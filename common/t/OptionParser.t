@@ -1,98 +1,581 @@
 #!/usr/bin/perl
 
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 58;
 use English qw(-no_match_vars);
+use Test::More tests => 99;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
 
-# #############################################################################
-# Tests with defaultset!, defaults-file|F=s, dog|D=s, foo!, love|l+
-# #############################################################################
-my @specs = (
-   { s => 'defaultset!',       d => 'alignment test with a very long thing '
-                                    . 'that is longer than 80 characters wide '
-                                    . 'and must be wrapped' },
-   { s => 'defaults-file|F=s', d => 'alignment test' },
-   { s => 'dog|D=s',           d => 'Dogs are fun' },
-   { s => 'foo!',              d => 'Foo' },
-   { s => 'love|l+',           d => 'And peace' },
+my $dp = new DSNParser();
+my $o  = new OptionParser(
+   description  => 'parses command line options.',
+   prompt       => '[OPTIONS]',
+   dsn          => $dp,
 );
 
-my $p = new OptionParser(@specs);
-my %defaults = ( foo => 1 );
-my %opts;
-my %basic = ( version => undef, help => undef );
+isa_ok($o, 'OptionParser');
 
-%opts = $p->parse(%defaults);
+my @opt_specs;
+my %opts;
+
+# #############################################################################
+# Test basic usage.
+# #############################################################################
+@opt_specs = $o->_pod_to_specs('samples/pod_sample_01.txt');
+is_deeply(
+   \@opt_specs,
+   [
+      { spec => 'database|D=s', desc => 'database string'             },
+      { spec => 'port|p=i',     desc => 'port (default 3306)'         },
+      { spec => 'price=f',      desc => 'price float (default 1.23)'  },
+      { spec => 'hash-req=H',   desc => 'hash that requires a value'  },
+      { spec => 'hash-opt=h',   desc => 'hash with an optional value' },
+      { spec => 'array-req=A',  desc => 'array that requires a value' },
+      { spec => 'array-opt=a',  desc => 'array with an optional value'},
+      { spec => 'host=d',       desc => 'host DSN'                    },
+      { spec => 'chunk-size=z', desc => 'chunk size'                  },
+      { spec => 'time=m',       desc => 'time'                        },
+      { spec => 'help+',        desc => 'help cumulative'             },
+      { spec => 'magic!',       desc => 'magic negatable'             },
+   ],
+   'Convert POD OPTIONS to opt specs (pod_sample_01.txt)',
+);
+
+$o->_parse_specs(@opt_specs);
+%opts = $o->opts();
 is_deeply(
    \%opts,
-   { %basic, foo => 1, D => undef, l => undef, F => undef, defaultset => undef },
-   'Basics works'
+   {
+      'database'   => {
+         spec           => 'database|D=s',
+         desc           => 'database string',
+         group          => 'default',
+         long           => 'database',
+         short          => 'D',
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 's',
+         got            => 0,
+         value          => undef,
+      },
+      'port'       => {
+         spec           => 'port|p=i',
+         desc           => 'port (default 3306)',
+         group          => 'default',
+         long           => 'port',
+         short          => 'p',
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 'i',
+         got            => 0,
+         value          => undef,
+      },
+      'price'      => {
+         spec           => 'price=f',
+         desc           => 'price float (default 1.23)',
+         group          => 'default',
+         long           => 'price',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 'f',
+         got            => 0,
+         value          => undef,
+      },
+      'hash-req'   => {
+         spec           => 'hash-req=s',
+         desc           => 'hash that requires a value',
+         group          => 'default',
+         long           => 'hash-req',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 'H',
+         got            => 0,
+         value          => undef,
+      },
+      'hash-opt'   => {
+         spec           => 'hash-opt=s',
+         desc           => 'hash with an optional value',
+         group          => 'default',
+         long           => 'hash-opt',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 'h',
+         got            => 0,
+         value          => undef,
+      },
+      'array-req'  => {
+         spec           => 'array-req=s',
+         desc           => 'array that requires a value',
+         group          => 'default',
+         long           => 'array-req',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 'A',
+         got            => 0,
+         value          => undef,
+      },
+      'array-opt'  => {
+         spec           => 'array-opt=s',
+         desc           => 'array with an optional value',
+         group          => 'default',
+         long           => 'array-opt',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 'a',
+         got            => 0,
+         value          => undef,
+      },
+      'host'       => {
+         spec           => 'host=s',
+         desc           => 'host DSN',
+         group          => 'default',
+         long           => 'host',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 'd',
+         got            => 0,
+         value          => undef,
+      },
+      'chunk-size' => {
+         spec           => 'chunk-size=s',
+         desc           => 'chunk size',
+         group          => 'default',
+         long           => 'chunk-size',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 'z',
+         got            => 0,
+         value          => undef,
+      },
+      'time'       => {
+         spec           => 'time=s',
+         desc           => 'time',
+         group          => 'default',
+         long           => 'time',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 'm',
+         got            => 0,
+         value          => undef,
+      },
+      'help'       => {
+         spec           => 'help+',
+         desc           => 'help cumulative',
+         group          => 'default',
+         long           => 'help',
+         short          => undef,
+         is_cumulative  => 1,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => undef,
+         got            => 0,
+         value          => undef,
+      },
+      'magic'      => {
+         spec           => 'magic!',
+         desc           => 'magic negatable',
+         group          => 'default',
+         long           => 'magic',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 1,
+         is_required    => 0,
+         type           => undef,
+         got            => 0,
+         value          => undef,
+      }
+   },
+   'Parse opt specs'
 );
+
+%opts = $o->short_opts();
+is_deeply(
+   \%opts,
+   {
+      'D' => 'database',
+      'p' => 'port',
+   },
+   'Short opts => log opts'
+);
+
+# get() single option
+is(
+   $o->get('database'),
+   undef,
+   'Get valueless long opt'
+);
+is(
+   $o->get('p'),
+   undef,
+   'Get valuless short opt'
+);
+eval { $o->get('foo'); };
+like(
+   $EVAL_ERROR,
+   qr/Option foo does not exist/,
+   'Die trying to get() nonexistent long opt'
+);
+eval { $o->get('x'); };
+like(
+   $EVAL_ERROR,
+   qr/Option x does not exist/,
+   'Die trying to get() nonexistent short opt'
+);
+
+# set()
+$o->set('database', 'foodb');
+is(
+   $o->get('database'),
+   'foodb',
+   'Set long opt'
+);
+$o->set('p', 12345);
+is(
+   $o->get('p'),
+   12345,
+   'Set short opt'
+);
+eval { $o->set('foo', 123); };
+like(
+   $EVAL_ERROR,
+   qr/Option foo does not exist/,
+   'Die trying to set() nonexistent long opt'
+);
+eval { $o->set('x', 123); };
+like(
+   $EVAL_ERROR,
+   qr/Option x does not exist/,
+   'Die trying to set() nonexistent short opt'
+);
+
+# got()
+@ARGV = qw(--port 12345);
+$o->get_opts();
+is(
+   $o->got('port'),
+   1,
+   'Got long opt'
+);
+is(
+   $o->got('p'),
+   1,
+   'Got short opt'
+);
+is(
+   $o->got('database'),
+   0,
+   'Did not "got" long opt'
+);
+is(
+   $o->got('D'),
+   0,
+   'Did not "got" short opt'
+);
+
+eval { $o->got('foo'); };
+like(
+   $EVAL_ERROR,
+   qr/Option foo does not exist/,
+   'Die trying to got() nonexistent long opt',
+);
+eval { $o->got('x'); };
+like(
+   $EVAL_ERROR,
+   qr/Option x does not exist/,
+   'Die trying to got() nonexistent short opt',
+);
+
+@ARGV = qw(--bar);
+eval {
+   $o->get_opts();
+   $o->get('bar');
+};
+like(
+   $EVAL_ERROR,
+   qr/Option bar does not exist/,
+   'Ignore nonexistent opt given on cmd line'
+);
+
+@ARGV = qw(--port 12345);
+$o->get_opts();
+is_deeply(
+   $o->errors(),
+   [],
+   'get_opts() resets errors'
+);
+
+# #############################################################################
+# Test hostile, broken usage.
+# #############################################################################
+eval { $o->_pod_to_specs('samples/pod_sample_02.txt'); };
+like(
+   $EVAL_ERROR,
+   qr/POD has no OPTIONS section/,
+   'Dies on POD without an OPTIONS section'
+);
+
+eval { $o->_pod_to_specs('samples/pod_sample_03.txt'); };
+like(
+   $EVAL_ERROR,
+   qr/No valid specs in POD OPTIONS/,
+   'Dies on POD with an OPTIONS section but no option items'
+);
+
+eval { $o->_pod_to_specs('samples/pod_sample_04.txt'); };
+like(
+   $EVAL_ERROR,
+   qr/No description after option spec foo/,
+   'Dies on option with no description'
+);
+
+# TODO: more hostile tests: duplicate opts, can't parse long opt from spec,
+# unrecognized rules, ...
+
+# #############################################################################
+# Test option defaults.
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   prompt       => '[OPTIONS]',
+);
+# These are dog opt specs. They're used by other tests below.
+$o->_parse_specs(
+   {
+      spec => 'defaultset!',
+      desc => 'alignment test with a very long thing '
+            . 'that is longer than 80 characters wide '
+            . 'and must be wrapped'
+   },
+   { spec => 'defaults-file|F=s', desc => 'alignment test'  },
+   { spec => 'dog|D=s',           desc => 'Dogs are fun'    },
+   { spec => 'foo!',              desc => 'Foo'             },
+   { spec => 'love|l+',           desc => 'And peace'       },
+);
+
+is_deeply(
+   $o->get_defaults(),
+   {},
+   'No default defaults',
+);
+
+$o->set_defaults(foo => 1);
+is_deeply(
+   $o->get_defaults(),
+   {
+      foo => 1,
+   },
+   'set_defaults() with values'
+);
+
+$o->set_defaults();
+is_deeply(
+   $o->get_defaults(),
+   {},
+   'set_defaults() without values unsets defaults'
+);
+
+# We've already tested opt spec parsing,
+# but we do it again for thoroughness.
+%opts = $o->opts();
+is_deeply(
+   \%opts,
+   {
+      'foo'           => {
+         spec           => 'foo!',
+         desc           => 'Foo',
+         group          => 'default',
+         long           => 'foo',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 1,
+         is_required    => 0,
+         type           => undef,
+         got            => 0,
+         value          => undef,
+      },
+      'defaultset'    => {
+         spec           => 'defaultset!',
+         desc           => 'alignment test with a very long thing '
+                         . 'that is longer than 80 characters wide '
+                         . 'and must be wrapped',
+         group          => 'default',
+         long           => 'defaultset',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 1,
+         is_required    => 0,
+         type           => undef,
+         got            => 0,
+         value          => undef,
+      },
+      'defaults-file' => {
+         spec           => 'defaults-file|F=s',
+         desc           => 'alignment test',
+         group          => 'default',
+         long           => 'defaults-file',
+         short          => 'F',
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 's',
+         got            => 0,
+         value          => undef,
+      },
+      'dog'           => {
+         spec           => 'dog|D=s',
+         desc           => 'Dogs are fun',
+         group          => 'default',
+         long           => 'dog',
+         short          => 'D',
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => 's',
+         got            => 0,
+         value          => undef,
+      },
+      'love'          => {
+         spec           => 'love|l+',
+         desc           => 'And peace',
+         group          => 'default',
+         long           => 'love',
+         short          => 'l',
+         is_cumulative  => 1,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => undef,
+         got            => 0,
+         value          => undef,
+      },
+   },
+   'Parse dog specs'
+);
+
+$o->set_defaults('dog' => 'fido');
+
+@ARGV = ();
+$o->get_opts();
+is(
+   $o->get('dog'),
+   'fido',
+   'Opt gets default value'
+);
+is(
+   $o->got('dog'),
+   0,
+   'Did not "got" opt with default value'
+);
+
+@ARGV = qw(--dog rover);
+$o->get_opts();
+is(
+   $o->get('dog'),
+   'rover',
+   'Value given on cmd line overrides default value'
+);
+
+eval { $o->set_defaults('bone' => 1) };
+like(
+   $EVAL_ERROR,
+   qr/Cannot set default for nonexistent option bone/,
+   'Cannot set default for nonexistent option'
+);
+
+# #############################################################################
+# Test option attributes negatable and cumulative.
+# #############################################################################
+
+# These tests use the dog opt specs from above.
 
 @ARGV = qw(--nofoo);
-%opts = $p->parse(%defaults);
-is_deeply(
-   \%opts,
-   { %basic, foo => 0, D => undef, l => undef, F => undef, defaultset => undef },
+$o->get_opts();
+is(
+   $o->get('foo'),
+   0,
    'Can negate negatable opt'
 );
 
 @ARGV = qw(--nodog);
-%opts = $p->parse(%defaults);
+$o->get_opts();
 is_deeply(
-   \%opts,
-   { %basic, foo => 1, D => undef, l => undef, F => undef, defaultset => undef },
+   $o->get('dog'),
+   undef,
    'Cannot negate non-negatable opt'
 );
-is($p->{__error__}, 1, 'Trying to negate non-negatable opt sets an error');
-
-@ARGV = qw(--bar);
-%opts = $p->parse();
-ok(!defined $opts{bar}, 'Completely nonexistent opt is ignored');
-
-$defaults{bone} = 1;
-eval {
-   %opts = $p->parse(%defaults);
-};
-is($EVAL_ERROR, "Cannot set default for non-existent option 'bone'\n", 'No bone');
-
-delete $defaults{bone};
-@ARGV = qw(--love -l -l);
-%opts = $p->parse(%defaults);
 is_deeply(
-   \%opts,
-   { %basic, foo => 1, D => undef, l => 3, F => undef, defaultset => undef },
-   'More love'
+   $o->errors(),
+   ['Error parsing options'],
+   'Trying to negate non-negatable opt sets an error'
 );
 
-$p->{prompt} = '<options>';
-is($p->usage,
-<<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+@ARGV = qw(--love -l -l);
+$o->get_opts();
+is(
+   $o->get('love'),
+   3,
+   'Cumulative opt val increases (--love -l -l)'
+);
+is(
+   $o->got('love'),
+   1,
+   "got('love') when given multiple times short and long"
+);
 
-Usage: OptionParser.t <options>
+@ARGV = qw(--love);
+$o->get_opts();
+is(
+   $o->got('love'),
+   1,
+   "got('love') long once"
+);
+
+@ARGV = qw(-l);
+$o->get_opts();
+is(
+   $o->got('l'),
+   1,
+   "got('l') short once"
+);
+
+
+# #############################################################################
+# Test usage output.
+# #############################################################################
+
+# The following one test uses the dog opt specs from above.
+
+# Clear values from previous tests.
+$o->set_defaults();
+@ARGV = ();
+$o->get_opts();
+
+is(
+   $o->print_usage(),
+<<EOF
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
+
+Usage: OptionParser [OPTIONS]
 
 Options:
   --defaults-file -F  alignment test
@@ -100,327 +583,520 @@ Options:
                       80 characters wide and must be wrapped
   --dog           -D  Dogs are fun
   --[no]foo           Foo
-  --help              Show this help message
   --love          -l  And peace
-  --version           Output version information and exit
 
 Options and values after processing arguments:
   --defaults-file     (No value)
   --defaultset        FALSE
   --dog               (No value)
   --foo               FALSE
-  --help              FALSE
   --love              (No value)
-  --version           FALSE
 EOF
-, 'Options aligned and prompt included'
+,
+   'Options aligned and custom prompt included'
 );
 
-# #############################################################################
-# Tests with database|D=s, nouniquechecks!
-# #############################################################################
-
-$p = new OptionParser(
-      { s => 'database|D=s',      d => 'Specify the database for all tables' },
-      { s => 'nouniquechecks!',   d => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
+$o = new OptionParser(
+   description  => 'parses command line options.',
 );
-is($p->usage,
+$o->_parse_specs(
+   { spec => 'database|D=s',    desc => 'Specify the database for all tables' },
+   { spec => 'nouniquechecks!', desc => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
+);
+
+is(
+   $o->print_usage(),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: OptionParser <options>
 
 Options:
   --database        -D  Specify the database for all tables
-  --help                Show this help message
   --[no]nouniquechecks  Set UNIQUE_CHECKS=0 before LOAD DATA INFILE
-  --version             Output version information and exit
 
 Options and values after processing arguments:
   --database            (No value)
-  --help                FALSE
   --nouniquechecks      FALSE
-  --version             FALSE
 EOF
-, 'Options aligned when short options shorter than long, no-usage defaults to <options>'
+,
+   'Really long option aligns with shorts, and prompt defaults to <options>'
 );
 
 # #############################################################################
-# Tests with cat|C=s
+# Test _get_participants()
 # #############################################################################
-
-$p = new OptionParser(
-   { s => 'cat|C=s', d => 'How to catch the cat; required' }
+$o = new OptionParser(
+   description  => 'parses command line options.',
 );
-
-%opts = $p->parse();
-is(
-   $p->{__error__},
-   1,
-   'Required option sets error',
+$o->_parse_specs(
+   { spec => 'foo',      desc => 'opt' },
+   { spec => 'bar-bar!', desc => 'opt' },
+   { spec => 'baz',      desc => 'opt' },
+);
+is_deeply(
+   [ $o->_get_participants('L<"--foo"> disables --bar-bar and C<--baz>') ],
+   [qw(foo bar-bar baz)],
+   'Extract option names from a string',
 );
 
 is_deeply(
-   $p->{errors},
-   ['Required option --cat must be specified'],
-   'Note set upon missing --cat',
+   [ $o->_get_participants('L<"--foo"> disables L<"--[no]bar-bar">.') ],
+   [qw(foo bar-bar)],
+   'Extract [no]-negatable option names from a string',
+);
+# TODO: test w/ opts that don't exist, or short opts
+
+# #############################################################################
+# Test required options.
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   { spec => 'cat|C=s', desc => 'How to catch the cat; required' }
 );
 
-$p->{prompt} = 'foofoo';
-$p->{descr}  = 'barbar';
-is($p->errors,
+@ARGV = ();
+$o->get_opts();
+is_deeply(
+   $o->errors(),
+   ['Required option --cat must be specified'],
+   'Missing required option sets an error',
+);
+
+is(
+   @{$o->errors()}[0],
 <<EOF
-Usage: OptionParser.t foofoo
+Usage: OptionParser <options>
 
 Errors in command-line arguments:
   * Required option --cat must be specified
 
-OptionParser.t barbar  For more details, please use the --help option, or try
-'perldoc OptionParser.t' for complete documentation.
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
 EOF
-, 'Error output includes note about missing cat');
+,
+   'Error output includes note about missing required option'
+);
 
 @ARGV = qw(--cat net);
-%opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, C => 'net' },
+$o->get_opts();
+is(
+   $o->get('cat'),
+   'net',
    'Required option OK',
 );
 
 # #############################################################################
-# Tests with ignore|i, replace|r, delete|d
+# Test option rules.
 # #############################################################################
-
-$p = new OptionParser(
-      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
-      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-      '--ignore and --replace are mutually exclusive.',
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   { spec => 'ignore|i',  desc => 'Use IGNORE for INSERT statements'         },
+   { spec => 'replace|r', desc => 'Use REPLACE instead of INSERT statements' },
+   '--ignore and --replace are mutually exclusive.',
 );
 
-is($p->usage, <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
+is(
+   $o->print_usage(),
+<<EOF
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc
 OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
 Options:
-  --help        Show this help message
   --ignore  -i  Use IGNORE for INSERT statements
   --replace -r  Use REPLACE instead of INSERT statements
-  --version     Output version information and exit
   --ignore and --replace are mutually exclusive.
 
 Options and values after processing arguments:
-  --help        FALSE
   --ignore      FALSE
   --replace     FALSE
-  --version     FALSE
 EOF
-, 'Usage with instructions');
+,
+   'Usage with rules'
+);
 
 @ARGV = qw(--replace);
-%opts = $p->parse();
-is(
-   $p->{__error__}, undef, '--replace does not trigger error',
+$o->get_opts();
+ok(
+   scalar $o->errors() == 0,
+   '--replace does not trigger an error',
 );
 
 @ARGV = qw(--ignore --replace);
-%opts = $p->parse();
-is(
-   $p->{__error__}, 1,
-   '--ignore --replace triggers error',
-);
-
+$o->get_opts();
 is_deeply(
-   $p->{errors},
+   $o->errors(),
    ['--ignore and --replace are mutually exclusive.'],
-   'Note set when instruction violated',
+   'Error set when rule violated',
 );
 
-$p = new OptionParser(
-      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
-      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-      { s => 'delete|d',    d => 'Delete' },
-      '-ird are mutually exclusive.',
+# These are used several times in the follow tests.
+my @ird_specs = (
+   { spec => 'ignore|i',   desc => 'Use IGNORE for INSERT statements'         },
+   { spec => 'replace|r',  desc => 'Use REPLACE instead of INSERT statements' },
+   { spec => 'delete|d',   desc => 'Delete'                                   },
 );
 
+
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   @ird_specs,
+   '-ird are mutually exclusive.',
+);
 @ARGV = qw(--ignore --replace);
-%opts = $p->parse();
-is(
-   $p->{__error__}, 1, 
-   '--ignore --replace triggers error when short spec used',
-);
-
+$o->get_opts();
 is_deeply(
-   $p->{errors},
+   $o->errors(),
    ['--ignore, --replace and --delete are mutually exclusive.'],
-   'Note set with long opt name and nice commas when instruction violated',
+   'Error set with long opt name and nice commas when rule violated',
 );
 
+
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 eval {
-   $p = new OptionParser(
-         { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
-         { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-         { s => 'delete|d',    d => 'Delete' },
-         'Use one and only one of --insert, --replace, or --delete.',
+   $o->_parse_specs(
+      @ird_specs,
+     'Use one and only one of --insert, --replace, or --delete.',
    );
 };
-like($EVAL_ERROR, qr/No such option 'insert'/, 'Bad option in one-and-only-one');
+like(
+   $EVAL_ERROR,
+   qr/No such option 'insert'/,
+   'Die on using nonexistent option in one-and-only-one rule'
+);
 
-$p = new OptionParser(
-      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
-      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-      { s => 'delete|d',    d => 'Delete' },
-      'Use one and only one of --ignore, --replace, or --delete.',
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   @ird_specs,
+   'Use one and only one of --ignore, --replace, or --delete.',
 );
 @ARGV = qw(--ignore --replace);
-%opts = $p->parse();
-
-is(
-   $p->{__error__}, 1,
-   '--ignore --replace triggers error for one-and-only-one',
-);
-
+$o->get_opts();
 is_deeply(
-   $p->{errors},
+   $o->errors(),
    ['--ignore, --replace and --delete are mutually exclusive.'],
-   'Note set with one-and-only-one',
+   'Error set with one-and-only-one rule violated',
 );
 
-$p = new OptionParser(
-      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
-      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-      { s => 'delete|d',    d => 'Delete' },
-      'Use one and only one of --ignore, --replace, or --delete.',
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   @ird_specs,
+   'Use one and only one of --ignore, --replace, or --delete.',
 );
 @ARGV = ();
-%opts = $p->parse();
-is(
-   $p->{__error__}, 1,
-   'Missing options triggers error for one-and-only-one',
-);
-
+$o->get_opts();
 is_deeply(
-   $p->{errors},
+   $o->errors(),
    ['Specify at least one of --ignore, --replace or --delete'],
-   'Note set with one-and-only-one when none specified',
+   'Error set with one-and-only-one when none specified',
 );
 
-$p = new OptionParser(
-      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
-      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-      { s => 'delete|d',    d => 'Delete' },
-      'Use at least one of --ignore, --replace, or --delete.',
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   @ird_specs,
+   'Use at least one of --ignore, --replace, or --delete.',
 );
 @ARGV = ();
-%opts = $p->parse();
-is(
-   $p->{__error__}, 1,
-   'Missing options triggers error for at-least-one',
-);
-
+$o->get_opts();
 is_deeply(
-   $p->{errors},
+   $o->errors(),
    ['Specify at least one of --ignore, --replace or --delete'],
-   'Note set with at-least-one when none specified',
+   'Error set with at-least-one when none specified',
 );
 
-$p = new OptionParser(
-      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
-      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-      { s => 'delete|d',    d => 'Delete' },
-      'Use at least one of --ignore, --replace, or --delete.',
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   @ird_specs,
+   'Use at least one of --ignore, --replace, or --delete.',
 );
 @ARGV = qw(-ir);
-%opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, i => 1, r => 1, d => undef },
+$o->get_opts();
+ok(
+   $o->get('insert') == 1 && $o->get('replace') == 1,
    'Multiple options OK for at-least-one',
 );
 
-# #############################################################################
-# Tests with foo, bar
-# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   { specs => 'foo=i', desc => 'Foo disables --bar'   },
+   { specs => 'bar',   desc => 'Bar (default 1)'      },
+);
+@ARGV = qw(--foo 5);
+$o->get_opts();
+is_deeply(
+   $o->get('foo') == 5 && $o->get('bar') == undef,
+   '--foo disables --bar',
+);
 
-# Defaults encoded in descriptions.
-$p = new OptionParser(
-   { s => 'foo=i', d => 'Foo (default 5)' },
-   { s => 'bar',   d => 'Bar (default)' },
+# Option can't disable a nonexistent option.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+eval {
+   $o->_parse_specs(
+      { spec => 'foo=i', desc => 'Foo disables --fox' },
+      { spec => 'bar',   desc => 'Bar (default 1)'    },
+   );
+};
+like(
+   $EVAL_ERROR,
+   qr/No such option 'fox' while processing foo/,
+   'Invalid option name in disable rule',
+);
+
+# Option can't 'allowed with' a nonexistent option.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+eval {
+   $o->_parse_specs(
+      { spec => 'foo=i', d => 'Foo disables --bar' },
+      { spec => 'bar',   d => 'Bar (default 1)'    },
+      'allowed with --foo: --fox',
+   );
+};
+like(
+   $EVAL_ERROR,
+   qr/No such option 'fox' while processing allowed with --foo: --fox/,
+   'Invalid option name in \'allowed with\' rule',
+);
+
+# #############################################################################
+# Test default values encoded in description.
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   { spec => 'foo=i',   desc => 'Foo (default 5)'                 },
+   { spec => 'bar',     desc => 'Bar (default)'                   },
+   { spec => 'price=f', desc => 'Price (default 12345.123456)'    },
+   { spec => 'size=z',  desc => 'Size (default 128M)'             },
+   { spec => 'time=m',  desc => 'Time (default 24h)'              },
+   { spec => 'host=d',  desc => 'Host (default h=127.1,P=12345)'  },
 );
 @ARGV = ();
-%opts = $p->parse();
+$o->get_opts();
+is(
+   $o->get('foo'),
+   5,
+   'Default integer value encoded in description'
+);
+is(
+   $o->get('bar'),
+   1,
+   'Default option enabled encoded in description'
+);
+is(
+   $o->get('price'),
+   12345.123456,
+   'Default float value encoded in description'
+);
+is(
+   $o->get('size'),
+   134217728,
+   'Default size value encoded in description'
+);
+is(
+   $o->get('time'),
+   86400,
+   'Default time value encoded in description'
+);
 is_deeply(
-   \%opts,
-   { %basic, foo => 5, bar => 1 },
-   'Defaults encoded in description',
+   $o->get('host'),
+   {
+      S => undef,
+      F => undef,
+      A => undef,
+      p => undef,
+      u => undef,
+      h => '127.1',
+      D => undef,
+      P => '12345'
+   },
+   'Default host value encoded in description'
 );
 
-$p = new OptionParser(
-   { s => 'foo=z', d => 'Number' },
+is(
+   $o->got('foo'),
+   0,
+   'Did not "got" --foo with encoded default'
+);
+is(
+   $o->got('bar'),
+   0,
+   'Did not "got" --bar with encoded default'
+);
+is(
+   $o->got('price'),
+   0,
+   'Did not "got" --price with encoded default'
+);
+is(
+   $o->got('size'),
+   0,
+   'Did not "got" --size with encoded default'
+);
+is(
+   $o->got('time'),
+   0,
+   'Did not "got" --time with encoded default'
+);
+is(
+   $o->got('host'),
+   0,
+   'Did not "got" --host with encoded default'
 );
 
-@ARGV = qw(--foo 5k);
-%opts = $p->parse();
+# #############################################################################
+# Test size option type.
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   { spec => 'size=z', desc => 'size' }
+);
+
+@ARGV = qw(--size 5k);
+$o->get_opts();
 is_deeply(
-   \%opts,
-   { %basic, foo => 1024*5, },
+   $o->get('size'),
+   1024*5,
    '5K expanded',
 );
 
-@ARGV = qw(--foo -5k);
-%opts = $p->parse();
+@ARGV = qw(--size -5k);
+$o->get_opts();
 is_deeply(
-   \%opts,
-   { %basic, foo => -1024*5, },
+   $o->get('size'),
+   -1024*5,
    '-5K expanded',
 );
 
-@ARGV = qw(--foo +5k);
-%opts = $p->parse();
+@ARGV = qw(--size +5k);
+$o->get_opts();
 is_deeply(
-   \%opts,
-   { %basic, foo => '+' . (1024*5), },
+   $o->get('size'),
+   '+' . (1024*5),
    '+5K expanded',
 );
 
-@ARGV = qw(--foo 5);
-%opts = $p->parse();
+@ARGV = qw(--size 5);
+$o->get_opts();
 is_deeply(
-   \%opts,
-   { %basic, foo => 5 },
+   $o->get('size'),
+   5,
    '5 expanded',
 );
 
-@ARGV = qw(--foo 5z);
-%opts = $p->parse();
+@ARGV = qw(--size 5z);
+$o->get_opts();
+is_deeply(
+   $o->errors(),
+   ['Invalid --size argument'],
+   'Bad size argument sets an error',
+);
+
+# #############################################################################
+# Test time option type.
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   { spec => 't=m', desc => 'Time'            },
+   { spec => 's=m', desc => 'Time (suffix s)' },
+   { spec => 'm=m', desc => 'Time (suffix m)' },
+   { spec => 'h=m', desc => 'Time (suffix h)' },
+   { spec => 'd=m', desc => 'Time (suffix d)' },
+);
+
+@ARGV = qw(-t 10 -s 20 -m 30 -h 40 -d 50);
+$o->get_opts();
+is_deeply(
+   $o->get('t'),
+   10,
+   'Time value with default suffix decoded',
+);
+is_deeply(
+   $o->get('s'),
+   20,
+   'Time value with s suffix decoded',
+);
+is_deeply(
+   $o->get('m'),
+   30*60,
+   'Time value with m suffix decoded',
+);
+is_deeply(
+   $o->get('h'),
+   40*3600,
+   'Time value with h suffix decoded',
+);
+is_deeply(
+   $o->get('d'),
+   50*86400,
+   'Time value with d suffix decoded',
+);
+
+@ARGV = qw(-d 5m);
+$o->get_opts();
+is_deeply(
+   $o->get('d'),
+   5*60,
+   'Explicit suffix overrides default suffix'
+);
+
+# Use shorter, simpler specs to test usage for time blurb.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   { spec => 'foo=m', desc => 'Time' },
+   { spec => 'bar=m', desc => 'Time (suffix m)' },
+);
+
 is(
-   $p->{__error__}, 1,
-   'Bad number value threw error',
-);
-is_deeply(
-   $p->{errors},
-   ['Invalid --foo argument'],
-   'Bad number argument set note',
-);
-
-$p = new OptionParser(
-   { s => 'foo=m', d => 'Time' },
-   { s => 'bar=m', d => 'Time (suffix m)' },
-);
-@ARGV = qw(--foo 5h --bar 5);
-%opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, foo => 3600*5, bar => 60*5 },
-   'Time value decoded',
-);
-
-is($p->usage, <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+   $o->print_usage(),
+<<EOF
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
@@ -429,94 +1105,45 @@ Options:
              suffix, m is used.
   --foo      Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
              suffix, s is used.
-  --help     Show this help message
-  --version  Output version information and exit
 
 Options and values after processing arguments:
   --bar      (No value)
   --foo      (No value)
-  --help     FALSE
-  --version  FALSE
 EOF
-, 'Usage for time value');
+,
+   'Usage for time value');
 
 @ARGV = qw(--foo 5z);
-%opts = $p->parse();
-is(
-   $p->{__error__}, 1,
-   'Bad time value threw error',
-);
+$o->get_opts();
 is_deeply(
-   $p->{errors},
+   $o->errors(),
    ['Invalid --foo argument'],
-   'Bad time argument set note',
+   'Bad time argument sets an error',
 );
 
-# One option disables another.
-$p = new OptionParser(
-   { s => 'foo=i', d => 'Foo disables --bar' },
-   { s => 'bar',   d => 'Bar (default 1)' },
+# #############################################################################
+# Test DSN option type.
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
 );
-@ARGV = qw(--foo 5);
-%opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, foo => 5, bar => undef },
-   '--foo disables --bar',
-);
-
-# Option can't disable a non-existent option.
-eval {
-   $p = new OptionParser(
-      { s => 'foo=i', d => 'Foo disables --fox' },
-      { s => 'bar',   d => 'Bar (default 1)' },
-   );
-};
-like(
-   $EVAL_ERROR,
-   qr/No such option 'fox' while processing foo/,
-   'Invalid option name in disable instruction',
-);
-
-# Option can't 'allowed with' a non-existent option.
-eval {
-   $p = new OptionParser(
-      { s => 'foo=i', d => 'Foo disables --bar' },
-      { s => 'bar',   d => 'Bar (default 1)' },
-      'allowed with --foo: --fox',
-   );
-};
-like(
-   $EVAL_ERROR,
-   qr/No such option 'fox' while processing allowed with --foo: --fox/,
-   'Invalid option name in \'allowed with\' instruction',
-);
-
-is_deeply(
-   [$p->get_participants('--foo --bar, --baz, -abc')],
-   [qw(foo bar baz a b c)],
-   'Extract option names from a string',
-);
-
-my $d = new DSNParser;
-$p = new OptionParser(
-   { s => 'foo=d', d => 'DSN foo' },
-   { s => 'bar=d', d => 'DSN bar' },
+$o->_parse_specs(
+   { spec => 'foo=d', desc => 'DSN foo' },
+   { spec => 'bar=d', desc => 'DSN bar' },
    'DSN values in --foo default to values in --bar if COPY is yes.',
 );
-$p->{dsn} = $d;
-is($p->usage(),
+
+is(
+   $o->print_usage(),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
 Options:
   --bar      DSN bar
   --foo      DSN foo
-  --help     Show this help message
-  --version  Output version information and exit
   DSN values in --foo default to values in --bar if COPY is yes.
 
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
@@ -534,16 +1161,17 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
 Options and values after processing arguments:
   --bar      (No value)
   --foo      (No value)
-  --help     FALSE
-  --version  FALSE
 EOF
-, 'DSN is integrated into help output');
+,
+   'DSN is integrated into help output'
+);
 
 @ARGV = ('--bar', 'D=DB,u=USER,h=localhost', '--foo', 'h=otherhost');
-%opts = $p->parse();
-
-is_deeply($opts{bar},
-   {  D => 'DB',
+$o->get_opts();
+is_deeply(
+   $o->get('bar'),
+   {
+      D => 'DB',
       u => 'USER',
       S => undef,
       F => undef,
@@ -554,9 +1182,10 @@ is_deeply($opts{bar},
    },
    'DSN parsing on type=d',
 );
-
-is_deeply($opts{foo},
-   {  D => 'DB',
+is_deeply(
+   $o->get('foo'),
+   {
+      D => 'DB',
       u => 'USER',
       S => undef,
       F => undef,
@@ -568,10 +1197,10 @@ is_deeply($opts{foo},
    'DSN parsing on type=d inheriting from --bar',
 );
 
-is($p->usage(%opts),
+is(
+   $o->print_usage(),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
@@ -600,20 +1229,25 @@ Options and values after processing arguments:
   --help     FALSE
   --version  FALSE
 EOF
-, 'DSN stringified with inheritance into post-processed args');
+,
+   'DSN stringified with inheritance into post-processed args'
+);
 
-$p = new OptionParser(
-   { s => 'foo|f=d', d => 'DSN foo' },
-   { s => 'bar|b=d', d => 'DSN bar' },
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   { spec => 'foo|f=d', desc => 'DSN foo' },
+   { spec => 'bar|b=d', desc => 'DSN bar' },
    'DSN values in --foo default to values in --bar if COPY is yes.',
 );
-$p->{dsn} = $d;
-
 @ARGV = ('-b', 'D=DB,u=USER,h=localhost', '-f', 'h=otherhost');
-%opts = $p->parse();
-
-is_deeply($opts{f},
-   {  D => 'DB',
+$o->get_opts();
+is_deeply(
+   $o->get('f'),
+   {
+      D => 'DB',
       u => 'USER',
       S => undef,
       F => undef,
@@ -626,21 +1260,25 @@ is_deeply($opts{f},
 );
 
 # #############################################################################
-# Tests with columns|C, tables|t, databases|d, books|b
+# Test [Hh]ash and [Aa]rray option types.
 # #############################################################################
-
-$p = new OptionParser(
-   { s => 'columns|C=H',    d => 'Comma-separated list of columns to output' },
-   { s => 'tables|t=h',     d => 'Comma-separated list of tables to output' },
-   { s => 'databases|d=A',  d => 'Comma-separated list of databases to output' },
-   { s => 'books|b=a',      d => 'Comma-separated list of books to output' },
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+$o->_parse_specs(
+   { spec => 'columns|C=H',   desc => 'cols required'       },
+   { spec => 'tables|t=h',    desc => 'tables optional'     },
+   { spec => 'databases|d=A', desc => 'databases required'  },
+   { spec => 'books|b=a',     desc => 'books optional'      },
 );
 
 @ARGV = ();
-%opts = $p->parse;
+$o->get_opts();
+%opts = $o->get(qw(C t d b));
 is_deeply(
    \%opts,
-   {  %basic,
+   { 
       C => {},
       t => undef,
       d => [],
@@ -650,22 +1288,23 @@ is_deeply(
 );
 
 @ARGV = ('-C', 'a,b', '-t', 'd,e', '-d', 'f,g', '-b', 'o,p' );
-%opts = $p->parse;
+$o->get_opts();
+%opts = $o->get(qw(C t d b));
 is_deeply(
    \%opts,
-   {  %basic,
-      C => { a => 1, b => 1},
-      t => { d => 1, e => 1},
+   {
+      C => { a => 1, b => 1 },
+      t => { d => 1, e => 1 },
       d => [qw(f g)],
       b => [qw(o p)],
    },
    'Comma-separated lists: all processed when given',
 );
 
-is($p->usage(%opts),
+is(
+   $o->print_usage(),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
@@ -685,161 +1324,107 @@ Options and values after processing arguments:
   --tables        d,e
   --version       FALSE
 EOF
-, 'Lists properly expanded into usage information',
+,
+   'Lists properly expanded into usage information',
 );
 
-$p = new OptionParser(
-   { s => 'columns|C=H',    g => 'o', d => 'Comma-separated list of columns to output' },
-   { s => 'tables|t=h',     g => 'p', d => 'Comma-separated list of tables to output' },
-   { s => 'databases|d=A',  g => 'q', d => 'Comma-separated list of databases to output' },
-   { s => 'books|b=a',      g => 'p', d => 'Comma-separated list of books to output' },
+# #############################################################################
+# Test groups.
+# #############################################################################
+
+# TODO: refine these tests after I think more about how
+# groups will be implemented.
+
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
 );
-$p->groups(
-   { k => 'p', d => 'Foofoo' },
-   { k => 'q', d => 'Bizbat' },
+$o->_parse_specs(
+   { spec  => 'help',   desc  => 'Help',                         },
+   { spec  => 'user=s', desc  => 'User',                         },
+   { spec  => 'dog',    desc  => 'dog option', group => 'Dogs',  },
+   { spec  => 'cat',    desc  => 'cat option', group => 'Cats',  },
 );
 
-is($p->usage(%opts),
+@ARGV = ();
+$o->get_opts();
+is(
+   $o->print_usage(),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
 Options:
-  --columns   -C  Comma-separated list of columns to output
-  --help          Show this help message
-  --version       Output version information and exit
+  --help          Help
+  --user          user
 
-Foofoo:
-  --books     -b  Comma-separated list of books to output
-  --tables    -t  Comma-separated list of tables to output
+Dogs:
+  --dog           dog option
 
-Bizbat:
-  --databases -d  Comma-separated list of databases to output
+Cats:
+  --cat           cat option
 
 Options and values after processing arguments:
-  --books         o,p
-  --columns       a,b
-  --databases     f,g
+  --cat           FALSE
+  --dog           FALSE
   --help          FALSE
-  --tables        d,e
-  --version       FALSE
+  --user          FALSE
 EOF
-, 'Option groupings',
+,
+   'Option groupings usage',
 );
 
-# R.I.P.: dark magick
+@ARGV = qw(--user foo --dog);
+$o->get_opts();
+is(
+   $o->get('user') eq 'foo' && $o->get('dog') == 1,
+   'Grouped option allowed with default group option'
+);
+
+@ARGV = qw(--dog --cat);
+eval { $o->get_opts(); };
+like(
+   $EVAL_ERROR,
+   qr/Option --cat is not allowed with option --dog/,
+   'Options from different non-default groups not allowed together'
+);
 
 # #############################################################################
-# Tests using POD samples
+# Test issues. Any other tests should find their proper place above.
 # #############################################################################
 
-# Check that it can convert a Perldoc into a opt_spec
-my @opt_spec = $p->pod_to_spec("samples/podsample.txt");
+# #############################################################################
+# Issue 140: Check that new style =item --[no]foo works like old style:
+#    =item --foo
+#    negatable: yes
+# #############################################################################
+@opt_specs = $o->_pod_to_spec("samples/pod_sample_issue_140.txt");
 is_deeply(
-   \@opt_spec,
+   \@opt_specs,
    [
-   { s => 'array=a',           d => 'An array' },
-   { s => 'askpass!',          d => 'Prompts the user for a password when '
-                               . 'connecting to MySQL' },
-   { s => 'charset|A=s',       d => 'Default character set' },
-   { s => 'database|D=s',      d => 'The database to use for the connection' },
-   { s => 'interval|i=m',      d => 'Interval between updates and checks. '
-                               . 'Second line. (default 1s)' },
-   { s => 'setvars=s',         d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   { s => 'size|s=z',          d => 'Size' },
-   { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 0)' },
-   { s => 'verbose|v+',        d => 'Verbosity' },
-   { s => 'hash=h',            d => 'Hash option' },
-   { s => 'hash2=H',           d => 'Hash option forced' },
-   'Specify at least one of --stop, --update, --monitor, or --check.',
-   '--update, --monitor, and --check are mutually exclusive.',
-   '--daemonize and --check are mutually exclusive.',
-   ],
-   'Converted POD into opt_spec',
-);
-
-# #############################################################################
-# Tests using wine, grapes, barely, hops, yeast
-# #############################################################################
-
-$p = new OptionParser(
-   { s => 'wine',    g => 'o', d => 'wine'                       },
-   { s => 'grapes',  g => 'o', d => 'grapes'                     },
-   { s => 'barely',  g => 'o', d => 'barely (default yes)'       },
-   { s => 'hops=s',  g => 'o', d => 'hops'                       },
-   { s => 'yeast=s', g => 'o', d => 'yeast (default Montrachet)' },
-   'allowed with --wine: --grapes, --yeast',
-);
-@ARGV = ('--wine', '--grapes', '--hops=Strisselspalt');
-%opts = $p->parse();
-is_deeply(
-   \%opts,
-   {
-      wine     => 1,
-      grapes   => 1,
-      barely   => undef,
-      hops     => undef,
-      yeast    => 'Montrachet',
-      version  => undef,
-      help     => undef,
-   },
-   'Opt only allowed with other opts parses correclty'
-);
-
-@ARGV = ('--barely', '--hops=Strisselspalt');
-%opts = $p->parse();
-is_deeply(
-   \%opts,
-   {
-      wine     => undef,
-      grapes   => undef,
-      barely   => 1,
-      hops     => 'Strisselspalt',
-      yeast    => 'Montrachet',
-      version  => undef,
-      help     => undef,
-   },
-   'Other ops parse correctly w/o special only allowed opt'
-);
-
-is_deeply(
-   $p->{given},
-   {
-      barely => '1',
-      hops   => 'Strisselspalt',
-   },
-   'Given opts'
-);
-
-# #############################################################################
-# Check that new style (issue 140) =item --[no]foo works like old style:
-# =item --foo
-# negatable: yes
-# #############################################################################
-@opt_spec = $p->pod_to_spec("samples/pod_sample_issue_140.txt");
-is_deeply(
-   \@opt_spec,
-   [
-      { s => 'foo',   d => 'Basic foo' },
-      { s => 'bar!',  d => 'New negatable bar'},
+      { spec => 'foo',   desc => 'Basic foo'          },
+      { spec => 'bar!',  desc => 'New negatable bar'  },
    ],
    'New =item --[no]foo style for negatables'
 );
 
 # #############################################################################
-# For issue 92, extract a paragraph from POD.
+# Issue 92: extract a paragraph from POD.
 # #############################################################################
-is($p->read_para_after("samples/pod_sample_issue_92.txt", qr/magic/),
+is(
+   $o->_read_para_after("samples/pod_sample_issue_92.txt", qr/magic/),
    'This is the paragraph, hooray',
-   'read_para_after');
+   'read_para_after'
+);
 
 # The first time I wrote this, I used the /o flag to the regex, which means you
 # always get the same thing on each subsequent call no matter what regex you
 # pass in.  This is to test and make sure I don't do that again.
-is($p->read_para_after("samples/pod_sample_issue_92.txt", qr/abracadabra/),
+is(
+   $o->read_para_after("samples/podsample_issue92.txt", qr/abracadabra/),
    'This is the next paragraph, hooray',
-   'read_para_after again');
+   'read_para_after again'
+);
 
 exit;

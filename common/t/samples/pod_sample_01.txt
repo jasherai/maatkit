@@ -48,25 +48,25 @@ here. Unfortunately for us all, I have forgotten what that magick is. :-(
 
 type: Hash
 
-hash required.
+hash that requires a value.
 
 =item --hash-opt
 
 type: hash
 
-hash optional.
+hash with an optional value.
 
 =item --array-req
 
 type: Array
 
-array required.
+array that requires a value.
 
 =item --array-opt
 
 type: array
 
-array optional.
+array with an optional value.
 
 Naturally, other POD stuff like C<format codes> and links to other options
 like L<"--port"> or L<"--hash-req"> should pose no problems.
