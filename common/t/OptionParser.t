@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 99;
+use Test::More tests => 96;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -12,7 +12,7 @@ my $dp = new DSNParser();
 my $o  = new OptionParser(
    description  => 'parses command line options.',
    prompt       => '[OPTIONS]',
-   dsn          => $dp,
+   dp           => $dp,
 );
 
 isa_ok($o, 'OptionParser');
@@ -653,7 +653,7 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
+   dp           => $dp,
 );
 $o->_parse_specs(
    { spec => 'cat|C=s', desc => 'How to catch the cat; required' }
@@ -668,7 +668,7 @@ is_deeply(
 );
 
 is(
-   @{$o->errors()}[0],
+   $o->print_errors(),
 <<EOF
 Usage: OptionParser <options>
 
@@ -695,7 +695,6 @@ is(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 $o->_parse_specs(
    { spec => 'ignore|i',  desc => 'Use IGNORE for INSERT statements'         },
@@ -706,10 +705,10 @@ $o->_parse_specs(
 is(
    $o->print_usage(),
 <<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: OptionParser <options>
 
 Options:
   --ignore  -i  Use IGNORE for INSERT statements
@@ -726,8 +725,9 @@ EOF
 
 @ARGV = qw(--replace);
 $o->get_opts();
-ok(
-   scalar $o->errors() == 0,
+is_deeply(
+   $o->errors(),
+   [],
    '--replace does not trigger an error',
 );
 
@@ -746,14 +746,12 @@ my @ird_specs = (
    { spec => 'delete|d',   desc => 'Delete'                                   },
 );
 
-
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 $o->_parse_specs(
    @ird_specs,
-   '-ird are mutually exclusive.',
+   '--ignore, --replace and --delete are mutually exclusive.',
 );
 @ARGV = qw(--ignore --replace);
 $o->get_opts();
@@ -763,10 +761,8 @@ is_deeply(
    'Error set with long opt name and nice commas when rule violated',
 );
 
-
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 eval {
    $o->_parse_specs(
@@ -776,13 +772,12 @@ eval {
 };
 like(
    $EVAL_ERROR,
-   qr/No such option 'insert'/,
+   qr/Option --insert does not exist/,
    'Die on using nonexistent option in one-and-only-one rule'
 );
 
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 $o->_parse_specs(
    @ird_specs,
@@ -798,7 +793,6 @@ is_deeply(
 
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 $o->_parse_specs(
    @ird_specs,
@@ -814,7 +808,6 @@ is_deeply(
 
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 $o->_parse_specs(
    @ird_specs,
@@ -830,7 +823,6 @@ is_deeply(
 
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 $o->_parse_specs(
    @ird_specs,
@@ -839,29 +831,28 @@ $o->_parse_specs(
 @ARGV = qw(-ir);
 $o->get_opts();
 ok(
-   $o->get('insert') == 1 && $o->get('replace') == 1,
+   $o->get('ignore') == 1 && $o->get('replace') == 1,
    'Multiple options OK for at-least-one',
 );
 
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 $o->_parse_specs(
-   { specs => 'foo=i', desc => 'Foo disables --bar'   },
-   { specs => 'bar',   desc => 'Bar (default 1)'      },
+   { spec => 'foo=i', desc => 'Foo disables --bar'   },
+   { spec => 'bar',   desc => 'Bar (default 1)'      },
 );
 @ARGV = qw(--foo 5);
 $o->get_opts();
 is_deeply(
-   $o->get('foo') == 5 && $o->get('bar') == undef,
+   [ $o->get('foo'),  $o->get('bar') ],
+   [ 5, undef ],
    '--foo disables --bar',
 );
 
 # Option can't disable a nonexistent option.
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 eval {
    $o->_parse_specs(
@@ -871,25 +862,25 @@ eval {
 };
 like(
    $EVAL_ERROR,
-   qr/No such option 'fox' while processing foo/,
+   qr/Option --fox does not exist/,
    'Invalid option name in disable rule',
 );
 
 # Option can't 'allowed with' a nonexistent option.
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
+   dp           => $dp,
 );
 eval {
    $o->_parse_specs(
-      { spec => 'foo=i', d => 'Foo disables --bar' },
-      { spec => 'bar',   d => 'Bar (default 1)'    },
+      { spec => 'foo=i', desc => 'Foo disables --bar' },
+      { spec => 'bar',   desc => 'Bar (default 0)'    },
       'allowed with --foo: --fox',
    );
 };
 like(
    $EVAL_ERROR,
-   qr/No such option 'fox' while processing allowed with --foo: --fox/,
+   qr/Option --fox does not exist/,
    'Invalid option name in \'allowed with\' rule',
 );
 
@@ -898,7 +889,7 @@ like(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
+   dp           => $dp,
 );
 $o->_parse_specs(
    { spec => 'foo=i',   desc => 'Foo (default 5)'                 },
@@ -986,7 +977,6 @@ is(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 $o->_parse_specs(
    { spec => 'size=z', desc => 'size' }
@@ -1028,7 +1018,7 @@ is_deeply(
 $o->get_opts();
 is_deeply(
    $o->errors(),
-   ['Invalid --size argument'],
+   ['Invalid size for --size'],
    'Bad size argument sets an error',
 );
 
@@ -1037,7 +1027,6 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 $o->_parse_specs(
    { spec => 't=m', desc => 'Time'            },
@@ -1086,7 +1075,6 @@ is_deeply(
 # Use shorter, simpler specs to test usage for time blurb.
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
 );
 $o->_parse_specs(
    { spec => 'foo=m', desc => 'Time' },
@@ -1096,19 +1084,20 @@ $o->_parse_specs(
 is(
    $o->print_usage(),
 <<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: OptionParser <options>
 
 Options:
-  --bar      Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
-             suffix, m is used.
-  --foo      Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
-             suffix, s is used.
+  --bar  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
+         suffix, m is used.
+  --foo  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
+         suffix, s is used.
 
 Options and values after processing arguments:
-  --bar      (No value)
-  --foo      (No value)
+  --bar  (No value)
+  --foo  (No value)
 EOF
 ,
    'Usage for time value');
@@ -1117,7 +1106,7 @@ EOF
 $o->get_opts();
 is_deeply(
    $o->errors(),
-   ['Invalid --foo argument'],
+   ['Invalid time suffix for --foo'],
    'Bad time argument sets an error',
 );
 
@@ -1126,7 +1115,7 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
+   dp           => $dp,
 );
 $o->_parse_specs(
    { spec => 'foo=d', desc => 'DSN foo' },
@@ -1137,13 +1126,14 @@ $o->_parse_specs(
 is(
    $o->print_usage(),
 <<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: OptionParser <options>
 
 Options:
-  --bar      DSN bar
-  --foo      DSN foo
+  --bar  DSN bar
+  --foo  DSN foo
   DSN values in --foo default to values in --bar if COPY is yes.
 
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
@@ -1159,8 +1149,8 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   u    yes   User for login if not current user
 
 Options and values after processing arguments:
-  --bar      (No value)
-  --foo      (No value)
+  --bar  (No value)
+  --foo  (No value)
 EOF
 ,
    'DSN is integrated into help output'
@@ -1200,9 +1190,10 @@ is_deeply(
 is(
    $o->print_usage(),
 <<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: OptionParser <options>
 
 Options:
   --bar      DSN bar
@@ -1235,7 +1226,7 @@ EOF
 
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
+   dp           => $dp,
 );
 $o->_parse_specs(
    { spec => 'foo|f=d', desc => 'DSN foo' },
@@ -1264,7 +1255,7 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
+   dp           => $dp,
 );
 $o->_parse_specs(
    { spec => 'columns|C=H',   desc => 'cols required'       },
@@ -1304,9 +1295,10 @@ is_deeply(
 is(
    $o->print_usage(),
 <<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: OptionParser <options>
 
 Options:
   --books     -b  Comma-separated list of books to output
@@ -1337,7 +1329,7 @@ EOF
 
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dsn          => $dp,
+   dp           => $dp,
 );
 $o->_parse_specs(
    { spec  => 'help',   desc  => 'Help',                         },
@@ -1351,9 +1343,10 @@ $o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
-OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: OptionParser <options>
 
 Options:
   --help          Help

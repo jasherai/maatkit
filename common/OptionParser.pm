@@ -40,7 +40,7 @@ sub new {
       description  => $args{description},
       prompt       => $args{prompt} || '<options>',
       strict       => $args{strict} || 1,
-      dsn          => $args{dsn}    || undef,
+      dp           => $args{dp}     || undef,
       program_name => $program_name || $PROGRAM_NAME,
       opts         => {},
       short_opts   => {},
@@ -89,7 +89,7 @@ sub _pod_to_specs {
       hash   => 'h', # hash as above, but only if a value is given
       Array  => 'A', # array, similar to Hash
       array  => 'a', # array, similar to hash
-      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dsn}
+      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dp}
       size   => 'z', # size with kMG suffix (powers of 2^10)
       'time' => 'm', # time, with an optional suffix of s/h/m/d
    );
@@ -207,7 +207,7 @@ sub _parse_specs {
    foreach my $opt ( @specs ) {
       if ( ref $opt ) { # It's an option spec, not a rule.
          MKDEBUG && _d('Parsing opt spec:',
-            map { "$_=>$opt->{$_}" } keys %$opt);
+            map { ($_, '=>', $opt->{$_}) } keys %$opt);
 
          my ( $long, $short ) = $opt->{spec} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
          if ( !$long ) {
@@ -218,6 +218,11 @@ sub _parse_specs {
 
          die "Duplicate long option --$long" if exists $self->{opts}->{$long};
          $self->{opts}->{$long} = $opt;
+
+         if ( length $long == 1 ) {
+            MKDEBUG && _d('Long opt', $long, 'looks like short opt');
+            $self->{short_opts}->{$long} = $long;
+         }
 
          if ( $short ) {
             die "Duplicate short option -$short"
@@ -241,6 +246,11 @@ sub _parse_specs {
          $opt->{type} = $type;
          MKDEBUG && _d($long, 'type:', $type);
 
+         if ( $type && $type eq 'd' && !$self->{dp} ) {
+            die "$opt->{long} is type DSN (d) but no dp argument "
+               . "was given when this OptionParser object was created";
+         }
+
          # Option has a non-Getopt type: HhAadzm (see %types in
          # _pod_to_spec() above). For these, use Getopt type 's'.
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
@@ -250,7 +260,7 @@ sub _parse_specs {
          # to set_defaults().
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
             $self->{defaults}->{$long} = defined $def ? $def : 1;
-            MKDEBUG && _d('Option', $long, 'default:', $def);
+            MKDEBUG && _d($long, 'default:', $def);
          }
 
          # Option disable another option if its desc says 'disable'.
@@ -267,16 +277,20 @@ sub _parse_specs {
          MKDEBUG && _d('Parsing rule:', $opt); 
          push @{$self->{rules}}, $opt;
          my @participants = $self->_get_participants($opt);
+         my $rule_ok = 0;
 
          if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+            $rule_ok = 1;
             push @{$self->{mutex}}, \@participants;
             MKDEBUG && _d(@participants, 'are mutually exclusive');
          }
-         elsif ( $opt =~ m/at least one|one and only one/ ) {
+         if ( $opt =~ m/at least one|one and only one/ ) {
+            $rule_ok = 1;
             push @{$self->{atleast1}}, \@participants;
             MKDEBUG && _d(@participants, 'require at least one');
          }
-         elsif ( $opt =~ m/default to/ ) {
+         if ( $opt =~ m/default to/ ) {
+            $rule_ok = 1;
             # Example: "DSN values in L<"--dest"> default to values
             # from L<"--source">."
             $self->{defaults_to}->{$participants[0]} = $participants[1];
@@ -284,9 +298,7 @@ sub _parse_specs {
          }
          # TODO: 'allowed with' is only used in mk-table-checksum.
          # Groups need to be used instead.
-         else {
-            die "Unrecognized option rule: $opt";
-         }
+         die "Unrecognized option rule: $opt" unless $rule_ok;
       }
    }
 
@@ -352,9 +364,6 @@ sub get_defaults {
 # $self->{opts} and accessed later by get(), got() and set().
 sub get_opts {
    my ( $self ) = @_; 
-# TODO
-use Data::Dumper;
-$Data::Dumper::Indent=1;
 
    # Reset opts. 
    foreach my $long ( keys %{$self->{opts}} ) {
@@ -405,47 +414,44 @@ $Data::Dumper::Indent=1;
       $self->_save_error("Unrecognized command-line options @ARGV");
    }
 
-   # Check the 'at least one' rule.
-   if ( @{$self->{atleast1}}
-        && !(grep { $self->{opts}->{$_}->{got} } @{$self->{atleast1}}) )
-   {
-      my $err = 'Specify at least one of '
-              . join(',',  map { "--$_" } @{$self->{atleast1}});
-      $self->_save_error($err);
-   }
-
-   # Check the other rules and validate option type.
-   foreach my $long ( keys %{$self->{opts}} ) {
-      my $opt = $self->{opts}->{$long};
-
-      # Rule: opt disables other opts.
-      if ( exists $self->{disables}->{$long} ) {
-         my @disable_opts = @{$self->{disables}->{$long}};
-         map { $self->{opts}->{$_} = undef; } @disable_opts;
-         MKDEBUG && _d('Unset options', @disable_opts,
-            'because', $long,'disables them');
-      }
-
-      # Rule: opts are mutually exclusive.
-      my @mutex_opts;
-      foreach my $mutex_long ( @{$self->{mutex}} ) {
-         next if $long eq $mutex_long;
-         push @mutex_opts, $mutex_long if $self->{opts}->{$mutex_long}->{got};
-      }
-      if ( @mutex_opts ) {
-         my $err = "Option --$long is mutually exclusive with options "
-                 . join(', ', @mutex_opts)
-                 . '.';
+   # Check mutex options.
+   foreach my $mutex ( @{$self->{mutex}} ) {
+      my @set = grep { $self->{opts}->{$_}->{got} } @$mutex;
+      if ( @set > 1 ) {
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$mutex}[ 0 .. scalar(@$mutex) - 2] )
+                 . ' and --'.$self->{opts}->{$mutex->[-1]}->{long}
+                 . ' are mutually exclusive.';
          $self->_save_error($err);
       }
+   }
 
-      # Check if option is required but was not given.
-      if ( $opt->{is_required} && !$opt->{got} ) {
-         $self->_save_error("Required option --$long  must be specified");
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { $self->{opts}->{$_}->{got} } @$required;
+      if ( @set == 0 ) {
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$required}[ 0 .. scalar(@$required) - 2] )
+                 .' or --'.$self->{opts}->{$required->[-1]}->{long};
+         $self->_save_error("Specify at least one of $err");
+      }
+   }
+
+   foreach my $long ( keys %{$self->{opts}} ) {
+      my $opt = $self->{opts}->{$long};
+      if ( $opt->{got} ) {
+         # Rule: opt disables other opts.
+         if ( exists $self->{disables}->{$long} ) {
+            my @disable_opts = @{$self->{disables}->{$long}};
+            map { $self->{opts}->{$_} = undef; } @disable_opts;
+            MKDEBUG && _d('Unset options', @disable_opts,
+               'because', $long,'disables them');
+         }
+      }
+      elsif ( $opt->{is_required} ) { 
+         $self->_save_error("Required option --$long must be specified");
       }
 
-      # Validate option type.
-      _validate_type($opt);
+      $self->_validate_type($opt);
 
       # TODO: Check groups.
    }
@@ -455,7 +461,7 @@ $Data::Dumper::Indent=1;
 
 sub _validate_type {
    my ( $self, $opt ) = @_;
-   return unless $opt && $opt->{type};
+   return unless $opt && $opt->{type} && $opt->{value};
    my $val = $opt->{value};
 
    if ( $opt->{type} eq 'm' ) {
@@ -487,10 +493,10 @@ sub _validate_type {
       if ( $from_key ) {
          MKDEBUG && _d('Option', $opt->{long}, 'DSN copies from option',
             $from_key);
-         $default = $self->{dsn}->parse(
-            $self->{dsn}->as_string($self->{opts}->{$from_key}) );
+         $default = $self->{dp}->parse(
+            $self->{dp}->as_string($self->{opts}->{$from_key}) );
       }
-      $opt->{value} = $self->{dsn}->parse($val, $default);
+      $opt->{value} = $self->{dp}->parse($val, $default);
    }
    elsif ( $opt->{type} eq 'z' ) {
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
@@ -676,8 +682,8 @@ sub print_usage {
    if ( (my @rules = @{$self->{rules}}) ) {
       $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
-   if ( $self->{dsn} ) {
-      $usage .= "\n" . $self->{dsn}->usage();
+   if ( $self->{dp} ) {
+      $usage .= "\n" . $self->{dp}->usage();
    }
    $usage .= "\nOptions and values after processing arguments:\n";
    foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
@@ -686,7 +692,7 @@ sub print_usage {
       my $bool  = $opt->{spec} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
       $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
                 : !defined $val             ? '(No value)'
-                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type eq 'd'              ? $self->{dp}->as_string($val)
                 : $type =~ m/H|h/           ? join(',', sort keys %$val)
                 : $type =~ m/A|a/           ? join(',', @$val)
                 :                             $val;
