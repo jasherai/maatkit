@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 25;
 
 use DBI;
 require "../TableParser.pm";
@@ -454,12 +454,27 @@ is_deeply(
          name            => 't1_ibfk_1',
          colnames        => '`a`',
          cols            => ['a'],
-         parent_tbl      => 't2',
+         parent_tbl      => '`t2`',
          parent_colnames => '`a`',
          parent_cols     => ['a'],
       },
    },
    'one fk'
+);
+
+is_deeply(
+   $tp->get_fks( load_file('samples/one_fk.sql'), {database=>'foo'} ),   
+   {
+      't1_ibfk_1' => {
+         name            => 't1_ibfk_1',
+         colnames        => '`a`',
+         cols            => ['a'],
+         parent_tbl      => '`foo`.`t2`',
+         parent_colnames => '`a`',
+         parent_cols     => ['a'],
+      },
+   },
+   'one fk with default database'
 );
 
 is_deeply(
@@ -469,7 +484,7 @@ is_deeply(
          name            => 'fk_1',
          colnames        => '`id`',
          cols            => ['id'],
-         parent_tbl      => 'issue_331_t1',
+         parent_tbl      => '`issue_331_t1`',
          parent_colnames => '`t1_id`',
          parent_cols     => ['t1_id'],
       },
@@ -477,7 +492,7 @@ is_deeply(
          name            => 'fk_2',
          colnames        => '`id`',
          cols            => ['id'],
-         parent_tbl      => 'issue_331_t1',
+         parent_tbl      => '`issue_331_t1`',
          parent_colnames => '`t1_id`',
          parent_cols     => ['t1_id'],
       }
