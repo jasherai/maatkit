@@ -461,10 +461,10 @@ sub get_opts {
 
 sub _validate_type {
    my ( $self, $opt ) = @_;
-   return unless $opt && $opt->{type} && $opt->{value};
+   return unless $opt && $opt->{type};
    my $val = $opt->{value};
 
-   if ( $opt->{type} eq 'm' ) {
+   if ( $val && $opt->{type} eq 'm' ) {
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
       my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
       # The suffix defaults to 's' unless otherwise specified.
@@ -486,19 +486,18 @@ sub _validate_type {
          $self->_save_error("Invalid time suffix for --$opt->{long}");
       }
    }
-   elsif ( $opt->{type} eq 'd' ) {
+   elsif ( $val && $opt->{type} eq 'd' ) {
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a DSN');
-      my $from_key = $self->{default_to}->{ $opt->{long} };
+      my $from_key = $self->{defaults_to}->{ $opt->{long} };
       my $default = {};
       if ( $from_key ) {
-         MKDEBUG && _d('Option', $opt->{long}, 'DSN copies from option',
-            $from_key);
+         MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
          $default = $self->{dp}->parse(
-            $self->{dp}->as_string($self->{opts}->{$from_key}) );
+            $self->{dp}->as_string($self->{opts}->{$from_key}->{value}) );
       }
       $opt->{value} = $self->{dp}->parse($val, $default);
    }
-   elsif ( $opt->{type} eq 'z' ) {
+   elsif ( $val && $opt->{type} eq 'z' ) {
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
       my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
       my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
@@ -522,7 +521,7 @@ sub _validate_type {
    }
    else {
       MKDEBUG && _d('Nothing to validate for option',
-         $opt->{long}, 'type', $opt->{type});
+         $opt->{long}, 'type', $opt->{type}, 'value', $val);
    }
 
    return;
@@ -744,7 +743,7 @@ if ( MKDEBUG ) {
 
 # Reads the next paragraph from the POD after the magical regular expression is
 # found in the text.
-sub read_para_after {
+sub _read_para_after {
    my ( $self, $file, $regex ) = @_;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
    local $INPUT_RECORD_SEPARATOR = '';

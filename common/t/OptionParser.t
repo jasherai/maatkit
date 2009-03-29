@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 96;
+use Test::More tests => 99;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1196,10 +1196,8 @@ OptionParser parses command line options.  For more details, please use the
 Usage: OptionParser <options>
 
 Options:
-  --bar      DSN bar
-  --foo      DSN foo
-  --help     Show this help message
-  --version  Output version information and exit
+  --bar  DSN bar
+  --foo  DSN foo
   DSN values in --foo default to values in --bar if COPY is yes.
 
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
@@ -1215,10 +1213,8 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   u    yes   User for login if not current user
 
 Options and values after processing arguments:
-  --bar      D=DB,h=localhost,u=USER
-  --foo      D=DB,h=otherhost,u=USER
-  --help     FALSE
-  --version  FALSE
+  --bar  D=DB,h=localhost,u=USER
+  --foo  D=DB,h=otherhost,u=USER
 EOF
 ,
    'DSN stringified with inheritance into post-processed args'
@@ -1255,7 +1251,6 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
 $o->_parse_specs(
    { spec => 'columns|C=H',   desc => 'cols required'       },
@@ -1266,21 +1261,35 @@ $o->_parse_specs(
 
 @ARGV = ();
 $o->get_opts();
-%opts = $o->get(qw(C t d b));
 is_deeply(
-   \%opts,
-   { 
-      C => {},
-      t => undef,
-      d => [],
-      b => undef,
-   },
-   'Comma-separated lists: uppercase created even when not given',
+   $o->get('C'),
+   {},
+   'required Hash'
+);
+is_deeply(
+   $o->get('t'),
+   undef,
+   'optional hash'
+);
+is_deeply(
+   $o->get('d'),
+   [],
+   'required Array'
+);
+is_deeply(
+   $o->get('b'),
+   undef,
+   'optional array'
 );
 
 @ARGV = ('-C', 'a,b', '-t', 'd,e', '-d', 'f,g', '-b', 'o,p' );
 $o->get_opts();
-%opts = $o->get(qw(C t d b));
+%opts = (
+   C => $o->get('C'),
+   t => $o->get('t'),
+   d => $o->get('d'),
+   b => $o->get('b'),
+);
 is_deeply(
    \%opts,
    {
@@ -1301,20 +1310,16 @@ OptionParser parses command line options.  For more details, please use the
 Usage: OptionParser <options>
 
 Options:
-  --books     -b  Comma-separated list of books to output
-  --columns   -C  Comma-separated list of columns to output
-  --databases -d  Comma-separated list of databases to output
-  --help          Show this help message
-  --tables    -t  Comma-separated list of tables to output
-  --version       Output version information and exit
+  --books     -b  books optional
+  --columns   -C  cols required
+  --databases -d  databases required
+  --tables    -t  tables optional
 
 Options and values after processing arguments:
   --books         o,p
   --columns       a,b
   --databases     f,g
-  --help          FALSE
   --tables        d,e
-  --version       FALSE
 EOF
 ,
    'Lists properly expanded into usage information',
@@ -1326,10 +1331,11 @@ EOF
 
 # TODO: refine these tests after I think more about how
 # groups will be implemented.
+SKIP: {
+   skip 'TODO: groups', 3;
 
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
 $o->_parse_specs(
    { spec  => 'help',   desc  => 'Help',                         },
@@ -1383,6 +1389,8 @@ like(
    'Options from different non-default groups not allowed together'
 );
 
+};
+
 # #############################################################################
 # Test issues. Any other tests should find their proper place above.
 # #############################################################################
@@ -1392,7 +1400,7 @@ like(
 #    =item --foo
 #    negatable: yes
 # #############################################################################
-@opt_specs = $o->_pod_to_spec("samples/pod_sample_issue_140.txt");
+@opt_specs = $o->_pod_to_specs('samples/pod_sample_issue_140.txt');
 is_deeply(
    \@opt_specs,
    [
@@ -1415,7 +1423,7 @@ is(
 # always get the same thing on each subsequent call no matter what regex you
 # pass in.  This is to test and make sure I don't do that again.
 is(
-   $o->read_para_after("samples/podsample_issue92.txt", qr/abracadabra/),
+   $o->_read_para_after("samples/pod_sample_issue_92.txt", qr/abracadabra/),
    'This is the next paragraph, hooray',
    'read_para_after again'
 );
