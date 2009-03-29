@@ -2,9 +2,8 @@
 
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 29;
 use English qw(-no_match_vars);
+use Test::More tests => 30;
 
 require "../DuplicateKeyFinder.pm";
 require "../Quoter.pm";
@@ -493,6 +492,28 @@ is(
    $dk->{keys}->{id_name}->{unconstrained},
    '1',
    'Unconstrained weaker unique set to normal key'
+);
+
+# #############################################################################
+# Issue 331: mk-duplicate-key-checker crashes when printing column types
+# #############################################################################
+$ddl   = load_file('samples/issue_331.sql');
+$dupes = [];
+$dk->get_duplicate_fks(
+   keys     => $tp->get_fks($ddl, {database => 'test'}),
+   callback => $callback);
+is_deeply(
+   $dupes,
+   [
+      {
+         'key'               => 'fk_1',
+         'cols'              => '`id`',
+         'duplicate_of'      => 'fk_2',
+         'duplicate_of_cols' => '`id`',
+         'reason'            => 'FOREIGN KEY fk_1 (`id`) REFERENCES `test`.`issue_331_t1` (`t1_id`) is a duplicate of FOREIGN KEY fk_2 (`id`) REFERENCES `test`.`issue_331_t1` (`t1_id`)',
+      }
+   ],
+   'fk col not in referencing table (issue 331)'
 );
 
 exit;

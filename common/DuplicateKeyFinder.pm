@@ -263,28 +263,27 @@ sub get_duplicate_fks {
          # A foreign key is a duplicate no matter what order the
          # columns are in, so re-order them alphabetically so they
          # can be compared.
-         my $i_cols = join(', ',
-            map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
-         my $j_cols = join(', ',
-            map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
-         my $i_fkcols = join(', ',
-            map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
-         my $j_fkcols = join(', ',
-            map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+         my $i_cols  = join(',', sort(split(/,/, $fks[$i]->{colnames})));
+         my $j_cols  = join(',', sort(split(/,/, $fks[$j]->{colnames})));
+         my $i_pcols = join(',', sort(split(/,/, $fks[$i]->{parent_colnames})));
+         my $j_pcols = join(',', sort(split(/,/, $fks[$j]->{parent_colnames})));
 
-         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
-              && $i_cols   eq $j_cols
-              && $i_fkcols eq $j_fkcols ) {
+         if ( $fks[$i]->{parent_tbl} eq $fks[$j]->{parent_tbl}
+              && $i_cols  eq $j_cols
+              && $i_pcols eq $j_pcols ) {
             my $dupe = {
                key               => $fks[$j]->{name},
-               cols              => $fks[$j]->{cols},
+               cols              => $fks[$j]->{colnames},
                duplicate_of      => $fks[$i]->{name},
-               duplicate_of_cols => $fks[$i]->{cols},
+               duplicate_of_cols => $fks[$i]->{colnames},
                reason       =>
-                    "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{cols}) "
-                  . "REFERENCES $fks[$j]->{parent} ($fks[$j]->{fkcols}) "                     .  'is a duplicate of '
-                  . "FOREIGN KEY $fks[$i]->{name} ($fks[$i]->{cols}) "
-                  . "REFERENCES $fks[$i]->{parent} ($fks[$i]->{fkcols})"
+                    "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{colnames}) "
+                  . "REFERENCES $fks[$j]->{parent_tbl} "
+                  . "($fks[$j]->{parent_colnames}) "
+                  . 'is a duplicate of '
+                  . "FOREIGN KEY $fks[$i]->{name} ($fks[$i]->{colnames}) "
+                  . "REFERENCES $fks[$i]->{parent_tbl} "
+                  ."($fks[$i]->{parent_colnames})"
             };
             push @dupes, $dupe;
             delete $fks[$j];

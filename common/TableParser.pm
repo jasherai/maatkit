@@ -314,7 +314,7 @@ sub get_fks {
    {
       my ( $name ) = $fk =~ m/CONSTRAINT `(.*?)`/;
       my ( $cols ) = $fk =~ m/FOREIGN KEY \(([^\)]+)\)/;
-      my ( $parent, $parent_cols ) = $fk =~ m/REFERENCES `(\S+)` \(([^\)]+)\)/;
+      my ( $parent, $parent_cols ) = $fk =~ m/REFERENCES (\S+) \(([^\)]+)\)/;
 
       if ( $parent !~ m/\./ && $opts->{database} ) {
          $parent = "`$opts->{database}`.$parent";
