@@ -1,5 +1,6 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Crashed getting size of foreign keys (issue 331).
    * Uppercase column names crashed the tool (issue 306).
    * Connection options were not read from the [client] section (issue 249).
    * Set connection options immediately after connecting (issue 286).
