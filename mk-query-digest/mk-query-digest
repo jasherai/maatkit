@@ -1816,7 +1816,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3251
+# EventAggregator package 3280
 # ###########################################################################
 package EventAggregator;
 
@@ -1824,6 +1824,12 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+# ###########################################################################
+# Set up some constants for bucketing values.  It is impossible to keep all
+# values seen in memory, but putting them into logarithmically scaled buckets
+# and just incrementing the bucket each time works, although it is imprecise.
+# See http://code.google.com/p/maatkit/wiki/EventAggregatorInternals.
+# ###########################################################################
 use constant MKDEBUG      => $ENV{MKDEBUG};
 use constant BUCK_SIZE    => 1.05;
 use constant BASE_LOG     => log(BUCK_SIZE);
@@ -1831,10 +1837,28 @@ use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
 
+# Used to pre-initialize {all} arrayrefs for event attribs in make_handler.
 our @buckets  = map { 0 } (0..NUM_BUCK-1);
 
+# Used in buckets_of() to map buckets of log10 to log1.05 buckets.
 my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 
+# The best way to see how to use this is to look at the .t file.
+#
+# %args is a hash containing:
+# groupby      The name of the property to group/aggregate by.
+# attributes   A hashref.  Each key is the name of an element to aggregate.
+#              And the values of those elements are arrayrefs of the
+#              values to pull from the hashref, with any second or subsequent
+#              values being fallbacks for the first in case it's not defined.
+# worst        The name of an element which defines the "worst" hashref in its
+#              class.  If this is Query_time, then each class will contain
+#              a sample that holds the event with the largest Query_time.
+# unroll_limit If this many events have been processed and some handlers haven't
+#              been generated yet (due to lack of sample data) unroll the loop
+#              anyway.  Defaults to 50.
+# attrib_limit Sanity limit for attribute values.  If the value exceeds the
+#              limit, use the last-seen for this class; if none, then 0.
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(groupby worst attributes) ) {
@@ -1857,12 +1881,18 @@ sub new {
    }, $class;
 }
 
+# Aggregate an event hashref's properties.  Code is built on the fly to do this,
+# based on the values being passed in.  After code is built for every attribute
+# (or 50 events are seen and we decide to give up) the little bits of code get
+# unrolled into a whole subroutine to handle events.  For that reason, you can't
+# re-use an instance.
 sub aggregate {
    my ( $self, $event ) = @_;
 
    my $group_by = $event->{$self->{groupby}};
    return unless defined $group_by;
 
+   # There might be a specially built sub that handles the work.
    if ( exists $self->{unrolled_loops} ) {
       return $self->{unrolled_loops}->($self, $event, $group_by);
    }
@@ -1870,6 +1900,7 @@ sub aggregate {
    my @attrs = sort keys %{$self->{attributes}};
    ATTRIB:
    foreach my $attrib ( @attrs ) {
+      # The value of the attribute ( $group_by ) may be an arrayref.
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
          my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
@@ -1891,22 +1922,31 @@ sub aggregate {
       }
    }
 
+   # Figure out whether we are ready to generate a faster version.
    if ( $self->{n_queries}++ > 50 # Give up waiting after 50 events.
       || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs
    ) {
+      # All attributes have handlers, so let's combine them into one faster sub.
+      # Start by getting direct handles to the location of each data store and
+      # thing that would otherwise be looked up via hash keys.
       my @attrs = grep { $self->{handlers}->{$_} } @attrs;
       my $globs = $self->{result_globals}; # Global stats for each
       my $samples = $self->{result_samples};
 
+      # Now the tricky part -- must make sure only the desired variables from
+      # the outer scope are re-used, and any variables that should have their
+      # own scope are declared within the subroutine.
       my @lines = (
          'my ( $self, $event, $group_by ) = @_;',
          'my ($val, $class, $global, $idx);',
          (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
+         # Create and get each attribute's storage
          'my $temp = $self->{result_class}->{ $group_by }
             ||= { map { $_ => { } } @attrs };',
          '$samples->{$group_by} ||= $event;', # Always start with the first.
       );
       foreach my $i ( 0 .. $#attrs ) {
+         # Access through array indexes, it's faster than hash lookups
          push @lines, (
             '$class  = $temp->{"'  . $attrs[$i] . '"};',
             '$global = $globs->{"' . $attrs[$i] . '"};',
@@ -1920,6 +1960,7 @@ sub aggregate {
       unshift @lines, 'sub {';
       push @lines, '}';
 
+      # Make the subroutine
       my $code = join("\n", @lines);
       MKDEBUG && _d('Unrolled subroutine:', @lines);
       my $sub = eval $code;
@@ -1928,6 +1969,7 @@ sub aggregate {
    }
 }
 
+# Return the aggregated results.
 sub results {
    my ( $self ) = @_;
    return {
@@ -1937,16 +1979,56 @@ sub results {
    };
 }
 
+# Return the attributes that this object is tracking, and their data types, as
+# a hashref of name => type.
 sub attributes {
    my ( $self ) = @_;
    return $self->{type_for};
 }
 
+# Returns the type of the attribute (as decided by the aggregation process,
+# which inspects the values).
 sub type_for {
    my ( $self, $attrib ) = @_;
    return $self->{type_for}->{$attrib};
 }
 
+# Make subroutines that do things with events.
+#
+# $attrib: the name of the attrib (Query_time, Rows_read, etc)
+# $event:  a sample event
+# %args:
+#     min => keep min for this attrib (default except strings)
+#     max => keep max (default except strings)
+#     sum => keep sum (default for numerics)
+#     cnt => keep count (default except strings)
+#     unq => keep all unique values per-class (default for strings and bools)
+#     all => keep a bucketed list of values seen per class (default for numerics)
+#     glo => keep stats globally as well as per-class (default)
+#     trf => An expression to transform the value before working with it
+#     wor => Whether to keep worst-samples for this attrib (default no)
+#     alt => Arrayref of other name(s) for the attribute, like db => Schema.
+#
+# The bucketed list works this way: each range of values from MIN_BUCK in
+# increments of BUCK_SIZE (that is 5%) we consider a bucket.  We keep NUM_BUCK
+# buckets.  The upper end of the range is more than 1.5e15 so it should be big
+# enough for almost anything.  The buckets are accessed by a log base BUCK_SIZE,
+# so floor(log(N)/log(BUCK_SIZE)).  The smallest bucket's index is -284. We
+# shift all values up 284 so we have values from 0 to 999 that can be used as
+# array indexes.  A value that falls into a bucket simply increments the array
+# entry.  We do NOT use POSIX::floor() because it is too expensive.
+#
+# This eliminates the need to keep and sort all values to calculate median,
+# standard deviation, 95th percentile etc.  Thus the memory usage is bounded by
+# the number of distinct aggregated values, not the number of events.
+#
+# Return value:
+# a subroutine with this signature:
+#    my ( $event, $class, $global ) = @_;
+# where
+#  $event   is the event
+#  $class   is the container to store the aggregated values
+#  $global  is is the container to store the globally aggregated values
 sub make_handler {
    my ( $self, $attrib, $event, %args ) = @_;
    die "I need an attrib" unless defined $attrib;
@@ -1958,6 +2040,7 @@ sub make_handler {
    }
    return unless defined $val; # Can't decide type if it's undef.
 
+   # Ripped off from Regexp::Common::number and modified.
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
    my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
@@ -2016,6 +2099,7 @@ sub make_handler {
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
+   # We only save unique/worst values for the class, not globally.
    if ( $args{unq} ) {
       push @lines, '++$class->{unq}->{$val};';
    }
@@ -2028,6 +2112,8 @@ sub make_handler {
       );
    }
 
+   # Make sure the value is constrained to legal limits.  If it's out of bounds,
+   # just use the last-seen value for it.
    my @limit;
    if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
@@ -2038,6 +2124,7 @@ sub make_handler {
       );
    }
 
+   # Save the code for later, as part of an "unrolled" subroutine.
    my @unrolled = (
       "\$val = \$event->{'$attrib'};",
       ($is_array ? ('foreach my $val ( @$val ) {') : ()),
@@ -2050,6 +2137,7 @@ sub make_handler {
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
 
+   # Build a subroutine with the code.
    unshift @lines, (
       'sub {',
       'my ( $event, $class, $global, $samples, $group_by ) = @_;',
@@ -2072,6 +2160,12 @@ sub make_handler {
    return $sub;
 }
 
+# Returns the bucket number for the given val. Buck numbers are zero-indexed,
+# so although there are 1,000 buckets (NUM_BUCK), 999 is the greatest idx.
+# *** Notice that this sub is not a class method, so either call it
+# from inside this module like bucket_idx() or outside this module
+# like EventAggregator::bucket_idx(). ***
+# TODO: could export this by default to avoid having to specific packge::.
 sub bucket_idx {
    my ( $val ) = @_;
    return 0 if $val < MIN_BUCK;
@@ -2079,22 +2173,43 @@ sub bucket_idx {
    return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
 }
 
+# Returns the value for the given bucket.
+# The value of each bucket is the first value that it covers. So the value
+# of bucket 1 is 0.000001000 because it covers [0.000001000, 0.000001050).
+#
+# *** Notice that this sub is not a class method, so either call it
+# from inside this module like bucket_idx() or outside this module
+# like EventAggregator::bucket_value(). ***
+# TODO: could export this by default to avoid having to specific packge::.
 sub bucket_value {
    my ( $bucket ) = @_;
    return 0 if $bucket == 0;
    die "Invalid bucket: $bucket" if $bucket < 0 || $bucket > (NUM_BUCK-1);
+   # $bucket - 1 because buckets are shifted up by 1 to handle zero values.
    return (BUCK_SIZE**($bucket-1)) * MIN_BUCK;
 }
 
+# Map the 1,000 base 1.05 buckets to 8 base 10 buckets. Returns an array
+# of 1,000 buckets, the value of each represents its index in an 8 bucket
+# base 10 array. For example: base 10 bucket 0 represents vals (0, 0.000010),
+# and base 1.05 buckets 0..47 represent vals (0, 0.000010401). So the first
+# 48 elements of the returned array will have 0 as their values. 
+# TODO: right now it's hardcoded to buckets of 10, in the future maybe not.
 {
    my @buck_tens;
    sub buckets_of {
       return @buck_tens if @buck_tens;
 
+      # To make a more precise map, we first set the starting values for
+      # each of the 8 base 10 buckets. 
       my $start_bucket  = 0;
       my @base10_starts = (0);
       map { push @base10_starts, (10**$_)*MIN_BUCK } (1..7);
 
+      # Then find the base 1.05 buckets that correspond to each
+      # base 10 bucket. The last value in each bucket's range belongs
+      # to the next bucket, so $next_bucket-1 represents the real last
+      # base 1.05 bucket in which the base 10 bucket's range falls.
       for my $base10_bucket ( 0..($#base10_starts-1) ) {
          my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
          MKDEBUG && _d('Base 10 bucket $base10_bucket maps to',
@@ -2105,12 +2220,24 @@ sub bucket_value {
          $start_bucket = $next_bucket;
       }
 
+      # Map all remaining base 1.05 buckets to base 10 bucket 7 which
+      # is for vals > 10.
       map { $buck_tens[$_] = 7 } ($start_bucket..(NUM_BUCK-1));
 
       return @buck_tens;
    }
 }
 
+# Given an arrayref of vals, returns a hashref with the following
+# statistical metrics:
+#
+#    pct_95    => top bucket value in the 95th percentile
+#    cutoff    => How many values fall into the 95th percentile
+#    stddev    => of all values
+#    median    => of all values
+#
+# The vals arrayref is the buckets as per the above (see the comments at the top
+# of this file).  $args should contain cnt, min and max properties.
 sub calculate_statistical_metrics {
    my ( $self, $vals, $args ) = @_;
    my $statistical_metrics = {
@@ -2120,9 +2247,13 @@ sub calculate_statistical_metrics {
       cutoff    => undef,
    };
 
+   # These cases might happen when there is nothing to get from the event, for
+   # example, processlist sniffing doesn't gather Rows_examined, so $args won't
+   # have {cnt} or other properties.
    return $statistical_metrics
       unless defined $vals && @$vals && $args->{cnt};
 
+   # Return accurate metrics for some cases.
    my $n_vals = $args->{cnt};
    if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
       my $v      = $args->{max} || 0;
@@ -2150,9 +2281,14 @@ sub calculate_statistical_metrics {
       };
    }
 
+   # Determine cutoff point for 95% if there are at least 10 vals.  Cutoff
+   # serves also for the number of vals left in the 95%.  E.g. with 50 vals the
+   # cutoff is 47 which means there are 47 vals: 0..46.  $cutoff is NOT an array
+   # index.
    my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
+   # Calculate the standard deviation and median of all values.
    my $total_left = $n_vals;
    my $top_vals   = $n_vals - $cutoff; # vals > 95th
    my $sum_excl   = 0;
@@ -2184,7 +2320,13 @@ sub calculate_statistical_metrics {
       $prev   =  $bucket;
    }
 
-   my $stddev   = sqrt (($sumsq - (($sum**2) / $n_vals)) / $n_vals);
+   # TODO: remove this once we can determine the real bug
+   # behind issue 332.
+   my $var = ($sumsq - (($sum**2) / $n_vals)) / $n_vals;
+   MKDEBUG && _d('var before sqrt:', $var);
+   $var = 0 if $var < 0;
+   my $stddev = sqrt($var);
+
    my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
    $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
@@ -2200,6 +2342,10 @@ sub calculate_statistical_metrics {
    return $statistical_metrics;
 }
 
+# Return a hashref of the metrics for some attribute, pre-digested.
+# %args is:
+#  attrib => the attribute to report on
+#  where  => the value of the fingerprint for the attrib
 sub metrics {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(attrib where) ) {
@@ -2224,6 +2370,18 @@ sub metrics {
    };
 }
 
+# Find the top N or top % event keys, in sorted order, optionally including
+# outliers (ol_...) that are notable for some reason.  %args looks like this:
+#
+#  attrib      order-by attribute (usually Query_time)
+#  orderby     order-by aggregate expression (should be numeric, usually sum)
+#  total       include events whose summed attribs are <= this number...
+#  count       ...or this many events, whichever is less...
+#  ol_attrib   ...or events where the 95th percentile of this attribute...
+#  ol_limit    ...is greater than this value, AND...
+#  ol_freq     ...the event occurred at least this many times.
+# The return value is a list of arrayrefs.  Each arrayref is the event key and
+# an explanation of why it was included (top|outlier).
 sub top_events {
    my ( $self, %args ) = @_;
    my $classes = $self->{result_class};
@@ -2231,11 +2389,13 @@ sub top_events {
       $classes->{$a}->{$args{attrib}}->{$args{orderby}}
          <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
       } grep {
+         # Defensive programming
          defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
       } keys %$classes;
    my @chosen;
    my ($total, $count) = (0, 0);
    foreach my $groupby ( @sorted ) {
+      # Events that fall into the top criterion for some reason
       if ( 
          (!$args{total} || $total < $args{total} )
          && ( !$args{count} || $count < $args{count} )
@@ -2243,9 +2403,11 @@ sub top_events {
          push @chosen, [$groupby, 'top'];
       }
 
+      # Events that are notable outliers
       elsif ( $args{ol_attrib} && (!$args{ol_freq}
          || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
+         # Calculate the 95th percentile of this event's specified attribute.
          MKDEBUG && _d('Calculating statistical_metrics');
          my $stats = $self->calculate_statistical_metrics(
             $classes->{$groupby}->{$args{ol_attrib}}->{all},
