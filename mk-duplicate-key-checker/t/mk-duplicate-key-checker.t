@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 9;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -13,11 +13,8 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 
-my $test_cover = $ENV{MK_TEST_COVERAGE} || '';
 my $cnf = '/tmp/12345/my.sandbox.cnf'; # TODO: use $sb
-my $cmd = "perl $test_cover ../mk-duplicate-key-checker -F $cnf";
-
-diag(`cover -delete`) if $test_cover;
+my $cmd = "perl ../mk-duplicate-key-checker -F $cnf";
 
 my $output = `$cmd -d mysql -t columns_priv -v`;
 like($output,
@@ -48,10 +45,23 @@ $sb->load_file('master', '../../common/t/samples/issue_269-1.sql', 'test');
 $output = `$cmd -d test -t a | diff samples/issue_269.txt -`;
 is($output, '', 'No dupes for issue 269');
 
-# Test for issue 298.
+$sb->wipe_clean($dbh);
+$output = `$cmd -d test | diff samples/nonexistent_db.txt -`;
+is($output, '', 'No results for nonexistent db');
+
+# #############################################################################
+# Issue 298: mk-duplicate-key-checker crashes
+# #############################################################################
 $output = `$cmd -d mysql -t columns_priv 2>&1`;
 unlike($output, qr/Use of uninitialized var/, 'Does not crash on undef var');
 
+# #############################################################################
+# Issue 331: mk-duplicate-key-checker crashes when printing column types
+# #############################################################################
+$sb->create_dbs($dbh, ['test']);
+$sb->load_file('master', 'samples/issue_331.sql', 'test');
+$output = `$cmd -d issue_331 | diff samples/issue_331.txt -`;
+is($output, '', 'Issue 331 crash on fks');
+
 $sb->wipe_clean($dbh);
-diag(`cover -report text -silent > cover_results.txt`) if $test_cover;
 exit;

@@ -134,7 +134,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 3075
+# TableParser package 3287
 # ###########################################################################
 package TableParser;
 
@@ -149,6 +149,17 @@ sub new {
    return bless {}, $class;
 }
 
+# Several subs in this module require either a $ddl or $tbl param.
+#
+# $ddl is the return value from MySQLDump::get_create_table() (which returns
+# the output of SHOW CREATE TALBE).
+#
+# $tbl is the return value from the sub below, parse().
+#
+# And some subs have an optional $opts param which is a hashref of options.
+# $opts->{mysql_version} is typically used, which is the return value from
+# VersionParser::parser() (which returns a zero-padded MySQL version,
+# e.g. 004001000 for 4.1.0).
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -169,17 +180,22 @@ sub parse {
          . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
 
+   # Lowercase identifiers to avoid issues with case-sensitivity in Perl.
+   # (Bug #1910276).
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
    my $engine = $self->get_engine($ddl);
 
    my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols   = map { $_ =~ m/`([^`]+)`/g } @defs;
-   MKDEBUG && _d('Columns: ' . join(', ', @cols));
+   MKDEBUG && _d('Columns:', join(', ', @cols));
 
+   # Save the column definitions *exactly*
    my %def_for;
    @def_for{@cols} = @defs;
 
+   # Find column types, whether numeric, whether nullable, whether
+   # auto-increment.
    my (@nums, @null);
    my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
    foreach my $col ( @cols ) {
@@ -198,6 +214,9 @@ sub parse {
       $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
    }
 
+   # TODO: passing is_nullable this way is just a quick hack. Ultimately,
+   # we probably should decompose this sub further, taking out the block
+   # above that parses col props like nullability, auto_inc, type, etc.
    my $keys = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
@@ -216,6 +235,9 @@ sub parse {
    };
 }
 
+# Sorts indexes in this order: PRIMARY, unique, non-nullable, any (shortest
+# first, alphabetical).  Only BTREE indexes are considered.
+# TODO: consider length as # of bytes instead of # of columns.
 sub sort_indexes {
    my ( $self, $tbl ) = @_;
 
@@ -231,10 +253,12 @@ sub sort_indexes {
       }
       sort keys %{$tbl->{keys}};
 
-   MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
+   MKDEBUG && _d('Indexes sorted best-first:', join(', ', @indexes));
    return @indexes;
 }
 
+# Finds the 'best' index; if the user specifies one, dies if it's not in the
+# table.
 sub find_best_index {
    my ( $self, $tbl, $index ) = @_;
    my $best;
@@ -243,16 +267,24 @@ sub find_best_index {
    }
    if ( !$best ) {
       if ( $index ) {
+         # The user specified an index, so we can't choose our own.
          die "Index '$index' does not exist in table";
       }
       else {
+         # Try to pick the best index.
+         # TODO: eliminate indexes that have column prefixes.
          ($best) = $self->sort_indexes($tbl);
       }
    }
-   MKDEBUG && _d("Best index found is " . ($best || 'undef'));
+   MKDEBUG && _d('Best index found is', $best);
    return $best;
 }
 
+# Takes a dbh, database, table, quoter, and WHERE clause, and reports the
+# indexes MySQL thinks are best for EXPLAIN SELECT * FROM that table.  If no
+# WHERE, just returns an empty list.  If no possible_keys, returns empty list,
+# even if 'key' is not null.  Only adds 'key' to the list if it's included in
+# possible_keys.
 sub find_possible_keys {
    my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
    return () unless $where;
@@ -260,19 +292,20 @@ sub find_possible_keys {
       . ' WHERE ' . $where;
    MKDEBUG && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
+   # Normalize columns to lowercase
    $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
    if ( $expl->{possible_keys} ) {
-      MKDEBUG && _d("possible_keys=$expl->{possible_keys}");
+      MKDEBUG && _d('possible_keys =', $expl->{possible_keys});
       my @candidates = split(',', $expl->{possible_keys});
       my %possible   = map { $_ => 1 } @candidates;
       if ( $expl->{key} ) {
-         MKDEBUG && _d("MySQL chose $expl->{key}");
+         MKDEBUG && _d('MySQL chose', $expl->{key});
          unshift @candidates, grep { $possible{$_} } split(',', $expl->{key});
-         MKDEBUG && _d('Before deduping: ' . join(', ', @candidates));
+         MKDEBUG && _d('Before deduping:', join(', ', @candidates));
          my %seen;
          @candidates = grep { !$seen{$_}++ } @candidates;
       }
-      MKDEBUG && _d('Final list: ' . join(', ', @candidates));
+      MKDEBUG && _d('Final list:', join(', ', @candidates));
       return @candidates;
    }
    else {
@@ -281,25 +314,54 @@ sub find_possible_keys {
    }
 }
 
+# Returns true if the table exists.  If $can_insert is set, also checks whether
+# the user can insert into the table.
 sub table_exists {
    my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
+   my $result = 0;
    my $db_tbl = $q->quote($db, $tbl);
-   my $sql    = $can_insert ? "REPLACE INTO $db_tbl " : '';
-   $sql      .= "SELECT * FROM $db_tbl LIMIT 0";
-   MKDEBUG && _d("table_exists check for $db_tbl: $sql");
-   eval { $dbh->do($sql); };
-   MKDEBUG && _d("eval error (if any): $EVAL_ERROR");
-   return 0 if $EVAL_ERROR;
-   return 1;
+   my $sql    = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d($sql);
+   eval {
+      my $sth = $dbh->prepare($sql);
+      $sth->execute();
+      my @columns = @{$sth->fetchall_arrayref({})};
+      if ( $can_insert ) {
+         $result = grep { ($_->{Privileges} || '') =~ m/insert/ } @columns;
+      }
+      else {
+         $result = 1;
+      }
+   };
+   if ( MKDEBUG && $EVAL_ERROR ) {
+      _d($EVAL_ERROR);
+   }
+   return $result;
 }
 
 sub get_engine {
    my ( $self, $ddl, $opts ) = @_;
    my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
-   MKDEBUG && _d('Storage engine: ', $engine || 'unknown');
+   MKDEBUG && _d('Storage engine:', $engine);
    return $engine || undef;
 }
 
+# $ddl is a SHOW CREATE TABLE returned from MySQLDumper::get_create_table().
+# The general format of a key is
+# [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
+# Returns a hashref of keys and their properties:
+#    key => {
+#       type         => BTREE, FULLTEXT or  SPATIAL
+#       name         => column name, like: "foo_key"
+#       colnames     => original col def string, like: "(`a`,`b`)"
+#       cols         => arrayref containing the col names, like: [qw(a b)]
+#       col_prefixes => arrayref containing any col prefixes (parallels cols)
+#       is_unique    => 1 if the col is UNIQUE or PRIMARY
+#       is_nullable  => true (> 0) if one or more col can be NULL
+#       is_col       => hashref with key for each col=>1
+#   },
+#   key => ...
+# Foreign keys are ignored; use get_fks() instead.
 sub get_keys {
    my ( $self, $ddl, $opts, $is_nullable ) = @_;
    my $engine = $self->get_engine($ddl);
@@ -308,14 +370,20 @@ sub get_keys {
    KEY:
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
 
+      # If you want foreign keys, use get_fks() below.
       next KEY if $key =~ m/FOREIGN/;
 
-      MKDEBUG && _d("Parsed key: $key");
+      MKDEBUG && _d('Parsed key:', $key);
 
+      # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
+      # will report its index as USING HASH even when this is not supported.
+      # The true type should be BTREE.  See
+      # http://bugs.mysql.com/bug.php?id=22632
       if ( $engine !~ m/MEMORY|HEAP/ ) {
          $key =~ s/USING HASH/USING BTREE/;
       }
 
+      # Determine index type
       my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
       my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
       $type = $type || $special || 'BTREE';
@@ -330,13 +398,15 @@ sub get_keys {
       my @cols;
       my @col_prefixes;
       foreach my $col_def ( split(',', $cols) ) {
+         # Parse columns of index including potential column prefixes
+         # E.g.: `a`,`b`(20)
          my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
       }
       $name =~ s/`//g;
 
-      MKDEBUG && _d("Key $name cols: " . join(', ', @cols));
+      MKDEBUG && _d('Key', $name, 'cols:', join(', ', @cols));
 
       $keys->{$name} = {
          name         => $name,
@@ -353,6 +423,7 @@ sub get_keys {
    return $keys;
 }
 
+# Like get_keys() above but only returns a hash of foreign keys.
 sub get_fks {
    my ( $self, $ddl, $opts ) = @_;
    my $fks = {};
@@ -360,20 +431,21 @@ sub get_fks {
    foreach my $fk (
       $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg )
    {
-      my ( $name )   = $fk =~ m/CONSTRAINT `(.*?)`/;
-      my ( $fkcols ) = $fk =~ m/\(([^\)]+)\)/;
-      my ( $cols )   = $fk =~ m/REFERENCES.*?\(([^\)]+)\)/;
-      my ( $parent ) = $fk =~ m/REFERENCES (\S+) /;
+      my ( $name ) = $fk =~ m/CONSTRAINT `(.*?)`/;
+      my ( $cols ) = $fk =~ m/FOREIGN KEY \(([^\)]+)\)/;
+      my ( $parent, $parent_cols ) = $fk =~ m/REFERENCES (\S+) \(([^\)]+)\)/;
 
       if ( $parent !~ m/\./ && $opts->{database} ) {
          $parent = "`$opts->{database}`.$parent";
       }
 
       $fks->{$name} = {
-         name   => $name,
-         parent => $parent,
-         cols   => $cols,
-         fkcols => $fkcols,
+         name           => $name,
+         colnames       => $cols,
+         cols           => [ map { s/[ `]+//g; $_; } split(',', $cols) ],
+         parent_tbl     => $parent,
+         parent_colnames=> $parent_cols,
+         parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
       };
    }
 
@@ -385,7 +457,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -1864,7 +1936,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DuplicateKeyFinder package 3097
+# DuplicateKeyFinder package 3288
 # ###########################################################################
 package DuplicateKeyFinder;
 
@@ -1879,6 +1951,8 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 sub new {
    my ( $class ) = @_;
    my $self = {
+      # These are used in case you want to look back and see more
+      # details about what happened inside get_duplicate_keys().
       keys        => undef,  # copy of last keys that we worked on
       unique_cols => undef,  # unique cols for those last keys (hashref)
       unique_sets => undef,  # unique sets for those last keys (arrayref) 
@@ -1886,6 +1960,23 @@ sub new {
    return bless $self, $class;
 }
 
+# %args should contain:
+#
+#  *  keys           (req) A hashref from TableParser::get_keys().
+#  *  tbl_info       (req) { db, tbl, engine, ddl } hashref.
+#  *  callback       (req) An anonymous subroutine, called for each dupe found.
+#  *  ignore_order   Order never matters for any type of index (generally order
+#                    matters except for FULLTEXT).
+#  *  ignore_type    Compare indexes of different types as if they're the same.
+#  *  clustered      Perform duplication checks against the clustered  key.
+#
+# Returns an arrayref of duplicate key hashrefs.  Each contains
+#
+#  *  key               The name of the index that's a duplicate.
+#  *  cols              The columns in that key (arrayref).
+#  *  duplicate_of      The name of the index it duplicates.
+#  *  duplicate_of_cols The columns of the index it duplicates.
+#  *  reason            A human-readable description of why this is a duplicate.
 sub get_duplicate_keys {
    my ( $self, %args ) = @_;
    die "I need a keys argument" unless $args{keys};
@@ -1903,6 +1994,10 @@ sub get_duplicate_keys {
       $key->{real_cols} = $key->{colnames}; 
       $key->{len_cols}  = length $key->{colnames};
 
+      # The PRIMARY KEY is treated specially. It is effectively never a
+      # duplicate, so it is never removed. It is compared to all other
+      # keys, and in any case of duplication, the PRIMARY is always kept
+      # and the other key removed.
       if ( $key->{name} eq 'PRIMARY' ) {
          $primary_key = $key;
          next ALL_KEYS;
@@ -1910,16 +2005,24 @@ sub get_duplicate_keys {
 
       my $is_fulltext = $key->{type} eq 'FULLTEXT' ? 1 : 0;
 
+      # Key column order matters for all keys except FULLTEXT, so we only
+      # sort if --ignoreorder or FULLTEXT. 
       if ( $args{ignore_order} || $is_fulltext  ) {
          my $ordered_cols = join(',', sort(split(/,/, $key->{colnames})));
-         MKDEBUG && _d("Reordered $key->{name} cols "
-            . "from ($key->{colnames}) to ($ordered_cols)"); 
+         MKDEBUG && _d('Reordered', $key->{name}, 'cols from',
+            $key->{colnames}, 'to', $ordered_cols); 
          $key->{colnames} = $ordered_cols;
       }
 
+      # By default --allstruct is false, so keys of different structs
+      # (BTREE, HASH, FULLTEXT, SPATIAL) are kept and compared separately.
+      # UNIQUE keys are also separated just to make comparisons easier.
       my $push_to = $key->{is_unique} ? \@unique_keys : \@normal_keys;
       if ( !$args{ignore_type} ) {
          $push_to = \@fulltext_keys if $is_fulltext;
+         # TODO:
+         # $push_to = \@hash_keys     if $is_hash;
+         # $push_to = \@spatial_keys  if $is_spatial;
       }
       push @$push_to, $key; 
    }
@@ -1927,6 +2030,9 @@ sub get_duplicate_keys {
    my @dupes;
 
    MKDEBUG && _d('Start unconstraining redundantly unique keys');
+   # See http://code.google.com/p/maatkit/wiki/DeterminingDuplicateKeys
+   # First, determine which unique keys define unique columns and which
+   # define unique sets.
    my %unique_cols;
    my @unique_sets;
    my %unconstrain;   # unique keys to unconstrain
@@ -1935,7 +2041,10 @@ sub get_duplicate_keys {
       next unless $unique_key; # primary key may be undefined
       my $cols = $unique_key->{cols};
       if ( @$cols == 1 ) {
-         MKDEBUG && _d("$unique_key->{name} defines unique column: $cols->[0]");
+         MKDEBUG && _d($unique_key->{name},'defines unique column:',$cols->[0]);
+         # Save only the first unique key for the unique col. If there
+         # are others, then they are exact duplicates and will be removed
+         # later when unique keys are compared to unique keys.
          if ( !exists $unique_cols{$cols->[0]} ) {
             $unique_cols{$cols->[0]}  = $unique_key;
             $unique_key->{unique_col} = 1;
@@ -1943,36 +2052,43 @@ sub get_duplicate_keys {
       }
       else {
          local $LIST_SEPARATOR = '-';
-         MKDEBUG && _d("$unique_key->{name} defines unique set: @$cols");
+         MKDEBUG && _d($unique_key->{name}, 'defines unique set:', @$cols);
          push @unique_sets, { cols => $cols, key => $unique_key };
       }
    }
 
+   # Second, find which unique sets can be unconstraind (i.e. those
+   # which have which have at least one unique column).
    UNIQUE_SET:
    foreach my $unique_set ( @unique_sets ) {
       my $n_unique_cols = 0;
       COL:
       foreach my $col ( @{$unique_set->{cols}} ) {
          if ( exists $unique_cols{$col} ) {
-            MKDEBUG && _d("Unique set $unique_set->{key}->{name} "
-               . "has unique col $col");
+            MKDEBUG && _d('Unique set', $unique_set->{key}->{name},
+               'has unique col', $col);
             last COL if ++$n_unique_cols > 1;
             $unique_set->{constraining_key} = $unique_cols{$col};
          }
       }
       if ( $n_unique_cols && $unique_set->{key}->{name} ne 'PRIMARY' ) {
-         MKDEBUG && _d("Will unconstrain unique set $unique_set->{key}->{name} "
-            . "because it is redundantly constrained by key "
-            . $unique_set->{constraining_key}->{name}
-            . " ($unique_set->{constraining_key}->{colnames})");
+         # Unique set is redundantly constrained.
+         MKDEBUG && _d('Will unconstrain unique set',
+            $unique_set->{key}->{name},
+            'because it is redundantly constrained by key',
+            $unique_set->{constraining_key}->{name},
+            '(',$unique_set->{constraining_key}->{colnames},')');
          $unconstrain{$unique_set->{key}->{name}}
             = $unique_set->{constraining_key};
       }
    }
 
+   # And finally, unconstrain the redudantly unique sets found above by
+   # removing them from the list of unique keys and adding them to the
+   # list of normal keys.
    for my $i ( 0..$#unique_keys ) {
       if ( exists $unconstrain{$unique_keys[$i]->{name}} ) {
-         MKDEBUG && _d("Normalizing $unique_keys[$i]->{name}");
+         MKDEBUG && _d('Normalizing', $unique_keys[$i]->{name});
          $unique_keys[$i]->{unconstrained} = 1;
          $unique_keys[$i]->{constraining_key}
             = $unconstrain{$unique_keys[$i]->{name}};
@@ -1984,6 +2100,14 @@ sub get_duplicate_keys {
    $self->{unique_sets} = \@unique_sets;
    MKDEBUG && _d('No more keys');
 
+   # If you're tempted to check the primary key against uniques before
+   # unconstraining redundantly unique keys: don't. In cases like
+   #    PRIMARY KEY (a, b)
+   #    UNIQUE KEY  (a)
+   # the unique key will be wrongly removed. It is needed to keep
+   # column a unique. The process of unconstraining redundantly unique
+   # keys marks single column unique keys so that they are never removed
+   # (the mark is adding unique_col=>1 to the unique key's hash).
    if ( $primary_key ) {
       MKDEBUG && _d('Start comparing PRIMARY KEY to UNIQUE keys');
       $self->remove_prefix_duplicates(
@@ -2013,13 +2137,21 @@ sub get_duplicate_keys {
          duplicate_keys => \@dupes,
          %pass_args);
 
+   # If --allstruct, then these special struct keys (FULLTEXT, HASH, etc.)
+   # will have already been put in and handled by @normal_keys.
    MKDEBUG && _d('Start comparing FULLTEXT keys');
    $self->remove_prefix_duplicates(
          keys             => \@fulltext_keys,
          exact_duplicates => 1,
          %pass_args);
 
+   # TODO: other structs
 
+   # For engines with a clustered index, if a key ends with a prefix
+   # of the primary key, it's a duplicate. Example:
+   #    PRIMARY KEY (a)
+   #    KEY foo (b, a)
+   # Key foo is redundant to PRIMARY.
    if ( $primary_key
         && $args{clustered}
         && $args{tbl_info}->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
@@ -2049,28 +2181,31 @@ sub get_duplicate_fks {
       next unless $fks[$i];
       foreach my $j ( $i+1..$#fks ) {
          next unless $fks[$j];
-         my $i_cols = join(', ',
-            map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
-         my $j_cols = join(', ',
-            map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
-         my $i_fkcols = join(', ',
-            map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
-         my $j_fkcols = join(', ',
-            map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
 
-         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
-              && $i_cols   eq $j_cols
-              && $i_fkcols eq $j_fkcols ) {
+         # A foreign key is a duplicate no matter what order the
+         # columns are in, so re-order them alphabetically so they
+         # can be compared.
+         my $i_cols  = join(',', sort @{$fks[$i]->{cols}} );
+         my $j_cols  = join(',', sort @{$fks[$j]->{cols}} );
+         my $i_pcols = join(',', sort @{$fks[$i]->{parent_cols}} );
+         my $j_pcols = join(',', sort @{$fks[$j]->{parent_cols}} );
+
+         if ( $fks[$i]->{parent_tbl} eq $fks[$j]->{parent_tbl}
+              && $i_cols  eq $j_cols
+              && $i_pcols eq $j_pcols ) {
             my $dupe = {
                key               => $fks[$j]->{name},
-               cols              => $fks[$j]->{cols},
+               cols              => $fks[$j]->{colnames},
                duplicate_of      => $fks[$i]->{name},
-               duplicate_of_cols => $fks[$i]->{cols},
+               duplicate_of_cols => $fks[$i]->{colnames},
                reason       =>
-                    "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{cols}) "
-                  . "REFERENCES $fks[$j]->{parent} ($fks[$j]->{fkcols}) "                     .  'is a duplicate of '
-                  . "FOREIGN KEY $fks[$i]->{name} ($fks[$i]->{cols}) "
-                  . "REFERENCES $fks[$i]->{parent} ($fks[$i]->{fkcols})"
+                    "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{colnames}) "
+                  . "REFERENCES $fks[$j]->{parent_tbl} "
+                  . "($fks[$j]->{parent_colnames}) "
+                  . 'is a duplicate of '
+                  . "FOREIGN KEY $fks[$i]->{name} ($fks[$i]->{colnames}) "
+                  . "REFERENCES $fks[$i]->{parent_tbl} "
+                  ."($fks[$i]->{parent_colnames})"
             };
             push @dupes, $dupe;
             delete $fks[$j];
@@ -2081,6 +2216,11 @@ sub get_duplicate_fks {
    return \@dupes;
 }
 
+# TODO: Document this subroutine.
+# %args should contain the same things passed to get_duplicate_keys(), plus:
+#  *  remove_keys       ????
+#  *  duplicate_keys    ????
+#  *  exact_duplicates  ????
 sub remove_prefix_duplicates {
    my ( $self, %args ) = @_;
    my $keys;
@@ -2134,24 +2274,33 @@ sub remove_prefix_duplicates {
          my $rm_cols       = $remove_keys->[$rm]->{colnames};
          my $rm_len_cols   = $remove_keys->[$rm]->{len_cols};
 
-         MKDEBUG && _d("Comparing [keep] $keep_name ($keep_cols) "
-            . "to [remove if dupe] $rm_name ($rm_cols)");
+         MKDEBUG && _d('Comparing [keep]', $keep_name, '(',$keep_cols,')',
+            'to [remove if dupe]', $rm_name, '(',$rm_cols,')');
 
+         # Compare the whole remove key to the keep key, not just
+         # the their common minimum length prefix. This is correct
+         # because it enables magick that I should document. :-)
          if (    substr($rm_cols, 0, $rm_len_cols)
               eq substr($keep_cols, 0, $rm_len_cols) ) {
 
+            # FULLTEXT keys, for example, are only duplicates if they
+            # are exact duplicates.
             if ( $args{exact_duplicates} && ($rm_len_cols < $keep_len_cols) ) {
-               MKDEBUG && _d("$rm_name not exact duplicate of $keep_name");
+               MKDEBUG && _d($rm_name, 'not exact duplicate of', $keep_name);
                next J_KEY;
             }
 
+            # Do not remove the unique key that is constraining a single
+            # column to uniqueness. This prevents UNIQUE KEY (a) from being
+            # removed by PRIMARY KEY (a, b).
             if ( exists $remove_keys->[$rm]->{unique_col} ) {
-               MKDEBUG && _d("Cannot remove $rm_name because is constrains col "
-                  . $remove_keys->[$rm]->{cols}->[0]);
+               MKDEBUG && _d('Cannot remove', $rm_name,
+                  'because is constrains col',
+                  $remove_keys->[$rm]->{cols}->[0]);
                next J_KEY;
             }
 
-            MKDEBUG && _d("Remove $remove_keys->[$rm]->{name}");
+            MKDEBUG && _d('Remove', $remove_keys->[$rm]->{name});
             my $reason;
             if ( $remove_keys->[$rm]->{unconstrained} ) {
                $reason .= "Uniqueness of $rm_name ignored because "
@@ -2178,7 +2327,7 @@ sub remove_prefix_duplicates {
             next J_KEY if $remove_index == 1;
          }
          else {
-            MKDEBUG && _d("$rm_name not left-prefix of $keep_name");
+            MKDEBUG && _d($rm_name, 'not left-prefix of', $keep_name);
             next I_KEY;
          }
       }
@@ -2199,6 +2348,8 @@ sub remove_clustered_duplicates {
    my $pkcols = $args{primary_key}->{colnames};
    my $keys   = $args{keys};
    my @dupes;
+   # TODO: this can be done more easily now that each key has
+   # its cols in an array, so we just have to look at cols[-1].
    KEY:
    for my $i ( 0 .. @$keys - 1 ) {
       my $suffix = $keys->[$i]->{colnames};
@@ -2235,7 +2386,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -2453,7 +2604,7 @@ my $max_width = 74;
 my $hdr_width = $max_width - 2;  # for '# '
 my $hdr_fmt   = "# %-${hdr_width}s\n";
 
-my %summary;
+my %summary = ( 'Total Keys' => 0 );
 my %seen_tbl;
 my $ks = $opts{summary} ? new KeySize() : undef;
 my $dk = new DuplicateKeyFinder();
@@ -2523,8 +2674,10 @@ foreach my $database ( $finder->find_databases($dbh) ) {
             %tp_opts,
          ) if $fks;
       }
+
+      # Always count Total Keys so print_key_summary won't die
+      # because %summary is empty.
       $summary{'Total Keys'} += (scalar keys %$keys) + (scalar keys %$fks)
-         if $opts{summary};
    }
 }
 
@@ -2576,6 +2729,7 @@ sub print_duplicate_key {
               grep { $_ if !$seen_col{$_}++; }
               split(',', "$dupe->{cols},$dupe->{duplicate_of_cols}");
    foreach my $col ( @cols ) {
+      MKDEBUG && _d('col', $col);
       print "#\t" . $struct->{defs}->{lc $col} . "\n";
    }
 

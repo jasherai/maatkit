@@ -1,0 +1,10 @@
+# ########################################################################
+# issue_331.issue_331_t2                                                  
+# ########################################################################
+
+# FOREIGN KEY fk_1 (`id`) REFERENCES `issue_331`.`issue_331_t1` (`t1_id`) is a duplicate of FOREIGN KEY fk_2 (`id`) REFERENCES `issue_331`.`issue_331_t1` (`t1_id`)
+# Column types:
+#	  `id` bigint(20) NOT NULL default '0'
+# To remove this duplicate key, execute:
+ALTER TABLE `issue_331`.`issue_331_t2` DROP KEY `fk_1`;
+# TODO
