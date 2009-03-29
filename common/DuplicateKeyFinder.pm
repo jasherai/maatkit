@@ -250,7 +250,8 @@ sub get_duplicate_keys {
 
    return \@dupes;
 }
-
+use Data::Dumper;
+$Data::Dumper::Indent=1;
 sub get_duplicate_fks {
    my ( $self, %args ) = @_;
    die "I need a keys argument" unless $args{keys};
@@ -260,13 +261,14 @@ sub get_duplicate_fks {
       next unless $fks[$i];
       foreach my $j ( $i+1..$#fks ) {
          next unless $fks[$j];
+
          # A foreign key is a duplicate no matter what order the
          # columns are in, so re-order them alphabetically so they
          # can be compared.
-         my $i_cols  = join(',', sort(split(/,/, $fks[$i]->{colnames})));
-         my $j_cols  = join(',', sort(split(/,/, $fks[$j]->{colnames})));
-         my $i_pcols = join(',', sort(split(/,/, $fks[$i]->{parent_colnames})));
-         my $j_pcols = join(',', sort(split(/,/, $fks[$j]->{parent_colnames})));
+         my $i_cols  = join(',', sort @{$fks[$i]->{cols}} );
+         my $j_cols  = join(',', sort @{$fks[$j]->{cols}} );
+         my $i_pcols = join(',', sort @{$fks[$i]->{parent_cols}} );
+         my $j_pcols = join(',', sort @{$fks[$j]->{parent_cols}} );
 
          if ( $fks[$i]->{parent_tbl} eq $fks[$j]->{parent_tbl}
               && $i_cols  eq $j_cols

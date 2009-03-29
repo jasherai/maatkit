@@ -321,12 +321,12 @@ sub get_fks {
       }
 
       $fks->{$name} = {
-         name            => $name,
-         colnames        => $cols,
-         cols            => [ map { s/`//g; $_; } split(',', $cols) ],
-         parent_tbl      => $parent,
-         parent_colnames => $parent_cols,
-         parent_cols     => [ map { s/`//g; $_; } split(',', $parent_cols) ],
+         name           => $name,
+         colnames       => $cols,
+         cols           => [ map { s/[ `]+//g; $_; } split(',', $cols) ],
+         parent_tbl     => $parent,
+         parent_colnames=> $parent_cols,
+         parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
       };
    }
 
