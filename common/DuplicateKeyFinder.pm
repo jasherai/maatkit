@@ -250,8 +250,7 @@ sub get_duplicate_keys {
 
    return \@dupes;
 }
-use Data::Dumper;
-$Data::Dumper::Indent=1;
+
 sub get_duplicate_fks {
    my ( $self, %args ) = @_;
    die "I need a keys argument" unless $args{keys};
