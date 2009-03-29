@@ -1,10 +1,9 @@
 #!/usr/bin/perl
 
-
 use strict;
 use warnings FATAL => 'all';
-use Test::More tests => 4;
 use English qw(-no_match_vars);
+use Test::More tests => 6;
 
 require '../KeySize.pm';
 require '../TableParser.pm';
@@ -19,6 +18,14 @@ my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
+my $q  = new Quoter();
+my $tp = new TableParser();
+my $ks = new KeySize();
+
+my $tbl;
+my $struct;
+my %key;
+my ($size, $chosen_key); 
 
 sub load_file {
    my ($file) = @_;
@@ -28,38 +35,60 @@ sub load_file {
    return $contents;
 }
 
-my $q  = new Quoter();
-my $tp = new TableParser();
-my $ks = new KeySize();
+sub key_info {
+   my ( $file, $db, $tbl, $key, $cols ) = @_;
+   $sb->load_file('master', $file, $db);
+   my $tbl_name = $q->quote($db, $tbl);
+   my $struct   = $tp->parse( load_file($file) );
+   return (
+      name       => $key,
+      cols       => $cols || $struct->{keys}->{$key}->{cols},
+      tbl_name   => $tbl_name,
+      tbl_struct => $struct,
+      dbh        => $dbh,
+   );
+}
+
+$sb->create_dbs($dbh, ['test']);
 
 isa_ok($ks, 'KeySize');
 
-$sb->create_dbs($dbh, ['test']);
-$sb->load_file('master', 'samples/dupe_key.sql', 'test');
-
-my $tbl    = $q->quote('test', 'dupe_key');
-my $struct = $tp->parse( load_file('samples/dupe_key.sql') );
-
-# The tbl is empty so MySQL should optimize away the query and
-# therefore key_len and rows will be NULL. This tests that
-# get_key_size doesn't blow up for such a case.
+# With an empty table, the WHERE is impossible, so MySQL should optimize
+# away the query, and key_len and rows will be NULL in EXPLAIN.
+%key = key_info('samples/dupe_key.sql', 'test', 'dupe_key', 'a');
 is(
-   $ks->get_key_size(tbl=>$tbl,key=>$struct->{keys}->{a},dbh=>$dbh),
+   $ks->get_key_size(%key),
    '0',
-   'dupe_key key a impossible where'
+   'empty table, impossible where'
 );
 
+# Populate the table to make the WHERE possible.
 $dbh->do('INSERT INTO test.dupe_key VALUE (1,2,3),(4,5,6),(7,8,9),(0,0,0)');
 is(
-   $ks->get_key_size(tbl=>$tbl,key=>$struct->{keys}->{a},dbh=>$dbh),
+   $ks->get_key_size(%key),
    '20',
-   'dupe_key key a'
+   'single column int key'
 );
 
+$key{name} = 'a_2';
 is(
-   $ks->get_key_size(tbl=>$tbl,key=>$struct->{keys}->{a_2},dbh=>$dbh),
+   $ks->get_key_size(%key),
    '40',
-   'dupe_key key a_2'
+   'two column int key'
+);
+
+$sb->load_file('master', 'samples/issue_331-parent.sql', 'test');
+%key = key_info('samples/issue_331.sql', 'test', 'issue_331_t2', 'fk_1', ['id']);
+($size, $chosen_key) = $ks->get_key_size(%key);
+is(
+   $size,
+   8,
+   'foreign key size'
+);
+is(
+   $chosen_key,
+   'PRIMARY',
+   'PRIMARY key chosen for foreign key'
 );
 
 $sb->wipe_clean($dbh);
