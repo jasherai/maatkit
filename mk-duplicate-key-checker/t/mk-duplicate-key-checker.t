@@ -56,7 +56,7 @@ $output = `$cmd -d mysql -t columns_priv 2>&1`;
 unlike($output, qr/Use of uninitialized var/, 'Does not crash on undef var');
 
 # #############################################################################
-# Issue 331: mk-duplicate-key-checker crashes when printing column types
+# Issue 331: mk-duplicate-key-checker crashes getting size of foreign keys
 # #############################################################################
 $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', 'samples/issue_331.sql', 'test');
