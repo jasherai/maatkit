@@ -1,39 +1,22 @@
 #!/usr/bin/perl
 
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 21;
 use English qw(-no_match_vars);
-use DBI;
+use Test::More tests => 24;
 
+use DBI;
 require "../TableParser.pm";
 require "../Quoter.pm";
 
-my $p = new TableParser();
-my $q = new Quoter();
-my $t;
+my $tp = new TableParser();
+my $q  = new Quoter();
+my $tbl;
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
    eval { $code->(); };
-   like ( $EVAL_ERROR, $pat, $msg );
+   like( $EVAL_ERROR, $pat, $msg );
 }
 
 sub load_file {
@@ -45,18 +28,18 @@ sub load_file {
 }
 
 eval {
-   $p->parse( load_file('samples/noquotes.sql') );
+   $tp->parse( load_file('samples/noquotes.sql') );
 };
 like($EVAL_ERROR, qr/quoting/, 'No quoting');
 
 eval {
-   $p->parse( load_file('samples/ansi_quotes.sql') );
+   $tp->parse( load_file('samples/ansi_quotes.sql') );
 };
 like($EVAL_ERROR, qr/quoting/, 'ANSI quoting');
 
-$t = $p->parse( load_file('samples/t1.sql') );
+$tbl = $tp->parse( load_file('samples/t1.sql') );
 is_deeply(
-   $t,
+   $tbl,
    {  cols         => [qw(a)],
       col_posn     => { a => 0 },
       is_col       => { a => 1 },
@@ -73,9 +56,9 @@ is_deeply(
    'Basic table is OK',
 );
 
-$t = $p->parse( load_file('samples/TableParser-prefix_idx.sql') );
+$tbl = $tp->parse( load_file('samples/TableParser-prefix_idx.sql') );
 is_deeply(
-   $t,
+   $tbl,
    {
       cols           => [ 'a', 'b' ],
       col_posn       => { a => 0, b => 1 },
@@ -123,9 +106,9 @@ is_deeply(
    'Indexes with prefixes parse OK (fixes issue 1)'
 );
 
-$t = $p->parse( load_file('samples/sakila.film.sql') );
+$tbl = $tp->parse( load_file('samples/sakila.film.sql') );
 is_deeply(
-   $t,
+   $tbl,
    {  cols => [
          qw(film_id title description release_year language_id
             original_language_id rental_duration rental_rate
@@ -281,23 +264,23 @@ is_deeply(
    'sakila.film',
 );
 
-is_deeply (
-   [$p->sort_indexes($t)],
+is_deeply(
+   [$tp->sort_indexes($tbl)],
    [qw(PRIMARY idx_fk_language_id idx_title idx_fk_original_language_id)],
    'Sorted indexes OK'
 );
 
-is( $p->find_best_index($t), 'PRIMARY', 'Primary key is best');
-is( $p->find_best_index($t, 'idx_title'), 'idx_title', 'Specified key is best');
+is($tp->find_best_index($tbl), 'PRIMARY', 'Primary key is best');
+is($tp->find_best_index($tbl, 'idx_title'), 'idx_title', 'Specified key is best');
 throws_ok (
-   sub { $p->find_best_index($t, 'foo') },
+   sub { $tp->find_best_index($tbl, 'foo') },
    qr/does not exist/,
    'Index does not exist',
 );
 
-$t = $p->parse( load_file('samples/temporary_table.sql') );
+$tbl = $tp->parse( load_file('samples/temporary_table.sql') );
 is_deeply(
-   $t,
+   $tbl,
    {  cols         => [qw(a)],
       col_posn     => { a => 0 },
       is_col       => { a => 1 },
@@ -314,9 +297,9 @@ is_deeply(
    'Temporary table',
 );
 
-$t = $p->parse( load_file('samples/hyphentest.sql') );
+$tbl = $tp->parse( load_file('samples/hyphentest.sql') );
 is_deeply(
-   $t,
+   $tbl,
    {  'is_autoinc' => {
          'sort_order'                => 0,
          'pfk-source_instrument_id'  => 0,
@@ -391,9 +374,9 @@ is_deeply(
    'Hyphens in indexed columns',
 );
 
-$t = $p->parse( load_file('samples/ndb_table.sql') );
+$tbl = $tp->parse( load_file('samples/ndb_table.sql') );
 is_deeply(
-   $t,
+   $tbl,
    {  cols        => [qw(id)],
       col_posn    => { id => 0 },
       is_col      => { id => 1 },
@@ -421,9 +404,9 @@ is_deeply(
    'NDB table',
 );
 
-$t = $p->parse( load_file('samples/mixed-case.sql') );
+$tbl = $tp->parse( load_file('samples/mixed-case.sql') );
 is_deeply(
-   $t,
+   $tbl,
    {  cols         => [qw(a b mixedcol)],
       col_posn     => { a => 0, b => 1, mixedcol => 2 },
       is_col       => { a => 1, b => 1, mixedcol => 1 },
@@ -456,6 +439,53 @@ is_deeply(
 );
 
 # #############################################################################
+# Test get_fks()
+# #############################################################################
+is_deeply(
+   $tp->get_fks( load_file('samples/one_key.sql') ),
+   {},
+   'no fks'
+);
+
+is_deeply(
+   $tp->get_fks( load_file('samples/one_fk.sql') ),   
+   {
+      't1_ibfk_1' => {
+         name            => 't1_ibfk_1',
+         colnames        => '`a`',
+         cols            => ['a'],
+         parent_tbl      => 't2',
+         parent_colnames => '`a`',
+         parent_cols     => ['a'],
+      },
+   },
+   'one fk'
+);
+
+is_deeply(
+   $tp->get_fks( load_file('samples/issue_331.sql') ),   
+   {
+      'fk_1' => {
+         name            => 'fk_1',
+         colnames        => '`id`',
+         cols            => ['id'],
+         parent_tbl      => 'issue_331_t1',
+         parent_colnames => '`t1_id`',
+         parent_cols     => ['t1_id'],
+      },
+      'fk_2' => {
+         name            => 'fk_2',
+         colnames        => '`id`',
+         cols            => ['id'],
+         parent_tbl      => 'issue_331_t1',
+         parent_colnames => '`t1_id`',
+         parent_cols     => ['t1_id'],
+      }
+   },
+   'two fks (issue 331)'
+);
+
+# #############################################################################
 # Sandbox tests
 # #############################################################################
 require '../DSNParser.pm';
@@ -478,7 +508,7 @@ SKIP: {
    my $user_dbh = DBI->connect(
       "DBI:mysql:host=127.0.0.1;port=12345", 'user', undef,
       { PrintError => 0, RaiseError => 1 });
-   is($p->table_exists($user_dbh, 'mysql', 'db', $q, 1), '0', 'table_exists but no insert privs');
+   is($tp->table_exists($user_dbh, 'mysql', 'db', $q, 1), '0', 'table_exists but no insert privs');
    $user_dbh->disconnect();
 
    # The following tests require that you manually load the
@@ -486,19 +516,19 @@ SKIP: {
    skip 'Sandbox master does not have the sakila database', 4
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
    is_deeply(
-      [$p->find_possible_keys(
+      [$tp->find_possible_keys(
          $dbh, 'sakila', 'film_actor', $q, 'film_id > 990  and actor_id > 1')],
       [qw(idx_fk_film_id PRIMARY)],
       'Best index for WHERE clause'
    );
    is_deeply(
-      [$p->find_possible_keys(
+      [$tp->find_possible_keys(
          $dbh, 'sakila', 'film_actor', $q, 'film_id > 990 or actor_id > 1')],
       [qw(idx_fk_film_id PRIMARY)],
       'Best index for WHERE clause with sort_union'
    );
-   is($p->table_exists($dbh, 'sakila', 'film_actor', $q), '1', 'table_exists returns true when the table exists');
-   is($p->table_exists($dbh, 'sakila', 'foo', $q), '0', 'table_exists returns false when the table does not exist');
+   is($tp->table_exists($dbh, 'sakila', 'film_actor', $q), '1', 'table_exists returns true when the table exists');
+   is($tp->table_exists($dbh, 'sakila', 'foo', $q), '0', 'table_exists returns false when the table does not exist');
 
    $sb->wipe_clean($dbh);
 }
@@ -509,17 +539,17 @@ SKIP: {
 sub cmp_ddls {
    my ( $desc, $v1, $v2 ) = @_;
 
-   $t = $p->parse( load_file($v1) );
-   my $t2 = $p->parse( load_file($v2) );
+   $tbl = $tp->parse( load_file($v1) );
+   my $tbl2 = $tp->parse( load_file($v2) );
 
    # The defs for each will differ due to string case: 'default' vs. 'DEFAULT'.
    # Everything else should be identical, though. So we'll chop out the defs,
    # compare them later, and check the rest first.
-   my %defs  = %{$t->{defs}};
-   my %defs2 = %{$t2->{defs}};
-   $t->{defs}  = ();
-   $t2->{defs} = ();
-   is_deeply($t, $t2, "$desc SHOW CREATE parse identically");
+   my %defs  = %{$tbl->{defs}};
+   my %defs2 = %{$tbl2->{defs}};
+   $tbl->{defs}  = ();
+   $tbl2->{defs} = ();
+   is_deeply($tbl, $tbl2, "$desc SHOW CREATE parse identically");
 
    my $defstr  = '';
    my $defstr2 = '';
@@ -537,9 +567,9 @@ cmp_ddls('v5.0 vs. v5.1', 'samples/issue_109-01-v50.sql', 'samples/issue_109-01-
 # #############################################################################
 # Issue 132: mk-parallel-dump halts with error when enum contains backtick
 # #############################################################################
-$t = $p->parse( load_file('samples/issue_132.sql') );
+$tbl = $tp->parse( load_file('samples/issue_132.sql') );
 is_deeply(
-   $t,
+   $tbl,
    {  cols         => [qw(country)],
       col_posn     => { country => 0 },
       is_col       => { country => 1 },

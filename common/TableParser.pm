@@ -312,20 +312,21 @@ sub get_fks {
    foreach my $fk (
       $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg )
    {
-      my ( $name )   = $fk =~ m/CONSTRAINT `(.*?)`/;
-      my ( $fkcols ) = $fk =~ m/\(([^\)]+)\)/;
-      my ( $cols )   = $fk =~ m/REFERENCES.*?\(([^\)]+)\)/;
-      my ( $parent ) = $fk =~ m/REFERENCES (\S+) /;
+      my ( $name ) = $fk =~ m/CONSTRAINT `(.*?)`/;
+      my ( $cols ) = $fk =~ m/FOREIGN KEY \(([^\)]+)\)/;
+      my ( $parent, $parent_cols ) = $fk =~ m/REFERENCES `(\S+)` \(([^\)]+)\)/;
 
       if ( $parent !~ m/\./ && $opts->{database} ) {
          $parent = "`$opts->{database}`.$parent";
       }
 
       $fks->{$name} = {
-         name   => $name,
-         parent => $parent,
-         cols   => $cols,
-         fkcols => $fkcols,
+         name            => $name,
+         colnames        => $cols,
+         cols            => [ map { s/`//g; $_; } split(',', $cols) ],
+         parent_tbl      => $parent,
+         parent_colnames => $parent_cols,
+         parent_cols     => [ map { s/`//g; $_; } split(',', $parent_cols) ],
       };
    }
 
