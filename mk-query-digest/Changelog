@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Crashed trying to take square root of negative number (issue 332).
    * --review-history did not store timestamps correctly (issue 329).
    * --shorten discarded too much information (issue 320).
    * No results when --orderby contained a nonexistent attribute (issue 244).
