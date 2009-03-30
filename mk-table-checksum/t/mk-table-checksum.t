@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 95;
+use Test::More tests => 96;
 use List::Util qw(sum);
 
 require '../../common/DSNParser.pm';
@@ -83,8 +83,10 @@ $output = `$cmd --checksum -f MD5 -a BIT_XOR 2>&1`;
 like($output, qr/c4ca4238a0b923820dcc509a6f75849b/, 'MD5 BIT_XOR' );
 
 # Check --schema
-$output = `$cmd --checksum --schema 2>&1`;
-like($output, qr/377366820/, 'Checksum with --schema' );
+$output = `perl ../mk-table-checksum --tables checksum_test --checksum --schema h=127.1,P=12345 2>&1`;
+like($output, qr/2752458186\s+127.1.test2.checksum_test/, 'Checksum test with --schema' );
+# Should output the same thing, it only lacks the AUTO_INCREMENT specifier.
+like($output, qr/2752458186\s+127.1.test.checksum_test/, 'Checksum 2 test with --schema' );
 
 # Check --since
 $output = `MKDEBUG=1 $cmd --since '"2008-01-01" - interval 1 day' --explain 2>&1 | grep 2007`;

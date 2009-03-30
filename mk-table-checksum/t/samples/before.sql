@@ -2,10 +2,17 @@ drop database if exists test;
 create database test;
 use test;
 
+drop database if exists test2;
+create database test2;
+
 drop table if exists checksum_test, checksum, fl_test, argtest;
 
 create table checksum_test(
-   a int not null primary key
+   a int not null primary key auto_increment
+) auto_increment = 5;
+
+create table test2.checksum_test(
+   a int not null primary key auto_increment
 );
 
 insert into checksum_test(a) values (1);
