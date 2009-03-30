@@ -333,6 +333,15 @@ sub get_fks {
    return $fks;
 }
 
+# Removes the AUTO_INCREMENT property from the end of SHOW CREATE TABLE.  A
+# sample:
+# ) ENGINE=InnoDB AUTO_INCREMENT=201 DEFAULT CHARSET=utf8;
+sub remove_auto_increment {
+   my ( $self, $ddl ) = @_;
+   $ddl =~ s/(^\).*?) AUTO_INCREMENT=\d+\b/$1/m;
+   return $ddl;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }

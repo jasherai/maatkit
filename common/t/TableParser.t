@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 25;
+use Test::More tests => 26;
 
 use DBI;
 require "../TableParser.pm";
@@ -599,6 +599,17 @@ is_deeply(
       type_for     => { country => 'enum' },
    },
    'ENUM col with backtick in value (issue 132)'
+);
+
+# #############################################################################
+# issue 328: remove AUTO_INCREMENT from schema for checksumming.
+# #############################################################################
+my $schema1 = load_file('samples/auto-increment-actor.sql');
+my $schema2 = load_file('samples/no-auto-increment-actor.sql');
+is(
+   $tp->remove_auto_increment($schema1),
+   $schema2,
+   'AUTO_INCREMENT is gone',
 );
 
 exit;
