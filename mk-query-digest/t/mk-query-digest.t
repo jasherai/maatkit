@@ -238,11 +238,17 @@ SKIP: {
 
    # Test --explain.  Because the file says 'use sakila' only the first one will
    # succeed.
-   ok(
-      no_diff($run_with.'slow001.txt --explain h=127.1,P=12345',
-         'samples/slow001_explainreport.txt'),
-      'Analysis for slow001 with --explain',
-   );
+   SKIP: {
+      # TODO: change slow001.sql or do something else to make this work
+      # with or without the sakila db loaded.
+      skip 'Sakila database is loaded which breaks this test', 1
+         if @{$dbh1->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
+      ok(
+         no_diff($run_with.'slow001.txt --explain h=127.1,P=12345',
+            'samples/slow001_explainreport.txt'),
+         'Analysis for slow001 with --explain',
+      );
+   };
 
    # Test --createreview and --create-review-history
    $output = 'foo'; # clear previous test results
