@@ -28,12 +28,12 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# VersionParser package 2801
+# VersionParser package 3186
 # ###########################################################################
+package VersionParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package VersionParser;
 
 use English qw(-no_match_vars);
 
@@ -47,7 +47,7 @@ sub new {
 sub parse {
    my ( $self, $str ) = @_;
    my $result = sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
-   MKDEBUG && _d("$str parses to $result");
+   MKDEBUG && _d($str, 'parses to', $result);
    return $result;
 }
 
@@ -58,7 +58,7 @@ sub version_ge {
          $dbh->selectrow_array('SELECT VERSION()'));
    }
    my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
-   MKDEBUG && _d("$self->{$dbh} ge $target: $result");
+   MKDEBUG && _d($self->{$dbh}, 'ge', $target, ':', $result);
    return $result;
 }
 
@@ -67,7 +67,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -77,7 +77,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 3085
+# Quoter package 3186
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -134,7 +134,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 3287
+# TableParser package 3293
 # ###########################################################################
 package TableParser;
 
@@ -149,17 +149,6 @@ sub new {
    return bless {}, $class;
 }
 
-# Several subs in this module require either a $ddl or $tbl param.
-#
-# $ddl is the return value from MySQLDump::get_create_table() (which returns
-# the output of SHOW CREATE TALBE).
-#
-# $tbl is the return value from the sub below, parse().
-#
-# And some subs have an optional $opts param which is a hashref of options.
-# $opts->{mysql_version} is typically used, which is the return value from
-# VersionParser::parser() (which returns a zero-padded MySQL version,
-# e.g. 004001000 for 4.1.0).
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -180,8 +169,6 @@ sub parse {
          . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
 
-   # Lowercase identifiers to avoid issues with case-sensitivity in Perl.
-   # (Bug #1910276).
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
    my $engine = $self->get_engine($ddl);
@@ -190,12 +177,9 @@ sub parse {
    my @cols   = map { $_ =~ m/`([^`]+)`/g } @defs;
    MKDEBUG && _d('Columns:', join(', ', @cols));
 
-   # Save the column definitions *exactly*
    my %def_for;
    @def_for{@cols} = @defs;
 
-   # Find column types, whether numeric, whether nullable, whether
-   # auto-increment.
    my (@nums, @null);
    my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
    foreach my $col ( @cols ) {
@@ -214,9 +198,6 @@ sub parse {
       $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
    }
 
-   # TODO: passing is_nullable this way is just a quick hack. Ultimately,
-   # we probably should decompose this sub further, taking out the block
-   # above that parses col props like nullability, auto_inc, type, etc.
    my $keys = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
@@ -235,9 +216,6 @@ sub parse {
    };
 }
 
-# Sorts indexes in this order: PRIMARY, unique, non-nullable, any (shortest
-# first, alphabetical).  Only BTREE indexes are considered.
-# TODO: consider length as # of bytes instead of # of columns.
 sub sort_indexes {
    my ( $self, $tbl ) = @_;
 
@@ -257,8 +235,6 @@ sub sort_indexes {
    return @indexes;
 }
 
-# Finds the 'best' index; if the user specifies one, dies if it's not in the
-# table.
 sub find_best_index {
    my ( $self, $tbl, $index ) = @_;
    my $best;
@@ -267,12 +243,9 @@ sub find_best_index {
    }
    if ( !$best ) {
       if ( $index ) {
-         # The user specified an index, so we can't choose our own.
          die "Index '$index' does not exist in table";
       }
       else {
-         # Try to pick the best index.
-         # TODO: eliminate indexes that have column prefixes.
          ($best) = $self->sort_indexes($tbl);
       }
    }
@@ -280,11 +253,6 @@ sub find_best_index {
    return $best;
 }
 
-# Takes a dbh, database, table, quoter, and WHERE clause, and reports the
-# indexes MySQL thinks are best for EXPLAIN SELECT * FROM that table.  If no
-# WHERE, just returns an empty list.  If no possible_keys, returns empty list,
-# even if 'key' is not null.  Only adds 'key' to the list if it's included in
-# possible_keys.
 sub find_possible_keys {
    my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
    return () unless $where;
@@ -292,7 +260,6 @@ sub find_possible_keys {
       . ' WHERE ' . $where;
    MKDEBUG && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
-   # Normalize columns to lowercase
    $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
    if ( $expl->{possible_keys} ) {
       MKDEBUG && _d('possible_keys =', $expl->{possible_keys});
@@ -314,8 +281,6 @@ sub find_possible_keys {
    }
 }
 
-# Returns true if the table exists.  If $can_insert is set, also checks whether
-# the user can insert into the table.
 sub table_exists {
    my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
    my $result = 0;
@@ -346,22 +311,6 @@ sub get_engine {
    return $engine || undef;
 }
 
-# $ddl is a SHOW CREATE TABLE returned from MySQLDumper::get_create_table().
-# The general format of a key is
-# [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
-# Returns a hashref of keys and their properties:
-#    key => {
-#       type         => BTREE, FULLTEXT or  SPATIAL
-#       name         => column name, like: "foo_key"
-#       colnames     => original col def string, like: "(`a`,`b`)"
-#       cols         => arrayref containing the col names, like: [qw(a b)]
-#       col_prefixes => arrayref containing any col prefixes (parallels cols)
-#       is_unique    => 1 if the col is UNIQUE or PRIMARY
-#       is_nullable  => true (> 0) if one or more col can be NULL
-#       is_col       => hashref with key for each col=>1
-#   },
-#   key => ...
-# Foreign keys are ignored; use get_fks() instead.
 sub get_keys {
    my ( $self, $ddl, $opts, $is_nullable ) = @_;
    my $engine = $self->get_engine($ddl);
@@ -370,20 +319,14 @@ sub get_keys {
    KEY:
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
 
-      # If you want foreign keys, use get_fks() below.
       next KEY if $key =~ m/FOREIGN/;
 
       MKDEBUG && _d('Parsed key:', $key);
 
-      # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
-      # will report its index as USING HASH even when this is not supported.
-      # The true type should be BTREE.  See
-      # http://bugs.mysql.com/bug.php?id=22632
       if ( $engine !~ m/MEMORY|HEAP/ ) {
          $key =~ s/USING HASH/USING BTREE/;
       }
 
-      # Determine index type
       my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
       my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
       $type = $type || $special || 'BTREE';
@@ -398,8 +341,6 @@ sub get_keys {
       my @cols;
       my @col_prefixes;
       foreach my $col_def ( split(',', $cols) ) {
-         # Parse columns of index including potential column prefixes
-         # E.g.: `a`,`b`(20)
          my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
@@ -423,7 +364,6 @@ sub get_keys {
    return $keys;
 }
 
-# Like get_keys() above but only returns a hash of foreign keys.
 sub get_fks {
    my ( $self, $ddl, $opts ) = @_;
    my $fks = {};
@@ -452,6 +392,12 @@ sub get_fks {
    return $fks;
 }
 
+sub remove_auto_increment {
+   my ( $self, $ddl ) = @_;
+   $ddl =~ s/(^\).*?) AUTO_INCREMENT=\d+\b/$1/m;
+   return $ddl;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -467,7 +413,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 2889
+# MySQLDump package 3186
 # ###########################################################################
 package MySQLDump;
 
@@ -532,7 +478,7 @@ sub dump {
          my $result = $before . "\nDELIMITER ;;\n";
          foreach my $trg ( @$trgs ) {
             if ( $trg->{sql_mode} ) {
-               $result .= "/*!50003 SET SESSION SQL_MODE=\"$trg->{sql_mode}\" */;;\n";
+               $result .= qq{/*!50003 SET SESSION SQL_MODE='$trg->{sql_mode}' */;;\n};
             }
             $result .= "/*!50003 CREATE */ ";
             if ( $trg->{definer} ) {
@@ -588,7 +534,7 @@ sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{cache} || !$self->{tables}->{$db}->{$tbl} ) {
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
-         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . q{@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, 'ANSI_QUOTES', ''), ',,', ','), }
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       MKDEBUG && _d($sql);
@@ -619,7 +565,7 @@ sub get_create_table {
 
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   MKDEBUG && _d("Get columns for $db.$tbl");
+   MKDEBUG && _d('Get columns for', $db, $tbl);
    if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
@@ -653,7 +599,7 @@ sub get_triggers {
    if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
-         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . q{@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, 'ANSI_QUOTES', ''), ',,', ','), }
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       MKDEBUG && _d($sql);
@@ -758,7 +704,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -768,7 +714,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 3009
+# MySQLFind package 3186
 # ###########################################################################
 package MySQLFind;
 
@@ -796,7 +742,7 @@ sub new {
          || $self->{engines}->{regexp} ? 1 : 0);
    die "I need a parser argument"
       if $self->{need_engine} && !defined $args{parser};
-   MKDEBUG && _d('Need engine: ' , $self->{need_engine} ? 'yes' : 'no');
+   MKDEBUG && _d('Need engine:', $self->{need_engine} ? 'yes' : 'no');
    $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
    $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
    if ( $args{useddl} ) {
@@ -811,7 +757,7 @@ sub init_timestamp {
    my $sql = 'SELECT CURRENT_TIMESTAMP';
    MKDEBUG && _d($sql);
    ($self->{timestamp}->{$dbh}->{now}) = $dbh->selectrow_array($sql);
-   MKDEBUG && _d("Current timestamp: $self->{timestamp}->{$dbh}->{now}");
+   MKDEBUG && _d('Current timestamp:', $self->{timestamp}->{$dbh}->{now});
 }
 
 sub find_databases {
@@ -922,7 +868,7 @@ sub _fetch_tbl_list {
 
 sub _filter {
    my ( $self, $thing, $sub, @vals ) = @_;
-   MKDEBUG && _d("Filtering $thing list on ", Dumper($self->{$thing}));
+   MKDEBUG && _d('Filtering', $thing, 'list on', Dumper($self->{$thing}));
    my $permit = $self->{$thing}->{permit};
    my $reject = $self->{$thing}->{reject};
    my $regexp = $self->{$thing}->{regexp};
@@ -947,7 +893,7 @@ sub _test_date {
    my ( $self, $table, $prop, $test, $dbh ) = @_;
    $prop = lc $prop;
    if ( !defined $table->{$prop} ) {
-      MKDEBUG && _d("$prop is not defined");
+      MKDEBUG && _d($prop, 'is not defined');
       return $self->{nullpass};
    }
    my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
@@ -969,7 +915,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -979,7 +925,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3140
+# DSNParser package 3186
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1041,7 +987,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
-      MKDEBUG && _d('Adding extra property ' . $opt->{key});
+      MKDEBUG && _d('Adding extra property', $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -1050,7 +996,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
-      MKDEBUG && _d("Setting $prop property");
+      MKDEBUG && _d('Setting', $prop, 'property');
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -1062,7 +1008,7 @@ sub parse {
       MKDEBUG && _d('No DSN to parse');
       return;
    }
-   MKDEBUG && _d("Parsing $dsn");
+   MKDEBUG && _d('Parsing', $dsn);
    $prev     ||= {};
    $defaults ||= {};
    my %given_props;
@@ -1075,26 +1021,27 @@ sub parse {
          $given_props{$prop_key} = $prop_val;
       }
       elsif ( $prop_autokey ) {
-         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         MKDEBUG && _d('Interpreting', $dsn_part, 'as',
+            $prop_autokey, '=', $dsn_part);
          $given_props{$prop_autokey} = $dsn_part;
       }
       else {
-         MKDEBUG && _d("Bad DSN part: $dsn_part");
+         MKDEBUG && _d('Bad DSN part:', $dsn_part);
       }
    }
 
    foreach my $key ( keys %opts ) {
-      MKDEBUG && _d("Finding value for $key");
+      MKDEBUG && _d('Finding value for', $key);
       $final_props{$key} = $given_props{$key};
       if (   !defined $final_props{$key}
            && defined $prev->{$key} && $opts{$key}->{copy} )
       {
          $final_props{$key} = $prev->{$key};
-         MKDEBUG && _d("Copying value for $key from previous DSN");
+         MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
       }
       if ( !defined $final_props{$key} ) {
          $final_props{$key} = $defaults->{$key};
-         MKDEBUG && _d("Copying value for $key from defaults");
+         MKDEBUG && _d('Copying value for', $key, 'from defaults');
       }
    }
 
@@ -1198,12 +1145,12 @@ sub get_dbh {
 
             $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
                  . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
-            MKDEBUG && _d("$dbh: $sql");
+            MKDEBUG && _d($dbh, ':', $sql);
             $dbh->do($sql);
 
             if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
                $sql = "/*!40101 SET NAMES $charset*/";
-               MKDEBUG && _d("$dbh: $sql");
+               MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
                MKDEBUG && _d('Enabling charset for STDOUT');
                if ( $charset eq 'utf8' ) {
@@ -1217,7 +1164,7 @@ sub get_dbh {
 
             if ( $self->prop('setvars') ) {
                $sql = "SET " . $self->prop('setvars');
-               MKDEBUG && _d("$dbh: $sql");
+               MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
          }
@@ -1225,7 +1172,7 @@ sub get_dbh {
       if ( !$dbh && $EVAL_ERROR ) {
          MKDEBUG && _d($EVAL_ERROR);
          if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
-            MKDEBUG && _d("Going to try again without utf8 support");
+            MKDEBUG && _d('Going to try again without utf8 support');
             delete $defaults->{mysql_enable_utf8};
          }
          if ( !$tries ) {
@@ -1238,12 +1185,11 @@ sub get_dbh {
       $dbh,
       Dumper($dbh->selectrow_hashref(
          'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
-      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
-      ' Character set info: ',
-      Dumper($dbh->selectall_arrayref(
-         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
-      ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
-      ' $DBI::VERSION: ', $DBI::VERSION,
+      'Connection info:',      $dbh->{mysql_hostinfo},
+      'Character set info:',   Dumper($dbh->selectall_arrayref(
+                     'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
+      '$DBD::mysql::VERSION:', $DBD::mysql::VERSION,
+      '$DBI::VERSION:',        $DBI::VERSION,
    );
 
    return $dbh;
@@ -1281,7 +1227,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -1291,7 +1237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3028
+# OptionParser package 3297
 # ###########################################################################
 package OptionParser;
 
@@ -1339,7 +1285,7 @@ sub pod_to_spec {
       chomp $para;
       $para =~ s/\s+/ /g;
       $para =~ s/$POD_link_re/$1/go;
-      MKDEBUG && _d('First option rules: '. $para);
+      MKDEBUG && _d('First option rules:', $para);
       push @rules, $para;
    }
 
@@ -1433,21 +1379,21 @@ sub new {
          $opt->{c} = $opt->{s} =~ m/\+/;
          $opt->{g} ||= 'o';
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            MKDEBUG && _d("Option $opt->{k} type: $y");
+            MKDEBUG && _d('Option', $opt->{k}, 'type:', $y);
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
          if ( $opt->{d} =~ m/required/ ) {
             $opt->{r} = 1;
-            MKDEBUG && _d("Option $opt->{k} is required");
+            MKDEBUG && _d('Option', $opt->{k}, 'is required');
          }
          if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
-            MKDEBUG && _d("Option $opt->{k} has a default");
+            MKDEBUG && _d('Option', $opt->{k}, 'has a default');
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            MKDEBUG && _d("Option $opt->{k} $dis");
+            MKDEBUG && _d('Option', $opt->{k}, $dis);
          }
       }
       else { # It's an option rule, not a spec.
@@ -1458,11 +1404,11 @@ sub new {
                } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
-               MKDEBUG && _d(@participants, ' are mutually exclusive');
+               MKDEBUG && _d(@participants, 'are mutually exclusive');
             }
             if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
-               MKDEBUG && _d(@participants, ' require at least one');
+               MKDEBUG && _d(@participants, 'require at least one');
             }
          }
          elsif ( $opt =~ m/default to/ ) {
@@ -1471,7 +1417,7 @@ sub new {
                   $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
-            MKDEBUG && _d(@participants, ' copy from each other');
+            MKDEBUG && _d(@participants, 'copy from each other');
          }
          elsif ( $opt  =~ m/allowed with/ ) {
             my @participants = map {
@@ -1528,7 +1474,7 @@ sub get_participants {
          }
       }
    }
-   MKDEBUG && _d("Participants for $str: ", @participants);
+   MKDEBUG && _d('Participants for', $str, ':', @participants);
    return @participants;
 }
 
@@ -1563,8 +1509,8 @@ sub parse {
                           else {
                              $vals{$spec->{k}} = $val;
                           }
-                          MKDEBUG && _d("Given option: $opt ($spec->{k}) "
-                             . " = $val");
+                          MKDEBUG && _d('Given option:',
+                             $opt, '(',$spec->{k},') =', $val);
                           $self->{given}->{$spec->{k}} = $vals{$spec->{k}};
                        }
       } @specs
@@ -1584,7 +1530,7 @@ sub parse {
 
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
-      MKDEBUG && _d("Unsetting options: ", @disses);
+      MKDEBUG && _d('Unsetting options:', @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
@@ -1624,8 +1570,8 @@ sub parse {
          if ( !$suffix ) {
             my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
             $suffix = $s || 's';
-            MKDEBUG && _d("No suffix given; using $suffix for $spec->{k} "
-               . "(value: '$val')");
+            MKDEBUG && _d('No suffix given; using', $suffix, 'for',
+               $spec->{k}, '(value:', $val, ')');
          }
          if ( $suffix =~ m/[smhd]/ ) {
             $val = $suffix eq 's' ? $num            # Seconds
@@ -1633,18 +1579,19 @@ sub parse {
                  : $suffix eq 'h' ? $num * 3600     # Hours
                  :                  $num * 86400;   # Days
             $vals{$spec->{k}} = $val;
-            MKDEBUG && _d("Setting option $spec->{k} to $val");
+            MKDEBUG && _d('Setting option', $spec->{k}, 'to', $val);
          }
          else {
             $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
-         MKDEBUG && _d("Parsing option $spec->{y} as a DSN");
+         MKDEBUG && _d('Parsing option', $spec->{y}, 'as a DSN');
          my $from_key = $self->{copyfrom}->{$spec->{k}};
          my $default = {};
          if ( $from_key ) {
-            MKDEBUG && _d("Option $spec->{y} DSN copies from option $from_key");
+            MKDEBUG && _d('Option', $spec->{y}, 'DSN copies from option',
+               $from_key);
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
@@ -1654,7 +1601,8 @@ sub parse {
          if ( defined $num ) {
             if ( $factor ) {
                $num *= $factor_for{$factor};
-               MKDEBUG && _d("Setting option $spec->{y} to num * factor");
+               MKDEBUG && _d('Setting option', $spec->{y},
+                  'to num', $num, '* factor', $factor);
             }
             $vals{$spec->{k}} = ($pre || '') . $num;
          }
@@ -1665,7 +1613,7 @@ sub parse {
    }
 
    foreach my $spec ( grep { $_->{y} } @specs ) {
-      MKDEBUG && _d("Treating option $spec->{k} as a list");
+      MKDEBUG && _d('Treating option', $spec->{k}, 'as a list');
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
          $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -1682,7 +1630,8 @@ sub parse {
       delete @defined_opts{ @$allowed_opts };
       foreach my $defined_opt ( keys %defined_opts ) {
          MKDEBUG
-            && _d("Unsetting options: $defined_opt (not allowed with $opt)");
+            && _d('Unsetting option', $defined_opt,
+               '; it is not allowed with option', $opt);
          $vals{$defined_opt} = undef;
       }
    }
@@ -1847,12 +1796,31 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
+sub read_para_after {
+   my ( $self, $file, $regex ) = @_;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=pod$/m;
+      last;
+   }
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/$regex/;
+      last;
+   }
+   $para = <$fh>;
+   chomp($para);
+   close $fh or die "Can't close $file: $OS_ERROR";
+   return $para;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -1862,7 +1830,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# KeySize package $Revision$
+# KeySize package 3290 $Revision$
 # ###########################################################################
 package KeySize;
 
@@ -1990,8 +1958,6 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 sub new {
    my ( $class ) = @_;
    my $self = {
-      # These are used in case you want to look back and see more
-      # details about what happened inside get_duplicate_keys().
       keys        => undef,  # copy of last keys that we worked on
       unique_cols => undef,  # unique cols for those last keys (hashref)
       unique_sets => undef,  # unique sets for those last keys (arrayref) 
@@ -1999,23 +1965,6 @@ sub new {
    return bless $self, $class;
 }
 
-# %args should contain:
-#
-#  *  keys           (req) A hashref from TableParser::get_keys().
-#  *  tbl_info       (req) { db, tbl, engine, ddl } hashref.
-#  *  callback       (req) An anonymous subroutine, called for each dupe found.
-#  *  ignore_order   Order never matters for any type of index (generally order
-#                    matters except for FULLTEXT).
-#  *  ignore_type    Compare indexes of different types as if they're the same.
-#  *  clustered      Perform duplication checks against the clustered  key.
-#
-# Returns an arrayref of duplicate key hashrefs.  Each contains
-#
-#  *  key               The name of the index that's a duplicate.
-#  *  cols              The columns in that key (arrayref).
-#  *  duplicate_of      The name of the index it duplicates.
-#  *  duplicate_of_cols The columns of the index it duplicates.
-#  *  reason            A human-readable description of why this is a duplicate.
 sub get_duplicate_keys {
    my ( $self, %args ) = @_;
    die "I need a keys argument" unless $args{keys};
@@ -2033,10 +1982,6 @@ sub get_duplicate_keys {
       $key->{real_cols} = $key->{colnames}; 
       $key->{len_cols}  = length $key->{colnames};
 
-      # The PRIMARY KEY is treated specially. It is effectively never a
-      # duplicate, so it is never removed. It is compared to all other
-      # keys, and in any case of duplication, the PRIMARY is always kept
-      # and the other key removed.
       if ( $key->{name} eq 'PRIMARY' ) {
          $primary_key = $key;
          next ALL_KEYS;
@@ -2044,8 +1989,6 @@ sub get_duplicate_keys {
 
       my $is_fulltext = $key->{type} eq 'FULLTEXT' ? 1 : 0;
 
-      # Key column order matters for all keys except FULLTEXT, so we only
-      # sort if --ignoreorder or FULLTEXT. 
       if ( $args{ignore_order} || $is_fulltext  ) {
          my $ordered_cols = join(',', sort(split(/,/, $key->{colnames})));
          MKDEBUG && _d('Reordered', $key->{name}, 'cols from',
@@ -2053,15 +1996,9 @@ sub get_duplicate_keys {
          $key->{colnames} = $ordered_cols;
       }
 
-      # By default --allstruct is false, so keys of different structs
-      # (BTREE, HASH, FULLTEXT, SPATIAL) are kept and compared separately.
-      # UNIQUE keys are also separated just to make comparisons easier.
       my $push_to = $key->{is_unique} ? \@unique_keys : \@normal_keys;
       if ( !$args{ignore_type} ) {
          $push_to = \@fulltext_keys if $is_fulltext;
-         # TODO:
-         # $push_to = \@hash_keys     if $is_hash;
-         # $push_to = \@spatial_keys  if $is_spatial;
       }
       push @$push_to, $key; 
    }
@@ -2069,9 +2006,6 @@ sub get_duplicate_keys {
    my @dupes;
 
    MKDEBUG && _d('Start unconstraining redundantly unique keys');
-   # See http://code.google.com/p/maatkit/wiki/DeterminingDuplicateKeys
-   # First, determine which unique keys define unique columns and which
-   # define unique sets.
    my %unique_cols;
    my @unique_sets;
    my %unconstrain;   # unique keys to unconstrain
@@ -2081,9 +2015,6 @@ sub get_duplicate_keys {
       my $cols = $unique_key->{cols};
       if ( @$cols == 1 ) {
          MKDEBUG && _d($unique_key->{name},'defines unique column:',$cols->[0]);
-         # Save only the first unique key for the unique col. If there
-         # are others, then they are exact duplicates and will be removed
-         # later when unique keys are compared to unique keys.
          if ( !exists $unique_cols{$cols->[0]} ) {
             $unique_cols{$cols->[0]}  = $unique_key;
             $unique_key->{unique_col} = 1;
@@ -2096,8 +2027,6 @@ sub get_duplicate_keys {
       }
    }
 
-   # Second, find which unique sets can be unconstraind (i.e. those
-   # which have which have at least one unique column).
    UNIQUE_SET:
    foreach my $unique_set ( @unique_sets ) {
       my $n_unique_cols = 0;
@@ -2111,7 +2040,6 @@ sub get_duplicate_keys {
          }
       }
       if ( $n_unique_cols && $unique_set->{key}->{name} ne 'PRIMARY' ) {
-         # Unique set is redundantly constrained.
          MKDEBUG && _d('Will unconstrain unique set',
             $unique_set->{key}->{name},
             'because it is redundantly constrained by key',
@@ -2122,9 +2050,6 @@ sub get_duplicate_keys {
       }
    }
 
-   # And finally, unconstrain the redudantly unique sets found above by
-   # removing them from the list of unique keys and adding them to the
-   # list of normal keys.
    for my $i ( 0..$#unique_keys ) {
       if ( exists $unconstrain{$unique_keys[$i]->{name}} ) {
          MKDEBUG && _d('Normalizing', $unique_keys[$i]->{name});
@@ -2139,14 +2064,6 @@ sub get_duplicate_keys {
    $self->{unique_sets} = \@unique_sets;
    MKDEBUG && _d('No more keys');
 
-   # If you're tempted to check the primary key against uniques before
-   # unconstraining redundantly unique keys: don't. In cases like
-   #    PRIMARY KEY (a, b)
-   #    UNIQUE KEY  (a)
-   # the unique key will be wrongly removed. It is needed to keep
-   # column a unique. The process of unconstraining redundantly unique
-   # keys marks single column unique keys so that they are never removed
-   # (the mark is adding unique_col=>1 to the unique key's hash).
    if ( $primary_key ) {
       MKDEBUG && _d('Start comparing PRIMARY KEY to UNIQUE keys');
       $self->remove_prefix_duplicates(
@@ -2176,21 +2093,13 @@ sub get_duplicate_keys {
          duplicate_keys => \@dupes,
          %pass_args);
 
-   # If --allstruct, then these special struct keys (FULLTEXT, HASH, etc.)
-   # will have already been put in and handled by @normal_keys.
    MKDEBUG && _d('Start comparing FULLTEXT keys');
    $self->remove_prefix_duplicates(
          keys             => \@fulltext_keys,
          exact_duplicates => 1,
          %pass_args);
 
-   # TODO: other structs
 
-   # For engines with a clustered index, if a key ends with a prefix
-   # of the primary key, it's a duplicate. Example:
-   #    PRIMARY KEY (a)
-   #    KEY foo (b, a)
-   # Key foo is redundant to PRIMARY.
    if ( $primary_key
         && $args{clustered}
         && $args{tbl_info}->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
@@ -2221,9 +2130,6 @@ sub get_duplicate_fks {
       foreach my $j ( $i+1..$#fks ) {
          next unless $fks[$j];
 
-         # A foreign key is a duplicate no matter what order the
-         # columns are in, so re-order them alphabetically so they
-         # can be compared.
          my $i_cols  = join(',', sort @{$fks[$i]->{cols}} );
          my $j_cols  = join(',', sort @{$fks[$j]->{cols}} );
          my $i_pcols = join(',', sort @{$fks[$i]->{parent_cols}} );
@@ -2255,11 +2161,6 @@ sub get_duplicate_fks {
    return \@dupes;
 }
 
-# TODO: Document this subroutine.
-# %args should contain the same things passed to get_duplicate_keys(), plus:
-#  *  remove_keys       ????
-#  *  duplicate_keys    ????
-#  *  exact_duplicates  ????
 sub remove_prefix_duplicates {
    my ( $self, %args ) = @_;
    my $keys;
@@ -2316,22 +2217,14 @@ sub remove_prefix_duplicates {
          MKDEBUG && _d('Comparing [keep]', $keep_name, '(',$keep_cols,')',
             'to [remove if dupe]', $rm_name, '(',$rm_cols,')');
 
-         # Compare the whole remove key to the keep key, not just
-         # the their common minimum length prefix. This is correct
-         # because it enables magick that I should document. :-)
          if (    substr($rm_cols, 0, $rm_len_cols)
               eq substr($keep_cols, 0, $rm_len_cols) ) {
 
-            # FULLTEXT keys, for example, are only duplicates if they
-            # are exact duplicates.
             if ( $args{exact_duplicates} && ($rm_len_cols < $keep_len_cols) ) {
                MKDEBUG && _d($rm_name, 'not exact duplicate of', $keep_name);
                next J_KEY;
             }
 
-            # Do not remove the unique key that is constraining a single
-            # column to uniqueness. This prevents UNIQUE KEY (a) from being
-            # removed by PRIMARY KEY (a, b).
             if ( exists $remove_keys->[$rm]->{unique_col} ) {
                MKDEBUG && _d('Cannot remove', $rm_name,
                   'because is constrains col',
@@ -2387,8 +2280,6 @@ sub remove_clustered_duplicates {
    my $pkcols = $args{primary_key}->{colnames};
    my $keys   = $args{keys};
    my @dupes;
-   # TODO: this can be done more easily now that each key has
-   # its cols in an array, so we just have to look at cols[-1].
    KEY:
    for my $i ( 0 .. @$keys - 1 ) {
       my $suffix = $keys->[$i]->{colnames};
@@ -2434,7 +2325,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2999
+# Transformers package 3186
 # ###########################################################################
 
 package Transformers;
@@ -2577,7 +2468,7 @@ sub unix_timestamp {
 sub make_checksum {
    my ( $val ) = @_;
    my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d("$checksum checksum for $val");
+   MKDEBUG && _d($checksum, 'checksum for', $val);
    return $checksum;
 }
 
@@ -2586,7 +2477,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

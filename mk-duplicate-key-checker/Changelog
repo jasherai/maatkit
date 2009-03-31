@@ -1,5 +1,6 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Removed string interpolation from debugging calls (issue 308).
    * Crashed getting size of foreign keys (issue 331).
    * Uppercase column names crashed the tool (issue 306).
    * Connection options were not read from the [client] section (issue 249).
