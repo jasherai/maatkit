@@ -1,5 +1,8 @@
 Changelog for mk-slave-delay:
 
+2009-03-31: version 1.0.12
+
+   * Send debugging output to STDERR (issue 308).
    * Removed string interpolation from debugging calls (issue 308)
    * A MASTER-HOST without binary logging enabled caused a crash (issue 215).
    * Connection options were not read from the [client] section (issue 249).

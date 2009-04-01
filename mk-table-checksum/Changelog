@@ -1,5 +1,8 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2009-03-31: version 1.2.4
+
+   * Send debugging output to STDERR (issue 308).
    * --schema was sensitive to the table's AUTO_INCREMENT value (issue 328).
    * Removed string interpolation from debugging calls (issue 308)
    * Connection options were not read from the [client] section (issue 249).

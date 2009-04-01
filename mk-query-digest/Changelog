@@ -1,5 +1,8 @@
 Changelog for mk-query-digest:
 
+2009-03-31: version 0.9.4
+
+   * Send debugging output to STDERR (issue 308).
    * Crashed trying to take square root of negative number (issue 332).
    * --review-history did not store timestamps correctly (issue 329).
    * --shorten discarded too much information (issue 320).

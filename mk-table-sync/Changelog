@@ -1,5 +1,8 @@
 Changelog for mk-table-sync:
 
+2009-03-31: version 1.0.14
+
+   * Send debugging output to STDERR (issue 308).
    * Added --ignore-columns option (issue 313).
    * Two NULL column values didn't compare properly w/ Stream/GroupBy (issue 218).
    * Removed string interpolation from debugging calls (issue 308)

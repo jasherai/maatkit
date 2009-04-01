@@ -1,5 +1,8 @@
 Changelog for mk-find:
 
+2009-03-31: version 0.9.15
+
+   * Send debugging output to STDERR (issue 308).
    * Removed string interpolation from debugging calls (issue 308).
    * Connection options were not read from the [client] section (issue 249).
    * Set connection options immediately after connecting (issue 286).
