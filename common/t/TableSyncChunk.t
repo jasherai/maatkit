@@ -90,7 +90,6 @@ SKIP: {
 
    $t = new TableSyncChunk(
       handler  => $ch,
-      cols     => [qw(a b c)],
       cols     => $tbl_struct->{cols},
       dbh      => $dbh,
       database => 'test',
@@ -127,7 +126,6 @@ SKIP: {
 
 $t = new TableSyncChunk(
    handler  => $ch,
-   cols     => [qw(a b c)],
    cols     => $tbl_struct->{cols},
    dbh      => $dbh,
    database => 'test',
@@ -156,7 +154,6 @@ is_deeply(
 
 $t = new TableSyncChunk(
    handler  => $ch,
-   cols     => [qw(a b c)],
    cols     => $tbl_struct->{cols},
    dbh      => $dbh,
    database => 'test',
@@ -187,7 +184,6 @@ like ($t->get_sql(
 
 $t = new TableSyncChunk(
    handler  => $ch,
-   cols     => [qw(a b c)],
    cols     => $tbl_struct->{cols},
    dbh      => $dbh,
    database => 'test',
@@ -254,7 +250,6 @@ ok($t->done(), 'Now done');
 
 $t = new TableSyncChunk(
    handler  => $ch,
-   cols     => [qw(a b c)],
    cols     => $tbl_struct->{cols},
    dbh      => $dbh,
    database => 'test',

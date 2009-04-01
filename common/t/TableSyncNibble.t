@@ -92,7 +92,6 @@ SKIP: {
 
    $t = new TableSyncNibble(
       handler  => $ch,
-      cols     => [qw(a b c)],
       cols     => $tbl_struct->{cols},
       dbh      => $dbh,
       database => 'test',
@@ -129,7 +128,6 @@ SKIP: {
 
 $t = new TableSyncNibble(
    handler  => $ch,
-   cols     => [qw(a b c)],
    cols     => $tbl_struct->{cols},
    dbh      => $dbh,
    database => 'test',
@@ -328,7 +326,6 @@ is($t->pending_changes(), 0, 'No pending changes');
 # Now test that SQL_BUFFER_RESULT is in the queries OK
 $t = new TableSyncNibble(
    handler  => $ch,
-   cols     => [qw(a b c)],
    cols     => $tbl_struct->{cols},
    dbh      => $dbh,
    database => 'test',
