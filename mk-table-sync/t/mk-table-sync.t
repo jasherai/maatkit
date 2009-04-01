@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 39;
+use Test::More tests => 44;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -283,6 +283,33 @@ $sb->use('master', '-e "CREATE TABLE issue218.t1 (i INT)"');
 $sb->use('master', '-e "INSERT INTO issue218.t1 VALUES (NULL)"');
 qx(../mk-table-sync --print --database issue218 h=127.1,P=12345 P=12346);
 ok(!$?, 'Issue 218: NULL values compare as equal');
+
+# #############################################################################
+# Issue 313: Add --ignore-columns (and add tests for --columns).
+# #############################################################################
+$sb->load_file('master', 'samples/before.sql');
+$output = `perl ../mk-table-sync --print h=127.1,P=12345,D=test,t=test3 t=test4`;
+is($output, <<EOF,
+UPDATE `test`.`test4` SET `name`=51707 WHERE `id`=15034 LIMIT 1;
+UPDATE `test`.`test4` SET `name`='001' WHERE `id`=1 LIMIT 1;
+EOF
+  'Baseline for --columns: found differences');
+$output = `perl ../mk-table-sync --columns=id --print h=127.1,P=12345,D=test,t=test3 t=test4`;
+is($output, "", '--columns id: found no differences');
+$output = `perl ../mk-table-sync --ignore-columns name --print h=127.1,P=12345,D=test,t=test3 t=test4`;
+is($output, "", '--ignore-columns name: found no differences');
+$output = `perl ../mk-table-sync --ignore-columns id --print h=127.1,P=12345,D=test,t=test3 t=test4`;
+is($output, <<EOF,
+UPDATE `test`.`test4` SET `name`=51707 WHERE `id`=15034 LIMIT 1;
+UPDATE `test`.`test4` SET `name`='001' WHERE `id`=1 LIMIT 1;
+EOF
+  '--ignore-columns id: found differences');
+$output = `perl ../mk-table-sync --columns name --print h=127.1,P=12345,D=test,t=test3 t=test4`;
+is($output, <<EOF,
+UPDATE `test`.`test4` SET `name`=51707 WHERE `id`=15034 LIMIT 1;
+UPDATE `test`.`test4` SET `name`='001' WHERE `id`=1 LIMIT 1;
+EOF
+  '--columns name: found differences');
 
 # #############################################################################
 # Done

@@ -1549,7 +1549,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 3186
+# MySQLDump package 3312
 # ###########################################################################
 package MySQLDump;
 
@@ -5206,6 +5206,11 @@ sub sync_a_table {
          $dbh->{AutoCommit} = !$use_txn;
       }
 
+      # Determine which columns to compare.
+      my @compare_columns = grep {
+         !$opts{'ignore-columns'}->{lc $_};
+      } @{$opts{c} || $tbl_struct->{cols}};
+
       my %status = $syncer->sync_table(
          algorithm     => $opts{a} || '',
          buffer        => $opts{bufferresults} || 0,
@@ -5213,7 +5218,7 @@ sub sync_a_table {
          checksum      => $checksum,
          chunker       => $chunker,
          chunksize     => $opts{chunksize},
-         cols          => $opts{c} || $tbl_struct->{cols},
+         cols          => \@compare_columns,
          dst_db        => $args{dst_db},
          dst_dbh       => $args{dst}->{dbh},
          dst_tbl       => $args{dst_tbl},
@@ -5701,6 +5706,17 @@ The default is C<CRC32>.  Other good choices include C<MD5> and C<SHA1>.  If you
 have installed the C<FNV_64> user-defined function, C<mk-table-sync> will detect
 it and prefer to use it, because it is much faster than the others.  See
 L<mk-table-checksum> for more information and benchmarks.
+
+=item --ignore-columns
+
+type: Hash
+
+Ignore this comma-separated list of column names in comparisons.
+
+This option causes columns not to be compared.  However, if a row is determined
+to differ between tables, all columns in that row will be synced, regardless.
+(It is not currently possible to exclude columns from the sync process itself,
+only from the comparison.)
 
 =item --ignoredb
 
