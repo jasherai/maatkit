@@ -1792,7 +1792,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# KeySize package 2864
+# KeySize package 3290
 # ###########################################################################
 package KeySize;
 
@@ -1810,45 +1810,59 @@ sub new {
 
 sub get_key_size {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(tbl key dbh) ) {
+   foreach my $arg ( qw(name cols tbl_name tbl_struct dbh) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $key = $args{key};
-   foreach my $req_key ( qw(name cols) ) {
-      die "The key hashref argument does not have a $req_key key"
-         unless exists $key->{$req_key};
-   }
 
-   my $sql = 'EXPLAIN SELECT ' . join(', ', @{$key->{cols}})
-           . ' FROM ' . $args{tbl}
-           . " FORCE INDEX (`$key->{name}`)"
+   my $name = $args{name};
+   my @cols = @{$args{cols}};
+
+   if ( @cols == 0 ) {
+      warn "No columns for key $name";
+      return 0;
+   }
+  
+   my $key_exists = exists $args{tbl_struct}->{keys}->{ $name } ? 1 : 0;
+   MKDEBUG && _d('Key', $name, 'exists in', $args{tbl_name}, ':', $key_exists);
+
+   my $sql = 'EXPLAIN SELECT ' . join(', ', @cols)
+           . ' FROM ' . $args{tbl_name}
+           . ($key_exists ? " FORCE INDEX (`$name`)" : '')
            . ' WHERE ';
    my @where_cols;
-   foreach my $col ( @{$key->{cols}} ) {
+   foreach my $col ( @cols ) {
       push @where_cols, "$col=1";
    }
-   if ( scalar @{$key->{cols}} == 1 ) {
-      push @where_cols, "$key->{cols}->[0]<>1";
+   if ( scalar @cols == 1 ) {
+      push @where_cols, "$cols[0]<>1";
    }
    $sql .= join(' OR ', @where_cols);
-   MKDEBUG && _d("key size sql: $sql");
+   MKDEBUG && _d('sql:', $sql);
 
-   my $explain = $args{dbh}->selectall_hashref($sql, 'id');
+   my $explain;
+   eval { $explain = $args{dbh}->selectall_hashref($sql, 'id'); };
+   if ( $args{dbh}->err ) {
+      warn "Cannot get size of $name key: $DBI::errstr";
+      return 0;
+   }
    my $key_len = $explain->{1}->{key_len};
    my $rows    = $explain->{1}->{rows};
+   my $key     = $explain->{1}->{key};
+
+   MKDEBUG && _d('MySQL chose key:', $key, 'len:', $key_len, 'rows:', $rows);
 
    my $key_size = 0;
    if ( defined $key_len && defined $rows ) {
       $key_size = $key_len * $rows;
    }
-   elsif ( MKDEBUG ) {
-      _d("key_len or rows NULL in EXPLAIN:\n"
-         . join("\n",
+   else {
+      MKDEBUG && _d("key_len or rows NULL in EXPLAIN:\n",
+         join("\n",
             map { "$_: ".($explain->{1}->{$_} ? $explain->{1}->{$_} : 'NULL') }
             keys %{$explain->{1}}));
    }
 
-   return $key_size;
+   return wantarray ? ($key_size, $key) : $key_size;
 }
 
 sub _d {
@@ -1856,7 +1870,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
