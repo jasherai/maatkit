@@ -4,6 +4,7 @@ Changelog for mk-slave-delay:
    * A MASTER-HOST without binary logging enabled caused a crash (issue 215).
    * Connection options were not read from the [client] section (issue 249).
    * Set connection options immediately after connecting (issue 286).
+   * Updates to shared code.
 
 2009-02-01: version 1.0.11
 

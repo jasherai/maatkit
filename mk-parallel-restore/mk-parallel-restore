@@ -30,7 +30,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 3028
+# OptionParser package 3297
 # ###########################################################################
 package OptionParser;
 
@@ -78,7 +78,7 @@ sub pod_to_spec {
       chomp $para;
       $para =~ s/\s+/ /g;
       $para =~ s/$POD_link_re/$1/go;
-      MKDEBUG && _d('First option rules: '. $para);
+      MKDEBUG && _d('First option rules:', $para);
       push @rules, $para;
    }
 
@@ -172,21 +172,21 @@ sub new {
          $opt->{c} = $opt->{s} =~ m/\+/;
          $opt->{g} ||= 'o';
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            MKDEBUG && _d("Option $opt->{k} type: $y");
+            MKDEBUG && _d('Option', $opt->{k}, 'type:', $y);
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
          if ( $opt->{d} =~ m/required/ ) {
             $opt->{r} = 1;
-            MKDEBUG && _d("Option $opt->{k} is required");
+            MKDEBUG && _d('Option', $opt->{k}, 'is required');
          }
          if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
-            MKDEBUG && _d("Option $opt->{k} has a default");
+            MKDEBUG && _d('Option', $opt->{k}, 'has a default');
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            MKDEBUG && _d("Option $opt->{k} $dis");
+            MKDEBUG && _d('Option', $opt->{k}, $dis);
          }
       }
       else { # It's an option rule, not a spec.
@@ -197,11 +197,11 @@ sub new {
                } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
-               MKDEBUG && _d(@participants, ' are mutually exclusive');
+               MKDEBUG && _d(@participants, 'are mutually exclusive');
             }
             if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
-               MKDEBUG && _d(@participants, ' require at least one');
+               MKDEBUG && _d(@participants, 'require at least one');
             }
          }
          elsif ( $opt =~ m/default to/ ) {
@@ -210,7 +210,7 @@ sub new {
                   $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
-            MKDEBUG && _d(@participants, ' copy from each other');
+            MKDEBUG && _d(@participants, 'copy from each other');
          }
          elsif ( $opt  =~ m/allowed with/ ) {
             my @participants = map {
@@ -267,7 +267,7 @@ sub get_participants {
          }
       }
    }
-   MKDEBUG && _d("Participants for $str: ", @participants);
+   MKDEBUG && _d('Participants for', $str, ':', @participants);
    return @participants;
 }
 
@@ -302,8 +302,8 @@ sub parse {
                           else {
                              $vals{$spec->{k}} = $val;
                           }
-                          MKDEBUG && _d("Given option: $opt ($spec->{k}) "
-                             . " = $val");
+                          MKDEBUG && _d('Given option:',
+                             $opt, '(',$spec->{k},') =', $val);
                           $self->{given}->{$spec->{k}} = $vals{$spec->{k}};
                        }
       } @specs
@@ -323,7 +323,7 @@ sub parse {
 
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
-      MKDEBUG && _d("Unsetting options: ", @disses);
+      MKDEBUG && _d('Unsetting options:', @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
@@ -363,8 +363,8 @@ sub parse {
          if ( !$suffix ) {
             my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
             $suffix = $s || 's';
-            MKDEBUG && _d("No suffix given; using $suffix for $spec->{k} "
-               . "(value: '$val')");
+            MKDEBUG && _d('No suffix given; using', $suffix, 'for',
+               $spec->{k}, '(value:', $val, ')');
          }
          if ( $suffix =~ m/[smhd]/ ) {
             $val = $suffix eq 's' ? $num            # Seconds
@@ -372,18 +372,19 @@ sub parse {
                  : $suffix eq 'h' ? $num * 3600     # Hours
                  :                  $num * 86400;   # Days
             $vals{$spec->{k}} = $val;
-            MKDEBUG && _d("Setting option $spec->{k} to $val");
+            MKDEBUG && _d('Setting option', $spec->{k}, 'to', $val);
          }
          else {
             $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
-         MKDEBUG && _d("Parsing option $spec->{y} as a DSN");
+         MKDEBUG && _d('Parsing option', $spec->{y}, 'as a DSN');
          my $from_key = $self->{copyfrom}->{$spec->{k}};
          my $default = {};
          if ( $from_key ) {
-            MKDEBUG && _d("Option $spec->{y} DSN copies from option $from_key");
+            MKDEBUG && _d('Option', $spec->{y}, 'DSN copies from option',
+               $from_key);
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
@@ -393,7 +394,8 @@ sub parse {
          if ( defined $num ) {
             if ( $factor ) {
                $num *= $factor_for{$factor};
-               MKDEBUG && _d("Setting option $spec->{y} to num * factor");
+               MKDEBUG && _d('Setting option', $spec->{y},
+                  'to num', $num, '* factor', $factor);
             }
             $vals{$spec->{k}} = ($pre || '') . $num;
          }
@@ -404,7 +406,7 @@ sub parse {
    }
 
    foreach my $spec ( grep { $_->{y} } @specs ) {
-      MKDEBUG && _d("Treating option $spec->{k} as a list");
+      MKDEBUG && _d('Treating option', $spec->{k}, 'as a list');
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
          $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -421,7 +423,8 @@ sub parse {
       delete @defined_opts{ @$allowed_opts };
       foreach my $defined_opt ( keys %defined_opts ) {
          MKDEBUG
-            && _d("Unsetting options: $defined_opt (not allowed with $opt)");
+            && _d('Unsetting option', $defined_opt,
+               '; it is not allowed with option', $opt);
          $vals{$defined_opt} = undef;
       }
    }
@@ -586,12 +589,31 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
+sub read_para_after {
+   my ( $self, $file, $regex ) = @_;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=pod$/m;
+      last;
+   }
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/$regex/;
+      last;
+   }
+   $para = <$fh>;
+   chomp($para);
+   close $fh or die "Can't close $file: $OS_ERROR";
+   return $para;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -601,7 +623,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 2215
+# Quoter package 3186
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -640,6 +662,17 @@ sub quote_val {
    );
 }
 
+sub split_unquote {
+   my ( $self, $db_tbl, $default_db ) = @_;
+   $db_tbl =~ s/`//g;
+   my ( $db, $tbl ) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   return ($db, $tbl);
+}
+
 1;
 
 # ###########################################################################
@@ -647,7 +680,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3140
+# DSNParser package 3186
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -709,7 +742,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
-      MKDEBUG && _d('Adding extra property ' . $opt->{key});
+      MKDEBUG && _d('Adding extra property', $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -718,7 +751,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
-      MKDEBUG && _d("Setting $prop property");
+      MKDEBUG && _d('Setting', $prop, 'property');
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -730,7 +763,7 @@ sub parse {
       MKDEBUG && _d('No DSN to parse');
       return;
    }
-   MKDEBUG && _d("Parsing $dsn");
+   MKDEBUG && _d('Parsing', $dsn);
    $prev     ||= {};
    $defaults ||= {};
    my %given_props;
@@ -743,26 +776,27 @@ sub parse {
          $given_props{$prop_key} = $prop_val;
       }
       elsif ( $prop_autokey ) {
-         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         MKDEBUG && _d('Interpreting', $dsn_part, 'as',
+            $prop_autokey, '=', $dsn_part);
          $given_props{$prop_autokey} = $dsn_part;
       }
       else {
-         MKDEBUG && _d("Bad DSN part: $dsn_part");
+         MKDEBUG && _d('Bad DSN part:', $dsn_part);
       }
    }
 
    foreach my $key ( keys %opts ) {
-      MKDEBUG && _d("Finding value for $key");
+      MKDEBUG && _d('Finding value for', $key);
       $final_props{$key} = $given_props{$key};
       if (   !defined $final_props{$key}
            && defined $prev->{$key} && $opts{$key}->{copy} )
       {
          $final_props{$key} = $prev->{$key};
-         MKDEBUG && _d("Copying value for $key from previous DSN");
+         MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
       }
       if ( !defined $final_props{$key} ) {
          $final_props{$key} = $defaults->{$key};
-         MKDEBUG && _d("Copying value for $key from defaults");
+         MKDEBUG && _d('Copying value for', $key, 'from defaults');
       }
    }
 
@@ -866,12 +900,12 @@ sub get_dbh {
 
             $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
                  . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
-            MKDEBUG && _d("$dbh: $sql");
+            MKDEBUG && _d($dbh, ':', $sql);
             $dbh->do($sql);
 
             if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
                $sql = "/*!40101 SET NAMES $charset*/";
-               MKDEBUG && _d("$dbh: $sql");
+               MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
                MKDEBUG && _d('Enabling charset for STDOUT');
                if ( $charset eq 'utf8' ) {
@@ -885,7 +919,7 @@ sub get_dbh {
 
             if ( $self->prop('setvars') ) {
                $sql = "SET " . $self->prop('setvars');
-               MKDEBUG && _d("$dbh: $sql");
+               MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
          }
@@ -893,7 +927,7 @@ sub get_dbh {
       if ( !$dbh && $EVAL_ERROR ) {
          MKDEBUG && _d($EVAL_ERROR);
          if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
-            MKDEBUG && _d("Going to try again without utf8 support");
+            MKDEBUG && _d('Going to try again without utf8 support');
             delete $defaults->{mysql_enable_utf8};
          }
          if ( !$tries ) {
@@ -906,12 +940,11 @@ sub get_dbh {
       $dbh,
       Dumper($dbh->selectrow_hashref(
          'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
-      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
-      ' Character set info: ',
-      Dumper($dbh->selectall_arrayref(
-         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
-      ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
-      ' $DBI::VERSION: ', $DBI::VERSION,
+      'Connection info:',      $dbh->{mysql_hostinfo},
+      'Character set info:',   Dumper($dbh->selectall_arrayref(
+                     'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
+      '$DBD::mysql::VERSION:', $DBD::mysql::VERSION,
+      '$DBI::VERSION:',        $DBI::VERSION,
    );
 
    return $dbh;
@@ -949,7 +982,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -959,10 +992,9 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2999
+# Transformers package 3186
 # ###########################################################################
 
-# Transformers - Common transformation and beautification subroutines
 package Transformers;
 
 use strict;
@@ -996,12 +1028,8 @@ sub micro_t {
 
    $t = 0 if $t < 0;
 
-   # "Remove" scientific notation so the regex below does not make
-   # 6.123456e+18 into 6.123456.
    $t = sprintf('%.17f', $t) if $t =~ /e/;
 
-   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
-   # because sprintf() rounds.
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
@@ -1022,7 +1050,6 @@ sub micro_t {
    return $f;
 }
 
-# Returns what percentage $is of $of.
 sub percentage_of {
    my ( $is, $of, %args ) = @_;
    my $p   = $args{p} || 0; # float precision
@@ -1035,7 +1062,6 @@ sub secs_to_time {
    $secs ||= 0;
    return '00:00' unless $secs;
 
-   # Decide what format to use, if not given
    $fmt ||= $secs >= 86_400 ? 'd'
           : $secs >= 3_600  ? 'h'
           :                   'm';
@@ -1085,7 +1111,6 @@ sub ts {
       $year, $mon, $mday, $hour, $min, $sec);
 }
 
-# Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.
 sub parse_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
@@ -1097,8 +1122,6 @@ sub parse_timestamp {
    return $val;
 }
 
-# Turns a properly formatted timestamp like 2007-10-15 01:43:52
-# into an int (seconds since epoch)
 sub unix_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
@@ -1109,11 +1132,10 @@ sub unix_timestamp {
    return $val;
 }
 
-# Returns the rightmost 64 bits of an MD5 checksum of the value.
 sub make_checksum {
    my ( $val ) = @_;
    my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d("$checksum checksum for $val");
+   MKDEBUG && _d($checksum, 'checksum for', $val);
    return $checksum;
 }
 
@@ -1122,9 +1144,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

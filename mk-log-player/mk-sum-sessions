@@ -25,12 +25,12 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 2825
+# OptionParser package 3297
 # ###########################################################################
+package OptionParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package OptionParser;
 
 use Getopt::Long;
 use List::Util qw(max);
@@ -39,6 +39,101 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+   $file ||= __FILE__;
+   open my $fh, '<', $file or die "Can't open $file: $OS_ERROR";
+
+   my %types = (
+      string => 's', # standard Getopt type
+      'int'  => 'i', # standard Getopt type
+      float  => 'f', # standard Getopt type
+      Hash   => 'H', # hash, formed from a comma-separated list
+      hash   => 'h', # hash as above, but only if a value is given
+      Array  => 'A', # array, similar to Hash
+      array  => 'a', # array, similar to hash
+      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dsn}
+      size   => 'z', # size with kMG suffix (powers of 2^10)
+      'time' => 'm', # time, with an optional suffix of s/h/m/d
+   );
+   my @specs = ();
+   my @rules = ();
+   my $para;
+   my $option;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $para =~ s/$POD_link_re/$1/go;
+      MKDEBUG && _d('First option rules:', $para);
+      push @rules, $para;
+   }
+
+   do {
+      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
+         MKDEBUG && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/$POD_link_re/$1/go;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
+         push @specs, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . (defined $props{default} ? " (default $props{default})" : ''),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+
+         if ( $option ) {
+            if ( my ($line)
+                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
+               1 while ( $line =~ s/$POD_link_re/$1/go );
+               push @rules, $line;
+            }
+         }
+
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @specs, @rules;
+}
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -52,11 +147,13 @@ sub new {
    my %disables;
    my %copyfrom;
    my @allowed_with;
+
    unshift @opts,
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
+
    foreach my $opt ( @opts ) {
-      if ( ref $opt ) {
+      if ( ref $opt ) { # It's an option spec, not a rule.
          my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
          $opt->{k} = $short || $long;
          $key_for{$long} = $opt->{k};
@@ -67,27 +164,27 @@ sub new {
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
+         $opt->{c} = $opt->{s} =~ m/\+/;
          $opt->{g} ||= 'o';
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            MKDEBUG && _d("Option $opt->{k} type: $y");
+            MKDEBUG && _d('Option', $opt->{k}, 'type:', $y);
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
          if ( $opt->{d} =~ m/required/ ) {
             $opt->{r} = 1;
-            MKDEBUG && _d("Option $opt->{k} is required");
+            MKDEBUG && _d('Option', $opt->{k}, 'is required');
          }
          if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
-            MKDEBUG && _d("Option $opt->{k} has a default");
+            MKDEBUG && _d('Option', $opt->{k}, 'has a default');
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            MKDEBUG && _d("Option $opt->{k} $dis");
+            MKDEBUG && _d('Option', $opt->{k}, $dis);
          }
       }
-      else { # It's an instruction.
-
+      else { # It's an option rule, not a spec.
          if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
             my @participants = map {
                   die "No such option '$_' in $opt" unless $long_for{$_};
@@ -95,11 +192,11 @@ sub new {
                } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
-               MKDEBUG && _d(@participants, ' are mutually exclusive');
+               MKDEBUG && _d(@participants, 'are mutually exclusive');
             }
             if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
-               MKDEBUG && _d(@participants, ' require at least one');
+               MKDEBUG && _d(@participants, 'require at least one');
             }
          }
          elsif ( $opt =~ m/default to/ ) {
@@ -108,7 +205,7 @@ sub new {
                   $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
-            MKDEBUG && _d(@participants, ' copy from each other');
+            MKDEBUG && _d(@participants, 'copy from each other');
          }
          elsif ( $opt  =~ m/allowed with/ ) {
             my @participants = map {
@@ -118,7 +215,6 @@ sub new {
                } $class->get_participants($opt);
             push @allowed_with, \@participants;
          }
-
       }
    }
 
@@ -135,7 +231,7 @@ sub new {
 
    my $self = {
       specs        => [ grep { ref $_ } @opts ],
-      notes        => [],
+      errors       => [],
       instr        => [ grep { !ref $_ } @opts ],
       mutex        => \@mutex,
       defaults     => \%defaults,
@@ -147,6 +243,7 @@ sub new {
       strict       => 1,
       groups       => [ { k => 'o', d => 'Options' } ],
       allowed_with => \@allowed_with,
+      given        => {},
    };
 
    return bless $self, $class;
@@ -165,7 +262,7 @@ sub get_participants {
          }
       }
    }
-   MKDEBUG && _d("Participants for $str: ", @participants);
+   MKDEBUG && _d('Participants for', $str, ':', @participants);
    return @participants;
 }
 
@@ -173,7 +270,6 @@ sub parse {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
    my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-
    my %opt_seen;
    my %vals = %{$self->{defaults}};
    @vals{keys %defaults} = values %defaults;
@@ -187,9 +283,26 @@ sub parse {
          unless $opt_seen{$key};
    }
 
+   $self->{given} = {}; # in case options are re-parsed
+
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
-      or $self->error('Error parsing options');
+   GetOptions(
+      map {
+         my $spec = $_;
+         $spec->{s} => sub {
+                          my ( $opt, $val ) = @_;
+                          if ( $spec->{c} ) {
+                             $vals{$spec->{k}}++
+                          }
+                          else {
+                             $vals{$spec->{k}} = $val;
+                          }
+                          MKDEBUG && _d('Given option:',
+                             $opt, '(',$spec->{k},') =', $val);
+                          $self->{given}->{$spec->{k}} = $vals{$spec->{k}};
+                       }
+      } @specs
+   ) or $self->error('Error parsing options');
 
    if ( $vals{version} ) {
       my $prog = $self->prog;
@@ -205,7 +318,7 @@ sub parse {
 
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
-      MKDEBUG && _d("Unsetting options: ", @disses);
+      MKDEBUG && _d('Unsetting options:', @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
@@ -245,8 +358,8 @@ sub parse {
          if ( !$suffix ) {
             my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
             $suffix = $s || 's';
-            MKDEBUG && _d("No suffix given; using $suffix for $spec->{k} "
-               . "(value: '$val')");
+            MKDEBUG && _d('No suffix given; using', $suffix, 'for',
+               $spec->{k}, '(value:', $val, ')');
          }
          if ( $suffix =~ m/[smhd]/ ) {
             $val = $suffix eq 's' ? $num            # Seconds
@@ -254,18 +367,19 @@ sub parse {
                  : $suffix eq 'h' ? $num * 3600     # Hours
                  :                  $num * 86400;   # Days
             $vals{$spec->{k}} = $val;
-            MKDEBUG && _d("Setting option $spec->{k} to $val");
+            MKDEBUG && _d('Setting option', $spec->{k}, 'to', $val);
          }
          else {
             $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
-         MKDEBUG && _d("Parsing option $spec->{y} as a DSN");
+         MKDEBUG && _d('Parsing option', $spec->{y}, 'as a DSN');
          my $from_key = $self->{copyfrom}->{$spec->{k}};
          my $default = {};
          if ( $from_key ) {
-            MKDEBUG && _d("Option $spec->{y} DSN copies from option $from_key");
+            MKDEBUG && _d('Option', $spec->{y}, 'DSN copies from option',
+               $from_key);
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
@@ -275,7 +389,8 @@ sub parse {
          if ( defined $num ) {
             if ( $factor ) {
                $num *= $factor_for{$factor};
-               MKDEBUG && _d("Setting option $spec->{y} to num * factor");
+               MKDEBUG && _d('Setting option', $spec->{y},
+                  'to num', $num, '* factor', $factor);
             }
             $vals{$spec->{k}} = ($pre || '') . $num;
          }
@@ -286,7 +401,7 @@ sub parse {
    }
 
    foreach my $spec ( grep { $_->{y} } @specs ) {
-      MKDEBUG && _d("Treating option $spec->{k} as a list");
+      MKDEBUG && _d('Treating option', $spec->{k}, 'as a list');
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
          $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -298,12 +413,13 @@ sub parse {
 
    foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
       my $opt = $allowed_opts->[0];
-      next if !defined $vals{$opt};
+      next unless $vals{$opt};
       my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
       delete @defined_opts{ @$allowed_opts };
       foreach my $defined_opt ( keys %defined_opts ) {
          MKDEBUG
-            && _d("Unsetting options: $defined_opt (not allowed with $opt)");
+            && _d('Unsetting option', $defined_opt,
+               '; it is not allowed with option', $opt);
          $vals{$defined_opt} = undef;
       }
    }
@@ -314,7 +430,7 @@ sub parse {
 sub error {
    my ( $self, $note ) = @_;
    $self->{__error__} = 1;
-   push @{$self->{notes}}, $note;
+   push @{$self->{errors}}, $note;
 }
 
 sub prog {
@@ -357,8 +473,8 @@ sub usage_or_errors {
 sub errors {
    my ( $self ) = @_;
    my $usage = $self->prompt() . "\n";
-   if ( (my @notes = @{$self->{notes}}) ) {
-      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   if ( (my @errors = @{$self->{errors}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors) . "\n";
    }
    return $usage . "\n" . $self->descr();
 }
@@ -428,102 +544,6 @@ sub usage {
    return $usage;
 }
 
-sub pod_to_spec {
-   my ( $self, $file ) = @_;
-
-   my %types = (
-      'time' => 'm',
-      'int'  => 'i',
-      string => 's',
-      hash   => 'h',
-      Hash   => 'H',
-      array  => 'a',
-      Array  => 'A',
-      size   => 'z',
-      DSN    => 'd',
-      float  => 'f',
-   );
-
-   my @spec = ();
-   my @special_options = ();
-   $file ||= __FILE__;
-   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
-   my $para;
-   my $option;
-
-   local $INPUT_RECORD_SEPARATOR = '';
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 OPTIONS/;
-      last;
-   }
-
-   while ( $para = <$fh> ) {
-      MKDEBUG && _d($para);
-      last if $para =~ m/^=over/;
-      chomp $para;
-      $para =~ s/\s+/ /g;
-      $para =~ s/$POD_link_re/$1/go;
-      push @special_options, $para;
-   }
-
-   do {
-      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
-         MKDEBUG && _d($para);
-         my %props;
-         $para = <$fh>;
-         if ( $para =~ m/: / ) {
-            $para =~ s/\s+\Z//g;
-            %props = map { split(/: /, $_) } split(/; /, $para);
-            if ( $props{'short form'} ) {
-               $props{'short form'} =~ s/-//;
-            }
-            $para = <$fh>;
-         }
-         $para =~ s/\s+\Z//g;
-         $para =~ s/\s+/ /g;
-         $para =~ s/$POD_link_re/$1/go;
-         if ( $para =~ m/^[^.]+\.$/ ) {
-            $para =~ s/\.$//;
-         }
-
-         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
-            $option = $base_option;
-            $props{'negatable'} = 1;
-         }
-
-         push @spec, {
-            s => $option
-               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
-               . ( $props{'negatable'}  ? '!'                        : '' )
-               . ( $props{'cumulative'} ? '+'                        : '' )
-               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
-            d => $para
-               . (defined $props{default} ? " (default $props{default})" : ''),
-         };
-      }
-      while ( $para = <$fh> ) {
-         last unless $para;
-
-         if ( $option ) {
-            if ( my ($line)
-                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
-               1 while ( $line =~ s/$POD_link_re/$1/go );
-               push @special_options, $line;
-            }
-         }
-
-         if ( $para =~ m/^=head1/ ) {
-            $para = undef; # Can't 'last' out of a do {} block.
-            last;
-         }
-         last if $para =~ m/^=item --/;
-      }
-   } while ( $para );
-
-   close $fh;
-   return @spec, @special_options;
-}
-
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
@@ -564,12 +584,31 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
+sub read_para_after {
+   my ( $self, $file, $regex ) = @_;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=pod$/m;
+      last;
+   }
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/$regex/;
+      last;
+   }
+   $para = <$fh>;
+   chomp($para);
+   close $fh or die "Can't close $file: $OS_ERROR";
+   return $para;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -579,7 +618,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2999
+# Transformers package 3186
 # ###########################################################################
 
 package Transformers;
@@ -722,7 +761,7 @@ sub unix_timestamp {
 sub make_checksum {
    my ( $val ) = @_;
    my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d("$checksum checksum for $val");
+   MKDEBUG && _d($checksum, 'checksum for', $val);
    return $checksum;
 }
 
@@ -731,7 +770,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -741,63 +780,25 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3018
+# EventAggregator package 3280
 # ###########################################################################
-
 package EventAggregator;
-
-# This package's function is to take hashrefs and aggregate them as you specify.
-# It basically does a GROUP BY.  If you say to group by z and calculate
-# aggregate statistics for a, b, c then it manufactures functions to record
-# various kinds of stats for the a per z, b per z, and c per z in incoming
-# hashrefs.  Usually you'll use it a little less abstractly: you'll say the
-# incoming hashrefs are parsed query events from the MySQL slow query log, and
-# you want it to calculate stats for Query_time, Rows_read etc aggregated by
-# query fingerprint.  It automatically determines whether a specified property
-# is a string, number or Yes/No value and aggregates them appropriately.
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use POSIX qw(floor);
 
-# ###########################################################################
-# Set up some constants for bucketing values.  It is impossible to keep all
-# values seen in memory, but putting them into logarithmically scaled buckets
-# and just incrementing the bucket each time works, although it is imprecise.
-# ###########################################################################
 use constant MKDEBUG      => $ENV{MKDEBUG};
 use constant BUCK_SIZE    => 1.05;
 use constant BASE_LOG     => log(BUCK_SIZE);
-use constant BASE_OFFSET  => -floor(log(.000001) / BASE_LOG); # typically 284
+use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
 
-our @buckets  = map { 0 } (1 .. NUM_BUCK);
-my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
-{
-   my $cur = BUCK_SIZE;
-   for ( 2 .. NUM_BUCK - 1 ) {
-      push @buck_vals, MIN_BUCK * ($cur *= BUCK_SIZE);
-   }
-}
+our @buckets  = map { 0 } (0..NUM_BUCK-1);
 
-# The best way to see how to use this is to look at the .t file.
-#
-# %args is a hash containing:
-# groupby      The name of the property to group/aggregate by.
-# attributes   A hashref.  Each key is the name of an element to aggregate.
-#              And the values of those elements are arrayrefs of the
-#              values to pull from the hashref, with any second or subsequent
-#              values being fallbacks for the first in case it's not defined.
-# worst        The name of an element which defines the "worst" hashref in its
-#              class.  If this is Query_time, then each class will contain
-#              a sample that holds the event with the largest Query_time.
-# unroll_limit If this many events have been processed and some handlers haven't
-#              been generated yet (due to lack of sample data) unroll the loop
-#              anyway.  Defaults to 50.
-# attrib_limit Sanity limit for attribute values.  If the value exceeds the
-#              limit, use the last-seen for this class; if none, then 0.
+my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(groupby worst attributes) ) {
@@ -814,23 +815,30 @@ sub new {
       worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
       attrib_limit => $args{attrib_limit},
+      result_classes => {},
+      result_globals => {},
+      result_samples => {},
    }, $class;
 }
 
-# Aggregate an event hashref's properties.
 sub aggregate {
    my ( $self, $event ) = @_;
 
    my $group_by = $event->{$self->{groupby}};
    return unless defined $group_by;
 
+   if ( exists $self->{unrolled_loops} ) {
+      return $self->{unrolled_loops}->($self, $event, $group_by);
+   }
+
+   my @attrs = sort keys %{$self->{attributes}};
    ATTRIB:
-   foreach my $attrib ( keys %{$self->{attributes}} ) {
-      # The value of the attribute ( $group_by ) may be an arrayref.
+   foreach my $attrib ( @attrs ) {
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
          my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
          my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+         my $samples       = $self->{result_samples};
          my $handler = $self->{handlers}->{ $attrib };
          if ( !$handler ) {
             $handler = $self->make_handler(
@@ -842,63 +850,67 @@ sub aggregate {
             $self->{handlers}->{$attrib} = $handler;
          }
          next GROUPBY unless $handler;
-         $handler->($event, $class_attrib, $global_attrib);
+         $samples->{$val} ||= $event; # Initialize to the first event.
+         $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
       }
+   }
+
+   if ( $self->{n_queries}++ > 50 # Give up waiting after 50 events.
+      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs
+   ) {
+      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
+      my $globs = $self->{result_globals}; # Global stats for each
+      my $samples = $self->{result_samples};
+
+      my @lines = (
+         'my ( $self, $event, $group_by ) = @_;',
+         'my ($val, $class, $global, $idx);',
+         (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
+         'my $temp = $self->{result_class}->{ $group_by }
+            ||= { map { $_ => { } } @attrs };',
+         '$samples->{$group_by} ||= $event;', # Always start with the first.
+      );
+      foreach my $i ( 0 .. $#attrs ) {
+         push @lines, (
+            '$class  = $temp->{"'  . $attrs[$i] . '"};',
+            '$global = $globs->{"' . $attrs[$i] . '"};',
+            $self->{unrolled_for}->{$attrs[$i]},
+         );
+      }
+      if ( ref $group_by ) {
+         push @lines, '}'; # Close the loop opened above
+      }
+      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+      unshift @lines, 'sub {';
+      push @lines, '}';
+
+      my $code = join("\n", @lines);
+      MKDEBUG && _d('Unrolled subroutine:', @lines);
+      my $sub = eval $code;
+      die if $EVAL_ERROR;
+      $self->{unrolled_loops} = $sub;
    }
 }
 
-# Return the aggregated results.
 sub results {
    my ( $self ) = @_;
    return {
       classes => $self->{result_class},
       globals => $self->{result_globals},
+      samples => $self->{result_samples},
    };
 }
 
-# Return the attributes that this object is tracking, and their data types, as
-# a hashref of name => type.
 sub attributes {
    my ( $self ) = @_;
    return $self->{type_for};
 }
 
-# Make subroutines that do things with events.
-#
-# $attrib: the name of the attrib (Query_time, Rows_read, etc)
-# $event:  a sample event
-# %args:
-#     min => keep min for this attrib (default except strings)
-#     max => keep max (default except strings)
-#     sum => keep sum (default for numerics)
-#     cnt => keep count (default except strings)
-#     unq => keep all unique values per-class (default for strings and bools)
-#     all => keep a bucketed list of values seen per class (default for numerics)
-#     glo => keep stats globally as well as per-class (default)
-#     trf => An expression to transform the value before working with it
-#     wor => Whether to keep worst-samples for this attrib (default no)
-#     alt => Arrayref of other name(s) for the attribute, like db => Schema.
-#
-# The bucketed list works this way: each range of values from MIN_BUCK in
-# increments of BUCK_SIZE (that is 5%) we consider a bucket.  We keep NUM_BUCK
-# buckets.  The upper end of the range is more than 1.5e15 so it should be big
-# enough for almost anything.  The buckets are accessed by a log base BUCK_SIZE,
-# so floor(log(N)/log(BUCK_SIZE)).  The smallest bucket's index is -284. We
-# shift all values up 284 so we have values from 0 to 999 that can be used as
-# array indexes.  A value that falls into a bucket simply increments the array
-# entry.
-#
-# This eliminates the need to keep and sort all values to calculate median,
-# standard deviation, 95th percentile etc.  Thus the memory usage is bounded by
-# the number of distinct aggregated values, not the number of events.
-#
-# Return value:
-# a subroutine with this signature:
-#    my ( $event, $class, $global ) = @_;
-# where
-#  $event   is the event
-#  $class   is the container to store the aggregated values
-#  $global  is is the container to store the globally aggregated values
+sub type_for {
+   my ( $self, $attrib ) = @_;
+   return $self->{type_for}->{$attrib};
+}
+
 sub make_handler {
    my ( $self, $attrib, $event, %args ) = @_;
    die "I need an attrib" unless defined $attrib;
@@ -910,12 +922,12 @@ sub make_handler {
    }
    return unless defined $val; # Can't decide type if it's undef.
 
-   # Ripped off from Regexp::Common::number.
-   my $float_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)}i;
+   my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
    my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
-   MKDEBUG && _d("Type for $attrib is $type (sample: $val), is array: $is_array");
+   MKDEBUG && _d('Type for', $attrib, 'is', $type,
+      '(sample:', $val, '), is array:', $is_array);
    $self->{type_for}->{$attrib} = $type;
 
    %args = ( # Set up defaults
@@ -961,16 +973,13 @@ sub make_handler {
       }
       if ( $args{all} ) {
          push @tmp, (
-            # If you change this code, change the similar code in bucketize.
-            'PLACE->{all} ||= [ @buckets ];',
-            '$idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
-            '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
+            'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
+            '++PLACE->{all}->[ EventAggregator::bucket_idx($val) ];',
          );
       }
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
-   # We only save unique/worst values for the class, not globally.
    if ( $args{unq} ) {
       push @lines, '++$class->{unq}->{$val};';
    }
@@ -978,13 +987,11 @@ sub make_handler {
       my $op = $type eq 'num' ? '>=' : 'ge';
       push @lines, (
          'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-         '   $class->{sample} = $event;',
+         '   $samples->{$group_by} = $event;',
          '}',
       );
    }
 
-   # Make sure the value is constrained to legal limits.  If it's out of bounds,
-   # just use the last-seen value for it.
    my @limit;
    if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
@@ -995,22 +1002,25 @@ sub make_handler {
       );
    }
 
-   # Save the code for later, as part of an "unrolled" subroutine.
    my @unrolled = (
       "\$val = \$event->{'$attrib'};",
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" } @{$args{alt}}),
+      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
+      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
+         grep { $_ ne $attrib } @{$args{alt}}),
       'defined $val && do {',
       ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
       '};',
+      ($is_array ? ('}') : ()),
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
 
-   # Build a subroutine with the code.
    unshift @lines, (
       'sub {',
-      'my ( $event, $class, $global ) = @_;',
+      'my ( $event, $class, $global, $samples, $group_by ) = @_;',
       'my ($val, $idx);', # NOTE: define all variables here
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" } @{$args{alt}}),
+      "\$val = \$event->{'$attrib'};",
+      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
+         grep { $_ ne $attrib } @{$args{alt}}),
       'return unless defined $val;',
       ($is_array ? ('foreach my $val ( @$val ) {') : ()),
       @limit,
@@ -1020,71 +1030,51 @@ sub make_handler {
    my $code = join("\n", @lines);
    $self->{code_for}->{$attrib} = $code;
 
-   MKDEBUG && _d("Metric handler for '$attrib': ", @lines);
+   MKDEBUG && _d('Metric handler for', $attrib, ':', @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
    return $sub;
 }
 
-# This method is for testing only.  If you change this code, change the code
-# above too (look for bucketize).
-sub bucketize {
-   my ( $self, $vals ) = @_;
-   my @bucketed = @buckets;
-   my ($sum, $max, $min);
-   $max = $min = $vals->[0];
-   foreach my $val ( @$vals ) {
-      my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);
-      ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
-      $max = $max > $val ? $max : $val;
-      $min = $min < $val ? $min : $val;
-      $sum += $val;
-   }
-   return (\@bucketed, { sum => $sum, max => $max, min => $min, cnt => scalar @$vals});
+sub bucket_idx {
+   my ( $val ) = @_;
+   return 0 if $val < MIN_BUCK;
+   my $idx = int(BASE_OFFSET + log($val)/BASE_LOG);
+   return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
 }
 
-# This method is for testing only.
-sub unbucketize {
-   my ( $self, $vals ) = @_;
-   my @result;
-   foreach my $i ( 0 .. NUM_BUCK - 1 ) {
-      next unless $vals->[$i];
-      foreach my $j ( 1 .. $vals->[$i] ) {
-         push @result, $buck_vals[$i];
-      }
-   }
-   return @result;
+sub bucket_value {
+   my ( $bucket ) = @_;
+   return 0 if $bucket == 0;
+   die "Invalid bucket: $bucket" if $bucket < 0 || $bucket > (NUM_BUCK-1);
+   return (BUCK_SIZE**($bucket-1)) * MIN_BUCK;
 }
 
-# Break the buckets down into powers of ten, in 8 coarser buckets.  Bucket 0
-# represents (0 <= val < 10us) and 7 represents 10s and greater.  The powers are
-# thus constrained to between -6 and 1.  Because these are used as array
-# indexes, we shift up so it's non-negative, to get 0 to 7.  Now you have a list
-# of 1000 buckets that act as a lookup table between the 5% buckets and buckets
-# of 10. TODO: right now it's hardcoded to buckets of 10, in the future maybe
-# not.
 {
    my @buck_tens;
    sub buckets_of {
       return @buck_tens if @buck_tens;
-      @buck_tens = map {
-         my $f = floor(log($_) / log(10)) + 6;
-         $f > 7 ? 7 : $f;
-      } @buck_vals;
+
+      my $start_bucket  = 0;
+      my @base10_starts = (0);
+      map { push @base10_starts, (10**$_)*MIN_BUCK } (1..7);
+
+      for my $base10_bucket ( 0..($#base10_starts-1) ) {
+         my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
+         MKDEBUG && _d('Base 10 bucket $base10_bucket maps to',
+            'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
+         for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
+            $buck_tens[$base1_05_bucket] = $base10_bucket;
+         }
+         $start_bucket = $next_bucket;
+      }
+
+      map { $buck_tens[$_] = 7 } ($start_bucket..(NUM_BUCK-1));
+
       return @buck_tens;
    }
 }
 
-# Given an arrayref of vals, returns a hashref with the following
-# statistical metrics:
-#
-#    pct_95    => The 95th percentile
-#    cutoff    => How many values fall into the 95th percentile
-#    stddev    => of 95% values
-#    median    => of 95% values
-#
-# The vals arrayref is the buckets as per the above (see the comments at the top
-# of this file).  $args should contain cnt, min, max and sum properties.
 sub calculate_statistical_metrics {
    my ( $self, $vals, $args ) = @_;
    my $statistical_metrics = {
@@ -1094,17 +1084,13 @@ sub calculate_statistical_metrics {
       cutoff    => undef,
    };
 
-   # These cases might happen when there is nothing to get from the event, for
-   # example, processlist sniffing doesn't gather Rows_examined, so $args won't
-   # have {cnt} or other properties.
    return $statistical_metrics
       unless defined $vals && @$vals && $args->{cnt};
 
-   # Return accurate metrics for some cases.
    my $n_vals = $args->{cnt};
    if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
       my $v      = $args->{max} || 0;
-      my $bucket = floor( log($v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+      my $bucket = int(6 + ( log($v > 0 ? $v : MIN_BUCK) / log(10)));
       $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
       return {
          pct_95 => $v,
@@ -1115,7 +1101,7 @@ sub calculate_statistical_metrics {
    }
    elsif ( $n_vals == 2 ) {
       foreach my $v ( $args->{min}, $args->{max} ) {
-         my $bucket = floor( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+         my $bucket = int(6 + ( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)));
          $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
       }
       my $v      = $args->{max} || 0;
@@ -1128,63 +1114,52 @@ sub calculate_statistical_metrics {
       };
    }
 
-   # Determine cutoff point for 95% if there are at least 10 vals.  Cutoff
-   # serves also for the number of vals left in the 95%.  E.g. with 50 vals the
-   # cutoff is 47 which means there are 47 vals: 0..46.  $cutoff is NOT an array
-   # index.
    my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
    my $total_left = $n_vals;
-   my $i = NUM_BUCK - 1;
+   my $top_vals   = $n_vals - $cutoff; # vals > 95th
+   my $sum_excl   = 0;
+   my $sum        = 0;
+   my $sumsq      = 0;
+   my $mid        = int($n_vals / 2);
+   my $median     = 0;
+   my $prev       = NUM_BUCK-1; # Used for getting median when $cutoff is odd
+   my $bucket_95  = 0; # top bucket in 95th
 
-   # Find the 95th percentile biggest value.  And calculate the values of the
-   # ones we exclude.
-   my $sum_excl  = 0;
-   while ( $i-- && $total_left > $cutoff ) {
-      if ( $vals->[$i] ) {
-         $total_left -= $vals->[$i];
-         $sum_excl   += $buck_vals[$i] * $vals->[$i];
+   MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals, 'mid:', $mid);
+
+   BUCKET:
+   for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
+      my $val = $vals->[$bucket];
+      next BUCKET unless $val; 
+
+      $total_left -= $val;
+      $sum_excl   += $val;
+      $bucket_95   = $bucket if !$bucket_95 && $sum_excl > $top_vals;
+
+      if ( !$median && $total_left <= $mid ) {
+         $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
+                 : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
       }
+
+      $sum    += $val * $buck_vals[$bucket];
+      $sumsq  += $val * ($buck_vals[$bucket]**2);
+      $prev   =  $bucket;
    }
 
-   # Continue until we find the next array element that has a value.
-   my $bucket_95;
-   while ( $i-- ){
-      $bucket_95 = $i;
-      last if $vals->[$i];
-   }
-   return $statistical_metrics unless $vals->[$bucket_95];
-   # At this point, $bucket_95 points to the first value we want to keep.
+   my $var = ($sumsq - (($sum**2) / $n_vals)) / $n_vals;
+   MKDEBUG && _d('var before sqrt:', $var);
+   $var = 0 if $var < 0;
+   my $stddev = sqrt($var);
 
-   # Calculate the standard deviation, median, and max value of the 95th
-   # percentile of values.
-   my $sum    = $buck_vals[$bucket_95] * $vals->[$bucket_95];
-   my $sumsq  = $sum ** 2;
-   my $mid    = int($cutoff / 2);
-   my $median = 0;
-   my $prev   = $bucket_95; # Used for getting median when $cutoff is odd
-
-   # Continue through the rest of the values.
-   while ( $i-- ) {
-      my $val = $vals->[$i];
-      if ( $val ) {
-         $total_left -= $val;
-         if ( !$median && $total_left <= $mid ) {
-            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$i]
-                    : ($buck_vals[$i] + $buck_vals[$prev]) / 2;
-         }
-         $sum        += $buck_vals[$i] * $val;
-         $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
-         $prev       =  $i;
-      }
-   }
-
-   my $stddev   = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
    my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
    $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
-   MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
+   MKDEBUG && _d('sum:', $sum, 'sumsq:', $sumsq, 'stddev:', $stddev,
+      'median:', $median, 'prev bucket:', $prev,
+      'total left:', $total_left, 'sum excl', $sum_excl,
+      'bucket 95:', $bucket_95, $buck_vals[$bucket_95]);
 
    $statistical_metrics->{stddev} = $stddev;
    $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
@@ -1193,16 +1168,30 @@ sub calculate_statistical_metrics {
    return $statistical_metrics;
 }
 
-# Find the top N or top % event keys, in sorted order, optionally including
-# outliers (ol_...) that are notable for some reason.  %args looks like this:
-#
-#  attrib      order-by attribute (usually Query_time)
-#  orderby     order-by aggregate expression (should be numeric, usually sum)
-#  total       include events whose summed attribs are <= this number...
-#  count       ...or this many events, whichever is less...
-#  ol_attrib   ...or events where the 95th percentile of this attribute...
-#  ol_limit    ...is greater than this value, AND...
-#  ol_freq     ...the event occurred at least this many times.
+sub metrics {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(attrib where) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $stats = $self->results;
+   my $store = $stats->{classes}->{$args{where}}->{$args{attrib}};
+
+   my $global_cnt = $stats->{globals}->{$args{attrib}}->{cnt};
+   my $metrics    = $self->calculate_statistical_metrics($store->{all}, $store);
+
+   return {
+      cnt    => $store->{cnt},
+      pct    => $global_cnt && $store->{cnt} ? $store->{cnt} / $global_cnt : 0,
+      sum    => $store->{sum},
+      min    => $store->{min},
+      max    => $store->{max},
+      avg    => $store->{sum} && $store->{cnt} ? $store->{sum} / $store->{cnt} : 0,
+      median => $metrics->{median},
+      pct_95 => $metrics->{pct_95},
+      stddev => $metrics->{stddev},
+   };
+}
+
 sub top_events {
    my ( $self, %args ) = @_;
    my $classes = $self->{result_class};
@@ -1210,31 +1199,28 @@ sub top_events {
       $classes->{$a}->{$args{attrib}}->{$args{orderby}}
          <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
       } grep {
-         # Defensive programming
          defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
       } keys %$classes;
    my @chosen;
    my ($total, $count) = (0, 0);
    foreach my $groupby ( @sorted ) {
-      # Events that fall into the top criterion for some reason
       if ( 
          (!$args{total} || $total < $args{total} )
          && ( !$args{count} || $count < $args{count} )
       ) {
-         push @chosen, $groupby;
+         push @chosen, [$groupby, 'top'];
       }
 
-      # Events that are notable outliers
       elsif ( $args{ol_attrib} && (!$args{ol_freq}
          || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
-         # Calculate the 95th percentile of this event's specified attribute.
+         MKDEBUG && _d('Calculating statistical_metrics');
          my $stats = $self->calculate_statistical_metrics(
             $classes->{$groupby}->{$args{ol_attrib}}->{all},
             $classes->{$groupby}->{$args{ol_attrib}}
          );
          if ( $stats->{pct_95} >= $args{ol_limit} ) {
-            push @chosen, $groupby;
+            push @chosen, [$groupby, 'outlier'];
          }
       }
 
@@ -1249,9 +1235,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

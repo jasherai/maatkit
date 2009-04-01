@@ -1,6 +1,7 @@
 Changelog for mk-fifo-split:
 
    * Removed string interpolation from debugging calls (issue 308).
+   * Updates to shared code.
 
 2008-12-01: version 1.0.3
 
