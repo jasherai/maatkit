@@ -61,7 +61,7 @@ sub new {
 sub get_specs {
    my ( $self, $file ) = @_;
    my @specs = $self->_pod_to_specs($file);
-   _parse_specs(@specs);
+   $self->_parse_specs(@specs);
    return;
 }
 

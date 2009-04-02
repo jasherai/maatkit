@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 99;
+use Test::More tests => 100;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -23,6 +23,20 @@ my %opts;
 # #############################################################################
 # Test basic usage.
 # #############################################################################
+
+# Quick test of standard interface.
+$o->get_specs('samples/pod_sample_01.txt');
+%opts = $o->opts();
+ok(
+   exists $opts{help},
+   'get_specs() basic interface'
+);
+
+# More exhaustive test of how the standard interface works internally.
+$o  = new OptionParser(
+   description  => 'parses command line options.',
+   dp           => $dp,
+);
 @opt_specs = $o->_pod_to_specs('samples/pod_sample_01.txt');
 is_deeply(
    \@opt_specs,
