@@ -405,7 +405,7 @@ sub get_opts {
 
    if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $self->{progam_name}, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         $self->{program_name}, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
             or die "Cannot print: $OS_ERROR";
       exit 0;
    }
