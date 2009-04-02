@@ -576,6 +576,10 @@ is(
 # Test usage output.
 # #############################################################################
 
+# TODO: the program name isn't correct for scripts:
+# Usage: ./mk-visual-explain <options> [FILE]...
+# The ./ or any leading path stuff needs to be stripped.
+
 # The following one test uses the dog opt specs from above.
 
 # Clear values from previous tests.
