@@ -211,7 +211,7 @@ sub event_report {
          my $min  = parse_timestamp($store->{ts}->{min});
          my $max  = parse_timestamp($store->{ts}->{max});
          my $diff = unix_timestamp($max) - unix_timestamp($min);
-         $qps     = $global_cnt / $diff;
+         $qps     = $class_cnt / $diff;
          $conc    = $store->{$opts{worst}}->{sum} / $diff;
       };
    }

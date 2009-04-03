@@ -135,7 +135,7 @@ $result = $qrf->global_report(
 is($result, $expected, 'Global report');
 
 $expected = <<EOF;
-# Query 1: 3 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 _____
+# Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 _____
 # This item is included in the report because it matches --limit.
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         66       2
