@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * The report's per-class QPS was calculated incorrectly (issue 326).
+
 2009-03-31: version 0.9.4
 
    * Send debugging output to STDERR (issue 308).
