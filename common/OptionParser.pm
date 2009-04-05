@@ -56,9 +56,9 @@ sub new {
       defaults_to  => {},  # rule: opt defaults to value of other opt
       default_files=> [
          "/etc/maatkit/maatkit.conf",
-         "/etc/maatkit/$PROGRAM_NAME.conf",
+         "/etc/maatkit/$program_name.conf",
          "$ENV{HOME}/.maatkit.conf",
-         "$ENV{HOME}/.$PROGRAM_NAME.conf",
+         "$ENV{HOME}/.$program_name.conf",
       ],
    };
    return bless $self, $class;
