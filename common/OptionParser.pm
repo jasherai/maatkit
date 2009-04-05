@@ -36,13 +36,15 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($program_name) = $PROGRAM_NAME =~ m/^([\w-]+)/;
+   $program_name ||= $PROGRAM_NAME;
    my $self = {
       description  => $args{description},
       prompt       => $args{prompt} || '<options>',
       strict       => $args{strict} || 1,
       dp           => $args{dp}     || undef,
-      program_name => $program_name || $PROGRAM_NAME,
+      program_name => $program_name,
       opts         => {},
+      got_opts     => 0,
       short_opts   => {},
       defaults     => {},
       groups       => [ { name => 'default', desc => 'Options' } ],
@@ -52,6 +54,12 @@ sub new {
       atleast1     => [],  # rule: at least one opt is required
       disables     => {},  # rule: opt disables other opts 
       defaults_to  => {},  # rule: opt defaults to value of other opt
+      default_files=> [
+         "/etc/maatkit/maatkit.conf",
+         "/etc/maatkit/$PROGRAM_NAME.conf",
+         "$ENV{HOME}/.maatkit.conf",
+         "$ENV{HOME}/.$PROGRAM_NAME.conf",
+      ],
    };
    return bless $self, $class;
 }
@@ -63,6 +71,12 @@ sub get_specs {
    my @specs = $self->_pod_to_specs($file);
    $self->_parse_specs(@specs);
    return;
+}
+
+# Returns the program's defaults files.
+sub get_defaults_files {
+   my ( $self ) = @_;
+   return @{$self->{default_files}};
 }
 
 # Parse command line options from the OPTIONS section of the POD in the
@@ -196,6 +210,7 @@ sub _pod_to_specs {
 #    is_cumulative => true if the option is cumulative
 #    is_negatable  => true if the option is negatable
 #    is_required   => true if the option is required
+#    must_be_first => true if the option must be the first option on the cmdline
 #    type          => the option's type (see %types in _pod_to_spec() above)
 #    got           => true if the option was given explicitly on the cmd line
 #    value         => the option's value
@@ -237,6 +252,7 @@ sub _parse_specs {
          $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
          $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
          $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
+         $opt->{must_be_first} = $opt->{desc} =~ m/must be the first option/ ? 1 : 0;
 
          $opt->{group} = 'default'; # TODO: groups
          $opt->{value} = undef;
@@ -261,6 +277,20 @@ sub _parse_specs {
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
+         }
+
+         # Handle special behavior for options that have to be first on the
+         # command-line: parse them manually and remove them from @ARGV
+         if ( $opt->{must_be_first} ) {
+            if ( @ARGV && $ARGV[0] eq "--$long" ) {
+               shift @ARGV;
+               $self->{defaults}->{$long} = shift @ARGV;
+            }
+            elsif ( $long eq 'config' ) {
+               # Special case logic for config files.
+               $self->{defaults}->{$long}
+                  = join(',', $self->get_defaults_files());
+            }
          }
 
          # Option disable another option if its desc says 'disable'.
@@ -372,6 +402,7 @@ sub get_opts {
          = exists $self->{defaults}->{$long} ? $self->{defaults}->{$long}
          : undef;
    }
+   $self->{got_opts} = 0;
 
    # Reset errors.
    $self->{errors} = [];
@@ -392,7 +423,7 @@ sub get_opts {
             # Reassign $opt.
             $opt = $self->{opts}->{$long};
             if ( $opt->{is_cumulative} ) {
-                  $opt->{value}++;
+               $opt->{value}++;
             }
             else {
                $opt->{value} = $val;
@@ -400,7 +431,9 @@ sub get_opts {
             $opt->{got} = 1;
             MKDEBUG && _d('Got option', $long, '=', $val);
          };
-      } values %{$self->{opts}}
+      }
+      grep { !$_->{must_be_first} } # These are handled specially elsewhere.
+      values %{$self->{opts}}
    ) or $self->_save_error('Error parsing options');
 
    if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
@@ -456,6 +489,7 @@ sub get_opts {
       # TODO: Check groups.
    }
 
+   $self->{got_opts} = 1;
    return;
 }
 
@@ -625,6 +659,7 @@ sub print_errors {
 # protrude past that.
 sub print_usage {
    my ( $self ) = @_;
+   die "Run get_opts() before print_usage()" unless $self->{got_opts};
    my @opts = values %{$self->{opts}};
 
    # Find how wide the widest long option is.
@@ -739,6 +774,38 @@ if ( MKDEBUG ) {
       ($main::SVN_REV || ''), __LINE__);
    print('# Arguments: ',
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+# Reads a configuration file and returns it as a list.  Inspired by
+# Config::Tiny.
+sub _read_config_file {
+   my ( $self, $filename ) = @_;
+   open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR";
+   my @args;
+   my $prefix = '--';
+
+   LINE:
+   while ( my $line = <$fh> ) {
+      chomp $line;
+      # Skip comments and empty lines
+      next LINE if $line =~ m/^\s*(?:\#|\;|$)/;
+      # Remove inline comments
+      $line =~ s/\s+#.*$//g;
+      # Watch for the beginning of the literal values (not to be interpreted as
+      # options)
+      if ( $line eq '--' ) {
+         $prefix = '';
+         next LINE;
+      }
+      if ( my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/ ) {
+         push @args, grep { defined $_ } ("$prefix$opt", $arg);
+      }
+      else {
+         die "Syntax error in file $filename at line $INPUT_LINE_NUMBER";
+      }
+   }
+   close $fh;
+   return @args;
 }
 
 # Reads the next paragraph from the POD after the magical regular expression is

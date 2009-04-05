@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 100;
+use Test::More tests => 107;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -52,7 +52,7 @@ is_deeply(
       { spec => 'chunk-size=z', desc => 'chunk size'                  },
       { spec => 'time=m',       desc => 'time'                        },
       { spec => 'help+',        desc => 'help cumulative'             },
-      { spec => 'magic!',       desc => 'magic negatable'             },
+      { spec => 'other!',       desc => 'other negatable'             },
    ],
    'Convert POD OPTIONS to opt specs (pod_sample_01.txt)',
 );
@@ -74,6 +74,7 @@ is_deeply(
          type           => 's',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'port'       => {
          spec           => 'port|p=i',
@@ -87,6 +88,7 @@ is_deeply(
          type           => 'i',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'price'      => {
          spec           => 'price=f',
@@ -100,6 +102,7 @@ is_deeply(
          type           => 'f',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'hash-req'   => {
          spec           => 'hash-req=s',
@@ -113,6 +116,7 @@ is_deeply(
          type           => 'H',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'hash-opt'   => {
          spec           => 'hash-opt=s',
@@ -126,6 +130,7 @@ is_deeply(
          type           => 'h',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'array-req'  => {
          spec           => 'array-req=s',
@@ -139,6 +144,7 @@ is_deeply(
          type           => 'A',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'array-opt'  => {
          spec           => 'array-opt=s',
@@ -152,6 +158,7 @@ is_deeply(
          type           => 'a',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'host'       => {
          spec           => 'host=s',
@@ -165,6 +172,7 @@ is_deeply(
          type           => 'd',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'chunk-size' => {
          spec           => 'chunk-size=s',
@@ -178,6 +186,7 @@ is_deeply(
          type           => 'z',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'time'       => {
          spec           => 'time=s',
@@ -191,6 +200,7 @@ is_deeply(
          type           => 'm',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'help'       => {
          spec           => 'help+',
@@ -204,12 +214,13 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
-      'magic'      => {
-         spec           => 'magic!',
-         desc           => 'magic negatable',
+      'other'      => {
+         spec           => 'other!',
+         desc           => 'other negatable',
          group          => 'default',
-         long           => 'magic',
+         long           => 'other',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 1,
@@ -217,6 +228,7 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       }
    },
    'Parse opt specs'
@@ -426,6 +438,7 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'defaultset'    => {
          spec           => 'defaultset!',
@@ -441,6 +454,7 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'defaults-file' => {
          spec           => 'defaults-file|F=s',
@@ -454,6 +468,7 @@ is_deeply(
          type           => 's',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'dog'           => {
          spec           => 'dog|D=s',
@@ -467,6 +482,7 @@ is_deeply(
          type           => 's',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'love'          => {
          spec           => 'love|l+',
@@ -480,6 +496,7 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
    },
    'Parse dog specs'
@@ -621,7 +638,7 @@ $o->_parse_specs(
    { spec => 'database|D=s',    desc => 'Specify the database for all tables' },
    { spec => 'nouniquechecks!', desc => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
 );
-
+$o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
@@ -720,6 +737,7 @@ $o->_parse_specs(
    '--ignore and --replace are mutually exclusive.',
 );
 
+$o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
@@ -1098,7 +1116,7 @@ $o->_parse_specs(
    { spec => 'foo=m', desc => 'Time' },
    { spec => 'bar=m', desc => 'Time (suffix m)' },
 );
-
+$o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
@@ -1140,7 +1158,7 @@ $o->_parse_specs(
    { spec => 'bar=d', desc => 'DSN bar' },
    'DSN values in --foo default to values in --bar if COPY is yes.',
 );
-
+$o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
@@ -1275,6 +1293,7 @@ $o->_parse_specs(
    { spec => 'tables|t=h',    desc => 'tables optional'     },
    { spec => 'databases|d=A', desc => 'databases required'  },
    { spec => 'books|b=a',     desc => 'books optional'      },
+   { spec => 'foo=A',         desc => 'foo (default a,b,c)' },
 );
 
 @ARGV = ();
@@ -1299,6 +1318,7 @@ is_deeply(
    undef,
    'optional array'
 );
+is_deeply($o->get('foo'), [qw(a b c)], 'Array got a default');
 
 @ARGV = ('-C', 'a,b', '-t', 'd,e', '-d', 'f,g', '-b', 'o,p' );
 $o->get_opts();
@@ -1331,12 +1351,14 @@ Options:
   --books     -b  books optional
   --columns   -C  cols required
   --databases -d  databases required
+  --foo           foo (default a,b,c)
   --tables    -t  tables optional
 
 Options and values after processing arguments:
   --books         o,p
   --columns       a,b
   --databases     f,g
+  --foo           a,b,c
   --tables        d,e
 EOF
 ,
@@ -1444,6 +1466,102 @@ is(
    $o->_read_para_after("samples/pod_sample_issue_92.txt", qr/abracadabra/),
    'This is the next paragraph, hooray',
    'read_para_after again'
+);
+
+# #############################################################################
+# Issue 231: read configuration files
+# #############################################################################
+is_deeply(
+   [$o->_read_config_file("samples/config_file_1.conf")],
+   [qw(--foo bar --verbose /path/to/file)],
+   'Reads a config file',
+);
+
+is_deeply(
+   [$o->get_defaults_files()],
+   ["/etc/maatkit/maatkit.conf", "/etc/maatkit/OptionParser.t.conf",
+      "$ENV{HOME}/.maatkit.conf", "$ENV{HOME}/.OptionParser.t.conf"],
+   "default options files",
+);
+
+$o = new OptionParser(
+   description  => 'parses command line options.',
+);
+$o->_parse_specs(
+   { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
+            . 'files (must be the first option on the command line).',  },
+   { spec  => 'cat=A',    desc  => 'cat option (default a,b)',  },
+);
+$o->get_opts();
+is(
+   $o->print_usage(),
+<<EOF
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
+
+Usage: OptionParser <options>
+
+Options:
+  --cat     cat option (default a,b)
+  --config  Read this comma-separated list of config files (must be the first
+            option on the command line).
+
+Options and values after processing arguments:
+  --cat     a,b
+  --config  /etc/maatkit/maatkit.conf,/etc/maatkit/OptionParser.t.conf,$ENV{HOME}/.maatkit.conf,$ENV{HOME}/.OptionParser.t.conf
+EOF
+,
+   'Sets special config file default value',
+);
+
+@ARGV=qw(--config /path/to/config --cat);
+$o = new OptionParser(
+   description  => 'parses command line options.',
+);
+$o->_parse_specs(
+   { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
+            . 'files (must be the first option on the command line).',  },
+   { spec  => 'cat',     desc  => 'cat option',  },
+);
+is_deeply([@ARGV], [qw(--cat)], '--config shifted off @ARGV');
+$o->get_opts();
+
+is(
+   $o->print_usage(),
+<<EOF
+OptionParser parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser' for complete documentation.
+
+Usage: OptionParser <options>
+
+Options:
+  --cat     cat option
+  --config  Read this comma-separated list of config files (must be the first
+            option on the command line).
+
+Options and values after processing arguments:
+  --cat     TRUE
+  --config  /path/to/config
+EOF
+,
+   'Parses special --config option first',
+);
+
+$o = new OptionParser(
+   description  => 'parses command line options.',
+);
+$o->_parse_specs(
+   { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
+      . 'files (must be the first option on the command line).',  },
+   { spec  => 'cat',     desc  => 'cat option',  },
+);
+
+@ARGV=qw(--cat --config /path/to/config);
+$o->get_opts();
+is_deeply(
+   $o->errors(),
+   ['Error parsing options', 'Unrecognized command-line options /path/to/config'],
+   'special --config option not given first',
 );
 
 exit;

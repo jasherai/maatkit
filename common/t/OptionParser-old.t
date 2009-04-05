@@ -692,6 +692,7 @@ $p = new OptionParser(
    { s => 'columns|C=H',    g => 'o', d => 'Comma-separated list of columns to output' },
    { s => 'tables|t=h',     g => 'p', d => 'Comma-separated list of tables to output' },
    { s => 'databases|d=A',  g => 'q', d => 'Comma-separated list of databases to output' },
+   { s => 'foo=A', g => 'q', 'Foo (default a,b,c)' },
    { s => 'books|b=a',      g => 'p', d => 'Comma-separated list of books to output' },
 );
 $p->groups(
@@ -717,11 +718,13 @@ Foofoo:
 
 Bizbat:
   --databases -d  Comma-separated list of databases to output
+  --foo           Foo (default a,b,c)
 
 Options and values after processing arguments:
   --books         o,p
   --columns       a,b
   --databases     f,g
+  --foo           a,b,c
   --help          FALSE
   --tables        d,e
   --version       FALSE
