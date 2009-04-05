@@ -76,6 +76,7 @@ The following items are unimplemented at this time:
          * COUNT(col) is probably suspect, see Percona issue 3379 complex query
          * Watch for LEFT JOIN that has a WHERE clause that'll make it an INNER
            (see email "explain extended" from Piotr, see Percona issue 3379).
+         * http://pento.net/2009/04/03/join-and-comma-precedence/
       * Connections and users
          * report anonymous users
            * Complain loudly if connected as anonymous user -- print out what
