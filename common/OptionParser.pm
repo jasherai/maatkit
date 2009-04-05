@@ -35,7 +35,7 @@ sub new {
    foreach my $arg ( qw(description) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($program_name) = $PROGRAM_NAME =~ m/^([\w-]+)/;
+   my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
    $program_name ||= $PROGRAM_NAME;
    my $self = {
       description  => $args{description},
@@ -639,14 +639,14 @@ sub errors {
 
 sub prompt {
    my ( $self ) = @_;
-   return "Usage: $self->{program_name} $self->{prompt}\n";
+   return "Usage: $PROGRAM_NAME $self->{prompt}\n";
 }
 
 sub descr {
    my ( $self ) = @_;
    my $descr  = $self->{program_name} . ' ' . ($self->{description} || '')
               . "  For more details, please use the --help option, "
-              . "or try 'perldoc $self->{program_name}' "
+              . "or try 'perldoc $PROGRAM_NAME' "
               . "for complete documentation.";
    $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
    $descr =~ s/ +$//mg;

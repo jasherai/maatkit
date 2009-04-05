@@ -595,10 +595,6 @@ is(
 # Test usage output.
 # #############################################################################
 
-# TODO: the program name isn't correct for scripts:
-# Usage: ./mk-visual-explain <options> [FILE]...
-# The ./ or any leading path stuff needs to be stripped.
-
 # The following one test uses the dog opt specs from above.
 
 # Clear values from previous tests.
@@ -609,10 +605,10 @@ $o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 
-Usage: OptionParser [OPTIONS]
+Usage: OptionParser.t [OPTIONS]
 
 Options:
   --defaults-file -F  alignment test
@@ -644,10 +640,10 @@ $o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 
-Usage: OptionParser <options>
+Usage: OptionParser.t <options>
 
 Options:
   --database        -D  Specify the database for all tables
@@ -707,13 +703,13 @@ is_deeply(
 is(
    $o->print_errors(),
 <<EOF
-Usage: OptionParser <options>
+Usage: OptionParser.t <options>
 
 Errors in command-line arguments:
   * Required option --cat must be specified
 
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 EOF
 ,
    'Error output includes note about missing required option'
@@ -743,10 +739,10 @@ $o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 
-Usage: OptionParser <options>
+Usage: OptionParser.t <options>
 
 Options:
   --ignore  -i  Use IGNORE for INSERT statements
@@ -1122,10 +1118,10 @@ $o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 
-Usage: OptionParser <options>
+Usage: OptionParser.t <options>
 
 Options:
   --bar  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
@@ -1164,10 +1160,10 @@ $o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 
-Usage: OptionParser <options>
+Usage: OptionParser.t <options>
 
 Options:
   --bar  DSN bar
@@ -1228,10 +1224,10 @@ is_deeply(
 is(
    $o->print_usage(),
 <<EOF
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 
-Usage: OptionParser <options>
+Usage: OptionParser.t <options>
 
 Options:
   --bar  DSN bar
@@ -1344,10 +1340,10 @@ is_deeply(
 is(
    $o->print_usage(),
 <<EOF
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 
-Usage: OptionParser <options>
+Usage: OptionParser.t <options>
 
 Options:
   --books     -b  books optional
@@ -1391,10 +1387,10 @@ $o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 
-Usage: OptionParser <options>
+Usage: OptionParser.t <options>
 
 Options:
   --help          Help
@@ -1509,10 +1505,10 @@ $o->get_opts();
 is(
    $o->print_usage(),
 <<EOF
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 
-Usage: OptionParser <options>
+Usage: OptionParser.t <options>
 
 Options:
   --cat     cat option (default a,b)
@@ -1546,10 +1542,10 @@ ok($o->got('config'), 'Got --config');
 is(
    $o->print_usage(),
 <<EOF
-OptionParser parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the
+--help option, or try 'perldoc OptionParser.t' for complete documentation.
 
-Usage: OptionParser <options>
+Usage: OptionParser.t <options>
 
 Options:
   --cat     cat option
