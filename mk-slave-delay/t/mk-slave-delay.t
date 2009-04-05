@@ -51,7 +51,7 @@ unlike($output, qr/Missing DSN part 'h'/, 'Does not require h DSN part');
 # #############################################################################
 diag `sed -i '/log.bin\\|log.slave/d' /tmp/12346/my.sandbox.cnf`;
 diag `/tmp/12346/stop; /tmp/12346/start;`;
-$output = `../mk-slave-delay -d 1s h=127.1,P=12346 h=127.1 2>&1`;
+$output = `../mk-slave-delay --delay 1s h=127.1,P=12346 h=127.1 2>&1`;
 like($output, qr/Binary logging is disabled/,
    'Detects master that is not a master');
 diag `/tmp/12346/stop; rm -rf /tmp/12346; ../../sandbox/make_slave 12346`;

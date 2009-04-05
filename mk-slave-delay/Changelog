@@ -1,5 +1,13 @@
 Changelog for mk-slave-delay:
 
+   * Added the --config option for issue 231.
+   * Removed the -d short option.  Use --delay instead.
+   * Removed the -c short option.  Use --continue instead.
+   * Removed the -q short option.  Use --quiet instead.
+   * Removed the -t short option.  Use --time instead.
+   * Removed the -u short option.  Use --usemaster instead.
+   * Removed the -i short option.  Use --interval instead.
+
 2009-03-31: version 1.0.12
 
    * Send debugging output to STDERR (issue 308).
