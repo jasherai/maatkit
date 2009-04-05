@@ -157,12 +157,10 @@ sub _pod_to_specs {
          $para =~ s/\s+/ /g;
          $para =~ s/$POD_link_re/$1/go;
 
-         # Take the first period-terminated sentence as the
-         # option's short help description. TODO: is this correct?
-         if ( $para =~ m/^.+?\.$/ ) {
-            $para =~ s/\.$//;
-            MKDEBUG && _d('Short help:', $para);
-         }
+         # Take the first period-terminated sentence as the option's short help
+         # description.
+         $para =~ s/\.(?:\n.*| [A-Z].*|\Z)//s;
+         MKDEBUG && _d('Short help:', $para);
 
          die "No description after option spec $option" if $para =~ m/^=item/;
 

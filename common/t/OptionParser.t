@@ -37,7 +37,7 @@ $o  = new OptionParser(
    description  => 'parses command line options.',
    dp           => $dp,
 );
-ok(!$o->has('time'), 'There is no --database yet');
+ok(!$o->has('time'), 'There is no --time yet');
 @opt_specs = $o->_pod_to_specs('samples/pod_sample_01.txt');
 is_deeply(
    \@opt_specs,

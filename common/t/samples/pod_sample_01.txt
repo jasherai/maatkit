@@ -31,18 +31,19 @@ short form: -p; type: int; default: 3306
 
 port.
 
-OptionParser should not have any problems with other keywords appearing
-in random places like short form type int DSN default etc. Basically, these
-full-explanation paragraphs should be (mostly) ignored.
+The sentence above is the description for --help.  Note that in --help output,
+the default is appended and the period is removed.  OptionParser should not have
+any problems with other keywords appearing in random places like short form type
+int DSN default etc. Basically, these full-explanation paragraphs should be
+(mostly) ignored.
 
 =item --price
 
 type: float
 
-price float (default 1.23).
-
-By "mostly" I mean that there is, in fact, some magick that can happen in
-here. Unfortunately for us all, I have forgotten what that magick is. :-(
+price float (default 1.23).  By "mostly" I mean that there is, in fact, some
+magick that can happen in here.  The first sentence of the first paragraph is
+treated as the decription for the --help output.
 
 =item --hash-req
 
