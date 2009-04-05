@@ -280,13 +280,9 @@ sub _parse_specs {
          }
 
          # Handle special behavior for options that have to be first on the
-         # command-line: parse them manually and remove them from @ARGV
+         # command-line.
          if ( $opt->{must_be_first} ) {
-            if ( @ARGV && $ARGV[0] eq "--$long" ) {
-               shift @ARGV;
-               $self->{defaults}->{$long} = shift @ARGV;
-            }
-            elsif ( $long eq 'config' ) {
+            if ( $long eq 'config' ) {
                # Special case logic for config files.
                $self->{defaults}->{$long}
                   = join(',', $self->get_defaults_files());
@@ -389,6 +385,27 @@ sub get_defaults {
    return $self->{defaults};
 }
 
+# Getopt::Long calls this sub for each opt it finds on the
+# cmd line. We have to do this in order to know which opts
+# were "got" on the cmd line.
+sub _set_option {
+   my ( $self, $opt, $val ) = @_;
+   my $long = exists $self->{opts}->{$opt}       ? $opt
+            : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
+            : die "Getopt::Long gave a nonexistent option: $opt";
+
+   # Reassign $opt.
+   $opt = $self->{opts}->{$long};
+   if ( $opt->{is_cumulative} ) {
+      $opt->{value}++;
+   }
+   else {
+      $opt->{value} = $val;
+   }
+   $opt->{got} = 1;
+   MKDEBUG && _d('Got option', $long, '=', $val);
+}
+
 # Get options on the command line (ARGV) according to the option specs
 # and enforce option rules. Option values are saved internally in
 # $self->{opts} and accessed later by get(), got() and set().
@@ -407,32 +424,37 @@ sub get_opts {
    # Reset errors.
    $self->{errors} = [];
 
+   # --config is special-case; parse them manually and remove them from @ARGV
+   if ( @ARGV && $ARGV[0] eq "--config" ) {
+      shift @ARGV;
+      $self->_set_option('config', shift @ARGV);
+   }
+   if ( $self->has('config') ) {
+      my @extra_args;
+      foreach my $filename ( split(',', $self->get('config')) ) {
+         # Try to open the file.  If it was set explicitly, it's an error if it
+         # can't be opened, but the built-in defaults are to be ignored if they
+         # can't be opened.
+         eval {
+            push @ARGV, $self->_read_config_file($filename);
+         };
+         if ( $EVAL_ERROR ) {
+            if ( $self->got('config') ) {
+               die $EVAL_ERROR;
+            }
+            elsif ( MKDEBUG ) {
+               _d($EVAL_ERROR);
+            }
+         }
+      }
+      unshift @ARGV, @extra_args;
+   }
+
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions(
       # Make Getopt::Long specs for each option with custom handler subs.
-      map {
-         $_->{spec} => sub {
-            # Getopt::Long calls this sub for each opt it finds on the
-            # cmd line. We have to do this in order to know which opts
-            # were "got" on the cmd line.
-            my ( $opt, $val ) = @_;
-            my $long = exists $self->{opts}->{$opt}       ? $opt
-                     : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
-                     : die "Getopt::Long gave a nonexistent option: $opt";
-
-            # Reassign $opt.
-            $opt = $self->{opts}->{$long};
-            if ( $opt->{is_cumulative} ) {
-               $opt->{value}++;
-            }
-            else {
-               $opt->{value} = $val;
-            }
-            $opt->{got} = 1;
-            MKDEBUG && _d('Got option', $long, '=', $val);
-         };
-      }
-      grep { !$_->{must_be_first} } # These are handled specially elsewhere.
+      map    { $_->{spec} => sub { $self->_set_option(@_); } }
+      grep   { !$_->{must_be_first} } # These are handled specially elsewhere.
       values %{$self->{opts}}
    ) or $self->_save_error('Error parsing options');
 
@@ -580,6 +602,12 @@ sub got {
    die "Option $opt does not exist"
       unless $long && exists $self->{opts}->{$long};
    return $self->{opts}->{$long}->{got};
+}
+
+# Returns true if the option exists.
+sub has {
+   my ( $self, $opt ) = @_;
+   return exists $self->{opts}->{$opt};
 }
 
 # Set an option's value. The option can be either a
@@ -780,7 +808,7 @@ if ( MKDEBUG ) {
 # Config::Tiny.
 sub _read_config_file {
    my ( $self, $filename ) = @_;
-   open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR";
+   open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
    my @args;
    my $prefix = '--';
 

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 107;
+use Test::More tests => 121;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -37,6 +37,7 @@ $o  = new OptionParser(
    description  => 'parses command line options.',
    dp           => $dp,
 );
+ok(!$o->has('time'), 'There is no --database yet');
 @opt_specs = $o->_pod_to_specs('samples/pod_sample_01.txt');
 is_deeply(
    \@opt_specs,
@@ -58,6 +59,7 @@ is_deeply(
 );
 
 $o->_parse_specs(@opt_specs);
+ok($o->has('time'), 'There is a --time now');
 %opts = $o->opts();
 is_deeply(
    \%opts,
@@ -1477,12 +1479,22 @@ is_deeply(
    'Reads a config file',
 );
 
+$o = new OptionParser(
+   description  => 'parses command line options.',
+);
+$o->_parse_specs(
+   { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
+            . 'files (must be the first option on the command line).',  },
+   { spec  => 'cat=A',    desc  => 'cat option (default a,b)',  },
+);
+
 is_deeply(
    [$o->get_defaults_files()],
    ["/etc/maatkit/maatkit.conf", "/etc/maatkit/OptionParser.t.conf",
       "$ENV{HOME}/.maatkit.conf", "$ENV{HOME}/.OptionParser.t.conf"],
    "default options files",
 );
+ok(!$o->got('config'), 'Did not got --config');
 
 $o = new OptionParser(
    description  => 'parses command line options.',
@@ -1492,6 +1504,7 @@ $o->_parse_specs(
             . 'files (must be the first option on the command line).',  },
    { spec  => 'cat=A',    desc  => 'cat option (default a,b)',  },
 );
+
 $o->get_opts();
 is(
    $o->print_usage(),
@@ -1523,8 +1536,12 @@ $o->_parse_specs(
             . 'files (must be the first option on the command line).',  },
    { spec  => 'cat',     desc  => 'cat option',  },
 );
-is_deeply([@ARGV], [qw(--cat)], '--config shifted off @ARGV');
+eval { $o->get_opts(); };
+like($EVAL_ERROR, qr/Cannot open/, 'No config file found');
+
+@ARGV = qw(--config samples/empty --cat);
 $o->get_opts();
+ok($o->got('config'), 'Got --config');
 
 is(
    $o->print_usage(),
@@ -1541,7 +1558,7 @@ Options:
 
 Options and values after processing arguments:
   --cat     TRUE
-  --config  /path/to/config
+  --config  samples/empty
 EOF
 ,
    'Parses special --config option first',
@@ -1563,5 +1580,41 @@ is_deeply(
    ['Error parsing options', 'Unrecognized command-line options /path/to/config'],
    'special --config option not given first',
 );
+
+# And now we can actually get it to read a config file into the options!
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   strict       => 0,
+);
+$o->_parse_specs(
+   { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
+      . 'files (must be the first option on the command line).',  },
+   { spec  => 'foo=s',     desc  => 'foo option',  },
+   { spec  => 'verbose+',  desc  => 'increase verbosity',  },
+);
+
+@ARGV = qw(--config samples/config_file_1.conf);
+$o->get_opts();
+is_deeply(
+   [@ARGV],
+   [qw(/path/to/file)],
+   'Config file influences @ARGV',
+);
+ok($o->got('foo'), 'Got --foo');
+is($o->get('foo'), 'bar', 'Got --foo value');
+ok($o->got('verbose'), 'Got --verbose');
+is($o->get('verbose'), 1, 'Got --verbose value');
+
+@ARGV = ('--config', 'samples/config_file_1.conf,samples/config_file_2.conf');
+$o->get_opts();
+is_deeply(
+   [@ARGV],
+   [qw(/path/to/file /path/to/file)],
+   'Second config file influences @ARGV',
+);
+ok($o->got('foo'), 'Got --foo again');
+is($o->get('foo'), 'baz', 'Got overridden --foo value');
+ok($o->got('verbose'), 'Got --verbose twice');
+is($o->get('verbose'), 2, 'Got --verbose value twice');
 
 exit;
