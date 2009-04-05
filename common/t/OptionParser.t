@@ -1471,7 +1471,7 @@ is(
 # #############################################################################
 is_deeply(
    [$o->_read_config_file("samples/config_file_1.conf")],
-   [qw(--foo bar --verbose /path/to/file)],
+   ['--foo', 'bar', '--verbose', '/path/to/file', 'h=127.1,P=12346'],
    'Reads a config file',
 );
 
@@ -1594,7 +1594,7 @@ is($o->{strict}, 0, 'setting strict to 0 worked');
 $o->get_opts();
 is_deeply(
    [@ARGV],
-   [qw(/path/to/file)],
+   ['/path/to/file', 'h=127.1,P=12346'],
    'Config file influences @ARGV',
 );
 ok($o->got('foo'), 'Got --foo');
@@ -1606,7 +1606,7 @@ is($o->get('verbose'), 1, 'Got --verbose value');
 $o->get_opts();
 is_deeply(
    [@ARGV],
-   [qw(/path/to/file /path/to/file)],
+   ['/path/to/file', 'h=127.1,P=12346', '/path/to/file'],
    'Second config file influences @ARGV',
 );
 ok($o->got('foo'), 'Got --foo again');

@@ -811,6 +811,7 @@ sub _read_config_file {
    open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
    my @args;
    my $prefix = '--';
+   my $parse  = 1;
 
    LINE:
    while ( my $line = <$fh> ) {
@@ -819,14 +820,22 @@ sub _read_config_file {
       next LINE if $line =~ m/^\s*(?:\#|\;|$)/;
       # Remove inline comments
       $line =~ s/\s+#.*$//g;
+      # Remove whitespace
+      $line =~ s/^\s+|\s+$//g;
       # Watch for the beginning of the literal values (not to be interpreted as
       # options)
       if ( $line eq '--' ) {
          $prefix = '';
+         $parse  = 0;
          next LINE;
       }
-      if ( my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/ ) {
+      if ( $parse
+         && (my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/)
+      ) {
          push @args, grep { defined $_ } ("$prefix$opt", $arg);
+      }
+      elsif ( $line =~ m/./ ) {
+         push @args, $line;
       }
       else {
          die "Syntax error in file $filename at line $INPUT_LINE_NUMBER";
