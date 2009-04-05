@@ -40,7 +40,7 @@ sub new {
    my $self = {
       description  => $args{description},
       prompt       => $args{prompt} || '<options>',
-      strict       => $args{strict} || 1,
+      strict       => (exists $args{strict} ? $args{strict} : 1),
       dp           => $args{dp}     || undef,
       program_name => $program_name,
       opts         => {},

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 121;
+use Test::More tests => 122;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1588,6 +1588,7 @@ $o->_parse_specs(
    { spec  => 'foo=s',     desc  => 'foo option',  },
    { spec  => 'verbose+',  desc  => 'increase verbosity',  },
 );
+is($o->{strict}, 0, 'setting strict to 0 worked');
 
 @ARGV = qw(--config samples/config_file_1.conf);
 $o->get_opts();
