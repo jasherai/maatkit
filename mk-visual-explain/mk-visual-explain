@@ -1797,7 +1797,7 @@ sub main {
       }
 
       my $dbh = $dp->get_dbh(
-         $dp->get_cxn_params( $o->opts() ), { AutoCommit => 1 } );
+         $dp->get_cxn_params( {$o->opts()} ), { AutoCommit => 1 } );
 
       $text =~ s{^.*?select}{EXPLAIN /*!50115 PARTITIONS*/ SELECT}is;
       $rows =  $dbh->selectall_arrayref($text, { Slice => {} } );
