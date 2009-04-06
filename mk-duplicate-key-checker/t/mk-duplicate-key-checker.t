@@ -62,6 +62,6 @@ $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', 'samples/issue_331.sql', 'test');
 $output = `$cmd -d issue_331 | diff samples/issue_331.txt -`;
 is($output, '', 'Issue 331 crash on fks');
-
+exit;
 $sb->wipe_clean($dbh);
 exit;

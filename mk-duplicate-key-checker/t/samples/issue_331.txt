@@ -8,10 +8,11 @@
 # To remove this duplicate key, execute:
 ALTER TABLE `issue_331`.`issue_331_t2` DROP KEY `fk_1`;
 
+# MySQL uses the PRIMARY key for this foreign key constraint
+
 # ########################################################################
 # Summary of keys                                                         
 # ########################################################################
 
-# Size Duplicate Keys   8
 # Total Duplicate Keys  1
 # Total Keys            4

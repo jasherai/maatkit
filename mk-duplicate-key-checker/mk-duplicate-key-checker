@@ -1237,7 +1237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3352
+# OptionParser package 3366
 # ###########################################################################
 package OptionParser;
 
@@ -1519,6 +1519,16 @@ sub _get_participants {
 sub opts {
    my ( $self ) = @_;
    my %opts = %{$self->{opts}};
+   return %opts;
+}
+
+sub opt_values {
+   my ( $self ) = @_;
+   my %opts = map {
+      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
+              : $_;
+      $opt => $self->{opts}->{$_}->{value}
+   } keys %{$self->{opts}};
    return %opts;
 }
 
@@ -2667,17 +2677,17 @@ sub main {
    }
    my $dp = new DSNParser;
    $dp->prop('setvars', $o->get('set-vars'));
-   my $dbh = $dp->get_dbh($dp->get_cxn_params({$o->opts()}), {AutoCommit=>1});
+   my $dbh = $dp->get_dbh($dp->get_cxn_params({$o->opt_values()}), {AutoCommit=>1});
 
    my $vp = new VersionParser();
    my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
 
-   my $ks = $o->got('summary') ? new KeySize() : undef;
+   my $ks = $o->get('summary') ? new KeySize() : undef;
    my $dk = new DuplicateKeyFinder();
    my $du = new MySQLDump();
 
    my %tp_opts = (
-      ignore_type  => $o->get('ignore-type'),
+      ignore_type  => $o->get('all-structs'),
       ignore_order => $o->get('ignore-order'),
       clustered    => $o->get('clustered'),
    );
@@ -2762,7 +2772,7 @@ sub main {
       }
    }
 
-   print_key_summary(%summary) if $o->got('summary');
+   print_key_summary(%summary) if $o->get('summary');
 }
 
 # ##########################################################################
@@ -2790,7 +2800,7 @@ sub print_duplicate_key {
    my ( $dupe, %args ) = @_;
    return unless $dupe;
    foreach my $arg ( qw(tbl_info dbh is_fk o ks) ) {
-      die "I need a $arg argument" unless $args{$arg};
+      die "I need a $arg argument" unless exists $args{$arg};
    }
    my $db     = $args{tbl_info}->{db};
    my $tbl    = $args{tbl_info}->{tbl};
@@ -2821,10 +2831,10 @@ sub print_duplicate_key {
 
    print "# To remove this duplicate key, execute:\n"
       . 'ALTER TABLE '.$q->quote($db, $tbl)." DROP KEY `$dupe->{key}`;\n"
-         if $o->got('sql');
+         if $o->get('sql');
    print "\n";
 
-   if ( $o->got('summary') ) {
+   if ( $o->get('summary') ) {
       $summary{'Total Duplicate Keys'} += 1;
       my ($size, $chosen_key) = $ks->get_key_size(
          name        => $dupe->{key},
@@ -2836,14 +2846,14 @@ sub print_duplicate_key {
       if ( $args{is_fk} ) {
          # Foreign keys have no size because they're just constraints.
          print "# MySQL uses the $chosen_key key for this "
-            . "foreign key constraint\n";
+            . "foreign key constraint\n\n";
       }
       else {
          $summary{'Size Duplicate Keys'} += $size;
 
-         if ( $chosen_key ne $dupe->{key} ) {
+         if ( $chosen_key && $chosen_key ne $dupe->{key} ) {
             # This shouldn't happen. But in case it does, we should know.
-            print "# MySQL chose the $chosen_key key despite FORCE INDEX.\n";
+            print "# MySQL chose the $chosen_key key despite FORCE INDEX\n\n";
          }
       }
    }
@@ -2981,13 +2991,6 @@ should return the same results.
 
 Currently, the tool suggests removing these indexes, but it should suggest
 shortening them instead.  This is filed as a feature request (issue 295).
-
-=item --config
-
-type: Array
-
-Read this comma-separated list of config files.  If specified, this must be the
-first option on the command line.
 
 =item --databases
 
