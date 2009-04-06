@@ -92,8 +92,8 @@ foreach my $p ( sort keys %versions ) {
 }
 
 # Write maatkit.pod
-print `cat maatkit.head.pod packlist maatkit.mid.pod > $dist/lib/maatkit.pm`;
-open my $file, ">> $dist/lib/maatkit.pm" or die $OS_ERROR;
+print `cat maatkit.head.pod packlist maatkit.mid.pod > $dist/maatkit.pod`;
+open my $file, ">> $dist/maatkit.pod" or die $OS_ERROR;
 foreach my $program ( <$dist/bin/mk-*> ) {
    my $line = `grep -A 6 head1.NAME $program | tail -n 5`;
    my @parts = split(/\n\n/, $line);
@@ -103,8 +103,7 @@ foreach my $program ( <$dist/bin/mk-*> ) {
    print $file "\n\n=item $prog\n\n$rest See L<$prog>.";
 }
 close $file;
-print `cat maatkit.tail.pod >> $dist/lib/maatkit.pm`;
-print `cat maatkitdsn.pod >> $dist/lib/maatkitdsn.pm`;
+print `cat maatkit.tail.pod >> $dist/maatkit.pod`;
 
 # Copy other files
 foreach my $file ( qw(README Makefile.PL COPYING INSTALL ../spec/maatkit.spec) ) {
