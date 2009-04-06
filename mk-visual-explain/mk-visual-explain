@@ -700,7 +700,7 @@ sub index_access {
 }
 
 # ###########################################################################
-# OptionParser package 3347
+# OptionParser package 3366
 # ###########################################################################
 package OptionParser;
 
@@ -725,7 +725,7 @@ sub new {
    my $self = {
       description  => $args{description},
       prompt       => $args{prompt} || '<options>',
-      strict       => $args{strict} || 1,
+      strict       => (exists $args{strict} ? $args{strict} : 1),
       dp           => $args{dp}     || undef,
       program_name => $program_name,
       opts         => {},
@@ -823,10 +823,8 @@ sub _pod_to_specs {
          $para =~ s/\s+/ /g;
          $para =~ s/$POD_link_re/$1/go;
 
-         if ( $para =~ m/^.+?\.$/ ) {
-            $para =~ s/\.$//;
-            MKDEBUG && _d('Short help:', $para);
-         }
+         $para =~ s/\.(?:\n.*| [A-Z].*|\Z)//s;
+         MKDEBUG && _d('Short help:', $para);
 
          die "No description after option spec $option" if $para =~ m/^=item/;
 
@@ -984,6 +982,16 @@ sub _get_participants {
 sub opts {
    my ( $self ) = @_;
    my %opts = %{$self->{opts}};
+   return %opts;
+}
+
+sub opt_values {
+   my ( $self ) = @_;
+   my %opts = map {
+      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
+              : $_;
+      $opt => $self->{opts}->{$_}->{value}
+   } keys %{$self->{opts}};
    return %opts;
 }
 
@@ -1379,18 +1387,26 @@ sub _read_config_file {
    open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
    my @args;
    my $prefix = '--';
+   my $parse  = 1;
 
    LINE:
    while ( my $line = <$fh> ) {
       chomp $line;
       next LINE if $line =~ m/^\s*(?:\#|\;|$)/;
       $line =~ s/\s+#.*$//g;
+      $line =~ s/^\s+|\s+$//g;
       if ( $line eq '--' ) {
          $prefix = '';
+         $parse  = 0;
          next LINE;
       }
-      if ( my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/ ) {
+      if ( $parse
+         && (my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/)
+      ) {
          push @args, grep { defined $_ } ("$prefix$opt", $arg);
+      }
+      elsif ( $line =~ m/./ ) {
+         push @args, $line;
       }
       else {
          die "Syntax error in file $filename at line $INPUT_LINE_NUMBER";
@@ -1797,7 +1813,7 @@ sub main {
       }
 
       my $dbh = $dp->get_dbh(
-         $dp->get_cxn_params( {$o->opts()} ), { AutoCommit => 1 } );
+         $dp->get_cxn_params({$o->opt_values()}), { AutoCommit => 1 } );
 
       $text =~ s{^.*?select}{EXPLAIN /*!50115 PARTITIONS*/ SELECT}is;
       $rows =  $dbh->selectall_arrayref($text, { Slice => {} } );
@@ -1956,8 +1972,7 @@ retrieve rows.  This is the case for InnoDB.
 
 type: Array
 
-Read this comma-separated list of config files.  If specified, this must be the
-first option on the command line.
+Read this comma-separated list of config files; if specified, this must be the first option on the command line.
 
 =item --connect
 
