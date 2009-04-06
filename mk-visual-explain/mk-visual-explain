@@ -1772,9 +1772,10 @@ sub main {
    my $dp = new DSNParser();
    my $o  = new OptionParser(
       prompt       => '<options> [FILE]...',
-      description  =>   q{examines MySQL tables for duplicate or redundant }
-                      . q{indexes and foreign keys.  Connection options }
-                      . q{are read from MySQL option files.},
+      description  => q{transforms EXPLAIN output into a tree } 
+                    . q{representation of the query plan.  If FILE is }
+                    . q{given, input is read from the file(s).  With no }
+                    . q{FILE, or when FILE is -, read standard input.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -1817,16 +1818,12 @@ sub main {
    }
 }
 
-1; # Because this is a module as well as a script.
-
 # ############################################################################
 # Run the program.
 # ############################################################################
-package main;
+main(@ARGV) unless caller;
 
-mk_visual_explain::main(@ARGV) unless caller;
-
-1;
+1; # Because this is a module as well as a script.
 
 # ############################################################################
 # Documentation.
