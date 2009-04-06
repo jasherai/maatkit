@@ -365,7 +365,11 @@ sub opts {
 # kind of hash.
 sub opt_values {
    my ( $self ) = @_;
-   my %opts = map { $_ => $self->{opts}->{$_}->{value} } keys %{$self->{opts}};
+   my %opts = map {
+      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
+              : $_;
+      $opt => $self->{opts}->{$_}->{value}
+   } keys %{$self->{opts}};
    return %opts;
 }
 

@@ -244,8 +244,8 @@ is_deeply(
 is_deeply(
    \%opts,
    {
-      'database'   => undef,
-      'port'       => undef,
+      'D'          => undef,
+      'p'          => undef,
       'price'      => undef,
       'hash-req'   => undef,
       'hash-opt'   => undef,
