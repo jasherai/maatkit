@@ -413,7 +413,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 3186
+# MySQLDump package 3312
 # ###########################################################################
 package MySQLDump;
 
@@ -1237,7 +1237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3297
+# OptionParser package 3352
 # ###########################################################################
 package OptionParser;
 
@@ -1252,10 +1252,56 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
-sub pod_to_spec {
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(description) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   $program_name ||= $PROGRAM_NAME;
+   my $self = {
+      description  => $args{description},
+      prompt       => $args{prompt} || '<options>',
+      strict       => (exists $args{strict} ? $args{strict} : 1),
+      dp           => $args{dp}     || undef,
+      program_name => $program_name,
+      opts         => {},
+      got_opts     => 0,
+      short_opts   => {},
+      defaults     => {},
+      groups       => [ { name => 'default', desc => 'Options' } ],
+      errors       => [],
+      rules        => [],  # desc of rules for --help
+      mutex        => [],  # rule: opts are mutually exclusive
+      atleast1     => [],  # rule: at least one opt is required
+      disables     => {},  # rule: opt disables other opts 
+      defaults_to  => {},  # rule: opt defaults to value of other opt
+      default_files=> [
+         "/etc/maatkit/maatkit.conf",
+         "/etc/maatkit/$program_name.conf",
+         "$ENV{HOME}/.maatkit.conf",
+         "$ENV{HOME}/.$program_name.conf",
+      ],
+   };
+   return bless $self, $class;
+}
+
+sub get_specs {
+   my ( $self, $file ) = @_;
+   my @specs = $self->_pod_to_specs($file);
+   $self->_parse_specs(@specs);
+   return;
+}
+
+sub get_defaults_files {
+   my ( $self ) = @_;
+   return @{$self->{default_files}};
+}
+
+sub _pod_to_specs {
    my ( $self, $file ) = @_;
    $file ||= __FILE__;
-   open my $fh, '<', $file or die "Can't open $file: $OS_ERROR";
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 
    my %types = (
       string => 's', # standard Getopt type
@@ -1265,14 +1311,13 @@ sub pod_to_spec {
       hash   => 'h', # hash as above, but only if a value is given
       Array  => 'A', # array, similar to Hash
       array  => 'a', # array, similar to hash
-      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dsn}
+      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dp}
       size   => 'z', # size with kMG suffix (powers of 2^10)
       'time' => 'm', # time, with an optional suffix of s/h/m/d
    );
    my @specs = ();
    my @rules = ();
    my $para;
-   my $option;
 
    local $INPUT_RECORD_SEPARATOR = '';
    while ( $para = <$fh> ) {
@@ -1285,55 +1330,59 @@ sub pod_to_spec {
       chomp $para;
       $para =~ s/\s+/ /g;
       $para =~ s/$POD_link_re/$1/go;
-      MKDEBUG && _d('First option rules:', $para);
+      MKDEBUG && _d('Option rule:', $para);
       push @rules, $para;
    }
 
+   die 'POD has no OPTIONS section' unless $para;
+
    do {
-      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         chomp $para;
          MKDEBUG && _d($para);
-         my %props;
-         $para = <$fh>;
-         if ( $para =~ m/: / ) {
+         my %attribs;
+
+         $para = <$fh>; # read next paragraph, possibly attributes
+
+         if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %props = map { split(/: /, $_) } split(/; /, $para);
-            if ( $props{'short form'} ) {
-               $props{'short form'} =~ s/-//;
+            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            if ( $attribs{'short form'} ) {
+               $attribs{'short form'} =~ s/-//;
             }
-            $para = <$fh>;
+            $para = <$fh>; # read next paragraph, probably short help desc
          }
+         else {
+            MKDEBUG && _d('Option has no attributes');
+         }
+
          $para =~ s/\s+\Z//g;
          $para =~ s/\s+/ /g;
          $para =~ s/$POD_link_re/$1/go;
-         if ( $para =~ m/^[^.]+\.$/ ) {
-            $para =~ s/\.$//;
-         }
+
+         $para =~ s/\.(?:\n.*| [A-Z].*|\Z)//s;
+         MKDEBUG && _d('Short help:', $para);
+
+         die "No description after option spec $option" if $para =~ m/^=item/;
 
          if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
             $option = $base_option;
-            $props{'negatable'} = 1;
+            $attribs{'negatable'} = 1;
          }
 
          push @specs, {
-            s => $option
-               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
-               . ( $props{'negatable'}  ? '!'                        : '' )
-               . ( $props{'cumulative'} ? '+'                        : '' )
-               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
-            d => $para
-               . (defined $props{default} ? " (default $props{default})" : ''),
+            spec => $option
+               . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
+               . ($attribs{'negatable'}  ? '!'                          : '' )
+               . ($attribs{'cumulative'} ? '+'                          : '' )
+               . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
+            desc => $para
+               . ($attribs{default} ? " (default $attribs{default})" : ''),
          };
       }
       while ( $para = <$fh> ) {
          last unless $para;
 
-         if ( $option ) {
-            if ( my ($line)
-                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
-               1 while ( $line =~ s/$POD_link_re/$1/go );
-               push @rules, $line;
-            }
-         }
 
          if ( $para =~ m/^=head1/ ) {
             $para = undef; # Can't 'last' out of a do {} block.
@@ -1343,363 +1392,430 @@ sub pod_to_spec {
       }
    } while ( $para );
 
+   die 'No valid specs in POD OPTIONS' unless @specs;
+
    close $fh;
    return @specs, @rules;
 }
 
-sub new {
-   my ( $class, @opts ) = @_;
-   my %key_seen;
-   my %long_seen;
-   my %key_for;
-   my %defaults;
-   my @mutex;
-   my @atleast1;
-   my %long_for;
-   my %disables;
-   my %copyfrom;
-   my @allowed_with;
+sub _parse_specs {
+   my ( $self, @specs ) = @_;
+   my %disables; # special rule that requires deferred checking
 
-   unshift @opts,
-      { s => 'help',    d => 'Show this help message' },
-      { s => 'version', d => 'Output version information and exit' };
-
-   foreach my $opt ( @opts ) {
+   foreach my $opt ( @specs ) {
       if ( ref $opt ) { # It's an option spec, not a rule.
-         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-         $opt->{k} = $short || $long;
-         $key_for{$long} = $opt->{k};
-         $long_for{$opt->{k}} = $long;
-         $long_for{$long} = $long;
-         $opt->{l} = $long;
-         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
-         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
-         $opt->{t} = $short;
-         $opt->{n} = $opt->{s} =~ m/!/;
-         $opt->{c} = $opt->{s} =~ m/\+/;
-         $opt->{g} ||= 'o';
-         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            MKDEBUG && _d('Option', $opt->{k}, 'type:', $y);
-            $opt->{y} = $y;
-            $opt->{s} =~ s/=./=s/;
+         MKDEBUG && _d('Parsing opt spec:',
+            map { ($_, '=>', $opt->{$_}) } keys %$opt);
+
+         my ( $long, $short ) = $opt->{spec} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         if ( !$long ) {
+            die "Cannot parse long option from spec $opt->{spec}";
          }
-         if ( $opt->{d} =~ m/required/ ) {
-            $opt->{r} = 1;
-            MKDEBUG && _d('Option', $opt->{k}, 'is required');
+         $opt->{long} = $long;
+
+         die "Duplicate long option --$long" if exists $self->{opts}->{$long};
+         $self->{opts}->{$long} = $opt;
+
+         if ( length $long == 1 ) {
+            MKDEBUG && _d('Long opt', $long, 'looks like short opt');
+            $self->{short_opts}->{$long} = $long;
          }
-         if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
-            $defaults{$opt->{k}} = defined $def ? $def : 1;
-            MKDEBUG && _d('Option', $opt->{k}, 'has a default');
+
+         if ( $short ) {
+            die "Duplicate short option -$short"
+               if exists $self->{short_opts}->{$short};
+            $self->{short_opts}->{$short} = $long;
+            $opt->{short} = $short;
          }
-         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
-            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            MKDEBUG && _d('Option', $opt->{k}, $dis);
+         else {
+            $opt->{short} = undef;
          }
+
+         $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
+         $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
+         $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
+         $opt->{must_be_first} = $opt->{desc} =~ m/must be the first option/ ? 1 : 0;
+
+         $opt->{group} = 'default'; # TODO: groups
+         $opt->{value} = undef;
+         $opt->{got}   = 0;
+
+         my ( $type ) = $opt->{spec} =~ m/=(.)/;
+         $opt->{type} = $type;
+         MKDEBUG && _d($long, 'type:', $type);
+
+         if ( $type && $type eq 'd' && !$self->{dp} ) {
+            die "$opt->{long} is type DSN (d) but no dp argument "
+               . "was given when this OptionParser object was created";
+         }
+
+         $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
+
+         if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            $self->{defaults}->{$long} = defined $def ? $def : 1;
+            MKDEBUG && _d($long, 'default:', $def);
+         }
+
+         if ( $opt->{must_be_first} ) {
+            if ( $long eq 'config' ) {
+               $self->{defaults}->{$long}
+                  = join(',', $self->get_defaults_files());
+            }
+         }
+
+         if ( (my ($dis) = $opt->{desc} =~ m/(disables .*)/) ) {
+            $disables{$long} = $dis;
+            MKDEBUG && _d('Deferring check of disables rule for', $opt, $dis);
+         }
+
+         $self->{opts}->{$long} = $opt;
       }
       else { # It's an option rule, not a spec.
-         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
-            my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
-                  $long_for{$_};
-               } $class->get_participants($opt);
-            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
-               push @mutex, \@participants;
-               MKDEBUG && _d(@participants, 'are mutually exclusive');
-            }
-            if ( $opt =~ m/at least one|one and only one/ ) {
-               push @atleast1, \@participants;
-               MKDEBUG && _d(@participants, 'require at least one');
-            }
+         MKDEBUG && _d('Parsing rule:', $opt); 
+         push @{$self->{rules}}, $opt;
+         my @participants = $self->_get_participants($opt);
+         my $rule_ok = 0;
+
+         if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{mutex}}, \@participants;
+            MKDEBUG && _d(@participants, 'are mutually exclusive');
          }
-         elsif ( $opt =~ m/default to/ ) {
-            my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
-                  $key_for{$_};
-               } $class->get_participants($opt);
-            $copyfrom{$participants[0]} = $participants[1];
-            MKDEBUG && _d(@participants, 'copy from each other');
+         if ( $opt =~ m/at least one|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{atleast1}}, \@participants;
+            MKDEBUG && _d(@participants, 'require at least one');
          }
-         elsif ( $opt  =~ m/allowed with/ ) {
-            my @participants = map {
-                  die "No such option '$_' while processing $opt"
-                     unless $long_for{$_};
-                  $key_for{$_};
-               } $class->get_participants($opt);
-            push @allowed_with, \@participants;
+         if ( $opt =~ m/default to/ ) {
+            $rule_ok = 1;
+            $self->{defaults_to}->{$participants[0]} = $participants[1];
+            MKDEBUG && _d($participants[0], 'defaults to', $participants[1]);
          }
+         die "Unrecognized option rule: $opt" unless $rule_ok;
       }
    }
 
-   foreach my $dis ( keys %disables ) {
-      $disables{$dis} = [
-            map {
-               if ( !defined $long_for{$_} ) {
-                  die "No such option '$_' while processing $dis";
-               }
-               $long_for{$_};
-            } @{$disables{$dis}}
-      ];
+   foreach my $long ( keys %disables ) {
+      my @participants = $self->_get_participants($disables{$long});
+      $self->{disables}->{$long} = \@participants;
+      MKDEBUG && _d('Option', $long, 'disables', @participants);
    }
 
-   my $self = {
-      specs        => [ grep { ref $_ } @opts ],
-      errors       => [],
-      instr        => [ grep { !ref $_ } @opts ],
-      mutex        => \@mutex,
-      defaults     => \%defaults,
-      long_for     => \%long_for,
-      atleast1     => \@atleast1,
-      disables     => \%disables,
-      key_for      => \%key_for,
-      copyfrom     => \%copyfrom,
-      strict       => 1,
-      groups       => [ { k => 'o', d => 'Options' } ],
-      allowed_with => \@allowed_with,
-      given        => {},
-   };
-
-   return bless $self, $class;
+   return; 
 }
 
-sub get_participants {
+sub _get_participants {
    my ( $self, $str ) = @_;
    my @participants;
-   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
-      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
-         push @participants, $long;
-      }
-      else {
-         foreach my $short ( $thing =~ m/([^-])/g ) {
-            push @participants, $short;
-         }
-      }
+   foreach my $long ( $str =~ m/--(?:\[no\])?([\w-]+)/g ) {
+      die "Option --$long does not exist while processing rule $str"
+         unless exists $self->{opts}->{$long};
+      push @participants, $long;
    }
    MKDEBUG && _d('Participants for', $str, ':', @participants);
    return @participants;
 }
 
-sub parse {
+sub opts {
+   my ( $self ) = @_;
+   my %opts = %{$self->{opts}};
+   return %opts;
+}
+
+sub short_opts {
+   my ( $self ) = @_;
+   my %short_opts = %{$self->{short_opts}};
+   return %short_opts;
+}
+
+sub set_defaults {
    my ( $self, %defaults ) = @_;
-   my @specs = @{$self->{specs}};
-   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-   my %opt_seen;
-   my %vals = %{$self->{defaults}};
-   @vals{keys %defaults} = values %defaults;
-   foreach my $spec ( @specs ) {
-      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
-      $opt_seen{$spec->{k}} = 1;
+   $self->{defaults} = {};
+   foreach my $long ( keys %defaults ) {
+      die "Cannot set default for nonexistent option $long"
+         unless exists $self->{opts}->{$long};
+      $self->{defaults}->{$long} = $defaults{$long};
+      MKDEBUG && _d('Default val for', $long, ':', $defaults{$long});
    }
+   return;
+}
 
-   foreach my $key ( keys %defaults ) {
-      die "Cannot set default for non-existent option '$key'\n"
-         unless $opt_seen{$key};
+sub get_defaults {
+   my ( $self ) = @_;
+   return $self->{defaults};
+}
+
+sub _set_option {
+   my ( $self, $opt, $val ) = @_;
+   my $long = exists $self->{opts}->{$opt}       ? $opt
+            : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
+            : die "Getopt::Long gave a nonexistent option: $opt";
+
+   $opt = $self->{opts}->{$long};
+   if ( $opt->{is_cumulative} ) {
+      $opt->{value}++;
    }
+   else {
+      $opt->{value} = $val;
+   }
+   $opt->{got} = 1;
+   MKDEBUG && _d('Got option', $long, '=', $val);
+}
 
-   $self->{given} = {}; # in case options are re-parsed
+sub get_opts {
+   my ( $self ) = @_; 
+
+   foreach my $long ( keys %{$self->{opts}} ) {
+      $self->{opts}->{$long}->{got} = 0;
+      $self->{opts}->{$long}->{value}
+         = exists $self->{defaults}->{$long} ? $self->{defaults}->{$long}
+         : undef;
+   }
+   $self->{got_opts} = 0;
+
+   $self->{errors} = [];
+
+   if ( @ARGV && $ARGV[0] eq "--config" ) {
+      shift @ARGV;
+      $self->_set_option('config', shift @ARGV);
+   }
+   if ( $self->has('config') ) {
+      my @extra_args;
+      foreach my $filename ( split(',', $self->get('config')) ) {
+         eval {
+            push @ARGV, $self->_read_config_file($filename);
+         };
+         if ( $EVAL_ERROR ) {
+            if ( $self->got('config') ) {
+               die $EVAL_ERROR;
+            }
+            elsif ( MKDEBUG ) {
+               _d($EVAL_ERROR);
+            }
+         }
+      }
+      unshift @ARGV, @extra_args;
+   }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions(
-      map {
-         my $spec = $_;
-         $spec->{s} => sub {
-                          my ( $opt, $val ) = @_;
-                          if ( $spec->{c} ) {
-                             $vals{$spec->{k}}++
-                          }
-                          else {
-                             $vals{$spec->{k}} = $val;
-                          }
-                          MKDEBUG && _d('Given option:',
-                             $opt, '(',$spec->{k},') =', $val);
-                          $self->{given}->{$spec->{k}} = $vals{$spec->{k}};
-                       }
-      } @specs
-   ) or $self->error('Error parsing options');
+      map    { $_->{spec} => sub { $self->_set_option(@_); } }
+      grep   { !$_->{must_be_first} } # These are handled specially elsewhere.
+      values %{$self->{opts}}
+   ) or $self->_save_error('Error parsing options');
 
-   if ( $vals{version} ) {
-      my $prog = $self->prog;
+   if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+         $self->{program_name}, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+            or die "Cannot print: $OS_ERROR";
+      exit 0;
    }
 
    if ( @ARGV && $self->{strict} ) {
-      $self->error("Unrecognized command-line options @ARGV");
-   }
-
-   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
-      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
-      MKDEBUG && _d('Unsetting options:', @disses);
-      @vals{@disses} = map { undef } @disses;
-   }
-
-   foreach my $spec ( grep { $_->{r} } @specs ) {
-      if ( !defined $vals{$spec->{k}} ) {
-         $self->error("Required option --$spec->{l} must be specified");
-      }
+      $self->_save_error("Unrecognized command-line options @ARGV");
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
-      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
+      my @set = grep { $self->{opts}->{$_}->{got} } @$mutex;
       if ( @set > 1 ) {
-         my $note = join(', ',
-            map { "--$self->{long_for}->{$_}" }
-                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
-         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
-               . " are mutually exclusive.";
-         $self->error($note);
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$mutex}[ 0 .. scalar(@$mutex) - 2] )
+                 . ' and --'.$self->{opts}->{$mutex->[-1]}->{long}
+                 . ' are mutually exclusive.';
+         $self->_save_error($err);
       }
    }
 
    foreach my $required ( @{$self->{atleast1}} ) {
-      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
-      if ( !@set ) {
-         my $note = join(', ',
-            map { "--$self->{long_for}->{$_}" }
-                @{$required}[ 0 .. scalar(@$required) - 2] );
-         $note .= " or --$self->{long_for}->{$required->[-1]}";
-         $self->error("Specify at least one of $note");
+      my @set = grep { $self->{opts}->{$_}->{got} } @$required;
+      if ( @set == 0 ) {
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$required}[ 0 .. scalar(@$required) - 2] )
+                 .' or --'.$self->{opts}->{$required->[-1]}->{long};
+         $self->_save_error("Specify at least one of $err");
       }
    }
 
-   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
-      my $val = $vals{$spec->{k}};
-      if ( $spec->{y} eq 'm' ) {
-         my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
-         if ( !$suffix ) {
-            my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
-            $suffix = $s || 's';
-            MKDEBUG && _d('No suffix given; using', $suffix, 'for',
-               $spec->{k}, '(value:', $val, ')');
-         }
-         if ( $suffix =~ m/[smhd]/ ) {
-            $val = $suffix eq 's' ? $num            # Seconds
-                 : $suffix eq 'm' ? $num * 60       # Minutes
-                 : $suffix eq 'h' ? $num * 3600     # Hours
-                 :                  $num * 86400;   # Days
-            $vals{$spec->{k}} = $val;
-            MKDEBUG && _d('Setting option', $spec->{k}, 'to', $val);
-         }
-         else {
-            $self->error("Invalid --$spec->{l} argument");
+   foreach my $long ( keys %{$self->{opts}} ) {
+      my $opt = $self->{opts}->{$long};
+      if ( $opt->{got} ) {
+         if ( exists $self->{disables}->{$long} ) {
+            my @disable_opts = @{$self->{disables}->{$long}};
+            map { $self->{opts}->{$_} = undef; } @disable_opts;
+            MKDEBUG && _d('Unset options', @disable_opts,
+               'because', $long,'disables them');
          }
       }
-      elsif ( $spec->{y} eq 'd' ) {
-         MKDEBUG && _d('Parsing option', $spec->{y}, 'as a DSN');
-         my $from_key = $self->{copyfrom}->{$spec->{k}};
-         my $default = {};
-         if ( $from_key ) {
-            MKDEBUG && _d('Option', $spec->{y}, 'DSN copies from option',
-               $from_key);
-            $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
-         }
-         $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
+      elsif ( $opt->{is_required} ) { 
+         $self->_save_error("Required option --$long must be specified");
       }
-      elsif ( $spec->{y} eq 'z' ) {
-         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
-         if ( defined $num ) {
-            if ( $factor ) {
-               $num *= $factor_for{$factor};
-               MKDEBUG && _d('Setting option', $spec->{y},
-                  'to num', $num, '* factor', $factor);
-            }
-            $vals{$spec->{k}} = ($pre || '') . $num;
-         }
-         else {
-            $self->error("Invalid --$spec->{l} argument");
-         }
-      }
+
+      $self->_validate_type($opt);
+
    }
 
-   foreach my $spec ( grep { $_->{y} } @specs ) {
-      MKDEBUG && _d('Treating option', $spec->{k}, 'as a list');
-      my $val = $vals{$spec->{k}};
-      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
-         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
-      }
-      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
-         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
-      }
-   }
-
-   foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
-      my $opt = $allowed_opts->[0];
-      next unless $vals{$opt};
-      my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
-      delete @defined_opts{ @$allowed_opts };
-      foreach my $defined_opt ( keys %defined_opts ) {
-         MKDEBUG
-            && _d('Unsetting option', $defined_opt,
-               '; it is not allowed with option', $opt);
-         $vals{$defined_opt} = undef;
-      }
-   }
-
-   return %vals;
+   $self->{got_opts} = 1;
+   return;
 }
 
-sub error {
-   my ( $self, $note ) = @_;
-   $self->{__error__} = 1;
-   push @{$self->{errors}}, $note;
+sub _validate_type {
+   my ( $self, $opt ) = @_;
+   return unless $opt && $opt->{type};
+   my $val = $opt->{value};
+
+   if ( $val && $opt->{type} eq 'm' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
+      my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+      if ( !$suffix ) {
+         my ( $s ) = $opt->{desc} =~ m/\(suffix (.)\)/;
+         $suffix = $s || 's';
+         MKDEBUG && _d('No suffix given; using', $suffix, 'for',
+            $opt->{long}, '(value:', $val, ')');
+      }
+      if ( $suffix =~ m/[smhd]/ ) {
+         $val = $suffix eq 's' ? $num            # Seconds
+              : $suffix eq 'm' ? $num * 60       # Minutes
+              : $suffix eq 'h' ? $num * 3600     # Hours
+              :                  $num * 86400;   # Days
+         $opt->{value} = $val;
+         MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
+      }
+      else {
+         $self->_save_error("Invalid time suffix for --$opt->{long}");
+      }
+   }
+   elsif ( $val && $opt->{type} eq 'd' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a DSN');
+      my $from_key = $self->{defaults_to}->{ $opt->{long} };
+      my $default = {};
+      if ( $from_key ) {
+         MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
+         $default = $self->{dp}->parse(
+            $self->{dp}->as_string($self->{opts}->{$from_key}->{value}) );
+      }
+      $opt->{value} = $self->{dp}->parse($val, $default);
+   }
+   elsif ( $val && $opt->{type} eq 'z' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
+      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+      if ( defined $num ) {
+         if ( $factor ) {
+            $num *= $factor_for{$factor};
+            MKDEBUG && _d('Setting option', $opt->{y},
+               'to num', $num, '* factor', $factor);
+         }
+         $opt->{value} = ($pre || '') . $num;
+      }
+      else {
+         $self->_save_error("Invalid size for --$opt->{long}");
+      }
+   }
+   elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
+      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+   }
+   elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
+      $opt->{value} = [ split(',', ($val || '')) ];
+   }
+   else {
+      MKDEBUG && _d('Nothing to validate for option',
+         $opt->{long}, 'type', $opt->{type}, 'value', $val);
+   }
+
+   return;
 }
 
-sub prog {
-   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
-   return $prog || $PROGRAM_NAME;
+sub get {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{value};
+}
+
+sub got {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{got};
+}
+
+sub has {
+   my ( $self, $opt ) = @_;
+   return exists $self->{opts}->{$opt};
+}
+
+sub set {
+   my ( $self, $opt, $val ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   $self->{opts}->{$long}->{value} = $val;
+   return;
+}
+
+sub _save_error {
+   my ( $self, $error ) = @_;
+   push @{$self->{errors}}, $error;
+}
+
+sub errors {
+   my ( $self ) = @_;
+   return $self->{errors};
 }
 
 sub prompt {
    my ( $self ) = @_;
-   my $prog   = $self->prog;
-   my $prompt = $self->{prompt} || '<options>';
-   return "Usage: $prog $prompt\n";
+   return "Usage: $PROGRAM_NAME $self->{prompt}\n";
 }
 
 sub descr {
    my ( $self ) = @_;
-   my $prog = $self->prog;
-   my $descr  = $prog . ' ' . ($self->{descr} || '')
-          . "  For more details, please use the --help option, "
-          . "or try 'perldoc $prog' for complete documentation.";
+   my $descr  = $self->{program_name} . ' ' . ($self->{description} || '')
+              . "  For more details, please use the --help option, "
+              . "or try 'perldoc $PROGRAM_NAME' "
+              . "for complete documentation.";
    $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
    $descr =~ s/ +$//mg;
    return $descr;
 }
 
 sub usage_or_errors {
-   my ( $self, %opts ) = @_;
-   if ( $opts{help} ) {
-      print $self->usage(%opts)
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+   my ( $self ) = @_;
+   if ( $self->{opts}->{help}->{got} ) {
+      print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
+      exit 0;
    }
-   elsif ( $self->{__error__} ) {
-      print $self->errors()
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+   elsif ( scalar @{$self->{errors}} ) {
+      print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
+      exit 0;
    }
+   return;
 }
 
-sub errors {
+sub print_errors {
    my ( $self ) = @_;
    my $usage = $self->prompt() . "\n";
    if ( (my @errors = @{$self->{errors}}) ) {
-      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors) . "\n";
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors)
+              . "\n";
    }
    return $usage . "\n" . $self->descr();
 }
 
-sub usage {
-   my ( $self, %vals ) = @_;
-   my @specs = @{$self->{specs}};
+sub print_usage {
+   my ( $self ) = @_;
+   die "Run get_opts() before print_usage()" unless $self->{got_opts};
+   my @opts = values %{$self->{opts}};
 
-   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+   my $maxl = max(
+      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      @opts);
 
    my $maxs = max(0,
-      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
-      grep { $_->{t} } @specs);
+      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      values %{$self->{short_opts}});
 
    my $lcol = max($maxl, ($maxs + 3));
    my $rcol = 80 - $lcol - 6;
@@ -1708,15 +1824,17 @@ sub usage {
    $maxs = max($lcol - 3, $maxs);
 
    my $usage = $self->descr() . "\n" . $self->prompt();
-   foreach my $g ( @{$self->{groups}} ) {
-      $usage .= "\n$g->{d}:\n";
-      foreach my $spec (
-         sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs )
+   foreach my $group ( @{$self->{groups}} ) {
+      $usage .= "\n$group->{desc}:\n";
+      foreach my $opt (
+         sort { $a->{long} cmp $b->{long} }
+         grep { $_->{group} eq $group->{name} }
+         @opts )
       {
-         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-         my $short = $spec->{t};
-         my $desc  = $spec->{d};
-         if ( $spec->{y} && $spec->{y} eq 'm' ) {
+         my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
+         my $short = $opt->{short};
+         my $desc  = $opt->{desc};
+         if ( $opt->{type} && $opt->{type} eq 'm' ) {
             my ($s) = $desc =~ m/\(suffix (.)\)/;
             $s    ||= 's';
             $desc =~ s/\s+\(suffix .\)//;
@@ -1734,24 +1852,24 @@ sub usage {
       }
    }
 
-   if ( (my @instr = @{$self->{instr}}) ) {
-      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   if ( (my @rules = @{$self->{rules}}) ) {
+      $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
-   if ( $self->{dsn} ) {
-      $usage .= "\n" . $self->{dsn}->usage();
+   if ( $self->{dp} ) {
+      $usage .= "\n" . $self->{dp}->usage();
    }
    $usage .= "\nOptions and values after processing arguments:\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
-      my $val   = $vals{$spec->{k}};
-      my $type  = $spec->{y} || '';
-      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+   foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
+      my $val   = $opt->{value};
+      my $type  = $opt->{type} || '';
+      my $bool  = $opt->{spec} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
       $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
                 : !defined $val             ? '(No value)'
-                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type eq 'd'              ? $self->{dp}->as_string($val)
                 : $type =~ m/H|h/           ? join(',', sort keys %$val)
                 : $type =~ m/A|a/           ? join(',', @$val)
                 :                             $val;
-      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $opt->{long}, $val);
    }
    return $usage;
 }
@@ -1777,11 +1895,6 @@ sub prompt_noecho {
    return $response;
 }
 
-sub groups {
-   my ( $self, @groups ) = @_;
-   push @{$self->{groups}}, @groups;
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -1796,7 +1909,41 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
-sub read_para_after {
+sub _read_config_file {
+   my ( $self, $filename ) = @_;
+   open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
+   my @args;
+   my $prefix = '--';
+   my $parse  = 1;
+
+   LINE:
+   while ( my $line = <$fh> ) {
+      chomp $line;
+      next LINE if $line =~ m/^\s*(?:\#|\;|$)/;
+      $line =~ s/\s+#.*$//g;
+      $line =~ s/^\s+|\s+$//g;
+      if ( $line eq '--' ) {
+         $prefix = '';
+         $parse  = 0;
+         next LINE;
+      }
+      if ( $parse
+         && (my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/)
+      ) {
+         push @args, grep { defined $_ } ("$prefix$opt", $arg);
+      }
+      elsif ( $line =~ m/./ ) {
+         push @args, $line;
+      }
+      else {
+         die "Syntax error in file $filename at line $INPUT_LINE_NUMBER";
+      }
+   }
+   close $fh;
+   return @args;
+}
+
+sub _read_para_after {
    my ( $self, $file, $regex ) = @_;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
    local $INPUT_RECORD_SEPARATOR = '';
@@ -2462,9 +2609,14 @@ sub _d {
 # ###########################################################################
 
 # #############################################################################
-# And now for the "program".
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
 # #############################################################################
-package main;
+package mk_duplicate_key_checker;
 
 use English qw(-no_match_vars);
 use Getopt::Long;
@@ -2476,119 +2628,142 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# ##########################################################################
-# Get configuration information.
-# ##########################################################################
-
-my @opt_spec   = OptionParser::pod_to_spec(); 
-my $opt_parser = OptionParser->new(@opt_spec);
-$opt_parser->{prompt} = '<options>';
-$opt_parser->{descr}  = q{examines MySQL tables for duplicate or redundant }
-                      . q{indexes and foreign keys.  Connection options }
-                      . q{are read from MySQL option files.};
-my %opts = $opt_parser->parse();
-$opt_parser->usage_or_errors(%opts);
-
-# ##########################################################################
-# Get ready to do the main work.
-# ##########################################################################
-
-# Connect to the database
-if ( !defined $opts{p} && $opts{askpass} ) {
-   $opts{p} = OptionParser::prompt_noecho("Enter password: ");
-}
-
-my $vp = new VersionParser();
-my $dp = new DSNParser;
-$dp->prop('setvars', $opts{setvars});
-my $dbh = $dp->get_dbh( $dp->get_cxn_params(\%opts), { AutoCommit => 1 } );
-
-my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
-
 my $max_width = 74;
 my $hdr_width = $max_width - 2;  # for '# '
 my $hdr_fmt   = "# %-${hdr_width}s\n";
 
 my %summary = ( 'Total Keys' => 0 );
 my %seen_tbl;
-my $ks = $opts{summary} ? new KeySize() : undef;
-my $dk = new DuplicateKeyFinder();
+
 my $q  = new Quoter();
 my $tp = new TableParser();
-my $du = new MySQLDump();
-my %tp_opts = (
-   ignore_type  => $opts{a},
-   ignore_order => $opts{ignoreorder},
-   clustered    => $opts{c},
-);
 
-my $finder = new MySQLFind(
-   quoter    => $q,
-   useddl    => 1,
-   parser    => $tp,
-   dumper    => $du,
-   databases => {
-      permit => $opts{d},
-      reject => $opts{g},
-   },
-   tables => {
-      permit => $opts{t},
-      reject => $opts{n},
-   },
-   engines => {
-      views  => 0,
-      permit => $opts{e},
-      reject => $opts{E},
-   },
-);
+sub main {
+   @ARGV = @_;  # set global ARGV for this package
 
-DATABASE:
-foreach my $database ( $finder->find_databases($dbh) ) {
-   TABLE:
-   foreach my $table ( $finder->find_tables($dbh, database => $database) ) {
-      my $ddl      = $du->get_create_table($dbh, $q, $database, $table)->[1];
-      my $engine   = $tp->get_engine($ddl) || next TABLE;
-      my $tbl_info = {
-         db     => $database,
-         tbl    => $table,
-         engine => $engine,
-         ddl    => $ddl,
-      };
+   # #######################################################################
+   # Get configuration information and parse command line options.
+   # #######################################################################
+   my $o  = new OptionParser(
+      description  => q{examines MySQL tables for duplicate or redundant }
+                    . q{indexes and foreign keys.  Connection options }
+                    . q{are read from MySQL option files.},
+   );
+   $o->get_specs();
+   $o->get_opts();
+   $o->usage_or_errors();
 
-      my $keys = $tp->get_keys($ddl,{version => $version }) if $opts{f} =~ m/k/;
-      my $fks  = $tp->get_fks($ddl,{database => $database}) if $opts{f} =~ m/f/;
+   # #######################################################################
+   # Get ready to do the main work.
+   # #######################################################################
+   my $get_keys = $o->get('key-types') =~ m/k/ ? 1 : 0;
+   my $get_fks  = $o->get('key-types') =~ m/f/ ? 1 : 0;
+   my %opts     = $o->opts();
 
-      next TABLE unless %$keys || %$fks;
-
-      if ( $opts{v} ) {
-         print_all_keys($keys, $tbl_info) if $keys;
-         print_all_keys($fks,  $tbl_info) if $fks;
-      }
-      else {
-         $dk->get_duplicate_keys(
-            keys     => $keys,
-            callback => \&print_duplicate_key,
-            tbl_info => $tbl_info,
-            %tp_opts,
-         ) if $keys;
-
-         $dk->get_duplicate_fks(
-            keys     => $fks,
-            callback => \&print_duplicate_key,
-            tbl_info => $tbl_info,
-            %tp_opts,
-         ) if $fks;
-      }
-
-      # Always count Total Keys so print_key_summary won't die
-      # because %summary is empty.
-      $summary{'Total Keys'} += (scalar keys %$keys) + (scalar keys %$fks)
+   # Connect to the database
+   if ( $o->got('ask-pass') && !$o->got('pass') ) {
+      my $pass = OptionParser::prompt_noecho("Enter password: ");
+      $o->set('pass', $pass);
    }
+   my $dp = new DSNParser;
+   $dp->prop('setvars', $o->get('set-vars'));
+   my $dbh = $dp->get_dbh($dp->get_cxn_params({$o->opts()}), {AutoCommit=>1});
+
+   my $vp = new VersionParser();
+   my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
+
+   my $ks = $o->got('summary') ? new KeySize() : undef;
+   my $dk = new DuplicateKeyFinder();
+   my $du = new MySQLDump();
+
+   my %tp_opts = (
+      ignore_type  => $o->get('ignore-type'),
+      ignore_order => $o->get('ignore-order'),
+      clustered    => $o->get('clustered'),
+   );
+
+   my $finder = new MySQLFind(
+      quoter    => $q,
+      useddl    => 1,
+      parser    => $tp,
+      dumper    => $du,
+      databases => {
+         permit => $o->get('databases'),
+         reject => $o->get('ignore-databases'),
+      },
+      tables => {
+         permit => $o->get('tables'),
+         reject => $o->get('ignore-tables'),
+      },
+      engines => {
+         views  => 0,
+         permit => $o->get('engines'),
+         reject => $o->get('ignore-engines'),
+      },
+   );
+
+   # #######################################################################
+   # Do the main work.
+   # #######################################################################
+
+   DATABASE:
+   foreach my $database ( $finder->find_databases($dbh) ) {
+      TABLE:
+      foreach my $table ( $finder->find_tables($dbh, database => $database) ) {
+         my $ddl      = $du->get_create_table($dbh, $q, $database, $table)->[1];
+         my $engine   = $tp->get_engine($ddl) || next TABLE;
+         my $tbl_info = {
+            db     => $database,
+            tbl    => $table,
+            engine => $engine,
+            ddl    => $ddl,
+         };
+
+         my $keys = $tp->get_keys($ddl, {version => $version })  if $get_keys;
+         my $fks  = $tp->get_fks($ddl,  {database => $database}) if $get_fks;
+
+         next TABLE unless %$keys || %$fks;
+
+         if ( $o->got('verbose') ) {
+            print_all_keys($keys, $tbl_info) if $keys;
+            print_all_keys($fks,  $tbl_info) if $fks;
+         }
+         else {
+            $dk->get_duplicate_keys(
+               keys     => $keys,
+               tbl_info => $tbl_info,
+               callback => \&print_duplicate_key,
+               %tp_opts,
+               # get_duplicate_keys() ignores these args but passes them
+               # to the callback:
+                  dbh   => $dbh,
+                  is_fk => 0,
+                  o     => $o,
+                  ks    => $ks,
+            ) if $keys;
+
+            $dk->get_duplicate_fks(
+               keys     => $fks,
+               tbl_info => $tbl_info,
+               callback => \&print_duplicate_key,
+               %tp_opts,
+               # get_duplicate_keys() ignores these args but passes them
+               # to the callback:
+                  dbh   => $dbh,
+                  is_fk => 1,
+                  o     => $o,
+                  ks    => $ks,
+            ) if $fks;
+         }
+
+         # Always count Total Keys so print_key_summary won't die
+         # because %summary is empty.
+         $summary{'Total Keys'} += (scalar keys %$keys) + (scalar keys %$fks)
+      }
+   }
+
+   print_key_summary(%summary) if $o->got('summary');
 }
-
-print_key_summary(%summary) if $opts{summary};
-
-exit;
 
 # ##########################################################################
 # Subroutines
@@ -2614,8 +2789,14 @@ sub print_all_keys {
 sub print_duplicate_key {
    my ( $dupe, %args ) = @_;
    return unless $dupe;
+   foreach my $arg ( qw(tbl_info dbh is_fk o ks) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    my $db     = $args{tbl_info}->{db};
    my $tbl    = $args{tbl_info}->{tbl};
+   my $dbh    = $args{dbh};
+   my $o      = $args{o};
+   my $ks     = $args{ks};
    my $struct = $tp->parse($args{tbl_info}->{ddl});
 
    if ( !$seen_tbl{"$db$tbl"}++ ) {
@@ -2640,10 +2821,10 @@ sub print_duplicate_key {
 
    print "# To remove this duplicate key, execute:\n"
       . 'ALTER TABLE '.$q->quote($db, $tbl)." DROP KEY `$dupe->{key}`;\n"
-         if $opts{sql};
+         if $o->got('sql');
    print "\n";
 
-   if ( $opts{summary} ) {
+   if ( $o->got('summary') ) {
       $summary{'Total Duplicate Keys'} += 1;
       my ($size, $chosen_key) = $ks->get_key_size(
          name        => $dupe->{key},
@@ -2652,13 +2833,19 @@ sub print_duplicate_key {
          tbl_struct  => $struct,
          dbh         => $dbh,
       );
-      $summary{'Size Duplicate Keys'} += $size;
+      if ( $args{is_fk} ) {
+         # Foreign keys have no size because they're just constraints.
+         print "# MySQL uses the $chosen_key key for this "
+            . "foreign key constraint\n";
+      }
+      else {
+         $summary{'Size Duplicate Keys'} += $size;
 
-      # If this key is a fk, $chosen_key will be the actual key
-      # that MySQL chose to satisfy the fk constraint.
-      # At present, we don't report this, but KeySize prints
-      # an MKDEBUG statement like:
-      # KeySize:1947 29348 MySQL chose key: PRIMARY len: 8 rows: 1
+         if ( $chosen_key ne $dupe->{key} ) {
+            # This shouldn't happen. But in case it does, we should know.
+            print "# MySQL chose the $chosen_key key despite FORCE INDEX.\n";
+         }
+      }
    }
    return;
 }
@@ -2685,6 +2872,13 @@ sub _d {
         @_;
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
+
+# ############################################################################
+# Run the program.
+# ############################################################################
+main(@ARGV) unless caller;
+
+1; # Because this is a module as well as a script.
 
 # ############################################################################
 # Documentation
@@ -2732,16 +2926,14 @@ second gets the latest trunk code from Subversion.
 
 =over
 
-=item --allstruct
-
-short form: -a
+=item --all-structs
 
 Compare indexes with different structs (BTREE, HASH, etc).
 
 By default this is disabled, because a BTREE index that covers the same columns
 as a FULLTEXT index is not really a duplicate, for example.
 
-=item --askpass
+=item --ask-pass
 
 Prompt for a password when connecting to MySQL.
 
@@ -2759,7 +2951,7 @@ after connecting to MySQL.
 
 =item --[no]clustered
 
-short form: -c; default: yes
+default: yes
 
 PK columns appended to secondary key is duplicate.
 
@@ -2790,6 +2982,13 @@ should return the same results.
 Currently, the tool suggests removing these indexes, but it should suggest
 shortening them instead.  This is filed as a feature request (issue 295).
 
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files.  If specified, this must be the
+first option on the command line.
+
 =item --databases
 
 short form: -d; type: hash
@@ -2804,17 +3003,21 @@ Only read mysql options from the given file.
 
 You must give an absolute pathname.
 
-=item --engine
+=item --engines
 
 short form: -e; type: hash
 
 Do only tables whose storage engine is in this comma-separated list.
 
-=item --function
+=item --key-types
 
-short form: -f; type: string; default: fk
+type: string; default: fk
 
-Do f=foreign keys, k=keys or fk=check both.
+Check for duplicate f=foreign keys, k=keys or fk=both.
+
+=item --help
+
+Show help and exit.
 
 =item --host
 
@@ -2822,25 +3025,25 @@ short form: -h; type: string
 
 Connect to host.
 
-=item --ignoredb
+=item --ignore-databases
 
-short form: -g; type: Hash
+type: Hash
 
 Ignore this comma-separated list of databases.
 
-=item --ignoreengine
+=item --ignore-engines
 
-short form: -E; type: Hash
+type: Hash
 
 Ignore this comma-separated list of storage engines.
 
-=item --ignoreorder
+=item --ignore-order
 
 Ignore index order so KEY(a,b) duplicates KEY(b,a).
 
-=item --ignoretbl
+=item --ignore-tables
 
-short form: -n; type: Hash
+type: Hash
 
 Ignore this comma-separated list of tables.
 
@@ -2858,7 +3061,7 @@ short form: -P; type: int
 
 Port number to use for connection.
 
-=item --setvars
+=item --set-vars
 
 type: string
 
@@ -2910,6 +3113,10 @@ User for login if not current user.
 short form: -v
 
 Output all keys and/or foreign keys found, not just redundant ones.
+
+=item --version
+
+Show version and exit.
 
 =back
 
