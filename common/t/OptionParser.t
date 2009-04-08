@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 122;
+use Test::More tests => 123;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1578,16 +1578,17 @@ $o = new OptionParser(
 $o->_parse_specs(
    { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
       . 'files (must be the first option on the command line).',  },
-   { spec  => 'cat',     desc  => 'cat option',  },
+   { spec  => 'verbose', desc  => 'verbose',     },
+   { spec  => 'foo=s',   desc  => 'foo option',  },
 );
 
-#@ARGV=qw(--cat --config /path/to/config);
-#$o->get_opts();
-#is_deeply(
-#   $o->errors(),
-#   ['Error parsing options', 'Unrecognized command-line options /path/to/config'],
-#   'special --config option not given first',
-#);
+@ARGV=qw(--foo givenfoo --config samples/config_file_1.conf);
+$o->get_opts();
+is(
+   $o->get('foo'),
+   'givenfoo',
+   '--config not first does not override given opt'
+);
 
 # And now we can actually get it to read a config file into the options!
 $o = new OptionParser(

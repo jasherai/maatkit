@@ -389,7 +389,8 @@ sub get_defaults {
 # cmd line. We have to do this in order to know which opts
 # were "got" on the cmd line.
 sub _set_option {
-   my ( $self, $opt, $val ) = @_;
+   my ( $self, $from, $opt, $val ) = @_;
+   die "I need a from argument" unless $from;
    my $long = exists $self->{opts}->{$opt}       ? $opt
             : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
             : die "Getopt::Long gave a nonexistent option: $opt";
@@ -403,7 +404,8 @@ sub _set_option {
       $opt->{value} = $val;
    }
    $opt->{got} = 1;
-   MKDEBUG && _d('Got option', $long, '=', $val);
+   $opt->{got_from}->{$from} = 1;
+   MKDEBUG && _d('Got option', $long, '=', $val, 'from', $from);
 }
 
 # Get options on the command line (ARGV) according to the option specs
@@ -427,7 +429,7 @@ sub get_opts {
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions(
       # Make Getopt::Long specs for each option with custom handler subs.
-      map    { $_->{spec} => sub { $self->_set_option(@_); } }
+      map    { $_->{spec} => sub { $self->_set_option('cmdline', @_); } }
       values %{$self->{opts}}
    ) or $self->_save_error('Error parsing options');
 
@@ -500,7 +502,7 @@ sub get_opts {
          # given by --config, we manually set them by calling _set_option and
          # _validate_type so that --help will list them.
          @config_files = @{$self->{default_files}};
-         $self->_set_option('config', join(',', @config_files));
+         $self->_set_option('config', 'config', join(',', @config_files));
          $self->_validate_type($self->{opts}->{config});
          $required = 0;
       }
@@ -519,7 +521,8 @@ sub get_opts {
                         : $opt;
                die "Option $long in config file $config_file does not exist"
                   unless $long && exists $self->{opts}->{$long};
-               $self->_set_option($long, $val);
+               $self->_set_option('config', $long, $val)
+                  unless $self->{opts}->{$long}->{got_from}->{cmdline};
             }
             else { 
                # Is literal value (DSN, file, etc.).
