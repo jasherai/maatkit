@@ -1237,7 +1237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3376
+# OptionParser package 3380
 # ###########################################################################
 package OptionParser;
 
@@ -1647,7 +1647,7 @@ sub get_opts {
       if ( $opt->{got} ) {
          if ( exists $self->{disables}->{$long} ) {
             my @disable_opts = @{$self->{disables}->{$long}};
-            map { $self->{opts}->{$_} = undef; } @disable_opts;
+            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
             MKDEBUG && _d('Unset options', @disable_opts,
                'because', $long,'disables them');
          }
