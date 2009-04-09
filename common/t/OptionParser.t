@@ -76,7 +76,6 @@ is_deeply(
          type           => 's',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'port'       => {
          spec           => 'port|p=i',
@@ -90,7 +89,6 @@ is_deeply(
          type           => 'i',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'price'      => {
          spec           => 'price=f',
@@ -104,7 +102,6 @@ is_deeply(
          type           => 'f',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'hash-req'   => {
          spec           => 'hash-req=s',
@@ -118,7 +115,6 @@ is_deeply(
          type           => 'H',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'hash-opt'   => {
          spec           => 'hash-opt=s',
@@ -132,7 +128,6 @@ is_deeply(
          type           => 'h',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'array-req'  => {
          spec           => 'array-req=s',
@@ -146,7 +141,6 @@ is_deeply(
          type           => 'A',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'array-opt'  => {
          spec           => 'array-opt=s',
@@ -160,7 +154,6 @@ is_deeply(
          type           => 'a',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'host'       => {
          spec           => 'host=s',
@@ -174,7 +167,6 @@ is_deeply(
          type           => 'd',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'chunk-size' => {
          spec           => 'chunk-size=s',
@@ -188,7 +180,6 @@ is_deeply(
          type           => 'z',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'time'       => {
          spec           => 'time=s',
@@ -202,7 +193,6 @@ is_deeply(
          type           => 'm',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'help'       => {
          spec           => 'help+',
@@ -216,7 +206,6 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'other'      => {
          spec           => 'other!',
@@ -230,7 +219,6 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       }
    },
    'Parse opt specs'
@@ -464,7 +452,6 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'defaultset'    => {
          spec           => 'defaultset!',
@@ -480,7 +467,6 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'defaults-file' => {
          spec           => 'defaults-file|F=s',
@@ -494,7 +480,6 @@ is_deeply(
          type           => 's',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'dog'           => {
          spec           => 'dog|D=s',
@@ -508,7 +493,6 @@ is_deeply(
          type           => 's',
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
       'love'          => {
          spec           => 'love|l+',
@@ -522,7 +506,6 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
-         must_be_first  => 0,
       },
    },
    'Parse dog specs'

@@ -208,7 +208,6 @@ sub _pod_to_specs {
 #    is_cumulative => true if the option is cumulative
 #    is_negatable  => true if the option is negatable
 #    is_required   => true if the option is required
-#    must_be_first => true if the option must be the first option on the cmdline
 #    type          => the option's type (see %types in _pod_to_spec() above)
 #    got           => true if the option was given explicitly on the cmd line
 #    value         => the option's value
@@ -250,7 +249,6 @@ sub _parse_specs {
          $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
          $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
          $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
-         $opt->{must_be_first} = $opt->{desc} =~ m/must be the first option/ ? 1 : 0;
 
          $opt->{group} = 'default'; # TODO: groups
          $opt->{value} = undef;
@@ -277,14 +275,9 @@ sub _parse_specs {
             MKDEBUG && _d($long, 'default:', $def);
          }
 
-         # Handle special behavior for options that have to be first on the
-         # command-line.
-         if ( $opt->{must_be_first} ) {
-            if ( $long eq 'config' ) {
-               # Special case logic for config files.
-               $self->{defaults}->{$long}
-                  = join(',', $self->get_defaults_files());
-            }
+         # Handle special behavior for --config.
+         if ( $long eq 'config' ) {
+            $self->{defaults}->{$long} = join(',', $self->get_defaults_files());
          }
 
          # Option disable another option if its desc says 'disable'.
@@ -466,7 +459,7 @@ sub get_opts {
    GetOptions(
       # Make Getopt::Long specs for each option with custom handler subs.
       map    { $_->{spec} => sub { $self->_set_option(@_); } }
-      grep   { !$_->{must_be_first} } # These are handled specially elsewhere.
+      grep   { $_->{long} ne 'config' } # --config is handled specially above.
       values %{$self->{opts}}
    ) or $self->_save_error('Error parsing options');
 
