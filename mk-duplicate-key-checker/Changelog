@@ -1,5 +1,6 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Added config file handling and --config (issue 231).
    * Changed the --allstruct option to --all-structs.
    * Changed the --askpass option to --ask-pass.
    * Changed the --engine option to --engines.
