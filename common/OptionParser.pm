@@ -502,7 +502,7 @@ sub get_opts {
          # Rule: opt disables other opts.
          if ( exists $self->{disables}->{$long} ) {
             my @disable_opts = @{$self->{disables}->{$long}};
-            map { $self->{opts}->{$_} = undef; } @disable_opts;
+            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
             MKDEBUG && _d('Unset options', @disable_opts,
                'because', $long,'disables them');
          }

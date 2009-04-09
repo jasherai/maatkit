@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 123;
+use Test::More tests => 124;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -875,7 +875,8 @@ ok(
    $o->get('ignore') == 1 && $o->get('replace') == 1,
    'Multiple options OK for at-least-one',
 );
-
+use Data::Dumper;
+$Data::Dumper::Indent=1;
 $o = new OptionParser(
    description  => 'parses command line options.',
 );
@@ -889,6 +890,24 @@ is_deeply(
    [ $o->get('foo'),  $o->get('bar') ],
    [ 5, undef ],
    '--foo disables --bar',
+);
+%opts = $o->opts();
+is_deeply(
+   $opts{'bar'},
+   {
+      spec          => 'bar',
+      is_required   => 0,
+      value         => undef,
+      is_cumulative => 0,
+      short         => undef,
+      group         => 'default',
+      got           => 0,
+      is_negatable  => 0,
+      desc          => 'Bar (default 1)',
+      long          => 'bar',
+      type          => undef,
+   },
+   'Disabled opt is not destroyed'
 );
 
 # Option can't disable a nonexistent option.
