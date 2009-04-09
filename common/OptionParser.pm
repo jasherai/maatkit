@@ -208,6 +208,7 @@ sub _pod_to_specs {
 #    is_cumulative => true if the option is cumulative
 #    is_negatable  => true if the option is negatable
 #    is_required   => true if the option is required
+#    must_be_first => true if the option must be the first option on the cmdline
 #    type          => the option's type (see %types in _pod_to_spec() above)
 #    got           => true if the option was given explicitly on the cmd line
 #    value         => the option's value
@@ -249,6 +250,7 @@ sub _parse_specs {
          $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
          $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
          $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
+         $opt->{must_be_first} = $opt->{desc} =~ m/must be the first option/ ? 1 : 0;
 
          $opt->{group} = 'default'; # TODO: groups
          $opt->{value} = undef;
@@ -273,6 +275,16 @@ sub _parse_specs {
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
+         }
+
+         # Handle special behavior for options that have to be first on the
+         # command-line.
+         if ( $opt->{must_be_first} ) {
+            if ( $long eq 'config' ) {
+               # Special case logic for config files.
+               $self->{defaults}->{$long}
+                  = join(',', $self->get_defaults_files());
+            }
          }
 
          # Option disable another option if its desc says 'disable'.
@@ -389,8 +401,7 @@ sub get_defaults {
 # cmd line. We have to do this in order to know which opts
 # were "got" on the cmd line.
 sub _set_option {
-   my ( $self, $from, $opt, $val ) = @_;
-   die "I need a from argument" unless $from;
+   my ( $self, $opt, $val ) = @_;
    my $long = exists $self->{opts}->{$opt}       ? $opt
             : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
             : die "Getopt::Long gave a nonexistent option: $opt";
@@ -404,8 +415,7 @@ sub _set_option {
       $opt->{value} = $val;
    }
    $opt->{got} = 1;
-   $opt->{got_from}->{$from} = 1;
-   MKDEBUG && _d('Got option', $long, '=', $val, 'from', $from);
+   MKDEBUG && _d('Got option', $long, '=', $val);
 }
 
 # Get options on the command line (ARGV) according to the option specs
@@ -426,10 +436,37 @@ sub get_opts {
    # Reset errors.
    $self->{errors} = [];
 
+   # --config is special-case; parse them manually and remove them from @ARGV
+   if ( @ARGV && $ARGV[0] eq "--config" ) {
+      shift @ARGV;
+      $self->_set_option('config', shift @ARGV);
+   }
+   if ( $self->has('config') ) {
+      my @extra_args;
+      foreach my $filename ( split(',', $self->get('config')) ) {
+         # Try to open the file.  If it was set explicitly, it's an error if it
+         # can't be opened, but the built-in defaults are to be ignored if they
+         # can't be opened.
+         eval {
+            push @ARGV, $self->_read_config_file($filename);
+         };
+         if ( $EVAL_ERROR ) {
+            if ( $self->got('config') ) {
+               die $EVAL_ERROR;
+            }
+            elsif ( MKDEBUG ) {
+               _d($EVAL_ERROR);
+            }
+         }
+      }
+      unshift @ARGV, @extra_args;
+   }
+
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions(
       # Make Getopt::Long specs for each option with custom handler subs.
-      map    { $_->{spec} => sub { $self->_set_option('cmdline', @_); } }
+      map    { $_->{spec} => sub { $self->_set_option(@_); } }
+      grep   { !$_->{must_be_first} } # These are handled specially elsewhere.
       values %{$self->{opts}}
    ) or $self->_save_error('Error parsing options');
 
@@ -444,7 +481,7 @@ sub get_opts {
       $self->_save_error("Unrecognized command-line options @ARGV");
    }
 
-   # Check opts are mutually exclusive rule.
+   # Check mutex options.
    foreach my $mutex ( @{$self->{mutex}} ) {
       my @set = grep { $self->{opts}->{$_}->{got} } @$mutex;
       if ( @set > 1 ) {
@@ -456,7 +493,6 @@ sub get_opts {
       }
    }
 
-   # Check at least one opt is required rule.
    foreach my $required ( @{$self->{atleast1}} ) {
       my @set = grep { $self->{opts}->{$_}->{got} } @$required;
       if ( @set == 0 ) {
@@ -470,7 +506,7 @@ sub get_opts {
    foreach my $long ( keys %{$self->{opts}} ) {
       my $opt = $self->{opts}->{$long};
       if ( $opt->{got} ) {
-         # Check opt disables other opts rule. 
+         # Rule: opt disables other opts.
          if ( exists $self->{disables}->{$long} ) {
             my @disable_opts = @{$self->{disables}->{$long}};
             map { $self->{opts}->{$_} = undef; } @disable_opts;
@@ -485,51 +521,6 @@ sub get_opts {
       $self->_validate_type($opt);
 
       # TODO: Check groups.
-   }
-
-   # Read and set opts from config files for special --config option.
-   if ( exists $self->{opts}->{config} ) {
-      my @config_files;
-      my $required;
-
-      # Config files given on cmd line override built-in default files.
-      if ( $self->got('config') ) {
-         @config_files = @{$self->{opts}->{config}->{value}};
-         $required     = 1;  # Die if config file cannot be read.
-      }
-      else {
-         # Use the built-in default config files. Since these weren't actually
-         # given by --config, we manually set them by calling _set_option and
-         # _validate_type so that --help will list them.
-         @config_files = @{$self->{default_files}};
-         $self->_set_option('config', 'config', join(',', @config_files));
-         $self->_validate_type($self->{opts}->{config});
-         $required = 0;
-      }
-
-      foreach my $config_file ( @config_files ) {
-         my @opts = $self->_read_config_file(
-            file     => $config_file,
-            required => $required,
-         );
-         foreach my $opt ( @opts ) {
-            if ( ref $opt ) {
-               # Is option (--foo=bar, etc.).
-               my $val  = $opt->{val};
-               my $opt  = $opt->{opt};
-               my $long = length $opt == 1 ? $self->{short_opts}->{$opt}
-                        : $opt;
-               die "Option $long in config file $config_file does not exist"
-                  unless $long && exists $self->{opts}->{$long};
-               $self->_set_option('config', $long, $val)
-                  unless $self->{opts}->{$long}->{got_from}->{cmdline};
-            }
-            else { 
-               # Is literal value (DSN, file, etc.).
-               push @ARGV, $opt;
-            }
-         }
-      }
    }
 
    $self->{got_opts} = 1;
@@ -828,19 +819,8 @@ if ( MKDEBUG ) {
 # Reads a configuration file and returns it as a list.  Inspired by
 # Config::Tiny.
 sub _read_config_file {
-   my ( $self, %args ) = @_;
-   my $filename = $args{file};
-   my $required = defined $args{required} ? $args{required} : 0;
-   my $fh;
-   if ( !open $fh, "<", $filename ) {
-      if ( $required ) {
-         die "Cannot open $filename: $OS_ERROR";
-      }
-      else {
-         MKDEBUG && _d('Cannot open config file', $filename, ':', $OS_ERROR);
-         return;
-      }
-   }
+   my ( $self, $filename ) = @_;
+   open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
    my @args;
    my $prefix = '--';
    my $parse  = 1;
@@ -864,7 +844,7 @@ sub _read_config_file {
       if ( $parse
          && (my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/)
       ) {
-         push @args, { opt=>$opt, val=>(defined $arg ? $arg : 1) };
+         push @args, grep { defined $_ } ("$prefix$opt", $arg);
       }
       elsif ( $line =~ m/./ ) {
          push @args, $line;

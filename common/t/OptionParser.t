@@ -76,6 +76,7 @@ is_deeply(
          type           => 's',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'port'       => {
          spec           => 'port|p=i',
@@ -89,6 +90,7 @@ is_deeply(
          type           => 'i',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'price'      => {
          spec           => 'price=f',
@@ -102,6 +104,7 @@ is_deeply(
          type           => 'f',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'hash-req'   => {
          spec           => 'hash-req=s',
@@ -115,6 +118,7 @@ is_deeply(
          type           => 'H',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'hash-opt'   => {
          spec           => 'hash-opt=s',
@@ -128,6 +132,7 @@ is_deeply(
          type           => 'h',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'array-req'  => {
          spec           => 'array-req=s',
@@ -141,6 +146,7 @@ is_deeply(
          type           => 'A',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'array-opt'  => {
          spec           => 'array-opt=s',
@@ -154,6 +160,7 @@ is_deeply(
          type           => 'a',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'host'       => {
          spec           => 'host=s',
@@ -167,6 +174,7 @@ is_deeply(
          type           => 'd',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'chunk-size' => {
          spec           => 'chunk-size=s',
@@ -180,6 +188,7 @@ is_deeply(
          type           => 'z',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'time'       => {
          spec           => 'time=s',
@@ -193,6 +202,7 @@ is_deeply(
          type           => 'm',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'help'       => {
          spec           => 'help+',
@@ -206,6 +216,7 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'other'      => {
          spec           => 'other!',
@@ -219,6 +230,7 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       }
    },
    'Parse opt specs'
@@ -452,6 +464,7 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'defaultset'    => {
          spec           => 'defaultset!',
@@ -467,6 +480,7 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'defaults-file' => {
          spec           => 'defaults-file|F=s',
@@ -480,6 +494,7 @@ is_deeply(
          type           => 's',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'dog'           => {
          spec           => 'dog|D=s',
@@ -493,6 +508,7 @@ is_deeply(
          type           => 's',
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
       'love'          => {
          spec           => 'love|l+',
@@ -506,6 +522,7 @@ is_deeply(
          type           => undef,
          got            => 0,
          value          => undef,
+         must_be_first  => 0,
       },
    },
    'Parse dog specs'
@@ -1477,13 +1494,8 @@ is(
 # Issue 231: read configuration files
 # #############################################################################
 is_deeply(
-   [$o->_read_config_file(file=>"samples/config_file_1.conf")],
-   [
-      { opt => 'foo',     val=>'bar' },
-      { opt => 'verbose', val=>1     },
-      '/path/to/file',
-      'h=127.1,P=12346'
-   ],
+   [$o->_read_config_file("samples/config_file_1.conf")],
+   ['--foo', 'bar', '--verbose', '/path/to/file', 'h=127.1,P=12346'],
    'Reads a config file',
 );
 
@@ -1578,16 +1590,15 @@ $o = new OptionParser(
 $o->_parse_specs(
    { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
       . 'files (must be the first option on the command line).',  },
-   { spec  => 'verbose', desc  => 'verbose',     },
-   { spec  => 'foo=s',   desc  => 'foo option',  },
+   { spec  => 'cat',     desc  => 'cat option',  },
 );
 
-@ARGV=qw(--foo givenfoo --config samples/config_file_1.conf);
+@ARGV=qw(--cat --config /path/to/config);
 $o->get_opts();
-is(
-   $o->get('foo'),
-   'givenfoo',
-   '--config not first does not override given opt'
+is_deeply(
+   $o->errors(),
+   ['Error parsing options', 'Unrecognized command-line options /path/to/config'],
+   'special --config option not given first',
 );
 
 # And now we can actually get it to read a config file into the options!

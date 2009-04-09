@@ -519,13 +519,7 @@ sub calculate_statistical_metrics {
       $prev   =  $bucket;
    }
 
-   # TODO: remove this once we can determine the real bug
-   # behind issue 332.
-   my $var = ($sumsq - (($sum**2) / $n_vals)) / $n_vals;
-   MKDEBUG && _d('var before sqrt:', $var);
-   $var = 0 if $var < 0;
-   my $stddev = sqrt($var);
-
+   my $stddev   = sqrt($sumsq/$n_vals - ( ($sum/$n_vals) ** 2 ));
    my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
    $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
