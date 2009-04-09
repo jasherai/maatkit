@@ -700,7 +700,7 @@ sub index_access {
 }
 
 # ###########################################################################
-# OptionParser package 3366
+# OptionParser package 3376
 # ###########################################################################
 package OptionParser;
 
@@ -897,7 +897,6 @@ sub _parse_specs {
          $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
          $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
          $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
-         $opt->{must_be_first} = $opt->{desc} =~ m/must be the first option/ ? 1 : 0;
 
          $opt->{group} = 'default'; # TODO: groups
          $opt->{value} = undef;
@@ -919,11 +918,8 @@ sub _parse_specs {
             MKDEBUG && _d($long, 'default:', $def);
          }
 
-         if ( $opt->{must_be_first} ) {
-            if ( $long eq 'config' ) {
-               $self->{defaults}->{$long}
-                  = join(',', $self->get_defaults_files());
-            }
+         if ( $long eq 'config' ) {
+            $self->{defaults}->{$long} = join(',', $self->get_defaults_files());
          }
 
          if ( (my ($dis) = $opt->{desc} =~ m/(disables .*)/) ) {
@@ -1073,7 +1069,7 @@ sub get_opts {
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions(
       map    { $_->{spec} => sub { $self->_set_option(@_); } }
-      grep   { !$_->{must_be_first} } # These are handled specially elsewhere.
+      grep   { $_->{long} ne 'config' } # --config is handled specially above.
       values %{$self->{opts}}
    ) or $self->_save_error('Error parsing options');
 
@@ -1972,7 +1968,9 @@ retrieve rows.  This is the case for InnoDB.
 
 type: Array
 
-Read this comma-separated list of config files; if specified, this must be the first option on the command line.
+Read this comma-separated list of config files.
+
+If specified, this must be the first option on the command line.
 
 =item --connect
 
