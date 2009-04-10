@@ -1,6 +1,5 @@
 Changelog for mk-duplicate-key-checker:
 
-   * Added config file handling and --config (issue 231).
    * Changed the --allstruct option to --all-structs.
    * Changed the --askpass option to --ask-pass.
    * Changed the --engine option to --engines.
@@ -16,6 +15,7 @@ Changelog for mk-duplicate-key-checker:
    * Removed the -g short option.  Use --ignore-databases instead.
    * Removed the -E short option.  Use --ignore-engines instead.
    * Removed the -n short option.  Use --ignore-tables instead.
+   * Added config file handling and --config (issue 231).
    * Converted script to runnable module (issue 315).
 
 2009-03-31: version 1.2.2

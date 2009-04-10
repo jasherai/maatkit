@@ -1,12 +1,12 @@
 Changelog for mk-visual-explain:
 
-   * Added config file handling and --config (issue 231).
    * Changed the --askpass option to --ask-pass.
    * Changed the --clusterpk option to --cluster-pk.
    * Changed the --setvars option to --set-vars.
    * Removed the -C short option.  Use --cluster-pk instead.
    * Removed the -c short option.  Use --connect intsead.
    * Removed the -f short option.  Use --format instead.
+   * Added config file handling and --config (issue 231).
    * Converted script to runnable module (issue 315).
 
 2009-03-31: version 1.0.13
