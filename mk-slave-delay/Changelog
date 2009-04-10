@@ -1,12 +1,18 @@
 Changelog for mk-slave-delay:
 
-   * Added the --config option for issue 231.
+   * Changed the --askpass option to --ask-pass.
+   * Changed the --setvars option to --set-vars.
+   * Changed the --usemaster option to --user-master.
    * Removed the -d short option.  Use --delay instead.
    * Removed the -c short option.  Use --continue instead.
    * Removed the -q short option.  Use --quiet instead.
    * Removed the -t short option.  Use --time instead.
-   * Removed the -u short option.  Use --usemaster instead.
+   * Removed the -u short option.  Use --use-master instead.
    * Removed the -i short option.  Use --interval instead.
+   * Added the -q short option for --quiet.
+   * Added the --config option for issue 231.
+   * Added the --stderr and --stdout options for issue 241.
+   * Converted script to runnable module (issue 315).
 
 2009-03-31: version 1.0.12
 
