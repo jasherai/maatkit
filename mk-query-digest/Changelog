@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * The --shorten option was implemented badly and was slow (issue 336).
    * The report's per-class QPS was calculated incorrectly (issue 326).
 
 2009-03-31: version 0.9.4
