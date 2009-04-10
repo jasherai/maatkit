@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 124;
+use Test::More tests => 125;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -552,7 +552,15 @@ $o->get_opts();
 is(
    $o->get('foo'),
    0,
-   'Can negate negatable opt'
+   'Can negate negatable opt like --nofoo'
+);
+
+@ARGV = qw(--no-foo);
+$o->get_opts();
+is(
+   $o->get('foo'),
+   0,
+   'Can negate negatable opt like --no-foo'
 );
 
 @ARGV = qw(--nodog);
@@ -596,7 +604,6 @@ is(
    1,
    "got('l') short once"
 );
-
 
 # #############################################################################
 # Test usage output.
@@ -1553,6 +1560,7 @@ EOF
 $o = new OptionParser(
    description  => 'parses command line options.',
 );
+
 $o->_parse_specs(
    { spec  => 'config=A', desc  => 'Read this comma-separated list of config '
             . 'files (must be the first option on the command line).',  },
