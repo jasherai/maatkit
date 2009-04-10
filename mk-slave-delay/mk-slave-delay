@@ -1412,7 +1412,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $now;
 my $o;
-my $oktorun    = 1;
+my $oktorun = 1;
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -1768,7 +1768,19 @@ second gets the latest trunk code from Subversion.
 
 =item --ask-pass
 
-Prompt for a password when connecting to MySQL.
+Prompt for a password when connecting to slave.
+
+=item --charset
+
+short form: -A; type: string
+
+Default character set.
+
+Enables character set settings in Perl and MySQL. If the value is C<utf8>,
+sets Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option
+to DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL. Any other
+value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES>
+after connecting to MySQL.
 
 =item --config
 
@@ -1791,6 +1803,14 @@ C<mk-slave-delay> with Control-C.
 
 Fork to the background and detach.  POSIX only.
 
+=item --defaults-file
+
+short form: -F; type: string
+
+Only read mysql options from the given file.
+
+You must give an absolute pathname.
+
 =item --delay
 
 type: time; default: 1h
@@ -1800,6 +1820,12 @@ How far the slave should lag its master.
 =item --help
 
 Show help and exit.
+
+=item --host
+
+short form: -h; type: string
+
+Connect to slave host.
 
 =item --interval
 
@@ -1828,14 +1854,32 @@ short form: -q
 
 Do not output regular status messages.
 
+=item --password
+
+short form: -p; type: string
+
+Password to use for connection to slave.
+
+=item --port
+
+short form: -P; type: int
+
+Port number to use for connection to slave.
+
 =item --set-vars
 
-type: string; default: wait_timeout=10000
+type: string
 
-Set these MySQL variables.
+Set these MySQL variables (default wait_timeout=10000).
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
+
+=item --socket
+
+short form: -S; type: string
+
+Socket file to use for connection to slave.
 
 =item --stderr
 
@@ -1872,6 +1916,12 @@ SLAVE STATUS for the master connection.  It does not use the MASTER_USER
 value.  If you want to specify a different username for the master than the
 one you use to connect to the slave, you should specify the MASTER-HOST option
 explicitly on the command line.
+
+=item --user
+
+short form: -u; type: string
+
+User for slave login if not current user.
 
 =item --version
 
