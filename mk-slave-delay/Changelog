@@ -2,7 +2,7 @@ Changelog for mk-slave-delay:
 
    * Changed the --askpass option to --ask-pass.
    * Changed the --setvars option to --set-vars.
-   * Changed the --usemaster option to --user-master.
+   * Changed the --usermaster option to --user-master.
    * Removed the -d short option.  Use --delay instead.
    * Removed the -c short option.  Use --continue instead.
    * Removed the -q short option.  Use --quiet instead.
