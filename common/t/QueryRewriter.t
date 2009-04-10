@@ -781,8 +781,8 @@ is(
 );
 
 is(
-   $qr->shorten("select * from a where b in(1, '5 string', \"6 string\")"),
-   "select * from a where b in(1 /*... omitted ...*/ )",
+   $qr->shorten("select * from a where b in(1, '5 string', \"6 string\")", 1),
+   "select * from a where b in(1 /*... omitted 2 items ...*/ )",
    "shorten IN() list numbers and strings",
 );
 

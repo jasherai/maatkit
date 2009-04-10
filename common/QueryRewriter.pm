@@ -63,7 +63,7 @@ sub strip_comments {
 }
 
 # Shortens long queries by normalizing stuff out of them.  $length is used only
-# for IN() lists;
+# for IN() lists.
 sub shorten {
    my ( $self, $query, $length ) = @_;
    # Shorten multi-value insert/replace, all the way up to on duplicate key
@@ -77,38 +77,39 @@ sub shorten {
       \s*,\s*\(.*?(ON\s+DUPLICATE|\Z)}
       {$1 /*... omitted ...*/$2}xsi;
 
+   # Shortcut!  Find out if there's an IN() list with values.
+   return $query unless $query =~ m/IN\s*\(\s*(?!select)/i;
+
    # Shorten long IN() lists of literals.  But only if the string is longer than
-   # the $length limit.  This is very inefficient, because it repeatedly does
-   # the same replacement with trial and error, but this isn't called from
-   # performance-critical parts of the code at the time of writing.
+   # the $length limit.  Assumption: values don't contain commas or closing
+   # parens inside them.  Assumption: all values are the same length.
    if ( $length && length($query) > $length ) {
-      my $replaced = 0;
-      my $limit    = 1;
-      my ($temp, $last);
-      do {
-         $last = defined $temp ? $temp : '';
-         $temp = $query;
-         $replaced = $temp =~ s{
-            (IN\s*\((?:$quote_re|\w+))           # One literal in an IN list
-            (?:\s*,\s*(?:$quote_re|\w+)){$limit} # Followed by N more
-            }
-            {$1 /*... omitted ...*/ }xsi;
-         if ( !$replaced && $limit > 1 ) {
-            $temp = $last; # We're done, return last successful replacement
+      my ($left, $mid, $right) = $query =~ m{
+         (\A.*?\bIN\s*\()     # Everything up to the opening of IN list
+         ([^\)]+)             # Contents of the list
+         (\).*\Z)             # The rest of the query
+      }xsi;
+      if ( $left ) {
+         # Compute how many to keep and try to get rid of the middle of the
+         # list until it's short enough.
+         my $targ = $length - length($left) - length($right);
+         my @vals = split(/,/, $mid);
+         my @left = shift @vals;
+         my @right;
+         my $len  = length($left[0]);
+         while ( @vals && $len < $targ / 2 ) {
+            $len += length($vals[0]) + 1;
+            push @left, shift @vals;
          }
-         elsif ( $replaced ) {
-            $temp =~ s/\.\.\. omitted/... omitted $limit items/;
-            $limit++;
+         while ( @vals && $len < $targ ) {
+            $len += length($vals[-1]) + 1;
+            unshift @right, pop @vals;
          }
-      } until ( length($temp) <= $length || $temp eq $last );
-      $query = $temp;
-   }
-   elsif ( !$length ) {
-      $query =~ s{
-         (IN\s*\((?:$quote_re|\w+))    # One literal in an IN list
-         (?:\s*,\s*(?:$quote_re|\w+))+ # Followed by N more
-         }
-         {$1 /*... omitted ...*/ }xsio;
+         $query = $left . join(',', @left)
+                . (@right ? ',' : '')
+                . " /*... omitted " . scalar(@vals) . " items ...*/ "
+                . join(',', @right) . $right;
+      }
    }
 
    return $query;
