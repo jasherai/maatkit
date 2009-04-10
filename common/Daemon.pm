@@ -24,54 +24,58 @@ package Daemon;
 use strict;
 use warnings FATAL => 'all';
 
-use POSIX;
+use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   my $self = { %args };
-   $self->{reopen_STDIN}  ||= '/dev/null';
-   $self->{reopen_STDOUT} ||= '/dev/null';
-   $self->{reopen_STDERR} ||= '&STDOUT';
-
-   # PID_file cannot be given here; it must be given to create_PID_file().
-   # See that sub for why.
-   $self->{PID_file}        = undef;
-
+   my $self = {
+      stdout   => $args{'stdout'} || '/dev/null',
+      stderr   => $args{'stderr'} || undef,
+      stdin    => $args{'stdin'}  || '/dev/null',
+      PID_file => undef,  # set with create_PID_file()
+   };
+   MKDEBUG && _d('Daemonized child will redirect stdout to', $self->{stdout},
+      'stderr to', $self->{stderr}, 'and stdin from', $self->{stdin});
    return bless $self, $class;
 }
 
 sub daemonize {
    my ( $self ) = @_;
 
-   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
-   exit if $pid;
-   POSIX::setsid() or die "Can't start a new session: $OS_ERROR";
+   MKDEBUG && _d('About to fork and daemonize');
+   defined (my $pid = fork()) or die "Cannot fork: $OS_ERROR";
+   if ( $pid ) {
+      MKDEBUG && _d('I am the parent and now I die');
+      exit;
+   }
 
-   chdir '/' or die "Can't chdir to /: $OS_ERROR";
-
-   open STDIN,  "$self->{reopen_STDIN}",
-      or die "Cannot reopen STDIN $self->{reopen_STDIN}: $OS_ERROR";
-   open STDOUT, ">$self->{reopen_STDOUT}"
-      or die "Cannot reopen STDOUT >$self->{reopen_STDOUT}: $OS_ERROR";
-   open STDERR, ">$self->{reopen_STDERR}"
-      or die "Cannot reopen STDERR >$self->{reopen_STDERR}: $OS_ERROR";
-
-   # TODO: don't allow MKDEBUG=1
-
+   # I'm daemonized now.
+   POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
+   chdir '/' or die "Cannot chdir to /: $OS_ERROR";
+   open STDOUT, ">$self->{stdout}"
+      or die "Cannot redirect STDOUT to $self->{stdout}: $OS_ERROR";
+   if ( $self->{stderr} ) {
+      open STDERR, ">$self->{stderr}"
+         or die "Cannot redirect STDERR to $self->{stderr}: $OS_ERROR";
+   }
+   open STDIN,  "$self->{stdin}",
+      or die "Cannot redirect STDIN from $self->{stdin}: $OS_ERROR";
+   MKDEBUG && _d('I am the child and now I live daemonized');
    return;
 }
 
+# PID_file must be set with this sub and not in new() because if it is
+# already set then the parent will unlink it when its copy of the daemon
+# obj is destoryed.
 sub create_PID_file {
    my ( $self, $PID_file ) = @_;
-   return if !$PID_file;
-   # PID_file must be given here and not new() because if it is already
-   # set then the parent will unlink it when its copy of this daemon obj
-   # is destoried.
+   return unless $PID_file;
    $self->{PID_file} = $PID_file; # save for unlink in DESTORY()
-   open my $PID_FILE, "+> $self->{PID_file}"
+   MKDEBUG && _d('PID file:', $self->{PID_file});
+   open my $PID_FILE, '>', $self->{PID_file}
       or die "Cannot open PID file '$self->{PID_file}': $OS_ERROR";
    print $PID_FILE $PID;
    close $PID_FILE
@@ -81,9 +85,13 @@ sub create_PID_file {
 
 sub remove_PID_file {
    my ( $self ) = @_;
-   if ( defined $self->{PID_file} ) {
+   if ( defined $self->{PID_file} && -f $self->{PID_file} ) {
+      MKDEBUG && _d('Removing PID file');
       unlink $self->{PID_file}
          or warn "Cannot remove PID file '$self->{PID_file}': $OS_ERROR";
+   }
+   else {
+      MKDEBUG && _d('No PID to remove');
    }
    return;
 }

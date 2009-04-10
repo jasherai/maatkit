@@ -10,17 +10,20 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 require '../Daemon.pm';
 
-if ( scalar @ARGV < 2 ) {
-   die "Usage: daemonizes.pl sleep exit|die\n";
+if ( scalar @ARGV < 1 ) {
+   die "Usage: daemonizes.pl sleep_time [args]\n";
 }
-my ( $s, $e, $a ) = ( $ARGV[0], $ARGV[1], $ARGV[2] );
-
+my ( $t, $args ) = ( $ARGV[0], $ARGV[1] );
 my $d;
-if ( defined $a ) {
+
+# Turn comma-separated args from cmd line into a hash that
+# we pass to new(). Each arg should be a quoted string like
+# 'key => val' (must quote to preserve spaces).
+if ( defined $args ) {
    my %args = map {
       my ( $k, $v ) = m/(.*) \=\> (.*)/;
       $k => $v;
-   } split /,/, $a;
+   } split /,/, $args;
    $d = new Daemon(%args);
 }
 else {
@@ -28,11 +31,7 @@ else {
 }
 $d->daemonize();
 $d->create_PID_file('/tmp/daemonizes.pl.pid');
-
 print STDOUT ' STDOUT ';
 print STDERR ' STDERR ';
-
-sleep $s;
-
-exit if $e eq 'exit';
-die  if $e eq 'die';
+sleep $t;
+exit;
