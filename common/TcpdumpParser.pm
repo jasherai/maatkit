@@ -230,7 +230,7 @@ sub parse_event {
                      $arg = $sess->{cmd}->{arg};
                   }
                   else {
-                     $arg = 'Administrator command: '
+                     $arg = 'administrator command: '
                           . ucfirst(lc(substr($com_for{$com}, 4)));
                      $com = 'Admin';
                   }
@@ -250,14 +250,42 @@ sub parse_event {
             }
             elsif ( $first_byte eq 'ff' ) {
                MKDEBUG && _d('Got an ERROR packet');
-               #MKDEBUG && _d('ERROR',
-                  #hex(substr($data, 1, 2)),
-                  #to_string(substring($data, 3)));
+               my $errno = to_num(substr($data, 0, 4));
+               my $messg = to_string(substr($data, 4));
+               MKDEBUG && _d('ERROR', $errno, $messg);
+               my $event;
                if ( $sess->{state} eq 'client_auth' ) {
                   MKDEBUG && _d('Connection failed');
-                  # TODO: Fire an event?
+                  $event = {
+                     cmd       => 'Admin',
+                     arg       => 'administrator command: Connect',
+                     ts        => $ts,
+                     Error_no  => $errno,
+                  };
                   $sess->{state} = 'closing';
                }
+               elsif ( $sess->{cmd} ) { # It should be a query or something
+                  my $com = $sess->{cmd}->{cmd};
+                  my $arg;
+                  if ( $com eq COM_QUERY ) {
+                     $com = 'Query';
+                     $arg = $sess->{cmd}->{arg};
+                  }
+                  else {
+                     $arg = 'administrator command: '
+                          . ucfirst(lc(substr($com_for{$com}, 4)));
+                     $com = 'Admin';
+                  }
+                  $event = {
+                     cmd       => $com,
+                     arg       => $arg,
+                     ts        => $ts,
+                     Error_no  => $errno,
+                  };
+                  $sess->{state} = 'ready';
+               }
+               fire_event($event, $pack, $sess, @callbacks);
+               return 1;
             }
             elsif ( $first_byte eq 'fe' && $packet_len < 9 ) {
                MKDEBUG && _d('Got an EOF packet');
@@ -289,7 +317,7 @@ sub parse_event {
                      $arg = $sess->{cmd}->{arg};
                   }
                   else {
-                     $arg = 'Administrator command: '
+                     $arg = 'administrator command: '
                           . ucfirst(lc(substr($com_for{$com}, 4)));
                      $com = 'Admin';
                   }
@@ -342,8 +370,6 @@ sub parse_event {
 
             # Otherwise, it should be a query.  We ignore the commands
             # that take arguments (COM_CHANGE_USER, COM_PROCESS_KILL).
-            # TODO: handle COM_QUIT, which doesn't really get a reply from
-            # MySQL, only from TCP/IP closing the socket.
             else {
                my $COM = substr($data, 0, 2);
                $data = to_string(substr($data, 2));
@@ -354,6 +380,18 @@ sub parse_event {
                   cmd => $COM,
                   arg => $data,
                };
+               if ( $COM eq COM_QUIT ) { # Fire right away; will cleanup later.
+                  MKDEBUG && _d('Got a COM_QUIT');
+                  fire_event(
+                     {  cmd       => 'Admin',
+                        arg       => 'administrator command: Quit',
+                        ts        => $ts,
+                     },
+                     $pack, $sess, @callbacks
+                  );
+                  $sess->{state} = 'closing';
+                  return 1;
+               }
             }
          } # From client to server
 
@@ -377,18 +415,19 @@ sub fire_event {
 
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\.(\d+)/;
    $event = {
-      cmd => $event->{cmd},
-      arg => $event->{arg},
-      bytes => length($event->{arg}),
-      ts    => tcp_timestamp($event->{ts}),
-      host  => $host,
-      ip    => $host,
-      port  => $port,
-      db    => $session->{db},
-      user  => $session->{user},
+      cmd        => $event->{cmd},
+      arg        => $event->{arg},
+      bytes      => length( $event->{arg} ),
+      ts         => tcp_timestamp( $event->{ts} ),
+      host       => $host,
+      ip         => $host,
+      port       => $port,
+      db         => $session->{db},
+      user       => $session->{user},
       Thread_id  => $session->{thread_id},
       pos_in_log => $session->{pos_in_log},
       Query_time => timestamp_diff($session->{ts}, $packet =~ m/\A(\S+ \S+)/g),
+      Error_no   => ($event->{Error_no} || 0),
    };
    foreach my $callback ( @callbacks ) {
       last unless $event = $callback->($event);

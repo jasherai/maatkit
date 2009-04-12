@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -54,6 +54,7 @@ run_test({
          pos_in_log    => 0,
          bytes         => length('select "hello world" as greeting'),
          cmd           => 'Query',
+         Error_no      => 0,
       },
    ],
 });
@@ -75,6 +76,7 @@ run_test({
          pos_in_log => 0,
          bytes      => length('administrator command: Connect'),
          cmd        => 'Admin',
+         Error_no   => 0,
       },
       {  Query_time => '0.000265',
          Thread_id  => 8,
@@ -87,7 +89,8 @@ run_test({
          port       => '57890',
          pos_in_log => 2427,
          ts         => '090412 11:00:13.118643',
-         user       => 'msandbox'
+         user       => 'msandbox',
+         Error_no   => 0,
       },
       {  Query_time => '0.000167',
          Thread_id  => 8,
@@ -100,7 +103,67 @@ run_test({
          port       => '57890',
          pos_in_log => 3270,
          ts         => '090412 11:00:13.119079',
-         user       => 'msandbox'
+         user       => 'msandbox',
+         Error_no   => 0,
+      },
+      {  Query_time => '0.000000',
+         Thread_id  => 8,
+         arg        => 'administrator command: Quit',
+         bytes      => 27,
+         cmd        => 'Admin',
+         db         => 'mysql',
+         host       => '127.0.0.1',
+         ip         => '127.0.0.1',
+         port       => '57890',
+         pos_in_log => '4152',
+         ts         => '090412 11:00:13.119487',
+         user       => 'msandbox',
+         Error_no   => 0,
       },
    ],
 });
+
+# A session that has an error during login.
+run_test({
+   file   => 'samples/tcpdump003.txt',
+   misc   => { watching => '127.0.0.1.3306' },
+   result => [
+      {  ts         => "090412 12:41:46.357853",
+         db         => '',
+         user       => 'msandbox',
+         host       => '127.0.0.1',
+         ip         => '127.0.0.1',
+         port       => '44488',
+         arg        => 'administrator command: Connect',
+         Query_time => '0.010753',
+         Thread_id  => 9,
+         pos_in_log => 0,
+         bytes      => length('administrator command: Connect'),
+         cmd        => 'Admin',
+         Error_no   => 1045,
+      },
+   ],
+});
+
+# A session that has an error executing a query
+run_test({
+   file   => 'samples/tcpdump004.txt',
+   misc   => { watching => '127.0.0.1.3306' },
+   result => [
+      {  ts         => "090412 12:58:02.036002",
+         db         => undef,
+         user       => undef,
+         host       => '127.0.0.1',
+         ip         => '127.0.0.1',
+         port       => '60439',
+         arg        => 'select 5 from foo',
+         Query_time => '0.000251',
+         Thread_id  => undef,
+         pos_in_log => 0,
+         bytes      => length('select 5 from foo'),
+         cmd        => 'Query',
+         Error_no   => 1046,
+      },
+   ],
+});
+
