@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 2;
 use English qw(-no_match_vars);
 
 require "../SlowLogParser.pm";
