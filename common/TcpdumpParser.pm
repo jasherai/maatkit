@@ -19,7 +19,10 @@
 # ###########################################################################
 package TcpdumpParser;
 
-# TODO: tcpdump -i lo port 3306 -s 1500 -x -n -q -tttt
+# This is a parser for tcpdump output.  It expects the output to be formatted a
+# certain way.  See the t/samples/tcpdumpxxx.txt files for examples.  Here's a
+# sample command on Ubuntu to produce the right formatted output:
+# tcpdump -i lo port 3306 -s 1500 -x -n -q -tttt
 
 use strict;
 use warnings FATAL => 'all';
@@ -60,35 +63,35 @@ use constant {
 };
 
 my %com_for = (
-   COM_SLEEP               => 'COM_SLEEP',
-   COM_QUIT                => 'COM_QUIT',
-   COM_INIT_DB             => 'COM_INIT_DB',
-   COM_QUERY               => 'COM_QUERY',
-   COM_FIELD_LIST          => 'COM_FIELD_LIST',
-   COM_CREATE_DB           => 'COM_CREATE_DB',
-   COM_DROP_DB             => 'COM_DROP_DB',
-   COM_REFRESH             => 'COM_REFRESH',
-   COM_SHUTDOWN            => 'COM_SHUTDOWN',
-   COM_STATISTICS          => 'COM_STATISTICS',
-   COM_PROCESS_INFO        => 'COM_PROCESS_INFO',
-   COM_CONNECT             => 'COM_CONNECT',
-   COM_PROCESS_KILL        => 'COM_PROCESS_KILL',
-   COM_DEBUG               => 'COM_DEBUG',
-   COM_PING                => 'COM_PING',
-   COM_TIME                => 'COM_TIME',
-   COM_DELAYED_INSERT      => 'COM_DELAYED_INSERT',
-   COM_CHANGE_USER         => 'COM_CHANGE_USER',
-   COM_BINLOG_DUMP         => 'COM_BINLOG_DUMP',
-   COM_TABLE_DUMP          => 'COM_TABLE_DUMP',
-   COM_CONNECT_OUT         => 'COM_CONNECT_OUT',
-   COM_REGISTER_SLAVE      => 'COM_REGISTER_SLAVE',
-   COM_STMT_PREPARE        => 'COM_STMT_PREPARE',
-   COM_STMT_EXECUTE        => 'COM_STMT_EXECUTE',
-   COM_STMT_SEND_LONG_DATA => 'COM_STMT_SEND_LONG_DATA',
-   COM_STMT_CLOSE          => 'COM_STMT_CLOSE',
-   COM_STMT_RESET          => 'COM_STMT_RESET',
-   COM_SET_OPTION          => 'COM_SET_OPTION',
-   COM_STMT_FETCH          => 'COM_STMT_FETCH',
+   '00' => 'COM_SLEEP',
+   '01' => 'COM_QUIT',
+   '02' => 'COM_INIT_DB',
+   '03' => 'COM_QUERY',
+   '04' => 'COM_FIELD_LIST',
+   '05' => 'COM_CREATE_DB',
+   '06' => 'COM_DROP_DB',
+   '07' => 'COM_REFRESH',
+   '08' => 'COM_SHUTDOWN',
+   '09' => 'COM_STATISTICS',
+   '0a' => 'COM_PROCESS_INFO',
+   '0b' => 'COM_CONNECT',
+   '0c' => 'COM_PROCESS_KILL',
+   '0d' => 'COM_DEBUG',
+   '0e' => 'COM_PING',
+   '0f' => 'COM_TIME',
+   '10' => 'COM_DELAYED_INSERT',
+   '11' => 'COM_CHANGE_USER',
+   '12' => 'COM_BINLOG_DUMP',
+   '13' => 'COM_TABLE_DUMP',
+   '14' => 'COM_CONNECT_OUT',
+   '15' => 'COM_REGISTER_SLAVE',
+   '16' => 'COM_STMT_PREPARE',
+   '17' => 'COM_STMT_EXECUTE',
+   '18' => 'COM_STMT_SEND_LONG_DATA',
+   '19' => 'COM_STMT_CLOSE',
+   '1a' => 'COM_STMT_RESET',
+   '1b' => 'COM_SET_OPTION',
+   '1c' => 'COM_STMT_FETCH',
 );
 
 sub new {
@@ -98,8 +101,6 @@ sub new {
    }, $class;
 }
 
-my $hdr_line  = qr/^\d\d:/;
-my $data_line = qr/^\t0x/;
 my $handshake_pat = qr{
                         # Bytes                Name
       ^                 # -----                ----
@@ -172,11 +173,10 @@ sub parse_event {
          # contain many MySQL protocol packets!  The first 4 bytes are the
          # packet header: a 3-byte length and a 1-byte sequence.  After that, it
          # depends on what type of packet this is.  NOTE: the data is modified
-         # by the inmost substr call here! TODO: at some point, we can try
-         # to change this to a while loop; while get-a-packet-from-$data, do
-         # stuff, etc.  But that will be a stateful loop, and it'll depend on us
-         # having ALL the data, which we might not since the tcpdump only gives
-         # us part of it.
+         # by the inmost substr call here!  If we had all the data in the TCP
+         # packets, we could change this to a while loop; while
+         # get-a-packet-from-$data, do stuff, etc.  But we don't, and we don't
+         # want to either.
          my $packet_len = to_num(substr(substr($data, 0, 8, ''), 0, 6));
          MKDEBUG && _d('Packet length:', $packet_len);
 
@@ -214,7 +214,6 @@ sub parse_event {
 
                if ( ($sess->{state} || '') eq 'client_auth' ) {
                   # We logged in OK!  Trigger an admin Connect command.
-                  # TODO: how can we capture the time it takes to log in?
                   fire_event(
                      {  cmd => 'Admin',
                         arg => 'administrator command: Connect',
@@ -223,7 +222,7 @@ sub parse_event {
                      $pack, $sess, @callbacks
                   );
                }
-               elsif ( $sess->{cmd} ) {
+               elsif ( $sess->{cmd} ) { # It should be a query or something
                   my $com = $sess->{cmd}->{cmd};
                   my $arg;
                   if ( $com eq COM_QUERY ) {
@@ -254,44 +253,21 @@ sub parse_event {
                #MKDEBUG && _d('ERROR',
                   #hex(substr($data, 1, 2)),
                   #to_string(substring($data, 3)));
-               if ( $sess->{status} eq 'client_auth' ) {
+               if ( $sess->{state} eq 'client_auth' ) {
                   MKDEBUG && _d('Connection failed');
                   # TODO: Fire an event?
-                  delete $self->{sessions}->{$to};
+                  $sess->{state} = 'closing';
                }
             }
             elsif ( $first_byte eq 'fe' && $packet_len < 9 ) {
                MKDEBUG && _d('Got an EOF packet');
-
-               # Good server status flags to look at are
-               # SERVER_QUERY_NO_GOOD_INDEX_USED (16) and
-               # SERVER_QUERY_NO_INDEX_USED (32).
-               my $warnings = to_num(substr($data, 0, 4, ''));
-               my $status   = to_num(substr($data, 0, 4, ''));
-
-               if ( $sess->{cmd} ) {
-                  my $com = $sess->{cmd}->{cmd};
-                  my $arg;
-                  if ( $com eq COM_QUERY ) {
-                     $com = 'Query';
-                     $arg = $sess->{cmd}->{arg};
-                  }
-                  else {
-                     $arg = 'Administrator command: '
-                          . ucfirst(lc(substr($com_for{$com}, 4)));
-                     $com = 'Admin';
-                  }
-                  fire_event(
-                     {  cmd           => $com,
-                        arg           => $arg,
-                        ts            => $ts,
-                        Warnings      => $warnings,
-                     },
-                     $pack, $sess, @callbacks
-                  );
-               }
+               die "You should not have gotten here";
+               # ^^^ We shouldn't reach this because EOF should come after a
+               # header, field, or row data packet; and we should be firing the
+               # event and returning when we see that.  See SVN history for some
+               # good stuff we could do if we wanted to handle EOF packets.
             }
-            elsif ( !$self->{sessions}->{$to}
+            elsif ( !$sess->{state}
                && (my ($thread_id) = $data =~ m/$handshake_pat/o )
             ) {
                # It's the handshake packet from the server to the client.
@@ -324,10 +300,10 @@ sub parse_event {
                      },
                      $pack, $sess, @callbacks
                   );
+                  $sess->{state} = 'ready';
+                  return 1;
                }
             }
-            $sess->{state} = 'ready';
-            return 1;
          } # From server to client
 
          # If it's from the client to the server, I care about
@@ -340,15 +316,15 @@ sub parse_event {
          else {  # From client to server
             if ( ($sess->{state} || '') eq 'server_handshake' ) {
                MKDEBUG && _d('Expect client authentication packet');
-               my ( $user, $scr_len ) = $data =~ m{
+               my ( $user, $buff_len ) = $data =~ m{
                   ^.{18}         # Client flags, max packet size, charset
                   (?:00){23}     # Filler
                   ((?:..)+?)00   # Null-terminated user name
                   (..)           # Length-coding byte for scramble buff
                }x;
-               if ( defined $scr_len ) {
-                  MKDEBUG && _d('Found user', $user, 'scr_len', $scr_len);
-                  my $code_len = hex($scr_len);
+               if ( defined $buff_len ) {
+                  MKDEBUG && _d('Found user', $user, 'buff_len', $buff_len);
+                  my $code_len = hex($buff_len);
                   my ( $database ) = $data =~ m!
                      ^.{64}${user}00..   # Everything matched before
                      (?:..){$code_len}   # The scramble buffer
@@ -357,7 +333,7 @@ sub parse_event {
                   MKDEBUG && _d('Found databasename', $database);
                   $sess->{state}    = 'client_auth';
                   $sess->{user}     = to_string($user);
-                  $sess->{database} = to_string($database || '');
+                  $sess->{db}       = to_string($database || '');
                }
                else {
                   MKDEBUG && _d('Did not match client auth packet');
@@ -371,9 +347,10 @@ sub parse_event {
             else {
                my $COM = substr($data, 0, 2);
                $data = to_string(substr($data, 2));
-               $sess->{ts}    = $ts;
-               $sess->{state} = 'awaiting_reply';
-               $sess->{cmd}   = {
+               $sess->{ts}         = $ts;
+               $sess->{state}      = 'awaiting_reply';
+               $sess->{pos_in_log} = $pos_in_log;
+               $sess->{cmd}        = {
                   cmd => $COM,
                   arg => $data,
                };
@@ -383,6 +360,10 @@ sub parse_event {
       } # There was data in the TCP packet.
       else {
          MKDEBUG && _d('No data in TCP packet');
+         # Is the session ready to close?
+         if ( ($sess->{state} || '') eq 'closing' ) {
+            delete $self->{sessions}->{$sess->{client}};
+         }
       }
 
       $pos_in_log = tell($fh);

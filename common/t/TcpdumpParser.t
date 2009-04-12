@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 44;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -21,6 +21,7 @@ sub run_test {
       keys %$def;
    my @e;
    my $num_events = 0;
+   my $p = new TcpdumpParser;
    eval {
       open my $fh, "<", $def->{file} or die $OS_ERROR;
       $num_events++ while $p->parse_event($fh, $def->{misc}, sub { push @e, @_ });
@@ -62,17 +63,44 @@ run_test({
    file   => 'samples/tcpdump002.txt',
    misc   => { watching => '127.0.0.1.3306' },
    result => [
-      {  ts            => "${today}20:52:55.696357",
-         db            => undef,
-         user          => 'msandbox',
-         host          => '127.0.0.1',
-         ip            => '127.0.0.1',
-         port          => '50321',
-         arg           => 'administrator command: Connect',
-         Query_time    => 0.010625999988406,
-         pos_in_log    => 1229,
-         bytes         => length('administrator command: Connect'),
-         cmd           => 'Admin',
+      {  ts         => "090412 11:00:13.118191",
+         db         => 'mysql',
+         user       => 'msandbox',
+         host       => '127.0.0.1',
+         ip         => '127.0.0.1',
+         port       => '57890',
+         arg        => 'administrator command: Connect',
+         Query_time => '0.011152',
+         Thread_id  => 8,
+         pos_in_log => 0,
+         bytes      => length('administrator command: Connect'),
+         cmd        => 'Admin',
+      },
+      {  Query_time => '0.000265',
+         Thread_id  => 8,
+         arg        => 'select @@version_comment limit 1',
+         bytes      => 32,
+         cmd        => 'Query',
+         db         => 'mysql',
+         host       => '127.0.0.1',
+         ip         => '127.0.0.1',
+         port       => '57890',
+         pos_in_log => 2427,
+         ts         => '090412 11:00:13.118643',
+         user       => 'msandbox'
+      },
+      {  Query_time => '0.000167',
+         Thread_id  => 8,
+         arg        => 'select "paris in the the spring" as trick',
+         bytes      => 41,
+         cmd        => 'Query',
+         db         => 'mysql',
+         host       => '127.0.0.1',
+         ip         => '127.0.0.1',
+         port       => '57890',
+         pos_in_log => 3270,
+         ts         => '090412 11:00:13.119079',
+         user       => 'msandbox'
       },
    ],
 });
