@@ -38,10 +38,33 @@ sub run_test {
 
 # Check that I can parse a really simple session.
 run_test({
+   file   => 'samples/tcpdump001.txt',
+   misc   => { watching => '127.0.0.1.3306' },
+   result => [
+      {  ts            => '2009-04-12 09:50:16.805123',
+         db            => undef,
+         user          => undef,
+         Thread_id     => undef,
+         host          => '127.0.0.1',
+         ip            => '127.0.0.1',
+         port          => '42167',
+         arg           => 'select "hello world" as greeting',
+         Query_time    => .805123 - .804849,
+         pos_in_log    => 1229,
+         bytes         => length('select "hello world" as greeting'),
+         cmd           => 'Query',
+      },
+   ],
+});
+
+__DATA__
+
+# Check that I can parse a really simple session.
+run_test({
    file   => 'samples/tcpdump002.txt',
    misc   => { watching => '127.0.0.1.3306' },
    result => [
-      {  ts            => '090411 20:52:55.696357',
+      {  ts            => "${today}20:52:55.696357",
          db            => undef,
          user          => 'msandbox',
          host          => '127.0.0.1',

@@ -19,7 +19,7 @@
 # ###########################################################################
 package TcpdumpParser;
 
-# TODO: tcpdump -i lo port 3306 -s 1500 -x -n -q
+# TODO: tcpdump -i lo port 3306 -s 1500 -x -n -q -tttt
 
 use strict;
 use warnings FATAL => 'all';
@@ -58,6 +58,38 @@ use constant {
    COM_SET_OPTION          => '1b',
    COM_STMT_FETCH          => '1c',
 };
+
+my %com_for = (
+   COM_SLEEP               => 'COM_SLEEP',
+   COM_QUIT                => 'COM_QUIT',
+   COM_INIT_DB             => 'COM_INIT_DB',
+   COM_QUERY               => 'COM_QUERY',
+   COM_FIELD_LIST          => 'COM_FIELD_LIST',
+   COM_CREATE_DB           => 'COM_CREATE_DB',
+   COM_DROP_DB             => 'COM_DROP_DB',
+   COM_REFRESH             => 'COM_REFRESH',
+   COM_SHUTDOWN            => 'COM_SHUTDOWN',
+   COM_STATISTICS          => 'COM_STATISTICS',
+   COM_PROCESS_INFO        => 'COM_PROCESS_INFO',
+   COM_CONNECT             => 'COM_CONNECT',
+   COM_PROCESS_KILL        => 'COM_PROCESS_KILL',
+   COM_DEBUG               => 'COM_DEBUG',
+   COM_PING                => 'COM_PING',
+   COM_TIME                => 'COM_TIME',
+   COM_DELAYED_INSERT      => 'COM_DELAYED_INSERT',
+   COM_CHANGE_USER         => 'COM_CHANGE_USER',
+   COM_BINLOG_DUMP         => 'COM_BINLOG_DUMP',
+   COM_TABLE_DUMP          => 'COM_TABLE_DUMP',
+   COM_CONNECT_OUT         => 'COM_CONNECT_OUT',
+   COM_REGISTER_SLAVE      => 'COM_REGISTER_SLAVE',
+   COM_STMT_PREPARE        => 'COM_STMT_PREPARE',
+   COM_STMT_EXECUTE        => 'COM_STMT_EXECUTE',
+   COM_STMT_SEND_LONG_DATA => 'COM_STMT_SEND_LONG_DATA',
+   COM_STMT_CLOSE          => 'COM_STMT_CLOSE',
+   COM_STMT_RESET          => 'COM_STMT_RESET',
+   COM_SET_OPTION          => 'COM_SET_OPTION',
+   COM_STMT_FETCH          => 'COM_STMT_FETCH',
+);
 
 sub new {
    my ( $class ) = @_;
@@ -137,10 +169,10 @@ sub parse_event {
             $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
             if ( $data ) {
 
-               # Now we're down to the MySQL protocol.  The first 4 bytes are the
-               # packet header: a 3-byte length and a 1-byte sequence.  After that,
-               # it depends on what type of packet this is.  NOTE: the data is
-               # modified by the inmost substr call here!
+               # Now we're down to the MySQL protocol.  The first 4 bytes are
+               # the packet header: a 3-byte length and a 1-byte sequence.
+               # After that, it depends on what type of packet this is.  NOTE:
+               # the data is modified by the inmost substr call here!
                my $packet_len = to_num(substr(substr($data, 0, 8, ''), 0, 6));
                MKDEBUG && _d('Packet length:', $packet_len);
 
@@ -151,15 +183,32 @@ sub parse_event {
                   MKDEBUG && _d('Packet is from server to client');
 
                   # The first byte in the packet indicates whether it's an OK,
-                  # ERROR, EOF packet.  If it's not one of those, we test whether
-                  # it's an initialization packet (the first thing the server ever
-                  # sends the client).  If it's not that, it could be a result set
-                  # header, field, row data, etc.
-                  my ( $first_byte ) = substr($data, 0, 2);
+                  # ERROR, EOF packet.  If it's not one of those, we test
+                  # whether it's an initialization packet (the first thing the
+                  # server ever sends the client).  If it's not that, it could
+                  # be a result set header, field, row data, etc.
+                  my ( $first_byte ) = substr($data, 0, 2, '');
+                  MKDEBUG && _d("First byte of packet:", $first_byte);
                   if ( $first_byte eq '00' ) {
-                     MKDEBUG && _d('Got an OK packet');
+                     MKDEBUG && _d('Got an OK packet', $data);
+
+                     # Gather all the data from the packet.
+                     $first_byte = hex(substr($data, 0, 2, '')); # LCB aff_rows
+                     my $affected_rows = $first_byte
+                        ? to_num(substr($data, 0, $first_byte * 2, ''))
+                        : 0;
+                     $first_byte = hex(substr($data, 0, 2, '')); # LCB insert_id
+                     my $insert_id = $first_byte
+                        ? to_num(substr($data, 0, $first_byte * 2, ''))
+                        : 0;
+                     my $status   = to_num(substr($data, 0, 4, ''));
+                     my $warnings = to_num(substr($data, 0, 4, ''));
+                     my $message  = to_string($data);
+                     MKDEBUG && _d('OK data: affected_rows', $affected_rows,
+                        'insert_id', $insert_id, 'status', $status, 'warnings',
+                        $warnings, 'message', $message);
+
                      if ( ($sess->{state} || '') eq 'client_auth' ) {
-                        $sess->{state} = 'ready';
                         # We logged in OK!  Trigger an admin Connect command.
                         # TODO: how can we capture the time it takes to log in?
                         fire_event(
@@ -169,27 +218,75 @@ sub parse_event {
                            },
                            $packet, $sess, @callbacks
                         );
-                        push @{$self->{pending}}, $line;
-                        return 1;
                      }
+                     elsif ( $sess->{cmd} ) {
+                        my $com = $sess->{cmd}->{cmd};
+                        my $arg;
+                        if ( $com eq COM_QUERY ) {
+                           $com = 'Query';
+                           $arg = $sess->{cmd}->{arg};
+                        }
+                        else {
+                           $arg = 'Administrator command: '
+                                . ucfirst(lc(substr($com_for{$com}, 4)));
+                           $com = 'Admin';
+                        }
+                        fire_event(
+                           {  cmd           => $com,
+                              arg           => $arg,
+                              ts            => $ts,
+                              Insert_id     => $insert_id,
+                              Warnings      => $warnings,
+                              Rows_affected => $affected_rows,
+                           },
+                           $packet, $sess, @callbacks
+                        );
+                     }
+                     $sess->{state} = 'ready';
+                     push @{$self->{pending}}, $line;
+                     return 1;
                   }
                   elsif ( $first_byte eq 'ff' ) {
                      MKDEBUG && _d('Got an ERROR packet');
-                     MKDEBUG && _d('ERROR',
-                        hex(substr($data, 1, 2)),
-                        to_string(substring($data, 3)));
+                     #MKDEBUG && _d('ERROR',
+                        #hex(substr($data, 1, 2)),
+                        #to_string(substring($data, 3)));
                      if ( $sess->{status} eq 'client_auth' ) {
                         MKDEBUG && _d('Connection failed');
                         # TODO: Fire an event?
                         delete $self->{sessions}->{$to};
                      }
                   }
-                  elsif ( $first_byte eq 'fe' && $packet_len < 9 ) {
+                  elsif ( $first_byte eq 'fe' ) { # TODO && $packet_len < 9 ) {
                      MKDEBUG && _d('Got an EOF packet');
-                     # The 2nd and 3rd bytes are the warning count.
-                     # The 4th and 5th bytes are the server status flags.  The
-                     # good ones to look at are SERVER_QUERY_NO_GOOD_INDEX_USED
-                     # (16) and SERVER_QUERY_NO_INDEX_USED (32).
+
+                     # Good server status flags to look at are
+                     # SERVER_QUERY_NO_GOOD_INDEX_USED (16) and
+                     # SERVER_QUERY_NO_INDEX_USED (32).
+                     my $warnings = to_num(substr($data, 0, 4, ''));
+                     my $status   = to_num(substr($data, 0, 4, ''));
+
+                     if ( $sess->{cmd} ) {
+                        my $com = $sess->{cmd}->{cmd};
+                        my $arg;
+                        if ( $com eq COM_QUERY ) {
+                           $com = 'Query';
+                           $arg = $sess->{cmd}->{arg};
+                        }
+                        else {
+                           $arg = 'Administrator command: '
+                                . ucfirst(lc(substr($com_for{$com}, 4)));
+                           $com = 'Admin';
+                        }
+                        fire_event(
+                           {  cmd           => $com,
+                              arg           => $arg,
+                              ts            => $ts,
+                              Warnings      => $warnings,
+                           },
+                           $packet, $sess, @callbacks
+                        );
+                     }
                   }
                   elsif ( !$self->{sessions}->{$to}
                      && (my ($thread_id) = $data =~ m/$handshake_pat/o )
@@ -207,27 +304,33 @@ sub parse_event {
                   }
                   else { # Row data, field, result set header.
                      MKDEBUG && _d('Got a row/field/result packet');
+                     # It looks to me like a command that doesn't access any
+                     # tables, such as "select @@version_comment limit 1", will
+                     # in fact result in a single packet that contains the
+                     # entire result set.  So we can consider the query finished
+                     # at that point.
                   }
-               }
+               } # From server to client
 
                # If it's from the client to the server, I care about
-               # 1) during the initialization sequence, I want to know the user and
-               #    the initial database.  It looks like the best way to detect
-               #    this command is by looking for the 23-byte 0x00... filler.  I
-               #    only need to do this for sessions that aren't yet initialized.
+               # 1) during the initialization sequence, I want to know the user
+               #    and the initial database.  It looks like the best way to
+               #    detect this command is by looking for the 23-byte 0x00...
+               #    filler.  I only need to do this for sessions that aren't yet
+               #    initialized.
                # 2) after that, I want to know the query text.
                else {  # From client to server
                   if ( ($sess->{state} || '') eq 'server_handshake' ) {
                      MKDEBUG && _d('Expect client authentication packet');
-                     my ( $user, $code_len ) = $data =~ m{
+                     my ( $user, $scr_len ) = $data =~ m{
                         ^.{18}         # Client flags, max packet size, charset
                         (?:00){23}     # Filler
                         ((?:..)+?)00   # Null-terminated user name
                         (..)           # Length-coding byte for scramble buff
                      }x;
-                     if ( $code_len ) { # We matched.  Continue.
-                        MKDEBUG && _d('Found user', $user, 'bufflen', $code_len);
-                        $code_len = hex($code_len);
+                     if ( defined $scr_len ) {
+                        MKDEBUG && _d('Found user', $user, 'scr_len', $scr_len);
+                        my $code_len = hex($scr_len);
                         my ( $database ) = $data =~ m!
                            ^.{64}${user}00..   # Everything matched before
                            (?:..){$code_len}   # The scramble buffer
@@ -245,15 +348,26 @@ sub parse_event {
 
                   # Otherwise, it should be a query.  We ignore the commands
                   # that take arguments (COM_CHANGE_USER, COM_PROCESS_KILL).
+                  # TODO: handle COM_QUIT, which doesn't really get a reply from
+                  # MySQL, only from TCP/IP closing the socket.
                   else {
                      my $COM = substr($data, 0, 2);
                      $data = to_string(substr($data, 2));
-                     $sess->{cmd} = {
+                     # In case we weren't here when the client auth took
+                     # place, create a session.
+                     $sess ||= $self->{sessions}->{$from} = {
+                        client     => $from,
+                        pos_in_log => tell($fh),
+                     };
+                     $sess->{ts}    = $ts;
+                     $sess->{state} = 'awaiting_reply';
+                     $sess->{cmd}   = {
                         cmd => $COM,
                         arg => $data,
                      };
                   }
-               }
+               } # From client to server
+
             } # There was data in the TCP packet.
             else {
                MKDEBUG && _d('No data in TCP packet');
@@ -289,7 +403,8 @@ sub fire_event {
       db    => $session->{db},
       user  => $session->{user},
       pos_in_log => $session->{pos_in_log},
-      Query_time => timestamp_diff($session->{ts}, $packet->{header} =~ m/^(\S+)/g),
+      Query_time => timestamp_diff(
+                    $session->{ts}, $packet->{header} =~ m/^(\S+)/g),
    };
    foreach my $callback ( @callbacks ) {
       last unless $event = $callback->($event);
@@ -298,7 +413,8 @@ sub fire_event {
 
 }
 
-# Assumes the day is today.
+# Assumes the day is today.  Extracts a slow-log-formatted timestamp from the
+# TCPdump timestamp format.
 sub tcp_timestamp {
    my ( $ts ) = @_;
    my ( $sec, $min, $hour, $mday, $mon, $year ) = localtime;
@@ -307,6 +423,7 @@ sub tcp_timestamp {
    return sprintf("%02d%02d%02d %s", substr($year, 2), $mon, $mday, $ts);
 }
 
+# Returns the difference between two TCPdump timestamps.
 sub timestamp_diff {
    my ( $start, $end ) = @_;
    my ( $sh, $sm, $ss ) = split(/:/, $start);
@@ -314,9 +431,11 @@ sub timestamp_diff {
    return ($eh * 3600 + $em * 60 + $es) - ($sh * 3600 + $sm * 60 + $ss);
 }
 
+# Converts hexadecimal to string.
 sub to_string {
    my ( $data ) = @_;
-   $data =~ s/(..)/chr(hex $1)/eg;
+   # $data =~ s/(..)/chr(hex $1)/eg;
+   $data = pack('H*', $data);
    return $data;
 }
 
