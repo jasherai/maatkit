@@ -41,7 +41,7 @@ run_test({
    file   => 'samples/tcpdump001.txt',
    misc   => { watching => '127.0.0.1.3306' },
    result => [
-      {  ts            => '2009-04-12 09:50:16.805123',
+      {  ts            => '090412 09:50:16.805123',
          db            => undef,
          user          => undef,
          Thread_id     => undef,
@@ -49,17 +49,15 @@ run_test({
          ip            => '127.0.0.1',
          port          => '42167',
          arg           => 'select "hello world" as greeting',
-         Query_time    => .805123 - .804849,
-         pos_in_log    => 1229,
+         Query_time    => sprintf('%.6f', .805123 - .804849),
+         pos_in_log    => 0,
          bytes         => length('select "hello world" as greeting'),
          cmd           => 'Query',
       },
    ],
 });
 
-__DATA__
-
-# Check that I can parse a really simple session.
+# A more complex session with a complete login/logout cycle.
 run_test({
    file   => 'samples/tcpdump002.txt',
    misc   => { watching => '127.0.0.1.3306' },
