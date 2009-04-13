@@ -164,8 +164,8 @@ sub parse_event {
       my $ip_hlen = hex(substr($data, 1, 1)); # Num of 32-bit words in header.
       # The total length of the entire datagram, including header.  This is
       # useful because it lets us see whether we got the whole thing.
-      my $ip_plen = hex(substr($data, 4, 4)); # Num of words in IPv4 datagram.
-      my $complete = length($data) == 8 * $ip_plen;
+      my $ip_plen = hex(substr($data, 4, 4)); # Num of BYTES in IPv4 datagram.
+      my $complete = length($data) == 2 * $ip_plen;
 
       # Same thing in a different position, with the TCP header.  See
       # http://en.wikipedia.org/wiki/Transmission_Control_Protocol.
@@ -333,7 +333,7 @@ sub parse_event {
                         = $data =~ m/fe(.{4})(.{4})\Z/;
                      if ( $warning_count ) { 
                         $event->{Warnings} = to_num($warning_count);
-                        my $flags = to_num($status_flags);
+                        my $flags = to_num($status_flags); # TODO set all flags?
                         $event->{No_good_index_used}
                            = $flags & SERVER_QUERY_NO_GOOD_INDEX_USED ? 1 : 0;
                         $event->{No_index_used}

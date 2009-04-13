@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 14;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -233,6 +233,58 @@ run_test({
          ts         => '090412 16:46:20.245088',
          user       => undef,
          Warning_count      => 0,
+         No_good_index_used => 'No',
+         No_index_used      => 'No',
+      },
+   ],
+});
+
+# A session that causes a slow query because it doesn't use an index.
+run_test({
+   file   => 'samples/tcpdump006.txt',
+   misc   => { watching => '127.0.0.1.3306' },
+   result => [
+      {  ts         => '090412 20:46:10.776899',
+         db         => undef,
+         user       => undef,
+         host       => '127.0.0.1',
+         ip         => '127.0.0.1',
+         port       => '48259',
+         arg        => 'select * from t',
+         Query_time => '0.000205',
+         Thread_id  => undef,
+         pos_in_log => 0,
+         bytes      => length('select * from t'),
+         cmd        => 'Query',
+         Error_no   => 0,
+         Rows_affected      => 0,
+         Warning_count      => 0,
+         No_good_index_used => 'No',
+         No_index_used      => 'Yes',
+      },
+   ],
+});
+
+# A session that truncates an insert.
+run_test({
+   file   => 'samples/tcpdump007.txt',
+   misc   => { watching => '127.0.0.1.3306' },
+   result => [
+      {  ts         => '090412 20:57:22.798296',
+         db         => undef,
+         user       => undef,
+         host       => '127.0.0.1',
+         ip         => '127.0.0.1',
+         port       => '38381',
+         arg        => 'insert into t values(current_date)',
+         Query_time => '0.000020',
+         Thread_id  => undef,
+         pos_in_log => 0,
+         bytes      => length('insert into t values(current_date)'),
+         cmd        => 'Query',
+         Error_no   => 0,
+         Rows_affected      => 1,
+         Warning_count      => 1,
          No_good_index_used => 'No',
          No_index_used      => 'No',
       },
