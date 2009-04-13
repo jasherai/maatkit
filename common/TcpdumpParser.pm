@@ -60,6 +60,8 @@ use constant {
    COM_STMT_RESET          => '1a',
    COM_SET_OPTION          => '1b',
    COM_STMT_FETCH          => '1c',
+   SERVER_QUERY_NO_GOOD_INDEX_USED => 16,
+   SERVER_QUERY_NO_INDEX_USED      => 32,
 };
 
 my %com_for = (
@@ -159,7 +161,11 @@ sub parse_event {
 
       # Find length information in the IPv4 header.  Typically 5 32-bit
       # words.  See http://en.wikipedia.org/wiki/IPv4#Header
-      my $ip_hlen = hex(substr($data, 1, 1)); # Number of 32-bit words.
+      my $ip_hlen = hex(substr($data, 1, 1)); # Num of 32-bit words in header.
+      # The total length of the entire datagram, including header.  This is
+      # useful because it lets us see whether we got the whole thing.
+      my $ip_plen = hex(substr($data, 4, 4)); # Num of words in IPv4 datagram.
+      my $complete = length($data) == 8 * $ip_plen;
 
       # Same thing in a different position, with the TCP header.  See
       # http://en.wikipedia.org/wiki/Transmission_Control_Protocol.
@@ -197,17 +203,15 @@ sub parse_event {
                MKDEBUG && _d('Got an OK packet', $data);
 
                # Gather all the data from the packet.
-               $first_byte = hex(substr($data, 0, 2, '')); # LCB aff_rows
-               my $affected_rows = $first_byte
-                  ? to_num(substr($data, 0, $first_byte * 2, ''))
-                  : 0;
-               $first_byte = hex(substr($data, 0, 2, '')); # LCB insert_id
-               my $insert_id = $first_byte
-                  ? to_num(substr($data, 0, $first_byte * 2, ''))
-                  : 0;
+               my $affected_rows = get_lcb(\$data);
+               my $insert_id     = get_lcb(\$data);
                my $status   = to_num(substr($data, 0, 4, ''));
                my $warnings = to_num(substr($data, 0, 4, ''));
                my $message  = to_string($data);
+               # Note: $message is discarded.  It might be something like
+               # Records: 2  Duplicates: 0  Warnings: 0
+               # I don't know why, but it looks like it has an extra char on the
+               # front, unless I misunderstand the protocol somehow.
                MKDEBUG && _d('OK data: affected_rows', $affected_rows,
                   'insert_id', $insert_id, 'status', $status, 'warnings',
                   $warnings, 'message', $message);
@@ -239,7 +243,7 @@ sub parse_event {
                         arg           => $arg,
                         ts            => $ts,
                         Insert_id     => $insert_id,
-                        Warnings      => $warnings,
+                        Warning_count => $warnings,
                         Rows_affected => $affected_rows,
                      },
                      $pack, $sess, @callbacks
@@ -305,29 +309,38 @@ sub parse_event {
             }
             else { # Row data, field, result set header.
                MKDEBUG && _d('Got a row/field/result packet');
-               # Since we do NOT have all the data the server sent to the
-               # client, we can't really do any processing of results.  So when
-               # we get one of these, we just fire the event and assume the
-               # query is done.
+               # Since we do NOT always have all the data the server sent to the
+               # client, we can't always do any processing of results.  So when
+               # we get one of these, we just fire the event even if the query
+               # is not done.  This means we will NOT process EOF packets
+               # themselves (see above).
                if ( $sess->{cmd} ) {
                   my $com = $sess->{cmd}->{cmd};
-                  my $arg;
+                  my $event = { ts  => $ts };
                   if ( $com eq COM_QUERY ) {
-                     $com = 'Query';
-                     $arg = $sess->{cmd}->{arg};
+                     $event->{cmd} = 'Query';
+                     $event->{arg} = $sess->{cmd}->{arg};
                   }
                   else {
-                     $arg = 'administrator command: '
+                     $event->{arg} = 'administrator command: '
                           . ucfirst(lc(substr($com_for{$com}, 4)));
-                     $com = 'Admin';
+                     $event->{cmd} = 'Admin';
                   }
-                  fire_event(
-                     {  cmd           => $com,
-                        arg           => $arg,
-                        ts            => $ts,
-                     },
-                     $pack, $sess, @callbacks
-                  );
+                  if ( $complete ) { # We DID get all the data in the packet.
+                     # Look to see if the end of the data appears to be an EOF
+                     # packet.
+                     my ( $warning_count, $status_flags )
+                        = $data =~ m/fe(.{4})(.{4})\Z/;
+                     if ( $warning_count ) { 
+                        $event->{Warnings} = to_num($warning_count);
+                        my $flags = to_num($status_flags);
+                        $event->{No_good_index_used}
+                           = $flags & SERVER_QUERY_NO_GOOD_INDEX_USED ? 1 : 0;
+                        $event->{No_index_used}
+                           = $flags & SERVER_QUERY_NO_INDEX_USED ? 1 : 0;
+                     }
+                  }
+                  fire_event($event, $pack, $sess, @callbacks);
                   $sess->{state} = 'ready';
                   return 1;
                }
@@ -351,6 +364,8 @@ sub parse_event {
                   (..)           # Length-coding byte for scramble buff
                }x;
                if ( defined $buff_len ) {
+                  # This length-coded binary doesn't seem to be a normal one, it
+                  # seems more like a length-coded string actually.
                   MKDEBUG && _d('Found user', $user, 'buff_len', $buff_len);
                   my $code_len = hex($buff_len);
                   my ( $database ) = $data =~ m!
@@ -428,6 +443,10 @@ sub fire_event {
       pos_in_log => $session->{pos_in_log},
       Query_time => timestamp_diff($session->{ts}, $packet =~ m/\A(\S+ \S+)/g),
       Error_no   => ($event->{Error_no} || 0),
+      Rows_affected      => ($event->{Rows_affected} || 0),
+      Warning_count      => ($event->{Warning_count} || 0),
+      No_good_index_used => ($event->{No_good_index_used} ? 'Yes' : 'No'),
+      No_index_used      => ($event->{No_index_used}      ? 'Yes' : 'No'),
    };
    foreach my $callback ( @callbacks ) {
       last unless $event = $callback->($event);
@@ -473,7 +492,31 @@ sub to_string {
 sub to_num {
    my ( $str ) = @_;
    my @bytes = $str =~ m/(..)/g;
-   return hex(join('', reverse @bytes));
+   my $result = 0;
+   foreach my $i ( 0 .. $#bytes ) {
+      $result += hex($bytes[$i]) * (16 ** ($i * 2));
+   }
+   return $result;
+}
+
+# Accepts a reference to a string, which it will modify.  Extracts a
+# length-coded binary off the front of the string and returns that value as an
+# integer.
+sub get_lcb {
+   my ( $string ) = @_;
+   my $first_byte = hex(substr($$string, 0, 2, ''));
+   if ( $first_byte < 251 ) {
+      return $first_byte;
+   }
+   elsif ( $first_byte == 252 ) {
+      return to_num(substr($$string, 0, 4, ''));
+   }
+   elsif ( $first_byte == 253 ) {
+      return to_num(substr($$string, 0, 6, ''));
+   }
+   elsif ( $first_byte == 254 ) {
+      return to_num(substr($$string, 0, 16, ''));
+   }
 }
 
 sub _d {
