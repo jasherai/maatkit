@@ -85,7 +85,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3297
+# OptionParser package 3380
 # ###########################################################################
 package OptionParser;
 
@@ -100,10 +100,56 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
-sub pod_to_spec {
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(description) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   $program_name ||= $PROGRAM_NAME;
+   my $self = {
+      description  => $args{description},
+      prompt       => $args{prompt} || '<options>',
+      strict       => (exists $args{strict} ? $args{strict} : 1),
+      dp           => $args{dp}     || undef,
+      program_name => $program_name,
+      opts         => {},
+      got_opts     => 0,
+      short_opts   => {},
+      defaults     => {},
+      groups       => [ { name => 'default', desc => 'Options' } ],
+      errors       => [],
+      rules        => [],  # desc of rules for --help
+      mutex        => [],  # rule: opts are mutually exclusive
+      atleast1     => [],  # rule: at least one opt is required
+      disables     => {},  # rule: opt disables other opts 
+      defaults_to  => {},  # rule: opt defaults to value of other opt
+      default_files=> [
+         "/etc/maatkit/maatkit.conf",
+         "/etc/maatkit/$program_name.conf",
+         "$ENV{HOME}/.maatkit.conf",
+         "$ENV{HOME}/.$program_name.conf",
+      ],
+   };
+   return bless $self, $class;
+}
+
+sub get_specs {
+   my ( $self, $file ) = @_;
+   my @specs = $self->_pod_to_specs($file);
+   $self->_parse_specs(@specs);
+   return;
+}
+
+sub get_defaults_files {
+   my ( $self ) = @_;
+   return @{$self->{default_files}};
+}
+
+sub _pod_to_specs {
    my ( $self, $file ) = @_;
    $file ||= __FILE__;
-   open my $fh, '<', $file or die "Can't open $file: $OS_ERROR";
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 
    my %types = (
       string => 's', # standard Getopt type
@@ -113,14 +159,13 @@ sub pod_to_spec {
       hash   => 'h', # hash as above, but only if a value is given
       Array  => 'A', # array, similar to Hash
       array  => 'a', # array, similar to hash
-      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dsn}
+      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dp}
       size   => 'z', # size with kMG suffix (powers of 2^10)
       'time' => 'm', # time, with an optional suffix of s/h/m/d
    );
    my @specs = ();
    my @rules = ();
    my $para;
-   my $option;
 
    local $INPUT_RECORD_SEPARATOR = '';
    while ( $para = <$fh> ) {
@@ -133,55 +178,59 @@ sub pod_to_spec {
       chomp $para;
       $para =~ s/\s+/ /g;
       $para =~ s/$POD_link_re/$1/go;
-      MKDEBUG && _d('First option rules:', $para);
+      MKDEBUG && _d('Option rule:', $para);
       push @rules, $para;
    }
 
+   die 'POD has no OPTIONS section' unless $para;
+
    do {
-      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         chomp $para;
          MKDEBUG && _d($para);
-         my %props;
-         $para = <$fh>;
-         if ( $para =~ m/: / ) {
+         my %attribs;
+
+         $para = <$fh>; # read next paragraph, possibly attributes
+
+         if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %props = map { split(/: /, $_) } split(/; /, $para);
-            if ( $props{'short form'} ) {
-               $props{'short form'} =~ s/-//;
+            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            if ( $attribs{'short form'} ) {
+               $attribs{'short form'} =~ s/-//;
             }
-            $para = <$fh>;
+            $para = <$fh>; # read next paragraph, probably short help desc
          }
+         else {
+            MKDEBUG && _d('Option has no attributes');
+         }
+
          $para =~ s/\s+\Z//g;
          $para =~ s/\s+/ /g;
          $para =~ s/$POD_link_re/$1/go;
-         if ( $para =~ m/^[^.]+\.$/ ) {
-            $para =~ s/\.$//;
-         }
+
+         $para =~ s/\.(?:\n.*| [A-Z].*|\Z)//s;
+         MKDEBUG && _d('Short help:', $para);
+
+         die "No description after option spec $option" if $para =~ m/^=item/;
 
          if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
             $option = $base_option;
-            $props{'negatable'} = 1;
+            $attribs{'negatable'} = 1;
          }
 
          push @specs, {
-            s => $option
-               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
-               . ( $props{'negatable'}  ? '!'                        : '' )
-               . ( $props{'cumulative'} ? '+'                        : '' )
-               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
-            d => $para
-               . (defined $props{default} ? " (default $props{default})" : ''),
+            spec => $option
+               . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
+               . ($attribs{'negatable'}  ? '!'                          : '' )
+               . ($attribs{'cumulative'} ? '+'                          : '' )
+               . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
+            desc => $para
+               . ($attribs{default} ? " (default $attribs{default})" : ''),
          };
       }
       while ( $para = <$fh> ) {
          last unless $para;
 
-         if ( $option ) {
-            if ( my ($line)
-                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
-               1 while ( $line =~ s/$POD_link_re/$1/go );
-               push @rules, $line;
-            }
-         }
 
          if ( $para =~ m/^=head1/ ) {
             $para = undef; # Can't 'last' out of a do {} block.
@@ -191,363 +240,436 @@ sub pod_to_spec {
       }
    } while ( $para );
 
+   die 'No valid specs in POD OPTIONS' unless @specs;
+
    close $fh;
    return @specs, @rules;
 }
 
-sub new {
-   my ( $class, @opts ) = @_;
-   my %key_seen;
-   my %long_seen;
-   my %key_for;
-   my %defaults;
-   my @mutex;
-   my @atleast1;
-   my %long_for;
-   my %disables;
-   my %copyfrom;
-   my @allowed_with;
+sub _parse_specs {
+   my ( $self, @specs ) = @_;
+   my %disables; # special rule that requires deferred checking
 
-   unshift @opts,
-      { s => 'help',    d => 'Show this help message' },
-      { s => 'version', d => 'Output version information and exit' };
-
-   foreach my $opt ( @opts ) {
+   foreach my $opt ( @specs ) {
       if ( ref $opt ) { # It's an option spec, not a rule.
-         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-         $opt->{k} = $short || $long;
-         $key_for{$long} = $opt->{k};
-         $long_for{$opt->{k}} = $long;
-         $long_for{$long} = $long;
-         $opt->{l} = $long;
-         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
-         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
-         $opt->{t} = $short;
-         $opt->{n} = $opt->{s} =~ m/!/;
-         $opt->{c} = $opt->{s} =~ m/\+/;
-         $opt->{g} ||= 'o';
-         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            MKDEBUG && _d('Option', $opt->{k}, 'type:', $y);
-            $opt->{y} = $y;
-            $opt->{s} =~ s/=./=s/;
+         MKDEBUG && _d('Parsing opt spec:',
+            map { ($_, '=>', $opt->{$_}) } keys %$opt);
+
+         my ( $long, $short ) = $opt->{spec} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         if ( !$long ) {
+            die "Cannot parse long option from spec $opt->{spec}";
          }
-         if ( $opt->{d} =~ m/required/ ) {
-            $opt->{r} = 1;
-            MKDEBUG && _d('Option', $opt->{k}, 'is required');
+         $opt->{long} = $long;
+
+         die "Duplicate long option --$long" if exists $self->{opts}->{$long};
+         $self->{opts}->{$long} = $opt;
+
+         if ( length $long == 1 ) {
+            MKDEBUG && _d('Long opt', $long, 'looks like short opt');
+            $self->{short_opts}->{$long} = $long;
          }
-         if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
-            $defaults{$opt->{k}} = defined $def ? $def : 1;
-            MKDEBUG && _d('Option', $opt->{k}, 'has a default');
+
+         if ( $short ) {
+            die "Duplicate short option -$short"
+               if exists $self->{short_opts}->{$short};
+            $self->{short_opts}->{$short} = $long;
+            $opt->{short} = $short;
          }
-         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
-            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            MKDEBUG && _d('Option', $opt->{k}, $dis);
+         else {
+            $opt->{short} = undef;
          }
+
+         $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
+         $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
+         $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
+
+         $opt->{group} = 'default'; # TODO: groups
+         $opt->{value} = undef;
+         $opt->{got}   = 0;
+
+         my ( $type ) = $opt->{spec} =~ m/=(.)/;
+         $opt->{type} = $type;
+         MKDEBUG && _d($long, 'type:', $type);
+
+         if ( $type && $type eq 'd' && !$self->{dp} ) {
+            die "$opt->{long} is type DSN (d) but no dp argument "
+               . "was given when this OptionParser object was created";
+         }
+
+         $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
+
+         if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            $self->{defaults}->{$long} = defined $def ? $def : 1;
+            MKDEBUG && _d($long, 'default:', $def);
+         }
+
+         if ( $long eq 'config' ) {
+            $self->{defaults}->{$long} = join(',', $self->get_defaults_files());
+         }
+
+         if ( (my ($dis) = $opt->{desc} =~ m/(disables .*)/) ) {
+            $disables{$long} = $dis;
+            MKDEBUG && _d('Deferring check of disables rule for', $opt, $dis);
+         }
+
+         $self->{opts}->{$long} = $opt;
       }
       else { # It's an option rule, not a spec.
-         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
-            my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
-                  $long_for{$_};
-               } $class->get_participants($opt);
-            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
-               push @mutex, \@participants;
-               MKDEBUG && _d(@participants, 'are mutually exclusive');
-            }
-            if ( $opt =~ m/at least one|one and only one/ ) {
-               push @atleast1, \@participants;
-               MKDEBUG && _d(@participants, 'require at least one');
-            }
+         MKDEBUG && _d('Parsing rule:', $opt); 
+         push @{$self->{rules}}, $opt;
+         my @participants = $self->_get_participants($opt);
+         my $rule_ok = 0;
+
+         if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{mutex}}, \@participants;
+            MKDEBUG && _d(@participants, 'are mutually exclusive');
          }
-         elsif ( $opt =~ m/default to/ ) {
-            my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
-                  $key_for{$_};
-               } $class->get_participants($opt);
-            $copyfrom{$participants[0]} = $participants[1];
-            MKDEBUG && _d(@participants, 'copy from each other');
+         if ( $opt =~ m/at least one|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{atleast1}}, \@participants;
+            MKDEBUG && _d(@participants, 'require at least one');
          }
-         elsif ( $opt  =~ m/allowed with/ ) {
-            my @participants = map {
-                  die "No such option '$_' while processing $opt"
-                     unless $long_for{$_};
-                  $key_for{$_};
-               } $class->get_participants($opt);
-            push @allowed_with, \@participants;
+         if ( $opt =~ m/default to/ ) {
+            $rule_ok = 1;
+            $self->{defaults_to}->{$participants[0]} = $participants[1];
+            MKDEBUG && _d($participants[0], 'defaults to', $participants[1]);
          }
+         die "Unrecognized option rule: $opt" unless $rule_ok;
       }
    }
 
-   foreach my $dis ( keys %disables ) {
-      $disables{$dis} = [
-            map {
-               if ( !defined $long_for{$_} ) {
-                  die "No such option '$_' while processing $dis";
-               }
-               $long_for{$_};
-            } @{$disables{$dis}}
-      ];
+   foreach my $long ( keys %disables ) {
+      my @participants = $self->_get_participants($disables{$long});
+      $self->{disables}->{$long} = \@participants;
+      MKDEBUG && _d('Option', $long, 'disables', @participants);
    }
 
-   my $self = {
-      specs        => [ grep { ref $_ } @opts ],
-      errors       => [],
-      instr        => [ grep { !ref $_ } @opts ],
-      mutex        => \@mutex,
-      defaults     => \%defaults,
-      long_for     => \%long_for,
-      atleast1     => \@atleast1,
-      disables     => \%disables,
-      key_for      => \%key_for,
-      copyfrom     => \%copyfrom,
-      strict       => 1,
-      groups       => [ { k => 'o', d => 'Options' } ],
-      allowed_with => \@allowed_with,
-      given        => {},
-   };
-
-   return bless $self, $class;
+   return; 
 }
 
-sub get_participants {
+sub _get_participants {
    my ( $self, $str ) = @_;
    my @participants;
-   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
-      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
-         push @participants, $long;
-      }
-      else {
-         foreach my $short ( $thing =~ m/([^-])/g ) {
-            push @participants, $short;
-         }
-      }
+   foreach my $long ( $str =~ m/--(?:\[no\])?([\w-]+)/g ) {
+      die "Option --$long does not exist while processing rule $str"
+         unless exists $self->{opts}->{$long};
+      push @participants, $long;
    }
    MKDEBUG && _d('Participants for', $str, ':', @participants);
    return @participants;
 }
 
-sub parse {
+sub opts {
+   my ( $self ) = @_;
+   my %opts = %{$self->{opts}};
+   return %opts;
+}
+
+sub opt_values {
+   my ( $self ) = @_;
+   my %opts = map {
+      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
+              : $_;
+      $opt => $self->{opts}->{$_}->{value}
+   } keys %{$self->{opts}};
+   return %opts;
+}
+
+sub short_opts {
+   my ( $self ) = @_;
+   my %short_opts = %{$self->{short_opts}};
+   return %short_opts;
+}
+
+sub set_defaults {
    my ( $self, %defaults ) = @_;
-   my @specs = @{$self->{specs}};
-   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-   my %opt_seen;
-   my %vals = %{$self->{defaults}};
-   @vals{keys %defaults} = values %defaults;
-   foreach my $spec ( @specs ) {
-      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
-      $opt_seen{$spec->{k}} = 1;
+   $self->{defaults} = {};
+   foreach my $long ( keys %defaults ) {
+      die "Cannot set default for nonexistent option $long"
+         unless exists $self->{opts}->{$long};
+      $self->{defaults}->{$long} = $defaults{$long};
+      MKDEBUG && _d('Default val for', $long, ':', $defaults{$long});
    }
+   return;
+}
 
-   foreach my $key ( keys %defaults ) {
-      die "Cannot set default for non-existent option '$key'\n"
-         unless $opt_seen{$key};
+sub get_defaults {
+   my ( $self ) = @_;
+   return $self->{defaults};
+}
+
+sub _set_option {
+   my ( $self, $opt, $val ) = @_;
+   my $long = exists $self->{opts}->{$opt}       ? $opt
+            : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
+            : die "Getopt::Long gave a nonexistent option: $opt";
+
+   $opt = $self->{opts}->{$long};
+   if ( $opt->{is_cumulative} ) {
+      $opt->{value}++;
    }
+   else {
+      $opt->{value} = $val;
+   }
+   $opt->{got} = 1;
+   MKDEBUG && _d('Got option', $long, '=', $val);
+}
 
-   $self->{given} = {}; # in case options are re-parsed
+sub get_opts {
+   my ( $self ) = @_; 
+
+   foreach my $long ( keys %{$self->{opts}} ) {
+      $self->{opts}->{$long}->{got} = 0;
+      $self->{opts}->{$long}->{value}
+         = exists $self->{defaults}->{$long} ? $self->{defaults}->{$long}
+         : undef;
+   }
+   $self->{got_opts} = 0;
+
+   $self->{errors} = [];
+
+   if ( @ARGV && $ARGV[0] eq "--config" ) {
+      shift @ARGV;
+      $self->_set_option('config', shift @ARGV);
+   }
+   if ( $self->has('config') ) {
+      my @extra_args;
+      foreach my $filename ( split(',', $self->get('config')) ) {
+         eval {
+            push @ARGV, $self->_read_config_file($filename);
+         };
+         if ( $EVAL_ERROR ) {
+            if ( $self->got('config') ) {
+               die $EVAL_ERROR;
+            }
+            elsif ( MKDEBUG ) {
+               _d($EVAL_ERROR);
+            }
+         }
+      }
+      unshift @ARGV, @extra_args;
+   }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions(
-      map {
-         my $spec = $_;
-         $spec->{s} => sub {
-                          my ( $opt, $val ) = @_;
-                          if ( $spec->{c} ) {
-                             $vals{$spec->{k}}++
-                          }
-                          else {
-                             $vals{$spec->{k}} = $val;
-                          }
-                          MKDEBUG && _d('Given option:',
-                             $opt, '(',$spec->{k},') =', $val);
-                          $self->{given}->{$spec->{k}} = $vals{$spec->{k}};
-                       }
-      } @specs
-   ) or $self->error('Error parsing options');
+      map    { $_->{spec} => sub { $self->_set_option(@_); } }
+      grep   { $_->{long} ne 'config' } # --config is handled specially above.
+      values %{$self->{opts}}
+   ) or $self->_save_error('Error parsing options');
 
-   if ( $vals{version} ) {
-      my $prog = $self->prog;
+   if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+         $self->{program_name}, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+            or die "Cannot print: $OS_ERROR";
+      exit 0;
    }
 
    if ( @ARGV && $self->{strict} ) {
-      $self->error("Unrecognized command-line options @ARGV");
-   }
-
-   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
-      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
-      MKDEBUG && _d('Unsetting options:', @disses);
-      @vals{@disses} = map { undef } @disses;
-   }
-
-   foreach my $spec ( grep { $_->{r} } @specs ) {
-      if ( !defined $vals{$spec->{k}} ) {
-         $self->error("Required option --$spec->{l} must be specified");
-      }
+      $self->_save_error("Unrecognized command-line options @ARGV");
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
-      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
+      my @set = grep { $self->{opts}->{$_}->{got} } @$mutex;
       if ( @set > 1 ) {
-         my $note = join(', ',
-            map { "--$self->{long_for}->{$_}" }
-                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
-         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
-               . " are mutually exclusive.";
-         $self->error($note);
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$mutex}[ 0 .. scalar(@$mutex) - 2] )
+                 . ' and --'.$self->{opts}->{$mutex->[-1]}->{long}
+                 . ' are mutually exclusive.';
+         $self->_save_error($err);
       }
    }
 
    foreach my $required ( @{$self->{atleast1}} ) {
-      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
-      if ( !@set ) {
-         my $note = join(', ',
-            map { "--$self->{long_for}->{$_}" }
-                @{$required}[ 0 .. scalar(@$required) - 2] );
-         $note .= " or --$self->{long_for}->{$required->[-1]}";
-         $self->error("Specify at least one of $note");
+      my @set = grep { $self->{opts}->{$_}->{got} } @$required;
+      if ( @set == 0 ) {
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$required}[ 0 .. scalar(@$required) - 2] )
+                 .' or --'.$self->{opts}->{$required->[-1]}->{long};
+         $self->_save_error("Specify at least one of $err");
       }
    }
 
-   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
-      my $val = $vals{$spec->{k}};
-      if ( $spec->{y} eq 'm' ) {
-         my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
-         if ( !$suffix ) {
-            my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
-            $suffix = $s || 's';
-            MKDEBUG && _d('No suffix given; using', $suffix, 'for',
-               $spec->{k}, '(value:', $val, ')');
-         }
-         if ( $suffix =~ m/[smhd]/ ) {
-            $val = $suffix eq 's' ? $num            # Seconds
-                 : $suffix eq 'm' ? $num * 60       # Minutes
-                 : $suffix eq 'h' ? $num * 3600     # Hours
-                 :                  $num * 86400;   # Days
-            $vals{$spec->{k}} = $val;
-            MKDEBUG && _d('Setting option', $spec->{k}, 'to', $val);
-         }
-         else {
-            $self->error("Invalid --$spec->{l} argument");
+   foreach my $long ( keys %{$self->{opts}} ) {
+      my $opt = $self->{opts}->{$long};
+      if ( $opt->{got} ) {
+         if ( exists $self->{disables}->{$long} ) {
+            my @disable_opts = @{$self->{disables}->{$long}};
+            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
+            MKDEBUG && _d('Unset options', @disable_opts,
+               'because', $long,'disables them');
          }
       }
-      elsif ( $spec->{y} eq 'd' ) {
-         MKDEBUG && _d('Parsing option', $spec->{y}, 'as a DSN');
-         my $from_key = $self->{copyfrom}->{$spec->{k}};
-         my $default = {};
-         if ( $from_key ) {
-            MKDEBUG && _d('Option', $spec->{y}, 'DSN copies from option',
-               $from_key);
-            $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
-         }
-         $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
+      elsif ( $opt->{is_required} ) { 
+         $self->_save_error("Required option --$long must be specified");
       }
-      elsif ( $spec->{y} eq 'z' ) {
-         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
-         if ( defined $num ) {
-            if ( $factor ) {
-               $num *= $factor_for{$factor};
-               MKDEBUG && _d('Setting option', $spec->{y},
-                  'to num', $num, '* factor', $factor);
-            }
-            $vals{$spec->{k}} = ($pre || '') . $num;
-         }
-         else {
-            $self->error("Invalid --$spec->{l} argument");
-         }
-      }
+
+      $self->_validate_type($opt);
+
    }
 
-   foreach my $spec ( grep { $_->{y} } @specs ) {
-      MKDEBUG && _d('Treating option', $spec->{k}, 'as a list');
-      my $val = $vals{$spec->{k}};
-      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
-         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
-      }
-      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
-         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
-      }
-   }
-
-   foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
-      my $opt = $allowed_opts->[0];
-      next unless $vals{$opt};
-      my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
-      delete @defined_opts{ @$allowed_opts };
-      foreach my $defined_opt ( keys %defined_opts ) {
-         MKDEBUG
-            && _d('Unsetting option', $defined_opt,
-               '; it is not allowed with option', $opt);
-         $vals{$defined_opt} = undef;
-      }
-   }
-
-   return %vals;
+   $self->{got_opts} = 1;
+   return;
 }
 
-sub error {
-   my ( $self, $note ) = @_;
-   $self->{__error__} = 1;
-   push @{$self->{errors}}, $note;
+sub _validate_type {
+   my ( $self, $opt ) = @_;
+   return unless $opt && $opt->{type};
+   my $val = $opt->{value};
+
+   if ( $val && $opt->{type} eq 'm' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
+      my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+      if ( !$suffix ) {
+         my ( $s ) = $opt->{desc} =~ m/\(suffix (.)\)/;
+         $suffix = $s || 's';
+         MKDEBUG && _d('No suffix given; using', $suffix, 'for',
+            $opt->{long}, '(value:', $val, ')');
+      }
+      if ( $suffix =~ m/[smhd]/ ) {
+         $val = $suffix eq 's' ? $num            # Seconds
+              : $suffix eq 'm' ? $num * 60       # Minutes
+              : $suffix eq 'h' ? $num * 3600     # Hours
+              :                  $num * 86400;   # Days
+         $opt->{value} = $val;
+         MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
+      }
+      else {
+         $self->_save_error("Invalid time suffix for --$opt->{long}");
+      }
+   }
+   elsif ( $val && $opt->{type} eq 'd' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a DSN');
+      my $from_key = $self->{defaults_to}->{ $opt->{long} };
+      my $default = {};
+      if ( $from_key ) {
+         MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
+         $default = $self->{dp}->parse(
+            $self->{dp}->as_string($self->{opts}->{$from_key}->{value}) );
+      }
+      $opt->{value} = $self->{dp}->parse($val, $default);
+   }
+   elsif ( $val && $opt->{type} eq 'z' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
+      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+      if ( defined $num ) {
+         if ( $factor ) {
+            $num *= $factor_for{$factor};
+            MKDEBUG && _d('Setting option', $opt->{y},
+               'to num', $num, '* factor', $factor);
+         }
+         $opt->{value} = ($pre || '') . $num;
+      }
+      else {
+         $self->_save_error("Invalid size for --$opt->{long}");
+      }
+   }
+   elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
+      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+   }
+   elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
+      $opt->{value} = [ split(',', ($val || '')) ];
+   }
+   else {
+      MKDEBUG && _d('Nothing to validate for option',
+         $opt->{long}, 'type', $opt->{type}, 'value', $val);
+   }
+
+   return;
 }
 
-sub prog {
-   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
-   return $prog || $PROGRAM_NAME;
+sub get {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{value};
+}
+
+sub got {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{got};
+}
+
+sub has {
+   my ( $self, $opt ) = @_;
+   return exists $self->{opts}->{$opt};
+}
+
+sub set {
+   my ( $self, $opt, $val ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   $self->{opts}->{$long}->{value} = $val;
+   return;
+}
+
+sub _save_error {
+   my ( $self, $error ) = @_;
+   push @{$self->{errors}}, $error;
+}
+
+sub errors {
+   my ( $self ) = @_;
+   return $self->{errors};
 }
 
 sub prompt {
    my ( $self ) = @_;
-   my $prog   = $self->prog;
-   my $prompt = $self->{prompt} || '<options>';
-   return "Usage: $prog $prompt\n";
+   return "Usage: $PROGRAM_NAME $self->{prompt}\n";
 }
 
 sub descr {
    my ( $self ) = @_;
-   my $prog = $self->prog;
-   my $descr  = $prog . ' ' . ($self->{descr} || '')
-          . "  For more details, please use the --help option, "
-          . "or try 'perldoc $prog' for complete documentation.";
+   my $descr  = $self->{program_name} . ' ' . ($self->{description} || '')
+              . "  For more details, please use the --help option, "
+              . "or try 'perldoc $PROGRAM_NAME' "
+              . "for complete documentation.";
    $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
    $descr =~ s/ +$//mg;
    return $descr;
 }
 
 sub usage_or_errors {
-   my ( $self, %opts ) = @_;
-   if ( $opts{help} ) {
-      print $self->usage(%opts)
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+   my ( $self ) = @_;
+   if ( $self->{opts}->{help}->{got} ) {
+      print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
+      exit 0;
    }
-   elsif ( $self->{__error__} ) {
-      print $self->errors()
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+   elsif ( scalar @{$self->{errors}} ) {
+      print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
+      exit 0;
    }
+   return;
 }
 
-sub errors {
+sub print_errors {
    my ( $self ) = @_;
    my $usage = $self->prompt() . "\n";
    if ( (my @errors = @{$self->{errors}}) ) {
-      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors) . "\n";
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors)
+              . "\n";
    }
    return $usage . "\n" . $self->descr();
 }
 
-sub usage {
-   my ( $self, %vals ) = @_;
-   my @specs = @{$self->{specs}};
+sub print_usage {
+   my ( $self ) = @_;
+   die "Run get_opts() before print_usage()" unless $self->{got_opts};
+   my @opts = values %{$self->{opts}};
 
-   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+   my $maxl = max(
+      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      @opts);
 
    my $maxs = max(0,
-      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
-      grep { $_->{t} } @specs);
+      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      values %{$self->{short_opts}});
 
    my $lcol = max($maxl, ($maxs + 3));
    my $rcol = 80 - $lcol - 6;
@@ -556,15 +678,17 @@ sub usage {
    $maxs = max($lcol - 3, $maxs);
 
    my $usage = $self->descr() . "\n" . $self->prompt();
-   foreach my $g ( @{$self->{groups}} ) {
-      $usage .= "\n$g->{d}:\n";
-      foreach my $spec (
-         sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs )
+   foreach my $group ( @{$self->{groups}} ) {
+      $usage .= "\n$group->{desc}:\n";
+      foreach my $opt (
+         sort { $a->{long} cmp $b->{long} }
+         grep { $_->{group} eq $group->{name} }
+         @opts )
       {
-         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-         my $short = $spec->{t};
-         my $desc  = $spec->{d};
-         if ( $spec->{y} && $spec->{y} eq 'm' ) {
+         my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
+         my $short = $opt->{short};
+         my $desc  = $opt->{desc};
+         if ( $opt->{type} && $opt->{type} eq 'm' ) {
             my ($s) = $desc =~ m/\(suffix (.)\)/;
             $s    ||= 's';
             $desc =~ s/\s+\(suffix .\)//;
@@ -582,24 +706,24 @@ sub usage {
       }
    }
 
-   if ( (my @instr = @{$self->{instr}}) ) {
-      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   if ( (my @rules = @{$self->{rules}}) ) {
+      $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
-   if ( $self->{dsn} ) {
-      $usage .= "\n" . $self->{dsn}->usage();
+   if ( $self->{dp} ) {
+      $usage .= "\n" . $self->{dp}->usage();
    }
    $usage .= "\nOptions and values after processing arguments:\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
-      my $val   = $vals{$spec->{k}};
-      my $type  = $spec->{y} || '';
-      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+   foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
+      my $val   = $opt->{value};
+      my $type  = $opt->{type} || '';
+      my $bool  = $opt->{spec} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
       $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
                 : !defined $val             ? '(No value)'
-                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type eq 'd'              ? $self->{dp}->as_string($val)
                 : $type =~ m/H|h/           ? join(',', sort keys %$val)
                 : $type =~ m/A|a/           ? join(',', @$val)
                 :                             $val;
-      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $opt->{long}, $val);
    }
    return $usage;
 }
@@ -625,11 +749,6 @@ sub prompt_noecho {
    return $response;
 }
 
-sub groups {
-   my ( $self, @groups ) = @_;
-   push @{$self->{groups}}, @groups;
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -644,7 +763,41 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
-sub read_para_after {
+sub _read_config_file {
+   my ( $self, $filename ) = @_;
+   open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
+   my @args;
+   my $prefix = '--';
+   my $parse  = 1;
+
+   LINE:
+   while ( my $line = <$fh> ) {
+      chomp $line;
+      next LINE if $line =~ m/^\s*(?:\#|\;|$)/;
+      $line =~ s/\s+#.*$//g;
+      $line =~ s/^\s+|\s+$//g;
+      if ( $line eq '--' ) {
+         $prefix = '';
+         $parse  = 0;
+         next LINE;
+      }
+      if ( $parse
+         && (my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/)
+      ) {
+         push @args, grep { defined $_ } ("$prefix$opt", $arg);
+      }
+      elsif ( $line =~ m/./ ) {
+         push @args, $line;
+      }
+      else {
+         die "Syntax error in file $filename at line $INPUT_LINE_NUMBER";
+      }
+   }
+   close $fh;
+   return @args;
+}
+
+sub _read_para_after {
    my ( $self, $file, $regex ) = @_;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
    local $INPUT_RECORD_SEPARATOR = '';
@@ -964,8 +1117,8 @@ sub get_dbh {
                }
             }
 
-            if ( $self->prop('setvars') ) {
-               $sql = "SET " . $self->prop('setvars');
+            if ( $self->prop('set-vars') ) {
+               $sql = "SET " . $self->prop('set-vars');
                MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
@@ -1614,7 +1767,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 3186
+# Daemon package 3389
 # ###########################################################################
 
 package Daemon;
@@ -1622,48 +1775,54 @@ package Daemon;
 use strict;
 use warnings FATAL => 'all';
 
-use POSIX;
+use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   my $self = { %args };
-   $self->{reopen_STDIN}  ||= '/dev/null';
-   $self->{reopen_STDOUT} ||= '/dev/null';
-   $self->{reopen_STDERR} ||= '&STDOUT';
-
-   $self->{PID_file}        = undef;
-
+   my $self = {
+      stdout   => $args{'stdout'} || '/dev/null',
+      stderr   => $args{'stderr'} || undef,
+      stdin    => $args{'stdin'}  || '/dev/null',
+      PID_file => undef,  # set with create_PID_file()
+   };
+   MKDEBUG && _d('Daemonized child will redirect stdout to', $self->{stdout},
+      'stderr to', $self->{stderr}, 'and stdin from', $self->{stdin});
    return bless $self, $class;
 }
 
 sub daemonize {
    my ( $self ) = @_;
 
-   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
-   exit if $pid;
-   POSIX::setsid() or die "Can't start a new session: $OS_ERROR";
+   MKDEBUG && _d('About to fork and daemonize');
+   defined (my $pid = fork()) or die "Cannot fork: $OS_ERROR";
+   if ( $pid ) {
+      MKDEBUG && _d('I am the parent and now I die');
+      exit;
+   }
 
-   chdir '/' or die "Can't chdir to /: $OS_ERROR";
-
-   open STDIN,  "$self->{reopen_STDIN}",
-      or die "Cannot reopen STDIN $self->{reopen_STDIN}: $OS_ERROR";
-   open STDOUT, ">$self->{reopen_STDOUT}"
-      or die "Cannot reopen STDOUT >$self->{reopen_STDOUT}: $OS_ERROR";
-   open STDERR, ">$self->{reopen_STDERR}"
-      or die "Cannot reopen STDERR >$self->{reopen_STDERR}: $OS_ERROR";
-
-
+   POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
+   chdir '/' or die "Cannot chdir to /: $OS_ERROR";
+   open STDOUT, ">$self->{stdout}"
+      or die "Cannot redirect STDOUT to $self->{stdout}: $OS_ERROR";
+   if ( $self->{stderr} ) {
+      open STDERR, ">$self->{stderr}"
+         or die "Cannot redirect STDERR to $self->{stderr}: $OS_ERROR";
+   }
+   open STDIN,  "$self->{stdin}",
+      or die "Cannot redirect STDIN from $self->{stdin}: $OS_ERROR";
+   MKDEBUG && _d('I am the child and now I live daemonized');
    return;
 }
 
 sub create_PID_file {
    my ( $self, $PID_file ) = @_;
-   return if !$PID_file;
+   return unless $PID_file;
    $self->{PID_file} = $PID_file; # save for unlink in DESTORY()
-   open my $PID_FILE, "+> $self->{PID_file}"
+   MKDEBUG && _d('PID file:', $self->{PID_file});
+   open my $PID_FILE, '>', $self->{PID_file}
       or die "Cannot open PID file '$self->{PID_file}': $OS_ERROR";
    print $PID_FILE $PID;
    close $PID_FILE
@@ -1673,9 +1832,13 @@ sub create_PID_file {
 
 sub remove_PID_file {
    my ( $self ) = @_;
-   if ( defined $self->{PID_file} ) {
+   if ( defined $self->{PID_file} && -f $self->{PID_file} ) {
+      MKDEBUG && _d('Removing PID file');
       unlink $self->{PID_file}
          or warn "Cannot remove PID file '$self->{PID_file}': $OS_ERROR";
+   }
+   else {
+      MKDEBUG && _d('No PID to remove');
    }
    return;
 }
@@ -1719,57 +1882,47 @@ $OUTPUT_AUTOFLUSH = 1;
 my $dp = new DSNParser();
 my $vp = new VersionParser();
 
-my @opt_spec   = OptionParser::pod_to_spec();
-my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{prompt} = '<options>';
-$opt_parser->{descr}  = 'watches one or more MySQL replication slaves for '
-                      . 'errors, and tries to restart replication if it stops.';
-my %opts = $opt_parser->parse();
-$dp->prop('setvars', $opts{setvars});
+my $o = new OptionParser(
+   prompt      => '<options>',
+   description => 'watches one or more MySQL replication slaves for '
+                . 'errors, and tries to restart replication if it stops.',
+);
+$o->get_specs();
+$o->get_opts();
 
-$opts{v} = 0 if $opts{q};
+$dp->prop('set-vars', $o->get('set-vars'));
 
-if ( !$opts{help} ) {
-   if ( $opts{untilmaster} ) {
-      if ( $opts{untilmaster} !~ m/^[.\w-]+,\d+$/ ) {
-         $opt_parser->error("Invalid --untilmaster argument, must be file,pos");
+if ( !$o->get('help') ) {
+   if ( $o->get('until-master') ) {
+      if ( $o->get('until-master') !~ m/^[.\w-]+,\d+$/ ) {
+         $o->_save_error("Invalid --until-master argument, must be file,pos");
       }
    }
-   if ( $opts{untilrelay} ) {
-      if ( $opts{untilrelay} !~ m/^[.\w-]+,\d+$/ ) {
-         $opt_parser->error("Invalid --untilrelay argument, must be file,pos");
+   if ( $o->get('until-relay') ) {
+      if ( $o->get('until-relay') !~ m/^[.\w-]+,\d+$/ ) {
+         $o->_save_error("Invalid --until-relay argument, must be file,pos");
       }
    }
 }
 
-# --stop disables --monitor unless --monitor is explicitly given
-if ( defined $opts{stop} ) {
-   # Have to disable monitor because it is enabled by default.
-   # Problem is: $opts{monitor} is always set: 'yes' by default
-   # when not given on cmd line, '1' when given on cmd line.
-   # That's why here we must check that it eq '1', i.e. that it was
-   # explicitly given.
-   $opts{monitor} = 0 unless $opts{monitor} eq '1';
-}
-
-
-$opt_parser->usage_or_errors(%opts);
+$o->usage_or_errors();
 
 # ############################################################################
 # First things first: if --stop was given, create the sentinel file.
 # ############################################################################
-if ( $opts{stop} ) {
-   MKDEBUG && _d("Creating sentinel file", $opts{sentinel});
-   my $file = IO::File->new($opts{sentinel}, ">>")
-      or die "Cannot open $opts{sentinel}: $OS_ERROR\n";
+if ( $o->get('stop') ) {
+   my $sentinel = $o->get('sentinel');
+   MKDEBUG && _d("Creating sentinel file", $sentinel);
+   my $file = IO::File->new($o->get('sentinel'), ">>")
+      or die "Cannot open $sentinel: $OS_ERROR\n";
    print $file "Remove this file to permit mk-slave-restart to run\n"
-      or die "Cannot write to $opts{sentinel}: $OS_ERROR\n";
+      or die "Cannot write to $sentinel: $OS_ERROR\n";
    close $file
-      or die "Cannot close $opts{sentinel}: $OS_ERROR\n";
-   print STDOUT "Successfully created file $opts{sentinel}\n"
-      unless $opts{q};
+      or die "Cannot close $sentinel: $OS_ERROR\n";
+   print STDOUT "Successfully created file $sentinel\n"
+      unless $o->get('quiet');
    # Exit unlesss --monitor is given.
-   if ( !$opts{monitor} ) {
+   if ( !$o->got('monitor') ) {
       MKDEBUG && _d("Nothing more to do, quitting");
       exit(0);
    }
@@ -1778,10 +1931,10 @@ if ( $opts{stop} ) {
       # same --interval as this invocation.  Then remove the file and
       # continue.
       MKDEBUG && _d("Waiting for other instances to quit");
-      sleep($opts{M});
-      MKDEBUG && _d("Unlinking", $opts{sentinel});
-      unlink $opts{sentinel}
-         or die "Cannot unlink $opts{sentinel}: $OS_ERROR";
+      sleep($o->get('maxlength'));
+      MKDEBUG && _d("Unlinking", $o->get('sentinel'));
+      unlink $o->get('sentinel')
+         or die "Cannot unlink $sentinel: $OS_ERROR";
    }
 }
 
@@ -1802,27 +1955,28 @@ my @error_patterns = (
 # ############################################################################
 # Connect and go to work.
 # ############################################################################
-if ( $opts{askpass} ) {
-   $opts{p} = OptionParser::prompt_noecho("Enter password: ");
+if ( $o->get('ask-pass') ) {
+   $o->set('p', OptionParser::prompt_noecho("Enter password: "));
 }
-my $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts), { AutoCommit => 1, } );
+my $dbh = $dp->get_dbh(
+   $dp->get_cxn_params({$o->opt_values()}), { AutoCommit => 1, } );
 
 $dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork/daemonize
 
-# Daemonize only after connecting and doing --askpass.
+# Daemonize only after connecting and doing --ask-pass.
 my $daemon;
-if ( $opts{daemonize} ) {
+if ( $o->get('daemonize') ) {
    my $outfile = MKDEBUG
                  ? '/tmp/' . OptionParser::prog() . '.debug'
                  : '/dev/null';
    $daemon = new Daemon( reopen_STDOUT => "$outfile" )
       or die "Cannot daemonize: $OS_ERROR";
    $daemon->daemonize();
-   if ( defined $opts{pid} ) {
-      $daemon->create_PID_file( $opts{pid} );
+   if ( $o->got('pid') ) {
+      $daemon->create_PID_file( $o->get('pid') );
    } 
-   # I'm a daemon now.
-   $opts{v} = MKDEBUG ? 4 : 0;
+   # I'm a daemon now. TODO: fix this (issue 241).
+   $o->set('verbose', MKDEBUG ? 4 : 0);
 }
 
 my $exit_status = 0;
@@ -1835,9 +1989,9 @@ my $q = new Quoter();
 my $ms = new MasterSlave();
 $ms->recurse_to_slaves(
    {  dbh        => $dbh,
-      dsn        => \%opts,
+      dsn        => { $o->opt_values() },
       dsn_parser => $dp,
-      recurse    => $opts{r} || 0,
+      recurse    => $o->get('recurse') || 0,
       callback   => sub {
          my ( $dsn, $dbh, $level ) = @_;
          # Test whether we want to watch this server.
@@ -1908,17 +2062,17 @@ sub watch_server {
 
    my $start_sql = $vp->version_ge($dbh, '4.0.5')
                  ? 'START SLAVE' : 'SLAVE START';
-   if ( $opts{untilmaster} ) {
-      my ( $file, $pos ) = split(',', $opts{untilmaster});
+   if ( $o->get('until-master') ) {
+      my ( $file, $pos ) = split(',', $o->get('until-master'));
       $start_sql .= " UNTIL MASTER_LOG_FILE = '$file', MASTER_LOG_POS = $pos";
    }
-   elsif ( $opts{untilrelay} ) {
-      my ( $file, $pos ) = split(',', $opts{untilrelay});
+   elsif ( $o->get('until-relay') ) {
+      my ( $file, $pos ) = split(',', $o->get('until-relay'));
       $start_sql .= " UNTIL RELAY_LOG_FILE = '$file', RELAY_LOG_POS = $pos";
    }
 
-   my $set_skip   = $dbh->prepare(
-                    "SET GLOBAL SQL_SLAVE_SKIP_COUNTER = $opts{k}");
+   my $set_skip   = $dbh->prepare("SET GLOBAL SQL_SLAVE_SKIP_COUNTER = "
+                    . $o->get('skip-count'));
    my $start      = $dbh->prepare($start_sql);
    my $stop       = $dbh->prepare('STOP SLAVE');
    my $chmt       = $dbh->prepare(
@@ -1954,13 +2108,13 @@ sub watch_server {
       },
    );
 
-   my $exit_time = time() + ($opts{t} || 0);
-   my $sleep = $opts{s};
+   my $exit_time = time() + ($o->get('time') || 0);
+   my $sleep = $o->get('sleep');
    my ($last_log, $last_pos);
 
    my $stat = {}; # Will hold SHOW SLAVE STATUS
    STAT:
-   while ($stat && (!$opts{t} || time() < $exit_time) && !-f $opts{sentinel}) {
+   while ($stat && (!$o->get('time') || time() < $exit_time) && !-f $o->get('sentinel')) {
       my $increase_sleep = 1;
       $stat = $ms->get_slave_status($dbh);
       if ( !$stat ) {
@@ -1977,21 +2131,23 @@ sub watch_server {
          $stat->{last_error}        ||= '';
          $stat->{last_errno}        ||= 0;
 
-         if ( $opts{untilmaster} && pos_ge($stat, 'master') ) {
-            die "Slave has advanced past $opts{untilmaster} on master.\n";
+         if ( $o->get('until-master') && pos_ge($stat, 'master') ) {
+            die "Slave has advanced past " . $o->get('until-master')
+               . " on master.\n";
          }
-         elsif ( $opts{untilrelay} && pos_ge($stat, 'relay') ) {
-            die "Slave has advanced past $opts{untilrelay} in relay logs.\n";
+         elsif ( $o->get('until-relay') && pos_ge($stat, 'relay') ) {
+            die "Slave has advanced past " . $o->get('until-relay')
+               . " in relay logs.\n";
          }
 
          if ( $stat->{slave_sql_running} eq 'No' ) {
             # Print the time, error, etc
-            if ( $opts{v} ) {
+            if ( $o->get('verbose') ) {
                my $err = '';
-               if ( $opts{v} > 1 ) {
+               if ( $o->get('verbose') > 1 ) {
                   ($err = $stat->{last_error} || '' ) =~ s/\s+/ /g;
-                  if ( $opts{L} ) {
-                     $err = substr($err, 0, $opts{L});
+                  if ( $o->get('error-length') ) {
+                     $err = substr($err, 0, $o->get('error-length'));
                   }
                }
                printf("%s %s %s %11d %d %s\n",
@@ -2004,15 +2160,17 @@ sub watch_server {
                );
             }
 
-            if ( $opts{e} && !exists($opts{e}->{$stat->{last_errno}}) ) {
+            if ( $o->got('error-numbers') 
+               && !exists($o->get('error-numbers')->{$stat->{last_errno}})
+            ) {
                die "Error $stat->{last_errno} is not in --error-numbers.\n";
             }
-            elsif ( $opts{E} && $stat->{last_error}
-                  && $stat->{last_error} !~ m/$opts{E}/ )
+            elsif ( $o->get('error-text') && $stat->{last_error}
+                  && $stat->{last_error} !~ m/$o->get('error-text')/ )
             {
                die "Error does not match --error-text.\n";
             }
-            elsif ( $stat->{last_error} || $opts{always} ) {
+            elsif ( $stat->{last_error} || $o->get('always') ) {
 
                # What kind of error is it?
                foreach my $pat ( @error_patterns ) {
@@ -2044,10 +2202,10 @@ sub watch_server {
 
       # Adjust sleep time.
       if ( $increase_sleep ) {
-         $sleep = min($opts{M}, $sleep * 2);
+         $sleep = min($o->get('max-sleep'), $sleep * 2);
       }
       else {
-         $sleep = max($opts{m}, $sleep / 2);
+         $sleep = max($o->get('min-sleep'), $sleep / 2);
       }
 
       # Errors are very likely to follow each other in quick succession.  NOTE:
@@ -2057,8 +2215,8 @@ sub watch_server {
       # there is no error when it wakes up after 1 second, because 1 was too
       # short.  Now it doubles $sleep, back to 512.  $sleep has the same value
       # it did before the error was ever found.
-      print $dp->as_string($dsn), " sleeping $sleep\n" if $opts{v} > 2;
-      sleep($increase_sleep ? $sleep : min($sleep, $opts{s}));
+      print $dp->as_string($dsn), " sleeping $sleep\n" if $o->get('verbose') > 2;
+      sleep($increase_sleep ? $sleep : min($sleep, $o->get('sleep')));
    }
 
    MKDEBUG && _d('All done with server', $dp->as_string($dsn));
@@ -2076,7 +2234,7 @@ sub pos_ge {
    my $curr = $which eq 'master'
       ? sprintf($fmt, @{$stat}{qw(relay_master_log_file exec_master_log_pos)})
       : sprintf($fmt, @{$stat}{qw(relay_log_file relay_log_pos)});
-   my $stop = sprintf($fmt, split(',', $opts{"until$which"}));
+   my $stop = sprintf($fmt, split(',', $o->get("until-$which")));
    return $curr ge $stop;
 }
 
@@ -2167,7 +2325,7 @@ Always (re)start the slave processes, even when there is no error.  With this
 option enabled, C<mk-slave-restart> will not let you stop the slave if you want
 to!
 
-=item --askpass
+=item --ask-pass
 
 Prompt for a password when connecting to MySQL.
 
@@ -2182,6 +2340,13 @@ Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
 DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
 value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
 connecting to MySQL.
+
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
 
 =item --daemonize
 
@@ -2203,17 +2368,15 @@ Only read mysql options from the given file.
 
 =item --error-length
 
-short form: -L; type: int
+type: int
 
-Max length of error message to print.
-
-When L<"--verbose"> is set high enough to print the error, this option will
-truncate the error text to the specified length.  This can be useful to prevent
-wrapping on the terminal.
+Max length of error message to print.  When L<"--verbose"> is set high enough to
+print the error, this option will truncate the error text to the specified
+length.  This can be useful to prevent wrapping on the terminal.
 
 =item --error-numbers
 
-short form: -e; type: hash
+type: hash
 
 Only restart this comma-separated list of errors.
 
@@ -2225,7 +2388,7 @@ The error number is in the C<last_errno> column of C<SHOW SLAVE STATUS>.
 
 =item --error-text
 
-short form: -E; type: string
+type: string
 
 Only restart errors that match this pattern.
 
@@ -2235,35 +2398,36 @@ slave.  If it exists but doesn't match, mk-slave-restart will exit.
 
 The error text is in the C<last_error> column of C<SHOW SLAVE STATUS>.
 
+=item --help
+
+Show help and exit.
+
 =item --host
 
 short form: -h; type: string
 
 Connect to host.
 
-=item --maxsleep
+=item --max-sleep
 
-short form: -M; type: float; default: 64
+type: float; default: 64
 
 Maximum sleep seconds.
 
 The maximum time mk-slave-restart will sleep before polling the slave again.
 See L<"SLEEP">.
 
-=item --minsleep
+=item --min-sleep
 
-short form: -m; type: float; default: 0.015625
+type: float; default: 0.015625
 
 The minimum time mk-slave-restart will sleep before polling the slave again.
 See L<"SLEEP">.
 
 =item --monitor
 
-default: yes
-
-Whether to monitor the slave.
-
-Unless you specify --monitor explicitly, L<"--stop"> will disable it.
+Whether to monitor the slave (default).  Unless you specify --monitor
+explicitly, L<"--stop"> will disable it.
 
 =item --password
 
@@ -2299,7 +2463,7 @@ Suppresses normal output (disables L<"--verbose">).
 
 =item --recurse
 
-short form: -r; type: int; default: 0
+type: int; default: 0
 
 Number of levels to recurse.
 
@@ -2327,7 +2491,7 @@ type: string; default: /tmp/mk-slave-restart-sentinel
 
 Exit if this file exists.
 
-=item --setvars
+=item --set-vars
 
 type: string; default: wait_timeout=10000
 
@@ -2336,15 +2500,15 @@ Set these MySQL variables.
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
-=item --skipcount
+=item --skip-count
 
-short form: -k; type: int; default: 1
+type: int; default: 1
 
 Number of statements to skip when restarting the slave.
 
 =item --sleep
 
-short form: -s; type: int; default: 1
+type: int; default: 1
 
 Initial sleep seconds between checking the slave.
 
@@ -2365,7 +2529,7 @@ L<"--sentinel">.  This should have the effect of stopping all running
 instances which are watching the same sentinel file.  If L<"--monitor"> isn't
 specified, C<mk-slave-restart> will exit after creating the file.  If it is
 specified, C<mk-slave-restart> will wait the interval given by
-L<"--maxsleep">, then remove the file and continue working.
+L<"--max-sleep">, then remove the file and continue working.
 
 You might find this handy to stop cron jobs gracefully if necessary, or to
 replace one running instance with another.  For example, if you want to stop
@@ -2383,14 +2547,14 @@ See also L<"--sentinel">.
 
 =item --time
 
-short form: -t; type: time
+type: time
 
 Time to run before exiting.
 
 Causes C<mk-slave-restart> to stop after the specified time has elapsed.
 Optional suffix: s=seconds, m=minutes, h=hours, d=days; if no suffix, s is used.
 
-=item --untilmaster
+=item --until-master
 
 type: string
 
@@ -2407,13 +2571,13 @@ This will also cause an UNTIL clause to be given to START SLAVE.
 After reaching this point, the slave should be stopped and mk-slave-restart
 will exit.
 
-=item --untilrelay
+=item --until-relay
 
 type: string
 
 Run until this relay log file and position.
 
-Like L<"--untilmaster">, but in the slave's relay logs instead.  The coordinates
+Like L<"--until-master">, but in the slave's relay logs instead.  The coordinates
 are given by relay_log_file, relay_log_pos.
 
 =item --user
@@ -2434,6 +2598,10 @@ relay_log_pos, and last_errno.
 Verbosity 2 adds last_error.  See also L<"--error-length">.
 
 Verbosity 3 prints the current sleep time each time mk-slave-restart sleeps.
+
+=item --version
+
+Show version and exit.
 
 =back
 
@@ -2468,7 +2636,7 @@ If it finds no error, it doubles the previous sleep time.
 
 =item *
 
-The sleep time is bounded below by L<"--minsleep"> and above by L<"--maxsleep">.
+The sleep time is bounded below by L<"--min-sleep"> and above by L<"--max-sleep">.
 
 =item *
 

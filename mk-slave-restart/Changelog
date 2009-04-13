@@ -1,5 +1,24 @@
 Changelog for mk-slave-restart:
 
+   * Added the --config option for issue 231.
+   * Added the --help and --verbose options for issue 318.
+   * Removed the --setvars long option.  Use --set-vars instead.
+   * Removed the --askpass long option.  Use --ask-pass instead.
+   * Removed the -L short option.  Use --error-length instead.
+   * Removed the -E short option.  Use --error-text instead.
+   * Removed the -M short option.  Use --max-sleep instead.
+   * Removed the --maxsleep long option.  Use --max-sleep instead.
+   * Removed the -m short option.  Use --min-sleep instead.
+   * Removed the --minsleep long option.  Use --min-sleep instead.
+   * Removed the -r short option.  Use --recurse instead.
+   * Removed the -k short option.  Use --skip-count instead.
+   * Removed the --skipcount long option.  Use --skip-count instead.
+   * Removed the -s short option.  Use --sleep instead.
+   * Removed the -t short option.  Use --time instead.
+   * Removed the --untilmaster long option.  Use --until-master instead.
+   * Removed the --untilrelay long option.  Use --until-relay instead.
+   * Removed the -v short option.  Use --verbose instead.
+
 2009-03-31: version 1.0.12
 
    * Send debugging output to STDERR (issue 308).
