@@ -1,5 +1,9 @@
 Changelog for mk-query-digest:
 
+   * Fixed a division by zero when a query has zero exec time.
+   * Added --print to print query events in slow-log format.
+   * Added --type to specify the type of log file (default slowlog).
+   * Added --tcpdump to permit parsing output of tcpdump (issue 228).
    * The --shorten option was implemented badly and was slow (issue 336).
    * The report's per-class QPS was calculated incorrectly (issue 326).
 

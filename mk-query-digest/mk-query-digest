@@ -987,7 +987,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 3186
+# Transformers package 3407
 # ###########################################################################
 
 package Transformers;
@@ -1108,11 +1108,12 @@ sub ts {
 
 sub parse_timestamp {
    my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   if ( my($y, $m, $d, $h, $i, $s, $f)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?$/ )
    {
-      return sprintf "%d-%02d-%02d %02d:%02d:%02d",
-                     $y + 2000, $m, $d, $h, $i, $s;
+      return sprintf "%d-%02d-%02d %02d:%02d:"
+                     . (defined $f ? '%02.6f' : '%02d'),
+                     $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
    }
    return $val;
 }
@@ -1553,6 +1554,438 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# TcpdumpParser package 3406
+# ###########################################################################
+package TcpdumpParser;
+
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Data::Dumper;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+use constant {
+   COM_SLEEP               => '00',
+   COM_QUIT                => '01',
+   COM_INIT_DB             => '02',
+   COM_QUERY               => '03',
+   COM_FIELD_LIST          => '04',
+   COM_CREATE_DB           => '05',
+   COM_DROP_DB             => '06',
+   COM_REFRESH             => '07',
+   COM_SHUTDOWN            => '08',
+   COM_STATISTICS          => '09',
+   COM_PROCESS_INFO        => '0a',
+   COM_CONNECT             => '0b',
+   COM_PROCESS_KILL        => '0c',
+   COM_DEBUG               => '0d',
+   COM_PING                => '0e',
+   COM_TIME                => '0f',
+   COM_DELAYED_INSERT      => '10',
+   COM_CHANGE_USER         => '11',
+   COM_BINLOG_DUMP         => '12',
+   COM_TABLE_DUMP          => '13',
+   COM_CONNECT_OUT         => '14',
+   COM_REGISTER_SLAVE      => '15',
+   COM_STMT_PREPARE        => '16',
+   COM_STMT_EXECUTE        => '17',
+   COM_STMT_SEND_LONG_DATA => '18',
+   COM_STMT_CLOSE          => '19',
+   COM_STMT_RESET          => '1a',
+   COM_SET_OPTION          => '1b',
+   COM_STMT_FETCH          => '1c',
+   SERVER_QUERY_NO_GOOD_INDEX_USED => 16,
+   SERVER_QUERY_NO_INDEX_USED      => 32,
+};
+
+my %com_for = (
+   '00' => 'COM_SLEEP',
+   '01' => 'COM_QUIT',
+   '02' => 'COM_INIT_DB',
+   '03' => 'COM_QUERY',
+   '04' => 'COM_FIELD_LIST',
+   '05' => 'COM_CREATE_DB',
+   '06' => 'COM_DROP_DB',
+   '07' => 'COM_REFRESH',
+   '08' => 'COM_SHUTDOWN',
+   '09' => 'COM_STATISTICS',
+   '0a' => 'COM_PROCESS_INFO',
+   '0b' => 'COM_CONNECT',
+   '0c' => 'COM_PROCESS_KILL',
+   '0d' => 'COM_DEBUG',
+   '0e' => 'COM_PING',
+   '0f' => 'COM_TIME',
+   '10' => 'COM_DELAYED_INSERT',
+   '11' => 'COM_CHANGE_USER',
+   '12' => 'COM_BINLOG_DUMP',
+   '13' => 'COM_TABLE_DUMP',
+   '14' => 'COM_CONNECT_OUT',
+   '15' => 'COM_REGISTER_SLAVE',
+   '16' => 'COM_STMT_PREPARE',
+   '17' => 'COM_STMT_EXECUTE',
+   '18' => 'COM_STMT_SEND_LONG_DATA',
+   '19' => 'COM_STMT_CLOSE',
+   '1a' => 'COM_STMT_RESET',
+   '1b' => 'COM_SET_OPTION',
+   '1c' => 'COM_STMT_FETCH',
+);
+
+sub new {
+   my ( $class ) = @_;
+   bless {
+      sessions => {},
+   }, $class;
+}
+
+my $handshake_pat = qr{
+      ^                 # -----                ----
+      ..                # 1                    protocol_version
+      (?:..)+?00        # n Null-Term String   server_version
+      (.{8})            # 4                    thread_id
+      .{16}             # 8                    scramble_buff
+      .{2}              # 1                    filler: always 0x00
+      .{4}              # 2                    server_capabilities
+      .{2}              # 1                    server_language
+      .{4}              # 2                    server_status
+      .{26}             # 13                   filler: always 0x00
+   }x;
+
+
+sub parse_event {
+   my ( $self, $fh, $misc, @callbacks ) = @_;
+   my $watching   = $misc->{watching};
+
+   local $INPUT_RECORD_SEPARATOR = "\n200";
+
+   my $pos_in_log = tell($fh);
+   EVENT:
+   while ( defined(my $pack = <$fh>) ) {
+      $pack =~ s/\n200\Z//;
+      $pack = "200$pack" unless $pack =~ m/\A200/;
+
+      my ( $ts, $from, $to ) = $pack =~ m/\A(\S+ \S+) IP (\S+) > (\S+):/;
+      (my $data = join('', $pack =~ m/\t0x\d+:  (.*)/g))=~ s/\s+//g; 
+      my $sess = $self->{sessions}->{$from eq $watching ? $to : $from}
+            ||= {
+               client     => ($from eq $watching ? $to : $from),
+               ts         => $ts,
+               pos_in_log => $pos_in_log,
+            };
+
+      my $ip_hlen = hex(substr($data, 1, 1)); # Num of 32-bit words in header.
+      my $ip_plen = hex(substr($data, 4, 4)); # Num of BYTES in IPv4 datagram.
+      my $complete = length($data) == 2 * $ip_plen;
+
+      my $tcp_hlen = hex(substr($data, ($ip_hlen + 3) * 8, 1));
+      MKDEBUG && _d('Header len: IP', $ip_hlen, 'TCP', $tcp_hlen);
+      $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
+      if ( $data ) {
+
+         my $packet_len = to_num(substr(substr($data, 0, 8, ''), 0, 6));
+         MKDEBUG && _d('Packet length:', $packet_len);
+
+         if ( $from eq $watching ) { # From server to client
+            MKDEBUG && _d('Packet is from server to client');
+
+            my ( $first_byte ) = substr($data, 0, 2, '');
+            MKDEBUG && _d("First byte of packet:", $first_byte);
+            if ( $first_byte eq '00' ) {
+               MKDEBUG && _d('Got an OK packet', $data);
+
+               my $affected_rows = get_lcb(\$data);
+               my $insert_id     = get_lcb(\$data);
+               my $status   = to_num(substr($data, 0, 4, ''));
+               my $warnings = to_num(substr($data, 0, 4, ''));
+               my $message  = to_string($data);
+               MKDEBUG && _d('OK data: affected_rows', $affected_rows,
+                  'insert_id', $insert_id, 'status', $status, 'warnings',
+                  $warnings, 'message', $message);
+
+               if ( ($sess->{state} || '') eq 'client_auth' ) {
+                  fire_event(
+                     {  cmd => 'Admin',
+                        arg => 'administrator command: Connect',
+                        ts  => $ts, # Events are timestamped when they end
+                     },
+                     $pack, $sess, @callbacks
+                  );
+               }
+               elsif ( $sess->{cmd} ) { # It should be a query or something
+                  my $com = $sess->{cmd}->{cmd};
+                  my $arg;
+                  if ( $com eq COM_QUERY ) {
+                     $com = 'Query';
+                     $arg = $sess->{cmd}->{arg};
+                  }
+                  else {
+                     $arg = 'administrator command: '
+                          . ucfirst(lc(substr($com_for{$com}, 4)));
+                     $com = 'Admin';
+                  }
+                  fire_event(
+                     {  cmd           => $com,
+                        arg           => $arg,
+                        ts            => $ts,
+                        Insert_id     => $insert_id,
+                        Warning_count => $warnings,
+                        Rows_affected => $affected_rows,
+                     },
+                     $pack, $sess, @callbacks
+                  );
+               }
+               $sess->{state} = 'ready';
+               return 1;
+            }
+            elsif ( $first_byte eq 'ff' ) {
+               MKDEBUG && _d('Got an ERROR packet');
+               my $errno = to_num(substr($data, 0, 4));
+               my $messg = to_string(substr($data, 4));
+               MKDEBUG && _d('ERROR', $errno, $messg);
+               my $event;
+               if ( $sess->{state} eq 'client_auth' ) {
+                  MKDEBUG && _d('Connection failed');
+                  $event = {
+                     cmd       => 'Admin',
+                     arg       => 'administrator command: Connect',
+                     ts        => $ts,
+                     Error_no  => $errno,
+                  };
+                  $sess->{state} = 'closing';
+               }
+               elsif ( $sess->{cmd} ) { # It should be a query or something
+                  my $com = $sess->{cmd}->{cmd};
+                  my $arg;
+                  if ( $com eq COM_QUERY ) {
+                     $com = 'Query';
+                     $arg = $sess->{cmd}->{arg};
+                  }
+                  else {
+                     $arg = 'administrator command: '
+                          . ucfirst(lc(substr($com_for{$com}, 4)));
+                     $com = 'Admin';
+                  }
+                  $event = {
+                     cmd       => $com,
+                     arg       => $arg,
+                     ts        => $ts,
+                     Error_no  => $errno,
+                  };
+                  $sess->{state} = 'ready';
+               }
+               fire_event($event, $pack, $sess, @callbacks);
+               return 1;
+            }
+            elsif ( $first_byte eq 'fe' && $packet_len < 9 ) {
+               MKDEBUG && _d('Got an EOF packet');
+               die "You should not have gotten here";
+            }
+            elsif ( !$sess->{state}
+               && (my ($thread_id) = $data =~ m/$handshake_pat/o )
+            ) {
+               MKDEBUG && _d('Got a handshake for thread_id', $thread_id);
+               $sess->{thread_id} = to_num($thread_id);
+               $sess->{state}     = 'server_handshake';
+            }
+            else { # Row data, field, result set header.
+               MKDEBUG && _d('Got a row/field/result packet');
+               if ( $sess->{cmd} ) {
+                  my $com = $sess->{cmd}->{cmd};
+                  my $event = { ts  => $ts };
+                  if ( $com eq COM_QUERY ) {
+                     $event->{cmd} = 'Query';
+                     $event->{arg} = $sess->{cmd}->{arg};
+                  }
+                  else {
+                     $event->{arg} = 'administrator command: '
+                          . ucfirst(lc(substr($com_for{$com}, 4)));
+                     $event->{cmd} = 'Admin';
+                  }
+                  if ( $complete ) { # We DID get all the data in the packet.
+                     my ( $warning_count, $status_flags )
+                        = $data =~ m/fe(.{4})(.{4})\Z/;
+                     if ( $warning_count ) { 
+                        $event->{Warnings} = to_num($warning_count);
+                        my $flags = to_num($status_flags); # TODO set all flags?
+                        $event->{No_good_index_used}
+                           = $flags & SERVER_QUERY_NO_GOOD_INDEX_USED ? 1 : 0;
+                        $event->{No_index_used}
+                           = $flags & SERVER_QUERY_NO_INDEX_USED ? 1 : 0;
+                     }
+                  }
+                  fire_event($event, $pack, $sess, @callbacks);
+                  $sess->{state} = 'ready';
+                  return 1;
+               }
+            }
+         } # From server to client
+
+         else {  # From client to server
+            if ( ($sess->{state} || '') eq 'server_handshake' ) {
+               MKDEBUG && _d('Expect client authentication packet');
+               my ( $user, $buff_len ) = $data =~ m{
+                  ^.{18}         # Client flags, max packet size, charset
+                  (?:00){23}     # Filler
+                  ((?:..)+?)00   # Null-terminated user name
+                  (..)           # Length-coding byte for scramble buff
+               }x;
+               if ( defined $buff_len ) {
+                  MKDEBUG && _d('Found user', $user, 'buff_len', $buff_len);
+                  my $code_len = hex($buff_len);
+                  my ( $database ) = $data =~ m!
+                     ^.{64}${user}00..   # Everything matched before
+                     (?:..){$code_len}   # The scramble buffer
+                     (.*)00\Z            # The database name
+                  !x;
+                  MKDEBUG && _d('Found databasename', $database);
+                  $sess->{state}    = 'client_auth';
+                  $sess->{user}     = to_string($user);
+                  $sess->{db}       = to_string($database || '');
+               }
+               else {
+                  MKDEBUG && _d('Did not match client auth packet');
+               }
+            }
+
+            else {
+               my $COM = substr($data, 0, 2);
+               $data = to_string(substr($data, 2));
+               $sess->{ts}         = $ts;
+               $sess->{state}      = 'awaiting_reply';
+               $sess->{pos_in_log} = $pos_in_log;
+               $sess->{cmd}        = {
+                  cmd => $COM,
+                  arg => $data,
+               };
+               if ( $COM eq COM_QUIT ) { # Fire right away; will cleanup later.
+                  MKDEBUG && _d('Got a COM_QUIT');
+                  fire_event(
+                     {  cmd       => 'Admin',
+                        arg       => 'administrator command: Quit',
+                        ts        => $ts,
+                     },
+                     $pack, $sess, @callbacks
+                  );
+                  $sess->{state} = 'closing';
+                  return 1;
+               }
+            }
+         } # From client to server
+
+      } # There was data in the TCP packet.
+      else {
+         MKDEBUG && _d('No data in TCP packet');
+         if ( ($sess->{state} || '') eq 'closing' ) {
+            delete $self->{sessions}->{$sess->{client}};
+         }
+      }
+
+      $pos_in_log = tell($fh);
+   }
+
+   return 0;
+}
+
+sub fire_event {
+   my ( $event, $packet, $session, @callbacks ) = @_;
+
+   my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\.(\d+)/;
+   $event = {
+      cmd        => $event->{cmd},
+      arg        => $event->{arg},
+      bytes      => length( $event->{arg} ),
+      ts         => tcp_timestamp( $event->{ts} ),
+      host       => $host,
+      ip         => $host,
+      port       => $port,
+      db         => $session->{db},
+      user       => $session->{user},
+      Thread_id  => $session->{thread_id},
+      pos_in_log => $session->{pos_in_log},
+      Query_time => timestamp_diff($session->{ts}, $packet =~ m/\A(\S+ \S+)/g),
+      Error_no   => ($event->{Error_no} || 0),
+      Rows_affected      => ($event->{Rows_affected} || 0),
+      Warning_count      => ($event->{Warning_count} || 0),
+      No_good_index_used => ($event->{No_good_index_used} ? 'Yes' : 'No'),
+      No_index_used      => ($event->{No_index_used}      ? 'Yes' : 'No'),
+   };
+   foreach my $callback ( @callbacks ) {
+      last unless $event = $callback->($event);
+   }
+   return 1;
+
+}
+
+sub tcp_timestamp {
+   my ( $ts ) = @_;
+   $ts =~ s/^\d\d(\d\d)-(\d\d)-(\d\d)/$1$2$3/;
+   return $ts;
+}
+
+sub timestamp_diff {
+   my ( $start, $end ) = @_;
+   my $sd = substr($start, 0, 11, '');
+   my $ed = substr($end,   0, 11, '');
+   my ( $sh, $sm, $ss ) = split(/:/, $start);
+   my ( $eh, $em, $es ) = split(/:/, $end);
+   my $esecs = ($eh * 3600 + $em * 60 + $es);
+   my $ssecs = ($sh * 3600 + $sm * 60 + $ss);
+   if ( $sd eq $ed ) {
+      return sprintf '%.6f', $esecs - $ssecs;
+   }
+   else { # Assume only one day boundary has been crossed, no DST, etc
+      return sprintf '%.6f', ( 86_400 - $ssecs ) + $esecs;
+   }
+}
+
+sub to_string {
+   my ( $data ) = @_;
+   $data = pack('H*', $data);
+   return $data;
+}
+
+sub to_num {
+   my ( $str ) = @_;
+   my @bytes = $str =~ m/(..)/g;
+   my $result = 0;
+   foreach my $i ( 0 .. $#bytes ) {
+      $result += hex($bytes[$i]) * (16 ** ($i * 2));
+   }
+   return $result;
+}
+
+sub get_lcb {
+   my ( $string ) = @_;
+   my $first_byte = hex(substr($$string, 0, 2, ''));
+   if ( $first_byte < 251 ) {
+      return $first_byte;
+   }
+   elsif ( $first_byte == 252 ) {
+      return to_num(substr($$string, 0, 4, ''));
+   }
+   elsif ( $first_byte == 253 ) {
+      return to_num(substr($$string, 0, 6, ''));
+   }
+   elsif ( $first_byte == 254 ) {
+      return to_num(substr($$string, 0, 16, ''));
+   }
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TcpdumpParser package
+# ###########################################################################
+
+# ###########################################################################
 # SlowLogParser package 3192
 # ###########################################################################
 package SlowLogParser;
@@ -1720,6 +2153,58 @@ sub _d {
 
 # ###########################################################################
 # End SlowLogParser package
+# ###########################################################################
+
+# ###########################################################################
+# SlowLogWriter package 3405
+# ###########################################################################
+package SlowLogWriter;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub write {
+   my ( $self, $fh, $event ) = @_;
+   if ( $event->{ts} ) {
+      print $fh "# Time: $event->{ts}\n";
+   }
+   if ( $event->{user} ) {
+      printf $fh "# User\@Host: %s[%s] \@ %s []\n",
+         $event->{user}, $event->{user}, $event->{host};
+   }
+   printf $fh
+      "# Query_time: %d  Lock_time: %d  Rows_sent: %d  Rows_examined: %d\n",
+      map { $_ || 0 }
+         @{$event}{qw(Query_time Lock_time Rows_sent Rows_examined)};
+   if ( $event->{db} ) {
+      printf $fh "use %s;\n", $event->{db};
+   }
+   if ( $event->{arg} =~ m/^administrator command/ ) {
+      print $fh '# ';
+   }
+   print $fh $event->{arg}, ";\n";
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SlowLogWriter package
 # ###########################################################################
 
 # ###########################################################################
@@ -2184,7 +2669,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 3338
+# QueryReportFormatter package 3408
 # ###########################################################################
 
 
@@ -2444,7 +2929,7 @@ sub chart_distro {
 
    foreach my $i ( 0 .. $#distro ) {
       my $n_vals = $distro[$i];
-      my $n_marks = $n_vals / $vals_per_mark;
+      my $n_marks = $n_vals / ($vals_per_mark || 1);
       $n_marks = 1 if $n_marks < 1 && $n_vals > 0;
       my $bar = ($n_marks ? '  ' : '') . '#' x $n_marks;
       push @results, sprintf $bar_fmt, $distro_labels[$i], $bar;
@@ -3796,6 +4281,14 @@ my %ea;      # EventAggregators
          return $event;
       };
    }
+   if ( $opts{print} ) {
+      my $w = new SlowLogWriter();
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         $w->write(*STDOUT, $event);
+         return $event;
+      };
+   }
    if ( grep { $_ eq 'tables' } @{$opts{groupby}} ) {
       push @callbacks, sub {
          my ( $event ) = @_;
@@ -3980,21 +4473,26 @@ my %ea;      # EventAggregators
          push @ARGV, '-'; # Magical STDIN filename.
       }
 
-      my $lp   = new SlowLogParser();
-      my $misc = undef;
+      # Set up the parser and miscellaneous options to it.
+      my $misc   = {};
+      my $parser = $opts{type} eq 'slowlog' ? new SlowLogParser()
+                 : $opts{type} eq 'tcpdump' ? new TcpdumpParser()
+                 :                            die("Unknown type $opts{type}");
       if ( $opts{embeddedattr} ) {
-         $misc = {
-            embed   => $opts{embeddedattr},
-            capture => $opts{embeddedattrcapt},
-         };
+         $misc->{embed}   = $opts{embeddedattr};
+         $misc->{capture} = $opts{embeddedattrcapt};
       }
+      if ( $opts{type} eq 'tcpdump' && $opts{tcpdump} ) {
+         ($misc->{watching} = $opts{tcpdump}) =~ s/:/./;
+      }
+
       # TODO: carry the last db and ts values forward if they're undefined
       # now.  Do that by unshifting a new callback onto the front of @callbacks.
       while ( $oktorun && (my $file = shift(@ARGV)) ) {
          # TODO: non-blocking I/O so we can respond to CTRL-C.  See
          # http://www.perlmonks.org/?node_id=55241
-         # http://davesource.com/Solutions/20080924.Perl-Non-blocking-Read-On-Pipes-Or-Files.html
-         # http://hell.org.ua/Docs/oreilly/perl/cookbook/ch07_15.htm
+         # http://tinyurl.com/c6lqzz
+         # Or look at the Perl Cookbook, ch07.
          my $fh;
          if ( $file eq '-' ) {
             $fh = *STDIN;
@@ -4005,7 +4503,7 @@ my %ea;      # EventAggregators
          while ( $oktorun ) {
             my $events = 0;
             eval {
-               $events = $lp->parse_event($fh, $misc, @callbacks);
+               $events = $parser->parse_event($fh, $misc, @callbacks);
             };
             MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
             last unless $events;
@@ -4886,6 +5384,10 @@ not writable by non-root users, so /tmp/ is a more reliable alternative.
 
 The PID file is removed when the daemonized instance exits.
 
+=item --print
+
+Print log events to STDOUT in standard slow-query-log format.
+
 =item --processlist
 
 type: DSN
@@ -5069,6 +5571,37 @@ such list in the statement will be shortened.
 If it shortens something beyond recognition, you can find the original statement
 in the log, at the offset shown in the report header (see L<"OUTPUT">).
 
+=item --tcpdump
+
+type: string
+
+Which IP address and port to watch (default 127.0.0.1:3306).  This option tells
+mk-query-digest whether a given TCP packet is from client to server or server to
+client.  If you get this wrong, nothing works right.
+
+mk-query-digest does not actually watch the network (i.e. it does NOT "sniff
+packets").  Instead, it's just parsing the output of tcpdump.  You are
+responsible for generating this output; mk-query-digest does not do it for you.
+Then you send this to mk-query-digest as you would any log file: as files on the
+command line or to STDIN.
+
+The parser expects the input to be formatted with the following options: C<-x -n
+-q -tttt>.  For example, if you want to capture output from your local machine,
+you can do something like
+
+  tcpdump -i lo port 3306 -s 1500 -c 1000 -x -n -q -tttt \
+    | mk-query-digest --type tcpdump
+
+The other tcpdump parameters, such as -s, -c, and -i, are up to you.  Just make
+sure the output looks like this:
+
+  2009-04-12 09:50:16.804849 IP 127.0.0.1.42167 > 127.0.0.1.3306: tcp 37
+      0x0000:  4508 0059 6eb2 4000 4006 cde2 7f00 0001
+      0x0010:  ....
+
+Remember tcpdump has a handy -c option to stop after it captures some number of
+packets!  That's very useful for testing your tcpdump command.
+
 =item --timeline
 
 type: Array
@@ -5095,6 +5628,13 @@ Example:
 default: yes
 
 Zero out the Rows_XXX properties for administrator command events.
+
+=item --type
+
+type: string
+
+The type of input to parse (default slowlog).  You can also specify tcpdump; if
+you do, see also L<"--tcpdump">.
 
 =back
 
