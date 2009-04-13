@@ -2992,9 +2992,8 @@ shortening them instead.  This is filed as a feature request (issue 295).
 
 type: Array
 
-Read this comma-separated list of config files.
-
-If specified, this must be the first option on the command line.
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
 
 =item --databases
 
