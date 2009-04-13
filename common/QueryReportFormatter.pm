@@ -308,7 +308,7 @@ sub chart_distro {
 
    foreach my $i ( 0 .. $#distro ) {
       my $n_vals = $distro[$i];
-      my $n_marks = $n_vals / $vals_per_mark;
+      my $n_marks = $n_vals / ($vals_per_mark || 1);
       # Always print at least 1 mark for any bucket that has at least
       # 1 value. This skews the graph a tiny bit, but it allows us to
       # see all buckets that have values.

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 5;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -179,3 +179,105 @@ $result = $qrf->chart_distro(
 );
 
 is($result, $expected, 'Query_time distro');
+
+# ########################################################################
+# This one is all about an event that's all zeroes.
+# ########################################################################
+$ea  = new EventAggregator(
+   groupby => 'fingerprint',
+   worst   => 'Query_time',
+   attributes => {
+      Query_time    => [qw(Query_time)],
+      Lock_time     => [qw(Lock_time)],
+      user          => [qw(user)],
+      ts            => [qw(ts)],
+      Rows_sent     => [qw(Rows_sent)],
+      Rows_examined => [qw(Rows_examined)],
+      db            => [qw(db)],
+   },
+);
+
+$events = [
+   {  bytes              => 30,
+      db                 => 'mysql',
+      ip                 => '127.0.0.1',
+      arg                => 'administrator command: Connect',
+      fingerprint        => 'administrator command: connect',
+      Rows_affected      => 0,
+      user               => 'msandbox',
+      Warning_count      => 0,
+      cmd                => 'Admin',
+      No_good_index_used => 'No',
+      ts                 => '090412 11:00:13.118191',
+      No_index_used      => 'No',
+      port               => '57890',
+      host               => '127.0.0.1',
+      Thread_id          => 8,
+      pos_in_log         => '0',
+      Query_time         => '0',
+      Error_no           => 0
+   },
+];
+
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea->aggregate($event);
+}
+
+$expected = <<EOF;
+# Overall: 1 total, 1 unique, 0 QPS, 0x concurrency ______________________
+#                    total     min     max     avg     95%  stddev  median
+# Exec time              0       0       0       0       0       0       0
+# Time range        2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
+EOF
+
+$result = $qrf->global_report(
+   $ea,
+   select  => [ qw(Query_time Lock_time Rows_sent Rows_examined ts) ],
+   worst   => 'Query_time',
+);
+
+is($result, $expected, 'Global report with all zeroes');
+
+$expected = <<EOF;
+# Query 1: 0 QPS, 0x concurrency, ID 0x261703E684370D2C at byte 0 ________
+# This item is included in the report because it matches --limit.
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       1
+# Exec time      0       0       0       0       0       0       0       0
+# Time range 2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
+# Databases      1   mysql
+# Users          1 msandbox
+EOF
+
+$result = $qrf->event_report(
+   $ea,
+   select => [ qw(Query_time Lock_time Rows_sent Rows_examined ts db user users) ],
+   where   => 'administrator command: connect',
+   rank    => 1,
+   worst   => 'Query_time',
+   reason  => 'top',
+);
+
+is($result, $expected, 'Event report with all zeroes');
+
+$expected = <<EOF;
+# Query_time distribution
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
+EOF
+
+# This used to cause illegal division by zero in some cases.
+$result = $qrf->chart_distro(
+   $ea,
+   attribute => 'Query_time',
+   where     => 'administrator command: connect',
+);
+
+is($result, $expected, 'Chart distro with all zeroes');
