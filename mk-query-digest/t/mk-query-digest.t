@@ -188,14 +188,14 @@ ok(
 # Issue 228: parse tcpdump.
 # #############################################################################
 { # Isolate $run_with locally
-   $run_with = 'perl ../mk-query-digest --limit 100 --type tcpdump ../../common/t/samples';
+   my $run_with = 'perl ../mk-query-digest --noheader --limit 100 '
+      . '--type tcpdump ../../common/t/samples';
    ok(
       no_diff("$run_with/tcpdump002.txt", 'samples/tcpdump002_report.txt'),
       'Analysis for tcpdump002',
    );
 }
 
-__DATA__
 # #############################################################################
 # Test cmd line op sanity.
 # #############################################################################

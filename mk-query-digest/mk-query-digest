@@ -1554,7 +1554,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 3406
+# TcpdumpParser package 3417
 # ###########################################################################
 package TcpdumpParser;
 
@@ -1664,26 +1664,21 @@ sub parse_event {
       $pack =~ s/\n200\Z//;
       $pack = "200$pack" unless $pack =~ m/\A200/;
 
-      my ( $ts, $from, $to ) = $pack =~ m/\A(\S+ \S+) IP (\S+) > (\S+):/;
-      (my $data = join('', $pack =~ m/\t0x\d+:  (.*)/g))=~ s/\s+//g; 
+      my $packet = $self->parse_packet($pack);
+      my ($from, $to, $ts, $complete, $data) = @{$packet}{qw(
+           from   to   ts   complete   data)};
+
       my $sess = $self->{sessions}->{$from eq $watching ? $to : $from}
             ||= {
                client     => ($from eq $watching ? $to : $from),
                ts         => $ts,
-               pos_in_log => $pos_in_log,
+               pos_in_log => $pos_in_log ? $pos_in_log - 2 : 0,
             };
 
-      my $ip_hlen = hex(substr($data, 1, 1)); # Num of 32-bit words in header.
-      my $ip_plen = hex(substr($data, 4, 4)); # Num of BYTES in IPv4 datagram.
-      my $complete = length($data) == 2 * $ip_plen;
-
-      my $tcp_hlen = hex(substr($data, ($ip_hlen + 3) * 8, 1));
-      MKDEBUG && _d('Header len: IP', $ip_hlen, 'TCP', $tcp_hlen);
-      $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
       if ( $data ) {
 
          my $packet_len = to_num(substr(substr($data, 0, 8, ''), 0, 6));
-         MKDEBUG && _d('Packet length:', $packet_len);
+         MKDEBUG && _d('Packet/data length:', $packet_len, length($data)/2);
 
          if ( $from eq $watching ) { # From server to client
             MKDEBUG && _d('Packet is from server to client');
@@ -1884,6 +1879,29 @@ sub parse_event {
    }
 
    return 0;
+}
+
+sub parse_packet {
+   my ( $self, $pack ) = @_;
+   my ( $ts, $from, $to ) = $pack =~ m/\A(\S+ \S+) IP (\S+) > (\S+):/;
+   (my $data = join('', $pack =~ m/\t0x[0-9a-f]+:  (.*)/g))=~ s/\s+//g; 
+
+   my $ip_hlen = hex(substr($data, 1, 1)); # Num of 32-bit words in header.
+   my $ip_plen = hex(substr($data, 4, 4)); # Num of BYTES in IPv4 datagram.
+   my $complete = length($data) == 2 * $ip_plen ? 1 : 0;
+
+   my $tcp_hlen = hex(substr($data, ($ip_hlen + 3) * 8, 1));
+   MKDEBUG && _d('Header len: IP', $ip_hlen, 'TCP', $tcp_hlen,
+      'complete:', $complete);
+   $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
+
+   return {
+      ts       => $ts,
+      from     => $from,
+      to       => $to,
+      data     => $data,
+      complete => $complete,
+   };
 }
 
 sub fire_event {
