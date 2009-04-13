@@ -1786,9 +1786,8 @@ after connecting to MySQL.
 
 type: Array
 
-Read this comma-separated list of config files.
-
-If specified, this must be the first option on the command line.
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
 
 =item --[no]continue
 
