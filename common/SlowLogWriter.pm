@@ -42,10 +42,14 @@ sub write {
    }
    printf $fh
       "# Query_time: %d  Lock_time: %d  Rows_sent: %d  Rows_examined: %d\n",
+      # TODO 0  Rows_affected: 0  Rows_read: 1
       map { $_ || 0 }
          @{$event}{qw(Query_time Lock_time Rows_sent Rows_examined)};
    if ( $event->{db} ) {
       printf $fh "use %s;\n", $event->{db};
+   }
+   if ( $event->{arg} =~ m/^administrator command/ ) {
+      print $fh '# ';
    }
    print $fh $event->{arg}, ";\n";
 }
