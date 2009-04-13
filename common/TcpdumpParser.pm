@@ -150,29 +150,18 @@ sub parse_event {
       $pack =~ s/\n200\Z//;
       $pack = "200$pack" unless $pack =~ m/\A200/;
 
-      my ( $ts, $from, $to ) = $pack =~ m/\A(\S+ \S+) IP (\S+) > (\S+):/;
-      (my $data = join('', $pack =~ m/\t0x\d+:  (.*)/g))=~ s/\s+//g; 
+      my $packet = $self->parse_packet($pack);
+      my ($from, $to, $ts, $complete, $data) = @{$packet}{qw(
+           from   to   ts   complete   data)};
+
       my $sess = $self->{sessions}->{$from eq $watching ? $to : $from}
             ||= {
                client     => ($from eq $watching ? $to : $from),
                ts         => $ts,
-               pos_in_log => $pos_in_log,
+               # Adjust for trimming off the start of the log
+               pos_in_log => $pos_in_log ? $pos_in_log - 2 : 0,
             };
 
-      # Find length information in the IPv4 header.  Typically 5 32-bit
-      # words.  See http://en.wikipedia.org/wiki/IPv4#Header
-      my $ip_hlen = hex(substr($data, 1, 1)); # Num of 32-bit words in header.
-      # The total length of the entire datagram, including header.  This is
-      # useful because it lets us see whether we got the whole thing.
-      my $ip_plen = hex(substr($data, 4, 4)); # Num of BYTES in IPv4 datagram.
-      my $complete = length($data) == 2 * $ip_plen;
-
-      # Same thing in a different position, with the TCP header.  See
-      # http://en.wikipedia.org/wiki/Transmission_Control_Protocol.
-      my $tcp_hlen = hex(substr($data, ($ip_hlen + 3) * 8, 1));
-      # Throw away the IP and TCP headers.
-      MKDEBUG && _d('Header len: IP', $ip_hlen, 'TCP', $tcp_hlen);
-      $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
       if ( $data ) {
 
          # Now we're down to the MySQL protocol.  A single TCP packet can
@@ -184,7 +173,7 @@ sub parse_event {
          # get-a-packet-from-$data, do stuff, etc.  But we don't, and we don't
          # want to either.
          my $packet_len = to_num(substr(substr($data, 0, 8, ''), 0, 6));
-         MKDEBUG && _d('Packet length:', $packet_len);
+         MKDEBUG && _d('Packet/data length:', $packet_len, length($data)/2);
 
          # If it's from the server to the client, I care about
          # 1) during the initialization sequence, the thread_id.
@@ -423,6 +412,37 @@ sub parse_event {
    }
 
    return 0;
+}
+
+# Takes a hex description of a TCP/IP packet and returns the interesting bits.
+sub parse_packet {
+   my ( $self, $pack ) = @_;
+   my ( $ts, $from, $to ) = $pack =~ m/\A(\S+ \S+) IP (\S+) > (\S+):/;
+   (my $data = join('', $pack =~ m/\t0x[0-9a-f]+:  (.*)/g))=~ s/\s+//g; 
+
+   # Find length information in the IPv4 header.  Typically 5 32-bit
+   # words.  See http://en.wikipedia.org/wiki/IPv4#Header
+   my $ip_hlen = hex(substr($data, 1, 1)); # Num of 32-bit words in header.
+   # The total length of the entire datagram, including header.  This is
+   # useful because it lets us see whether we got the whole thing.
+   my $ip_plen = hex(substr($data, 4, 4)); # Num of BYTES in IPv4 datagram.
+   my $complete = length($data) == 2 * $ip_plen ? 1 : 0;
+
+   # Same thing in a different position, with the TCP header.  See
+   # http://en.wikipedia.org/wiki/Transmission_Control_Protocol.
+   my $tcp_hlen = hex(substr($data, ($ip_hlen + 3) * 8, 1));
+   # Throw away the IP and TCP headers.
+   MKDEBUG && _d('Header len: IP', $ip_hlen, 'TCP', $tcp_hlen,
+      'complete:', $complete);
+   $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
+
+   return {
+      ts       => $ts,
+      from     => $from,
+      to       => $to,
+      data     => $data,
+      complete => $complete,
+   };
 }
 
 sub fire_event {
