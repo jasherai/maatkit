@@ -141,14 +141,16 @@ sub ts {
       $year, $mon, $mday, $hour, $min, $sec);
 }
 
-# Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.
+# Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.  Also
+# handles a timestamp with fractions after it.
 sub parse_timestamp {
    my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   if ( my($y, $m, $d, $h, $i, $s, $f)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?$/ )
    {
-      return sprintf "%d-%02d-%02d %02d:%02d:%02d",
-                     $y + 2000, $m, $d, $h, $i, $s;
+      return sprintf "%d-%02d-%02d %02d:%02d:"
+                     . (defined $f ? '%02.6f' : '%02d'),
+                     $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
    }
    return $val;
 }
