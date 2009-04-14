@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 126;
+use Test::More tests => 127;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -367,6 +367,10 @@ is_deeply(
 ok(
    $o->has('D'),
    'Has short opt' 
+);
+ok(
+   !$o->has('X'),
+   'Does not "has" nonexistent short opt'
 );
 
 # #############################################################################
