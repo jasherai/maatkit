@@ -612,7 +612,8 @@ sub got {
 # Returns true if the option exists.
 sub has {
    my ( $self, $opt ) = @_;
-   return exists $self->{opts}->{$opt};
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   return exists $self->{opts}->{$long};
 }
 
 # Set an option's value. The option can be either a
