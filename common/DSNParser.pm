@@ -100,6 +100,19 @@ sub prop {
    return $self->{$prop};
 }
 
+# Parse DSN string, like "h=host,P=3306", and return hashref with
+# all DSN values, like:
+#    {
+#       D => undef,
+#       F => undef,
+#       h => 'host',
+#       p => undef,
+#       P => 3306,
+#       S => undef,
+#       t => undef,
+#       u => undef,
+#       A => undef,
+#    }
 sub parse {
    my ( $self, $dsn, $prev, $defaults ) = @_;
    if ( !$dsn ) {
@@ -159,6 +172,21 @@ sub parse {
    }
 
    return \%final_props;
+}
+
+# Like parse() above but takes an OptionParser object instead of
+# a DSN string.
+sub parse_options {
+   my ( $self, $o ) = @_;
+   die 'I need an OptionParser object' unless ref $o eq 'OptionParser';
+   my $dsn_string
+      = join(',',
+          map  { "$_=".$o->get($_); }
+          grep { $o->has($_) && $o->get($_) }
+          keys %{$self->{opts}}
+        );
+   MKDEBUG && _d('DSN string made from options:', $dsn_string);
+   return $self->parse($dsn_string);
 }
 
 sub as_string {

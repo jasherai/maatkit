@@ -1,28 +1,12 @@
 #!/usr/bin/perl
 
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 21;
 use English qw(-no_match_vars);
+use Test::More tests => 22;
 
 require "../DSNParser.pm";
+require '../OptionParser.pm';
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -30,10 +14,10 @@ sub throws_ok {
    like ( $EVAL_ERROR, $pat, $msg );
 }
 
-my $p = new DSNParser;
+my $dp = new DSNParser;
 
 is_deeply(
-   $p->parse('u=a,p=b'),
+   $dp->parse('u=a,p=b'),
    {  u => 'a',
       p => 'b',
       S => undef,
@@ -47,7 +31,7 @@ is_deeply(
 );
 
 is_deeply(
-   $p->parse('u=a,p=b,A=utf8'),
+   $dp->parse('u=a,p=b,A=utf8'),
    {  u => 'a',
       p => 'b',
       S => undef,
@@ -60,12 +44,12 @@ is_deeply(
    'Basic DSN with charset'
 );
 
-$p = new DSNParser(
+$dp = new DSNParser(
    { key => 't', copy => 0 }
    );
 
 is_deeply(
-   $p->parse('u=a,p=b'),
+   $dp->parse('u=a,p=b'),
    {  u => 'a',
       p => 'b',
       S => undef,
@@ -80,7 +64,7 @@ is_deeply(
 );
 
 is_deeply(
-   $p->parse('u=a,p=b', { D => 'foo', h => 'me' }, { S => 'bar', h => 'host' } ),
+   $dp->parse('u=a,p=b', { D => 'foo', h => 'me' }, { S => 'bar', h => 'host' } ),
    {  D => 'foo',
       F => undef,
       h => 'me',
@@ -95,15 +79,15 @@ is_deeply(
 );
 
 is(
-   $p->as_string(
-      $p->parse('u=a,p=b', { D => 'foo', h => 'me' }, { S => 'bar', h => 'host' } )
+   $dp->as_string(
+      $dp->parse('u=a,p=b', { D => 'foo', h => 'me' }, { S => 'bar', h => 'host' } )
    ),
    'D=foo,S=bar,h=me,p=...,u=a',
    'DSN stringified when it gets DSN as arg'
 );
 
 is(
-   $p->as_string(
+   $dp->as_string(
       'D=foo,S=bar,h=me,p=b,u=a',
    ),
    'D=foo,S=bar,h=me,p=b,u=a',
@@ -111,12 +95,12 @@ is(
 );
 
 is (
-   $p->as_string({ bez => 'bat', h => 'foo' }),
+   $dp->as_string({ bez => 'bat', h => 'foo' }),
    'h=foo',
    'DSN stringifies without extra crap',
 );
 
-is ($p->usage(),
+is ($dp->usage(),
 <<EOF
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   KEY  COPY  MEANING
@@ -133,9 +117,9 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
 EOF
 , 'Usage');
 
-$p->prop('autokey', 'h');
+$dp->prop('autokey', 'h');
 is_deeply(
-   $p->parse('automatic'),
+   $dp->parse('automatic'),
    {  D => undef,
       F => undef,
       h => 'automatic',
@@ -149,9 +133,9 @@ is_deeply(
    'DSN with autokey'
 );
 
-$p->prop('autokey', 'h');
+$dp->prop('autokey', 'h');
 is_deeply(
-   $p->parse('localhost,A=utf8'),
+   $dp->parse('localhost,A=utf8'),
    {  u => undef,
       p => undef,
       S => undef,
@@ -166,7 +150,7 @@ is_deeply(
 );
 
 is_deeply(
-   $p->parse('automatic',
+   $dp->parse('automatic',
       { D => 'foo', h => 'me', p => 'b' },
       { S => 'bar', h => 'host', u => 'a' } ),
    {  D => 'foo',
@@ -182,7 +166,7 @@ is_deeply(
    'DSN with defaults and an autokey'
 );
 
-is ($p->usage(),
+is ($dp->usage(),
 <<EOF
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   KEY  COPY  MEANING
@@ -202,8 +186,8 @@ EOF
 
 is_deeply (
    [
-      $p->get_cxn_params(
-         $p->parse(
+      $dp->get_cxn_params(
+         $dp->parse(
             'u=a,p=b',
             { D => 'foo', h => 'me' },
             { S => 'bar', h => 'host' } ))
@@ -218,8 +202,8 @@ is_deeply (
 
 is_deeply (
    [
-      $p->get_cxn_params(
-         $p->parse(
+      $dp->get_cxn_params(
+         $dp->parse(
             'u=a,p=b,A=foo',
             { D => 'foo', h => 'me' },
             { S => 'bar', h => 'host' } ))
@@ -233,26 +217,26 @@ is_deeply (
 );
 
 # Make sure we can connect to MySQL with a charset
-my $d = $p->parse('h=127.0.0.1,A=utf8');
+my $d = $dp->parse('h=127.0.0.1,P=12345,A=utf8');
 my $dbh;
 eval {
-   $dbh = $p->get_dbh($p->get_cxn_params($d), {});
+   $dbh = $dp->get_dbh($dp->get_cxn_params($d), {});
 };
 SKIP: {
-   skip 'Cannot connect to MySQL', 4 if $EVAL_ERROR;
+   skip 'Cannot connect to sandbox master', 4 if $EVAL_ERROR;
 
-   $p->fill_in_dsn($dbh, $d);
-   is($d->{P}, 3306, 'Filled in port');
+   $dp->fill_in_dsn($dbh, $d);
+   is($d->{P}, 12345, 'Left port alone');
    is($d->{u}, 'msandbox', 'Filled in username');
-   is($d->{S}, '/var/run/mysqld/mysqld.sock', 'filled in socket');
-   is($d->{h}, '127.0.0.1', 'left hostname alone');
-   $p->disconnect($dbh);
+   is($d->{S}, '/tmp/12345/mysql_sandbox12345.sock', 'Filled in socket');
+   is($d->{h}, '127.0.0.1', 'Left hostname alone');
+   $dp->disconnect($dbh);
 }
 
-$p->prop('dbidriver', 'Pg');
+$dp->prop('dbidriver', 'Pg');
 is_deeply (
    [
-      $p->get_cxn_params(
+      $dp->get_cxn_params(
          {
             u => 'a',
             p => 'b',
@@ -269,15 +253,51 @@ is_deeply (
    'Got connection arguments for PostgreSQL',
 );
 
-$p->prop('required', { h => 1 } );
+$dp->prop('required', { h => 1 } );
 throws_ok (
-   sub { $p->parse('u=b') },
+   sub { $dp->parse('u=b') },
    qr/Missing DSN part 'h' in 'u=b'/,
    'Missing host part',
 );
 
 throws_ok (
-   sub { $p->parse('h=foo,Z=moo') },
+   sub { $dp->parse('h=foo,Z=moo') },
    qr/Unrecognized DSN part 'Z' in 'h=foo,Z=moo'/,
    'Extra key',
 );
+
+# #############################################################################
+# Test parse_options().
+# #############################################################################
+my $o = new OptionParser(
+   description => 'parses command line options.',
+   dp          => $dp,
+);
+$o->_parse_specs(
+   { spec => 'defaults-file|F=s', desc => 'defaults file'  },
+   { spec => 'password|p=s',      desc => 'password'       },
+   { spec => 'host|h=s',          desc => 'host'           },
+   { spec => 'port|P=i',          desc => 'port'           },
+   { spec => 'socket|S=s',        desc => 'socket'         },
+   { spec => 'user|u=s',          desc => 'user'           },
+);
+@ARGV = qw(--host slave1 --user foo);
+$o->get_opts();
+
+is_deeply(
+   $dp->parse_options($o),
+   {
+      D => undef,
+      F => undef,
+      h => 'slave1',
+      p => undef,
+      P => undef,
+      S => undef,
+      t => undef,
+      u => 'foo',
+      A => undef,
+   },
+   'Parses DSN from OptionParser obj'
+);
+
+exit
