@@ -2,8 +2,8 @@
 
 use strict;
 use warnings FATAL => 'all';
-use Test::More tests => 7;
 use English qw(-no_match_vars);
+use Test::More tests => 10;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -54,5 +54,34 @@ $output = `../mk-slave-delay --delay 1s h=127.1,P=12346 h=127.1 2>&1`;
 like($output, qr/Binary logging is disabled/,
    'Detects master that is not a master');
 diag `/tmp/12346/stop; rm -rf /tmp/12346; ../../sandbox/make_slave 12346`;
+
+# #############################################################################
+# Check that SLAVE-HOST can be given by cmd line opts.
+# #############################################################################
+$output = `../mk-slave-delay --time 1s --interval 1s --host 127.1 --port 12346`;
+sleep 1;
+like(
+   $output,
+   qr/slave running /,
+   'slave host given by cmd line opts'
+);
+
+# #############################################################################
+# Check --use-master
+# #############################################################################
+$output = `../mk-slave-delay --time 1s --interval 1s --use-master --host 127.1 --port 12346`;
+sleep 1;
+like(
+   $output,
+   qr/slave running /,
+   '--use-master'
+);
+
+$output = `../mk-slave-delay --time 1s --interval 1s --use-master --host 127.1 --port 12345 2>&1`;
+like(
+   $output,
+   qr/No SLAVE STATUS found/,
+   'No SLAVE STATUS on master'
+);
 
 exit;

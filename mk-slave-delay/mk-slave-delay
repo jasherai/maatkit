@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 3380
+# OptionParser package 3420
 # ###########################################################################
 package OptionParser;
 
@@ -539,7 +539,8 @@ sub got {
 
 sub has {
    my ( $self, $opt ) = @_;
-   return exists $self->{opts}->{$opt};
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   return defined $long ? exists $self->{opts}->{$long} : 0;
 }
 
 sub set {
@@ -822,7 +823,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3186
+# DSNParser package 3421
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -955,6 +956,19 @@ sub parse {
    return \%final_props;
 }
 
+sub parse_options {
+   my ( $self, $o ) = @_;
+   die 'I need an OptionParser object' unless ref $o eq 'OptionParser';
+   my $dsn_string
+      = join(',',
+          map  { "$_=".$o->get($_); }
+          grep { $o->has($_) && $o->get($_) }
+          keys %{$self->{opts}}
+        );
+   MKDEBUG && _d('DSN string made from options:', $dsn_string);
+   return $self->parse($dsn_string);
+}
+
 sub as_string {
    my ( $self, $dsn ) = @_;
    return $dsn unless ref $dsn;
@@ -1059,8 +1073,8 @@ sub get_dbh {
                }
             }
 
-            if ( $self->prop('set-vars') ) {
-               $sql = "SET " . $self->prop('set-vars');
+            if ( $self->prop('setvars') ) {
+               $sql = "SET " . $self->prop('setvars');
                MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
@@ -1231,7 +1245,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 3186
+# Transformers package 3407
 # ###########################################################################
 
 package Transformers;
@@ -1352,11 +1366,12 @@ sub ts {
 
 sub parse_timestamp {
    my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   if ( my($y, $m, $d, $h, $i, $s, $f)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?$/ )
    {
-      return sprintf "%d-%02d-%02d %02d:%02d:%02d",
-                     $y + 2000, $m, $d, $h, $i, $s;
+      return sprintf "%d-%02d-%02d %02d:%02d:"
+                     . (defined $f ? '%02.6f' : '%02d'),
+                     $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
    }
    return $val;
 }
@@ -1434,17 +1449,25 @@ sub main {
 
    $dp->prop('set-vars', $o->get('set-vars'));
 
-   my ($slave_dsn, $master_dsn);
+   my $slave_dsn = $dp->parse_options($o);
+   MKDEBUG && _d('Got slave host from opts:', $slave_dsn ? 'yes' : 'no');
+   my $master_dsn; 
    if ( @ARGV ) {
-      $slave_dsn  = $dp->parse(shift @ARGV);
-      $master_dsn = $dp->parse(shift(@ARGV), $slave_dsn) if @ARGV;
+      if ( $slave_dsn ) {  # ARGV has master DSN
+         MKDEBUG && _d('Master host DSN:', $ARGV[0]);
+         $master_dsn = $dp->parse(shift(@ARGV), $slave_dsn) if @ARGV;
+      }
+      else {  # ARGV has slave DSN and maybe master DSN
+         MKDEBUG && _d('Slave host DSN:', $ARGV[0]);
+         $slave_dsn  = $dp->parse(shift @ARGV);
+         MKDEBUG && _d('Master host DSN:', $ARGV[0]);
+         $master_dsn = $dp->parse(shift(@ARGV), $slave_dsn) if @ARGV;
+      }
    }
 
    # TODO: this can go into the POD.
-   if ( !$o->got('help') ) {
-      if ( !$slave_dsn ) {
-         $o->_save_error("Missing or invalid slave host");
-      }
+   if ( !$o->got('help') && !$slave_dsn ) {
+      $o->_save_error("Missing or invalid slave host");
    }
 
    # TODO: this can go into the POD.
@@ -1698,7 +1721,7 @@ mk-slave-delay - Make a MySQL slave server lag behind its master.
 
 To hold slavehost one minute behind its master for ten minutes:
 
- mk-slave-delay --delay 1m --interval 15s --time 10m slavehost
+   mk-slave-delay --delay 1m --interval 15s --time 10m slavehost
 
 =head1 DESCRIPTION
 
@@ -1726,9 +1749,18 @@ Note that since C<mk-slave-delay> starts and stops the SQL thread, monitoring
 systems may think the slave is having trouble when it's just being held back
 intentionally.
 
-There is a special syntax for connecting to MySQL servers.  Each server name
-on the command line can be either just a hostname, or a key=value,key=value
-string.  Keys are a single letter:
+The slave host can be specified using one of two methods.  The first method is
+to use at least one of the standard connection-related command line options:
+L<"--defaults-file">, L<"--password">, L<"--host">, L<"--port">, L<"--socket">
+or L<"--user">.  These options only apply to the slave host.  To connect to a
+slave host using this method while also specifying an optional master host on
+the command line requires that the master host be specified using the next
+method, a DSN.
+
+The second method to specifiy the slave host, or an optional master host, is
+a DSN.  A DSN is a special syntax that can be either just a hostname (like
+C<server.domain.com> or C<1.2.3.4>), or a C<key=value,key=value> string.
+Keys are a single letter:
 
    KEY MEANING
    === =======
@@ -1739,10 +1771,10 @@ string.  Keys are a single letter:
    p   Password to use when connecting
    F   Only read default options from the given file
 
-If you omit any values in MASTER-HOST, they are filled in with defaults from
-SLAVE-HOST, so you don't need to specify them in both places.  C<mk-slave-delay>
-reads all normal MySQL option files, such as ~/.my.cnf, so you may not need to
-specify username, password and other common options at all.
+If you omit any values in a MASTER-HOST DSN, they are filled in with defaults
+from SLAVE-HOST, so you don't need to specify them in both places.
+C<mk-slave-delay> reads all normal MySQL option files, such as ~/.my.cnf, so
+you may not need to specify username, password and other common options at all.
 
 C<mk-slave-delay> tries to exit gracefully by trapping signals such as Ctrl-C.
 You cannot bypass L<"--[no]continue"> with a trappable signal.
