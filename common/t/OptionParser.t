@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 127;
+use Test::More tests => 128;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1656,5 +1656,17 @@ ok($o->got('foo'), 'Got --foo again');
 is($o->get('foo'), 'baz', 'Got overridden --foo value');
 ok($o->got('verbose'), 'Got --verbose twice');
 is($o->get('verbose'), 2, 'Got --verbose value twice');
+
+# #############################################################################
+# Test pod_sample_05.txt
+# #############################################################################
+
+# I ran across this while working on mk-slave-prefetch.
+$o->get_specs('samples/pod_sample_05.txt');
+is(
+   $o->get('errors'),
+   0,
+   'cumulative with default 0 (pod_sample_05.txt)'
+);
 
 exit;

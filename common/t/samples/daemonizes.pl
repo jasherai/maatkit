@@ -1,5 +1,8 @@
 #!/usr/bin/env perl
 
+# This script is used by Daemon.t because that test script
+# cannot daemonize itself.
+
 use strict;
 use warnings FATAL => 'all';
 
