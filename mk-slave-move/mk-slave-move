@@ -1821,7 +1821,10 @@ sub main {
    $dp->prop('autokey', 'h');
    $dp->prop('set-vars', $o->get('set-vars'));
 
+   my $slave_dsn = $dp->parse_options($o);
+   MKDEBUG && _d('Got slave host from opts:', $slave_dsn ? 'yes' : 'no');
    my @dsns;
+   push @dsns, $slave_dsn if $slave_dsn;
    while ( my $arg = shift(@ARGV) ) {
       my $dsn = $dp->parse($arg, $dsns[0]);
       push @dsns, $dsn;
@@ -1844,10 +1847,11 @@ sub main {
 
    if ( $o->get('ask-pass') ) {
       my $pass = OptionParser::prompt_noecho("Enter password: ");
+      # Same password for all slave hosts.
       map { $_->{p} ||= $pass } @dsns;
    }
 
-   my $slave_dsn = shift @dsns;
+   $slave_dsn = shift @dsns;  # re-using $slave_dsn from above
    my $slave_dbh
       = $dp->get_dbh($dp->get_cxn_params($slave_dsn), { AutoCommit => 1 });
    $dp->fill_in_dsn($slave_dbh, $slave_dsn);
@@ -1882,7 +1886,7 @@ sub main {
       # TODO
    }
 
-   exit($exit_status);
+   exit($exit_status) unless caller;
 }
 
 # ############################################################################
@@ -1929,6 +1933,30 @@ by hand, but it is tedious and error-prone to do this by hand.
 
 Some of the features are incomplete, including some safety checks such as not
 moving slaves that have temporary tables open.
+
+The slave host can be specified using one of two methods.  The first method is
+to use at least one of the standard connection-related command line options:
+L<"--defaults-file">, L<"--password">, L<"--host">, L<"--port">, L<"--socket">
+or L<"--user">.  These options only apply to the slave host.
+
+The second method to specifiy the slave host, or the sibling or uncle host, is
+a DSN.  A DSN is a special syntax that can be either just a hostname (like
+C<server.domain.com> or C<1.2.3.4>), or a C<key=value,key=value> string.
+Keys are a single letter:
+
+   KEY MEANING
+   === =======
+   h   Connect to host
+   P   Port number to use for connection
+   S   Socket file to use for connection
+   u   User for login if not current user
+   p   Password to use when connecting
+   F   Only read default options from the given file
+
+If you omit any values in the sibling or uncle host, they are filled in with
+defaults from the slave host, so you don't need to specify them in both places.
+C<mk-slave-move> reads all normal MySQL option files, such as ~/.my.cnf, so
+you may not need to specify username, password and other common options at all.
 
 =head1 DOWNLOADING
 
