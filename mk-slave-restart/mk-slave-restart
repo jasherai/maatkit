@@ -85,7 +85,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3380
+# OptionParser package 3420
 # ###########################################################################
 package OptionParser;
 
@@ -597,7 +597,8 @@ sub got {
 
 sub has {
    my ( $self, $opt ) = @_;
-   return exists $self->{opts}->{$opt};
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   return defined $long ? exists $self->{opts}->{$long} : 0;
 }
 
 sub set {
@@ -880,7 +881,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3186
+# DSNParser package 3421
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1013,6 +1014,19 @@ sub parse {
    return \%final_props;
 }
 
+sub parse_options {
+   my ( $self, $o ) = @_;
+   die 'I need an OptionParser object' unless ref $o eq 'OptionParser';
+   my $dsn_string
+      = join(',',
+          map  { "$_=".$o->get($_); }
+          grep { $o->has($_) && $o->get($_) }
+          keys %{$self->{opts}}
+        );
+   MKDEBUG && _d('DSN string made from options:', $dsn_string);
+   return $self->parse($dsn_string);
+}
+
 sub as_string {
    my ( $self, $dsn ) = @_;
    return $dsn unless ref $dsn;
@@ -1117,8 +1131,8 @@ sub get_dbh {
                }
             }
 
-            if ( $self->prop('set-vars') ) {
-               $sql = "SET " . $self->prop('set-vars');
+            if ( $self->prop('setvars') ) {
+               $sql = "SET " . $self->prop('setvars');
                MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
@@ -1966,17 +1980,15 @@ $dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork/daemonize
 # Daemonize only after connecting and doing --ask-pass.
 my $daemon;
 if ( $o->get('daemonize') ) {
-   my $outfile = MKDEBUG
-                 ? '/tmp/' . OptionParser::prog() . '.debug'
-                 : '/dev/null';
-   $daemon = new Daemon( reopen_STDOUT => "$outfile" )
-      or die "Cannot daemonize: $OS_ERROR";
+   $daemon = new Daemon(
+      stdout => $o->get('stdout'),
+      stderr => $o->get('stderr'),
+   ) or die "Cannot daemonize: $OS_ERROR";
    $daemon->daemonize();
    if ( $o->got('pid') ) {
       $daemon->create_PID_file( $o->get('pid') );
-   } 
-   # I'm a daemon now. TODO: fix this (issue 241).
-   $o->set('verbose', MKDEBUG ? 4 : 0);
+   }
+   MKDEBUG && _d('I am a daemon now');
 }
 
 my $exit_status = 0;
@@ -2519,6 +2531,21 @@ See L<"SLEEP">.
 short form: -S; type: string
 
 Socket file to use for connection.
+
+=item --stderr
+
+type: string
+
+Redirect STDERR to this file when daemonized.
+
+By default STDERR is not redirected when daemonized, so MKDEBUG messages
+will still be printed.
+
+=item --stdout
+
+type: string; default: /dev/null
+
+Redirect STDOUT to this file when daemonized.
 
 =item --stop
 
