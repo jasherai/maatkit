@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Fixed another crash when sqrt() of a negative number (issue 332).
    * Fixed a division by zero when a query has zero exec time.
    * Added --print to print query events in slow-log format.
    * Added --type to specify the type of log file (default slowlog).
