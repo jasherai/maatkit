@@ -519,7 +519,8 @@ sub calculate_statistical_metrics {
       $prev   =  $bucket;
    }
 
-   my $stddev   = sqrt($sumsq/$n_vals - ( ($sum/$n_vals) ** 2 ));
+   my $var      = $sumsq/$n_vals - ( ($sum/$n_vals) ** 2 );
+   my $stddev   = $var > 0 ? sqrt($var) : 0;
    my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
    $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
