@@ -11,7 +11,7 @@ Changelog for mk-slave-delay:
    * Removed the -i short option.  Use --interval instead.
    * Added the -q short option for --quiet.
    * Added the --config option for issue 231.
-   * Added the --stderr and --stdout options for issue 241.
+   * Added the --log option for issue 241.
    * Added the following options for issue 248:
    *    --charset (-A)
    *    --defaults-file (-F)

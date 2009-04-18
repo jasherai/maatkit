@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 10;
+use Test::More tests => 11;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -20,7 +20,7 @@ like($output, qr/Prompt for a password/, 'It compiles');
 
 # Check daemonization
 my $cmd = '../mk-slave-delay --delay 1m --interval 15s --time 10m --daemonize --pid /tmp/mk-slave-delay.pid h=127.1,P=12346';
-diag(`$cmd`);
+diag(`$cmd 1>/dev/null 2>/dev/null`);
 $output = `ps -eaf | grep 'mk-slave-delay \-\-delay'`;
 like($output, qr/$cmd/, 'It lives daemonized');
 
@@ -82,6 +82,19 @@ like(
    $output,
    qr/No SLAVE STATUS found/,
    'No SLAVE STATUS on master'
+);
+
+# #############################################################################
+# Check --log.
+# #############################################################################
+`../mk-slave-delay --time 1s --interval 1s -h 127.1 -P 12346 --log /tmp/mk-slave-delay.log --daemonize`;
+sleep 2;
+$output = `cat /tmp/mk-slave-delay.log`;
+`rm -f /tmp/mk-slave-delay.log`;
+like(
+   $output,
+   qr/slave running /,
+   '--log'
 );
 
 exit;
