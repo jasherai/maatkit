@@ -6,6 +6,8 @@ Changelog for mk-slave-find:
    * Removed the -r short option.  Use --recurse instead.
    * Added the --config option for issue 231.
    * Converted script to runnable module (issue 315).
+   * Defaults files were not read properly.
+   * Added ability to specify master host with DSN.
    * Updated POD to describe what script actually does.
    * Updates to shared code.
 

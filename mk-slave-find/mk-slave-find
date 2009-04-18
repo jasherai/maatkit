@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 3420
+# OptionParser package 3436
 # ###########################################################################
 package OptionParser;
 
@@ -365,7 +365,8 @@ sub get_opts {
    foreach my $long ( keys %{$self->{opts}} ) {
       $self->{opts}->{$long}->{got} = 0;
       $self->{opts}->{$long}->{value}
-         = exists $self->{defaults}->{$long} ? $self->{defaults}->{$long}
+         = exists $self->{defaults}->{$long}       ? $self->{defaults}->{$long}
+         : $self->{opts}->{$long}->{is_cumulative} ? 0
          : undef;
    }
    $self->{got_opts} = 0;
@@ -1698,6 +1699,7 @@ sub main {
    my $o  = new OptionParser(
       strict      => 0,
       description => 'finds and prints a hierarchy tree of MySQL slaves.',
+      prompt      => '[OPTIONS] MASTER-HOST',
       dp          => $dp,
    );
    $o->get_specs();
@@ -1705,17 +1707,25 @@ sub main {
 
    $dp->prop('set-vars', $o->get('set-vars'));
 
+   if ( $o->get('ask-pass') ) {
+      my $pass = OptionParser::prompt_noecho("Enter password: ");
+      $o->set('pass', $pass);
+   }
+   my $master_dsn = $dp->parse_options($o);
+   MKDEBUG && _d('Got master host from opts:', $master_dsn ? 'yes' : 'no');
+   if ( !$master_dsn && @ARGV ) {
+      $master_dsn = $dp->parse(shift @ARGV);
+   }
+   if ( !$master_dsn ) { 
+      $o->_save_error("Missing or invalid master host");
+   }
+
    $o->usage_or_errors();
 
    # ########################################################################
    # Connect and go to work.
    # ########################################################################
-   if ( $o->get('ask-pass') ) {
-      my $pass = OptionParser::prompt_noecho("Enter password: ");
-      $o->set('pass', $pass);
-   }
-   my %opts = $o->opt_values();
-   my $dbh  = $dp->get_dbh($dp->get_cxn_params(\%opts), { AutoCommit => 1, } );
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($master_dsn), {AutoCommit => 1});
 
    my $exit_status = 0;
    my %slaves_found;
@@ -1726,9 +1736,9 @@ sub main {
    my $ms = new MasterSlave();
    $ms->recurse_to_slaves(
       {  dbh        => $dbh,
-         dsn        => \%opts,
+         dsn        => $master_dsn,
          dsn_parser => $dp,
-         recurse    => $opts{recurse},
+         recurse    => $o->get('recurse'),
          callback   => sub {
             my ( $dsn, $dbh, $level, $parent ) = @_;
             if ( !$parent ) {
@@ -1749,35 +1759,46 @@ sub main {
 
    # Now that we've found them all, recurse through them and do stuff!
    # TODO: do other actions, such as --exec or whatever.
-   print pretty_print($ms, $root);
+   print_slaves($ms, $root);
+
+   return 0;
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
-sub pretty_print {
-   my ( $ms, $node, $prefix ) = @_;
-   $prefix ||= '';
-   my $branch = $prefix ? substr($prefix, 0, length($prefix) -3) . '+- ' : '';
+
+# Print master and slaves in a tree like:
+#    master:port
+#    +- slave1:port
+#       +- slave1-1:port
+#    +- slave2:port
+# The levels are thus:
+#    0
+#    +- 1
+#       +- 2
+#    +- 1
+sub print_slaves {
+   my ( $ms, $node, $level ) = @_;
+   die "I need a node" unless $node;
+   $level ||= 0;
 
    # Strip out the noise.  We really only need to see the host and port, and if
    # the port is default, we don't even need to see that.
-   my $hostname = $ms->short_host($node);
-   my $output = $branch . $hostname . "\n";
+   my $host   = $ms->short_host($node);
+   my $prefix = $level ? (' ' x (($level-1)*3) . '+- ') : '';
 
-   my @kids;
+   MKDEBUG && _d('level', $level, 'host', $host);
+   print "$prefix$host\n";
+
    if ( $node->{children} ) {
-      @kids   = reverse @{$node->{children}};
+      my @slaves = reverse @{$node->{children}};
+      foreach my $slave ( @slaves ) {
+         print_slaves($ms, $slave, $level + 1);
+      }
    }
-   my $suffix = (@kids > 1) ? '|  ' : '   ';
-   my $last_child = pop @kids;
-   foreach my $child ( @kids ) {
-      $output .= pretty_print($ms, $child, $prefix . $suffix);
-   }
-   if ( $last_child ) {
-      $output .= pretty_print($ms, $last_child, $prefix . '   ');
-   }
-   return $output;
+
+   return;
 }
 
 sub _d {
@@ -1791,7 +1812,7 @@ sub _d {
 # ############################################################################
 # Run the program.
 # ############################################################################
-main(@ARGV) unless caller;
+if ( !caller ) { exit main(@ARGV); }
 
 1; # Because this is a module as well as a script.
 
@@ -1814,6 +1835,27 @@ mk-slave-find - Find and print replication hierarchy tree of MySQL slaves.
 mk-slave-find connects to a MySQL replication master and finds its slaves.
 Currently the only thing it can do is print a tree-like view of the replication
 hierarchy.
+
+The master host can be specified using one of two methods.  The first method is
+to use the standard connection-related command line options:
+L<"--defaults-file">, L<"--password">, L<"--host">, L<"--port">, L<"--socket">
+or L<"--user">.
+
+The second method to specifiy the master host is a DSN.  A DSN is a special
+syntax that can be either just a hostname (like C<server.domain.com> or
+C<1.2.3.4>), or a C<key=value,key=value> string. Keys are a single letter:
+
+   KEY MEANING
+   === =======
+   h   Connect to host
+   P   Port number to use for connection
+   S   Socket file to use for connection
+   u   User for login if not current user
+   p   Password to use when connecting
+   F   Only read default options from the given file
+
+C<mk-slave-find> reads all normal MySQL option files, such as ~/.my.cnf, so
+you may not need to specify username, password and other common options at all.
 
 =head1 DOWNLOADING
 
@@ -1863,9 +1905,11 @@ Database to use.
 
 =item --defaults-file
 
-short form: -F
+short form: -F; type: string
 
-Only read default options from the given file.
+Only read mysql options from the given file.
+
+You must give an absolute pathname.
 
 =item --help
 
