@@ -21,6 +21,7 @@ Changelog for mk-slave-prefetch:
    * Removed the -w short option.  Use --window instead.
    * Added the --config option for issue 231.
    * Added the --log option for issue 241.
+   * --errors did not work properly.
    * Converted script to runnable module (issue 315).
    * --print and --daemonize are no longer mutually exclusive.
 
