@@ -421,7 +421,8 @@ sub get_opts {
    foreach my $long ( keys %{$self->{opts}} ) {
       $self->{opts}->{$long}->{got} = 0;
       $self->{opts}->{$long}->{value}
-         = exists $self->{defaults}->{$long} ? $self->{defaults}->{$long}
+         = exists $self->{defaults}->{$long}       ? $self->{defaults}->{$long}
+         : $self->{opts}->{$long}->{is_cumulative} ? 0
          : undef;
    }
    $self->{got_opts} = 0;

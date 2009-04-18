@@ -585,6 +585,14 @@ is_deeply(
    'Trying to negate non-negatable opt sets an error'
 );
 
+@ARGV = ();
+$o->get_opts();
+is(
+   $o->get('love'),
+   0,
+   'Cumulative defaults to 0 when not given'
+);
+
 @ARGV = qw(--love -l -l);
 $o->get_opts();
 is(
@@ -646,7 +654,7 @@ Options and values after processing arguments:
   --defaultset        FALSE
   --dog               (No value)
   --foo               FALSE
-  --love              (No value)
+  --love              0
 EOF
 ,
    'Options aligned and custom prompt included'
@@ -1656,17 +1664,5 @@ ok($o->got('foo'), 'Got --foo again');
 is($o->get('foo'), 'baz', 'Got overridden --foo value');
 ok($o->got('verbose'), 'Got --verbose twice');
 is($o->get('verbose'), 2, 'Got --verbose value twice');
-
-# #############################################################################
-# Test pod_sample_05.txt
-# #############################################################################
-
-# I ran across this while working on mk-slave-prefetch.
-$o->get_specs('samples/pod_sample_05.txt');
-is(
-   $o->get('errors'),
-   0,
-   'cumulative with default 0 (pod_sample_05.txt)'
-);
 
 exit;
