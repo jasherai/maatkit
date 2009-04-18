@@ -700,7 +700,7 @@ sub index_access {
 }
 
 # ###########################################################################
-# OptionParser package 3380
+# OptionParser package 3436
 # ###########################################################################
 package OptionParser;
 
@@ -1037,7 +1037,8 @@ sub get_opts {
    foreach my $long ( keys %{$self->{opts}} ) {
       $self->{opts}->{$long}->{got} = 0;
       $self->{opts}->{$long}->{value}
-         = exists $self->{defaults}->{$long} ? $self->{defaults}->{$long}
+         = exists $self->{defaults}->{$long}       ? $self->{defaults}->{$long}
+         : $self->{opts}->{$long}->{is_cumulative} ? 0
          : undef;
    }
    $self->{got_opts} = 0;
@@ -1212,7 +1213,8 @@ sub got {
 
 sub has {
    my ( $self, $opt ) = @_;
-   return exists $self->{opts}->{$opt};
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   return defined $long ? exists $self->{opts}->{$long} : 0;
 }
 
 sub set {
@@ -1446,7 +1448,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3186
+# DSNParser package 3421
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1577,6 +1579,19 @@ sub parse {
    }
 
    return \%final_props;
+}
+
+sub parse_options {
+   my ( $self, $o ) = @_;
+   die 'I need an OptionParser object' unless ref $o eq 'OptionParser';
+   my $dsn_string
+      = join(',',
+          map  { "$_=".$o->get($_); }
+          grep { $o->has($_) && $o->get($_) }
+          keys %{$self->{opts}}
+        );
+   MKDEBUG && _d('DSN string made from options:', $dsn_string);
+   return $self->parse($dsn_string);
 }
 
 sub as_string {
@@ -1828,12 +1843,14 @@ sub main {
       print $o->got('format') eq 'dump' ? Dumper($tree)
          : $et->pretty_print($tree);
    }
+
+   return 0;
 }
 
 # ############################################################################
 # Run the program.
 # ############################################################################
-main(@ARGV) unless caller;
+if ( !caller ) { exit main(@ARGV); }
 
 1; # Because this is a module as well as a script.
 
