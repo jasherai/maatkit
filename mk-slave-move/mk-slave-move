@@ -84,7 +84,7 @@ sub split_unquote {
 # End Quoter package
 # ###########################################################################
 # ###########################################################################
-# OptionParser package 3420
+# OptionParser package 3436
 # ###########################################################################
 package OptionParser;
 
@@ -421,7 +421,8 @@ sub get_opts {
    foreach my $long ( keys %{$self->{opts}} ) {
       $self->{opts}->{$long}->{got} = 0;
       $self->{opts}->{$long}->{value}
-         = exists $self->{defaults}->{$long} ? $self->{defaults}->{$long}
+         = exists $self->{defaults}->{$long}       ? $self->{defaults}->{$long}
+         : $self->{opts}->{$long}->{is_cumulative} ? 0
          : undef;
    }
    $self->{got_opts} = 0;
@@ -1886,7 +1887,7 @@ sub main {
       # TODO
    }
 
-   exit($exit_status) unless caller;
+   return $exit_status;
 }
 
 # ############################################################################
@@ -1904,7 +1905,7 @@ sub _d {
 # ############################################################################
 # Run the program.
 # ############################################################################
-main(@ARGV) unless caller;
+if ( !caller ) { exit main(@ARGV); }
 
 1; # Because this is a module as well as a script.
 
