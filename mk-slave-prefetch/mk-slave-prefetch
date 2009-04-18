@@ -2476,7 +2476,7 @@ sub _d {
 # ############################################################################
 # Run the program.
 # ############################################################################
-exit main(@ARGV) unless caller;
+if ( !caller ) { exit main(@ARGV); }
 
 1; # Because this is a module as well as a script.
 
