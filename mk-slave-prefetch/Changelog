@@ -1,5 +1,29 @@
 Changelog for mk-slave-prefetch:
 
+   * Removed the --askpass long option.  Use --ask-pass instead.
+   * Removed the --checkint long option. Use --check-interval instead.
+   * Removed the --iolag long option.  Use --io-lag instead.
+   * Removed the --maxquerytime option.  Use --max-query-time instead.
+   * Removed the --setvars long option.  Use --set-vars instead.
+   * Removed the --numprefix long option.  Use --num-prefix instead.
+   * Removed the --permitregexp long option.  Use --permit-regexp instead.
+   * Removed the --printnonrewritten long option.  Use --print-nonrewritten
+	  instead.
+   * Removed the --querysampsize long option.  Use --query-sample-size instead.
+   * Removed the --rejectregexp long option.  Use --reject-regexp instead.
+   * Removed the --setvars long option.  Use --set-vars instead.
+   * Removed the -i short option.  Use --check-interval instead.
+   * Removed the -x short option.  Use --execute instead.
+   * Removed the -l short option.  Use --io-lag instead.
+   * Removed the -q short option.  Use --max-query-time instead.
+   * Removed the -o short option.  Use --offset instead.
+   * Removed the -t short option.  Use --time instead.
+   * Removed the -w short option.  Use --window instead.
+   * Added the --config option for issue 231.
+   * Added the --log option for issue 241.
+   * Converted script to runnable module (issue 315).
+   * --print and --daemonize are no longer mutually exclusive.
+
 2009-03-31: version 1.0.6
 
    * Send debugging output to STDERR (issue 308).
