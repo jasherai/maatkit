@@ -26,7 +26,7 @@ my $output = `/tmp/12346/use -e 'show slave status'`;
 like($output, qr/Table 'test.t' doesn't exist'/, 'It is busted');
 
 # Start an instance
-diag(`perl ../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -u msandbox -p msandbox -P 12346 --daemonize --pid /tmp/mk-slave-restart.pid`);
+diag(`perl ../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 --daemonize --pid /tmp/mk-slave-restart.pid --log /tmp/mk-slave-restart.log`);
 $output = `ps -eaf | grep 'perl ../mk-slave-restart' | grep -v grep | grep -v mk-slave-restart.t`;
 like($output, qr/mk-slave-restart --max/, 'It lives');
 

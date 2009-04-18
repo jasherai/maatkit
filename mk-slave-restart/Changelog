@@ -1,6 +1,6 @@
 Changelog for mk-slave-restart:
 
-   * Added the --stderr and --stdout options for issue 241.
+   * Added the --log option for issue 241.
    * Added the --config option for issue 231.
    * Added the --help and --verbose options for issue 318.
    * Removed the --setvars long option.  Use --set-vars instead.
