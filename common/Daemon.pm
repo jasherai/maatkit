@@ -32,13 +32,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 sub new {
    my ( $class, %args ) = @_;
    my $self = {
-      stdout   => $args{'stdout'} || '/dev/null',
-      stderr   => $args{'stderr'} || undef,
-      stdin    => $args{'stdin'}  || '/dev/null',
+      log_file => $args{'log_file'} || undef,
       PID_file => undef,  # set with create_PID_file()
    };
-   MKDEBUG && _d('Daemonized child will redirect stdout to', $self->{stdout},
-      'stderr to', $self->{stderr}, 'and stdin from', $self->{stdin});
+   MKDEBUG && _d('Daemonized child will log to', $self->{log_file});
    return bless $self, $class;
 }
 
@@ -55,14 +52,12 @@ sub daemonize {
    # I'm daemonized now.
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/' or die "Cannot chdir to /: $OS_ERROR";
-   open STDOUT, ">$self->{stdout}"
-      or die "Cannot redirect STDOUT to $self->{stdout}: $OS_ERROR";
-   if ( $self->{stderr} ) {
-      open STDERR, ">$self->{stderr}"
-         or die "Cannot redirect STDERR to $self->{stderr}: $OS_ERROR";
+   if ( $self->{log_file} ) {
+      open STDOUT, '>>', $self->{log_file}
+         or die "Cannot open log file $self->{log_file}: $OS_ERROR";
+      open STDERR, ">&STDOUT"
+         or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
    }
-   open STDIN,  "$self->{stdin}",
-      or die "Cannot redirect STDIN from $self->{stdin}: $OS_ERROR";
    MKDEBUG && _d('I am the child and now I live daemonized');
    return;
 }
@@ -73,13 +68,14 @@ sub daemonize {
 sub create_PID_file {
    my ( $self, $PID_file ) = @_;
    return unless $PID_file;
+   open my $PID_FH, '>', $PID_file
+      or die "Cannot open PID file $PID_file: $OS_ERROR";
+   print $PID_FH $PID
+      or die "Cannot print to PID file $PID_file: $OS_ERROR";
+   close $PID_FH
+      or die "Cannot close PID file $PID_file: $OS_ERROR";
    $self->{PID_file} = $PID_file; # save for unlink in DESTORY()
    MKDEBUG && _d('PID file:', $self->{PID_file});
-   open my $PID_FILE, '>', $self->{PID_file}
-      or die "Cannot open PID file '$self->{PID_file}': $OS_ERROR";
-   print $PID_FILE $PID;
-   close $PID_FILE
-      or die "Cannot close PID file '$self->{PID_file}': $OS_ERROR";
    return;
 }
 
@@ -88,7 +84,7 @@ sub remove_PID_file {
    if ( defined $self->{PID_file} && -f $self->{PID_file} ) {
       MKDEBUG && _d('Removing PID file');
       unlink $self->{PID_file}
-         or warn "Cannot remove PID file '$self->{PID_file}': $OS_ERROR";
+         or warn "Cannot remove PID file $self->{PID_file}: $OS_ERROR";
    }
    else {
       MKDEBUG && _d('No PID to remove');

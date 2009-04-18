@@ -6,7 +6,6 @@
 use strict;
 use warnings FATAL => 'all';
 
-use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -34,7 +33,7 @@ else {
 }
 $d->daemonize();
 $d->create_PID_file('/tmp/daemonizes.pl.pid');
-print STDOUT ' STDOUT ';
-print STDERR ' STDERR ';
+print "STDOUT\n";
+print STDERR "STDERR\n";
 sleep $t;
 exit;
