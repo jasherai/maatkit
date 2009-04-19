@@ -2,7 +2,6 @@
 
 use strict;
 use warnings FATAL => 'all';
-
 use English qw(-no_match_vars);
 use Test::More tests => 3;
 
@@ -30,7 +29,7 @@ SKIP: {
       'It lives with input on STDIN',
    );
 
-   $output = `$cmd -vvv -i sample.sql`;
+   $output = `$cmd -vvv --innodb sample.sql`;
    like(
       $output,
       qr{Temp files\s+0},
