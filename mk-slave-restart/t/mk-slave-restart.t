@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 9;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -33,6 +33,7 @@ like($output, qr/mk-slave-restart --max/, 'It lives');
 unlike($output, qr/Table 'test.t' doesn't exist'/, 'It is not busted');
 
 ok(-f '/tmp/mk-slave-restart.pid', 'PID file created');
+ok(-f '/tmp/mk-slave-restart.log', 'Log file created');
 
 my ($pid) = $output =~ /\s+(\d+)\s+/;
 $output = `cat /tmp/mk-slave-restart.pid`;

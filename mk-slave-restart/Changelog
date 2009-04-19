@@ -19,6 +19,7 @@ Changelog for mk-slave-restart:
    * Removed the --untilmaster long option.  Use --until-master instead.
    * Removed the --untilrelay long option.  Use --until-relay instead.
    * Removed the -v short option.  Use --verbose instead.
+   * Converted script to runnable module (issue 315).
 
 2009-03-31: version 1.0.12
 

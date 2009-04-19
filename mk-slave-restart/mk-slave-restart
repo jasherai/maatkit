@@ -1874,7 +1874,15 @@ sub _d {
 # End Daemon package
 # ###########################################################################
 
-package main;
+# ###########################################################################
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
+# ###########################################################################
+package mk_slave_restart;
 
 use English qw(-no_match_vars);
 use IO::File;
@@ -1886,175 +1894,162 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# ############################################################################
-# Get configuration information.
-# ############################################################################
-
-my $dp = new DSNParser();
-my $vp = new VersionParser();
-
-my $o = new OptionParser(
-   prompt      => '<options>',
-   description => 'watches one or more MySQL replication slaves for '
-                . 'errors, and tries to restart replication if it stops.',
-);
-$o->get_specs();
-$o->get_opts();
-
-$dp->prop('set-vars', $o->get('set-vars'));
-
-if ( !$o->get('help') ) {
-   if ( $o->get('until-master') ) {
-      if ( $o->get('until-master') !~ m/^[.\w-]+,\d+$/ ) {
-         $o->_save_error("Invalid --until-master argument, must be file,pos");
-      }
-   }
-   if ( $o->get('until-relay') ) {
-      if ( $o->get('until-relay') !~ m/^[.\w-]+,\d+$/ ) {
-         $o->_save_error("Invalid --until-relay argument, must be file,pos");
-      }
-   }
-}
-
-$o->usage_or_errors();
-
-# ############################################################################
-# First things first: if --stop was given, create the sentinel file.
-# ############################################################################
-if ( $o->get('stop') ) {
-   my $sentinel = $o->get('sentinel');
-   MKDEBUG && _d("Creating sentinel file", $sentinel);
-   my $file = IO::File->new($o->get('sentinel'), ">>")
-      or die "Cannot open $sentinel: $OS_ERROR\n";
-   print $file "Remove this file to permit mk-slave-restart to run\n"
-      or die "Cannot write to $sentinel: $OS_ERROR\n";
-   close $file
-      or die "Cannot close $sentinel: $OS_ERROR\n";
-   print STDOUT "Successfully created file $sentinel\n"
-      unless $o->get('quiet');
-   # Exit unlesss --monitor is given.
-   if ( !$o->got('monitor') ) {
-      MKDEBUG && _d("Nothing more to do, quitting");
-      exit(0);
-   }
-   else {
-      # Wait for all other running instances to quit, assuming they have the
-      # same --interval as this invocation.  Then remove the file and
-      # continue.
-      MKDEBUG && _d("Waiting for other instances to quit");
-      sleep($o->get('maxlength'));
-      MKDEBUG && _d("Unlinking", $o->get('sentinel'));
-      unlink $o->get('sentinel')
-         or die "Cannot unlink $sentinel: $OS_ERROR";
-   }
-}
-
-# ############################################################################
-# Lookup tables of things to do when a problem is detected.
-# ############################################################################
-
-my @error_patterns = (
-   [ qr/You have an error in your SQL/         => 'refetch_relay_log' ],
-   [ qr/Could not parse relay log event entry/ => 'refetch_relay_log' ],
-   [ qr/Incorrect key file for table/          => 'repair_table'      ],
-   # This must be the last one.  It's a catch-all rule: skip and restart.
-   [ qr/./                                     => 'skip'              ],
-);
-
-# TODO: let the user specify more patterns and actions.
-
-# ############################################################################
-# Connect and go to work.
-# ############################################################################
-if ( $o->get('ask-pass') ) {
-   $o->set('p', OptionParser::prompt_noecho("Enter password: "));
-}
-my $dbh = $dp->get_dbh(
-   $dp->get_cxn_params({$o->opt_values()}), { AutoCommit => 1, } );
-
-$dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork/daemonize
-
-# Daemonize only after connecting and doing --ask-pass.
-my $daemon;
-if ( $o->get('daemonize') ) {
-   $daemon = new Daemon(
-      log_file => $o->get('log'),
-   ) or die "Cannot daemonize: $OS_ERROR";
-   $daemon->daemonize();
-   if ( $o->got('pid') ) {
-      $daemon->create_PID_file( $o->get('pid') );
-   }
-   MKDEBUG && _d('I am a daemon now');
-}
-
-my $exit_status = 0;
+my $o;
+my $dp;
 my %children;
-my @servers_to_watch;
-my $q = new Quoter();
 
-# Despite the name, recursing to slaves actually begins at the specified
-# server, so the named server may also be watched, if it's a slave.
-my $ms = new MasterSlave();
-$ms->recurse_to_slaves(
-   {  dbh        => $dbh,
-      dsn        => { $o->opt_values() },
-      dsn_parser => $dp,
-      recurse    => $o->get('recurse') || 0,
-      callback   => sub {
-         my ( $dsn, $dbh, $level ) = @_;
-         # Test whether we want to watch this server.
-         eval {
-            my $stat = $ms->get_slave_status($dbh);
-            if ( $stat ) {
-               push @servers_to_watch, { dsn => $dsn, dbh => $dbh };
-            }
-            else {
-               die "could not find slave status on this server\n";
-            }
-         };
-         if ( $EVAL_ERROR ) {
-            chomp $EVAL_ERROR;
-            MKDEBUG && _d('Not watching', $dp->as_string($dsn),
-               'because', $EVAL_ERROR);
+sub main {
+   @ARGV = @_;  # set global ARGV for this package
+
+   # ########################################################################
+   # Get configuration information.
+   # ########################################################################
+   $dp = new DSNParser(); 
+   $o  = new OptionParser(
+      prompt      => '<options>',
+      description => 'watches one or more MySQL replication slaves for '
+                   . 'errors, and tries to restart replication if it stops.',
+   );
+   $o->get_specs();
+   $o->get_opts();
+
+   $dp->prop('set-vars', $o->get('set-vars'));
+
+   if ( !$o->get('help') ) {
+      if ( $o->get('until-master') ) {
+         if ( $o->get('until-master') !~ m/^[.\w-]+,\d+$/ ) {
+            $o->_save_error("Invalid --until-master argument, must be file,pos");
          }
-      },
-      skip_callback => sub {
-         my ( $dsn, $dbh, $level ) = @_;
-         print STDERR "Skipping ", $dp->as_string($dsn), "\n";
-      },
+      }
+      if ( $o->get('until-relay') ) {
+         if ( $o->get('until-relay') !~ m/^[.\w-]+,\d+$/ ) {
+            $o->_save_error("Invalid --until-relay argument, must be file,pos");
+         }
+      }
    }
-);
 
-# Watch each server found.
-my $must_fork = @servers_to_watch > 1;
-foreach my $host ( @servers_to_watch ) {
+   $o->usage_or_errors();
 
-   $host->{dbh}->{InactiveDestroy}  = 1;         # Don't disconnect on fork
-
-   # Fork, but only if there might be more than one host to watch.
-   my $pid = $must_fork ? fork() : undef;
-   if ( !$must_fork || (defined($pid) && $pid == 0) ) {
-      # I either forked and I'm a child, or I didn't fork... confusing, eh?
-      watch_server($host->{dsn}, $host->{dbh}, $must_fork);
+   # ########################################################################
+   # First things first: if --stop was given, create the sentinel file.
+   # ########################################################################
+   my $sentinel = $o->get('sentinel');
+   if ( $o->get('stop') ) {
+      MKDEBUG && _d('Creating sentinel file', $sentinel);
+      my $file = IO::File->new($sentinel, ">>")
+         or die "Cannot open $sentinel: $OS_ERROR\n";
+      print $file "Remove this file to permit mk-slave-restart to run\n"
+         or die "Cannot write to $sentinel: $OS_ERROR\n";
+      close $file
+         or die "Cannot close $sentinel: $OS_ERROR\n";
+      print STDOUT "Successfully created file $sentinel\n"
+         unless $o->get('quiet');
+      # Exit unlesss --monitor is given.
+      if ( !$o->got('monitor') ) {
+         MKDEBUG && _d('Nothing more to do, quitting');
+         return 0;
+      }
+      else {
+         # Wait for all other running instances to quit, assuming they have the
+         # same --interval as this invocation.  Then remove the file and
+         # continue.
+         MKDEBUG && _d('Waiting for other instances to quit');
+         sleep($o->get('maxlength'));
+         MKDEBUG && _d('Unlinking', $sentinel);
+         unlink $sentinel
+            or die "Cannot unlink $sentinel: $OS_ERROR";
+      }
    }
-   elsif ( $must_fork && !defined($pid) ) {
-      die("Unable to fork!");
+
+   # ########################################################################
+   # Connect and go to work.
+   # ########################################################################
+   if ( $o->get('ask-pass') ) {
+      $o->set('p', OptionParser::prompt_noecho("Enter password: "));
    }
-   # I already exited if I'm a child, so I'm the parent.  (Or maybe I never
-   # forked).
-   $children{$dp->as_string($host->{dsn})} = $pid if $must_fork;
+   my $dsn = $dp->parse_options($o);
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1, });
+
+   $dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork/daemonize
+
+   # Daemonize only after connecting and doing --ask-pass.
+   my $daemon;
+   if ( $o->get('daemonize') ) {
+      $daemon = new Daemon(
+         log_file => $o->get('log'),
+      ) or die "Cannot daemonize: $OS_ERROR";
+      $daemon->daemonize();
+      $daemon->create_PID_file($o->get('pid')) if $o->got('pid');
+      MKDEBUG && _d('I am a daemon now');
+   }
+
+   my $exit_status = 0; 
+   my @servers_to_watch; 
+
+   # Despite the name, recursing to slaves actually begins at the specified
+   # server, so the named server may also be watched, if it's a slave.
+   my $ms = new MasterSlave();
+   $ms->recurse_to_slaves(
+      {  dbh        => $dbh,
+         dsn        => $dsn,
+         dsn_parser => $dp,
+         recurse    => $o->get('recurse') || 0,
+         callback   => sub {
+            my ( $dsn, $dbh, $level ) = @_;
+            # Test whether we want to watch this server.
+            eval {
+               my $stat = $ms->get_slave_status($dbh);
+               if ( $stat ) {
+                  push @servers_to_watch, { dsn => $dsn, dbh => $dbh };
+               }
+               else {
+                  die "could not find slave status on this server\n";
+               }
+            };
+            if ( $EVAL_ERROR ) {
+               chomp $EVAL_ERROR;
+               MKDEBUG && _d('Not watching', $dp->as_string($dsn),
+                  'because', $EVAL_ERROR);
+            }
+         },
+         skip_callback => sub {
+            my ( $dsn, $dbh, $level ) = @_;
+            print STDERR "Skipping ", $dp->as_string($dsn), "\n";
+         },
+      }
+   );
+
+   # Watch each server found.
+   my $must_fork = @servers_to_watch > 1;
+   foreach my $host ( @servers_to_watch ) {
+
+      $host->{dbh}->{InactiveDestroy}  = 1;         # Don't disconnect on fork
+
+      # Fork, but only if there might be more than one host to watch.
+      my $pid = $must_fork ? fork() : undef;
+      if ( !$must_fork || (defined($pid) && $pid == 0) ) {
+         # I either forked and I'm a child, or I didn't fork... confusing, eh?
+         watch_server($host->{dsn}, $host->{dbh}, $must_fork, $ms);
+      }
+      elsif ( $must_fork && !defined($pid) ) {
+         die("Unable to fork!");
+      }
+      # I already exited if I'm a child, so I'm the parent.  (Or maybe I never
+      # forked).
+      $children{$dp->as_string($host->{dsn})} = $pid if $must_fork;
+   }
+
+   MKDEBUG && _d('Child PIDs:', values %children);
+   # Wait for the children to exit.
+   foreach my $host ( keys %children ) {
+      MKDEBUG && _d('Waiting to reap', $host);
+      my $pid = waitpid($children{$host}, 0);
+      $exit_status ||= $CHILD_ERROR >> 8;
+   }
+
+   $dp->disconnect($dbh);
+   return $exit_status;
 }
-
-MKDEBUG && _d('Child PIDs:', values %children);
-# Wait for the children to exit.
-foreach my $host ( keys %children ) {
-   MKDEBUG && _d('Waiting to reap', $host);
-   my $pid = waitpid($children{$host}, 0);
-   $exit_status ||= $CHILD_ERROR >> 8;
-}
-
-$dp->disconnect($dbh);
-exit($exit_status);
 
 # ############################################################################
 # Subroutines.
@@ -2063,10 +2058,12 @@ exit($exit_status);
 # Actually watch a server.  If many instances are being watched, this is
 # fork()ed.
 sub watch_server {
-   my ( $dsn, $dbh, $was_forked ) = @_;
+   my ( $dsn, $dbh, $was_forked, $ms ) = @_;
+   my $q  = new Quoter();
+   my $vp = new VersionParser();
 
    MKDEBUG && _d('Watching server', $dp->as_string($dsn),
-      "forked:", $was_forked);
+      'forked:', $was_forked);
 
    my $start_sql = $vp->version_ge($dbh, '4.0.5')
                  ? 'START SLAVE' : 'SLAVE START';
@@ -2085,6 +2082,20 @@ sub watch_server {
    my $stop       = $dbh->prepare('STOP SLAVE');
    my $chmt       = $dbh->prepare(
                     'CHANGE MASTER TO MASTER_LOG_FILE=?, MASTER_LOG_POS=?');
+
+
+   # ########################################################################
+   # Lookup tables of things to do when a problem is detected.
+   # ########################################################################
+   my @error_patterns = (
+      [ qr/You have an error in your SQL/         => 'refetch_relay_log' ],
+      [ qr/Could not parse relay log event entry/ => 'refetch_relay_log' ],
+      [ qr/Incorrect key file for table/          => 'repair_table'      ],
+      # This must be the last one.  It's a catch-all rule: skip and restart.
+      [ qr/./                                     => 'skip'              ],
+   );
+
+   # TODO: let the user specify more patterns and actions.
 
    # ########################################################################
    # These are actions to take when an error is found.
@@ -2122,7 +2133,9 @@ sub watch_server {
 
    my $stat = {}; # Will hold SHOW SLAVE STATUS
    STAT:
-   while ($stat && (!$o->get('time') || time() < $exit_time) && !-f $o->get('sentinel')) {
+   while ( $stat
+           && (!$o->get('time') || time() < $exit_time)
+           && !-f $o->get('sentinel') ) {
       my $increase_sleep = 1;
       $stat = $ms->get_slave_status($dbh);
       if ( !$stat ) {
@@ -2132,8 +2145,8 @@ sub watch_server {
       }
 
       if ( !$last_log
-         || $last_log ne $stat->{relay_log_file}   # Avoid infinite loops
-         || $last_pos != $stat->{relay_log_pos}
+           || $last_log ne $stat->{relay_log_file}   # Avoid infinite loops
+           || $last_pos != $stat->{relay_log_pos}
       ) {
          $stat->{slave_sql_running} ||= 'No';
          $stat->{last_error}        ||= '';
@@ -2274,6 +2287,13 @@ sub _d {
         @_;
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
+
+# ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
 
 # ############################################################################
 # Documentation.
