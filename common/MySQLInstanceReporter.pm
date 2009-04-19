@@ -16,15 +16,15 @@
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
 # ###########################################################################
-# InstanceReporter package $Revision$
+# MySQLInstanceReporter package $Revision$
 # ###########################################################################
-package InstanceReporter;
+package MySQLInstanceReporter;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-Transformers->import(qw());
+Transformers->import( qw(micro_t shorten secs_to_time) );
 
 use constant MKDEBUG     => $ENV{MKDEBUG};
 use constant LINE_LENGTH => 74;
@@ -37,15 +37,16 @@ sub new {
 
 sub report {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(mi n ps schema ma o) ) {
+   foreach my $arg ( qw(mi n ps schema ma o proclist) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $mi     = $args{mi};
-   my $n      = $args{n};
-   my $ps     = $args{ps};
-   my $schema = $args{schema};
-   my $ma     = $args{ma};
-   my $o      = $args{o};
+   my $mi       = $args{mi};
+   my $n        = $args{n};
+   my $ps       = $args{ps};
+   my $schema   = $args{schema};
+   my $ma       = $args{ma};
+   my $o        = $args{o};
+   my $proclist = $args{proclist};
 
 format MYSQL_INSTANCE_1 =
 
@@ -316,5 +317,5 @@ sub _d {
 1;
 
 # ###########################################################################
-# End InstanceReporter package
+# End MySQLInstanceReporter package
 # ###########################################################################
