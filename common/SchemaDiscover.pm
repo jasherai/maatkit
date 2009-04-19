@@ -17,8 +17,6 @@
 # ###########################################################################
 # SchemaDiscover package $Revision$
 # ###########################################################################
-
-# SchemaDiscover - Discover every db, table and index in the schema
 package SchemaDiscover;
 
 use strict;
@@ -30,22 +28,29 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dbh MySQLDump Quoter TableParser) ) {
+   foreach my $arg ( qw(du q tp) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
-      %args,
+      %args
+   };
+   return bless $self, $class;
+}
+
+sub discover {
+   my ( $self, $dbh ) = @_;
+   die "I need a dbh" unless $dbh;
+
+   my $schema = {
       dbs    => {},
       counts => {},
    };
-
    # brevity:
-   my $dbs     = $self->{dbs};
-   my $counts  = $self->{counts};
-   my $dbh     = $self->{dbh};
-   my $du      = $self->{MySQLDump};
-   my $q       = $self->{Quoter};
-   my $tp      = $self->{TableParser};
+   my $dbs     = $schema->{dbs};
+   my $counts  = $schema->{counts};
+   my $du      = $self->{du};
+   my $q       = $self->{q};
+   my $tp      = $self->{tp};
 
    %$dbs = map { $_ => {} } $du->get_databases($dbh, $q);
 
@@ -96,13 +101,14 @@ sub new {
       }
    }
 
-   return bless $self, $class;
+   return $schema;
 }
 
 sub discover_triggers_routines_events {
-   my ( $self ) = @_;
+   my ( $self, $dbh ) = @_;
+   die "I need a dbh" unless $dbh;
    my @tre =
-      @{ $self->{dbh}->selectall_arrayref(
+      @{ $dbh->selectall_arrayref(
             "SELECT EVENT_OBJECT_SCHEMA AS db,
             CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
             COUNT(*) AS num
