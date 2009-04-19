@@ -17,45 +17,54 @@
 # ###########################################################################
 # AggregateProcessList package $Revision$
 # ###########################################################################
-
-# AggregateProcessList - Aggregate snapshots of SHOW PROCESSLIST
 package AggregateProcessList;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Carp;
-use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   my ( $class, $dbh, $params ) = @_;
-   my $self = defined $params ? { %{ $params } } : {};
-   $self->{undef_value} ||= 'NULL';
+   my ( $class, %args ) = @_;
+   my $self = {
+      undef_value => $args{undef_val} || 'NULL',
+   };
    return bless $self, $class;
 }
 
-sub aggregate_processlist {
-   my ( $self, $recset ) = @_;
-   my $agg_proclist = {};
-   foreach my $proc ( @{ $recset } ) {
+# Given an arrayref of processes ($proclist), returns an hashref of
+# time and counts aggregates for User, Host, db, Command and State.
+# See t/AggregateProcessList.t for examples.
+# The $proclist arg is usually the return val of:
+#    $dbh->selectall_arrayref('SHOW PROCESSLIST', { Slice => {} } );
+sub aggregate {
+   my ( $self, $proclist ) = @_;
+   my $aggregate = {};
+   foreach my $proc ( @{$proclist} ) {
       foreach my $field ( keys %{ $proc } ) {
+         # Don't aggregate these fields.
          next if $field eq 'Id';
          next if $field eq 'Info';
          next if $field eq 'Time';
+
+         # Format the field's value a little.
          my $val  = $proc->{ $field };
-            $val  = $self->{undef_value} if !defined $val;
+            $val  = $self->{undef_va} if !defined $val;
             $val  = lc $val if ( $field eq 'Command' || $field eq 'State' );
             $val  =~ s/:.*// if $field eq 'Host';
+
          my $time = $proc->{Time};
             $time = 0 if $time eq 'NULL';
+
+         # Do this last or else $proc->{$field} won't match.
          $field = lc $field;
-         $agg_proclist->{ $field }->{ $val }->{time}  += $time;
-         $agg_proclist->{ $field }->{ $val }->{count} += 1;
+
+         $aggregate->{ $field }->{ $val }->{time}  += $time;
+         $aggregate->{ $field }->{ $val }->{count} += 1;
       }
    }
-   return $agg_proclist;
+   return $aggregate;
 }
 
 sub _d {

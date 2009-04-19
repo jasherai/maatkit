@@ -1,29 +1,9 @@
 #!/usr/bin/perl
 
-# This program is copyright 2008 Percona Inc.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
-
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 5;
 use English qw(-no_match_vars);
-
-use DBI;
+use Test::More tests => 5;
 
 require '../AggregateProcessList.pm';
 require '../RecordsetFromText.pm';
@@ -36,6 +16,11 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
 
+my $r   = new RecordsetFromText();
+my $apl = new AggregateProcessList();
+
+isa_ok($apl, 'AggregateProcessList');
+
 sub load_file {
    my ($file) = @_;
    open my $fh, "<", $file or die $!;
@@ -44,14 +29,19 @@ sub load_file {
    return $contents;
 }
 
-my $apl = AggregateProcessList->new();
-isa_ok($apl, 'AggregateProcessList');
+sub test_aggregate {
+   my ($file, $expected, $msg) = @_;
+   my $proclist = $r->parse( load_file($file) );
+   is_deeply(
+      $apl->aggregate($proclist),
+      $expected,
+      $msg
+   );
+   return;
+}
 
-my $r = RecordsetFromText->new();
-my $recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_basic.txt') );
-my $ag_pl = $apl->aggregate_processlist($recset);
-is_deeply(
-   $ag_pl,
+test_aggregate(
+   'samples/RecsetFromTxt-proclist_basic.txt',
    {
       command => { query     => { time => 0, count => 1 } },
       db      => { ''        => { time => 0, count => 1 } },
@@ -62,13 +52,10 @@ is_deeply(
    'Aggregate basic processlist'
 );
 
-$recset = $r->parse(
-   load_file('samples/RecsetFromTxt-proclist_vertical_51_rows.txt') );
-$ag_pl = $apl->aggregate_processlist($recset);
-
-is_deeply(
-   $ag_pl,
-   {  db => {
+test_aggregate(
+   'samples/RecsetFromTxt-proclist_vertical_51_rows.txt',
+   {
+      db => {
          NULL   => { count => 1,  time => 0 },
          forest => { count => 50, time => 529 }
       },
@@ -92,15 +79,19 @@ is_deeply(
    'Sample with 51 processes',
 );
 
-$recset = $r->parse(
-   load_file('samples/RecsetFromTxt-proclist_vertical_113_rows_NULL_Time.txt') );
-$ag_pl = $apl->aggregate_processlist($recset);
+my $proclist = $r->parse(
+   load_file('samples/RecsetFromTxt-proclist_vertical_113_rows_NULL_Time.txt'));
+my $aggregate = $apl->aggregate($proclist);
 cmp_ok(
-   $ag_pl->{db}->{NULL}->{count}, '==', 3,
+   $aggregate->{db}->{NULL}->{count},
+   '==',
+   3,
    '113 proc sample: 3 NULL db'
 );
 cmp_ok(
-   $ag_pl->{db}->{happy}->{count}, '==', 110,
+   $aggregate->{db}->{happy}->{count},
+   '==',
+   110,
    '113 proc sample: 110 happy db'
 );
 
