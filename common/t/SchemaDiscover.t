@@ -17,15 +17,18 @@ require '../DSNParser.pm';
 require '../MySQLDump.pm';
 require '../Quoter.pm';
 require '../TableParser.pm';
+require '../VersionParser.pm';
 
 my $du = new MySQLDump();
 my $q  = new Quoter();
 my $tp = new TableParser();
+my $vp = new VersionParser();
 
 my $sd = new SchemaDiscover(
    du => $du,
    q  => $q,
    tp => $tp,
+   vp => $vp,
 );
 isa_ok($sd, 'SchemaDiscover');
 
@@ -39,9 +42,8 @@ SKIP: {
    ok(exists $schema->{dbs}->{mysql},    'mysql db exists'     );
    ok(exists $schema->{counts}->{TOTAL}, 'TOTAL counts exists' );
 
-   $sd->discover_triggers_routines_events($dbh);
    is_deeply(
-      \@{ $sd->{trigs_routines_events} },
+      $schema->{stored_code},
       [
          'sakila del_trg 1',
          'sakila ins_trg 4',
@@ -49,7 +51,7 @@ SKIP: {
          'sakila func 3',
          'sakila proc 3',
       ],
-      'discover_triggers_routines_events'
+      'stored code objects'
    );
 
    $dbh->disconnect() if defined $dbh;

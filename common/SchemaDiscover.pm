@@ -28,7 +28,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(du q tp) ) {
+   foreach my $arg ( qw(du q tp vp) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
@@ -42,8 +42,9 @@ sub discover {
    die "I need a dbh" unless $dbh;
 
    my $schema = {
-      dbs    => {},
-      counts => {},
+      dbs         => {},
+      counts      => {},
+      stored_code => undef,  # may be either arrayref of error string
    };
    # brevity:
    my $dbs     = $schema->{dbs};
@@ -51,6 +52,7 @@ sub discover {
    my $du      = $self->{du};
    my $q       = $self->{q};
    my $tp      = $self->{tp};
+   my $vp      = $self->{vp};
 
    %$dbs = map { $_ => {} } $du->get_databases($dbh, $q);
 
@@ -101,13 +103,24 @@ sub discover {
       }
    }
 
+   if ( $vp->version_ge($dbh, '5.0.0') ) {
+      $schema->{stored_code} = $self->discover_stored_code($dbh);
+   }
+   else {
+      $schema->{stored_code}
+         = 'This version of MySQL does not support stored code.';
+   }
+
    return $schema;
 }
 
-sub discover_triggers_routines_events {
+# Returns an arrayref of strings which summarize the stored code
+# objects like: "db obj_type count".
+sub discover_stored_code {
    my ( $self, $dbh ) = @_;
    die "I need a dbh" unless $dbh;
-   my @tre =
+
+   my @stored_code_objs  =
       @{ $dbh->selectall_arrayref(
             "SELECT EVENT_OBJECT_SCHEMA AS db,
             CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
@@ -124,11 +137,13 @@ sub discover_triggers_routines_events {
                FROM INFORMATION_SCHEMA.EVENTS GROUP BY db, what
             */")
       };
-   $self->{trigs_routines_events} = ();
-   foreach my $x ( @tre ) {
-      push @{ $self->{trigs_routines_events} }, "$x->[0] $x->[1] $x->[2]";
+
+   my @formatted_code_objs;
+   foreach my $code_obj ( @stored_code_objs ) {
+      push @formatted_code_objs, "$code_obj->[0] $code_obj->[1] $code_obj->[2]";
    }
-   return;
+
+   return \@formatted_code_objs;
 }
 
 sub _d {

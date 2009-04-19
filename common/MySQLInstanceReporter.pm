@@ -48,6 +48,14 @@ sub report {
    my $o        = $args{o};
    my $proclist = $args{proclist};
 
+   if ( $schema->{counts}->{TOTAL}->{dbs} == 0 ) {
+      # This can happen of the user doesn't have privs to see any dbs,
+      # or in the rare case that there really aren't any dbs.
+      print "MySQL instance $n has no databases. "
+   }
+   else {
+   }
+   
 format MYSQL_INSTANCE_1 =
 
 ____________________________________________________________ MySQL Instance @>>
