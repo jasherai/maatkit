@@ -14,7 +14,6 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
-
 # ###########################################################################
 # Grants package $Revision$
 # ###########################################################################
@@ -38,8 +37,9 @@ my %check_for_priv = (
 );
       
 sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
+   my ( $class, %args ) = @_;
+   my $self = {};
+   return bless $self, $class;
 }
 
 sub have_priv {
