@@ -1,29 +1,121 @@
 #!/usr/bin/perl
 
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 31;
 use English qw(-no_match_vars);
+use Test::More tests => 34;
 
 require "../MasterSlave.pm";
 require "../DSNParser.pm";
+require '../Sandbox.pm';
+
+my $ms = new MasterSlave();
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $master_dbh = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+my $slave_dbh  = $sb->get_dbh_for('slave1')
+   or BAIL_OUT('Cannot connect to sandbox slave1');
+
+# Create slave2 as slave of slave1.
+#diag(`/tmp/12347/stop 2> /dev/null`);
+#diag(`rm -rf /tmp/12347 2> /dev/null`);
+#diag(`../../sandbox/make_sandbox 12347`);
+#diag(`/tmp/12347/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=12346"`);
+#diag(`/tmp/12347/use -e "start slave"`);
+my $slave_2_dbh = $sb->get_dbh_for('slave2');
+#   or BAIL_OUT('Cannot connect to sandbox slave2');
+
+# Make slave2 slave of master.
+#diag(`../../mk-slave-move/mk-slave-move --sibling-of-master h=127.1,P=12347`);
+
+SKIP: {
+   skip 'idea for future improvement', 3;
+
+# Make sure we're messed up nicely.
+my $rows = $master_dbh->selectall_arrayref('SHOW SLAVE HOSTS', {Slice => {}});
+is_deeply(
+   $rows,
+   [
+      {
+         Server_id => '12346',
+         Host      => '127.0.0.1',
+         Port      => '12346',
+         Rpl_recovery_rank => '0',
+         Master_id => '12345',
+      },
+   ],
+   'show slave hosts on master is precisely inaccurate'
+);
+
+$rows = $slave_dbh->selectall_arrayref('SHOW SLAVE HOSTS', {Slice => {}});
+is_deeply(
+   $rows,
+   [
+      {
+         Server_id => '12347',     # This is what's messed up because
+         Host      => '127.0.0.1', # slave2 (12347) was made a slave
+         Port      => '12347',     # of the master (12345), yet here
+         Rpl_recovery_rank => '0', # it still shows as a slave of
+         Master_id => '12346', # <-- slave1 (12346)
+      },
+      {
+         Server_id => '12346',
+         Host      => '127.0.0.1',
+         Port      => '12346',
+         Rpl_recovery_rank => '0',
+         Master_id => '12345',
+      },
+   ],
+   'show slave hosts on slave1 is precisely inaccurate'
+);
+
+$rows = $slave_2_dbh->selectall_arrayref('SHOW SLAVE HOSTS', {Slice => {}});
+is_deeply(
+   $rows,
+   [
+      {
+         Server_id => '12347',     
+         Host      => '127.0.0.1', 
+         Port      => '12347',     # Even slave2 itself is confused about
+         Rpl_recovery_rank => '0', # which sever it is really a slave to:
+         Master_id => '12346', # <-- slave1 (123456) wrong again
+      },
+      {
+         Server_id => '12346',
+         Host      => '127.0.0.1',
+         Port      => '12346',
+         Rpl_recovery_rank => '0',
+         Master_id => '12345',
+      },
+   ],
+   'show slave hosts on slave2 is precisely inaccurate'
+);
+
+# The real picture is:
+#    12345
+#    +- 12346
+#    +- 12347
+# And here's what MySQL would have us wrongly see:
+#   12345
+#   +- 12346
+#      +- 12347
+#is_deeply(
+#   $ms->new_recurse_to_salves(),
+#   [
+#      '127.0.0.1:12345',
+#      [
+#         '127.0.0.1:12346',
+#         '127.0.0.1:12357',
+#      ],
+#   ],
+#   '_new_rts()'
+#);
+
+# Stop and remove slave2.
+#diag(`/tmp/12347/stop`);
+#diag(`rm -rf /tmp/12347`);
+};
 
 # #############################################################################
 # First we need to setup a special replication sandbox environment apart from
@@ -75,8 +167,6 @@ diag(`/tmp/$port_for{slave1}/use -e "start slave"`);
 my $dbh;
 my @slaves;
 my @sldsns;
-my $ms = new MasterSlave();
-my $dp = new DSNParser();
 
 my $dsn = $dp->parse("h=127.0.0.1,P=$port_for{master}");
 $dbh    = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
@@ -249,4 +339,5 @@ foreach my $port ( reverse sort values %port_for ) {
    diag(`/tmp/$port/stop`);
    diag(`rm -rf /tmp/$port`);
 }
+
 exit;
