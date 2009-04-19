@@ -1,30 +1,12 @@
 #!/usr/bin/perl
 
-# This program is copyright 2008 Percona Inc.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
-
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 41;
 use English qw(-no_match_vars);
-use DBI;
+use Test::More tests => 41;
 
 require '../MySQLInstance.pm';
+require '../OptionParser.pm';
 require '../DSNParser.pm';
 require '../Sandbox.pm';
 my $dp = new DSNParser();
@@ -35,6 +17,12 @@ my $dbh = $sb->get_dbh_for('master')
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
+
+my $o = new OptionParser(
+   description => 'for MySQLInstance.t',
+   dp          => $dp,
+);
+$o->get_specs('../../mk-audit/mk-audit');
 
 sub load_file {
    my ($file) = @_;
@@ -54,7 +42,8 @@ if ( !defined $msandbox_basedir || !-d $msandbox_basedir ) {
 }
 
 # This should be the exact cmd line op with which the sandbox started mysqld.
-# If not, tests below will fail.
+# This comes from the start script of a sandbox (e.g. /tmp/12345/start).  If
+# this differs, tests below will fail.
 my $cmd = "$msandbox_basedir/bin/mysqld --defaults-file=/tmp/12345/my.sandbox.cnf --basedir=/usr --datadir=/tmp/12345/data --pid-file=/tmp/12345/data/mysql_sandbox12345.pid --skip-external-locking --port=12345 --socket=/tmp/12345/mysql_sandbox12345.sock --long-query-time=3";
 my %ops = (
    pid_file              => '/tmp/12345/data/mysql_sandbox12345.pid',
@@ -82,17 +71,17 @@ is(MySQLInstance::get_register_size(
    'Got 32-bit size',
 );
 
-my $myi = new MySQLInstance($cmd);
-isa_ok($myi, 'MySQLInstance');
+my $mi = new MySQLInstance($cmd);
+isa_ok($mi, 'MySQLInstance');
 is(
-   $myi->{mysqld_binary},
+   $mi->{mysqld_binary},
    "$msandbox_basedir/bin/mysqld",
    'mysqld_binary parsed'
 );
 
-$myi = new MySQLInstance(q{mysql    16420 20249 99 Aug27 ?        2-21:38:12 /usr/libexec/mysqld --defaults-file=/etc/my.cnf --basedir=/usr --datadir=/db/mysql --user=mysql --pid-file=/var/run/mysqld/mysqld.pid --skip-locking --socket=/db/mysql/mysql.sock});
+$mi = new MySQLInstance(q{mysql    16420 20249 99 Aug27 ?        2-21:38:12 /usr/libexec/mysqld --defaults-file=/etc/my.cnf --basedir=/usr --datadir=/db/mysql --user=mysql --pid-file=/var/run/mysqld/mysqld.pid --skip-locking --socket=/db/mysql/mysql.sock});
 is(
-   $myi->{mysqld_binary},
+   $mi->{mysqld_binary},
    '/usr/libexec/mysqld',
    'mysqld_binary parsed again'
 );
@@ -117,14 +106,17 @@ is(
    '/usr/libexec/mysqld', 'Found mysqld binary at end of string'
 );
 
-$myi = new MySQLInstance($cmd);
+$mi = new MySQLInstance($cmd);
 is_deeply(
-   \%{ $myi->{cmd_line_ops} },
+   \%{ $mi->{cmd_line_ops} },
    \%ops,
    'cmd_line_ops parsed'
 );
+
+@ARGV = qw(-S foo);
+$o->get_opts();
 is_deeply(
-   $myi->get_DSN(S => 'foo'),
+   $mi->get_DSN($o),
    {
       P => 12345,
       S => 'foo',
@@ -133,38 +125,38 @@ is_deeply(
    'It keeps localhost when socket given',
 );
 
-$myi->load_sys_vars($dbh);
+$mi->load_sys_vars($dbh);
 # Sample of stable/predictable vars to make sure load_online_sys_vars()
-# actually did something, otherwise $myi->{online_sys_vars} will be empty
-is($myi->{online_sys_vars}->{datadir}, '/tmp/12345/data/', 'Loads online sys vars (1/3)');
-is($myi->{online_sys_vars}->{log_bin}, 'ON', 'Loads online sys var (2/3)');
-is($myi->{online_sys_vars}->{port}, '12345', 'Loads online sys var (3/3)');
+# actually did something, otherwise $mi->{online_sys_vars} will be empty
+is($mi->{online_sys_vars}->{datadir}, '/tmp/12345/data/', 'Loads online sys vars (1/3)');
+is($mi->{online_sys_vars}->{log_bin}, 'ON', 'Loads online sys var (2/3)');
+is($mi->{online_sys_vars}->{port}, '12345', 'Loads online sys var (3/3)');
 
-my $ret = $myi->duplicate_sys_vars();
+my $ret = $mi->duplicate_sys_vars();
 is_deeply(
    $ret,
    [qw(max_connections long_query_time)],
    'Duplicate vars'
 );
 
-$ret = $myi->overriden_sys_vars();
+$ret = $mi->overriden_sys_vars();
 is_deeply(
    $ret,
    { long_query_time => [ '3', '1' ], },
    'Overriden sys vars'
 );
 
-$ret = $myi->out_of_sync_sys_vars();
+$ret = $mi->out_of_sync_sys_vars();
 is_deeply(
    $ret->{long_query_time},
    {online=>3, config=>1},
    'out of sync sys var}: long_query_time online=3 conf=1'
 );
 
-$myi->load_status_vals($dbh);
-ok(exists $myi->{status_vals}->{Aborted_clients},
+$mi->load_status_vals($dbh);
+ok(exists $mi->{status_vals}->{Aborted_clients},
    'status vals: Aborted_clients');
-ok(exists $myi->{status_vals}->{Uptime},
+ok(exists $mi->{status_vals}->{Uptime},
    'status vals: Uptime');
 
 my $eq = MySQLInstance::get_eq_for('query_cache_type');
@@ -199,21 +191,21 @@ is(
 
 # Check that missing my_print_defaults causes the obj to die
 eval {
-   $myi->_vars_from_defaults_file('', 'my_print_defaults_foozed');
+   $mi->_vars_from_defaults_file('', 'my_print_defaults_foozed');
 };
 like($EVAL_ERROR, qr/Cannot execute my_print_defaults command/, 'Dies if my_print_defaults cannot be executed');
 
 # Handle pathological oos cases like 2.2 and 2.200000 for long_query_time.
-$myi->{conf_sys_vars}   = {};
-$myi->{online_sys_vars} = {};
+$mi->{conf_sys_vars}   = {};
+$mi->{online_sys_vars} = {};
 # sql_mode has an eq_for calling _veq()
-$myi->{conf_sys_vars}->{long_query_time}   = '2.2';
-$myi->{online_sys_vars}->{long_query_time} = '2.200000';
-$ret = $myi->out_of_sync_sys_vars();
+$mi->{conf_sys_vars}->{long_query_time}   = '2.2';
+$mi->{online_sys_vars}->{long_query_time} = '2.200000';
+$ret = $mi->out_of_sync_sys_vars();
 ok(scalar keys %$ret == 0, 'long_query_time 2.2 is not oos with 2.200000');
 
 # !!! REMEMBER !!!
-# I just destroyed parts of $myi in the test above. Therefore, if you
+# I just destroyed parts of $mi in the test above. Therefore, if you
 # add tests below here, you may want to make a new MySQLInstance obj.
 
 # #############################################################################
@@ -247,10 +239,10 @@ is_deeply(
    socket                => '/mnt/data/mysql/mysql.sock',
    defaults_file         => '',
 );
-$myi = new MySQLInstance($mysqld_procs_ref->[0]->{cmd});
-is($myi->{mysqld_binary}, '/usr/libexec/mysqld', 'mysqld binary parsed (issue 49)');
+$mi = new MySQLInstance($mysqld_procs_ref->[0]->{cmd});
+is($mi->{mysqld_binary}, '/usr/libexec/mysqld', 'mysqld binary parsed (issue 49)');
 is_deeply(
-   \%{ $myi->{cmd_line_ops} },
+   \%{ $mi->{cmd_line_ops} },
    \%ops,
    'cmd line ops parsed (issue 49)'
 );
@@ -260,9 +252,9 @@ is_deeply(
 # and my.cnf values
 # #############################################################################
 my $mysqld_output = load_file('samples/mysqld_01_issue_58.txt');
-$myi->_load_default_defaults_files($mysqld_output),
+$mi->_load_default_defaults_files($mysqld_output),
 is_deeply(
-   $myi->{default_defaults_files},
+   $mi->{default_defaults_files},
    [
       '/etc/my.cnf',
       '~/.my.cnf'
@@ -270,30 +262,30 @@ is_deeply(
    'Parses default defaults files and removes duplicates (issue 58)'
 );
 # Break ourselves:
-@{ $myi->{default_defaults_files} } = ();
-eval { $myi->_vars_from_defaults_file(); };
+@{ $mi->{default_defaults_files} } = ();
+eval { $mi->_vars_from_defaults_file(); };
 like($EVAL_ERROR, qr/MySQL instance has no valid defaults files/, 'Dies if no valid defaults files');
 
 # #############################################################################
 # Issue 135: mk-audit dies if running mysqld --help --verbose dies      
 # #############################################################################
-$myi = new MySQLInstance($cmd);
+$mi = new MySQLInstance($cmd);
 SKIP: {
    skip 'segfault.c is not compiled', 1
       unless -f 'samples/segfault';
-   $myi->{mysqld_binary} = 'samples/segfault';
+   $mi->{mysqld_binary} = 'samples/segfault';
    {
       local $SIG{__WARN__}
          = sub { $EVAL_ERROR = $_[0]; }; # suppress warn output
-      $myi->load_sys_vars($dbh);
+      $mi->load_sys_vars($dbh);
    };
-   like($EVAL_ERROR, qr/Cannot execute $myi->{mysqld_binary}/, "Warns if mysqld fails to execute");
+   like($EVAL_ERROR, qr/Cannot execute $mi->{mysqld_binary}/, "Warns if mysqld fails to execute");
 };
 
-$myi->{mysqld_binary} = 'true';
+$mi->{mysqld_binary} = 'true';
 {
    local $SIG{__WARN__} = sub { $EVAL_ERROR = $_[0]; }; # suppress warn output
-   $myi->load_sys_vars($dbh);
+   $mi->load_sys_vars($dbh);
 };
 like($EVAL_ERROR, qr/MySQL returned no information/, "Warns if mysqld returns nothing");
 
@@ -380,10 +372,12 @@ my @dsns = (
       h => '127.0.0.1',
    },
 );
+@ARGV = ();
+$o->get_opts();
 my $i = 0;
 foreach my $m ( @$mysqld_procs_ref ) {
-   $myi = new MySQLInstance($m->{cmd});
-   my $dsn = $myi->get_DSN();
+   $mi     = new MySQLInstance($m->{cmd});
+   my $dsn = $mi->get_DSN($o);
    is_deeply(
       $dsn,
       $dsns[$i++],
@@ -400,12 +394,12 @@ foreach my $m ( @$mysqld_procs_ref ) {
 # _veq() returns false even if the var values are the same (and this is
 # correct for _veq()). The real problem is that the eq_for subs should only
 # be called after a standard eq comparison fails.
-$myi->{conf_sys_vars}   = {};
-$myi->{online_sys_vars} = {};
+$mi->{conf_sys_vars}   = {};
+$mi->{online_sys_vars} = {};
 # sql_mode has an eq_for calling _veq()
-$myi->{conf_sys_vars}->{sql_mode}   = 'foo';
-$myi->{online_sys_vars}->{sql_mode} = 'foo';
-$ret = $myi->out_of_sync_sys_vars();
+$mi->{conf_sys_vars}->{sql_mode}   = 'foo';
+$mi->{online_sys_vars}->{sql_mode} = 'foo';
+$ret = $mi->out_of_sync_sys_vars();
 ok(scalar keys %$ret == 0, 'Var with _veq eq_for and same vals (issue 139)');
 
 # #############################################################################
@@ -423,9 +417,9 @@ my @dupes = (
    ['replicate_do_table',''],
    ['replicate_do_db',''],
 );
-$myi->{defaults_file_sys_vars} = [];
-push @{$myi->{defaults_file_sys_vars}}, @dupes, @dupes;
-$ret = $myi->duplicate_sys_vars();
+$mi->{defaults_file_sys_vars} = [];
+push @{$mi->{defaults_file_sys_vars}}, @dupes, @dupes;
+$ret = $mi->duplicate_sys_vars();
 ok(scalar @$ret == 0, 'Exceptions to duplicate sys vars like replicate-do-db (issue 115)');
 
 $sb->wipe_clean($dbh);

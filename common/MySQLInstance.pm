@@ -258,7 +258,8 @@ sub _defaults_file_op {
    my ( $self, $ddf )   = @_;  # ddf = default defaults file (optional)
    my $defaults_file_op = '';
    my $tmp_file         = undef;
-   my $defaults_file    = defined $ddf ? $ddf : $self->{cmd_line_ops}->{defaults_file};
+   my $defaults_file    = defined $ddf ? $ddf
+                        : $self->{cmd_line_ops}->{defaults_file};
 
    if ( $defaults_file && -f $defaults_file ) {
       # Copy defaults file to /tmp/ because Debian/Ubuntu mysqld apparently
@@ -400,12 +401,13 @@ sub _load_online_sys_vars {
 # corresponds to --socket on the command line, then don't convert 'localhost'
 # to 127.0.0.1.
 sub get_DSN {
-   my ( $self, %opts ) = @_;
+   my ( $self, $o ) = @_;
+   die 'I need an OptionParser object' unless ref $o eq 'OptionParser';
    my $port   = $self->{cmd_line_ops}->{port} || '';
-   my $socket = $opts{S} || $self->{cmd_line_ops}->{'socket'} || '';
-   my $host   = $opts{S}      ? 'localhost'
-              : $port ne 3306 ? '127.0.0.1'
-              :                 'localhost';
+   my $socket = $o->get('socket') || $self->{cmd_line_ops}->{'socket'} || '';
+   my $host   = $o->get('socket') ? 'localhost'
+              : $port ne 3306     ? '127.0.0.1'
+              :                   'localhost';
    return {
       P => $port,
       S => $socket,
