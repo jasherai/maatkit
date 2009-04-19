@@ -48,14 +48,6 @@ sub report {
    my $o        = $args{o};
    my $proclist = $args{proclist};
 
-   if ( $schema->{counts}->{TOTAL}->{dbs} == 0 ) {
-      # This can happen of the user doesn't have privs to see any dbs,
-      # or in the rare case that there really aren't any dbs.
-      print "MySQL instance $n has no databases. "
-   }
-   else {
-   }
-   
 format MYSQL_INSTANCE_1 =
 
 ____________________________________________________________ MySQL Instance @>>
@@ -85,7 +77,18 @@ $mi->{conf_sys_vars}->{relay_log} || ''
 micro_t($mi->{online_sys_vars}->{long_query_time}), $mi->{conf_sys_vars}->{log_slow_queries} || 'OFF'
    Config file location: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mi->{cmd_line_ops}->{defaults_file}
+.
 
+   $FORMAT_NAME = 'MYSQL_INSTANCE_1';
+   write;
+
+   if ( $schema->{counts}->{TOTAL}->{dbs} == 0 ) {
+      # This can happen of the user doesn't have privs to see any dbs,
+      # or in the rare case that there really aren't any dbs.
+      print "This MySQL instance has no databases.\n"
+   }
+   else {
+format MYSQL_INSTANCE_2 =
    SCHEMA ________________________________________________________________
       #DATABASES   #TABLES   #ROWS     #INDEXES   SIZE DATA   SIZE INDEXES
       @<<<<<<      @<<<<<<   @<<<<<<   @<<<<<<    @<<<<<<     @<<<<<<
@@ -97,14 +100,15 @@ shorten($mi->{online_sys_vars}->{key_buffer_size})
 exists $mi->{online_sys_vars}->{innodb_buffer_pool_size} ? shorten($mi->{online_sys_vars}->{innodb_buffer_pool_size}) : ''
 
 .
-   # Print the above format
-   $FORMAT_NAME = 'MYSQL_INSTANCE_1';
-   write;
 
-   dbs_size_summary($schema, $o);
-   tables_size_summary($schema, $o);
-   engines_summary($schema, $o);
-   tre_summary($schema, $o);
+      $FORMAT_NAME = 'MYSQL_INSTANCE_2';
+      write;
+
+      $self->_print_dbs_size_summary($schema, $o);
+      $self->_print_tables_size_summary($schema, $o);
+      $self->_print_engines_summary($schema, $o);
+      $self->_print_stored_code_summary($schema, $o);
+   }
 
    print "\n   PROBLEMS ______________________________________________________________\n";
 
@@ -156,11 +160,13 @@ exists $mi->{online_sys_vars}->{innodb_buffer_pool_size} ? shorten($mi->{online_
       }
    }
 
+   $self->_print_aggregated_processlist($proclist);
+
    return;
 }
 
-sub dbs_size_summary {
-   my ( $schema, $o ) = @_;
+sub _print_dbs_size_summary {
+   my ( $self, $schema, $o ) = @_;
    my %dbs = %{ $schema->{counts}->{dbs} }; # copy we can chop
    my $top = $o->get('top');
    my @sorted;
@@ -186,7 +192,7 @@ $db, $size
       $n_remaining++;
       $r_size += $dbs{$db}->{data_size};
    }
-   if($n_remaining) {
+   if ($n_remaining) {
       $r_avg = shorten($r_size / $n_remaining);
       $r_size = shorten($r_size);
       $db   = "Remaining $n_remaining";
@@ -196,8 +202,8 @@ $db, $size
    return;
 }
 
-sub tables_size_summary {
-   my ( $schema, $o ) = @_;
+sub _print_tables_size_summary {
+   my ( $self, $schema, $o ) = @_;
    my %dbs_tbls;
    my $dbs = $schema->{dbs};
    my $top = $o->get('top');
@@ -234,7 +240,7 @@ $db_tbl, $size_data, $size_index, $n_rows, $engine
       $n_remaining++;
       $r_size += $dbs_tbls{$db_tbl};
    }
-   if($n_remaining) {
+   if ($n_remaining) {
       $r_avg  = shorten($r_size / $n_remaining);
       $r_size = shorten($r_size);
       print "         Remaining $n_remaining        $r_size ($r_avg average)\n";
@@ -242,8 +248,8 @@ $db_tbl, $size_data, $size_index, $n_rows, $engine
    return;
 }
 
-sub engines_summary {
-   my ( $schema, $o ) = @_;
+sub _print_engines_summary {
+   my ( $self, $schema, $o ) = @_;
    my $engines = $schema->{counts}->{engines};
    my ($engine, $n_tables, $n_indexes, $size_data, $size_indexes);
    print   "      Engines:\n"
@@ -263,20 +269,23 @@ $engine, $size_data, $size_indexes, $n_tables, $n_indexes
    return;
 }
 
-sub tre_summary {
-   my ( $schema, $o ) = @_;
+sub _print_stored_code_summary {
+   my ( $self, $schema, $o ) = @_;
    my ( $db, $type, $count );
+
    print   "      Triggers, Routines, Events:\n"
          . "         DATABASE           TYPE      COUNT\n";
 format TRE_LINE =
          @<<<<<<<<<<<<<<<<  @<<<<<<   @<<<<<<
 $db, $type, $count
 .
-   if ( exists $schema->{trigs_routines_events} ) {
-      if ( defined $schema->{trigs_routines_events} ) {
+
+   if ( ref $schema->{stored_code} ) {
+      my @stored_code_objs = @{$schema->{stored_code}};
+      if ( @stored_code_objs ) {
          $FORMAT_NAME = 'TRE_LINE';
-         foreach my $db_type_count ( @{ $schema->{trigs_routines_events} } ) {
-            ( $db, $type, $count ) = split ' ', $db_type_count;
+         foreach my $code_obj ( @stored_code_objs ) {
+            ( $db, $type, $count ) = split ' ', $code_obj;
             write;
          }
       }
@@ -285,13 +294,14 @@ $db, $type, $count
       }
    }
    else {
-      print "         Not supported (MySQL version < 5.0.0)\n";
+      print "         $schema->{stored_code}\n";
    }
+
    return;
 }
 
-sub report_aggregated_processlist {
-   my ( $ag_pl ) = @_;  # aggregated_processlist
+sub _print_aggregated_processlist {
+   my ( $self, $ag_pl ) = @_;
    my ( $value, $count, $total_time); # used by format
 
    print "\n   Aggregated PROCESSLIST ________________________________________________

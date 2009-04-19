@@ -14,7 +14,11 @@ require '../TableParser.pm';
 require '../MySQLDump.pm';
 require '../DSNParser.pm';
 require '../VersionParser.pm';
+require '../Quoter.pm';
+require '../Sandbox.pm';
 
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 
@@ -25,11 +29,11 @@ if ( !defined $msandbox_basedir || !-d $msandbox_basedir ) {
 }
 my $cmd = "$msandbox_basedir/bin/mysqld --defaults-file=/tmp/12345/my.sandbox.cnf --basedir=/usr --datadir=/tmp/12345/data --pid-file=/tmp/12345/data/mysql_sandbox12345.pid --skip-external-locking --port=12345 --socket=/tmp/12345/mysql_sandbox12345.sock --long-query-time=3";
 
-
 my $mi = new MySQLInstance($cmd);
 my $tp = new TableParser();
 my $du = new MySQLDump();
 my $vp = new VersionParser();
+my $q  = new Quoter();
 my $sd = new SchemaDiscover(du=>$du, q=>$q, tp=>$tp, vp=>$vp);
 
 $mi->load_sys_vars($dbh);
