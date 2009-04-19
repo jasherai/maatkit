@@ -312,15 +312,21 @@ format VALUE_LINE =
 $value, $count, $total_time
 .
 
-   foreach my $field ( keys %{ $ag_pl } ) {
-      printf "      %.8s\n", $field;
-      $FORMAT_NAME = 'VALUE_LINE';
-      foreach $value ( keys %{ $ag_pl->{$field} } ) {
-         $count       = $ag_pl->{$field}->{$value}->{count};
-         $total_time  = $ag_pl->{$field}->{$value}->{time};
-         write;
+   if ( ref $ag_pl ) {
+      foreach my $field ( keys %{ $ag_pl } ) {
+         printf "      %.8s\n", $field;
+         $FORMAT_NAME = 'VALUE_LINE';
+         foreach $value ( keys %{ $ag_pl->{$field} } ) {
+            $count       = $ag_pl->{$field}->{$value}->{count};
+            $total_time  = $ag_pl->{$field}->{$value}->{time};
+            write;
+         }
       }
    }
+   else {
+      print "   $ag_pl\n";
+   }
+
    return;
 }
 
