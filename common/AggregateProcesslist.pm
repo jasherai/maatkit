@@ -28,7 +28,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 sub new {
    my ( $class, %args ) = @_;
    my $self = {
-      undef_value => $args{undef_val} || 'NULL',
+      undef_val => $args{undef_val} || 'NULL',
    };
    return bless $self, $class;
 }
@@ -50,7 +50,7 @@ sub aggregate {
 
          # Format the field's value a little.
          my $val  = $proc->{ $field };
-            $val  = $self->{undef_va} if !defined $val;
+            $val  = $self->{undef_val} if !defined $val;
             $val  = lc $val if ( $field eq 'Command' || $field eq 'State' );
             $val  =~ s/:.*// if $field eq 'Host';
 
