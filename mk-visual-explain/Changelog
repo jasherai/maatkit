@@ -1,9 +1,9 @@
 Changelog for mk-visual-explain:
 
    * Changed the --askpass option to --ask-pass.
-   * Changed the --clusterpk option to --cluster-pk.
+   * Changed the --clusterpk option to --clustered-pk.
    * Changed the --setvars option to --set-vars.
-   * Removed the -C short option.  Use --cluster-pk instead.
+   * Removed the -C short option.  Use --clustered-pk instead.
    * Removed the -c short option.  Use --connect instead.
    * Removed the -f short option.  Use --format instead.
    * Added config file handling and --config (issue 231).

@@ -1976,7 +1976,7 @@ DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
 value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
 connecting to MySQL.
 
-=item --cluster-pk
+=item --clustered-pk
 
 Assume that PRIMARY KEY index accesses don't need to do a bookmark lookup to
 retrieve rows.  This is the case for InnoDB.
