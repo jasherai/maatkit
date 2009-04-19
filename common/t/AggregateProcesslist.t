@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 5;
 
-require '../AggregateProcessList.pm';
+require '../AggregateProcesslist.pm';
 require '../RecordsetFromText.pm';
 require '../DSNParser.pm';
 require '../MySQLDump.pm';
@@ -17,9 +17,9 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
 
 my $r   = new RecordsetFromText();
-my $apl = new AggregateProcessList();
+my $apl = new AggregateProcesslist();
 
-isa_ok($apl, 'AggregateProcessList');
+isa_ok($apl, 'AggregateProcesslist');
 
 sub load_file {
    my ($file) = @_;

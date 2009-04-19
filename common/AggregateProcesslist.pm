@@ -15,9 +15,9 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# AggregateProcessList package $Revision$
+# AggregateProcesslist package $Revision$
 # ###########################################################################
-package AggregateProcessList;
+package AggregateProcesslist;
 
 use strict;
 use warnings FATAL => 'all';
@@ -35,7 +35,7 @@ sub new {
 
 # Given an arrayref of processes ($proclist), returns an hashref of
 # time and counts aggregates for User, Host, db, Command and State.
-# See t/AggregateProcessList.t for examples.
+# See t/AggregateProcesslist.t for examples.
 # The $proclist arg is usually the return val of:
 #    $dbh->selectall_arrayref('SHOW PROCESSLIST', { Slice => {} } );
 sub aggregate {
@@ -78,5 +78,5 @@ sub _d {
 1;
 
 # ###########################################################################
-# End AggregateProcessList package
+# End AggregateProcesslist package
 # ###########################################################################
