@@ -68,7 +68,7 @@ sub parse {
    my $engine = $self->get_engine($ddl);
 
    my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
-   my @cols   = map { $_ =~ m/`([^`]+)`/g } @defs;
+   my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
    MKDEBUG && _d('Columns:', join(', ', @cols));
 
    # Save the column definitions *exactly*

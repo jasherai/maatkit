@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 27;
 
 use DBI;
 require "../TableParser.pm";
@@ -610,6 +610,28 @@ is(
    $tp->remove_auto_increment($schema1),
    $schema2,
    'AUTO_INCREMENT is gone',
+);
+
+# #############################################################################
+# Issue 330: mk-parallel-dump halts with error when comments contain pairing `
+# #############################################################################
+$tbl = $tp->parse( load_file('samples/issue_330_backtick_pair_in_col_comments.sql') );
+is_deeply(
+   $tbl,
+   {  cols         => [qw(a)],
+      col_posn     => { a => 0 },
+      is_col       => { a => 1 },
+      is_autoinc   => { a => 0 },
+      null_cols    => [qw(a)],
+      is_nullable  => { a => 1 },
+      keys         => {},
+      defs         => { a => "  `a` int(11) DEFAULT NULL COMMENT 'issue_330 `alex`'" },
+      numeric_cols => [qw(a)],
+      is_numeric   => { a => 1 },
+      engine       => 'MyISAM',
+      type_for     => { a => 'int' },
+   },
+   'issue with pairing backticks in column comments (issue 330)'
 );
 
 exit;
