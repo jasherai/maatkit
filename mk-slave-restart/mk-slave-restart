@@ -2499,25 +2499,21 @@ Suppresses normal output (disables L<"--verbose">).
 
 type: int; default: 0
 
-Number of levels to recurse.
+Watch slaves of the specified server, up to the specified number of servers deep
+in the hierarchy.  The default depth of 0 means "just watch the slave
+specified."
 
-This option specifies that instead of just watching the server specified on
-the command-line, C<mk-slave-restart> should try to find its slaves and watch
-them too, up to the specified depth.  The default depth of 0 means "just watch
-the slave specified."
-
-This works if you have configured your slaves to show up in C<SHOW SLAVE HOSTS>.
-The minimal configuration for this is the C<report_host> parameter, but there
-are other "report" parameters as well for the port, username, and password.
-
-If C<SHOW SLAVE HOSTS> doesn't return anything, C<mk-slave-restart> examines
-C<SHOW PROCESSLIST> and tries to determine which connections are from
-slaves, then connect to them.  This is less likely to work than C<SHOW SLAVE
-HOSTS>, but it works sometimes when that doesn't.
+mk-slave-restart examines C<SHOW PROCESSLIST> and tries to determine which
+connections are from slaves, then connect to them.  
 
 Recursion works by finding all slaves when the program starts, then watching
 them.  If there is more than one slave, C<mk-slave-restart> uses C<fork()> to
 monitor them.
+
+This also works if you have configured your slaves to show up in C<SHOW SLAVE
+HOSTS>.  The minimal configuration for this is the C<report_host> parameter, but
+there are other "report" parameters as well for the port, username, and
+password.
 
 =item --sentinel
 
