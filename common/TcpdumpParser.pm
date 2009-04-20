@@ -143,7 +143,7 @@ sub parse_event {
    local $INPUT_RECORD_SEPARATOR = "\n200";
 
    my $pos_in_log = tell($fh);
-   EVENT:
+   PACKET:
    while ( defined(my $pack = <$fh>) ) {
       # Remove the separator from the packet, and restore it to the front if
       # necessary.
