@@ -10,7 +10,7 @@ require '../SlowLogParser.pm';
 
 # Returns true (1) if there's no difference between the
 # output and the expected output.
-sub no_diff {
+sub test_diff {
    my ( $output, $expected_output ) = @_;
    my $retval = system("diff $output $expected_output");
    $retval = $retval >> 8;
@@ -131,11 +131,11 @@ select STDOUT;
 
 is(`ls -1 $tmpdir/1/ | wc -l`, "2\n", 'maxsessionfiles created only 2 files');
 ok(
-   no_diff("$tmpdir/1/mysql_log_session_0001", 'samples/maxsessionfiles_01'),
+   test_diff("$tmpdir/1/mysql_log_session_0001", 'samples/maxsessionfiles_01'),
    'maxsessionfiles file 1 of 2'
 );
 ok(
-   no_diff("$tmpdir/1/mysql_log_session_0002", 'samples/maxsessionfiles_02'),
+   test_diff("$tmpdir/1/mysql_log_session_0002", 'samples/maxsessionfiles_02'),
    'maxsessionfiles file 2 of 2'
 );
 like(
