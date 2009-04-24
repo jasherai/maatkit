@@ -1,0 +1,6 @@
+Changelog for mk-log-player:
+
+   * Queries per second was not calculated correctly (issue 356).
+   * Added --[no]warn-errors option.
+   * Wrapped all db calls in eval to catch and warn of errors.
+   * Changed total time from wall to sum of individual queries.
