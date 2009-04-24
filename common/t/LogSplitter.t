@@ -2,12 +2,11 @@
 
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 26;
 use English qw(-no_match_vars);
+use Test::More tests => 28;
 
 require '../LogSplitter.pm';
-require '../LogParser.pm';
+require '../SlowLogParser.pm';
 
 # Returns true (1) if there's no difference between the
 # output and the expected output.
@@ -21,12 +20,12 @@ sub no_diff {
 my $tmpdir = '/tmp/logettes';
 diag(`rm -rf $tmpdir ; mkdir $tmpdir`);
 
-my $lp = new LogParser();
+my $lp = new SlowLogParser();
 my $ls = new LogSplitter(
    attribute  => 'foo',
    saveto_dir => "$tmpdir/",
-   LogParser  => $lp,
-   verbosity  => 0,
+   lp         => $lp,
+   verbose    => 0,
 );
 
 isa_ok($ls, 'LogSplitter');
@@ -42,8 +41,8 @@ ok($ls->{n_sessions} == 0, 'Parsed zero sessions for bad attribute');
 $ls = new LogSplitter(
    attribute  => 'Thread_id',
    saveto_dir => "$tmpdir/",
-   LogParser  => $lp,
-   verbosity  => 0,
+   lp         => $lp,
+   verbose    => 0,
 );
 $ls->split_logs(['samples/slow006.txt' ]);
 ok(-f "$tmpdir/1/mysql_log_session_0001", 'Basic log split 0001 exists');
@@ -100,14 +99,14 @@ diag(`rm -rf $tmpdir/*`);
 $ls = new LogSplitter(
    attribute   => 'Thread_id',
    saveto_dir  => "$tmpdir/",
-   LogParser   => $lp,
-   verbosity         => undef,
+   lp          => $lp,
+   verbose           => undef,
    maxsessions       => undef,
    maxfiles          => undef,
    maxdirs           => undef,
    session_file_name => undef,
 );
-cmp_ok($ls->{verbosity}, '==', '0', 'Undef verbosity gets default');
+cmp_ok($ls->{verbose}, '==', '0', 'Undef verbose gets default');
 cmp_ok($ls->{maxsessions}, '==', '100000', 'Undef maxsessions gets default');
 cmp_ok($ls->{maxfiles}, '==', '100', 'Undef maxfiles gets default');
 cmp_ok($ls->{maxdirs}, '==', '100', 'Undef maxdirs gets default');
@@ -117,11 +116,19 @@ is($ls->{session_file_name}, 'mysql_log_session_', 'Undef session_file_name gets
 $ls = new LogSplitter(
    attribute       => 'Thread_id',
    saveto_dir      => "$tmpdir/",
-   LogParser       => $lp,
-   verbosity       => 0,
+   lp              => $lp,
+   verbose         => 1,
    maxsessionfiles => 2,
 );
+
+open OUTPUT, '>', \$output;
+select OUTPUT;
+
 $ls->split_logs(['samples/slow006.txt' ]);
+
+close OUTPUT;
+select STDOUT;
+
 is(`ls -1 $tmpdir/1/ | wc -l`, "2\n", 'maxsessionfiles created only 2 files');
 ok(
    no_diff("$tmpdir/1/mysql_log_session_0001", 'samples/maxsessionfiles_01'),
@@ -130,6 +137,16 @@ ok(
 ok(
    no_diff("$tmpdir/1/mysql_log_session_0002", 'samples/maxsessionfiles_02'),
    'maxsessionfiles file 2 of 2'
+);
+like(
+   $output,
+   qr/Total events: 6/,
+   'Counts total events'
+);
+like(
+   $output,
+   qr/Saved events: 6/,
+   'Counts saved events'
 );
 
 diag(`rm -rf $tmpdir`);

@@ -2,14 +2,14 @@
 
 use strict;
 require '../LogSplitter.pm';
-require '../LogParser.pm';
+require '../SlowLogParser.pm';
 
-my $lp = new LogParser();
+my $lp = new SlowLogParser();
 my $ls = new LogSplitter(
    attribute  => 'Thread_id',
    saveto_dir => "/tmp/logettes/",
-   LogParser  => $lp,
-   verbosity  => 1,
+   lp         => $lp,
+   verbose    => 1,
 );
 
 my @logs;

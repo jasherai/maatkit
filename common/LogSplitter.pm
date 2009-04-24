@@ -30,7 +30,7 @@ use constant CLOSE_N_LRU_FILES => 100;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(attribute saveto_dir LogParser) ) {
+   foreach my $arg ( qw(attribute saveto_dir lp) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -46,6 +46,8 @@ sub new {
       session_fhs     => [], # filehandles for each session
       n_open_fhs      => 0,  # number of open session filehandles
       sessions        => {}, # sessions data store
+      n_events_total  => 0,  # number of total queries in log
+      n_events_saved  => 0,  # number of queries split and saved from log
    };
    # These are "required options."
    # They cannot be undef, so we must check that here.
@@ -53,7 +55,7 @@ sub new {
    $self->{maxdirs}           ||= 100;
    $self->{maxsessions}       ||= 100000;
    $self->{maxsessionfiles}   ||= 0;
-   $self->{verbosity}         ||= 0;
+   $self->{verbose}           ||= 0;
    $self->{session_file_name} ||= 'mysql_log_session_';
 
    return bless $self, $class;
@@ -64,7 +66,9 @@ sub split_logs {
    my $oktorun = 1; # true as long as we haven't created too many
                     # session files or too many dirs and files
 
-   @{$self}{qw(n_dirs n_files n_sessions n_session_files)} = qw(0 -1 0 0);
+   # TODO: not pretty
+   @{$self}{qw(n_dirs n_files n_sessions n_session_files n_events_total n_events_saved)} = qw(0 -1 0 0 0 0);
+
    $self->{sessions} = {};
 
    if ( !defined $logs || scalar @$logs == 0 ) {
@@ -74,12 +78,13 @@ sub split_logs {
 
    # This sub is called by LogParser::parse_event (below).
    # It saves each event to its proper session file.
-   my $callback;
+   my @callbacks;
    if ( $self->{maxsessionfiles} ) {
-      $callback = sub {
+      push @callbacks, sub {
          my ( $event ) = @_;
-         my ($session, $sesion_id) = $self->_get_session_ds($event);
-         return 1 unless defined $session;
+         $self->{n_events_total}++;
+         my ( $session, $sesion_id ) = $self->_get_session_ds($event);
+         return unless defined $session;
          $self->{n_sessions}++ if !$session->{already_seen}++;
          my $db = $event->{db} || $event->{Schema};
          if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
@@ -87,14 +92,16 @@ sub split_logs {
             $session->{db} = $db;
          }
          push @{$session->{queries}}, $event->{arg};
-         return 1;
+         $self->{n_events_saved}++;
+         return;
       };
    }
    else {
-      $callback = sub {
+      push @callbacks, sub {
          my ( $event ) = @_; 
+         $self->{n_events_total}++;
          my ($session, $session_id) = $self->_get_session_ds($event);
-         return 1 unless defined $session;
+         return unless defined $session;
 
          if ( !defined $session->{fh} ) {
             $self->{n_sessions}++;
@@ -105,7 +112,7 @@ sub split_logs {
             if ( !$session_file ) {
                $oktorun = 0;
                MKDEBUG && _d('No longer oktorun because no _next_session_file');
-               return 1;
+               return;
             }
 
             # Close Last Recently Used session fhs if opening if this new
@@ -162,8 +169,9 @@ sub split_logs {
          }
 
          print $session_fh "$event->{arg}\n\n";
+         $self->{n_events_saved}++;
 
-         return 1;
+         return;
       };
    }
 
@@ -183,13 +191,13 @@ sub split_logs {
          open $fh, "<", $log or warn "Cannot open $log: $OS_ERROR\n";
       }
       if ( $fh ) {
-         1 while $oktorun && $self->{LogParser}->parse_slowlog_event(
-            $fh, undef, $callback);
+         1 while ($oktorun && $self->{lp}->parse_event($fh, undef, @callbacks));
          close $fh;
          last LOG if !$oktorun;
       }
    }
 
+   my $sessions_per_file;
    if ( $self->{maxsessionfiles} ) {   
       # Open all the needed session files.
       for my $i ( 1..$self->{maxsessionfiles} ) {
@@ -203,8 +211,7 @@ sub split_logs {
             { fh => $fh, session_file => $session_file };
       }
 
-      my $sessions_per_file = int( $self->{n_sessions}
-                                   / $self->{maxsessionfiles} );
+      $sessions_per_file = int($self->{n_sessions} / $self->{maxsessionfiles});
       MKDEBUG && _d($self->{n_sessions}, 'session,',
          $sessions_per_file, 'per file');
 
@@ -233,7 +240,7 @@ sub split_logs {
    $self->{n_open_fhs}  = 0;
 
    # Report what session files were created.
-   if ( $self->{verbosity} >= 1 ) {
+   if ( $self->{verbose} ) {
       print "Parsed $self->{n_sessions} sessions:\n";
       my $fmt = "   %-16s %-60s\n";
       printf($fmt, $self->{attribute}, 'Saved to log split file');
@@ -241,6 +248,11 @@ sub split_logs {
          my $session = $self->{sessions}->{ $session_id };
          printf($fmt, $session_id, $session->{session_file}); 
       }
+      if ( $sessions_per_file ) {
+         print "Sessions per file: $sessions_per_file\n";
+      }
+      print "Total events: $self->{n_events_total}\n"
+         . "Saved events: $self->{n_events_saved}\n";
    }
 
    return;
