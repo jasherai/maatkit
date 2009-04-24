@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 13;
 use Data::Dumper;
 
 require '../../common/DSNParser.pm';
@@ -60,6 +60,18 @@ is_deeply(
 # Test --print
 $output = `../mk-log-player --play $tmpdir/1 --print`;
 like($output, qr/session 4 query 2/, "Prints sessions' queries without DSN");
+
+# #############################################################################
+# Issue 356: mk-log-player doesn't calculate queries per second correctly
+# #############################################################################
+$output = `../mk-log-player --play samples/one_big_session.txt --csv h=127.1,P=12345 > $tmpdir/res`;
+my $res = `head -n 2 $tmpdir/res | tail -n 1 | cut -d',' -f 2,6,7`;
+my ($total_time, $n_queries, $qps) = split(',', $res);
+is(
+   sprintf('%.6f', $qps),
+   sprintf('%.6f', $total_time / $n_queries),
+   'calculate queries per second correctly (issue 356)'
+);
 
 diag(`rm -rf $tmpdir`);
 $sb->wipe_clean($dbh);

@@ -2822,7 +2822,7 @@ sub play_session {
       if ( $query =~ /^USE /i ) {
          eval { $dbh->do($query); };
          if ( $EVAL_ERROR ) {
-            # TODO: save errors to be optionally reported later
+            warn_error($session_n, $query_n, $query, $dbh->errstr());
          }
          next QUERY;
       }
@@ -2834,13 +2834,22 @@ sub play_session {
 
       if ( $query =~ m/^SELECT /i ) {
          # Count number of rows returned by SELECTs.
-         my $results = $dbh->selectall_arrayref($query);
+         my $results;
+         eval { $results = $dbh->selectall_arrayref($query); };
+         if ( $EVAL_ERROR ) {
+            warn_error($session_n, $query_n, $query, $dbh->errstr());
+            next QUERY;
+         }
          $n_rows = scalar @$results;
       }
       else {
          # Non-SELECTs do not return anything, therefore we can
          # just do() them.
-         $dbh->do($query);
+         eval { $dbh->do($query); };
+         if ( $EVAL_ERROR ) {
+            warn_error($session_n, $query_n, $query, $dbh->errstr());
+            next QUERY;
+         }
       }
 
       my $event = {
@@ -2874,11 +2883,11 @@ sub report_session_stats {
 
    # Global Queries and Rows per second, and avg query time.
    my $qps = sprintf '%.6f',
-      $global->{query_time}->{cnt} / $global->{query_time}->{sum};
-   my $rps = sprintf '%.6f',
-      $global->{n_rows}->{sum} / $global->{query_time}->{sum};
+      $global->{query_time}->{sum} / ($global->{query_time}->{cnt} || 1);
    my $avg = sprintf '%.6f',
-      $global->{query_time}->{sum} / $global->{query_time}->{cnt};
+      $global->{query_time}->{sum} / ($global->{query_time}->{cnt} || 1);
+   my $rps = sprintf '%.6f',
+      $global->{query_time}->{sum} / ($global->{n_rows}->{sum} || 1);
 
    # Stats for all queries (global).
    my $s = $opts{csv} ? ',' : "\t";
@@ -2894,7 +2903,7 @@ sub report_session_stats {
       .  "\n";
 
    print "$session_n"
-      .  "$s$total_time"
+      .  "$s$global->{query_time}->{sum}"
       .  "$s$global->{query_time}->{min}"
       .  "$s$global->{query_time}->{max}"
       .  "$s$avg"
@@ -2958,6 +2967,14 @@ sub get_cxn {
    return $dp->get_dbh( $dp->get_cxn_params($dsn) );
 }
 
+sub warn_error {
+   my ( $session_n, $query_n, $query, $warning ) = @_;
+   return unless $opts{'warn-errors'};
+   warn "Query $query_n '$query' in session $session_n caused an error: "
+      . "$warning\n";
+   return;
+}
+ 
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -3165,6 +3182,12 @@ Increase verbosity; can specifiy multiple times.
 short form: -w; type: time; default: 5m
 
 Wait limit when server is down.
+
+=item --[no]warn-errors
+
+default: yes
+
+Warn about SQL errors such as invalid queries.
 
 =back
 
