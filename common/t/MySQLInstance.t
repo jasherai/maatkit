@@ -422,5 +422,11 @@ push @{$mi->{defaults_file_sys_vars}}, @dupes, @dupes;
 $ret = $mi->duplicate_sys_vars();
 ok(scalar @$ret == 0, 'Exceptions to duplicate sys vars like replicate-do-db (issue 115)');
 
+# #############################################################################
+# For issue 248, getting --host to work with mk-audit will require
+# significant changes.
+# #############################################################################
+# TODO
+
 $sb->wipe_clean($dbh);
 exit;
