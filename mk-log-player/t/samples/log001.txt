@@ -18,7 +18,7 @@ SELECT a FROM tbl1;
 # QC_Hit: No  Full_scan: No  Full_join: No  Tmp_table: No  Disk_tmp_table: No
 # Filesort: No  Disk_filesort: No  Merge_passes: 0
 # No InnoDB statistics available for this query
-USE mk_log_player_2;
+use mk_log_player_2;
 SELECT a FROM tbl2;
 # Time: 071218 11:49:05 # User@Host: [SQL_SLAVE] @  []
 # Thread_id: 1  Schema: mk_log_player_2
@@ -40,7 +40,7 @@ DELETE FROM mk_log_player_2.tbl2 WHERE a IS NULL;
 # QC_Hit: No  Full_scan: No  Full_join: No  Tmp_table: No  Disk_tmp_table: No
 # Filesort: No  Disk_filesort: No  Merge_passes: 0
 # No InnoDB statistics available for this query
-USE mk_log_player_1;
+use mk_log_player_1;
 SELECT a FROM tbl1 WHERE a = 3;
 # Time: 071218 11:48:27 # User@Host: [SQL_SLAVE] @  []
 # Thread_id: 1  Schema: mk_log_player_1

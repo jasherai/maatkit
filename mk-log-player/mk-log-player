@@ -25,12 +25,12 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 2825
+# OptionParser package 3436
 # ###########################################################################
+package OptionParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package OptionParser;
 
 use Getopt::Long;
 use List::Util qw(max);
@@ -41,337 +41,577 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
 sub new {
-   my ( $class, @opts ) = @_;
-   my %key_seen;
-   my %long_seen;
-   my %key_for;
-   my %defaults;
-   my @mutex;
-   my @atleast1;
-   my %long_for;
-   my %disables;
-   my %copyfrom;
-   my @allowed_with;
-   unshift @opts,
-      { s => 'help',    d => 'Show this help message' },
-      { s => 'version', d => 'Output version information and exit' };
-   foreach my $opt ( @opts ) {
-      if ( ref $opt ) {
-         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-         $opt->{k} = $short || $long;
-         $key_for{$long} = $opt->{k};
-         $long_for{$opt->{k}} = $long;
-         $long_for{$long} = $long;
-         $opt->{l} = $long;
-         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
-         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
-         $opt->{t} = $short;
-         $opt->{n} = $opt->{s} =~ m/!/;
-         $opt->{g} ||= 'o';
-         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            MKDEBUG && _d("Option $opt->{k} type: $y");
-            $opt->{y} = $y;
-            $opt->{s} =~ s/=./=s/;
-         }
-         if ( $opt->{d} =~ m/required/ ) {
-            $opt->{r} = 1;
-            MKDEBUG && _d("Option $opt->{k} is required");
-         }
-         if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
-            $defaults{$opt->{k}} = defined $def ? $def : 1;
-            MKDEBUG && _d("Option $opt->{k} has a default");
-         }
-         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
-            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            MKDEBUG && _d("Option $opt->{k} $dis");
-         }
-      }
-      else { # It's an instruction.
-
-         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
-            my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
-                  $long_for{$_};
-               } $class->get_participants($opt);
-            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
-               push @mutex, \@participants;
-               MKDEBUG && _d(@participants, ' are mutually exclusive');
-            }
-            if ( $opt =~ m/at least one|one and only one/ ) {
-               push @atleast1, \@participants;
-               MKDEBUG && _d(@participants, ' require at least one');
-            }
-         }
-         elsif ( $opt =~ m/default to/ ) {
-            my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
-                  $key_for{$_};
-               } $class->get_participants($opt);
-            $copyfrom{$participants[0]} = $participants[1];
-            MKDEBUG && _d(@participants, ' copy from each other');
-         }
-         elsif ( $opt  =~ m/allowed with/ ) {
-            my @participants = map {
-                  die "No such option '$_' while processing $opt"
-                     unless $long_for{$_};
-                  $key_for{$_};
-               } $class->get_participants($opt);
-            push @allowed_with, \@participants;
-         }
-
-      }
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(description) ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
-
-   foreach my $dis ( keys %disables ) {
-      $disables{$dis} = [
-            map {
-               if ( !defined $long_for{$_} ) {
-                  die "No such option '$_' while processing $dis";
-               }
-               $long_for{$_};
-            } @{$disables{$dis}}
-      ];
-   }
-
+   my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   $program_name ||= $PROGRAM_NAME;
    my $self = {
-      specs        => [ grep { ref $_ } @opts ],
-      notes        => [],
-      instr        => [ grep { !ref $_ } @opts ],
-      mutex        => \@mutex,
-      defaults     => \%defaults,
-      long_for     => \%long_for,
-      atleast1     => \@atleast1,
-      disables     => \%disables,
-      key_for      => \%key_for,
-      copyfrom     => \%copyfrom,
-      strict       => 1,
-      groups       => [ { k => 'o', d => 'Options' } ],
-      allowed_with => \@allowed_with,
+      description  => $args{description},
+      prompt       => $args{prompt} || '<options>',
+      strict       => (exists $args{strict} ? $args{strict} : 1),
+      dp           => $args{dp}     || undef,
+      program_name => $program_name,
+      opts         => {},
+      got_opts     => 0,
+      short_opts   => {},
+      defaults     => {},
+      groups       => [ { name => 'default', desc => 'Options' } ],
+      errors       => [],
+      rules        => [],  # desc of rules for --help
+      mutex        => [],  # rule: opts are mutually exclusive
+      atleast1     => [],  # rule: at least one opt is required
+      disables     => {},  # rule: opt disables other opts 
+      defaults_to  => {},  # rule: opt defaults to value of other opt
+      default_files=> [
+         "/etc/maatkit/maatkit.conf",
+         "/etc/maatkit/$program_name.conf",
+         "$ENV{HOME}/.maatkit.conf",
+         "$ENV{HOME}/.$program_name.conf",
+      ],
    };
-
    return bless $self, $class;
 }
 
-sub get_participants {
-   my ( $self, $str ) = @_;
-   my @participants;
-   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
-      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
-         push @participants, $long;
-      }
-      else {
-         foreach my $short ( $thing =~ m/([^-])/g ) {
-            push @participants, $short;
+sub get_specs {
+   my ( $self, $file ) = @_;
+   my @specs = $self->_pod_to_specs($file);
+   $self->_parse_specs(@specs);
+   return;
+}
+
+sub get_defaults_files {
+   my ( $self ) = @_;
+   return @{$self->{default_files}};
+}
+
+sub _pod_to_specs {
+   my ( $self, $file ) = @_;
+   $file ||= __FILE__;
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+
+   my %types = (
+      string => 's', # standard Getopt type
+      'int'  => 'i', # standard Getopt type
+      float  => 'f', # standard Getopt type
+      Hash   => 'H', # hash, formed from a comma-separated list
+      hash   => 'h', # hash as above, but only if a value is given
+      Array  => 'A', # array, similar to Hash
+      array  => 'a', # array, similar to hash
+      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dp}
+      size   => 'z', # size with kMG suffix (powers of 2^10)
+      'time' => 'm', # time, with an optional suffix of s/h/m/d
+   );
+   my @specs = ();
+   my @rules = ();
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $para =~ s/$POD_link_re/$1/go;
+      MKDEBUG && _d('Option rule:', $para);
+      push @rules, $para;
+   }
+
+   die 'POD has no OPTIONS section' unless $para;
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         chomp $para;
+         MKDEBUG && _d($para);
+         my %attribs;
+
+         $para = <$fh>; # read next paragraph, possibly attributes
+
+         if ( $para =~ m/: / ) { # attributes
+            $para =~ s/\s+\Z//g;
+            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            if ( $attribs{'short form'} ) {
+               $attribs{'short form'} =~ s/-//;
+            }
+            $para = <$fh>; # read next paragraph, probably short help desc
          }
+         else {
+            MKDEBUG && _d('Option has no attributes');
+         }
+
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/$POD_link_re/$1/go;
+
+         $para =~ s/\.(?:\n.*| [A-Z].*|\Z)//s;
+         MKDEBUG && _d('Short help:', $para);
+
+         die "No description after option spec $option" if $para =~ m/^=item/;
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $attribs{'negatable'} = 1;
+         }
+
+         push @specs, {
+            spec => $option
+               . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
+               . ($attribs{'negatable'}  ? '!'                          : '' )
+               . ($attribs{'cumulative'} ? '+'                          : '' )
+               . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
+            desc => $para
+               . ($attribs{default} ? " (default $attribs{default})" : ''),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+
+
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   die 'No valid specs in POD OPTIONS' unless @specs;
+
+   close $fh;
+   return @specs, @rules;
+}
+
+sub _parse_specs {
+   my ( $self, @specs ) = @_;
+   my %disables; # special rule that requires deferred checking
+
+   foreach my $opt ( @specs ) {
+      if ( ref $opt ) { # It's an option spec, not a rule.
+         MKDEBUG && _d('Parsing opt spec:',
+            map { ($_, '=>', $opt->{$_}) } keys %$opt);
+
+         my ( $long, $short ) = $opt->{spec} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         if ( !$long ) {
+            die "Cannot parse long option from spec $opt->{spec}";
+         }
+         $opt->{long} = $long;
+
+         die "Duplicate long option --$long" if exists $self->{opts}->{$long};
+         $self->{opts}->{$long} = $opt;
+
+         if ( length $long == 1 ) {
+            MKDEBUG && _d('Long opt', $long, 'looks like short opt');
+            $self->{short_opts}->{$long} = $long;
+         }
+
+         if ( $short ) {
+            die "Duplicate short option -$short"
+               if exists $self->{short_opts}->{$short};
+            $self->{short_opts}->{$short} = $long;
+            $opt->{short} = $short;
+         }
+         else {
+            $opt->{short} = undef;
+         }
+
+         $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
+         $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
+         $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
+
+         $opt->{group} = 'default'; # TODO: groups
+         $opt->{value} = undef;
+         $opt->{got}   = 0;
+
+         my ( $type ) = $opt->{spec} =~ m/=(.)/;
+         $opt->{type} = $type;
+         MKDEBUG && _d($long, 'type:', $type);
+
+         if ( $type && $type eq 'd' && !$self->{dp} ) {
+            die "$opt->{long} is type DSN (d) but no dp argument "
+               . "was given when this OptionParser object was created";
+         }
+
+         $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
+
+         if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            $self->{defaults}->{$long} = defined $def ? $def : 1;
+            MKDEBUG && _d($long, 'default:', $def);
+         }
+
+         if ( $long eq 'config' ) {
+            $self->{defaults}->{$long} = join(',', $self->get_defaults_files());
+         }
+
+         if ( (my ($dis) = $opt->{desc} =~ m/(disables .*)/) ) {
+            $disables{$long} = $dis;
+            MKDEBUG && _d('Deferring check of disables rule for', $opt, $dis);
+         }
+
+         $self->{opts}->{$long} = $opt;
+      }
+      else { # It's an option rule, not a spec.
+         MKDEBUG && _d('Parsing rule:', $opt); 
+         push @{$self->{rules}}, $opt;
+         my @participants = $self->_get_participants($opt);
+         my $rule_ok = 0;
+
+         if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{mutex}}, \@participants;
+            MKDEBUG && _d(@participants, 'are mutually exclusive');
+         }
+         if ( $opt =~ m/at least one|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{atleast1}}, \@participants;
+            MKDEBUG && _d(@participants, 'require at least one');
+         }
+         if ( $opt =~ m/default to/ ) {
+            $rule_ok = 1;
+            $self->{defaults_to}->{$participants[0]} = $participants[1];
+            MKDEBUG && _d($participants[0], 'defaults to', $participants[1]);
+         }
+         die "Unrecognized option rule: $opt" unless $rule_ok;
       }
    }
-   MKDEBUG && _d("Participants for $str: ", @participants);
+
+   foreach my $long ( keys %disables ) {
+      my @participants = $self->_get_participants($disables{$long});
+      $self->{disables}->{$long} = \@participants;
+      MKDEBUG && _d('Option', $long, 'disables', @participants);
+   }
+
+   return; 
+}
+
+sub _get_participants {
+   my ( $self, $str ) = @_;
+   my @participants;
+   foreach my $long ( $str =~ m/--(?:\[no\])?([\w-]+)/g ) {
+      die "Option --$long does not exist while processing rule $str"
+         unless exists $self->{opts}->{$long};
+      push @participants, $long;
+   }
+   MKDEBUG && _d('Participants for', $str, ':', @participants);
    return @participants;
 }
 
-sub parse {
+sub opts {
+   my ( $self ) = @_;
+   my %opts = %{$self->{opts}};
+   return %opts;
+}
+
+sub opt_values {
+   my ( $self ) = @_;
+   my %opts = map {
+      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
+              : $_;
+      $opt => $self->{opts}->{$_}->{value}
+   } keys %{$self->{opts}};
+   return %opts;
+}
+
+sub short_opts {
+   my ( $self ) = @_;
+   my %short_opts = %{$self->{short_opts}};
+   return %short_opts;
+}
+
+sub set_defaults {
    my ( $self, %defaults ) = @_;
-   my @specs = @{$self->{specs}};
-   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-
-   my %opt_seen;
-   my %vals = %{$self->{defaults}};
-   @vals{keys %defaults} = values %defaults;
-   foreach my $spec ( @specs ) {
-      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
-      $opt_seen{$spec->{k}} = 1;
+   $self->{defaults} = {};
+   foreach my $long ( keys %defaults ) {
+      die "Cannot set default for nonexistent option $long"
+         unless exists $self->{opts}->{$long};
+      $self->{defaults}->{$long} = $defaults{$long};
+      MKDEBUG && _d('Default val for', $long, ':', $defaults{$long});
    }
+   return;
+}
 
-   foreach my $key ( keys %defaults ) {
-      die "Cannot set default for non-existent option '$key'\n"
-         unless $opt_seen{$key};
+sub get_defaults {
+   my ( $self ) = @_;
+   return $self->{defaults};
+}
+
+sub _set_option {
+   my ( $self, $opt, $val ) = @_;
+   my $long = exists $self->{opts}->{$opt}       ? $opt
+            : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
+            : die "Getopt::Long gave a nonexistent option: $opt";
+
+   $opt = $self->{opts}->{$long};
+   if ( $opt->{is_cumulative} ) {
+      $opt->{value}++;
+   }
+   else {
+      $opt->{value} = $val;
+   }
+   $opt->{got} = 1;
+   MKDEBUG && _d('Got option', $long, '=', $val);
+}
+
+sub get_opts {
+   my ( $self ) = @_; 
+
+   foreach my $long ( keys %{$self->{opts}} ) {
+      $self->{opts}->{$long}->{got} = 0;
+      $self->{opts}->{$long}->{value}
+         = exists $self->{defaults}->{$long}       ? $self->{defaults}->{$long}
+         : $self->{opts}->{$long}->{is_cumulative} ? 0
+         : undef;
+   }
+   $self->{got_opts} = 0;
+
+   $self->{errors} = [];
+
+   if ( @ARGV && $ARGV[0] eq "--config" ) {
+      shift @ARGV;
+      $self->_set_option('config', shift @ARGV);
+   }
+   if ( $self->has('config') ) {
+      my @extra_args;
+      foreach my $filename ( split(',', $self->get('config')) ) {
+         eval {
+            push @ARGV, $self->_read_config_file($filename);
+         };
+         if ( $EVAL_ERROR ) {
+            if ( $self->got('config') ) {
+               die $EVAL_ERROR;
+            }
+            elsif ( MKDEBUG ) {
+               _d($EVAL_ERROR);
+            }
+         }
+      }
+      unshift @ARGV, @extra_args;
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
-      or $self->error('Error parsing options');
+   GetOptions(
+      map    { $_->{spec} => sub { $self->_set_option(@_); } }
+      grep   { $_->{long} ne 'config' } # --config is handled specially above.
+      values %{$self->{opts}}
+   ) or $self->_save_error('Error parsing options');
 
-   if ( $vals{version} ) {
-      my $prog = $self->prog;
+   if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+         $self->{program_name}, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+            or die "Cannot print: $OS_ERROR";
+      exit 0;
    }
 
    if ( @ARGV && $self->{strict} ) {
-      $self->error("Unrecognized command-line options @ARGV");
-   }
-
-   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
-      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
-      MKDEBUG && _d("Unsetting options: ", @disses);
-      @vals{@disses} = map { undef } @disses;
-   }
-
-   foreach my $spec ( grep { $_->{r} } @specs ) {
-      if ( !defined $vals{$spec->{k}} ) {
-         $self->error("Required option --$spec->{l} must be specified");
-      }
+      $self->_save_error("Unrecognized command-line options @ARGV");
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
-      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
+      my @set = grep { $self->{opts}->{$_}->{got} } @$mutex;
       if ( @set > 1 ) {
-         my $note = join(', ',
-            map { "--$self->{long_for}->{$_}" }
-                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
-         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
-               . " are mutually exclusive.";
-         $self->error($note);
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$mutex}[ 0 .. scalar(@$mutex) - 2] )
+                 . ' and --'.$self->{opts}->{$mutex->[-1]}->{long}
+                 . ' are mutually exclusive.';
+         $self->_save_error($err);
       }
    }
 
    foreach my $required ( @{$self->{atleast1}} ) {
-      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
-      if ( !@set ) {
-         my $note = join(', ',
-            map { "--$self->{long_for}->{$_}" }
-                @{$required}[ 0 .. scalar(@$required) - 2] );
-         $note .= " or --$self->{long_for}->{$required->[-1]}";
-         $self->error("Specify at least one of $note");
+      my @set = grep { $self->{opts}->{$_}->{got} } @$required;
+      if ( @set == 0 ) {
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$required}[ 0 .. scalar(@$required) - 2] )
+                 .' or --'.$self->{opts}->{$required->[-1]}->{long};
+         $self->_save_error("Specify at least one of $err");
       }
    }
 
-   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
-      my $val = $vals{$spec->{k}};
-      if ( $spec->{y} eq 'm' ) {
-         my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
-         if ( !$suffix ) {
-            my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
-            $suffix = $s || 's';
-            MKDEBUG && _d("No suffix given; using $suffix for $spec->{k} "
-               . "(value: '$val')");
-         }
-         if ( $suffix =~ m/[smhd]/ ) {
-            $val = $suffix eq 's' ? $num            # Seconds
-                 : $suffix eq 'm' ? $num * 60       # Minutes
-                 : $suffix eq 'h' ? $num * 3600     # Hours
-                 :                  $num * 86400;   # Days
-            $vals{$spec->{k}} = $val;
-            MKDEBUG && _d("Setting option $spec->{k} to $val");
-         }
-         else {
-            $self->error("Invalid --$spec->{l} argument");
+   foreach my $long ( keys %{$self->{opts}} ) {
+      my $opt = $self->{opts}->{$long};
+      if ( $opt->{got} ) {
+         if ( exists $self->{disables}->{$long} ) {
+            my @disable_opts = @{$self->{disables}->{$long}};
+            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
+            MKDEBUG && _d('Unset options', @disable_opts,
+               'because', $long,'disables them');
          }
       }
-      elsif ( $spec->{y} eq 'd' ) {
-         MKDEBUG && _d("Parsing option $spec->{y} as a DSN");
-         my $from_key = $self->{copyfrom}->{$spec->{k}};
-         my $default = {};
-         if ( $from_key ) {
-            MKDEBUG && _d("Option $spec->{y} DSN copies from option $from_key");
-            $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
-         }
-         $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
+      elsif ( $opt->{is_required} ) { 
+         $self->_save_error("Required option --$long must be specified");
       }
-      elsif ( $spec->{y} eq 'z' ) {
-         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
-         if ( defined $num ) {
-            if ( $factor ) {
-               $num *= $factor_for{$factor};
-               MKDEBUG && _d("Setting option $spec->{y} to num * factor");
-            }
-            $vals{$spec->{k}} = ($pre || '') . $num;
-         }
-         else {
-            $self->error("Invalid --$spec->{l} argument");
-         }
-      }
+
+      $self->_validate_type($opt);
+
    }
 
-   foreach my $spec ( grep { $_->{y} } @specs ) {
-      MKDEBUG && _d("Treating option $spec->{k} as a list");
-      my $val = $vals{$spec->{k}};
-      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
-         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
-      }
-      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
-         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
-      }
-   }
-
-   foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
-      my $opt = $allowed_opts->[0];
-      next if !defined $vals{$opt};
-      my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
-      delete @defined_opts{ @$allowed_opts };
-      foreach my $defined_opt ( keys %defined_opts ) {
-         MKDEBUG
-            && _d("Unsetting options: $defined_opt (not allowed with $opt)");
-         $vals{$defined_opt} = undef;
-      }
-   }
-
-   return %vals;
+   $self->{got_opts} = 1;
+   return;
 }
 
-sub error {
-   my ( $self, $note ) = @_;
-   $self->{__error__} = 1;
-   push @{$self->{notes}}, $note;
+sub _validate_type {
+   my ( $self, $opt ) = @_;
+   return unless $opt && $opt->{type};
+   my $val = $opt->{value};
+
+   if ( $val && $opt->{type} eq 'm' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
+      my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+      if ( !$suffix ) {
+         my ( $s ) = $opt->{desc} =~ m/\(suffix (.)\)/;
+         $suffix = $s || 's';
+         MKDEBUG && _d('No suffix given; using', $suffix, 'for',
+            $opt->{long}, '(value:', $val, ')');
+      }
+      if ( $suffix =~ m/[smhd]/ ) {
+         $val = $suffix eq 's' ? $num            # Seconds
+              : $suffix eq 'm' ? $num * 60       # Minutes
+              : $suffix eq 'h' ? $num * 3600     # Hours
+              :                  $num * 86400;   # Days
+         $opt->{value} = $val;
+         MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
+      }
+      else {
+         $self->_save_error("Invalid time suffix for --$opt->{long}");
+      }
+   }
+   elsif ( $val && $opt->{type} eq 'd' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a DSN');
+      my $from_key = $self->{defaults_to}->{ $opt->{long} };
+      my $default = {};
+      if ( $from_key ) {
+         MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
+         $default = $self->{dp}->parse(
+            $self->{dp}->as_string($self->{opts}->{$from_key}->{value}) );
+      }
+      $opt->{value} = $self->{dp}->parse($val, $default);
+   }
+   elsif ( $val && $opt->{type} eq 'z' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
+      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+      if ( defined $num ) {
+         if ( $factor ) {
+            $num *= $factor_for{$factor};
+            MKDEBUG && _d('Setting option', $opt->{y},
+               'to num', $num, '* factor', $factor);
+         }
+         $opt->{value} = ($pre || '') . $num;
+      }
+      else {
+         $self->_save_error("Invalid size for --$opt->{long}");
+      }
+   }
+   elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
+      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+   }
+   elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
+      $opt->{value} = [ split(',', ($val || '')) ];
+   }
+   else {
+      MKDEBUG && _d('Nothing to validate for option',
+         $opt->{long}, 'type', $opt->{type}, 'value', $val);
+   }
+
+   return;
 }
 
-sub prog {
-   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
-   return $prog || $PROGRAM_NAME;
+sub get {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{value};
+}
+
+sub got {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{got};
+}
+
+sub has {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   return defined $long ? exists $self->{opts}->{$long} : 0;
+}
+
+sub set {
+   my ( $self, $opt, $val ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   $self->{opts}->{$long}->{value} = $val;
+   return;
+}
+
+sub _save_error {
+   my ( $self, $error ) = @_;
+   push @{$self->{errors}}, $error;
+}
+
+sub errors {
+   my ( $self ) = @_;
+   return $self->{errors};
 }
 
 sub prompt {
    my ( $self ) = @_;
-   my $prog   = $self->prog;
-   my $prompt = $self->{prompt} || '<options>';
-   return "Usage: $prog $prompt\n";
+   return "Usage: $PROGRAM_NAME $self->{prompt}\n";
 }
 
 sub descr {
    my ( $self ) = @_;
-   my $prog = $self->prog;
-   my $descr  = $prog . ' ' . ($self->{descr} || '')
-          . "  For more details, please use the --help option, "
-          . "or try 'perldoc $prog' for complete documentation.";
+   my $descr  = $self->{program_name} . ' ' . ($self->{description} || '')
+              . "  For more details, please use the --help option, "
+              . "or try 'perldoc $PROGRAM_NAME' "
+              . "for complete documentation.";
    $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
    $descr =~ s/ +$//mg;
    return $descr;
 }
 
 sub usage_or_errors {
-   my ( $self, %opts ) = @_;
-   if ( $opts{help} ) {
-      print $self->usage(%opts)
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+   my ( $self ) = @_;
+   if ( $self->{opts}->{help}->{got} ) {
+      print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
+      exit 0;
    }
-   elsif ( $self->{__error__} ) {
-      print $self->errors()
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+   elsif ( scalar @{$self->{errors}} ) {
+      print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
+      exit 0;
    }
+   return;
 }
 
-sub errors {
+sub print_errors {
    my ( $self ) = @_;
    my $usage = $self->prompt() . "\n";
-   if ( (my @notes = @{$self->{notes}}) ) {
-      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   if ( (my @errors = @{$self->{errors}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors)
+              . "\n";
    }
    return $usage . "\n" . $self->descr();
 }
 
-sub usage {
-   my ( $self, %vals ) = @_;
-   my @specs = @{$self->{specs}};
+sub print_usage {
+   my ( $self ) = @_;
+   die "Run get_opts() before print_usage()" unless $self->{got_opts};
+   my @opts = values %{$self->{opts}};
 
-   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+   my $maxl = max(
+      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      @opts);
 
    my $maxs = max(0,
-      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
-      grep { $_->{t} } @specs);
+      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      values %{$self->{short_opts}});
 
    my $lcol = max($maxl, ($maxs + 3));
    my $rcol = 80 - $lcol - 6;
@@ -380,15 +620,17 @@ sub usage {
    $maxs = max($lcol - 3, $maxs);
 
    my $usage = $self->descr() . "\n" . $self->prompt();
-   foreach my $g ( @{$self->{groups}} ) {
-      $usage .= "\n$g->{d}:\n";
-      foreach my $spec (
-         sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs )
+   foreach my $group ( @{$self->{groups}} ) {
+      $usage .= "\n$group->{desc}:\n";
+      foreach my $opt (
+         sort { $a->{long} cmp $b->{long} }
+         grep { $_->{group} eq $group->{name} }
+         @opts )
       {
-         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-         my $short = $spec->{t};
-         my $desc  = $spec->{d};
-         if ( $spec->{y} && $spec->{y} eq 'm' ) {
+         my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
+         my $short = $opt->{short};
+         my $desc  = $opt->{desc};
+         if ( $opt->{type} && $opt->{type} eq 'm' ) {
             my ($s) = $desc =~ m/\(suffix (.)\)/;
             $s    ||= 's';
             $desc =~ s/\s+\(suffix .\)//;
@@ -406,122 +648,26 @@ sub usage {
       }
    }
 
-   if ( (my @instr = @{$self->{instr}}) ) {
-      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   if ( (my @rules = @{$self->{rules}}) ) {
+      $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
-   if ( $self->{dsn} ) {
-      $usage .= "\n" . $self->{dsn}->usage();
+   if ( $self->{dp} ) {
+      $usage .= "\n" . $self->{dp}->usage();
    }
    $usage .= "\nOptions and values after processing arguments:\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
-      my $val   = $vals{$spec->{k}};
-      my $type  = $spec->{y} || '';
-      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+   foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
+      my $val   = $opt->{value};
+      my $type  = $opt->{type} || '';
+      my $bool  = $opt->{spec} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
       $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
                 : !defined $val             ? '(No value)'
-                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type eq 'd'              ? $self->{dp}->as_string($val)
                 : $type =~ m/H|h/           ? join(',', sort keys %$val)
                 : $type =~ m/A|a/           ? join(',', @$val)
                 :                             $val;
-      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $opt->{long}, $val);
    }
    return $usage;
-}
-
-sub pod_to_spec {
-   my ( $self, $file ) = @_;
-
-   my %types = (
-      'time' => 'm',
-      'int'  => 'i',
-      string => 's',
-      hash   => 'h',
-      Hash   => 'H',
-      array  => 'a',
-      Array  => 'A',
-      size   => 'z',
-      DSN    => 'd',
-      float  => 'f',
-   );
-
-   my @spec = ();
-   my @special_options = ();
-   $file ||= __FILE__;
-   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
-   my $para;
-   my $option;
-
-   local $INPUT_RECORD_SEPARATOR = '';
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 OPTIONS/;
-      last;
-   }
-
-   while ( $para = <$fh> ) {
-      MKDEBUG && _d($para);
-      last if $para =~ m/^=over/;
-      chomp $para;
-      $para =~ s/\s+/ /g;
-      $para =~ s/$POD_link_re/$1/go;
-      push @special_options, $para;
-   }
-
-   do {
-      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
-         MKDEBUG && _d($para);
-         my %props;
-         $para = <$fh>;
-         if ( $para =~ m/: / ) {
-            $para =~ s/\s+\Z//g;
-            %props = map { split(/: /, $_) } split(/; /, $para);
-            if ( $props{'short form'} ) {
-               $props{'short form'} =~ s/-//;
-            }
-            $para = <$fh>;
-         }
-         $para =~ s/\s+\Z//g;
-         $para =~ s/\s+/ /g;
-         $para =~ s/$POD_link_re/$1/go;
-         if ( $para =~ m/^[^.]+\.$/ ) {
-            $para =~ s/\.$//;
-         }
-
-         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
-            $option = $base_option;
-            $props{'negatable'} = 1;
-         }
-
-         push @spec, {
-            s => $option
-               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
-               . ( $props{'negatable'}  ? '!'                        : '' )
-               . ( $props{'cumulative'} ? '+'                        : '' )
-               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
-            d => $para
-               . (defined $props{default} ? " (default $props{default})" : ''),
-         };
-      }
-      while ( $para = <$fh> ) {
-         last unless $para;
-
-         if ( $option ) {
-            if ( my ($line)
-                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
-               1 while ( $line =~ s/$POD_link_re/$1/go );
-               push @special_options, $line;
-            }
-         }
-
-         if ( $para =~ m/^=head1/ ) {
-            $para = undef; # Can't 'last' out of a do {} block.
-            last;
-         }
-         last if $para =~ m/^=item --/;
-      }
-   } while ( $para );
-
-   close $fh;
-   return @spec, @special_options;
 }
 
 sub prompt_noecho {
@@ -545,11 +691,6 @@ sub prompt_noecho {
    return $response;
 }
 
-sub groups {
-   my ( $self, @groups ) = @_;
-   push @{$self->{groups}}, @groups;
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -564,12 +705,65 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
+sub _read_config_file {
+   my ( $self, $filename ) = @_;
+   open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
+   my @args;
+   my $prefix = '--';
+   my $parse  = 1;
+
+   LINE:
+   while ( my $line = <$fh> ) {
+      chomp $line;
+      next LINE if $line =~ m/^\s*(?:\#|\;|$)/;
+      $line =~ s/\s+#.*$//g;
+      $line =~ s/^\s+|\s+$//g;
+      if ( $line eq '--' ) {
+         $prefix = '';
+         $parse  = 0;
+         next LINE;
+      }
+      if ( $parse
+         && (my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/)
+      ) {
+         push @args, grep { defined $_ } ("$prefix$opt", $arg);
+      }
+      elsif ( $line =~ m/./ ) {
+         push @args, $line;
+      }
+      else {
+         die "Syntax error in file $filename at line $INPUT_LINE_NUMBER";
+      }
+   }
+   close $fh;
+   return @args;
+}
+
+sub _read_para_after {
+   my ( $self, $file, $regex ) = @_;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=pod$/m;
+      last;
+   }
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/$regex/;
+      last;
+   }
+   $para = <$fh>;
+   chomp($para);
+   close $fh or die "Can't close $file: $OS_ERROR";
+   return $para;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -579,13 +773,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2879
+# SlowLogParser package 3192
 # ###########################################################################
-package LogParser;
+package SlowLogParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -594,213 +789,19 @@ sub new {
    bless {}, $class;
 }
 
-my $general_log_first_line = qr{
-   \A
-   (?:(\d{6}\s+\d{1,2}:\d\d:\d\d)|\t)? # Timestamp
-   \t
-   (?:\s*(\d+))                        # Thread ID
-   \s
-   (.*)                                # Everything else
-   \Z
-}xs;
-
-my $general_log_any_line = qr{
-   \A(
-      Connect
-      |Field\sList
-      |Init\sDB
-      |Query
-      |Quit
-   )
-   (?:\s+(.*\Z))?
-}xs;
-
-my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
+my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
 my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
-
-my $binlog_line_1 = qr{^# at (\d+)};
-my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
-my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)};
+my $slow_log_hd_line = qr{
+      ^(?:
+      T[cC][pP]\s[pP]ort:\s+\d+ # case differs on windows/unix
+      |
+      [/A-Z].*mysqld,\sVersion.*(?:started\swith:|embedded\slibrary)
+      |
+      Time\s+Id\s+Command
+      ).*\n
+   }xm;
 
 sub parse_event {
-   my ( $self, $fh, $code, $mode ) = @_;
-   my $event; # Don't initialize, that'll cause a loop.
-
-   my $done = 0;
-   my $type = 0; # 0 = comments, 1 = USE and SET etc, 2 = the actual query
-   my $line = defined $self->{last_line} ? $self->{last_line} : <$fh>;
-   $mode  ||= '';
-
-   LINE:
-   while ( !$done && defined $line ) {
-      MKDEBUG && _d('type: ', $type, ' ', $line);
-      my $handled_line = 0;
-
-      if ( !$mode && $line =~ m/^# [A-Z]/ ) {
-         MKDEBUG && _d('Setting mode to slow log');
-         $mode ||= 'slow';
-      }
-
-      if ( $line =~ m/Version:.+ started with:/ ) {
-         MKDEBUG && _d('Chomping out header lines');
-         <$fh>; # Tcp port: etc
-         <$fh>; # Column headers
-         $line = <$fh>;
-         $type = 0;
-         redo LINE;
-      }
-
-      elsif ( $mode ne 'slow'
-         && (my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s)
-      ) {
-         MKDEBUG && _d('Beginning of general log event');
-         $handled_line = 1;
-         $mode ||= 'log';
-         $self->{last_line} = undef;
-         if ( $type == 0 ) {
-            MKDEBUG && _d('Type 0');
-            my ( $cmd, $arg ) = $rest =~ m/$general_log_any_line/;
-            $event = {
-               ts  => $ts || '',
-               id  => $id,
-               cmd => $cmd,
-               arg => $arg || '',
-            };
-            if ( $cmd ne 'Query' ) {
-               MKDEBUG && _d('Not a query, done with this event');
-               $done = 1;
-               chomp $event->{arg} if $event->{arg};
-            }
-            $type = 2;
-         }
-         else {
-            MKDEBUG && _d('Saving line for next invocation');
-            $self->{last_line} = $line;
-            $done = 1;
-            chomp $event->{arg} if $event->{arg};
-         }
-      }
-
-      elsif ( $mode eq 'slow' ) {
-         if ( $line =~ m/^# No InnoDB statistics available/ ) {
-            $handled_line = 1;
-            MKDEBUG && _d('Ignoring line');
-            $line = <$fh>;
-            $type = 0;
-            next LINE;
-         }
-
-         elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
-            $handled_line = 1;
-            MKDEBUG && _d('Beginning of slow log event');
-            $self->{last_line} = undef;
-            if ( $type == 0 ) {
-               MKDEBUG && _d('Type 0');
-               $event->{ts} = $time;
-               if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-                  @{$event}{qw(user host ip)} = ($user, $host, $ip);
-               }
-            }
-            else {
-               MKDEBUG && _d('Saving line for next invocation');
-               $self->{last_line} = $line;
-               $done = 1;
-            }
-            $type = 0;
-         }
-
-         elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-            $handled_line = 1;
-            if ( $type == 0 ) {
-               MKDEBUG && _d('Type 0');
-               @{$event}{qw(user host ip)} = ($user, $host, $ip);
-            }
-            else {
-               MKDEBUG && _d('Saving line for next invocation');
-               $self->{last_line} = $line;
-               $done = 1;
-            }
-            $type = 0;
-         }
-
-         elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
-
-            if ( $type == 0 ) {
-               if ( $line =~ m/^#.+;/ ) {
-                  MKDEBUG && _d('Commented event line ends header');
-               }
-               else {
-                  $handled_line = 1;
-                  MKDEBUG && _d('Splitting line into fields');
-                  @{$event}{keys %hash} = values %hash;
-               }
-            }
-            elsif ( $type == 1 && $line =~ m/^#.+;/ ) {
-               MKDEBUG && _d('Commented event line after type 1 line');
-               $handled_line = 0;
-            }
-            else {
-               $handled_line = 1;
-               MKDEBUG && _d('Saving line for next invocation');
-               $self->{last_line} = $line;
-               $done = 1;
-            }
-            $type = 0;
-         }
-      }
-
-      if ( !$handled_line ) {
-         $event->{cmd} = 'Query';
-         if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
-            MKDEBUG && _d('Line is the end of a query within event');
-            if ( my ( $db ) = $line =~ m/^use (.*);/i ) {
-               MKDEBUG && _d('Setting event DB to ', $db);
-               $event->{db} = $db;
-               $type = 1;
-            }
-            elsif ( $type < 2 && (my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) ) {
-               MKDEBUG && _d('Setting a property for event');
-               push @{$event->{settings}}, $setting;
-               $type = 1;
-            }
-            else {
-               MKDEBUG && _d('Line is a continuation of prev line');
-               if ( $line =~ m/^# / ) {
-                  MKDEBUG && _d('Line is a commented event line');
-                  $line =~ s/.+: (.+);\n/$1/;
-                  $event->{cmd} = 'Admin';
-               }
-               $event->{arg} .= $line;
-               $type = 2;
-            }
-         }
-         else {
-            MKDEBUG && _d('Line is a continuation of prev line');
-            $event->{arg} .= $line;
-            $type = 2;
-         }
-      }
-
-      $event->{NR} = $NR;
-
-      $line = <$fh> unless $done;
-   }
-
-   if ( !defined $line ) {
-      MKDEBUG && _d('EOF found');
-      $self->{last_line} = undef;
-   }
-
-   if ( $mode && $mode eq 'slow' ) {
-      MKDEBUG && _d('Slow log, trimming');
-      $event->{arg} =~ s/;\s*\Z// if $event->{arg};
-   }
-
-   $code->($event) if $event && $code;
-   return $event;
-}
-
-sub parse_slowlog_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
    my $num_events = 0;
 
@@ -815,18 +816,10 @@ sub parse_slowlog_event {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 
-      if ( $stmt =~ s{
-            ^(?:
-            Tcp\sport:\s+\d+
-            |
-            /.*Version.*started
-            |
-            Time\s+Id\s+Command
-            ).*\n
-         }{}gmxo
-      ){
+      if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
          my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
          if ( @chunks > 1 ) {
+            MKDEBUG && _d("Found multiple chunks");
             $stmt = shift @chunks;
             unshift @pending, @chunks;
          }
@@ -836,7 +829,7 @@ sub parse_slowlog_event {
       $stmt =~ s/;\n#?\Z//;
 
 
-      my ($got_ts, $got_uh, $got_ac, $got_db, $got_set);
+      my ($got_ts, $got_uh, $got_ac, $got_db, $got_set, $got_embed);
       my $pos = 0;
       my $len = length($stmt);
       my $found_arg = 0;
@@ -844,73 +837,87 @@ sub parse_slowlog_event {
       while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
          $pos     = pos($stmt);  # Be careful not to mess this up!
          my $line = $1;          # Necessary for /g and pos() to work.
+         MKDEBUG && _d($line);
 
-         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
+         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
 
-            if ( !$got_ts
-               && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
-               && ++$got_ts
-            ) {
+            if ( !$got_ts && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)) {
+               MKDEBUG && _d("Got ts", $time);
                push @properties, 'ts', $time;
+               ++$got_ts;
                if ( !$got_uh
                   && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
-                  && ++$got_uh
                ) {
+                  MKDEBUG && _d("Got user, host, ip", $user, $host, $ip);
                   push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+                  ++$got_uh;
                }
             }
 
             elsif ( !$got_uh
                   && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
-                  && ++$got_uh
             ) {
+               MKDEBUG && _d("Got user, host, ip", $user, $host, $ip);
                push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+               ++$got_uh;
             }
 
-            elsif ( !$got_ac
-                  && $line =~ m/^# (?:administrator command:.*)$/
-                  && ++$got_ac
-            ) {
+            elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
+               MKDEBUG && _d("Got admin command");
                push @properties, 'cmd', 'Admin', 'arg', $line;
-               $found_arg++;
+               push @properties, 'bytes', length($properties[-1]);
+               ++$found_arg;
+               ++$got_ac;
             }
 
-            elsif ( my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+)/g ) {
+            elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
+               MKDEBUG && _d("Got some line with properties");
+               my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
                push @properties, @temp;
             }
 
-            elsif ( !$got_db
-                  && (my ( $db ) = $line =~ m/^USE ([^;]+)/i )
-                  && ++$got_db
-            ) {
+            elsif ( !$got_db && (my ( $db ) = $line =~ m/^use ([^;]+)/ ) ) {
+               MKDEBUG && _d("Got a default database:", $db);
                push @properties, 'db', $db;
+               ++$got_db;
             }
 
-            elsif ( !$got_set
-                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/i )
-                  && ++$got_set
-            ) {
+            elsif (!$got_set && (my ($setting) = $line =~ m/^SET\s+([^;]*)/)) {
+               MKDEBUG && _d("Got some setting:", $setting);
                push @properties, split(/,|\s*=\s*/, $setting);
+               ++$got_set;
             }
 
             if ( !$found_arg && $pos == $len ) {
+               MKDEBUG && _d("Did not find arg, looking for special cases");
                local $INPUT_RECORD_SEPARATOR = ";\n";
                if ( defined(my $l = <$fh>) ) {
                   chomp $l;
+                  MKDEBUG && _d("Found admin statement", $l);
                   push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+                  push @properties, 'bytes', length($properties[-1]);
                   $found_arg++;
                }
                else {
+                  MKDEBUG && _d("I can't figure out what to do with this line");
                   next EVENT;
                }
             }
          }
          else {
-            push @properties, 'arg', substr($stmt, $pos - length($line));
+            MKDEBUG && _d("Got the query/arg line");
+            my $arg = substr($stmt, $pos - length($line));
+            push @properties, 'arg', $arg, 'bytes', length($arg);
+            if ( $misc && $misc->{embed}
+               && ( my ($e) = $arg =~ m/($misc->{embed})/)
+            ) {
+               push @properties, $e =~ m/$misc->{capture}/g;
+            }
             last LINE;
          }
       }
 
+      MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
       foreach my $callback ( @callbacks ) {
          last unless $event = $callback->($event);
@@ -921,81 +928,22 @@ sub parse_slowlog_event {
    return $num_events;
 }
 
-sub parse_binlog_event {
-   my ( $self, $fh, $code ) = @_;
-   my $event;
-
-   my $term  = $self->{term} || ";\n"; # Corresponds to DELIMITER
-   my $tpat  = quotemeta $term;
-   local $RS = $term;
-   my $line  = <$fh>;
-
-   LINE: {
-      return unless $line;
-
-      if ( $line =~ m/^DELIMITER/m ) {
-         my($del)      = $line =~ m/^DELIMITER ([^\n]+)/m;
-         $self->{term} = $del;
-         local $RS     = $del;
-         $line         = <$fh>; # Throw away DELIMITER line
-         MKDEBUG && _d('New record separator: ', $del);
-         redo LINE;
-      }
-
-      $line =~ s/$tpat\Z//;
-
-      if ( my ( $offset ) = $line =~ m/$binlog_line_1/m ) {
-         $self->{last_line} = undef;
-         $event = {
-            offset => $offset,
-         };
-         my ( $ts, $sid, $end, $type, $rest ) = $line =~ m/$binlog_line_2/m;
-         @{$event}{qw(ts server_id end type)} = ($ts, $sid, $end, $type);
-         (my $arg = $line) =~ s/\n*^#.*\n//gm; # Remove comment lines
-         $event->{arg} = $arg;
-         if ( $type eq 'Xid' ) {
-            my ($xid) = $rest =~ m/(\d+)/;
-            $event->{xid} = $xid;
-         }
-         elsif ( $type eq 'Query' ) {
-            @{$event}{qw(id time code)} = $rest =~ m/$binlog_line_2_rest/;
-         }
-         else {
-            die "Unknown event type $type"
-               unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
-         }
-      }
-      else {
-         $event = {
-            arg => $line,
-         };
-      }
-   }
-
-   if ( !defined $line ) {
-      delete $self->{term};
-   }
-
-   $code->($event) if $event && $code;
-   return $event;
-}
-
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
 
 # ###########################################################################
-# End LogParser package
+# End SlowLogParser package
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 3007
+# QueryRewriter package 3383
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1036,18 +984,61 @@ sub strip_comments {
    return $query;
 }
 
+sub shorten {
+   my ( $self, $query, $length ) = @_;
+   $query =~ s{
+      \A(
+         (?:INSERT|REPLACE)
+         (?:\s+LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)?
+         (?:\s\w+)*\s+\S+\s+VALUES\s*\(.*?\)
+      )
+      \s*,\s*\(.*?(ON\s+DUPLICATE|\Z)}
+      {$1 /*... omitted ...*/$2}xsi;
+
+   return $query unless $query =~ m/IN\s*\(\s*(?!select)/i;
+
+   if ( $length && length($query) > $length ) {
+      my ($left, $mid, $right) = $query =~ m{
+         (\A.*?\bIN\s*\()     # Everything up to the opening of IN list
+         ([^\)]+)             # Contents of the list
+         (\).*\Z)             # The rest of the query
+      }xsi;
+      if ( $left ) {
+         my $targ = $length - length($left) - length($right);
+         my @vals = split(/,/, $mid);
+         my @left = shift @vals;
+         my @right;
+         my $len  = length($left[0]);
+         while ( @vals && $len < $targ / 2 ) {
+            $len += length($vals[0]) + 1;
+            push @left, shift @vals;
+         }
+         while ( @vals && $len < $targ ) {
+            $len += length($vals[-1]) + 1;
+            unshift @right, pop @vals;
+         }
+         $query = $left . join(',', @left)
+                . (@right ? ',' : '')
+                . " /*... omitted " . scalar(@vals) . " items ...*/ "
+                . join(',', @right) . $right;
+      }
+   }
+
+   return $query;
+}
+
 sub fingerprint {
    my ( $self, $query ) = @_;
 
    $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
       && return 'mysqldump';
-   $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
+   $query =~ m#/\*\w+\.\w+:[0-9]/[0-9]\*/#     # mk-table-checksum, etc query
       && return 'maatkit';
    $query =~ m/\A# administrator command: /
       && return $query;
    $query =~ m/\A\s*(call\s+\S+)\(/i
       && return lc($1); # Warning! $1 used, be careful.
-   if ( my ($beginning) = $query =~ m/\A(INSERT INTO \S+ VALUES \(.*?\)),\(/ ) {
+   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)? INTO .+? VALUES \(.*?\)),\(/i ) {
       $query = $beginning; # Shorten multi-value INSERT statements ASAP
    }
 
@@ -1059,26 +1050,21 @@ sub fingerprint {
    $query =~ s/\\["']//g;                # quoted strings
    $query =~ s/".*?"/?/sg;               # quoted strings
    $query =~ s/'.*?'/?/sg;               # quoted strings
-
-   $query =~ s{                          # Anything vaguely resembling numbers
-      (?<=[^0-9+-])
-      [0-9+-].*?
-      (?=[^0-9a-f.xb+-]|\Z)
-      }{?}gx;
+   $query =~ s/[0-9+-][0-9a-f.xb+-]*/?/g;# Anything vaguely resembling numbers
    $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
    $query =~ s/\A\s+//;                  # Chop off leading whitespace
    chomp $query;                         # Kill trailing whitespace
    $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
    $query = lc $query;
    $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
-   $query =~ s{
+   $query =~ s{                          # Collapse IN and VALUES lists
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
-              {$1(?+)}gx;      # Collapse IN() and VALUES() lists
-   $query =~ s{
+              {$1(?+)}gx;
+   $query =~ s{                          # Collapse UNION
                \b(select\s.*?)(?:(\sunion(?:\sall)?)\s\1)+
               }
-              {$1 /*repeat$2*/}xg; # UNION
+              {$1 /*repeat$2*/}xg;
    $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
    return $query;
 }
@@ -1105,7 +1091,7 @@ sub distill {
 
    my @tables = map {
       $_ =~ s/`//g;
-      $_ =~ s/(_?)\d+/$1?/g;
+      $_ =~ s/(_?)[0-9]+/$1?/g;
       $_;
    } $qp->get_tables($query);
 
@@ -1126,7 +1112,7 @@ sub convert_to_select {
                  update\s+(.*?)
                  \s+set\b(.*?)
                  (?:\s*where\b(.*?))?
-                 (limit\s*\d+(?:\s*,\s*\d+)?)?
+                 (limit\s*[0-9]+(?:\s*,\s*[0-9]+)?)?
                  \Z
               }
               {__update_to_select($1, $2, $3, $4)}exsi
@@ -1170,12 +1156,12 @@ sub __delete_to_select {
 
 sub __insert_to_select {
    my ( $tbl, $cols, $vals ) = @_;
-   MKDEBUG && _d('Args: ', @_);
+   MKDEBUG && _d('Args:', @_);
    my @cols = split(/,/, $cols);
-   MKDEBUG && _d('Cols: ', @cols);
+   MKDEBUG && _d('Cols:', @cols);
    $vals =~ s/^\(|\)$//g; # Strip leading/trailing parens
    my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|[^,]+)/g;
-   MKDEBUG && _d('Vals: ', @vals);
+   MKDEBUG && _d('Vals:', @vals);
    if ( @cols == @vals ) {
       return "select * from $tbl where "
          . join(' and ', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
@@ -1205,7 +1191,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -1215,7 +1201,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 2801
+# LogSplitter package 3483
 # ###########################################################################
 
 package LogSplitter;
@@ -1230,7 +1216,7 @@ use constant CLOSE_N_LRU_FILES => 100;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(attribute saveto_dir LogParser) ) {
+   foreach my $arg ( qw(attribute saveto_dir lp) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -1245,12 +1231,14 @@ sub new {
       session_fhs     => [], # filehandles for each session
       n_open_fhs      => 0,  # number of open session filehandles
       sessions        => {}, # sessions data store
+      n_events_total  => 0,  # number of total queries in log
+      n_events_saved  => 0,  # number of queries split and saved from log
    };
    $self->{maxfiles}          ||= 100;
    $self->{maxdirs}           ||= 100;
    $self->{maxsessions}       ||= 100000;
    $self->{maxsessionfiles}   ||= 0;
-   $self->{verbosity}         ||= 0;
+   $self->{verbose}           ||= 0;
    $self->{session_file_name} ||= 'mysql_log_session_';
 
    return bless $self, $class;
@@ -1260,7 +1248,8 @@ sub split_logs {
    my ( $self, $logs ) = @_;
    my $oktorun = 1; # true as long as we haven't created too many
 
-   @{$self}{qw(n_dirs n_files n_sessions n_session_files)} = qw(0 -1 0 0);
+   @{$self}{qw(n_dirs n_files n_sessions n_session_files n_events_total n_events_saved)} = qw(0 -1 0 0 0 0);
+
    $self->{sessions} = {};
 
    if ( !defined $logs || scalar @$logs == 0 ) {
@@ -1268,12 +1257,13 @@ sub split_logs {
       push @$logs, '-';
    }
 
-   my $callback;
+   my @callbacks;
    if ( $self->{maxsessionfiles} ) {
-      $callback = sub {
+      push @callbacks, sub {
          my ( $event ) = @_;
-         my ($session, $sesion_id) = $self->_get_session_ds($event);
-         return 1 unless defined $session;
+         $self->{n_events_total}++;
+         my ( $session, $sesion_id ) = $self->_get_session_ds($event);
+         return unless defined $session;
          $self->{n_sessions}++ if !$session->{already_seen}++;
          my $db = $event->{db} || $event->{Schema};
          if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
@@ -1281,25 +1271,27 @@ sub split_logs {
             $session->{db} = $db;
          }
          push @{$session->{queries}}, $event->{arg};
-         return 1;
+         $self->{n_events_saved}++;
+         return;
       };
    }
    else {
-      $callback = sub {
+      push @callbacks, sub {
          my ( $event ) = @_; 
+         $self->{n_events_total}++;
          my ($session, $session_id) = $self->_get_session_ds($event);
-         return 1 unless defined $session;
+         return unless defined $session;
 
          if ( !defined $session->{fh} ) {
             $self->{n_sessions}++;
-            MKDEBUG && _d("New session: $session_id "
-                          . "($self->{n_sessions} of $self->{maxsessions})");
+            MKDEBUG && _d('New session:', $session_id, ',',
+               $self->{n_sessions}, 'of', $self->{maxsessions});
 
             my $session_file = $self->_next_session_file();
             if ( !$session_file ) {
                $oktorun = 0;
                MKDEBUG && _d('No longer oktorun because no _next_session_file');
-               return 1;
+               return;
             }
 
             $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
@@ -1315,8 +1307,8 @@ sub split_logs {
             push @{ $self->{session_fhs} },
                { fh => $fh, session_id => $session_id };
 
-            MKDEBUG && _d("Created $session_file "
-                          . "for session $self->{attribute}=$session_id");
+            MKDEBUG && _d('Created', $session_file, 'for session',
+               $self->{attribute}, '=', $session_id);
          }
          elsif ( !$session->{active} ) {
 
@@ -1329,11 +1321,11 @@ sub split_logs {
 
              $session->{active} = 1;
 
-             MKDEBUG && _d("Reopend $session->{session_file} "
-                           . "for session $self->{attribute}=$session_id");
+             MKDEBUG && _d('Reopend', $session->{session_file}, 'for session',
+               $self->{attribute}, '=', $session_id);
          }
          else {
-            MKDEBUG && _d("Event belongs to active session $session_id");
+            MKDEBUG && _d('Event belongs to active session', $session_id);
          }
 
          my $session_fh = $session->{fh};
@@ -1345,8 +1337,9 @@ sub split_logs {
          }
 
          print $session_fh "$event->{arg}\n\n";
+         $self->{n_events_saved}++;
 
-         return 1;
+         return;
       };
    }
 
@@ -1365,13 +1358,13 @@ sub split_logs {
          open $fh, "<", $log or warn "Cannot open $log: $OS_ERROR\n";
       }
       if ( $fh ) {
-         1 while $oktorun && $self->{LogParser}->parse_slowlog_event(
-            $fh, undef, $callback);
+         1 while ($oktorun && $self->{lp}->parse_event($fh, undef, @callbacks));
          close $fh;
          last LOG if !$oktorun;
       }
    }
 
+   my $sessions_per_file;
    if ( $self->{maxsessionfiles} ) {   
       for my $i ( 1..$self->{maxsessionfiles} ) {
          my $session_file = $self->_next_session_file($i);
@@ -1384,10 +1377,9 @@ sub split_logs {
             { fh => $fh, session_file => $session_file };
       }
 
-      my $sessions_per_file = int( $self->{n_sessions}
-                                   / $self->{maxsessionfiles} );
-      MKDEBUG && _d("$self->{n_sessions} session, "
-                    . "$sessions_per_file per file");
+      $sessions_per_file = int($self->{n_sessions} / $self->{maxsessionfiles});
+      MKDEBUG && _d($self->{n_sessions}, 'session,',
+         $sessions_per_file, 'per file');
 
       my $i      = 0;
       my $file_n = 0;
@@ -1411,10 +1403,21 @@ sub split_logs {
    }
    $self->{n_open_fhs}  = 0;
 
-   if ( $self->{verbosity} >= 1 ) {
-      print "Parsed $self->{n_sessions} sessions:\n";
-      my $fmt = "   %-16s %-60s\n";
-      printf($fmt, $self->{attribute}, 'Saved to log split file');
+   if ( $self->{verbose} ) {
+      my $fmt = "%-22s %15s %15s\n";
+      printf($fmt, 'SPLIT SUMMARY', 'COUNT', 'MAX ALLOWED');
+      printf($fmt, 'Parsed sessions', $self->{n_sessions},$self->{maxsessions});
+      printf($fmt, 'Directories created', $self->{n_dirs}, $self->{maxdirs});
+      printf($fmt, 'Session files created', $self->{n_session_files},
+         $self->{maxfiles});
+      printf($fmt, 'Sessions per file', $sessions_per_file,
+         $self->{maxsessionfiles}) if $self->{maxsessionfiles};
+      printf($fmt, 'Events read', $self->{n_events_total}, '');
+      printf($fmt, 'Events saved', $self->{n_events_saved}, '');
+
+      print "\n";
+      $fmt = "%-16s %-60s\n";
+      printf($fmt, $self->{attribute}, 'SAVED IN SESSION FILE');
       foreach my $session_id ( sort keys %{ $self->{sessions} } ) {
          my $session = $self->{sessions}->{ $session_id };
          printf($fmt, $session_id, $session->{session_file}); 
@@ -1431,7 +1434,7 @@ sub _get_session_ds {
    if ( !exists $event->{ $attrib } ) {
       if ( MKDEBUG ) {
          use Data::Dumper;
-         _d("No attribute $attrib in event: " . Dumper($event));
+         _d('No attribute', $attrib, 'in event:', Dumper($event));
       }
       return;
    }
@@ -1450,8 +1453,8 @@ sub _get_session_ds {
       $session = $self->{sessions}->{ $session_id };
    }
    else {
-      MKDEBUG && _d("Skipping new session $session_id because "
-                    . "maxsessions is reached");
+      MKDEBUG && _d('Skipping new session', $session_id,
+         'because maxsessions is reached');
    }
 
    return ($session, $session_id);
@@ -1463,9 +1466,8 @@ sub _close_lru_session {
    my $lru_n       = $self->{n_sessions} - MAX_OPEN_FILES - 1;
    my $close_to_n  = $lru_n + CLOSE_N_LRU_FILES - 1;
 
-   MKDEBUG && _d("Closing session fhs $lru_n..$close_to_n "
-                 . "($self->{n_sessions} sessions, "
-                 . "$self->{n_open_fhs} open fhs)");
+   MKDEBUG && _d('Closing session fhs', $lru_n, '..', $close_to_n,
+      '(',$self->{n_sessions}, 'sessions', $self->{n_open_fhs}, 'open fhs)');
 
    foreach my $session ( @$session_fhs[ $lru_n..$close_to_n ] ) {
       close $session->{fh};
@@ -1489,10 +1491,10 @@ sub _next_session_file {
          if ( ($retval >> 8) != 0 ) {
             die "Cannot create new directory $new_dir: $OS_ERROR";
          }
-         MKDEBUG && _d("Created new saveto_dir $new_dir");
+         MKDEBUG && _d('Created new saveto_dir', $new_dir);
       }
       elsif ( MKDEBUG ) {
-         _d("saveto_dir $new_dir already exists");
+         _d('saveto_dir', $new_dir, 'already exists');
       }
    }
 
@@ -1502,7 +1504,7 @@ sub _next_session_file {
    my $session_file = $self->{saveto_dir}
                     . $dir_n
                     . $self->{session_file_name} . $session_n;
-   MKDEBUG && _d("Next session file $session_file");
+   MKDEBUG && _d('Next session file', $session_file);
    return $session_file;
 }
 
@@ -1511,7 +1513,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -1521,7 +1523,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3140
+# DSNParser package 3421
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1583,7 +1585,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
-      MKDEBUG && _d('Adding extra property ' . $opt->{key});
+      MKDEBUG && _d('Adding extra property', $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -1592,7 +1594,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
-      MKDEBUG && _d("Setting $prop property");
+      MKDEBUG && _d('Setting', $prop, 'property');
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -1604,7 +1606,7 @@ sub parse {
       MKDEBUG && _d('No DSN to parse');
       return;
    }
-   MKDEBUG && _d("Parsing $dsn");
+   MKDEBUG && _d('Parsing', $dsn);
    $prev     ||= {};
    $defaults ||= {};
    my %given_props;
@@ -1617,26 +1619,27 @@ sub parse {
          $given_props{$prop_key} = $prop_val;
       }
       elsif ( $prop_autokey ) {
-         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         MKDEBUG && _d('Interpreting', $dsn_part, 'as',
+            $prop_autokey, '=', $dsn_part);
          $given_props{$prop_autokey} = $dsn_part;
       }
       else {
-         MKDEBUG && _d("Bad DSN part: $dsn_part");
+         MKDEBUG && _d('Bad DSN part:', $dsn_part);
       }
    }
 
    foreach my $key ( keys %opts ) {
-      MKDEBUG && _d("Finding value for $key");
+      MKDEBUG && _d('Finding value for', $key);
       $final_props{$key} = $given_props{$key};
       if (   !defined $final_props{$key}
            && defined $prev->{$key} && $opts{$key}->{copy} )
       {
          $final_props{$key} = $prev->{$key};
-         MKDEBUG && _d("Copying value for $key from previous DSN");
+         MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
       }
       if ( !defined $final_props{$key} ) {
          $final_props{$key} = $defaults->{$key};
-         MKDEBUG && _d("Copying value for $key from defaults");
+         MKDEBUG && _d('Copying value for', $key, 'from defaults');
       }
    }
 
@@ -1651,6 +1654,19 @@ sub parse {
    }
 
    return \%final_props;
+}
+
+sub parse_options {
+   my ( $self, $o ) = @_;
+   die 'I need an OptionParser object' unless ref $o eq 'OptionParser';
+   my $dsn_string
+      = join(',',
+          map  { "$_=".$o->get($_); }
+          grep { $o->has($_) && $o->get($_) }
+          keys %{$self->{opts}}
+        );
+   MKDEBUG && _d('DSN string made from options:', $dsn_string);
+   return $self->parse($dsn_string);
 }
 
 sub as_string {
@@ -1740,12 +1756,12 @@ sub get_dbh {
 
             $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
                  . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
-            MKDEBUG && _d("$dbh: $sql");
+            MKDEBUG && _d($dbh, ':', $sql);
             $dbh->do($sql);
 
             if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
                $sql = "/*!40101 SET NAMES $charset*/";
-               MKDEBUG && _d("$dbh: $sql");
+               MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
                MKDEBUG && _d('Enabling charset for STDOUT');
                if ( $charset eq 'utf8' ) {
@@ -1759,7 +1775,7 @@ sub get_dbh {
 
             if ( $self->prop('setvars') ) {
                $sql = "SET " . $self->prop('setvars');
-               MKDEBUG && _d("$dbh: $sql");
+               MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
          }
@@ -1767,7 +1783,7 @@ sub get_dbh {
       if ( !$dbh && $EVAL_ERROR ) {
          MKDEBUG && _d($EVAL_ERROR);
          if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
-            MKDEBUG && _d("Going to try again without utf8 support");
+            MKDEBUG && _d('Going to try again without utf8 support');
             delete $defaults->{mysql_enable_utf8};
          }
          if ( !$tries ) {
@@ -1780,12 +1796,11 @@ sub get_dbh {
       $dbh,
       Dumper($dbh->selectrow_hashref(
          'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
-      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
-      ' Character set info: ',
-      Dumper($dbh->selectall_arrayref(
-         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
-      ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
-      ' $DBI::VERSION: ', $DBI::VERSION,
+      'Connection info:',      $dbh->{mysql_hostinfo},
+      'Character set info:',   Dumper($dbh->selectall_arrayref(
+                     'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
+      '$DBD::mysql::VERSION:', $DBD::mysql::VERSION,
+      '$DBI::VERSION:',        $DBI::VERSION,
    );
 
    return $dbh;
@@ -1823,7 +1838,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -1833,7 +1848,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2999
+# Transformers package 3407
 # ###########################################################################
 
 package Transformers;
@@ -1954,11 +1969,12 @@ sub ts {
 
 sub parse_timestamp {
    my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   if ( my($y, $m, $d, $h, $i, $s, $f)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?$/ )
    {
-      return sprintf "%d-%02d-%02d %02d:%02d:%02d",
-                     $y + 2000, $m, $d, $h, $i, $s;
+      return sprintf "%d-%02d-%02d %02d:%02d:"
+                     . (defined $f ? '%02.6f' : '%02d'),
+                     $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
    }
    return $val;
 }
@@ -1976,7 +1992,7 @@ sub unix_timestamp {
 sub make_checksum {
    my ( $val ) = @_;
    my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d("$checksum checksum for $val");
+   MKDEBUG && _d($checksum, 'checksum for', $val);
    return $checksum;
 }
 
@@ -1985,7 +2001,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -1995,63 +2011,25 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3018
+# EventAggregator package 3434
 # ###########################################################################
-
 package EventAggregator;
-
-# This package's function is to take hashrefs and aggregate them as you specify.
-# It basically does a GROUP BY.  If you say to group by z and calculate
-# aggregate statistics for a, b, c then it manufactures functions to record
-# various kinds of stats for the a per z, b per z, and c per z in incoming
-# hashrefs.  Usually you'll use it a little less abstractly: you'll say the
-# incoming hashrefs are parsed query events from the MySQL slow query log, and
-# you want it to calculate stats for Query_time, Rows_read etc aggregated by
-# query fingerprint.  It automatically determines whether a specified property
-# is a string, number or Yes/No value and aggregates them appropriately.
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use POSIX qw(floor);
 
-# ###########################################################################
-# Set up some constants for bucketing values.  It is impossible to keep all
-# values seen in memory, but putting them into logarithmically scaled buckets
-# and just incrementing the bucket each time works, although it is imprecise.
-# ###########################################################################
 use constant MKDEBUG      => $ENV{MKDEBUG};
 use constant BUCK_SIZE    => 1.05;
 use constant BASE_LOG     => log(BUCK_SIZE);
-use constant BASE_OFFSET  => -floor(log(.000001) / BASE_LOG); # typically 284
+use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
 
-our @buckets  = map { 0 } (1 .. NUM_BUCK);
-my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
-{
-   my $cur = BUCK_SIZE;
-   for ( 2 .. NUM_BUCK - 1 ) {
-      push @buck_vals, MIN_BUCK * ($cur *= BUCK_SIZE);
-   }
-}
+our @buckets  = map { 0 } (0..NUM_BUCK-1);
 
-# The best way to see how to use this is to look at the .t file.
-#
-# %args is a hash containing:
-# groupby      The name of the property to group/aggregate by.
-# attributes   A hashref.  Each key is the name of an element to aggregate.
-#              And the values of those elements are arrayrefs of the
-#              values to pull from the hashref, with any second or subsequent
-#              values being fallbacks for the first in case it's not defined.
-# worst        The name of an element which defines the "worst" hashref in its
-#              class.  If this is Query_time, then each class will contain
-#              a sample that holds the event with the largest Query_time.
-# unroll_limit If this many events have been processed and some handlers haven't
-#              been generated yet (due to lack of sample data) unroll the loop
-#              anyway.  Defaults to 50.
-# attrib_limit Sanity limit for attribute values.  If the value exceeds the
-#              limit, use the last-seen for this class; if none, then 0.
+my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(groupby worst attributes) ) {
@@ -2068,23 +2046,30 @@ sub new {
       worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
       attrib_limit => $args{attrib_limit},
+      result_classes => {},
+      result_globals => {},
+      result_samples => {},
    }, $class;
 }
 
-# Aggregate an event hashref's properties.
 sub aggregate {
    my ( $self, $event ) = @_;
 
    my $group_by = $event->{$self->{groupby}};
    return unless defined $group_by;
 
+   if ( exists $self->{unrolled_loops} ) {
+      return $self->{unrolled_loops}->($self, $event, $group_by);
+   }
+
+   my @attrs = sort keys %{$self->{attributes}};
    ATTRIB:
-   foreach my $attrib ( keys %{$self->{attributes}} ) {
-      # The value of the attribute ( $group_by ) may be an arrayref.
+   foreach my $attrib ( @attrs ) {
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
          my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
          my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+         my $samples       = $self->{result_samples};
          my $handler = $self->{handlers}->{ $attrib };
          if ( !$handler ) {
             $handler = $self->make_handler(
@@ -2096,63 +2081,67 @@ sub aggregate {
             $self->{handlers}->{$attrib} = $handler;
          }
          next GROUPBY unless $handler;
-         $handler->($event, $class_attrib, $global_attrib);
+         $samples->{$val} ||= $event; # Initialize to the first event.
+         $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
       }
+   }
+
+   if ( $self->{n_queries}++ > 50 # Give up waiting after 50 events.
+      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs
+   ) {
+      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
+      my $globs = $self->{result_globals}; # Global stats for each
+      my $samples = $self->{result_samples};
+
+      my @lines = (
+         'my ( $self, $event, $group_by ) = @_;',
+         'my ($val, $class, $global, $idx);',
+         (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
+         'my $temp = $self->{result_class}->{ $group_by }
+            ||= { map { $_ => { } } @attrs };',
+         '$samples->{$group_by} ||= $event;', # Always start with the first.
+      );
+      foreach my $i ( 0 .. $#attrs ) {
+         push @lines, (
+            '$class  = $temp->{"'  . $attrs[$i] . '"};',
+            '$global = $globs->{"' . $attrs[$i] . '"};',
+            $self->{unrolled_for}->{$attrs[$i]},
+         );
+      }
+      if ( ref $group_by ) {
+         push @lines, '}'; # Close the loop opened above
+      }
+      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+      unshift @lines, 'sub {';
+      push @lines, '}';
+
+      my $code = join("\n", @lines);
+      MKDEBUG && _d('Unrolled subroutine:', @lines);
+      my $sub = eval $code;
+      die if $EVAL_ERROR;
+      $self->{unrolled_loops} = $sub;
    }
 }
 
-# Return the aggregated results.
 sub results {
    my ( $self ) = @_;
    return {
       classes => $self->{result_class},
       globals => $self->{result_globals},
+      samples => $self->{result_samples},
    };
 }
 
-# Return the attributes that this object is tracking, and their data types, as
-# a hashref of name => type.
 sub attributes {
    my ( $self ) = @_;
    return $self->{type_for};
 }
 
-# Make subroutines that do things with events.
-#
-# $attrib: the name of the attrib (Query_time, Rows_read, etc)
-# $event:  a sample event
-# %args:
-#     min => keep min for this attrib (default except strings)
-#     max => keep max (default except strings)
-#     sum => keep sum (default for numerics)
-#     cnt => keep count (default except strings)
-#     unq => keep all unique values per-class (default for strings and bools)
-#     all => keep a bucketed list of values seen per class (default for numerics)
-#     glo => keep stats globally as well as per-class (default)
-#     trf => An expression to transform the value before working with it
-#     wor => Whether to keep worst-samples for this attrib (default no)
-#     alt => Arrayref of other name(s) for the attribute, like db => Schema.
-#
-# The bucketed list works this way: each range of values from MIN_BUCK in
-# increments of BUCK_SIZE (that is 5%) we consider a bucket.  We keep NUM_BUCK
-# buckets.  The upper end of the range is more than 1.5e15 so it should be big
-# enough for almost anything.  The buckets are accessed by a log base BUCK_SIZE,
-# so floor(log(N)/log(BUCK_SIZE)).  The smallest bucket's index is -284. We
-# shift all values up 284 so we have values from 0 to 999 that can be used as
-# array indexes.  A value that falls into a bucket simply increments the array
-# entry.
-#
-# This eliminates the need to keep and sort all values to calculate median,
-# standard deviation, 95th percentile etc.  Thus the memory usage is bounded by
-# the number of distinct aggregated values, not the number of events.
-#
-# Return value:
-# a subroutine with this signature:
-#    my ( $event, $class, $global ) = @_;
-# where
-#  $event   is the event
-#  $class   is the container to store the aggregated values
-#  $global  is is the container to store the globally aggregated values
+sub type_for {
+   my ( $self, $attrib ) = @_;
+   return $self->{type_for}->{$attrib};
+}
+
 sub make_handler {
    my ( $self, $attrib, $event, %args ) = @_;
    die "I need an attrib" unless defined $attrib;
@@ -2164,12 +2153,12 @@ sub make_handler {
    }
    return unless defined $val; # Can't decide type if it's undef.
 
-   # Ripped off from Regexp::Common::number.
-   my $float_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)}i;
+   my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
    my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
-   MKDEBUG && _d("Type for $attrib is $type (sample: $val), is array: $is_array");
+   MKDEBUG && _d('Type for', $attrib, 'is', $type,
+      '(sample:', $val, '), is array:', $is_array);
    $self->{type_for}->{$attrib} = $type;
 
    %args = ( # Set up defaults
@@ -2215,16 +2204,13 @@ sub make_handler {
       }
       if ( $args{all} ) {
          push @tmp, (
-            # If you change this code, change the similar code in bucketize.
-            'PLACE->{all} ||= [ @buckets ];',
-            '$idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
-            '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
+            'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
+            '++PLACE->{all}->[ EventAggregator::bucket_idx($val) ];',
          );
       }
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
-   # We only save unique/worst values for the class, not globally.
    if ( $args{unq} ) {
       push @lines, '++$class->{unq}->{$val};';
    }
@@ -2232,13 +2218,11 @@ sub make_handler {
       my $op = $type eq 'num' ? '>=' : 'ge';
       push @lines, (
          'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-         '   $class->{sample} = $event;',
+         '   $samples->{$group_by} = $event;',
          '}',
       );
    }
 
-   # Make sure the value is constrained to legal limits.  If it's out of bounds,
-   # just use the last-seen value for it.
    my @limit;
    if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
@@ -2249,22 +2233,25 @@ sub make_handler {
       );
    }
 
-   # Save the code for later, as part of an "unrolled" subroutine.
    my @unrolled = (
       "\$val = \$event->{'$attrib'};",
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" } @{$args{alt}}),
+      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
+      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
+         grep { $_ ne $attrib } @{$args{alt}}),
       'defined $val && do {',
       ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
       '};',
+      ($is_array ? ('}') : ()),
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
 
-   # Build a subroutine with the code.
    unshift @lines, (
       'sub {',
-      'my ( $event, $class, $global ) = @_;',
+      'my ( $event, $class, $global, $samples, $group_by ) = @_;',
       'my ($val, $idx);', # NOTE: define all variables here
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" } @{$args{alt}}),
+      "\$val = \$event->{'$attrib'};",
+      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
+         grep { $_ ne $attrib } @{$args{alt}}),
       'return unless defined $val;',
       ($is_array ? ('foreach my $val ( @$val ) {') : ()),
       @limit,
@@ -2274,71 +2261,51 @@ sub make_handler {
    my $code = join("\n", @lines);
    $self->{code_for}->{$attrib} = $code;
 
-   MKDEBUG && _d("Metric handler for '$attrib': ", @lines);
+   MKDEBUG && _d('Metric handler for', $attrib, ':', @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
    return $sub;
 }
 
-# This method is for testing only.  If you change this code, change the code
-# above too (look for bucketize).
-sub bucketize {
-   my ( $self, $vals ) = @_;
-   my @bucketed = @buckets;
-   my ($sum, $max, $min);
-   $max = $min = $vals->[0];
-   foreach my $val ( @$vals ) {
-      my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);
-      ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
-      $max = $max > $val ? $max : $val;
-      $min = $min < $val ? $min : $val;
-      $sum += $val;
-   }
-   return (\@bucketed, { sum => $sum, max => $max, min => $min, cnt => scalar @$vals});
+sub bucket_idx {
+   my ( $val ) = @_;
+   return 0 if $val < MIN_BUCK;
+   my $idx = int(BASE_OFFSET + log($val)/BASE_LOG);
+   return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
 }
 
-# This method is for testing only.
-sub unbucketize {
-   my ( $self, $vals ) = @_;
-   my @result;
-   foreach my $i ( 0 .. NUM_BUCK - 1 ) {
-      next unless $vals->[$i];
-      foreach my $j ( 1 .. $vals->[$i] ) {
-         push @result, $buck_vals[$i];
-      }
-   }
-   return @result;
+sub bucket_value {
+   my ( $bucket ) = @_;
+   return 0 if $bucket == 0;
+   die "Invalid bucket: $bucket" if $bucket < 0 || $bucket > (NUM_BUCK-1);
+   return (BUCK_SIZE**($bucket-1)) * MIN_BUCK;
 }
 
-# Break the buckets down into powers of ten, in 8 coarser buckets.  Bucket 0
-# represents (0 <= val < 10us) and 7 represents 10s and greater.  The powers are
-# thus constrained to between -6 and 1.  Because these are used as array
-# indexes, we shift up so it's non-negative, to get 0 to 7.  Now you have a list
-# of 1000 buckets that act as a lookup table between the 5% buckets and buckets
-# of 10. TODO: right now it's hardcoded to buckets of 10, in the future maybe
-# not.
 {
    my @buck_tens;
    sub buckets_of {
       return @buck_tens if @buck_tens;
-      @buck_tens = map {
-         my $f = floor(log($_) / log(10)) + 6;
-         $f > 7 ? 7 : $f;
-      } @buck_vals;
+
+      my $start_bucket  = 0;
+      my @base10_starts = (0);
+      map { push @base10_starts, (10**$_)*MIN_BUCK } (1..7);
+
+      for my $base10_bucket ( 0..($#base10_starts-1) ) {
+         my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
+         MKDEBUG && _d('Base 10 bucket $base10_bucket maps to',
+            'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
+         for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
+            $buck_tens[$base1_05_bucket] = $base10_bucket;
+         }
+         $start_bucket = $next_bucket;
+      }
+
+      map { $buck_tens[$_] = 7 } ($start_bucket..(NUM_BUCK-1));
+
       return @buck_tens;
    }
 }
 
-# Given an arrayref of vals, returns a hashref with the following
-# statistical metrics:
-#
-#    pct_95    => The 95th percentile
-#    cutoff    => How many values fall into the 95th percentile
-#    stddev    => of 95% values
-#    median    => of 95% values
-#
-# The vals arrayref is the buckets as per the above (see the comments at the top
-# of this file).  $args should contain cnt, min, max and sum properties.
 sub calculate_statistical_metrics {
    my ( $self, $vals, $args ) = @_;
    my $statistical_metrics = {
@@ -2348,17 +2315,13 @@ sub calculate_statistical_metrics {
       cutoff    => undef,
    };
 
-   # These cases might happen when there is nothing to get from the event, for
-   # example, processlist sniffing doesn't gather Rows_examined, so $args won't
-   # have {cnt} or other properties.
    return $statistical_metrics
       unless defined $vals && @$vals && $args->{cnt};
 
-   # Return accurate metrics for some cases.
    my $n_vals = $args->{cnt};
    if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
       my $v      = $args->{max} || 0;
-      my $bucket = floor( log($v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+      my $bucket = int(6 + ( log($v > 0 ? $v : MIN_BUCK) / log(10)));
       $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
       return {
          pct_95 => $v,
@@ -2369,7 +2332,7 @@ sub calculate_statistical_metrics {
    }
    elsif ( $n_vals == 2 ) {
       foreach my $v ( $args->{min}, $args->{max} ) {
-         my $bucket = floor( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+         my $bucket = int(6 + ( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)));
          $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
       }
       my $v      = $args->{max} || 0;
@@ -2382,63 +2345,49 @@ sub calculate_statistical_metrics {
       };
    }
 
-   # Determine cutoff point for 95% if there are at least 10 vals.  Cutoff
-   # serves also for the number of vals left in the 95%.  E.g. with 50 vals the
-   # cutoff is 47 which means there are 47 vals: 0..46.  $cutoff is NOT an array
-   # index.
    my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
    my $total_left = $n_vals;
-   my $i = NUM_BUCK - 1;
+   my $top_vals   = $n_vals - $cutoff; # vals > 95th
+   my $sum_excl   = 0;
+   my $sum        = 0;
+   my $sumsq      = 0;
+   my $mid        = int($n_vals / 2);
+   my $median     = 0;
+   my $prev       = NUM_BUCK-1; # Used for getting median when $cutoff is odd
+   my $bucket_95  = 0; # top bucket in 95th
 
-   # Find the 95th percentile biggest value.  And calculate the values of the
-   # ones we exclude.
-   my $sum_excl  = 0;
-   while ( $i-- && $total_left > $cutoff ) {
-      if ( $vals->[$i] ) {
-         $total_left -= $vals->[$i];
-         $sum_excl   += $buck_vals[$i] * $vals->[$i];
+   MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals, 'mid:', $mid);
+
+   BUCKET:
+   for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
+      my $val = $vals->[$bucket];
+      next BUCKET unless $val; 
+
+      $total_left -= $val;
+      $sum_excl   += $val;
+      $bucket_95   = $bucket if !$bucket_95 && $sum_excl > $top_vals;
+
+      if ( !$median && $total_left <= $mid ) {
+         $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
+                 : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
       }
+
+      $sum    += $val * $buck_vals[$bucket];
+      $sumsq  += $val * ($buck_vals[$bucket]**2);
+      $prev   =  $bucket;
    }
 
-   # Continue until we find the next array element that has a value.
-   my $bucket_95;
-   while ( $i-- ){
-      $bucket_95 = $i;
-      last if $vals->[$i];
-   }
-   return $statistical_metrics unless $vals->[$bucket_95];
-   # At this point, $bucket_95 points to the first value we want to keep.
-
-   # Calculate the standard deviation, median, and max value of the 95th
-   # percentile of values.
-   my $sum    = $buck_vals[$bucket_95] * $vals->[$bucket_95];
-   my $sumsq  = $sum ** 2;
-   my $mid    = int($cutoff / 2);
-   my $median = 0;
-   my $prev   = $bucket_95; # Used for getting median when $cutoff is odd
-
-   # Continue through the rest of the values.
-   while ( $i-- ) {
-      my $val = $vals->[$i];
-      if ( $val ) {
-         $total_left -= $val;
-         if ( !$median && $total_left <= $mid ) {
-            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$i]
-                    : ($buck_vals[$i] + $buck_vals[$prev]) / 2;
-         }
-         $sum        += $buck_vals[$i] * $val;
-         $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
-         $prev       =  $i;
-      }
-   }
-
-   my $stddev   = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+   my $var      = $sumsq/$n_vals - ( ($sum/$n_vals) ** 2 );
+   my $stddev   = $var > 0 ? sqrt($var) : 0;
    my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
    $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
-   MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
+   MKDEBUG && _d('sum:', $sum, 'sumsq:', $sumsq, 'stddev:', $stddev,
+      'median:', $median, 'prev bucket:', $prev,
+      'total left:', $total_left, 'sum excl', $sum_excl,
+      'bucket 95:', $bucket_95, $buck_vals[$bucket_95]);
 
    $statistical_metrics->{stddev} = $stddev;
    $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
@@ -2447,16 +2396,30 @@ sub calculate_statistical_metrics {
    return $statistical_metrics;
 }
 
-# Find the top N or top % event keys, in sorted order, optionally including
-# outliers (ol_...) that are notable for some reason.  %args looks like this:
-#
-#  attrib      order-by attribute (usually Query_time)
-#  orderby     order-by aggregate expression (should be numeric, usually sum)
-#  total       include events whose summed attribs are <= this number...
-#  count       ...or this many events, whichever is less...
-#  ol_attrib   ...or events where the 95th percentile of this attribute...
-#  ol_limit    ...is greater than this value, AND...
-#  ol_freq     ...the event occurred at least this many times.
+sub metrics {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(attrib where) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $stats = $self->results;
+   my $store = $stats->{classes}->{$args{where}}->{$args{attrib}};
+
+   my $global_cnt = $stats->{globals}->{$args{attrib}}->{cnt};
+   my $metrics    = $self->calculate_statistical_metrics($store->{all}, $store);
+
+   return {
+      cnt    => $store->{cnt},
+      pct    => $global_cnt && $store->{cnt} ? $store->{cnt} / $global_cnt : 0,
+      sum    => $store->{sum},
+      min    => $store->{min},
+      max    => $store->{max},
+      avg    => $store->{sum} && $store->{cnt} ? $store->{sum} / $store->{cnt} : 0,
+      median => $metrics->{median},
+      pct_95 => $metrics->{pct_95},
+      stddev => $metrics->{stddev},
+   };
+}
+
 sub top_events {
    my ( $self, %args ) = @_;
    my $classes = $self->{result_class};
@@ -2464,31 +2427,28 @@ sub top_events {
       $classes->{$a}->{$args{attrib}}->{$args{orderby}}
          <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
       } grep {
-         # Defensive programming
          defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
       } keys %$classes;
    my @chosen;
    my ($total, $count) = (0, 0);
    foreach my $groupby ( @sorted ) {
-      # Events that fall into the top criterion for some reason
       if ( 
          (!$args{total} || $total < $args{total} )
          && ( !$args{count} || $count < $args{count} )
       ) {
-         push @chosen, $groupby;
+         push @chosen, [$groupby, 'top'];
       }
 
-      # Events that are notable outliers
       elsif ( $args{ol_attrib} && (!$args{ol_freq}
          || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
-         # Calculate the 95th percentile of this event's specified attribute.
+         MKDEBUG && _d('Calculating statistical_metrics');
          my $stats = $self->calculate_statistical_metrics(
             $classes->{$groupby}->{$args{ol_attrib}}->{all},
             $classes->{$groupby}->{$args{ol_attrib}}
          );
          if ( $stats->{pct_95} >= $args{ol_limit} ) {
-            push @chosen, $groupby;
+            push @chosen, [$groupby, 'outlier'];
          }
       }
 
@@ -2503,9 +2463,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
@@ -2515,9 +2473,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# And now for the "program".
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
 # ###########################################################################
-package main;
+package mk_log_player;
 
 use POSIX;
 use Time::HiRes qw(time usleep);
@@ -2529,179 +2492,193 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-Transformers->import( qw(micro_t shorten) );
+my $o;
+my $dp;
 
-# #############################################################################
-# Get configuration information.
-# #############################################################################
-my $dp = new DSNParser();
-$dp->prop('autokey', 'h');
-my @opt_spec = OptionParser::pod_to_spec();
-my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{dsn}    = $dp;
-$opt_parser->{strict} = 0;
-$opt_parser->{prompt} = '[OPTION].. DSN [DSN...]';
-$opt_parser->{descr}  = q{splits and plays slow log files.};
-my %opts = $opt_parser->parse();
-$dp->prop('setvars', $opts{setvars});
-
-# If not --split, then the remaining argv should be a DSN.
-my $dsn;
-if ( !$opts{s} && !$opts{print} ) {
-   my $dsn_args = shift @ARGV;
-   if ( $opts{p} && !$dsn_args ) {
-      $opt_parser->error('At least one DSN is required with --play');
-   }
-   $dsn = $dp->parse($dsn_args);
-}
-
-$opt_parser->usage_or_errors(%opts);
-
-# #############################################################################
-# Split the logs into session files and exit.
-# #############################################################################
-if ( $opts{s} ) {
-   if ( $opts{saveto} && !-d $opts{saveto} ) {
-      die "$opts{saveto} is not a directory"
-   }
-
-   # It's sad because I wrote this script but I still frequently forget
-   # to specify the split attribute (Thread_id, etc.). So the log file
-   # is taken to be the split attrib and then LogSplitter tries to read
-   # from STDIN. This is my self-reminder.
-   warn "The --split attribute $opts{s} does not seem to be valid"
-      if $opts{s} !~ m/^[\w]+$/;
-
-   $ARGV[0] = '-' if scalar @ARGV == 0; # causes LogSplitter to read STDIN
-
-   my $lp = new LogParser;
-   my $ls = new LogSplitter(
-      attribute         => $opts{s},
-      saveto_dir        => $opts{saveto},
-      maxdirs           => $opts{D},
-      maxfiles          => $opts{F},
-      maxsessions       => $opts{S},
-      maxsessionfiles   => $opts{M},
-      verbosity         => $opts{v},
-      session_file_name => $opts{sessionfilename},
-      LogParser         => $lp,
-   );
-   $ls->split_logs(\@ARGV);
-
-   exit;
-}
-
-# #############################################################################
-# Make list of session files to play. If playing a whole, the log is
-# treated as one big session file.
-# #############################################################################
-my @session_files;
-foreach my $session_file ( split ',', $opts{p} ) {
-   # The session "file" might actually be a dir, in which case we
-   # read ALL files in that dir.
-   if ( -d $session_file ) {
-      MKDEBUG && _d("Reading all session log files in", $session_file);
-      opendir my $dir, $session_file
-         or die "Cannot open directory $session_file: $OS_ERROR";
-      push @session_files,
-         map     { "$session_file/$_"    } # 3. Save full dir/file
-         grep    { -f "$session_file/$_" } # 2. If it's a file
-         readdir $dir;                     # 1. Each file in dir
-      closedir $dir;
-   }
-   else {
-      push @session_files, $session_file;
-   }
-}
-
-MKDEBUG && _d('Session files:', @session_files);
-
-if ( @session_files == 0 ) {
-   die 'No valid session files';
-}
-
-# #############################################################################
-# Connect parent to MySQL.
-# #############################################################################
-my $parent_dbh;
-if ( !$opts{print} ) {
-   if ( !$dsn->{p} && $opts{askpass} ) {
-      $dsn->{p} = OptionParser::prompt_noecho("Enter password for $dsn->{h}: ");
-   }
-   $parent_dbh = get_cxn($dsn);
-   $parent_dbh->{InactiveDestroy} = 1; # Don't die on fork().
-}
-
-# #############################################################################
-# Assign sessions to child processes.
-# #############################################################################
-my %children;
-my %exited_children;
-# This signal handler will do nothing but wake up the sleeping parent process
-# and record the exit status and time of the child that exited (as a side
-# effect of not discarding the signal).
-# -- Presently, however, we do not use this information.
-$SIG{CHLD} = sub {
-   my $pid;
-   while (($pid = waitpid(-1, POSIX::WNOHANG)) > 0) {
-      # Must right-shift to get the actual exit status of the child.
-      $exited_children{$pid}->{exit_status} = $CHILD_ERROR >> 8;
-      $exited_children{$pid}->{exit_time}   = time;
-   }
-};
-
-my $qr = new QueryRewriter(); # shared by the children
-my $session_n = 0;
-my $session_itr;
-
-# These 3 vars are used by get_next_session_itr().
+# These vars are mostly used by get_next_session_itr().
 # TODO: modularize this; something like SessionItr.pm.
+my @session_files;
 my $session_file;
 my $session_fh;
 my $done_reading_session_file = 1;
 
-do {
-   wait_for_server($parent_dbh, $dsn) unless $opts{print};
+sub main {
+   @ARGV = @_;  # set global ARGV for this package
 
-   while ( $opts{c} > keys %children
-           && ($session_itr = get_next_session_itr()) ) {
-      usleep( get_delay($opts{'delaysessions'}) );
-      $session_n++;
-      my $pid = fork();
-      die "Cannot fork: $OS_ERROR" unless defined $pid;
-      if ( $pid ) {              # I'm the parent.
-         $children{$pid} = $session_file;
-      }
-      else {                     # I'm the child.
-         $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
-         MKDEBUG && _d("Child PID", $PID, "got", $session_file, $session_n);
-         play_session($session_n, $session_itr);
-         MKDEBUG && _d("Child PID", $PID, "done");
-         exit;
-      }
-   } 
+   # #########################################################################
+   # Get configuration information.
+   # #########################################################################
+   $dp = new DSNParser(); 
+   $o  = new OptionParser(
+      strict      => 0,
+      prompt      => '[OPTIONS]... [DSN]',
+      description => q{splits and plays slow log files.},
+      dp          => $dp,
+   );
+   $o->get_specs();
+   $o->get_opts();
 
-   # Possibly wait for child.
-   my $reaped = 0;
-   foreach my $pid ( keys %exited_children ) { 
-      delete $children{$pid};
-      delete $exited_children{$pid};
-      $reaped = 1;
-      MKDEBUG && _d("Reaped child PID", $pid);
+   $dp->prop('autokey', 'h');
+   $dp->prop('set-vars', $o->get('set-vars'));
+
+   # If not --split, then the remaining argv should be a DSN.
+   my $dsn;
+   if ( !$o->get('split') && !$o->get('print') ) {
+      $dsn = $dp->parse_options($o);
+      MKDEBUG && _d('Got host from opts:', $dsn ? 'yes' : 'no');
+      if ( !$dsn ) {
+         @ARGV ? $dsn = $dp->parse(shift @ARGV)
+               : $o->_save_error('Missing or invalid host');
+      }
    }
 
-   if ( keys %children && !$reaped ) {
-      # Don't busy-wait.  But don't wait forever either, as a child may exit
-      # and signal while we're not sleeping, so if we sleep forever we may
-      # not get the signal.
-      MKDEBUG && _d("Sleeping to wait for children");
-      sleep(1);
+   $o->usage_or_errors();
+
+   # #########################################################################
+   # Split the logs into session files and exit.
+   # #########################################################################
+   my $split  = $o->get('split');
+   my $saveto = $o->get('saveto');
+   if ( $split ) {
+      die "$saveto is not a directory" if !-d $saveto;
+
+      # It's sad because I wrote this script but I still frequently forget
+      # to specify the split attribute (Thread_id, etc.). So the log file
+      # is taken to be the split attrib and then LogSplitter tries to read
+      # from STDIN. This is my self-reminder.
+      warn "The --split attribute $split does not appear valid"
+         if $split !~ m/^[\w]+$/;
+
+      $ARGV[0] = '-' if scalar @ARGV == 0; # causes LogSplitter to read STDIN
+
+      my $lp = new SlowLogParser;
+      my $ls = new LogSplitter(
+         attribute         => $split,
+         saveto_dir        => $saveto,
+         maxdirs           => $o->get('maxdirs'),
+         maxfiles          => $o->get('maxfiles'),
+         maxsessions       => $o->get('maxsessions'),
+         maxsessionfiles   => $o->get('maxsessionfiles'),
+         verbose           => $o->get('verbose'),
+         session_file_name => $o->get('sessionfilename'),
+         lp                => $lp,
+      );
+      $ls->split_logs(\@ARGV);
+
+      return 0;
    }
-   MKDEBUG && _d(scalar keys %children, 'children are still working');
 
-} while ( $session_itr || keys %children );
+   # #########################################################################
+   # Make list of session files to play. If playing a whole, the log is
+   # treated as one big session file.
+   # ######################################################################### 
+   foreach my $session_file ( split ',', $o->get('play') ) {
+      # The session "file" might actually be a dir, in which case we
+      # read ALL files in that dir.
+      if ( -d $session_file ) {
+         MKDEBUG && _d('Reading all session log files in', $session_file);
+         opendir my $dir, $session_file
+            or die "Cannot open directory $session_file: $OS_ERROR";
+         push @session_files,
+            map     { "$session_file/$_"    } # 3. Save full dir/file
+            grep    { -f "$session_file/$_" } # 2. If it's a file
+            readdir $dir;                     # 1. Each file in dir
+         closedir $dir;
+      }
+      else {
+         push @session_files, $session_file;
+      }
+   }
 
-exit;
+   MKDEBUG && _d('Session files:', @session_files);
+
+   if ( @session_files == 0 ) {
+      warn 'No valid session files';
+      return 0;
+   }
+
+   # #########################################################################
+   # Connect parent to MySQL.
+   # #########################################################################
+   my $parent_dbh;
+   if ( !$o->get('print') ) {
+      if ( $o->get('ask-pass') ) {
+         $o->set('p', OptionParser::prompt_noecho("Enter password: "));
+      }
+      $parent_dbh = get_cxn($dsn);
+      $parent_dbh->{InactiveDestroy} = 1; # Don't die on fork().
+   }
+
+   # #########################################################################
+   # Assign sessions to child processes.
+   # #########################################################################
+   my %children;
+   my %exited_children;
+   # This signal handler will do nothing but wake up the sleeping parent process
+   # and record the exit status and time of the child that exited (as a side
+   # effect of not discarding the signal).
+   # -- Presently, however, we do not use this information.
+   $SIG{CHLD} = sub {
+      my $pid;
+      while (($pid = waitpid(-1, POSIX::WNOHANG)) > 0) {
+         # Must right-shift to get the actual exit status of the child.
+         $exited_children{$pid}->{exit_status} = $CHILD_ERROR >> 8;
+         $exited_children{$pid}->{exit_time}   = time;
+      }
+   };
+
+   my $qr = new QueryRewriter(); # shared by the children
+   my $session_n = 0;
+   my $session_itr;
+
+
+   # Some opts that we use frequently.
+   my $concurrency    = $o->get('concurrency');
+   my $delay_sessions = $o->get('delaysessions');
+
+   do {
+      wait_for_server($parent_dbh, $dsn) unless $o->get('print');
+
+      while ( $concurrency > keys %children
+              && ($session_itr = get_next_session_itr()) ) {
+         usleep( get_delay($delay_sessions) );
+         $session_n++;
+         my $pid = fork();
+         die "Cannot fork: $OS_ERROR" unless defined $pid;
+         if ( $pid ) {              # I'm the parent.
+            $children{$pid} = $session_file;
+         }
+         else {                     # I'm the child.
+            $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
+            MKDEBUG && _d('Child PID', $PID, 'got', $session_file, $session_n);
+            play_session($dsn, $session_n, $session_itr);
+            MKDEBUG && _d('Child PID', $PID, 'done');
+            return 0;
+         }
+      } 
+
+      # Possibly wait for child.
+      my $reaped = 0;
+      foreach my $pid ( keys %exited_children ) { 
+         delete $children{$pid};
+         delete $exited_children{$pid};
+         $reaped = 1;
+         MKDEBUG && _d('Reaped child PID', $pid);
+      }
+
+      if ( keys %children && !$reaped ) {
+         # Don't busy-wait.  But don't wait forever either, as a child may exit
+         # and signal while we're not sleeping, so if we sleep forever we may
+         # not get the signal.
+         MKDEBUG && _d('Sleeping to wait for children');
+         sleep(1);
+      }
+      MKDEBUG && _d(scalar keys %children, 'children are still working');
+
+   } while ( $session_itr || keys %children );
+
+   return 0;
+}
 
 # #############################################################################
 # Subroutines.
@@ -2710,19 +2687,20 @@ exit;
 sub wait_for_server {
    my ( $dbh, $dsn ) = @_;
    my $tries = 0;
-   while ( !$dbh->ping && $tries++ < $opts{w} ) {
+   while ( !$dbh->ping && $tries++ < $o->get('wait') ) {
       sleep(1);
       eval {
          $dbh = get_cxn($dsn);
       };
       if ( $EVAL_ERROR ) {
-         info(0, 'Waiting: ' . scalar(localtime) . ' '
-            . mysql_error_msg($EVAL_ERROR));
+         warn 'Waiting: ' . scalar(localtime) . ' '
+            . mysql_error_msg($EVAL_ERROR);
       }
    }
-   if ( $tries >= $opts{w} ) {
+   if ( $tries >= $o->get('wait') ) {
       die "Too many retries while waiting for server, exiting.\n";
    }
+   return;
 }
 
 sub get_next_session_itr {
@@ -2732,7 +2710,7 @@ sub get_next_session_itr {
       close $session_fh if defined $session_fh;
       $session_file = shift @session_files;
       return unless defined $session_file;
-      MKDEBUG && _d("Opened session file", $session_file);
+      MKDEBUG && _d('Opened session file', $session_file);
 
       if ( $session_file eq '-' ) {
          $session_fh = *STDIN;
@@ -2775,14 +2753,14 @@ sub get_next_session_itr {
       local $INPUT_RECORD_SEPARATOR = "\n-- END SESSION\n\n";
       my $session = <$session_fh>;
       if ( $session ) {
-         MKDEBUG && _d("Read a session in", $session_file);
+         MKDEBUG && _d('Read a session in', $session_file);
          $done_reading_session_file = 0;
          chomp $session;
          my @queries = split("\n\n", $session);
          return sub { return shift @queries; };
       }
       else {
-         MKDEBUG && _d("No more sessions in", $session_file);
+         MKDEBUG && _d('No more sessions in', $session_file);
          $done_reading_session_file = 1;
          return get_next_session_itr();
       }
@@ -2790,8 +2768,8 @@ sub get_next_session_itr {
 }
 
 sub play_session {
-   my ( $session_n, $get_next_query ) = @_;
-   my $dbh        = get_cxn($dsn) unless $opts{print};
+   my ( $dsn, $session_n, $get_next_query ) = @_;
+   my $dbh        = get_cxn($dsn) unless $o->get('print');
    my $query_n    = 0;
    my $ea         = new EventAggregator(
       groupby      => 'arg',
@@ -2802,18 +2780,23 @@ sub play_session {
       worst=>       => 'query_time',
    );
 
+   # Frequently used opts.
+   my $only_select   = $o->get('onlyselect');
+   my $delay_queries = $o->get('delayqueries');
+   my $print         = $o->get('print');
+
    my $total_time = time;
    QUERY:
    while ( defined (my $query = $get_next_query->()) ) {
 
-      if ( $opts{onlyselect} && $query !~ m/^(?:SELECT|USE) /i ) {
-         MKDEBUG && _d("Skipping query for --onlyselect:", $query);
+      if ( $only_select && $query !~ m/^(?:SELECT|USE) /i ) {
+         MKDEBUG && _d('Skipping query for --onlyselect:', $query);
          next QUERY;
       }
 
       $query_n++;
 
-      if ( $opts{print} ) {
+      if ( $print ) {
          print "/* session $session_n query $query_n */ $query\n";
          next QUERY;
       }
@@ -2827,7 +2810,7 @@ sub play_session {
          next QUERY;
       }
 
-      usleep( get_delay($opts{'delayqueries'}) );
+      usleep( get_delay($delay_queries) );
 
       my $n_rows           = 0;
       my $query_start_time = time;
@@ -2860,12 +2843,12 @@ sub play_session {
       $ea->aggregate($event);
    }
 
-   if ( !$opts{print} ) {
+   if ( !$print ) {
       $total_time = time - $total_time;
       $dbh->disconnect();
       my $results = $ea->results();
       report_session_stats($session_n, $total_time, $results);
-   }
+  } 
 
    return;
 }
@@ -2890,7 +2873,7 @@ sub report_session_stats {
       $global->{query_time}->{sum} / ($global->{n_rows}->{sum} || 1);
 
    # Stats for all queries (global).
-   my $s = $opts{csv} ? ',' : "\t";
+   my $s = $o->get('csv') ? ',' : "\t";
    print "session number"
       .  "$s"."total time"
       .  "$s"."min query time"
@@ -2925,9 +2908,11 @@ sub report_session_stats {
       .  "$s"."sample"
       .  "\n";
 
-   foreach my $query ( values %{$results->{classes}} ) {
+   while ( my ($class, $query) = each %{$results->{classes}} ) {
       $avg = sprintf('%.6f',
          $query->{query_time}->{sum} / $query->{query_time}->{cnt});
+      my $sample = $results->{samples}->{$class}->{arg};
+
       print "$query->{query_time}->{cnt}"
          .  "$s$query->{query_time}->{sum}"
          .  "$s$query->{query_time}->{min}"
@@ -2936,7 +2921,7 @@ sub report_session_stats {
          .  "$s$query->{n_rows}->{sum}"
          .  "$s$query->{n_rows}->{min}"
          .  "$s$query->{n_rows}->{max}"
-         .  "$s$query->{query_time}->{sample}->{arg}"
+         .  "$s$sample"
          .  "\n";
    }
    print "\n";
@@ -2969,7 +2954,7 @@ sub get_cxn {
 
 sub warn_error {
    my ( $session_n, $query_n, $query, $warning ) = @_;
-   return unless $opts{'warn-errors'};
+   return unless $o->get('warn-errors');
    warn "Query $query_n '$query' in session $session_n caused an error: "
       . "$warning\n";
    return;
@@ -2982,6 +2967,13 @@ sub _d {
         @_;
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
+
+# ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
 
 # ############################################################################
 # Documentation.
@@ -3001,6 +2993,8 @@ mk-log-player - Split and play MySQL slow logs.
    mk-log-player --play  /tmp/mysql_log_session_* h=host1
 
 =head1 DESCRIPTION
+
+mk-log-player splits and play MySQL slow logs.
 
 =head1 DOWNLOADING
 
@@ -3025,19 +3019,44 @@ Specify at least one of --play or --split.
 
 =over
 
-=item --askpass
+=item --ask-pass
 
 Prompt for a password when connecting to MySQL.
 
+=item --charset
+
+short form: -A; type: string
+
+Default character set.
+
+Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
+Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
+DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
+value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
+connecting to MySQL.
+
 =item --concurrency
 
-short form: -c; type: int; default: 1
+type: int; default: 1
 
 Number of concurrent sessions to play.
+
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
 
 =item --csv
 
 Comma-separate output of performance metrics.
+
+=item --defaults-file
+
+short form: -F; type: string
+
+Only read mysql options from the given file.
 
 =item --delaysessions
 
@@ -3063,9 +3082,19 @@ a single value or a range. Single values cause an exact delay of the value time
 the given value times (example: 0.001,1 = random delay from 1 millisecond to
 1 second).
 
+=item --help
+
+Show help and exit.
+
+=item --host
+
+short form: -h; type: string
+
+Connect to host.
+
 =item --maxdirs
 
-short form: -D; type: int; default: 100
+type: int; default: 100
 
 Max number of directories to create for saving session files.
 
@@ -3084,7 +3113,7 @@ in 100 directories.
 
 =item --maxfiles
 
-short form: -F; type: int; default: 100
+type: int; default: 100
 
 Max number of session failes to create per directory.
 
@@ -3096,7 +3125,7 @@ in 100 directories.
 
 =item --maxsessions
 
-short form: -S; type: int
+type: int
 
 Max number of sessions to save with --split.
 
@@ -3108,7 +3137,7 @@ See also L<"--maxdirs"> and L<"--maxfiles">.
 
 =item --maxsessionfiles
 
-short form: -M; type: int; default: 0
+type: int; default: 0
 
 Max number of session files in which sessions are saved with --split.
 
@@ -3124,13 +3153,25 @@ If, for the same 10,000 session log, you specify --maxsessionfiles 2
 and --maxsessions 2000, then the two session files will each contain 1,000
 sessions.
 
+=item --password
+
+short form: -p; type: string
+
+Password to use when connecting.
+
+=item --port
+
+short form: -P; type: int
+
+Port number to use for connection.
+
 =item --onlyselect
 
 Play only SELECT queries.
 
 =item --play
 
-short form: -p; type: string
+type: string
 
 Play (execute) session files created by --split.
 
@@ -3162,20 +3203,45 @@ name and then be postfixed with a 4-digit, zero-padded session ID. For
 example, with the default session file name: mysql_log_session_0001,
 mysql_log_session_0002, etc.
 
+=item --set-vars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
+
+=item --socket
+
+short form: -S; type: string
+
+Socket file to use for connection.
+
 =item --split
 
-short form: -s; type: string
+type: string
 
 Split log by given attribute to create session files.
 
 Valid attributes are any which appear in the log: Thread_id, Schema,
 etc.
 
-=item --verbosity
+=item --user
+
+short form: -u; type: string
+
+User for login if not current user.
+
+=item --verbose
 
 short form: -v; cumulative: yes; default: 0
 
 Increase verbosity; can specifiy multiple times.
+
+=item --version
+
+Show version and exit.
 
 =item --wait
 
