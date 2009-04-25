@@ -1,5 +1,9 @@
 Changelog for mk-archiver:
 
+   * Added the --config option for issue 231.
+   * Added the --help and --verbose options for issue 318.
+   * Updates to shared code.
+
 2009-03-31: version 1.0.14
 
    * Send debugging output to STDERR (issue 308).
