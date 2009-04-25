@@ -138,17 +138,17 @@ sub parse_event {
    my $watching   = $misc->{watching};
 
    # We read a packet at a time.  Assuming that all packets begin with a
-   # timestamp "200.....", we just use that as the separator, and restore it.
+   # timestamp "20.....", we just use that as the separator, and restore it.
    # This will be good until the year 2100.
-   local $INPUT_RECORD_SEPARATOR = "\n200";
+   local $INPUT_RECORD_SEPARATOR = "\n20";
 
    my $pos_in_log = tell($fh);
    PACKET:
    while ( defined(my $pack = <$fh>) ) {
       # Remove the separator from the packet, and restore it to the front if
       # necessary.
-      $pack =~ s/\n200\Z//;
-      $pack = "200$pack" unless $pack =~ m/\A200/;
+      $pack =~ s/\n20\Z//;
+      $pack = "20$pack" unless $pack =~ m/\A20/;
 
       my $packet = $self->parse_packet($pack);
       my ($from, $to, $ts, $complete, $data) = @{$packet}{qw(
@@ -408,7 +408,7 @@ sub parse_event {
          }
       }
 
-      $pos_in_log = tell($fh);
+      $pos_in_log = tell($fh) - 1;
    }
 
    return 0;
