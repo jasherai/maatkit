@@ -241,18 +241,24 @@ sub split_logs {
 
    # Report what session files were created.
    if ( $self->{verbose} ) {
-      print "Parsed $self->{n_sessions} sessions:\n";
-      my $fmt = "   %-16s %-60s\n";
-      printf($fmt, $self->{attribute}, 'Saved to log split file');
+      my $fmt = "%-22s %15s %15s\n";
+      printf($fmt, 'SPLIT SUMMARY', 'COUNT', 'MAX ALLOWED');
+      printf($fmt, 'Parsed sessions', $self->{n_sessions},$self->{maxsessions});
+      printf($fmt, 'Directories created', $self->{n_dirs}, $self->{maxdirs});
+      printf($fmt, 'Session files created', $self->{n_session_files},
+         $self->{maxfiles});
+      printf($fmt, 'Sessions per file', $sessions_per_file,
+         $self->{maxsessionfiles}) if $self->{maxsessionfiles};
+      printf($fmt, 'Events read', $self->{n_events_total}, '');
+      printf($fmt, 'Events saved', $self->{n_events_saved}, '');
+
+      print "\n";
+      $fmt = "%-16s %-60s\n";
+      printf($fmt, $self->{attribute}, 'SAVED IN SESSION FILE');
       foreach my $session_id ( sort keys %{ $self->{sessions} } ) {
          my $session = $self->{sessions}->{ $session_id };
          printf($fmt, $session_id, $session->{session_file}); 
       }
-      if ( $sessions_per_file ) {
-         print "Sessions per file: $sessions_per_file\n";
-      }
-      print "Total events: $self->{n_events_total}\n"
-         . "Saved events: $self->{n_events_saved}\n";
    }
 
    return;

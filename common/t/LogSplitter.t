@@ -85,15 +85,15 @@ is_deeply(
 
 diag(`rm -rf $tmpdir/*`);
 $output = `cat samples/slow006.txt | samples/log_splitter.pl`;
-like($output, qr/Parsed 3 sessions/, 'Reads STDIN implicitly');
+like($output, qr/Parsed sessions\s+3/, 'Reads STDIN implicitly');
 
 diag(`rm -rf $tmpdir/*`);
 $output = `cat samples/slow006.txt | samples/log_splitter.pl -`;
-like($output, qr/Parsed 3 sessions/, 'Reads STDIN explicitly');
+like($output, qr/Parsed sessions\s+3/, 'Reads STDIN explicitly');
 
 diag(`rm -rf $tmpdir/*`);
 $output = `cat samples/slow006.txt | samples/log_splitter.pl blahblah`;
-like($output, qr/Parsed 0 sessions/, 'Does nothing if no valid logs are given');
+like($output, qr/Parsed sessions\s+0/, 'Does nothing if no valid logs are given');
 
 diag(`rm -rf $tmpdir/*`);
 $ls = new LogSplitter(
@@ -140,12 +140,12 @@ ok(
 );
 like(
    $output,
-   qr/Total events: 6/,
+   qr/Events read\s+6/,
    'Counts total events'
 );
 like(
    $output,
-   qr/Saved events: 6/,
+   qr/Events saved\s+6/,
    'Counts saved events'
 );
 
