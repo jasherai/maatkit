@@ -213,24 +213,6 @@ like($output, qr/--orderby\s+Query_time:sum,Query_time:sum/,
    '--groupby cascades to --orderby');
 
 # #############################################################################
-# Daemonizing and pid creation
-# #############################################################################
-# Start one daemonized instance to update it
-`../mk-query-digest --daemonize --pid /tmp/mk-query-digest.pid --processlist localhost`;
-$output = `ps -eaf | grep mk-query-digest | grep daemonize`;
-like($output, qr/perl ...mk-query-digest/, 'It is running');
-
-ok(-f '/tmp/mk-query-digest.pid', 'PID file created');
-my ($pid) = $output =~ /\s+(\d+)\s+/;
-$output = `cat /tmp/mk-query-digest.pid`;
-is($output, $pid, 'PID file has correct PID');
-kill 15, $pid;
-sleep 1;
-$output = `ps -eaf | grep mk-query-digest | grep daemonize`;
-unlike($output, qr/perl ...mk-query-digest/, 'It is not running');
-unlink '/tmp/mk-query-digest.pid' or die $OS_ERROR;
-
-# #############################################################################
 # Tests for query reviewing and other stuff that requires a DB server.
 # #############################################################################
 require '../../common/DSNParser.pm';
@@ -243,7 +225,28 @@ my $dbh1 = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave1');
 my $cmd;
 SKIP: {
-   skip 'Cannot connect to sandbox master', 15 if !$dbh1;
+   skip 'Cannot connect to sandbox master', 21 if !$dbh1;
+
+   # #########################################################################
+   # Daemonizing and pid creation
+   # #########################################################################
+
+   # TODO: why does this require system?
+   system('../mk-query-digest --daemonize --pid /tmp/mk-query-digest.pid --processlist h=127.1,P=12345');
+   $output = `ps -eaf | grep mk-query-digest | grep daemonize`;
+   like($output, qr/perl ...mk-query-digest/, 'It is running');
+   ok(-f '/tmp/mk-query-digest.pid', 'PID file created');
+
+   my ($pid) = $output =~ /\s+(\d+)\s+/;
+   $output = `cat /tmp/mk-query-digest.pid`;
+   is($output, $pid, 'PID file has correct PID');
+
+   kill 15, $pid;
+   sleep 1;
+   $output = `ps -eaf | grep mk-query-digest | grep daemonize`;
+   unlike($output, qr/perl ...mk-query-digest/, 'It is not running');
+
+   unlink '/tmp/mk-query-digest.pid' or die $OS_ERROR;
 
    $sb->create_dbs($dbh1, ['test']);
    $sb->load_file('master', 'samples/query_review.sql');

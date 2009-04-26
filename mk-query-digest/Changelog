@@ -1,5 +1,8 @@
 Changelog for mk-query-digest:
 
+   * Added the --config option for issue 231.
+   * Added the --log option for issue 241.
+   * Added the --help and --verbose options for issue 318.
    * Fixed another crash when sqrt() of a negative number (issue 332).
    * Fixed a division by zero when a query has zero exec time.
    * Added --print to print query events in slow-log format.
@@ -7,6 +10,7 @@ Changelog for mk-query-digest:
    * Added --tcpdump to permit parsing output of tcpdump (issue 228).
    * The --shorten option was implemented badly and was slow (issue 336).
    * The report's per-class QPS was calculated incorrectly (issue 326).
+   * Updates to shared code.
 
 2009-03-31: version 0.9.4
 
