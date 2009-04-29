@@ -2574,6 +2574,8 @@ foreach my $database ( $finder->find_databases($dbh) ) {
       #  * auto-generate sql to show col,count(*) group by 1 order by 2 desc limit 10
       #    so we can find the skew of the distribution.
       #  * for indexed columns, find ones that are not very selective 
+      #  * Look for *absence* of unsigned
+      #  * Look for someting like DECIMAL(31,0)
 
       my $keys = $dk->get_keys($ddl,{version => $version }) if $opts{f} =~ m/k/;
       my $fks  = $dk->get_fks($ddl,{database => $database}) if $opts{f} =~ m/f/;
