@@ -1,0 +1,31 @@
+-- MULTIPLE SESSIONS
+USE `mk_log_player_1`
+
+SELECT a FROM tbl1
+
+USE `mk_log_player_2`
+
+SELECT a FROM mk_log_player_2.tbl2
+
+USE `mk_log_player_1`
+
+UPDATE mk_log_player_1.tbl1 SET a = 100 WHERE a = 1
+-- END SESSION
+
+USE `mk_log_player_2`
+
+SELECT a FROM tbl2
+
+DELETE FROM mk_log_player_2.tbl2 WHERE a IS NULL
+-- END SESSION
+
+USE `mk_log_player_1`
+
+SELECT a FROM tbl1 WHERE a = 3
+-- END SESSION
+
+USE `mk_log_player_1`
+
+INSERT INTO mk_log_player_1.tbl1 VALUES (555)
+-- END SESSION
+
