@@ -125,8 +125,9 @@ sub sync_table {
          if ( !$args{skipslavecheck} && $slave_status && $sql_log_bin
             && ($log_bin || 'OFF') eq 'ON' )
          {
-            die "Can't make changes on $change_dbh: see the documentation "
-               . "section 'REPLICATION SAFETY' for solutions to this problem.";
+            die "Can't make changes on $change_dbh because it's a slave: see "
+               . "the documentation section 'REPLICATION SAFETY' for solutions "
+               . "to this problem.";
          }
       }
       MKDEBUG && _d('Will make changes via', $change_dbh);
@@ -277,11 +278,19 @@ sub sync_table {
 }
 
 # This query will check all needed privileges on the table without actually
-# changing anything in it.
+# changing anything in it.  We can't use REPLACE..SELECT because that doesn't
+# work inside of LOCK TABLES.
 sub check_permissions {
    my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
    my $db_tbl = $quoter->quote($db, $tbl);
-   my $sql = "REPLACE INTO $db_tbl SELECT * FROM $db_tbl LIMIT 0";
+   my $sql = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d('Permissions check:', $sql);
+   my $cols = $dbh->selectall_arrayref($sql, {Slice => {}});
+   my ($hdr_name) = grep { m/privileges/i } keys %{$cols->[0]};
+   my $privs = $cols->[0]->{$hdr_name};
+   die "$privs does not include all needed privileges for $db_tbl"
+      unless $privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/;
+   $sql = "DELETE FROM $db_tbl LIMIT 0"; # FULL COLUMNS doesn't show all privs
    MKDEBUG && _d('Permissions check:', $sql);
    $dbh->do($sql);
 }
