@@ -812,23 +812,23 @@ if ( !-e $master_file ) {
       die "Failed to create master file $master_file: $OS_ERROR";
    }
    print "Created master file $master_file.\n";
+
+   $retval = system("echo '-- MULTIPLE SESSIONS' > $master_file");
+   if ( $retval >> 8 ) {
+      die "Failed to write to master file $master_file: $OS_ERROR";
+   }
 } 
 else {
+   if ( !-w $master_file ) {
+      die "Cannot write to master file $master_file";
+   }
+
    my $header = `head -n 1 $master_file`;
    if ( $header !~ m/-- MULTIPLE SESSIONS/ ) {
       die "Master file $master_file already exists but does not appear to be "
          . "a multiple-session file.  Delete or fix this file, or specify a "
          . "different master file";
    }
-}
-
-if ( !-w $master_file ) {
-   die "Cannot write to master file $master_file";
-}
-
-$retval = system("echo '-- MULTIPLE SESSIONS' > $master_file");
-if ( $retval >> 8 ) {
-   die "Failed to write to master file $master_file: $OS_ERROR";
 }
 
 print "Session files will be merged into master file $master_file.\n";
