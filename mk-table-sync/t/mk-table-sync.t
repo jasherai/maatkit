@@ -3,10 +3,11 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 44;
+use Test::More tests => 46;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
+my $output;
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master')
@@ -32,7 +33,7 @@ sub run {
 # Test basic master-slave syncing
 # #############################################################################
 $sb->load_file('master', 'samples/before.sql');
-my $output = run('test1', 'test2', '');
+$output = run('test1', 'test2', '');
 like($output, qr/Can't make changes/, 'It dislikes changing a slave');
 
 $output = run('test1', 'test2', '--skipbinlog');
@@ -310,6 +311,25 @@ UPDATE `test`.`test4` SET `name`=51707 WHERE `id`=15034 LIMIT 1;
 UPDATE `test`.`test4` SET `name`='001' WHERE `id`=1 LIMIT 1;
 EOF
   '--columns name: found differences');
+
+# #############################################################################
+# Issue 363: lock and rename.
+# #############################################################################
+$sb->load_file('master', 'samples/before.sql');
+
+$output = `perl ../mk-table-sync --lock-and-rename h=127.1,P=12345 P=12346 2>&1`;
+like($output, qr/requires exactly two/,
+   '--lock-and-rename error when DSNs do not specify table');
+
+# It's hard to tell exactly which table is which, and the tables are going to be
+# "swapped", so we'll put a marker in each table to test the swapping.
+`/tmp/12345/use -e "alter table test.test1 comment='test1'"`;
+
+$output = `perl ../mk-table-sync --execute --lock-and-rename h=127.1,P=12345,D=test,t=test1 t=test2 2>&1`;
+diag $output if $output;
+
+$output = `/tmp/12345/use -e 'show create table test.test2'`;
+like($output, qr/COMMENT='test1'/, '--lock-and-rename worked');
 
 # #############################################################################
 # Done

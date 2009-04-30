@@ -3390,7 +3390,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 3186
+# TableSyncer package 3495
 # ###########################################################################
 package TableSyncer;
 
@@ -3480,8 +3480,9 @@ sub sync_table {
          if ( !$args{skipslavecheck} && $slave_status && $sql_log_bin
             && ($log_bin || 'OFF') eq 'ON' )
          {
-            die "Can't make changes on $change_dbh: see the documentation "
-               . "section 'REPLICATION SAFETY' for solutions to this problem.";
+            die "Can't make changes on $change_dbh because it's a slave: see "
+               . "the documentation section 'REPLICATION SAFETY' for solutions "
+               . "to this problem.";
          }
       }
       MKDEBUG && _d('Will make changes via', $change_dbh);
@@ -3624,7 +3625,14 @@ sub sync_table {
 sub check_permissions {
    my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
    my $db_tbl = $quoter->quote($db, $tbl);
-   my $sql = "REPLACE INTO $db_tbl SELECT * FROM $db_tbl LIMIT 0";
+   my $sql = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d('Permissions check:', $sql);
+   my $cols = $dbh->selectall_arrayref($sql, {Slice => {}});
+   my ($hdr_name) = grep { m/privileges/i } keys %{$cols->[0]};
+   my $privs = $cols->[0]->{$hdr_name};
+   die "$privs does not include all needed privileges for $db_tbl"
+      unless $privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/;
+   $sql = "DELETE FROM $db_tbl LIMIT 0"; # FULL COLUMNS doesn't show all privs
    MKDEBUG && _d('Permissions check:', $sql);
    $dbh->do($sql);
 }
@@ -4871,6 +4879,13 @@ if ( !@dsns || (@dsns ==1 && !$opts{R} && !$opts{s}) ) {
       . 'required unless --synctomaster or --replicate is specified');
 }
 
+if ( $opts{'lock-and-rename'} ) {
+   if ( @dsns != 2 || !$dsns[0]->{t} || !$dsns[1]->{t} ) {
+   $opt_parser->error("--lock-and-rename requires exactly two DSNs and they "
+      . "must each specify a table.");
+   }
+}
+
 if ( $opts{explainhosts} ) {
    foreach my $host ( @dsns ) {
       print "# DSN: ", $dsn_parser->as_string($host), "\n";
@@ -4886,7 +4901,67 @@ $opt_parser->usage_or_errors(%opts);
 my $exit_status = 0; # 1: internal error, 2: tables differed, 3: both
 my $hdr         = "# %6s %7s %6s %6s %-9s %s.%s\n";
 
-if ( $dsns[0]->{t} ) {
+if ( $opts{'lock-and-rename'} ) {
+   MKDEBUG && _d('Locking and syncing ONE TABLE with rename');
+   $dsns[0]->{dbh} = get_cxn($dsns[0]);
+   $dsns[1]->{dbh} = get_cxn($dsns[1]);
+
+   if ( !$opts{'ignore-triggers'} ) {
+      check_tables_for_triggers(
+         [ @dsns[1 .. $#dsns] ],
+         [ { db => $dsns[0]->{D}, tbl => $dsns[0]->{t} } ]
+      );
+   }
+
+   if ( $opts{v} ) {
+      print "# Lock and rename ", $dsn_parser->as_string($dsns[0]), "\n";
+      printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
+   }
+
+   my %args = (
+      src     => $dsns[0],
+      dst     => $dsns[1],
+   );
+
+   # We don't use lock_server() here because it does the usual stuff wrt
+   # waiting for slaves to catch up to master, etc, etc.
+   my $src_db_tbl = $q->quote(@{$dsns[0]}{qw(D t)});
+   my $dst_db_tbl = $q->quote(@{$dsns[1]}{qw(D t)});
+   my $tmp_db_tbl = $q->quote($dsns[0]->{D}, $dsns[0]->{t} . "_tmp_$PID");
+   my $sql = "LOCK TABLES $src_db_tbl WRITE";
+   MKDEBUG && _d($sql);
+   $dsns[0]->{dbh}->do($sql);
+   $sql = "LOCK TABLES $dst_db_tbl WRITE";
+   MKDEBUG && _d($sql);
+   $dsns[1]->{dbh}->do($sql);
+   sync_a_table(
+      %args,
+      lock       => 0,
+      src_db     => $dsns[0]->{D},
+      src_tbl    => $dsns[0]->{t},
+      dst_db     => $dsns[1]->{D},
+      dst_tbl    => $dsns[1]->{t},
+      where      => $opts{W},
+      index_hint => !$opts{nouseindex},
+   );
+
+   # Now rename the tables to swap them.
+   $sql = "ALTER TABLE $src_db_tbl RENAME $tmp_db_tbl";
+   MKDEBUG && _d($sql);
+   $dsns[0]->{dbh}->do($sql);
+   $sql = "ALTER TABLE $dst_db_tbl RENAME $src_db_tbl";
+   MKDEBUG && _d($sql);
+   $dsns[1]->{dbh}->do($sql);
+   $sql = "UNLOCK TABLES";
+   MKDEBUG && _d($sql);
+   $dsns[0]->{dbh}->do($sql);
+   $sql = "ALTER TABLE $tmp_db_tbl RENAME $dst_db_tbl";
+   MKDEBUG && _d($sql);
+   $dsns[0]->{dbh}->do($sql);
+
+   unlock_server(%args);
+}
+elsif ( $dsns[0]->{t} ) {
    MKDEBUG && _d('DSN has t part; syncing ONE TABLE between servers');
    if ( @dsns == 1 ) {
       die "You specified one DSN with a t part, but not --synctomaster.\n"
@@ -5777,10 +5852,19 @@ for the slave to catch up to the master before continuing.
 
 If --transaction is specified, C<LOCK TABLES> is not used.  Instead, lock
 and unlock are implemented by beginning and committing transactions.
-The exception is if L<"--lock"> is 3.
+The exception is if --lock is 3.
 
 If --notransaction is specified, then C<LOCK TABLES> is used for any
-value of L<"--lock">. See L<"--[no]transaction">.
+value of --lock. See L<"--[no]transaction">.
+
+=item --lock-and-rename
+
+Lock the source and destination table, sync, then swap names.  This is useful as
+a less-blocking ALTER TABLE, once the tables are reasonably in sync with each
+other (which you may choose to accomplish via any number of means, including
+dump and reload or even something like L<mk-archiver>).  It requires exactly two
+DSNs and assumes they are on the same server, so it does no waiting for
+replication or the like.  Tables are locked with LOCK TABLES.
 
 =item --nouseindex
 

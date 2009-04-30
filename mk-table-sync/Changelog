@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Added --lock-and-rename (issue 363).
+
 2009-03-31: version 1.0.14
 
    * Send debugging output to STDERR (issue 308).
