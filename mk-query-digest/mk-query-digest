@@ -5047,7 +5047,8 @@ sub _d {
 
 =head1 NAME
 
-mk-query-digest - Analyze, transform, filter, review and report on queries.
+mk-query-digest - Parses logs and more.  Analyze, transform, filter, review and
+report on queries.
 
 =head1 SYNOPSIS
 
