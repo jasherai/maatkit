@@ -184,6 +184,13 @@ ok(
    'Order by non-existent falls back to default',
 );
 
+# Issue 337, duplicate table names
+ok(
+   no_diff($run_with . 'slow028.txt',
+      'samples/slow028.txt'),
+   'No duplicate table names',
+);
+
 # #############################################################################
 # Issue 228: parse tcpdump.
 # #############################################################################
