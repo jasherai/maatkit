@@ -1971,8 +1971,8 @@ sub main {
 
    $dp->prop('set-vars', $o->get('set-vars'));
 
-   if ( $o->get('time') ) {
-      $o->set('time', max($o->get('time'), 1));
+   if ( $o->get('run-time') ) {
+      $o->set('run-time', max($o->get('run-time'), 1));
    }
 
    my ($chk_int, $chk_min, $chk_max) = @{$o->get('check-interval')};
@@ -2003,7 +2003,7 @@ sub main {
    # These opts are mostly used in subs.
    $window           = $o->get('window');
    $sentinel         = $o->get('sentinel');
-   $time             = $o->get('time');
+   $time             = $o->get('run-time');
 
    # ########################################################################
    # First things first: if --stop was given, create the sentinel file.
@@ -2889,7 +2889,7 @@ samples.
 
 Stop running instances by creating the L<"--sentinel"> file.
 
-=item --time
+=item --run-time
 
 type: time
 
