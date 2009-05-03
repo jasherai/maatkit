@@ -1469,8 +1469,8 @@ sub main {
 
    # TODO: this can go into the POD.
    $o->set('interval', max($o->get('interval'), 1));
-   if ( $o->get('time') ) {
-      $o->set('time', max($o->get('time'), 1));
+   if ( $o->get('run-time') ) {
+      $o->set('run-time', max($o->get('run-time'), 1));
    }
 
    $o->usage_or_errors();
@@ -1482,7 +1482,7 @@ sub main {
    my @positions;
    my $next_start = 0;
    $now    = time();
-   my $end = $now + ( $o->get('time') || 0 );    # When we should exit
+   my $end = $now + ( $o->get('run-time') || 0 );    # When we should exit
 
    # Connect before daemonizing, in case --ask-pass is needed.
    my ( $slave, $master );
@@ -1524,7 +1524,7 @@ sub main {
    $slave->do('START SLAVE IO_THREAD');
 
    while (                              # Quit if:
-      (!$o->get('time') || $now < $end) # time is exceeded
+      (!$o->get('run-time') || $now < $end) # time is exceeded
       && $oktorun                       # or instructed to quit
    ) {
 
@@ -1719,7 +1719,7 @@ mk-slave-delay - Make a MySQL slave server lag behind its master.
 
 To hold slavehost one minute behind its master for ten minutes:
 
-   mk-slave-delay --delay 1m --interval 15s --time 10m slavehost
+   mk-slave-delay --delay 1m --interval 15s --run-time 10m slavehost
 
 =head1 DESCRIPTION
 
@@ -1916,7 +1916,7 @@ short form: -S; type: string
 
 Socket file to use for connection to slave.
 
-=item --time
+=item --run-time
 
 type: time
 

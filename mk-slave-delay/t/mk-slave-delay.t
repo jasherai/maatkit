@@ -19,7 +19,7 @@ my $output = `perl ../mk-slave-delay --help`;
 like($output, qr/Prompt for a password/, 'It compiles');
 
 # Check daemonization
-my $cmd = '../mk-slave-delay --delay 1m --interval 15s --time 10m --daemonize --pid /tmp/mk-slave-delay.pid h=127.1,P=12346';
+my $cmd = '../mk-slave-delay --delay 1m --interval 15s --run-time 10m --daemonize --pid /tmp/mk-slave-delay.pid h=127.1,P=12346';
 diag(`$cmd 1>/dev/null 2>/dev/null`);
 $output = `ps -eaf | grep 'mk-slave-delay \-\-delay'`;
 like($output, qr/$cmd/, 'It lives daemonized');
@@ -39,7 +39,7 @@ ok(! -f '/tmp/mk-slave-delay.pid', 'PID file removed');
 # #############################################################################
 # Issue 149: h is required even with S, for slavehost argument
 # #############################################################################
-$output = `../mk-slave-delay --time 1s --delay 1s --interval 1s S=/tmp/12346/mysql_sandbox12346.sock 2>&1`;
+$output = `../mk-slave-delay --run-time 1s --delay 1s --interval 1s S=/tmp/12346/mysql_sandbox12346.sock 2>&1`;
 unlike($output, qr/Missing DSN part 'h'/, 'Does not require h DSN part');
 
 # #############################################################################
@@ -58,7 +58,7 @@ diag `/tmp/12346/stop; rm -rf /tmp/12346; ../../sandbox/make_slave 12346`;
 # #############################################################################
 # Check that SLAVE-HOST can be given by cmd line opts.
 # #############################################################################
-$output = `../mk-slave-delay --time 1s --interval 1s --host 127.1 --port 12346`;
+$output = `../mk-slave-delay --run-time 1s --interval 1s --host 127.1 --port 12346`;
 sleep 1;
 like(
    $output,
@@ -69,7 +69,7 @@ like(
 # #############################################################################
 # Check --use-master
 # #############################################################################
-$output = `../mk-slave-delay --time 1s --interval 1s --use-master --host 127.1 --port 12346`;
+$output = `../mk-slave-delay --run-time 1s --interval 1s --use-master --host 127.1 --port 12346`;
 sleep 1;
 like(
    $output,
@@ -77,7 +77,7 @@ like(
    '--use-master'
 );
 
-$output = `../mk-slave-delay --time 1s --interval 1s --use-master --host 127.1 --port 12345 2>&1`;
+$output = `../mk-slave-delay --run-time 1s --interval 1s --use-master --host 127.1 --port 12345 2>&1`;
 like(
    $output,
    qr/No SLAVE STATUS found/,
@@ -87,7 +87,7 @@ like(
 # #############################################################################
 # Check --log.
 # #############################################################################
-`../mk-slave-delay --time 1s --interval 1s -h 127.1 -P 12346 --log /tmp/mk-slave-delay.log --daemonize`;
+`../mk-slave-delay --run-time 1s --interval 1s -h 127.1 -P 12346 --log /tmp/mk-slave-delay.log --daemonize`;
 sleep 2;
 $output = `cat /tmp/mk-slave-delay.log`;
 `rm -f /tmp/mk-slave-delay.log`;
