@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 7;
+use Test::More tests => 8;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -57,6 +57,13 @@ unlike(
    $output,
    qr/at \d{4}/,
    'It has no timestamp',
+);
+
+$output = `$cmd --ignore baron,msandbox,root,root\@localhost`;
+unlike(
+   $output,
+   qr/uninitialized/,
+   'Does not die when all users skipped',
 );
 
 exit;
