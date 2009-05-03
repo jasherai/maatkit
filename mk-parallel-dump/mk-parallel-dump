@@ -1144,7 +1144,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 3293
+# TableParser package 3475
 # ###########################################################################
 package TableParser;
 
@@ -1184,7 +1184,7 @@ sub parse {
    my $engine = $self->get_engine($ddl);
 
    my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
-   my @cols   = map { $_ =~ m/`([^`]+)`/g } @defs;
+   my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
    MKDEBUG && _d('Columns:', join(', ', @cols));
 
    my %def_for;

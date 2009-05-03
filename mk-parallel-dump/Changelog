@@ -1,5 +1,6 @@
 Changelog for mk-parallel-dump:
 
+   * Columns with backticks in comments caused a crash (issue 330)
 2009-03-31: version 1.0.14
 
    * Send debugging output to STDERR (issue 308).

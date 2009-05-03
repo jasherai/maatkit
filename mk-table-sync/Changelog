@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * Columns with backticks in comments caused a crash (issue 330)
    * Added --lock-and-rename (issue 363).
 
 2009-03-31: version 1.0.14
