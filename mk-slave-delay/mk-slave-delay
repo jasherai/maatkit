@@ -1804,13 +1804,11 @@ Prompt for a password when connecting to slave.
 
 short form: -A; type: string
 
-Default character set.
-
-Enables character set settings in Perl and MySQL. If the value is C<utf8>,
-sets Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option
-to DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL. Any other
-value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES>
-after connecting to MySQL.
+Default character set.  Enables character set settings in Perl and MySQL. If the
+value is C<utf8>, sets Perl's binmode on STDOUT to utf8, passes the
+C<mysql_enable_utf8> option to DBD::mysql, and runs C<SET NAMES UTF8> after
+connecting to MySQL. Any other value sets binmode on STDOUT without the utf8
+layer, and runs C<SET NAMES> after connecting to MySQL.
 
 =item --config
 
@@ -1836,9 +1834,8 @@ Fork to the background and detach.  POSIX only.
 
 short form: -F; type: string
 
-Only read mysql options from the given file.
-
-You must give an absolute pathname.
+Only read mysql options from the given file.  You must give an absolute
+pathname.
 
 =item --delay
 
@@ -1869,31 +1866,27 @@ type: string
 
 Print all output to this file when daemonized.
 
-=item --pid
-
-type: string 
-
-Create the given PID file when daemonized.
-
-For example, '--daemonize --pid /tmp/mk-slave-delay.pid' would cause
-mk-slave-delay to create the PID file /tmp/mk-slave-delay.pid.
-
-/var/run/ is usually not writable by non-root users, therefore /tmp/ is a
-more reliable alternative.
-
-The PID file is removed when the daemonized instance of mk-slave-delay exits.
-
-=item --quiet
-
-short form: -q
-
-Do not output regular status messages.
-
 =item --password
 
 short form: -p; type: string
 
 Password to use for connection to slave.
+
+=item --pid
+
+type: string 
+
+Create the given PID file when daemonized.  For example, '--daemonize --pid
+/tmp/mk-slave-delay.pid' would cause mk-slave-delay to create the PID file
+/tmp/mk-slave-delay.pid.  The PID file is removed when the daemonized instance
+of mk-slave-delay exits.
+
+/var/run/ is usually not writable by non-root users, therefore /tmp/ is a
+more reliable alternative.  
+
+short form: -q
+
+Do not output regular status messages.
 
 =item --port
 
@@ -1901,20 +1894,9 @@ short form: -P; type: int
 
 Port number to use for connection to slave.
 
-=item --set-vars
+=item --quiet
 
-type: string
-
-Set these MySQL variables (default wait_timeout=10000).
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
-
-=item --socket
-
-short form: -S; type: string
-
-Socket file to use for connection to slave.
+Don't print informational messages about operation.  See L<OUTPUT> for details.
 
 =item --run-time
 
@@ -1922,6 +1904,20 @@ type: time
 
 How long C<mk-slave-delay> should run before exiting.  The default is to run
 forever.
+
+=item --set-vars
+
+type: string
+
+Set these MySQL variables (default wait_timeout=10000).  Specify any variables
+you want to be set immediately after connecting to MySQL.  These will be
+included in a C<SET> command.
+
+=item --socket
+
+short form: -S; type: string
+
+Socket file to use for connection to slave.
 
 =item --use-master
 

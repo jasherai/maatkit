@@ -2592,23 +2592,20 @@ Prompt for a password when connecting to MySQL.
 
 short form: -A; type: string
 
-Default character set.
-
-Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
-Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
-DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
-value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
-connecting to MySQL.
+Default character set.  Enables character set settings in Perl and MySQL.  If
+the value is C<utf8>, sets Perl's binmode on STDOUT to utf8, passes the
+C<mysql_enable_utf8> option to DBD::mysql, and runs C<SET NAMES UTF8> after
+connecting to MySQL.  Any other value sets binmode on STDOUT without the utf8
+layer, and runs C<SET NAMES> after connecting to MySQL.
 
 =item --check-interval
 
 type: Array; default: 16,1,1024
 
-How often to check the slave: init,min,max.
-
-How many relay log events should pass before checking the output of C<SHOW
-SLAVE STATUS>.  The syntax is a three-number range: initial, minimum, and
-maximum.  You should be able to leave this at the defaults.
+How often to check the slave: init,min,max.  This many relay log events should
+pass before checking the output of C<SHOW SLAVE STATUS>.  The syntax is a
+three-number range: initial, minimum, and maximum.  You should be able to leave
+this at the defaults.
 
 C<mk-slave-prefetch> varies the check interval in powers of two, depending on
 whether it decides the check was necessary.
@@ -2628,10 +2625,9 @@ Fork and run in the background; POSIX OSes only.
 
 short form: -D; type: string
 
-The database to use for the connection.
-
-Connect to this database.  C<mk-slave-prefetch> will issue C<USE> statements
-as required by the binary log events.
+The database to use for the connection.  The initial connection will be to this
+database, but mk-slave-prefetch will issue C<USE> statements as required by the
+binary log events.
 
 =item --defaults-file
 
@@ -2672,9 +2668,8 @@ Host to connect to.
 
 type: size; default: 1k
 
-How many bytes to lag the slave I/O thread.
-
-This helps avoid C<mysqlbinlog> reading right off the end of the relay log file.
+How many bytes to lag the slave I/O thread.  This helps avoid C<mysqlbinlog>
+reading right off the end of the relay log file.
 
 =item --log
 
@@ -2686,9 +2681,8 @@ Print all output to this file when daemonized.
 
 type: float; default: 1
 
-Do not run queries longer than this many seconds; fractions allowed.
-
-If C<mk-slave-prefetch> predicts the query will take longer to execute, it will
+Do not run queries longer than this many seconds; fractions allowed.  If
+C<mk-slave-prefetch> predicts the query will take longer to execute, it will
 skip the query.  This is based on the theory that pre-warming the cache is most
 beneficial for short queries.
 
@@ -2728,9 +2722,8 @@ queries).  The rewritten query will then look like the following;
 
 =item --num-prefix
 
-Abstract away numeric table name prefixes.
-
-This causes the following two queries to "fingeprint" to the same thing:
+Abstract away numeric table name prefixes.  This causes the following two
+queries to "fingeprint" to the same thing:
 
   select from 1_2_users;
   select from 2_3_users;
@@ -2739,11 +2732,9 @@ This causes the following two queries to "fingeprint" to the same thing:
 
 type: size; default: 128
 
-How many bytes C<mk-slave-prefetch> will try to stay in front of the slave
-SQL thread.
-
-It will not execute log events it doesn't think are at least this
-far ahead of the SQL thread.  See also L<"--window">.
+How many bytes C<mk-slave-prefetch> will try to stay in front of the slave SQL
+thread.  It will not execute log events it doesn't think are at least this far
+ahead of the SQL thread.  See also L<"--window">.
 
 =item --password
 
@@ -2755,11 +2746,10 @@ The password to use when connecting.
 
 type: string
 
-Permit queries matching this Perl regexp.
-
-This is a filter for log events.  The regular expression is matched against the
-raw log event, before any transformations are applied.  If specified, this
-option will permit only log events matching the regular expression.
+Permit queries matching this Perl regexp.  This is a filter for log events.  The
+regular expression is matched against the raw log event, before any
+transformations are applied.  If specified, this option will permit only log
+events matching the regular expression.
 
 =item --pid
 
@@ -2793,28 +2783,29 @@ Print queries that could not be transformed into C<SELECT>.
 
 type: int
 
-Print progress information every X events.
-
-The information is the current log file and position, plus a summary of the
-statistics gathered.
+Print progress information every X events.  The information is the current log
+file and position, plus a summary of the statistics gathered.
 
 =item --query-sample-size
 
 type: int; default: 4
 
-Average query exec time over this many queries.
-
-The last C<N> queries with a given fingerprint are averaged together to get the
-average query execution time (see L<"--max-query-time">).  
+Average query exec time over this many queries.  The last C<N> queries with a
+given fingerprint are averaged together to get the average query execution time
+(see L<"--max-query-time">).  
 
 =item --reject-regexp
 
 type: string
 
-Reject queries matching this Perl regexp.
+Reject queries matching this Perl regexp.  Similar to L<"--permit-regexp">, but
+has the opposite effect: log events must B<not> match the regular expression.
 
-Similar to L<"--permit-regexp">, but has the opposite effect: log events must
-B<not> match the regular expression.
+=item --run-time
+
+type: time
+
+How long C<mk-slave-prefetch> should run before exiting.  The default is to run forever.
 
 =item --sentinel
 
@@ -2826,10 +2817,8 @@ Exit if this file exists.
 
 type: string; default: wait_timeout=10000
 
-Set these MySQL variables.
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+Set these MySQL variables.  Specify any variables you want to be set immediately
+after connecting to MySQL.  These will be included in a C<SET> command.
 
 =item --socket
 
@@ -2839,10 +2828,9 @@ Socket file to use for connection.
 
 =item --statistics
 
-Print execution statistics after exiting.
-
-The statistics are in two sections: counters, and queries.  The counters simply
-count the number of times events occur.  You may see the following counters:
+Print execution statistics after exiting.  The statistics are in two sections:
+counters, and queries.  The counters simply count the number of times events
+occur.  You may see the following counters:
 
    NAME                    MEANING
    ======================  =======================================
@@ -2889,22 +2877,13 @@ samples.
 
 Stop running instances by creating the L<"--sentinel"> file.
 
-=item --run-time
-
-type: time
-
-How long C<mk-slave-prefetch> should run before exiting.
-
-The default is to run forever.
-
 =item --tmpdir
 
 type: string; default: /dev/null
 
-Where to create temp files for C<LOAD DATA INFILE> queries.
-
-The default will cause C<mysqlbinlog> to skip the file and the associated C<LOAD
-DATA INFILE> command entirely.
+Where to create temp files for C<LOAD DATA INFILE> queries.  The default will
+cause C<mysqlbinlog> to skip the file and the associated C<LOAD DATA INFILE>
+command entirely.
 
 If C<mk-slave-prefetch> sees a C<LOAD DATA INFILE> command (which it won't, if
 this is left at the default), it will try to remove the temporary file, then
@@ -2924,11 +2903,10 @@ Show version and exit.
 
 type: size; default: 4k
 
-The max bytes ahead of the slave C<mk-slave-prefetch> should get.
-
-Defines the window within which C<mk-slave-prefetch> considers a query OK to
-execute.  The window begins at the slave SQL thread's last known position plus
-L<"--offset"> bytes, and extends for the specified number of bytes.
+The max bytes ahead of the slave C<mk-slave-prefetch> should get.  Defines the
+window within which C<mk-slave-prefetch> considers a query OK to execute.  The
+window begins at the slave SQL thread's last known position plus L<"--offset">
+bytes, and extends for the specified number of bytes.
 
 If C<mk-slave-prefetch> sees a log event that is too far in the future, it will
 increment the C<too_far_ahead> counter and wait for the slave SQL thread to

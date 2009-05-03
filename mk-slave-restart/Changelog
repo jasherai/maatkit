@@ -15,7 +15,8 @@ Changelog for mk-slave-restart:
    * Removed the -k short option.  Use --skip-count instead.
    * Removed the --skipcount long option.  Use --skip-count instead.
    * Removed the -s short option.  Use --sleep instead.
-   * Removed the -t short option.  Use --time instead.
+   * Removed the -t short option.  Use --run-time instead.
+   * Removed the --time long option.  Use --run-time instead.
    * Removed the --untilmaster long option.  Use --until-master instead.
    * Removed the --untilrelay long option.  Use --until-relay instead.
    * Removed the -v short option.  Use --verbose instead.

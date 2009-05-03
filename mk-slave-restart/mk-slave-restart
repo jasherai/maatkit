@@ -2127,14 +2127,14 @@ sub watch_server {
       },
    );
 
-   my $exit_time = time() + ($o->get('time') || 0);
+   my $exit_time = time() + ($o->get('run-time') || 0);
    my $sleep = $o->get('sleep');
    my ($last_log, $last_pos);
 
    my $stat = {}; # Will hold SHOW SLAVE STATUS
    STAT:
    while ( $stat
-           && (!$o->get('time') || time() < $exit_time)
+           && (!$o->get('run-time') || time() < $exit_time)
            && !-f $o->get('sentinel') ) {
       my $increase_sleep = 1;
       $stat = $ms->get_slave_status($dbh);
@@ -2347,11 +2347,8 @@ second gets the latest trunk code from Subversion.
 
 =item --always
 
-Start slaves even when no error.
-
-Always (re)start the slave processes, even when there is no error.  With this
-option enabled, C<mk-slave-restart> will not let you stop the slave if you want
-to!
+Start slaves even when there is no error.  With this option enabled,
+mk-slave-restart will not let you stop the slave manually if you want to!
 
 =item --ask-pass
 
@@ -2361,13 +2358,11 @@ Prompt for a password when connecting to MySQL.
 
 short form: -A; type: string
 
-Default character set.
-
-Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
-Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
-DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
-value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
-connecting to MySQL.
+Default character set.  Enables character set settings in Perl and MySQL.  If
+the value is C<utf8>, sets Perl's binmode on STDOUT to utf8, passes the
+C<mysql_enable_utf8> option to DBD::mysql, and runs C<SET NAMES UTF8> after
+connecting to MySQL.  Any other value sets binmode on STDOUT without the utf8
+layer, and runs C<SET NAMES> after connecting to MySQL.
 
 =item --config
 
@@ -2378,9 +2373,8 @@ first option on the command line.
 
 =item --daemonize
 
-Fork to background and detach (POSIX only).
-
-This probably doesn't work on Microsoft Windows.
+Fork to background and detach (POSIX only).  This probably doesn't work on
+Microsoft Windows.
 
 =item --database
 
@@ -2406,11 +2400,9 @@ length.  This can be useful to prevent wrapping on the terminal.
 
 type: hash
 
-Only restart this comma-separated list of errors.
-
-Makes mk-slave-restart only try to restart if the error number is in this
-comma-separated list of errors.  If it sees an error not in the list, it will
-exit.
+Only restart this comma-separated list of errors.  Makes mk-slave-restart only
+try to restart if the error number is in this comma-separated list of errors.
+If it sees an error not in the list, it will exit.
 
 The error number is in the C<last_errno> column of C<SHOW SLAVE STATUS>.
 
@@ -2418,11 +2410,10 @@ The error number is in the C<last_errno> column of C<SHOW SLAVE STATUS>.
 
 type: string
 
-Only restart errors that match this pattern.
-
-A Perl regular expression against which the error text, if any, is matched.  If
-the error text exists and matches, mk-slave-restart will try to restart the
-slave.  If it exists but doesn't match, mk-slave-restart will exit.
+Only restart errors that match this pattern.  A Perl regular expression against
+which the error text, if any, is matched.  If the error text exists and matches,
+mk-slave-restart will try to restart the slave.  If it exists but doesn't match,
+mk-slave-restart will exit.
 
 The error text is in the C<last_error> column of C<SHOW SLAVE STATUS>.
 
@@ -2473,15 +2464,13 @@ Password to use when connecting.
 
 type: string 
 
-Create the given PID file when daemonized.
-
-For example, '--daemonize --pid /tmp/mk-slave-restart.pid' would cause
-mk-slave-restart to create the PID file /tmp/mk-slave-restart.pid.
+Create the given PID file when daemonized.  For example, '--daemonize --pid
+/tmp/mk-slave-restart.pid' would cause mk-slave-restart to create the PID file
+/tmp/mk-slave-restart.pid.  The PID file is removed when the daemonized instance
+exits.
 
 /var/run/ is usually not writable by non-root users, therefore /tmp/ is a
 more reliable alternative.
-
-The PID file is removed when the daemonized instance of mk-slave-restart exits.
 
 =item --port
 
@@ -2515,6 +2504,14 @@ HOSTS>.  The minimal configuration for this is the C<report_host> parameter, but
 there are other "report" parameters as well for the port, username, and
 password.
 
+=item --run-time
+
+type: time
+
+Time to run before exiting.  Causes mk-slave-restart to stop after the specified
+time has elapsed.  Optional suffix: s=seconds, m=minutes, h=hours, d=days; if no
+suffix, s is used.
+
 =item --sentinel
 
 type: string; default: /tmp/mk-slave-restart-sentinel
@@ -2525,10 +2522,8 @@ Exit if this file exists.
 
 type: string; default: wait_timeout=10000
 
-Set these MySQL variables.
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+Set these MySQL variables.  Specify any variables you want to be set immediately
+after connecting to MySQL.  These will be included in a C<SET> command.
 
 =item --skip-count
 
@@ -2575,26 +2570,15 @@ same C<cron> job).
 
 See also L<"--sentinel">.
 
-=item --time
-
-type: time
-
-Time to run before exiting.
-
-Causes C<mk-slave-restart> to stop after the specified time has elapsed.
-Optional suffix: s=seconds, m=minutes, h=hours, d=days; if no suffix, s is used.
-
 =item --until-master
 
 type: string
 
-Run until this master log file and position.
-
-Start the slave, and retry if it fails, until it reaches the given replication
-coordinates.  The coordinates are the logfile and position on the master, given
-by relay_master_log_file, exec_master_log_pos.  The argument must be in the
-format "file,pos".  Separate the filename and position with a single comma and
-no space.
+Run until this master log file and position.  Start the slave, and retry if it
+fails, until it reaches the given replication coordinates.  The coordinates are
+the logfile and position on the master, given by relay_master_log_file,
+exec_master_log_pos.  The argument must be in the format "file,pos".  Separate
+the filename and position with a single comma and no space.
 
 This will also cause an UNTIL clause to be given to START SLAVE.
 
@@ -2605,10 +2589,9 @@ will exit.
 
 type: string
 
-Run until this relay log file and position.
-
-Like L<"--until-master">, but in the slave's relay logs instead.  The coordinates
-are given by relay_log_file, relay_log_pos.
+Run until this relay log file and position.  Like L<"--until-master">, but in
+the slave's relay logs instead.  The coordinates are given by relay_log_file,
+relay_log_pos.
 
 =item --user
 
@@ -2620,14 +2603,10 @@ User for login if not current user.
 
 short form: -v; cumulative: yes; default: 1
 
-Be verbose; can specify multiple times.
-
-Verbosity 1 outputs connection information, a timestamp, relay_log_file,
-relay_log_pos, and last_errno.
-
-Verbosity 2 adds last_error.  See also L<"--error-length">.
-
-Verbosity 3 prints the current sleep time each time mk-slave-restart sleeps.
+Be verbose; can specify multiple times.  Verbosity 1 outputs connection
+information, a timestamp, relay_log_file, relay_log_pos, and last_errno.
+Verbosity 2 adds last_error.  See also L<"--error-length">.  Verbosity 3 prints
+the current sleep time each time mk-slave-restart sleeps.
 
 =item --version
 
@@ -2666,7 +2645,8 @@ If it finds no error, it doubles the previous sleep time.
 
 =item *
 
-The sleep time is bounded below by L<"--min-sleep"> and above by L<"--max-sleep">.
+The sleep time is bounded below by L<"--min-sleep"> and above by
+L<"--max-sleep">.
 
 =item *
 
