@@ -1076,7 +1076,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 3293
+# TableParser package 3475
 # ###########################################################################
 package TableParser;
 
@@ -1116,7 +1116,7 @@ sub parse {
    my $engine = $self->get_engine($ddl);
 
    my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
-   my @cols   = map { $_ =~ m/`([^`]+)`/g } @defs;
+   my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
    MKDEBUG && _d('Columns:', join(', ', @cols));
 
    my %def_for;
@@ -3202,8 +3202,9 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstanceReporter package 3469 $Revision$
+# MySQLInstanceReporter package 3469
 # ###########################################################################
+
 package MySQLInstanceReporter;
 
 use strict;
@@ -3269,14 +3270,11 @@ $mi->{cmd_line_ops}->{defaults_file}
    write;
 
    if ( $schema->{counts}->{TOTAL}->{dbs} == 0 ) {
-      # This can happen of the user doesn't have privs to see any dbs,
-      # or in the rare case that there really aren't any dbs.
       print "This MySQL instance has no databases.\n"
    }
    else {
 format MYSQL_INSTANCE_2 =
    SCHEMA ________________________________________________________________
-      #DATABASES   #TABLES   #ROWS     #INDEXES   SIZE DATA   SIZE INDEXES
       @<<<<<<      @<<<<<<   @<<<<<<   @<<<<<<    @<<<<<<     @<<<<<<
 $schema->{counts}->{TOTAL}->{dbs}, $schema->{counts}->{TOTAL}->{tables}, shorten($schema->{counts}->{TOTAL}->{rows}, d=>1000), $schema->{counts}->{TOTAL}->{indexes} || 'NA', shorten($schema->{counts}->{TOTAL}->{data_size}), shorten($schema->{counts}->{TOTAL}->{index_size})
 
@@ -3401,7 +3399,6 @@ format TBL_LINE =
          @<<<<<<<<<<<<<<<<   @<<<<<<<<  @<<<<<<<<<  @<<<<<<  @<<<<<
 $db_tbl, $size_data, $size_index, $n_rows, $engine
 .
-   # Build a schema-wide list of db.table => size
    foreach my $db ( keys %$dbs ) {
       foreach my $tbl ( keys %{$dbs->{$db}} ) {
          $dbs_tbls{"$db.$tbl"} = $dbs->{$db}->{$tbl}->{data_length};
@@ -3498,15 +3495,21 @@ format VALUE_LINE =
 $value, $count, $total_time
 .
 
-   foreach my $field ( keys %{ $ag_pl } ) {
-      printf "      %.8s\n", $field;
-      $FORMAT_NAME = 'VALUE_LINE';
-      foreach $value ( keys %{ $ag_pl->{$field} } ) {
-         $count       = $ag_pl->{$field}->{$value}->{count};
-         $total_time  = $ag_pl->{$field}->{$value}->{time};
-         write;
+   if ( ref $ag_pl ) {
+      foreach my $field ( keys %{ $ag_pl } ) {
+         printf "      %.8s\n", $field;
+         $FORMAT_NAME = 'VALUE_LINE';
+         foreach $value ( keys %{ $ag_pl->{$field} } ) {
+            $count       = $ag_pl->{$field}->{$value}->{count};
+            $total_time  = $ag_pl->{$field}->{$value}->{time};
+            write;
+         }
       }
    }
+   else {
+      print "   $ag_pl\n";
+   }
+
    return;
 }
 
