@@ -4714,7 +4714,9 @@ my %ea;      # EventAggregators
             eval {
                $events = $parser->parse_event($fh, $misc, @callbacks);
             };
-            MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+            if ( $EVAL_ERROR ) {
+               _d($EVAL_ERROR);
+            }
             last unless $events;
             # TODO: progress report (issue 169)
          }

@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Print a message and exit early if there's an error (issue 190).
    * Added the --config option for issue 231.
    * Added the --log option for issue 241.
    * Added the --help and --verbose options for issue 318.
