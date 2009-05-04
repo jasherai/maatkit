@@ -29,7 +29,7 @@ my $lp = new LogParser;
 my $q  = new Quoter();
 my $tp = new TableParser();
 my $du = new MySQLDump();
-my $opt_parser = new OptionParser();
+my $opt_parser = new OptionParser( description => 'hi' );
 my $tbl_struct = $tp->parse(
    $du->get_create_table($dbh, $q, 'test', 'query_review'));
 
@@ -121,10 +121,10 @@ is_deeply([$qv->review_cols],
 # ##############################################################################
 # Test review history stuff
 # ##############################################################################
-my $pat = $opt_parser->read_para_after('../../mk-query-digest/mk-query-digest',
+my $pat = $opt_parser->_read_para_after('../../mk-query-digest/mk-query-digest',
    qr/MAGIC_history_cols/);
 $pat =~ s/\s+//g;
-my $create_table = $opt_parser->read_para_after(
+my $create_table = $opt_parser->_read_para_after(
    '../../mk-query-digest/mk-query-digest', qr/MAGIC_create_review_history/);
 $create_table =~ s/query_review_history/test.query_review_history/;
 $dbh->do($create_table);
