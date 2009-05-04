@@ -6,10 +6,10 @@ WriteMakefile(
     EXE_FILES    => [ <bin/mk-*> ],
     MAN3PODS     => {}, # No man(3) pages, all man(1).
     MAN1PODS     => {
-      'maatkit.pod' => 'blib/man1/maatkit.1',
+      'maatkit.pod' => 'blib/man1/maatkit.1p',
       map {
          (my $name = $_) =~ s/^bin.//;
-         $_ => "blib/man1/$name.1";
+         $_ => "blib/man1/$name.1p";
       } <bin/mk-*>
     },
     PREREQ_PM    => {
