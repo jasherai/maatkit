@@ -1,20 +1,22 @@
 Changelog for mk-query-profiler and mk-profile-compact:
 
+2009-05-03: version 1.1.15
+
    * Added the --config option for issue 231.
    * Converted script to runnable module (issue 315). 
    * mk-query-profiler only:
    *    Removed the --allowcache long option.  Use --allow-cache instead.
-   *	  Removed the --askpass long option.  Use --ask-pass instead.
-   *	  Removed the --setvars long option.  Use --set-vars instead.
-   *	  Removed the -a short option.  Use --allow-cache instead.
-   *	  Removed the -c short option.  Use --calibrate instead.
-   *	  Removed the -e short option.  Use --external instead.
-   *	  Removed the -f short option.  Use --flush instead.
-   *	  Removed the -i short option.  Use --innodb instead.
-   *	  Removed the -n short option.  Use --only instead.
-   *	  Removed the -s short option.  Use --separate instead.
-   *	  Removed the -t short option.  Use --tab instead.
-   *	  Removed the -r short option.  Use --verify instead.
+   *    Removed the --askpass long option.  Use --ask-pass instead.
+   *    Removed the --setvars long option.  Use --set-vars instead.
+   *    Removed the -a short option.  Use --allow-cache instead.
+   *    Removed the -c short option.  Use --calibrate instead.
+   *    Removed the -e short option.  Use --external instead.
+   *    Removed the -f short option.  Use --flush instead.
+   *    Removed the -i short option.  Use --innodb instead.
+   *    Removed the -n short option.  Use --only instead.
+   *    Removed the -s short option.  Use --separate instead.
+   *    Removed the -t short option.  Use --tab instead.
+   *    Removed the -r short option.  Use --verify instead.
    * mk-profile-compact only:
    *    Removed the -q short option.  Use --queries instead.
    *    Removed the -m short option.  Use --mode instead.

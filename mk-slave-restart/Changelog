@@ -1,5 +1,7 @@
 Changelog for mk-slave-restart:
 
+2009-05-03: version 1.0.13
+
    * Added the --log option for issue 241.
    * Added the --config option for issue 231.
    * Added the --help and --verbose options for issue 318.

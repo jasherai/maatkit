@@ -1,5 +1,7 @@
 Changelog for mk-slave-find:
 
+2009-05-03: version 1.0.6
+
    * Removed the --print long option; replication hierarchy tree always printed.
    * Removed the --setvars long option.  Use --set-vars instead.
    * Removed the --askpass long option.  Use --ask-pass instead.

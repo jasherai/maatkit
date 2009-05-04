@@ -1,5 +1,7 @@
 Changelog for mk-visual-explain:
 
+2009-05-03: version 1.0.14
+
    * Changed the --askpass option to --ask-pass.
    * Changed the --clusterpk option to --clustered-pk.
    * Changed the --setvars option to --set-vars.
