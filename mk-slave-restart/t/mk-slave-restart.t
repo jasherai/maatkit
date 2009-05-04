@@ -15,6 +15,7 @@ my $master_dbh = $sb->get_dbh_for('master')
 my $slave_dbh  = $sb->get_dbh_for('slave1')
    or BAIL_OUT('Cannot connect to sandbox slave1');
 
+$slave_dbh->do('START SLAVE');
 $sb->create_dbs($master_dbh, ['test']);
 $master_dbh->do('CREATE TABLE test.t (a INT)');
 sleep 1; # wait for that CREATE TABLE to replicate
