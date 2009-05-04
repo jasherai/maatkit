@@ -13,6 +13,7 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
 my $master_dbh = $sb->get_dbh_for('master');
 my $slave_dbh  = $sb->get_dbh_for('slave1');
+$slave_dbh->do('START SLAVE');
 
 eval { $master_dbh->do('DROP FUNCTION test.fnv_64'); };
 
