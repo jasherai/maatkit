@@ -9,7 +9,7 @@ my $d = 3;
 if ( @ARGV && $ARGV[0] =~ m/^\d+$/ ) {
    $d = shift @ARGV;
 }
-$d = `mysql -e 'select current_date - interval $d day' -B --skip-column-names`;
+$d = `date -d "3 days ago" +%F`;
 
 my @packages = @ARGV;
 if ( !@packages ) {
