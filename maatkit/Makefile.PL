@@ -4,7 +4,13 @@ WriteMakefile(
     NAME         => 'maatkit',
     VERSION_FROM => 'maatkit.pod',
     EXE_FILES    => [ <bin/mk-*> ],
-    MAN1PODS     => { 'maatkit.pod' => 'blib/man1/maatkit.1' },
+    MAN1PODS     => {
+      'maatkit.pod' => 'blib/man1/maatkit.1',
+      map {
+         (my $name = $_) =~ s/^bin.//;
+         $_ => "blib/man1/$name.1";
+      }
+    },
     PREREQ_PM    => {
         DBI           => 1.13,
         DBD::mysql    => 1.0,
