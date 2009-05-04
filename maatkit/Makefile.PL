@@ -4,6 +4,7 @@ WriteMakefile(
     NAME         => 'maatkit',
     VERSION_FROM => 'maatkit.pod',
     EXE_FILES    => [ <bin/mk-*> ],
+    MAN3PODS     => {}, # No man(3) pages, all man(1).
     MAN1PODS     => {
       'maatkit.pod' => 'blib/man1/maatkit.1',
       map {
