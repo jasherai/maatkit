@@ -9,7 +9,7 @@ WriteMakefile(
       map {
          (my $name = $_) =~ s/^bin.//;
          $_ => "blib/man1/$name.1";
-      }
+      } <bin/mk-*>
     },
     PREREQ_PM    => {
         DBI           => 1.13,
