@@ -5779,8 +5779,10 @@ Which hash function you'd like to use for checksums.
 
 The default is C<CRC32>.  Other good choices include C<MD5> and C<SHA1>.  If you
 have installed the C<FNV_64> user-defined function, C<mk-table-sync> will detect
-it and prefer to use it, because it is much faster than the others.  See
-L<mk-table-checksum> for more information and benchmarks.
+it and prefer to use it, because it is much faster than the built-ins.  You can
+also use MURMUR_HASH if you've installed that user-defined function.  Bot of
+these are distributed with Maatkit.  See L<mk-table-checksum> for more
+information and benchmarks.
 
 =item --ignore-columns
 

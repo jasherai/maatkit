@@ -109,7 +109,7 @@ print `cat maatkit.tail.pod >> $dist/maatkit.pod`;
 foreach my $file ( qw(README Makefile.PL COPYING INSTALL ../spec/maatkit.spec) ) {
    print `cp $file $dist`;
 }
-print `cp ../udf/fnv_udf.cc $dist/udf`;
+print `cp ../udf/murmur_udf.cc ../udf/fnv_udf.cc $dist/udf`;
 
 # Set the DISTRIB variable
 print `grep DISTRIB -rl $dist | xargs sed -i -e 's/\@DISTRIB\@/$rev/'`;
