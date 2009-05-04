@@ -75,19 +75,19 @@ The global Maatkit configuration file, /etc/maatkit/maatkit.conf.  All tools
 read this file, so you should only add options to it that you want to apply to
 all Maatkit tools.
 
-=item 1.
+=item 2.
 
 The global tool configuration file, /etc/maatkit/[toolname].conf.  This file is
 named after the specific tool you're using, so you can add options that apply
 only to that tool.
 
-=item 1.
+=item 3.
 
 The user's own Maatkit configuration file, $HOME/.maatkit.conf.  All tools read
 this file, so you should only add options to it that you want to apply to all
 Maatkit tools.
 
-=item 1.
+=item 4.
 
 The user's tool configuration file, $HOME/.[toolname].conf.  This file is named
 after the specific tool you're using, so you can add options that apply only to
