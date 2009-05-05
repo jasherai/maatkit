@@ -1,5 +1,21 @@
 Changelog for mk-deadlock-logger:
 
+   * Added the --clear-deadlocks option (issue 75).
+   * Changed the --askpass option to --ask-pass.
+   * Removed the -c short option.  Use --collapse instead.
+   * Removed the -C short option.  Use --columns instead.
+   * Removed the -d short option.  Use --dest instead.
+   * Removed the -i short option.  Use --interval instead.
+   * Removed the -n short option.  Use --numeric-ip instead.
+   * Changed the --numip option to --numeric-ip.
+   * Removed the -n short option.  Use --numeric-ip instead.
+   * Removed the -p short option.  Use --print instead.
+   * Changed the --setvars option to --set-vars.
+   * Removed the -s short option.  Use --source instead.
+   * Removed the -t short option.  Use --tab instead.
+   * Removed the -m short option.  Use --run-time instead.
+   * Changed the --time option to --run-time.
+
 2009-03-31: version 1.0.14
 
    * Send debugging output to STDERR (issue 308).
