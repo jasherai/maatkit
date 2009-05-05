@@ -1016,7 +1016,8 @@ the Maatkit tools:
 =head1 BUGS
 
 Please use Google Code Issues and Groups to report bugs or request support:
-L<http://code.google.com/p/maatkit/>.
+L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
+discuss Maatkit.
 
 Please include the complete command-line used to reproduce the problem you are
 seeing, the version of all MySQL servers involved, the complete output of the
