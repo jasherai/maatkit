@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 3;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -135,5 +135,8 @@ EOF
 
 $result = '';
 $et->report($et->results, sub { $result .= $_[0] });
+
+$et->reset_aggregated_data();
+is_deeply($et->results, [], 'reset_aggregated_data()');
 
 is($result, $expected, 'Report for simple timeline');

@@ -56,6 +56,13 @@ sub new {
    }, $class;
 }
 
+# Reset the aggregated data, but not anything the code has learned about
+# incoming data.
+sub reset_aggregated_data {
+   my ( $self ) = @_;
+   $self->{results} = [];
+}
+
 # Aggregate an event hashref's properties.
 sub aggregate {
    my ( $self, $event ) = @_;
