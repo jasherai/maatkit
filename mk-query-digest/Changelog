@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Added --iterations and --run-time (issue 173, issue 361).
+
 2009-05-03: version 0.9.5
 
    * The query report printed duplicate table names (issue 337).

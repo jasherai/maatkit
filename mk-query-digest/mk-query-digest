@@ -2394,7 +2394,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3434
+# EventAggregator package 3538
 # ###########################################################################
 package EventAggregator;
 
@@ -2435,6 +2435,13 @@ sub new {
    }, $class;
 }
 
+sub reset_aggregated_data {
+   my ( $self ) = @_;
+   $self->{result_classes} = {};
+   $self->{result_globals} = {};
+   $self->{result_samples} = {};
+}
+
 sub aggregate {
    my ( $self, $event ) = @_;
 
@@ -2450,7 +2457,7 @@ sub aggregate {
    foreach my $attrib ( @attrs ) {
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
-         my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
+         my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
          my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
          my $samples       = $self->{result_samples};
          my $handler = $self->{handlers}->{ $attrib };
@@ -2480,7 +2487,7 @@ sub aggregate {
          'my ( $self, $event, $group_by ) = @_;',
          'my ($val, $class, $global, $idx);',
          (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
-         'my $temp = $self->{result_class}->{ $group_by }
+         'my $temp = $self->{result_classes}->{ $group_by }
             ||= { map { $_ => { } } @attrs };',
          '$samples->{$group_by} ||= $event;', # Always start with the first.
       );
@@ -2509,7 +2516,7 @@ sub aggregate {
 sub results {
    my ( $self ) = @_;
    return {
-      classes => $self->{result_class},
+      classes => $self->{result_classes},
       globals => $self->{result_globals},
       samples => $self->{result_samples},
    };
@@ -2805,7 +2812,7 @@ sub metrics {
 
 sub top_events {
    my ( $self, %args ) = @_;
-   my $classes = $self->{result_class};
+   my $classes = $self->{result_classes};
    my @sorted = reverse sort { # Sorted list of $groupby values
       $classes->{$a}->{$args{attrib}}->{$args{orderby}}
          <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
@@ -3160,7 +3167,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventTimeline package 3186
+# EventTimeline package 3539
 # ###########################################################################
 
 
@@ -3190,6 +3197,11 @@ sub new {
       attributes => [ grep { !$is_groupby{$_} } @{$args{attributes}} ],
       results    => [],
    }, $class;
+}
+
+sub reset_aggregated_data {
+   my ( $self ) = @_;
+   $self->{results} = [];
 }
 
 sub aggregate {
@@ -4626,6 +4638,7 @@ my %ea;      # EventAggregators
    # ##########################################################################
    # Parse the input.
    # ##########################################################################
+   my $run_func;
    if ( $o->get('processlist') ) {    # Sniff SHOW FULL PROCESSLIST
       require Time::HiRes;
       my $pl = new Processlist();
@@ -4665,9 +4678,10 @@ my %ea;      # EventAggregators
          $misc->{etime} = Time::HiRes::time() - $time;
          [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
       };
-      while ($oktorun) {
+      $run_func = sub {
+         my $events;
          eval {
-            $pl->parse_event(
+            $events = $pl->parse_event(
                $get_processlist_sub,
                $misc,
                @callbacks,
@@ -4675,7 +4689,8 @@ my %ea;      # EventAggregators
             Time::HiRes::usleep($o->get('interval') * 1_000_000);
          };
          MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-      }
+         return $events;
+      };
    }
    else { # Parse log files
       if ( @ARGV == 0 ) {
@@ -4697,234 +4712,269 @@ my %ea;      # EventAggregators
 
       # TODO: carry the last db and ts values forward if they're undefined
       # now.  Do that by unshifting a new callback onto the front of @callbacks.
-      while ( $oktorun && (my $file = shift(@ARGV)) ) {
+      my ($fh);
+      $run_func = sub {
+         if ( !$fh ) {
+            my $file = shift @ARGV or return;
+            if ( $file eq '-' ) {
+               $fh = *STDIN;
+            }
+            else {
+               open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
+            }
+         }
          # TODO: non-blocking I/O so we can respond to CTRL-C.  See
          # http://www.perlmonks.org/?node_id=55241
          # http://tinyurl.com/c6lqzz
          # Or look at the Perl Cookbook, ch07.
-         my $fh;
-         if ( $file eq '-' ) {
-            $fh = *STDIN;
-         }
-         else {
-            open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
-         }
-         while ( $oktorun ) {
-            my $events = 0;
-            eval {
-               $events = $parser->parse_event($fh, $misc, @callbacks);
-            };
-            if ( $EVAL_ERROR ) {
-               _d($EVAL_ERROR);
+
+         my $events;
+         eval {
+            $events = $parser->parse_event($fh, $misc, @callbacks);
+            if ( !$events ) {
+               close $fh;
+               $fh = undef;
             }
-            last unless $events;
-            # TODO: progress report (issue 169)
+         };
+         if ( $EVAL_ERROR ) {
+            _d($EVAL_ERROR);
          }
-         close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
-      }
+         return $events;
+      };
    }
 
-   # ##########################################################################
-   # Finish up.
-   # ##########################################################################
-   if ( @$report ) {
-      # Pick the first one and run the global report.
-      my @select = map {my ($name) = split(/:/,$_); $name} @{$o->get('select')};
-      my $qrf = new QueryReportFormatter();
-      if ( $o->get('header') ) {
-         my $ea = $ea{$report->[0]};
-         print $qrf->header() if $o->get('rusage');
-         if ( !$ea->results->{globals}->{$select[0]}->{cnt} ) {
-            print "# No events processed.\n";
-            exit 0;
-         }
-         print $qrf->global_report(
-            $ea,
-            select => [ grep { $_ !~ m/^(?:user|db)$/ } @select ],
-            worst  => $select[0],
-         );
+   my $start = time();
+   my $end   = $start + ($o->get('run-time') || 0); # When we should exit
+   my $now   = $start;
+
+   my $iters = 0;
+   ITERATION:
+   while ( !$o->get('iterations') || $iters++ < $o->get('iterations') ) {
+
+      EVENT:
+      while (                                 # Quit if:
+         $oktorun                             # instructed to quit
+         && ($start == $end || $now < $end) ) # or time is exceeded
+      {
+         my $result = $run_func->();
+         $now = time();
+         last EVENT unless defined $result;
+         # TODO: progress report (issue 169)
       }
 
-      foreach my $i ( 0 .. @$report - 1 ) {
-         my $groupby = $report->[$i];
-
-         # Prepare to do query review for the items, if needed. TODO: this is
-         # ugly, we can still access the global $qv.
-         my $local_qv;
-         if ( $groupby eq 'fingerprint' && $review_dsn ) {
-            $local_qv = $qv;
+      # ##########################################################################
+      # Finish up.
+      # ##########################################################################
+      if ( @$report ) {
+         # Pick the first one and run the global report.
+         my @select = map {my ($name) = split(/:/,$_); $name} @{$o->get('select')};
+         my $qrf = new QueryReportFormatter();
+         if ( $o->get('header') ) {
+            my $ea = $ea{$report->[0]};
+            print $qrf->header() if $o->get('rusage');
+            if ( !$ea->results->{globals}->{$select[0]}->{cnt} ) {
+               print "# No events processed.\n";
+            }
+            else {
+               print $qrf->global_report(
+                  $ea,
+                  select => [ grep { $_ !~ m/^(?:user|db)$/ } @select ],
+                  worst  => $select[0],
+               );
+            }
          }
 
-         if ( @$report > 1 || $groupby ne 'fingerprint' ) {
-            print "\n# ", ( '#' x 72 ), "\n";
-            print "# Report grouped by $groupby\n";
-            print '# ', ( '#' x 72 ), "\n";
-         }
+         foreach my $i ( 0 .. @$report - 1 ) {
+            my $groupby = $report->[$i];
 
-         my $ea      = $ea{$groupby};
-
-         # $attrib is the attribute by which the report is ordered.
-         my ( $attrib, $orderby ) = split(/:/, $orderby->[$i]);
-         if ( !$ea->type_for($attrib) && $attrib ne 'Query_time' ) {
-            # This fixes issue 244: missing --orderby
-            # TODO: get the default from the $o, here and in the "if"
-            print "--orderby attribute $attrib doesn't exist, using Query_time\n";
-            $attrib = 'Query_time'; # Fall back to the default.
-         }
-         my $limit = $o->get('limit')->[$i] || '95%:20';
-         my ($total, $count);
-         if ( $limit =~ m/^\d+$/ ) {
-            $count = $limit;
-         }
-         else {
-            # It's a percentage, so grab as many as needed to get to
-            # that % of the file.
-            ($total, $count) = $limit =~ m/(\d+)/g;
-            $total *= ($ea->results->{globals}->{$attrib}->{sum} || 0) / 100;
-         }
-
-         my %top_spec = (
-            attrib  => $attrib,
-            orderby => $orderby || 'cnt',
-            total   => $total,
-            count   => $count,
-         );
-         if ( $o->get('outliers')->[$i] ) {
-            @top_spec{qw(ol_attrib ol_limit ol_freq)}
-               = split(/:/, $o->get('outliers')->[$i]);
-         }
-
-         # Find the items to include in the report
-         my @worst          = $ea->top_events(%top_spec);
-         my $expected_range = $o->get('expectedrange');
-         my $explain_why
-            = $expected_range
-            && (@worst < $expected_range->[0] || @worst > $expected_range->[1]);
-
-         # Print a report for each item.
-         ITEM:
-         foreach my $rank ( 1 .. @worst ) {
-            my $item   = $worst[$rank - 1]->[0];
-            my $stats  = $ea->results->{classes}->{$item};
-            my $sample = $ea->results->{samples}->{$item};
-
-            my %history; # Prepare for saving review history
-            if ( $o->get('review-history') ) {
-               foreach my $attrib(@select) {
-                  $history{$attrib} = $ea->metrics(
-                     attrib => $attrib,
-                     where  => $item,
-                  );
-               }
+            # Prepare to do query review for the items, if needed. TODO: this is
+            # ugly, we can still access the global $qv.
+            my $local_qv;
+            if ( $groupby eq 'fingerprint' && $review_dsn ) {
+               $local_qv = $qv;
             }
 
-            my $review_vals;
-            if ( $local_qv ) {
-               $review_vals = $local_qv->get_review_info($item);
-               if ( $review_vals->{reviewed_by} && !$o->get('reportall') ) {
-                  # This item has already been reviewed, skip it.  But before
-                  # doing so, save the history if necessary.
+            if ( @$report > 1 || $groupby ne 'fingerprint' ) {
+               print "\n# ", ( '#' x 72 ), "\n";
+               print "# Report grouped by $groupby\n";
+               print '# ', ( '#' x 72 ), "\n";
+            }
+
+            my $ea      = $ea{$groupby};
+
+            # $attrib is the attribute by which the report is ordered.
+            my ( $attrib, $orderby ) = split(/:/, $orderby->[$i]);
+            if ( !$ea->type_for($attrib) && $attrib ne 'Query_time' ) {
+               # This fixes issue 244: missing --orderby
+               # TODO: get the default from the $o, here and in the "if"
+               print "--orderby attribute $attrib doesn't exist, using Query_time\n";
+               $attrib = 'Query_time'; # Fall back to the default.
+            }
+            my $limit = $o->get('limit')->[$i] || '95%:20';
+            my ($total, $count);
+            if ( $limit =~ m/^\d+$/ ) {
+               $count = $limit;
+            }
+            else {
+               # It's a percentage, so grab as many as needed to get to
+               # that % of the file.
+               ($total, $count) = $limit =~ m/(\d+)/g;
+               $total *= ($ea->results->{globals}->{$attrib}->{sum} || 0) / 100;
+            }
+
+            my %top_spec = (
+               attrib  => $attrib,
+               orderby => $orderby || 'cnt',
+               total   => $total,
+               count   => $count,
+            );
+            if ( $o->get('outliers')->[$i] ) {
+               @top_spec{qw(ol_attrib ol_limit ol_freq)}
+                  = split(/:/, $o->get('outliers')->[$i]);
+            }
+
+            # Find the items to include in the report
+            my @worst          = $ea->top_events(%top_spec);
+            my $expected_range = $o->get('expectedrange');
+            my $explain_why
+               = $expected_range
+               && (@worst < $expected_range->[0] || @worst > $expected_range->[1]);
+
+            # Print a report for each item.
+            ITEM:
+            foreach my $rank ( 1 .. @worst ) {
+               my $item   = $worst[$rank - 1]->[0];
+               my $stats  = $ea->results->{classes}->{$item};
+               my $sample = $ea->results->{samples}->{$item};
+
+               my %history; # Prepare for saving review history
+               if ( $o->get('review-history') ) {
+                  foreach my $attrib(@select) {
+                     $history{$attrib} = $ea->metrics(
+                        attrib => $attrib,
+                        where  => $item,
+                     );
+                  }
+               }
+
+               my $review_vals;
+               if ( $local_qv ) {
+                  $review_vals = $local_qv->get_review_info($item);
+                  if ( $review_vals->{reviewed_by} && !$o->get('reportall') ) {
+                     # This item has already been reviewed, skip it.  But before
+                     # doing so, save the history if necessary.
+                     if ( $o->get('review-history') ) {
+                        $local_qv->set_review_history(
+                           $item, $sample->{arg} || '', %history);
+                     }
+                     next ITEM;
+                  }
+               }
+
+               print "\n";
+               print $qrf->event_report(
+                  $ea,
+                  select => \@select,
+                  where  => $item,
+                  rank   => $rank,
+                  worst  => $attrib,
+                  reason => $explain_why ? $worst[$rank - 1]->[1] : '',
+               );
+               print $qrf->chart_distro(
+                  $ea,
+                  attribute  => $attrib,
+                  where      => $item,
+               );
+
+               if ( $local_qv ) {
+                  # Print the review information that is already in the table,
+                  # before putting anything new into the table.
+                  print "# Review information\n";
+                  foreach my $col ($local_qv->review_cols) {
+                     my $val = $review_vals->{$col};
+                     if ( !$val || $val ne '0000-00-00 00:00:00' ) { # See issue 202
+                        printf "# %13s: %-s\n", $col, ( defined $val ? $val : '' );
+                     }
+                  }
+                  # Update the query review information and history.
+                  $local_qv->set_review_info(
+                     fingerprint => $item,
+                     sample      => $sample->{arg} || '',
+                     first_seen  => $stats->{ts}->{min},
+                     last_seen   => $stats->{ts}->{max});
                   if ( $o->get('review-history') ) {
                      $local_qv->set_review_history(
                         $item, $sample->{arg} || '', %history);
                   }
-                  next ITEM;
                }
-            }
 
-            print "\n";
-            print $qrf->event_report(
-               $ea,
-               select => \@select,
-               where  => $item,
-               rank   => $rank,
-               worst  => $attrib,
-               reason => $explain_why ? $worst[$rank - 1]->[1] : '',
-            );
-            print $qrf->chart_distro(
-               $ea,
-               attribute  => $attrib,
-               where      => $item,
-            );
+               # Print the query fingerprint.
+               if ( $groupby eq 'fingerprint' && $o->get('fingerprints') ) {
+                  print "# Fingerprint\n#    $item\n";
+               }
 
-            if ( $local_qv ) {
-               # Print the review information that is already in the table,
-               # before putting anything new into the table.
-               print "# Review information\n";
-               foreach my $col ($local_qv->review_cols) {
-                  my $val = $review_vals->{$col};
-                  if ( !$val || $val ne '0000-00-00 00:00:00' ) { # See issue 202
-                     printf "# %13s: %-s\n", $col, ( defined $val ? $val : '' );
+               if ( $groupby eq 'fingerprint' ) {
+                  my $samp_query = $sample->{arg} || '';
+
+                  # Shorten it if necessary (issue 216 and 292).
+                  if ( $o->get('shorten') ) {
+                     $samp_query = $qr->shorten($samp_query, $o->get('shorten'));
                   }
-               }
-               # Update the query review information and history.
-               $local_qv->set_review_info(
-                  fingerprint => $item,
-                  sample      => $sample->{arg} || '',
-                  first_seen  => $stats->{ts}->{min},
-                  last_seen   => $stats->{ts}->{max});
-               if ( $o->get('review-history') ) {
-                  $local_qv->set_review_history(
-                     $item, $sample->{arg} || '', %history);
-               }
-            }
 
-            # Print the query fingerprint.
-            if ( $groupby eq 'fingerprint' && $o->get('fingerprints') ) {
-               print "# Fingerprint\n#    $item\n";
-            }
-
-            if ( $groupby eq 'fingerprint' ) {
-               my $samp_query = $sample->{arg} || '';
-
-               # Shorten it if necessary (issue 216 and 292).
-               if ( $o->get('shorten') ) {
-                  $samp_query = $qr->shorten($samp_query, $o->get('shorten'));
-               }
-
-               # Print out tables for the query, and if it's a SELECT statement,
-               # print out its EXPLAIN...
-               my ($db_for_show) = $sample->{db} ? $sample->{db}
-                                 : keys %{$stats->{db}->{unq}};
-               if ( $o->get('forexplain') ) {
-                  print_tables(extract_tables($samp_query, $db_for_show));
-               }
-               if ( $item =~ m/^(?:[\(\s]*select|insert|replace)/ ) {
-                  if ( $item =~ m/^(?:insert|replace)/ ) { # No EXPLAIN
-                     print $samp_query, "\\G\n";
+                  # Print out tables for the query, and if it's a SELECT statement,
+                  # print out its EXPLAIN...
+                  my ($db_for_show) = $sample->{db} ? $sample->{db}
+                                    : keys %{$stats->{db}->{unq}};
+                  if ( $o->get('forexplain') ) {
+                     print_tables(extract_tables($samp_query, $db_for_show));
+                  }
+                  if ( $item =~ m/^(?:[\(\s]*select|insert|replace)/ ) {
+                     if ( $item =~ m/^(?:insert|replace)/ ) { # No EXPLAIN
+                        print $samp_query, "\\G\n";
+                     }
+                     else {
+                        print "# EXPLAIN\n$samp_query\\G\n";
+                        print_explain($ep_dbh, $samp_query, $db_for_show);
+                     }
                   }
                   else {
-                     print "# EXPLAIN\n$samp_query\\G\n";
-                     print_explain($ep_dbh, $samp_query, $db_for_show);
+                     print "$samp_query\\G\n";
+                     my $converted = $qr->convert_to_select($samp_query);
+                     if ( $o->get('forexplain')
+                          && $converted
+                          && $converted =~ m/^[\(\s]*select/i ) {
+                        # It converted OK to a SELECT
+                        print "# Converted for EXPLAIN\n# EXPLAIN\n";
+                        print "$converted\\G\n";
+                     }
                   }
                }
                else {
-                  print "$samp_query\\G\n";
-                  my $converted = $qr->convert_to_select($samp_query);
-                  if ( $o->get('forexplain')
-                       && $converted
-                       && $converted =~ m/^[\(\s]*select/i ) {
-                     # It converted OK to a SELECT
-                     print "# Converted for EXPLAIN\n# EXPLAIN\n";
-                     print "$converted\\G\n";
+                  if ( $groupby eq 'tables' ) {
+                     my ( $db, $tbl ) = $q->split_unquote($item);
+                     print_tables([$db, $tbl]);
                   }
+                  print $item, "\n";
                }
-            }
-            else {
-               if ( $groupby eq 'tables' ) {
-                  my ( $db, $tbl ) = $q->split_unquote($item);
-                  print_tables([$db, $tbl]);
-               }
-               print $item, "\n";
             }
          }
       }
-   }
 
-   elsif ( $timeline ) {
-      foreach my $i ( 0 .. @{$timeline} - 1 ) {
-         my $t = $ea{$timeline->[$i]};
-         $t->report($t->results, sub { print @_ });
+      elsif ( $timeline ) {
+         foreach my $i ( 0 .. @{$timeline} - 1 ) {
+            my $t = $ea{$timeline->[$i]};
+            $t->report($t->results, sub { print @_ });
+         }
+      }
+
+      # Reset the start/end/now times so the next iteration will run for the
+      # same amount of time.
+      $start = time();
+      $end   = $start + ($o->get('run-time') || 0); # When we should exit
+      $now   = $start;
+
+      foreach my $ea ( values %ea ) {
+         $ea->reset_aggregated_data();
       }
    }
 
@@ -5529,6 +5579,13 @@ short form: -i; type: float; default: .1
 
 How frequently to poll the processlist, in seconds.
 
+=item --iterations
+
+type: int; default: 1
+
+How many times to iterate through the collect-and-report cycle.  If 0, iterate
+to infinity.  See also L<--run-time>.
+
 =item --limit
 
 type: Array; default: 95%:20
@@ -5765,6 +5822,13 @@ table definition is used for L<"--create-review-history">:
 
 Note that we store the count (cnt) for the ts attribute only; it will be
 redundant to store this for other attributes.
+
+=item --run-time
+
+type: time
+
+How long to run before exiting.  The default is to run forever (you can
+interrupt with CTRL-C).  See also L<--iterations>.
 
 =item --[no]rusage
 
