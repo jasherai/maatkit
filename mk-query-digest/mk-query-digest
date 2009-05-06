@@ -4840,12 +4840,22 @@ my %ea;      # EventAggregators
                = $expected_range
                && (@worst < $expected_range->[0] || @worst > $expected_range->[1]);
 
+            # Create a profile (issue 381).
+            my @profiles;
+            my $total_r = 0;
+
             # Print a report for each item.
             ITEM:
             foreach my $rank ( 1 .. @worst ) {
                my $item   = $worst[$rank - 1]->[0];
                my $stats  = $ea->results->{classes}->{$item};
                my $sample = $ea->results->{samples}->{$item};
+               my %profile = (
+                  rank => $rank,
+                  r    => $stats->{Query_time}->{sum},
+                  cnt  => $stats->{Query_time}->{cnt},
+               );
+               $total_r += $profile{r};
 
                my %history; # Prepare for saving review history
                if ( $o->get('review-history') ) {
@@ -4915,6 +4925,7 @@ my %ea;      # EventAggregators
 
                if ( $groupby eq 'fingerprint' ) {
                   my $samp_query = $sample->{arg} || '';
+                  $profile{sample} = $qr->distill($samp_query);
 
                   # Shorten it if necessary (issue 216 and 292).
                   if ( $o->get('shorten') ) {
@@ -4955,7 +4966,20 @@ my %ea;      # EventAggregators
                      print_tables([$db, $tbl]);
                   }
                   print $item, "\n";
+                  $profile{sample} = $item;
                }
+               push @profiles, \%profile;
+            }
+
+            # Print profile (issue 381).
+            printf "\n%13s %-7s %-8s %s\n",
+               "Response time", "Calls", "R/Call", "Item";
+            printf "%13s %7s %8s %s\n",
+               "=============", "=======", "========", "====";
+            foreach my $item ( reverse sort { $a->{r} <=> $b->{r} } @profiles) {
+               printf "%0.4f %0.2f%% %7d %0.6f %s\n",
+                  $item->{r}, $item->{r} / $total_r * 100,
+                  $item->{cnt}, $item->{r} / $item->{cnt}, $item->{sample};
             }
          }
       }
