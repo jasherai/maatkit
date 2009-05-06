@@ -80,6 +80,15 @@ sub new {
    }, $class;
 }
 
+# Delete all collected data, but don't delete things like the generated
+# subroutines.
+sub reset_aggregated_data {
+   my ( $self ) = @_;
+   $self->{result_classes} = {};
+   $self->{result_globals} = {};
+   $self->{result_samples} = {};
+}
+
 # Aggregate an event hashref's properties.  Code is built on the fly to do this,
 # based on the values being passed in.  After code is built for every attribute
 # (or 50 events are seen and we decide to give up) the little bits of code get
@@ -102,7 +111,7 @@ sub aggregate {
       # The value of the attribute ( $group_by ) may be an arrayref.
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
-         my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
+         my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
          my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
          my $samples       = $self->{result_samples};
          my $handler = $self->{handlers}->{ $attrib };
@@ -140,7 +149,7 @@ sub aggregate {
          'my ($val, $class, $global, $idx);',
          (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
          # Create and get each attribute's storage
-         'my $temp = $self->{result_class}->{ $group_by }
+         'my $temp = $self->{result_classes}->{ $group_by }
             ||= { map { $_ => { } } @attrs };',
          '$samples->{$group_by} ||= $event;', # Always start with the first.
       );
@@ -172,7 +181,7 @@ sub aggregate {
 sub results {
    my ( $self ) = @_;
    return {
-      classes => $self->{result_class},
+      classes => $self->{result_classes},
       globals => $self->{result_globals},
       samples => $self->{result_samples},
    };
@@ -578,7 +587,7 @@ sub metrics {
 # an explanation of why it was included (top|outlier).
 sub top_events {
    my ( $self, %args ) = @_;
-   my $classes = $self->{result_class};
+   my $classes = $self->{result_classes};
    my @sorted = reverse sort { # Sorted list of $groupby values
       $classes->{$a}->{$args{attrib}}->{$args{orderby}}
          <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}

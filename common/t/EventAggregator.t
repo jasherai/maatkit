@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 58;
+use Test::More tests => 59;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -1161,5 +1161,15 @@ is_deeply(
    },
    'float math with bigger number (issue 332)'
 );
+
+$ea->reset_aggregated_data();
+is_deeply(
+   $ea->results(),
+   {
+      classes => {},
+      globals => {},
+      samples => {},
+   },
+   'Reset works');
 
 exit;
