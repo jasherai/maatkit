@@ -1166,8 +1166,16 @@ $ea->reset_aggregated_data();
 is_deeply(
    $ea->results(),
    {
-      classes => {},
-      globals => {},
+      classes => {
+         foo => {
+            Schema       => {},
+            'Query time' => {},
+         }
+      },
+      globals => {
+         Schema       => {},
+         'Query time' => {},
+      },
       samples => {},
    },
    'Reset works');

@@ -81,12 +81,22 @@ sub new {
 }
 
 # Delete all collected data, but don't delete things like the generated
-# subroutines.
+# subroutines.  Resetting aggregated data is an interesting little exercise.
+# The generated functions that do aggregation have private namespaces with
+# references to some of the data.  Thus, they will not necessarily do as
+# expected if the stored data is simply wiped out.  Instead, it needs to be
+# zeroed out without replacing the actual objects.
 sub reset_aggregated_data {
    my ( $self ) = @_;
-   $self->{result_classes} = {};
-   $self->{result_globals} = {};
-   $self->{result_samples} = {};
+   foreach my $class ( values %{$self->{result_classes}} ) {
+      foreach my $attrib ( values %$class ) {
+         delete @{$attrib}{keys %$attrib};
+      }
+   }
+   foreach my $class ( values %{$self->{result_globals}} ) {
+      delete @{$class}{keys %$class};
+   }
+   delete @{$self->{result_samples}}{keys %{$self->{result_samples}}};
 }
 
 # Aggregate an event hashref's properties.  Code is built on the fly to do this,
