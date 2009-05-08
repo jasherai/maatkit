@@ -2394,7 +2394,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3538
+# EventAggregator package 3543
 # ###########################################################################
 package EventAggregator;
 
@@ -2437,9 +2437,15 @@ sub new {
 
 sub reset_aggregated_data {
    my ( $self ) = @_;
-   $self->{result_classes} = {};
-   $self->{result_globals} = {};
-   $self->{result_samples} = {};
+   foreach my $class ( values %{$self->{result_classes}} ) {
+      foreach my $attrib ( values %$class ) {
+         delete @{$attrib}{keys %$attrib};
+      }
+   }
+   foreach my $class ( values %{$self->{result_globals}} ) {
+      delete @{$class}{keys %$class};
+   }
+   delete @{$self->{result_samples}}{keys %{$self->{result_samples}}};
 }
 
 sub aggregate {

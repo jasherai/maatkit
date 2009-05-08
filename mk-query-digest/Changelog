@@ -1,5 +1,8 @@
 Changelog for mk-query-digest:
 
+   * Added --report-format option.
+   * Removed --header option; use --report-format instead.
+   * Removed --rusage option; use --report-format instead.
    * Added a response-time profile (issue 381).
    * Added --iterations and --run-time (issue 173, issue 361).
 
