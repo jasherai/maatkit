@@ -4749,7 +4749,10 @@ my %ea;      # EventAggregators
 
    my $iters = 0;
    ITERATION:
-   while ( !$o->get('iterations') || $iters++ < $o->get('iterations') ) {
+   while (  # Quit if instructed to, or if iterations are exceeded.
+      $oktorun
+      && (!$o->get('iterations') || $iters++ < $o->get('iterations') )
+   ) {
 
       EVENT:
       while (                                 # Quit if:
@@ -4765,13 +4768,14 @@ my %ea;      # EventAggregators
       # ##########################################################################
       # Finish up.
       # ##########################################################################
+      my $query_report = $o->get('report-format')->{query_report};
       if ( @$report ) {
          # Pick the first one and run the global report.
          my @select = map {my ($name) = split(/:/,$_); $name} @{$o->get('select')};
          my $qrf = new QueryReportFormatter();
-         if ( $o->get('header') ) {
+         if ( $o->get('report-format')->{header} ) {
             my $ea = $ea{$report->[0]};
-            print $qrf->header() if $o->get('rusage');
+            print $qrf->header() if $o->get('report-format')->{rusage};
             if ( !$ea->results->{globals}->{$select[0]}->{cnt} ) {
                print "# No events processed.\n";
             }
@@ -4794,7 +4798,7 @@ my %ea;      # EventAggregators
                $local_qv = $qv;
             }
 
-            if ( @$report > 1 || $groupby ne 'fingerprint' ) {
+            if ( $query_report && (@$report > 1 || $groupby ne 'fingerprint') ) {
                print "\n# ", ( '#' x 72 ), "\n";
                print "# Report grouped by $groupby\n";
                print '# ', ( '#' x 72 ), "\n";
@@ -4807,7 +4811,8 @@ my %ea;      # EventAggregators
             if ( !$ea->type_for($attrib) && $attrib ne 'Query_time' ) {
                # This fixes issue 244: missing --orderby
                # TODO: get the default from the $o, here and in the "if"
-               print "--orderby attribute $attrib doesn't exist, using Query_time\n";
+               print "--orderby attribute $attrib doesn't exist, using Query_time\n"
+                  if $query_report;
                $attrib = 'Query_time'; # Fall back to the default.
             }
             my $limit = $o->get('limit')->[$i] || '95%:20';
@@ -4854,6 +4859,7 @@ my %ea;      # EventAggregators
                   rank => $rank,
                   r    => $stats->{Query_time}->{sum},
                   cnt  => $stats->{Query_time}->{cnt},
+                  id   => '',
                );
                $total_r += $profile{r};
 
@@ -4881,7 +4887,7 @@ my %ea;      # EventAggregators
                   }
                }
 
-               print "\n";
+               print "\n" if $query_report;
                print $qrf->event_report(
                   $ea,
                   select => \@select,
@@ -4889,21 +4895,22 @@ my %ea;      # EventAggregators
                   rank   => $rank,
                   worst  => $attrib,
                   reason => $explain_why ? $worst[$rank - 1]->[1] : '',
-               );
+               ) if $query_report;
                print $qrf->chart_distro(
                   $ea,
                   attribute  => $attrib,
                   where      => $item,
-               );
+               ) if $query_report;
 
                if ( $local_qv ) {
                   # Print the review information that is already in the table,
                   # before putting anything new into the table.
-                  print "# Review information\n";
+                  print "# Review information\n" if $query_report;
                   foreach my $col ($local_qv->review_cols) {
                      my $val = $review_vals->{$col};
                      if ( !$val || $val ne '0000-00-00 00:00:00' ) { # See issue 202
-                        printf "# %13s: %-s\n", $col, ( defined $val ? $val : '' );
+                        printf "# %13s: %-s\n", $col, ( defined $val ? $val : '' )
+                           if $query_report;
                      }
                   }
                   # Update the query review information and history.
@@ -4920,12 +4927,13 @@ my %ea;      # EventAggregators
 
                # Print the query fingerprint.
                if ( $groupby eq 'fingerprint' && $o->get('fingerprints') ) {
-                  print "# Fingerprint\n#    $item\n";
+                  print "# Fingerprint\n#    $item\n" if $query_report;
                }
 
                if ( $groupby eq 'fingerprint' ) {
                   my $samp_query = $sample->{arg} || '';
                   $profile{sample} = $qr->distill($samp_query);
+                  $profile{id}     = make_checksum($item);
 
                   # Shorten it if necessary (issue 216 and 292).
                   if ( $o->get('shorten') ) {
@@ -4937,49 +4945,61 @@ my %ea;      # EventAggregators
                   my ($db_for_show) = $sample->{db} ? $sample->{db}
                                     : keys %{$stats->{db}->{unq}};
                   if ( $o->get('forexplain') ) {
-                     print_tables(extract_tables($samp_query, $db_for_show));
+                     print_tables(extract_tables($samp_query, $db_for_show))
+                        if $query_report;
                   }
                   if ( $item =~ m/^(?:[\(\s]*select|insert|replace)/ ) {
                      if ( $item =~ m/^(?:insert|replace)/ ) { # No EXPLAIN
-                        print $samp_query, "\\G\n";
+                        print $samp_query, "\\G\n"
+                           if $query_report;
                      }
                      else {
-                        print "# EXPLAIN\n$samp_query\\G\n";
-                        print_explain($ep_dbh, $samp_query, $db_for_show);
+                        print "# EXPLAIN\n$samp_query\\G\n"
+                           if $query_report;
+                        print_explain($ep_dbh, $samp_query, $db_for_show)
+                           if $query_report;
                      }
                   }
                   else {
-                     print "$samp_query\\G\n";
+                     print "$samp_query\\G\n"
+                        if $query_report;
                      my $converted = $qr->convert_to_select($samp_query);
                      if ( $o->get('forexplain')
                           && $converted
                           && $converted =~ m/^[\(\s]*select/i ) {
                         # It converted OK to a SELECT
-                        print "# Converted for EXPLAIN\n# EXPLAIN\n";
-                        print "$converted\\G\n";
+                        print "# Converted for EXPLAIN\n# EXPLAIN\n"
+                           if $query_report;
+                        print "$converted\\G\n"
+                           if $query_report;
                      }
                   }
                }
                else {
                   if ( $groupby eq 'tables' ) {
                      my ( $db, $tbl ) = $q->split_unquote($item);
-                     print_tables([$db, $tbl]);
+                     print_tables([$db, $tbl])
+                        if $query_report;
                   }
-                  print $item, "\n";
+                  print $item, "\n"
+                     if $query_report;
                   $profile{sample} = $item;
                }
                push @profiles, \%profile;
             }
 
             # Print profile (issue 381).
-            printf "\n%13s %-7s %-8s %s\n",
-               "Response time", "Calls", "R/Call", "Item";
-            printf "%13s %7s %8s %s\n",
-               "=============", "=======", "========", "====";
-            foreach my $item ( reverse sort { $a->{r} <=> $b->{r} } @profiles) {
-               printf "%0.4f %0.2f%% %7d %0.6f %s\n",
-                  $item->{r}, $item->{r} / $total_r * 100,
-                  $item->{cnt}, $item->{r} / $item->{cnt}, $item->{sample};
+            if ( $o->get('report-format')->{profile} ) {
+               print "# Rank Query ID           Response time    Calls   R/Call",
+                     "     Item\n",
+                     "# ==== ================== ================ ======= ======",
+                     "==== ====\n";
+               foreach my $item ( reverse sort { $a->{r} <=> $b->{r} } @profiles) {
+                  printf "# %4d 0x%16s %10.4f %4.1f%% %7d %10.6f %s\n",
+                     $item->{rank}, $item->{id}, $item->{r},
+                     $item->{r} / $total_r * 100,
+                     $item->{cnt}, $item->{r} / $item->{cnt}, $item->{sample};
+               }
             }
          }
       }
@@ -5188,7 +5208,8 @@ which is an abstracted version of the query text with literals removed,
 whitespace collapsed, and so forth.  The report is formatted so it's easy to
 paste into emails without wrapping, and all non-query lines begin with a
 comment, so you can save it to a .sql file and open it in your favorite
-syntax-highlighting text editor.
+syntax-highlighting text editor.  There is a response-time profile at the very
+end.
 
 The report begins with one paragraph about the entire analysis run.  The
 information is very similar to what you'll see for each class of queries in the
@@ -5289,6 +5310,19 @@ If you want to find this sample event in the log, use the offset mentioned
 above, and something like the following:
 
   tail -c +<offset> /path/to/file | head
+
+The final bit of output is the response-time profile over the events.  This is a
+summarized view of what we've already seen.  Here is a sample:
+
+  # Rank Query ID           Response time    Calls   R/Call     Item
+  # ==== ================== ================ ======= ========== ====
+  #    1 0x31DA25F95494CA95     0.1494 99.9%       1   0.149435 SHOW
+  #    2 0x3AEAAD0E15D725B5     0.0001  0.1%       2   0.000041 SET
+  #    3 0x813031B8BBC3B329     0.0000  0.0%       1   0.000015 COMMIT
+
+The columns should be fairly self-explanatory: rank, query ID, response time sum
+and percentage of total; number of calls and response time per call; and the
+distilled query (see L<"distill"> for more detail on this).
 
 =head1 QUERY REVIEWS
 
@@ -5565,33 +5599,25 @@ the grouping takes place:
 
 =over
 
-=item *
+=item fingerprint
 
-B<fingerprint>.  This causes events to be fingerprinted to abstract queries into
+This causes events to be fingerprinted to abstract queries into
 a canonical form, which is then used to group events together into a class.  See
 L<"FINGERPRINTS"> for more about fingerprinting.
 
-=item *
+=item tables
 
-B<tables>.  This causes events to be inspected for what appear to be tables, and
+This causes events to be inspected for what appear to be tables, and
 then aggregated by that.  Note that a query that contains two or more tables
 will be counted as many times as there are tables; so a join against two tables
 will count the Query_time against both tables.
 
-=item *
+=item distill
 
-B<distill>.  This is a sort of super-fingerprint that collapses queries down
+This is a sort of super-fingerprint that collapses queries down
 into a suggestion of what they do, such as C<INSERT SELECT table1 table2>.
 
 =back
-
-=item --[no]header
-
-default: yes
-
-Print information about the entire analysis run.
-
-See L<"OUTPUT"> for more information on the header.
 
 =item --help
 
@@ -5723,6 +5749,20 @@ L<"--groupby">.
 
 Include all queries, even if they have already been reviewed.
 
+=item --report-format
+
+type: Hash; default: rusage,header,query_report,profile
+
+Print these elements in the query analysis report.  Valid element names are
+rusage, header, query_report, and profile.  The rusage is information about CPU
+times and memory usage.  The header is information about the entire analysis
+run.  The query_report is detailed information on each query in the report.  The
+profile is a compact table of queries for an at-a-glance view of the report.
+Order does not matter; you cannot use this parameter to influence the order of
+items in the report, only the presence or absence of items.
+
+See L<"OUTPUT"> for more information on the various parts of the query report.
+
 =item --review
 
 short form: -R; type: DSN
@@ -5853,12 +5893,6 @@ type: time
 
 How long to run before exiting.  The default is to run forever (you can
 interrupt with CTRL-C).  See also L<--iterations>.
-
-=item --[no]rusage
-
-default: yes
-
-Report CPU times and memory usage in the header of the query analysis report.
 
 =item --select
 

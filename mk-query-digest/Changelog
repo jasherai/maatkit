@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Added a response-time profile (issue 381).
    * Added --iterations and --run-time (issue 173, issue 361).
 
 2009-05-03: version 0.9.5

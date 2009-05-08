@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 56;
+use Test::More tests => 57;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -27,9 +27,8 @@ sub no_diff {
    return !$retval;
 }
 
-my $run_with = '../mk-query-digest --noheader --limit 10 ../../common/t/samples/';
-my $run_notop = '../mk-query-digest --noheader ../../common/t/samples/';
-my $run_header = '../mk-query-digest ../../common/t/samples/';
+my $run_with = '../mk-query-digest --report-format=query_report --limit 10 ../../common/t/samples/';
+my $run_notop = '../mk-query-digest --report-format=query_report ../../common/t/samples/';
 
 ok(
    no_diff($run_with.'empty', 'samples/empty_report.txt'),
@@ -128,9 +127,15 @@ ok(
 );
 
 ok(
-   no_diff($run_header.'slow013.txt --norusage --orderby Query_time:sum,Query_time:sum --groupby fingerprint,user --report fingerprint,user',
+   no_diff($run_with.'slow013.txt --limit 1 --report-format header,query_report --orderby Query_time:sum,Query_time:sum --groupby fingerprint,user --report fingerprint,user',
       'samples/slow013_report_fingerprint_user.txt'),
    'Analysis for slow013 with --groupby fingerprint,user'
+);
+
+ok(
+   no_diff($run_with.'slow013.txt --report-format profile --limit 3',
+      'samples/slow013_report_profile.txt'),
+   'Analysis for slow013 with profile',
 );
 
 ok(
@@ -195,7 +200,7 @@ ok(
 # Issue 228: parse tcpdump.
 # #############################################################################
 { # Isolate $run_with locally
-   my $run_with = 'perl ../mk-query-digest --noheader --limit 100 '
+   my $run_with = 'perl ../mk-query-digest --report-format=query_report --limit 100 '
       . '--type tcpdump ../../common/t/samples';
    ok(
       no_diff("$run_with/tcpdump002.txt", 'samples/tcpdump002_report.txt'),
