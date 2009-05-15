@@ -1,5 +1,7 @@
 Changelog for mk-visual-explain:
 
+   * Optional input files were not read (issue 394).
+
 2009-05-03: version 1.0.14
 
    * Changed the --askpass option to --ask-pass.

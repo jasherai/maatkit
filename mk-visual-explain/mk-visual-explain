@@ -1798,6 +1798,7 @@ sub main {
    # #######################################################################
    my $dp = new DSNParser();
    my $o  = new OptionParser(
+      strict       => 0,
       prompt       => '<options> [FILE]...',
       description  => q{transforms EXPLAIN output into a tree } 
                     . q{representation of the query plan.  If FILE is }
