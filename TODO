@@ -32,6 +32,9 @@ A bad query pattern: derived tables that don't have any aggregation/distinct
   >                         FROM    object_events
   >                         ) oe2
 
+Detect queries like
+http://www.mysqlperformanceblog.com/2008/04/04/multi-column-in-clause-unexpected-mysql-issue/
+
 log-parser can autodetect the slow log.
 
 Build a query sniffer that sniffs off the wire and outputs in slow-log format.
