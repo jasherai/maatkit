@@ -5946,7 +5946,7 @@ The parser expects the input to be formatted with the following options: C<-x -n
 -q -tttt>.  For example, if you want to capture output from your local machine,
 you can do something like
 
-  tcpdump -i lo port 3306 -s 1500 -c 1000 -x -n -q -tttt \
+  tcpdump -i lo port 3306 -s 65535 -c 1000 -x -n -q -tttt \
     | mk-query-digest --type tcpdump
 
 The other tcpdump parameters, such as -s, -c, and -i, are up to you.  Just make
