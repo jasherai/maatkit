@@ -2284,7 +2284,7 @@ Check slave delay once and exit.
 Create the heartbeat L<"--table"> if it does not exist.
 
 This option causes the table specified by L<"--database"> and L<"--table"> to
-be created with the the following MAGIC_create_heartbeat table definition:
+be created with the following MAGIC_create_heartbeat table definition:
 
  CREATE TABLE heartbeat (
    id int NOT NULL PRIMARY KEY,
