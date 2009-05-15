@@ -2,10 +2,8 @@
 
 use strict;
 use warnings FATAL => 'all';
-
 use English qw(-no_match_vars);
-use DBI;
-use Test::More tests => 15;
+use Test::More tests => 16;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -31,12 +29,11 @@ $dbh->do(q{CREATE TABLE test.heartbeat (
 $output = `$cmd -D test --check 2>&1`;
 like($output, qr/heartbeat table is empty/ms, 'Dies on empty heartbeat table with --check (issue 45)');
 
-$output = `$cmd -D test --monitor -m 1s 2>&1`;
+$output = `$cmd -D test --monitor --time 1s 2>&1`;
 like($output, qr/heartbeat table is empty/ms, 'Dies on empty heartbeat table with --monitor (issue 45)');
 
-
 # Run one instance with --replace to create the table.
-`$cmd -D test --update --replace -m 1s`;
+`$cmd -D test --update --replace --time 1s`;
 ok($dbh->selectrow_array('select id from test.heartbeat'), 'Record is there');
 
 # Check the delay and ensure it is only a single line with nothing but the
@@ -46,7 +43,7 @@ chomp $output;
 like($output, qr/^\d+$/, 'Output is just a number');
 
 # Start one daemonized instance to update it
-`$cmd --daemonize -D test --update -m 5s --pid /tmp/mk-heartbeat.pid`;
+`$cmd --daemonize -D test --update --time 5s --pid /tmp/mk-heartbeat.pid 1>/dev/null 2>/dev/null`;
 $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
 like($output, qr/perl ...mk-heartbeat/, 'It is running');
 
@@ -55,7 +52,7 @@ my ($pid) = $output =~ /\s+(\d+)\s+/;
 $output = `cat /tmp/mk-heartbeat.pid`;
 is($output, $pid, 'PID file has correct PID');
 
-$output = `$cmd -D test --monitor -m 1s`;
+$output = `$cmd -D test --monitor --time 1s`;
 chomp ($output);
 is (
    $output,
@@ -70,7 +67,7 @@ ok(! -f '/tmp/mk-heartbeat.pid', 'PID file removed');
 
 # Run again, create the sentinel, and check that the sentinel makes the
 # daemon quit.
-`$cmd --daemonize -D test --update`;
+`$cmd --daemonize -D test --update 1>/dev/null 2>/dev/null`;
 $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
 like($output, qr/perl ...mk-heartbeat/, 'It is running');
 $output = `$cmd -D test --stop`;
@@ -82,9 +79,28 @@ ok(-f '/tmp/mk-heartbeat-sentinel', 'Sentinel file is there');
 unlink('/tmp/mk-heartbeat-sentinel');
 $dbh->do('drop table if exists test.heartbeat'); # This will kill it
 
-# Cannot daemonize and debug
-$output = `MKDEBUG=1 $cmd --daemonize -D test 2>&1`;
-like($output, qr/Cannot debug while daemonized/, 'Cannot debug while daemonized');
+# #############################################################################
+# Issue 353: Add --create-table to mk-heartbeat
+# #############################################################################
+$dbh->do('drop table if exists test.heartbeat');
+diag(`$cmd --update --time 1s --database test --table heartbeat --create-table`);
+$dbh->do('use test');
+$output = $dbh->selectcol_arrayref('SHOW TABLES LIKE "heartbeat"');
+is(
+   $output->[0],
+   'heartbeat', 
+   '--create-table creates heartbeat table'
+); 
+
+# #############################################################################
+# Issue 352: Add port to mk-heartbeat --check output
+# #############################################################################
+$output = `../mk-heartbeat --host 127.1 --port 12345 -D test --check --recurse 1`;
+like(
+   $output,
+   qr/:12346\s+\d/,
+   '--check output has :port'
+);
 
 $sb->wipe_clean($dbh);
 exit;
