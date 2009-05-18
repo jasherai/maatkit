@@ -882,7 +882,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3421
+# DSNParser package 3558
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1192,6 +1192,24 @@ sub print_active_handles {
    }
 }
 
+sub copy {
+   my ( $self, $dsn_1, $dsn_2, %args ) = @_;
+   die 'I need a dsn_1 argument' unless $dsn_1;
+   die 'I need a dsn_2 argument' unless $dsn_2;
+   my %new_dsn = map {
+      my $key = $_;
+      my $val;
+      if ( $args{overwrite} ) {
+         $val = defined $dsn_1->{$key} ? $dsn_1->{$key} : $dsn_2->{$key};
+      }
+      else {
+         $val = defined $dsn_2->{$key} ? $dsn_2->{$key} : $dsn_1->{$key};
+      }
+      $key => $val;
+   } keys %{$self->{opts}};
+   return \%new_dsn;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1299,7 +1317,15 @@ sub _d {
 # End Daemon package
 # ###########################################################################
 
-package main;
+# ###########################################################################
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
+# ###########################################################################
+package mk_deadlock_logger;
 
 use English qw(-no_match_vars);
 use List::Util qw(max);
@@ -1308,46 +1334,23 @@ use sigtrap qw(handler finish untrapped normal-signals);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-my $vp = new VersionParser();
-my $dp = new DSNParser(
-   { key => 't', copy => 1, desc => 'Table in which to store deadlock information' },
-);
-$dp->prop('required', { h => 1 });
-$dp->prop('autokey', 'h');
+my $o;
+my $oktorun;
+my $dp;
 
-# ############################################################################
-# Get configuration information.
-# ############################################################################
-
-
-my $q = new Quoter();
-my $o = new OptionParser(
-   description => q{extracts and saves information about the most }
-                . q{recent deadlock in a MySQL server.  You need to }
-                . q{specify whether to print the output or save it in }
-                . q{a database.},
-   prompt      => '--source DSN <options>',
-   dp          => $dp,
-);
-
-$o->get_specs();
-$o->get_opts();
-$o->set('collapse', $o->get('print')) unless $o->got('collapse');
-$o->usage_or_errors();
-
-# ############################################################################
+# ########################################################################
 # Configuration info.
-# ############################################################################
-my $source = $o->get('source');
-my $dest   = $o->get('dest');
+# ########################################################################
+my $source_dsn;
+my $dest_dsn;
 
 # Some common patterns and variables
-my $d         = qr/(\d+)/;                    # Digit
-my $t         = qr/(\d+ \d+)/;                # Transaction ID
-my $i         = qr/((?:\d{1,3}\.){3}\d+)/;    # IP address
-my $n         = qr/([^`\s]+)/;                # MySQL object name
-my $w         = qr/(\w+)/;                    # Words
-my $s         = qr/(\d{6} .\d:\d\d:\d\d)/;    # InnoDB timestamp
+my $d = qr/(\d+)/;                    # Digit
+my $t = qr/(\d+ \d+)/;                # Transaction ID
+my $i = qr/((?:\d{1,3}\.){3}\d+)/;    # IP address
+my $n = qr/([^`\s]+)/;                # MySQL object name
+my $w = qr/(\w+)/;                    # Words
+my $s = qr/(\d{6} .\d:\d\d:\d\d)/;    # InnoDB timestamp
 
 # A thread's proc_info can be at least 98 different things I've found in the
 # source.  Fortunately, most of them begin with a gerunded verb.  These are
@@ -1382,131 +1385,195 @@ my %is_proc_info = (
    'update'                       => 1,
 );
 
-# ############################################################################
-# Start working.
-# ############################################################################
-my $dbh   = get_cxn($source, 1);
-my $start = time();
-my $end   = $start + ($o->get('run-time') || 0); # When we should exit
-my $now   = $start;
-my $dbh2;
-my $sth;
-my $ins_sth;
+sub main {
+   @ARGV = @_;  # set global ARGV for this package
 
-# Since the user might not have specified a hostname for the connection, try to
-# extract it from the $dbh
-if ( !$source->{h} ) {
-   ($source->{h}) = $dbh->{mysql_hostinfo} =~ m/(\w+) via/;
-}
+   my $q  = new Quoter();
+   my $vp = new VersionParser();
+   $dp    = new DSNParser(
+      { key => 't',
+        copy => 1,
+        desc => 'Table in which to store deadlock information'
+      },
+   );
+   $dp->prop('autokey', 'h');
 
-my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx
-               lock_type lock_mode wait_hold victim query );
-if ( $o->got('columns') ) {
-   @cols = grep { $o->get('columns')->{$_} } @cols;
-}
+   # ########################################################################
+   # Get configuration information.
+   # ########################################################################
+   $o = new OptionParser(
+      strict      => 0,
+      description => q{extracts and saves information about the most }
+                   . q{recent deadlock in a MySQL server.},
+      prompt      => 'SOURCE_DSN [OPTION]...',
+      dp          => $dp,
+   );
 
-if ( $dest && $dest->{t} ) {
-   my $db_tbl = 
-      join('.',
-      map  {  $q->quote($_) }
-      grep { $_ }
-      ( $dest->{D}, $dest->{t} ));
+   $o->get_specs();
+   $o->get_opts();
 
-   $dbh2     = get_cxn($dest, 0);
-   my $cols  = join(',', map { $q->quote($_) } @cols);
-   my $parms = join(',', map { '?' } @cols);
-   $ins_sth  = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
-}
-
-# Daemonize only after (potentially) asking for passwords for --askpass.
-my $daemon;
-if ( $o->get('daemonize') ) {
-   $daemon = new Daemon() or die "Cannot daemonize: $OS_ERROR";
-   $daemon->daemonize();
-   if ( $o->got('pid') ) {
-      $daemon->create_PID_file( $o->get('pid') );
-   } 
-   # I'm a daemon now.
-}
-
-my $oktorun = 1;
-while (                            # Quit if:
-   ($start == $end || $now < $end) # time is exceeded
-   && $oktorun                     # or instructed to quit
-   )
-{
-
-   my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
-
-   my %txns = %{parse_deadlocks($text)};
-
-   if ( $ins_sth ) {
-      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
-         $ins_sth->execute(@{$txn}{@cols});
-      }
-      $dbh2->commit;
+   $o->set('collapse', $o->get('print')) unless $o->got('collapse'); 
+ 
+   $source_dsn = $dp->parse_options($o);
+   MKDEBUG && _d('Got source host from opts:', $source_dsn ? 'yes' : 'no');
+   if ( @ARGV ) {
+      MKDEBUG && _d('Source host DSN:', $ARGV[0]);
+      $source_dsn = $dp->parse(shift @ARGV);
    }
 
-   if ( $o->get('print') ) {
-      my $sep = $o->get('tab') ? "\t" : ' ';
-      print join($sep, @cols), "\n";
-      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
-         # If 'collapse' is on, it's already been taken care of, but if it's unset,
-         # by default strip whitespace.
-         if ( !$o->got('collapse') ) {
-            $txn->{query} =~ s/\s+/ /g;
-         }
-         print join($sep, map { $txn->{$_} } @cols), "\n";
+   $dest_dsn = $o->get('dest');
+   if ( $source_dsn && $dest_dsn ) {
+      # If dest DSN only has D and t, this will copy h, P, S, etc.
+      # from the source DSN.
+      $dest_dsn = $dp->copy($source_dsn, $dest_dsn);
+   }
+
+   if ( !$o->get('help') ) {
+      if ( !$source_dsn ) {
+         $o->_save_error('Missing or invalid source host');
+      }
+      if ( $dest_dsn && !$dest_dsn->{D} ) {
+         $o->_save_error('Destination DSN requires database (D)');
+      }
+      if ( $dest_dsn && !$dest_dsn->{t} ) {
+         $o->_save_error('Destination DSN requires table (t)');
       }
    }
 
-   # If there's an --interval argument, run forever or till specified.
-   # Otherwise just run once.
-   if ( $o->got('interval') ) {
-      sleep($o->get('interval'));
-      $now = time();
-   }
-   else {
-      $oktorun = 0;
-      # If specified, clear the deadlock... 
-      if ( $o->get('clear-deadlocks') ) {
-         $dbh->{AutoCommit} = 0;
-         my $db_tbl = $o->get('clear-deadlocks');
-         my $sql = $o->_read_para_after(__FILE__, qr/with.the.following.structure/);
-         if ( !$vp->version_ge($dbh, '4.1.2') ) {
-            $sql =~ s/ENGINE=/TYPE=/;
-         }
-         $sql =~ s/test.deadlock_maker/$db_tbl/;
-         MKDEBUG && _d($sql);
-         $dbh->do($sql);
-         $sql = "INSERT INTO $db_tbl(a) VALUES(1)";
-         MKDEBUG && _d($sql);
-         $dbh->do($sql); # I'm holding locks on the table now.
+   $o->usage_or_errors();
 
-         # Fork off a child to try to take a lock on the table.
-         my $pid = fork();
-         if ( defined($pid) && $pid == 0 ) { # I am a child
-            my $dbh_child = get_cxn($source, 0);
-            $sql = "SELECT * FROM $db_tbl FOR UPDATE";
+   # ########################################################################
+   # Start working.
+   # ########################################################################
+   my $dbh   = get_cxn($source_dsn, 1);
+   my $start = time();
+   my $end   = $start + ($o->get('run-time') || 0); # When we should exit
+   my $now   = $start;
+   my $dest_dbh;
+   my $sth;
+   my $ins_sth;
+
+   # Since the user might not have specified a hostname for the connection,
+   # try to extract it from the $dbh
+   if ( !$source_dsn->{h} ) {
+      ($source_dsn->{h}) = $dbh->{mysql_hostinfo} =~ m/(\w+) via/;
+      MKDEBUG && _d('Got source host from dbh:', $source_dsn->{h});
+   }
+
+   my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx
+                  lock_type lock_mode wait_hold victim query );
+   if ( $o->got('columns') ) {
+      @cols = grep { $o->get('columns')->{$_} } @cols;
+   }
+
+   if ( $dest_dsn ) {
+      my $db_tbl = 
+         join('.',
+         map  {  $q->quote($_) }
+         grep { $_ }
+         ( $dest_dsn->{D}, $dest_dsn->{t} ));
+      $dest_dbh = get_cxn($dest_dsn, 0);
+      my $cols  = join(',', map { $q->quote($_) } @cols);
+      my $parms = join(',', map { '?' } @cols);
+      $ins_sth  = $dest_dbh->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
+   }
+
+   # Daemonize only after (potentially) asking for passwords for --ask-pass.
+   my $daemon;
+   if ( $o->get('daemonize') ) {
+      $daemon = new Daemon(
+         log_file => $o->get('log'),
+      ) or die "Cannot daemonize: $OS_ERROR";
+      $daemon->daemonize();
+      if ( $o->got('pid') ) {
+         $daemon->create_PID_file( $o->get('pid') );
+      }
+      MKDEBUG && _d('I am a daemon now');
+   }
+
+   $oktorun = 1;
+   while (                            # Quit if:
+      ($start == $end || $now < $end) # time is exceeded
+      && $oktorun                     # or instructed to quit
+      )
+   {
+
+      my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
+
+      my %txns = %{parse_deadlocks($text)};
+
+      if ( $ins_sth ) {
+         foreach my $txn (sort { $a->{thread} <=> $b->{thread} } values %txns) {
+            $ins_sth->execute(@{$txn}{@cols});
+         }
+         $dest_dbh->commit();
+      }
+
+      if ( $o->got('print') || !$o->got('dest') ) {
+         my $sep = $o->get('tab') ? "\t" : ' ';
+         print join($sep, @cols), "\n";
+         foreach my $txn (sort { $a->{thread} <=> $b->{thread} } values %txns) {
+            # If 'collapse' is on, it's already been taken care of,
+            # but if it's unset, by default strip whitespace.
+            if ( !$o->got('collapse') ) {
+               $txn->{query} =~ s/\s+/ /g;
+            }
+            print join($sep, map { $txn->{$_} } @cols), "\n";
+         }
+      }
+
+      # If there's an --interval argument, run forever or till specified.
+      # Otherwise just run once.
+      if ( $o->got('interval') ) {
+         sleep($o->get('interval'));
+         $now = time();
+      }
+      else {
+         $oktorun = 0;
+         # If specified, clear the deadlock... 
+         if ( $o->get('clear-deadlocks') ) {
+            $dbh->{AutoCommit} = 0;
+            my $db_tbl = $o->get('clear-deadlocks');
+            my $sql    = $o->_read_para_after(__FILE__,
+               qr/with.the.following.structure/);
+
+            if ( !$vp->version_ge($dbh, '4.1.2') ) {
+               $sql =~ s/ENGINE=/TYPE=/;
+            }
+            $sql =~ s/test.deadlock_maker/$db_tbl/;
             MKDEBUG && _d($sql);
-            eval { $dbh_child->do($sql); }; # Should block against parent.
-            MKDEBUG && _d($EVAL_ERROR); # Parent inserted value 0.
-            $sql = "DROP TABLE $db_tbl";
+            $dbh->do($sql);
+            $sql = "INSERT INTO $db_tbl(a) VALUES(1)";
             MKDEBUG && _d($sql);
-            $dbh_child->do($sql);
-            exit;
+            $dbh->do($sql); # I'm holding locks on the table now.
+
+            # Fork off a child to try to take a lock on the table.
+            my $pid = fork();
+            if ( defined($pid) && $pid == 0 ) { # I am a child
+               my $dbh_child = get_cxn($source_dsn, 0);
+               $sql = "SELECT * FROM $db_tbl FOR UPDATE";
+               MKDEBUG && _d($sql);
+               eval { $dbh_child->do($sql); }; # Should block against parent.
+               MKDEBUG && _d($EVAL_ERROR); # Parent inserted value 0.
+               $sql = "DROP TABLE $db_tbl";
+               MKDEBUG && _d($sql);
+               $dbh_child->do($sql);
+               exit;
+            }
+            elsif ( !defined($pid) ) {
+               die("Unable to fork for clearing deadlocks!\n");
+            }
+            sleep 1;
+            $sql = "INSERT INTO $db_tbl(a) VALUES(0)";# Will make child deadlock
+            MKDEBUG && _d($sql);
+            eval { $dbh->do($sql); };
+            MKDEBUG && _d($EVAL_ERROR);
+            waitpid($pid, 0);
          }
-         elsif ( !defined($pid) ) {
-            die("Unable to fork for clearing deadlocks!\n");
-         }
-         sleep 1;
-         $sql = "INSERT INTO $db_tbl(a) VALUES(0)"; # Will make child deadlock
-         MKDEBUG && _d($sql);
-         eval { $dbh->do($sql); };
-         MKDEBUG && _d($EVAL_ERROR);
-         waitpid($pid, 0);
       }
    }
+
+   return 0;
 }
 
 # ############################################################################
@@ -1545,36 +1612,42 @@ sub parse_deadlocks {
       if ( $what eq 'TRANSACTION' ) {
          @{$hash}{qw(txn_time)} = $body =~ m/ACTIVE $d sec/;
 
-         # Parsing the line that begins 'MySQL thread id' is complicated.  The only
-         # thing always in the line is the thread and query id.  See function
-         # innobase_mysql_print_thd in InnoDB source file sql/ha_innodb.cc.
+         # Parsing the line that begins 'MySQL thread id' is complicated.
+         # The only thing always in the line is the thread and query id.
+         # See function innobase_mysql_print_thd in InnoDB source file
+         # sql/ha_innodb.cc.
          my ( $thread_line ) = $body =~ m/^(MySQL thread id .*)$/m;
-         my ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status );
+         my ($mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status);
 
          if ( $thread_line ) {
             # These parts can always be gotten.
-            ( $mysql_thread_id, $query_id ) = $thread_line =~ m/^MySQL thread id $d, query id $d/m;
+            ( $mysql_thread_id, $query_id )
+               = $thread_line =~ m/^MySQL thread id $d, query id $d/m;
 
-            # If it's a master/slave thread, "Has (read|sent) all" may be the thread's
-            # proc_info.  In these cases, there won't be any host/ip/user info
+            # If it's a master/slave thread, "Has (read|sent) all" may be the
+            # thread's proc_info.  In these cases, there won't be any
+            # host/ip/user info.
             ( $query_status ) = $thread_line =~ m/(Has (?:read|sent) all .*$)/m;
             if ( defined($query_status) ) {
                $user = 'system user';
             }
 
-            # It may be the case that the query id is the last thing in the line.
+            # The query id might be the last thing in the line.
             elsif ( $thread_line =~ m/query id \d+ / ) {
-               # The IP address is the only non-word thing left, so it's the most
-               # useful marker for where I have to start guessing.
+               # The IP address is the only non-word thing left, so it's
+               # the most useful marker for where I have to start guessing.
                ( $hostname, $ip ) = $thread_line =~ m/query id \d+(?: ([A-Za-z]\S+))? $i/m;
                if ( defined $ip ) {
-                  ( $user, $query_status ) = $thread_line =~ m/$ip $w(?: (.*))?$/;
+                  ($user, $query_status) = $thread_line =~ m/$ip $w(?: (.*))?$/;
                }
-               else { # OK, there wasn't an IP address.
+               else {
+                  # OK, there wasn't an IP address.
                   # There might not be ANYTHING except the query status.
                   ( $query_status ) = $thread_line =~ m/query id \d+ (.*)$/;
-                  if ( $query_status !~ m/^\w+ing/ && !exists($is_proc_info{$query_status}) ) {
-                     # The remaining tokens are, in order: hostname, user, query_status.
+                  if ( $query_status !~ m/^\w+ing/
+                       && !exists($is_proc_info{$query_status}) ) {
+                     # The remaining tokens are, in order: hostname, user,
+                     # query_status.
                      # It's basically impossible to know which is which.
                      ( $hostname, $user, $query_status ) = $thread_line
                         =~ m/query id \d+(?: ([A-Za-z]\S+))?(?: $w(?: (.*))?)?$/m;
@@ -1631,7 +1704,7 @@ sub parse_deadlocks {
    foreach my $txn ( values %txns ) {
       $txn->{victim} = $txn->{id} == $victim ? 1 : 0;
       $txn->{ts}     = $ts;
-      $txn->{server} = $source->{h} || '';
+      $txn->{server} = $source_dsn->{h} || '';
       $txn->{ip}     = inet_aton($txn->{ip}) if $o->got('numeric-ip');
    }
 
@@ -1646,11 +1719,11 @@ sub finish {
 }
 
 sub get_cxn {
-   my ( $info, $ac ) = @_;
-   if ( $o->got('ask-pass') ) {
-      $info->{p} = OptionParser::prompt_noecho("Enter password: ");
+   my ( $dsn, $ac ) = @_;
+   if ( $o->get('ask-pass') ) {
+      $dsn->{p} = OptionParser::prompt_noecho("Enter password: "); 
    }
-   my $dbh = $dp->get_dbh($dp->get_cxn_params($info), {AutoCommit => $ac});
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit => $ac});
    $dbh->{InactiveDestroy} = 1; # Because of forking.
    return $dbh;
 }
@@ -1664,6 +1737,13 @@ sub _d {
 }
 
 # ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
+
+# ############################################################################
 # Documentation
 # ############################################################################
 =pod
@@ -1674,19 +1754,58 @@ mk-deadlock-logger - Extract and log MySQL deadlock information.
 
 =head1 SYNOPSIS
 
-The following examples will print deadlocks, store deadlocks in a database
-table, and daemonize and check once every 30 seconds for 4 hours,
-respectively:
+Print deadlocks on SOURCE_DSN:
 
- mk-deadlock-logger --print
- mk-deadlock-logger --source u=user,p=pass,h=server --dest D=test,t=deadlocks
- mk-deadlock-logger --dest D=test,t=deadlocks --daemonize -m 4h -i 30s
+   mk-deadlock-logger SOURCE_DSN
+
+Store deadlock information from SOURCE_DSN in test.deadlocks table on SOURCE_DSN
+(source and destination are the same host):
+
+   mk-deadlock-logger SOURCE_DSN --dest D=test,t=deadlocks
+
+Store deadlock information from SOURCE_DSN in test.deadlocks table on DEST_DSN
+(source and destination are different hosts):
+
+   mk-deadlock-logger SOURCE_DSN --dest DEST_DSN,D=test,t=deadlocks
+
+Daemonize and check for deadlocks on SOURCE_DSN every 30 seconds for 4 hours:
+
+   mk-deadlock-logger SOURCE_DSN --dest D=test,t=deadlocks --daemonize --run-time 4h --interval 30s
 
 =head1 DESCRIPTION
 
-mk-deadlock-logger extracts deadlock data from a MySQL server (currently only
-InnoDB deadlock information is available).  You can print it to standard output
-or save it in a database table.  By default it does neither.
+mk-deadlock-logger extracts deadlock data from a MySQL server.  Currently only
+InnoDB deadlock information is available.  You can print the information to
+standard output, store it in a database table, or both.  If neither
+L<"--print"> nor L<"--dest"> are given, then the deadlock information is
+printed by default.  If only L<"--dest"> is given, then the deadlock
+information is only stored.  If both options are given, then the deadlock
+informat is printed and stored.
+
+The source host can specified using one of two methods.  The first method is
+to use at least one of the standard connection-related command line options:
+L<"--defaults-file">, L<"--password">, L<"--host">, L<"--port">, L<"--socket">
+or L<"--user">.  These options only apply to the source host; they cannot be
+used to specify the destination host.
+
+The second method to specifiy the source host, or the optional destination host
+with L<"--dest">, is a DSN.  A DSN is a special syntax that can be either just
+a hostname (like C<server.domain.com> or C<1.2.3.4>), or a
+C<key=value,key=value> string. Keys are a single letter:
+
+  KEY MEANING
+  === =======
+  h   Connect to host
+  P   Port number to use for connection
+  S   Socket file to use for connection
+  u   User for login if not current user
+  p   Password to use when connecting
+  F   Only read default options from the given file
+
+If you omit any values from the destination host DSN, they are filled in with
+values from the source host, so you don't need to specify them in both places.
+C<mk-deadlock-logger> reads all normal MySQL option files, such as ~/.my.cnf, so
+you may not need to specify username, password and other common options at all.
 
 =head1 DOWNLOADING
 
@@ -1705,15 +1824,21 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Specify at least one of L<"--print"> or L<"--dest">.
-
-DSN values in L<"--dest"> default to values from L<"--source">.
-
 =over
 
 =item --ask-pass
 
 Prompt for a password when connecting to MySQL.
+
+=item --charset
+
+short form: -A; type: string
+
+Default character set.  Enables character set settings in Perl and MySQL. If the
+value is C<utf8>, sets Perl's binmode on STDOUT to utf8, passes the
+C<mysql_enable_utf8> option to DBD::mysql, and runs C<SET NAMES UTF8> after
+connecting to MySQL. Any other value sets binmode on STDOUT without the utf8
+layer, and runs C<SET NAMES> after connecting to MySQL.
 
 =item --[no]collapse
 
@@ -1743,19 +1868,33 @@ create it with the following structure:
 After creating the table and causing a small deadlock, the tool will drop the
 table again.
 
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
+
 =item --daemonize
 
 Fork and run in the background; POSIX OSes only.
+
+=item --defaults-file
+
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute
+pathname.
 
 =item --dest
 
 type: DSN
 
-DSN for where to store deadlocks.  Specifies a server, database and table in
-which to store deadlock information, in the same format as L<"--source">.
-Missing values are filled in with the same values as L<"--source">, so you can
-usually omit most parts of this argument if you're storing deadlocks on the same
-server on which they happen.
+DSN for where to store deadlocks; specify at least a database (D) and table (t).
+
+Missing values are filled in with the same values from the source host, so you
+can usually omit most parts of this argument if you're storing deadlocks on the
+same server on which they happen.
 
 By default, whitespace in the query column is left intact;
 use L<"--[no]collapse"> if you want whitespace collapsed.
@@ -1790,19 +1929,37 @@ store.
 
 Show help and exit.
 
+=item --host
+
+short form: -h; type: string
+
+Connect to MySQL host.
+
 =item --interval
 
 type: time; default: 0s
 
 How often to check for deadlocks.
 
+=item --log
+
+type: string
+
+Print all output to this file when daemonized.
+
 =item --numeric-ip
 
 Express IP addresses as integers.
 
+=item --password
+
+short form: -p; type: string
+
+Password to use for MySQL connection.
+
 =item --pid
 
-type: string 
+type: string
 
 Create the given PID file when daemonized.  For example, '--daemonize --pid
 /tmp/mk-deadlock-logger.pid' would cause mk-deadlock-logger to create the PID
@@ -1811,6 +1968,12 @@ instance of mk-deadlock-logger exits.
 
 /var/run/ is usually not writable by non-root users, therefore /tmp/ is a
 more reliable alternative.
+
+=item --port
+
+short form: -P; type: int
+
+Port number to use for MySQL connection.
 
 =item --print
 
@@ -1824,12 +1987,11 @@ type: string; default: wait_timeout=10000
 Set these MySQL variables.  Specify any variables you want to be set immediately
 after connecting to MySQL.  These will be included in a C<SET> command.
 
-=item --source
+=item --socket
 
-type: DSN
+short form: -S; type: string
 
-DSN to check for deadlocks; required.  Specifies how to connect to a server to
-check for deadlocks.
+Socket file to use for MySQL connection.
 
 =item --tab
 
@@ -1840,6 +2002,12 @@ Print tab-separated columns, instead of aligned.
 type: time
 
 How long to run before exiting.
+
+=item --user
+
+short form: -u; type: string
+
+User for slave login if not current user.
 
 =item --version
 
@@ -1907,8 +2075,8 @@ The connection's host.
 
 =item ip
 
-The connection's IP address.  If you specify L<"--numip">, this is converted to
-an unsigned integer.
+The connection's IP address.  If you specify L<"--numeric-ip">, this is
+converted to an unsigned integer.
 
 =item db
 

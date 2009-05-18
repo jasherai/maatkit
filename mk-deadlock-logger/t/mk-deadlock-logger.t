@@ -1,35 +1,18 @@
 #!/usr/bin/perl
 
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 6;
 use English qw(-no_match_vars);
+use Test::More tests => 15;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master', { PrintError => 0, RaiseError => 1, AutoCommit => 0 })
-   or BAIL_OUT('Cannot connect to sandbox master');
+or BAIL_OUT('Cannot connect to sandbox master');
 my $dbh2 = $sb->get_dbh_for('master', { PrintError => 0, RaiseError => 1, AutoCommit => 0 })
-   or BAIL_OUT('Cannot connect to sandbox master');
+or BAIL_OUT('Cannot connect to sandbox master');
 
 $sb->create_dbs($dbh1, ['test']);
 
@@ -70,6 +53,7 @@ foreach my $child ( 0..1 ) {
    elsif ( !defined($pid) ) {
       die("Unable to fork for clearing deadlocks!\n");
    }
+
    # I already exited if I'm a child, so I'm the parent.
    $children{$child} = $pid;
 }
@@ -83,31 +67,111 @@ foreach my $child ( keys %children ) {
 my ($stat) = $dbh1->selectrow_array('show innodb status');
 like($stat, qr/WE ROLL BACK/, 'There was a deadlock');
 
-my $output = `perl ../mk-deadlock-logger --print --source h=127.1,P=12345`;
-like($output, qr/GEN_CLUST_INDEX/, 'Deadlock logger prints the output');
+my $output = `perl ../mk-deadlock-logger --print h=127.1,P=12345`;
+like(
+   $output,
+   qr/127\.1.+msandbox.+GEN_CLUST_INDEX/,
+   'Deadlock logger prints the output'
+);
+
+$output = `perl ../mk-deadlock-logger h=127.1,P=12345`;
+like(
+   $output,
+   qr/127\.1.+msandbox.+GEN_CLUST_INDEX/,
+   '--print is implicit'
+);
+
 $dbh1->do('drop table test.dl');
 
+# #############################################################################
 # Check daemonization
+# #############################################################################
 my $deadlocks_tbl = `cat deadlocks_tbl.sql`;
 $dbh1->do('USE test');
 $dbh1->do('DROP TABLE IF EXISTS deadlocks');
 $dbh1->do("$deadlocks_tbl");
 
-my $cmd = '../mk-deadlock-logger -d h=127.1,P=12345,D=test,t=deadlocks -s h=127.1,P=12345 --daemonize -m 4h -i 30s --pid /tmp/mk-deadlock-logger.pid';
-`$cmd`;
-
-$output = `ps -eaf | grep 'mk-deadlock-logger \-d'`;
+my $cmd = '../mk-deadlock-logger --dest D=test,t=deadlocks h=127.1,P=12345 --daemonize --run-time 1s --interval 1s --pid /tmp/mk-deadlock-logger.pid';
+`$cmd 1>/dev/null 2>/dev/null`;
+$output = `ps -eaf | grep 'mk-deadlock-logger \-\-dest '`;
 like($output, qr/$cmd/, 'It lives daemonized');
-
 ok(-f '/tmp/mk-deadlock-logger.pid', 'PID file created');
+
 my ($pid) = $output =~ /\s+(\d+)\s+/;
 $output = `cat /tmp/mk-deadlock-logger.pid`;
 is($output, $pid, 'PID file has correct PID');
 
 # Kill it
-`kill $pid`;
 sleep 1;
 ok(! -f '/tmp/mk-deadlock-logger.pid', 'PID file removed');
+
+# #############################################################################
+# Check that deadlocks from previous test were stored in table.
+# #############################################################################
+my $res = $dbh1->selectall_arrayref('SELECT * FROM test.deadlocks');
+ok(
+   scalar @$res,
+   'Deadlocks recorded in table'
+);
+
+# #############################################################################
+# Check that --dest suppress --print output unless --print is explicit.
+# #############################################################################
+$output = 'foo';
+$dbh1->do('TRUNCATE TABLE test.deadlocks');
+$cmd = '../mk-deadlock-logger --dest D=test,t=deadlocks h=127.1,P=12345';
+$output = `$cmd`;
+is(
+   $output,
+   '',
+   'No output with --dest'
+);
+
+$res = $dbh1->selectall_arrayref('SELECT * FROM test.deadlocks');
+ok(
+   scalar @$res,
+   'Deadlocks still recorded in table'
+);
+
+$output = '';
+$dbh1->do('TRUNCATE TABLE test.deadlocks');
+$cmd = '../mk-deadlock-logger --print --dest D=test,t=deadlocks --host 127.1 --port 12345';
+$output = `$cmd`;
+like(
+   $output,
+   qr/127\.1.+msandbox.+GEN_CLUST_INDEX/,
+   'Prints output with --dest and explicit --print'
+);
+
+$res = $dbh1->selectall_arrayref('SELECT * FROM test.deadlocks');
+ok(
+   scalar @$res,
+   'Deadlocks recorded in table again'
+);
+
+# #############################################################################
+# Sanity tests.
+# #############################################################################
+$output = `../mk-deadlock-logger --dest D=test,t=deadlocks 2>&1`;
+like(
+   $output,
+   qr/Missing or invalid source host/,
+   'Requires source host'
+);
+
+$output = `../mk-deadlock-logger h=127 --dest t=deadlocks 2>&1`;
+like(
+   $output,
+   qr/Destination DSN requires database/,
+   'Dest DSN requires D',
+);
+
+$output = `../mk-deadlock-logger --dest D=test 2>&1`;
+like(
+   $output,
+   qr/Destination DSN requires table/,
+   'Dest DSN requires t'
+);
 
 $sb->wipe_clean($dbh1);
 exit;
