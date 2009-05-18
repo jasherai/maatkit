@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 24;
 
 require "../DSNParser.pm";
 require '../OptionParser.pm';
@@ -298,6 +298,63 @@ is_deeply(
       A => undef,
    },
    'Parses DSN from OptionParser obj'
+);
+
+# #############################################################################
+# Test copy().
+# #############################################################################
+my $dsn_1 = {
+   D => undef,
+   F => undef,
+   h => 'slave1',
+   p => 'p1',
+   P => '12345',
+   S => undef,
+   t => undef,
+   u => 'foo',
+   A => undef,
+};
+my $dsn_2 = {
+   D => 'test',
+   F => undef,
+   h => undef,
+   p => 'p2',
+   P => undef,
+   S => undef,
+   t => 'tbl',
+   u => undef,
+   A => undef,
+};
+
+is_deeply(
+   $dp->copy($dsn_1, $dsn_2),
+   {
+      D => 'test',
+      F => undef,
+      h => 'slave1',
+      p => 'p2',
+      P => '12345',
+      S => undef,
+      t => 'tbl',
+      u => 'foo',
+      A => undef,
+   },
+   'Copy DSN without overwriting destination'
+);
+is_deeply(
+   $dp->copy($dsn_1, $dsn_2, overwrite=>1),
+   {
+      D => 'test',
+      F => undef,
+      h => 'slave1',
+      p => 'p1',
+      P => '12345',
+      S => undef,
+      t => 'tbl',
+      u => 'foo',
+      A => undef,
+   },
+   'Copy DSN and overwrite destination'
 );
 
 exit

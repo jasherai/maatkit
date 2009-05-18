@@ -366,6 +366,27 @@ sub print_active_handles {
    }
 }
 
+# Copy all set vals in dsn_1 to dsn_2.  Existing val in dsn_2 are not
+# overwritten unless overwrite=>1 is given, but undef never overwrites a
+# val.
+sub copy {
+   my ( $self, $dsn_1, $dsn_2, %args ) = @_;
+   die 'I need a dsn_1 argument' unless $dsn_1;
+   die 'I need a dsn_2 argument' unless $dsn_2;
+   my %new_dsn = map {
+      my $key = $_;
+      my $val;
+      if ( $args{overwrite} ) {
+         $val = defined $dsn_1->{$key} ? $dsn_1->{$key} : $dsn_2->{$key};
+      }
+      else {
+         $val = defined $dsn_2->{$key} ? $dsn_2->{$key} : $dsn_1->{$key};
+      }
+      $key => $val;
+   } keys %{$self->{opts}};
+   return \%new_dsn;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
