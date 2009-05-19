@@ -1,28 +1,13 @@
 mk-table-sync should say it's not syncing if you don't say --execute
 
-mk-log-parser, print out CRC32 of signature, plus some info about the
-query.  This can be used to (for example) make it easy to track performance over
-time, or shove things via email into ticketing systems.
-
 If binlog-do-db is set, checksumming won't work in some databases.  Same for
 binlog-ignore-db.  is it possible to make it stay in one DB?
-
-Draw a histogram of various types of things in the slow log.  For example, 
-show the long tail of count of query fingerprints, lock time, exec time, etc.
 
 Estimate query completion times (mk-how-long).  Check processlist, grab handler
 stats, assume only a single query running, look at show table status, look at
 explain and SHOW INDEX FROM to estimate rows.  Rows per second will probably
 decay logarithmically.  Take that into account.  Also look at innodb rollbacks.
 Estimate how long they will take.
-
-Compensate for this bug:
-# Time: 080906 17:41:59
-# User@Host: hssn[hssn] @ dingo-stage-1.host.cdc.advance.net [10.5.2.21]
-# Query_time: 4294967295  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
-# administrator command: Ping;
-# Time: 080906 17:42:01
-
 
 A script to check upgrade-readiness:  check-upgrade script that looks for suspicious things: DECIMAL data  types,  GROUP BY queries with aggregate functions over non-integer types, BIT  data  types, queries that mix comma-join with ansi-join syntaxes , BINARY type
 
@@ -37,8 +22,6 @@ http://www.mysqlperformanceblog.com/2008/04/04/multi-column-in-clause-unexpected
 
 log-parser can autodetect the slow log.
 
-Build a query sniffer that sniffs off the wire and outputs in slow-log format.
-
 Include the DSN options in POD.
 
 Make a way to get a list of DSNs out of a database table, and iterate over them.
@@ -47,32 +30,20 @@ This would be useful for mk-find, mk-table-checksum and several other tools.
 Tool to automate InnoDB recovery: start mysqld, dump table in chunks until it
 crashes, start again, ....
 
-Include --help and --version in POD, make --help show what kind of value is
-required
-
 A tool (or a feature on mk-slave-prefetch or mk-heartbeat) to watch how fast a
 slave is replicating, in bytes/sec.
-
-Debugging output when daemonizing, like mk-slave-restart has.
 
 Add timezone to DSN syntax
 
 Integrate mk-slave-delay with mk-heartbeat.
 
 Make mk-slave-delay implement a different definition of 'delay' as per Defition
-2 in bug report #1959496.
+2 in sourceforge.net bug report #1959496.
 
 a tool to load tables/indexes into cache by the techniques Peter mentioned:
 http://www.mysqlperformanceblog.com/2008/05/01/quickly-preloading-innodb-tables-in-the-buffer-pool/
 
-Make mk-table-checksum checksum only newly inserted rows (as defined by the
-checksum table).  Make it able to read from a table that defines tables to
-checksum and the desired strategies.
-
 Add a --charset option to all tools, like mk-table-sync has.
-
-Add a --setvars option to all tools, so one can set wait_timeout etc.
-Make it set the wait_timeout by default.
 
 mk-log-server: start a server that can serve the given binlog files.
 
@@ -80,23 +51,10 @@ mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 http://www.mysqldiff.org/
 (mk-schema-sync or similar tool should be in SVN history)
 
-query sniper:
-   * http://www.stillhq.com/mysql/000008.html
-   * Allow up to max_connections-X connections
-   * Specify users/hosts NOT to kill (by default root/localhost)
-   * http://google-mysql-tools.googlecode.com/svn/trunk/mypgrep.py
-
 Log parsing and coloring:
 
    Swallow a log file and output only the selected fields.  This could be
    piped to a colorizer or pushed into mk-query-profiler.
-
-   We need to update our slow-log tool to tell us the most recent time a query
-   was executed
-
-   Query rewriter: collapse INSERT ... VALUES (), (), (), ()..... to reduce the
-   number of VALUES lists to just one, with a (VALUES_LIST_REPEATED) token after
-   that.
 
 A script to copy files in parallel with netcat.
 
@@ -155,13 +113,6 @@ EXTENDED can help catch things like differing charsets, too.
 Query formatter/pretty printer
 
 timestamp column names: (updat|insert|delet|creat)ed
-
-New tool to help alter tables in chunks:
-   IDEA: We actually could add a tool to maatkit to handle ALTER TABLE
-   w replication similar way - create table_new with new structure and
-   when lock both tables and populate it with selects from the large
-   table in small chunks - this would allow to alter large tables
-   without stalling replication flow.
 
 About EXPLAIN fingerprinting:
 
