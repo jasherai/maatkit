@@ -854,7 +854,7 @@ sub _read_config_file {
 
 # Reads the next paragraph from the POD after the magical regular expression is
 # found in the text.
-sub _read_para_after {
+sub read_para_after {
    my ( $self, $file, $regex ) = @_;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
    local $INPUT_RECORD_SEPARATOR = '';

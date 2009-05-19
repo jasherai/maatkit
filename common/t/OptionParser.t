@@ -1502,7 +1502,7 @@ is_deeply(
 # Issue 92: extract a paragraph from POD.
 # #############################################################################
 is(
-   $o->_read_para_after("samples/pod_sample_issue_92.txt", qr/magic/),
+   $o->read_para_after("samples/pod_sample_issue_92.txt", qr/magic/),
    'This is the paragraph, hooray',
    'read_para_after'
 );
@@ -1511,7 +1511,7 @@ is(
 # always get the same thing on each subsequent call no matter what regex you
 # pass in.  This is to test and make sure I don't do that again.
 is(
-   $o->_read_para_after("samples/pod_sample_issue_92.txt", qr/abracadabra/),
+   $o->read_para_after("samples/pod_sample_issue_92.txt", qr/abracadabra/),
    'This is the next paragraph, hooray',
    'read_para_after again'
 );
