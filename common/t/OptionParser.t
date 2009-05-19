@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 128;
+use Test::More tests => 131;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1478,6 +1478,37 @@ like(
 );
 
 };
+
+# #############################################################################
+# Test clone().
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+);
+$o->_parse_specs(
+   { spec  => 'user=s', desc  => 'User',                         },
+   { spec  => 'dog|d',    desc  => 'dog option', group => 'Dogs',  },
+   { spec  => 'cat|c',    desc  => 'cat option', group => 'Cats',  },
+);
+@ARGV = qw(--user foo --dog);
+$o->get_opts();
+
+my $o_clone = $o->clone();
+isa_ok(
+   $o_clone,
+   'OptionParser'
+);
+ok(
+   $o_clone->has('user') && $o_clone->has('dog') && $o_clone->has('cat'),
+   'Clone has same opts'
+);
+
+$o_clone->set('user', 'Bob');
+is(
+   $o->get('user'),
+   'foo',
+   'Change to clone does not change original'
+);
 
 # #############################################################################
 # Test issues. Any other tests should find their proper place above.

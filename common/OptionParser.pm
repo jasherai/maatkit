@@ -873,6 +873,34 @@ sub read_para_after {
    return $para;
 }
 
+# Returns a lightweight clone of ourself.  Currently, only the basic
+# opts are copied.  This is used for stuff like "final opts" in
+# mk-table-checksum.
+sub clone {
+   my ( $self ) = @_;
+
+   # Deep-copy contents of hashrefs; do not just copy the refs. 
+   my %clone = map {
+      my $hashref  = $self->{$_};
+      my $val_copy = {};
+      foreach my $key ( keys %$hashref ) {
+         my $ref = ref $hashref->{$key};
+         $val_copy->{$key} = !$ref           ? $hashref->{$key}
+                           : $ref eq 'HASH'  ? { %{$hashref->{$key}} }
+                           : $ref eq 'ARRAY' ? [ @{$hashref->{$key}} ]
+                           : $hashref->{$key};
+      }
+      $_ => $val_copy;
+   } qw(opts short_opts defaults);
+
+   # Re-assign scalar values.
+   foreach my $scalar ( qw(got_opts) ) {
+      $clone{$scalar} = $self->{$scalar};
+   }
+
+   return bless \%clone;     
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
