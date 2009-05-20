@@ -2007,7 +2007,7 @@ How long to run before exiting.
 
 short form: -u; type: string
 
-User for slave login if not current user.
+User for login if not current user.
 
 =item --version
 
