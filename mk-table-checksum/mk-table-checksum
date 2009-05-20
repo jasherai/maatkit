@@ -654,7 +654,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3573
+# OptionParser package 3577
 # ###########################################################################
 package OptionParser;
 
@@ -1309,7 +1309,7 @@ sub print_usage {
    push @groups, 'default';
 
    foreach my $group ( reverse @groups ) {
-      $usage .= "\n".($group eq 'default' ? 'Options' : "  $group").":\n";
+      $usage .= "\n".($group eq 'default' ? 'Options' : $group).":\n\n";
       foreach my $opt (
          sort { $a->{long} cmp $b->{long} }
          grep { $_->{group} eq $group }
@@ -1337,13 +1337,13 @@ sub print_usage {
    }
 
    if ( (my @rules = @{$self->{rules}}) ) {
-      $usage .= "\nRules:\n";
+      $usage .= "\nRules:\n\n";
       $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
    if ( $self->{dp} ) {
       $usage .= "\n" . $self->{dp}->usage();
    }
-   $usage .= "\nOptions and values after processing arguments:\n";
+   $usage .= "\nOptions and values after processing arguments:\n\n";
    foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
       my $val   = $opt->{value};
       my $type  = $opt->{type} || '';
@@ -1485,7 +1485,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3558
+# DSNParser package 3577
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1643,7 +1643,7 @@ sub as_string {
 sub usage {
    my ( $self ) = @_;
    my $usage
-      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
    my %opts = %{$self->{opts}};
@@ -5140,7 +5140,7 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-L<"--schema"> is restricted to option groups Connection, Filter, Output, Help.
+L<"--schema"> is restricted to option groups Connection, Filter, Output, Help, Config.
 
 =over
 
@@ -5289,6 +5289,13 @@ of rows.
 type: array; group: Filter
 
 Checksum only this comma-separated list of columns.
+
+=item --config
+
+type: Array; group: Config
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
 
 =item --[no]count
 
