@@ -1461,18 +1461,18 @@ Options:
   --algorithm         Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)
   --schema            Checksum SHOW CREATE TABLE intead of table data
 
-  Connection:
+Connection:
   --defaults-file -F  Only read mysql options from the given file
 
-  Filter:
+Filter:
   --databases     -d  Only checksum this comma-separated list of databases
 
-  Help:
+Help:
   --explain-hosts     Explain hosts
   --help              Show help and exit
   --version           Show version and exit
 
-  Output:
+Output:
   --tab               Print tab-separated output, not column-aligned output
 
 Rules:

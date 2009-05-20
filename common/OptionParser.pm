@@ -780,7 +780,7 @@ sub print_usage {
    push @groups, 'default';
 
    foreach my $group ( reverse @groups ) {
-      $usage .= "\n".($group eq 'default' ? 'Options' : "  $group").":\n";
+      $usage .= "\n".($group eq 'default' ? 'Options' : $group).":\n";
       foreach my $opt (
          sort { $a->{long} cmp $b->{long} }
          grep { $_->{group} eq $group }
