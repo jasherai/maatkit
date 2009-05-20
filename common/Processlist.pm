@@ -259,12 +259,14 @@ sub find {
    my @matches;
    QUERY:
    foreach my $query ( @$proclist ) {
+      my $matched = 0;
       if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
          if ( $query->{Time} < $find_spec{busy_time} ) {
             # TODO: This won't work with idle_time
             MKDEBUG && _d("Query isn't running long enough");
             next QUERY;
          }
+         $matched++;
       }
       PROPERTY:
       foreach my $property ( qw(Id User Host db State Command Info) ) {
@@ -275,15 +277,18 @@ sub find {
             MKDEBUG && _d("Query matches 'ignore' filter on $property, skipping");
             next QUERY;
          }
-         if ( defined $find_spec{match}->{$property}
-            && !$self->$filter($query, $find_spec{match}->{$property})
-         ) {
-            MKDEBUG && _d("Query doesn't match 'match' filter on $property, skipping");
-            next QUERY;
+         if ( defined $find_spec{match}->{$property} ) {
+            if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
+               MKDEBUG && _d("Query doesn't match 'match' filter on $property, skipping");
+               next QUERY;
+            }
+            $matched++;
          }
       }
-      MKDEBUG && _d("Query passed all defined filters, adding");
-      push @matches, $query;
+      if ( $matched ) {
+         MKDEBUG && _d("Query passed all defined filters, adding");
+         push @matches, $query;
+      }
    }
    if ( @matches && $find_spec{only_oldest} ) {
       my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;

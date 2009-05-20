@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 17;
+use Test::More tests => 18;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -314,6 +314,7 @@ is_deeply(
 # #########################################################################
 # Tests for "find" functionality.
 # #########################################################################
+
 my %find_spec = (
    only_oldest  => 1,
    busy_time    => 60,
@@ -431,3 +432,31 @@ my $expected = [
    ];
 
 is_deeply(\@queries, $expected, 'Basic find()');
+
+%find_spec = (
+   only_oldest  => 1,
+   busy_time    => 1,
+   ignore => {
+      User     => qr/^system.user$/,
+      State    => qr/Locked/,
+      Command  => qr/Binlog Dump/,
+   },
+   match => {
+   },
+);
+
+@queries = $pl->find(
+   [  {  'Time'    => '488',
+         'Command' => 'Sleep',
+         'db'      => undef,
+         'Id'      => '7',
+         'Info'    => undef,
+         'User'    => 'msandbox',
+         'State'   => '',
+         'Host'    => 'localhost'
+      },
+   ],
+   %find_spec,
+);
+
+is(scalar(@queries), 0, 'Did not find any query');
