@@ -780,7 +780,7 @@ sub print_usage {
    push @groups, 'default';
 
    foreach my $group ( reverse @groups ) {
-      $usage .= "\n".($group eq 'default' ? 'Options' : $group).":\n";
+      $usage .= "\n".($group eq 'default' ? 'Options' : $group).":\n\n";
       foreach my $opt (
          sort { $a->{long} cmp $b->{long} }
          grep { $_->{group} eq $group }
@@ -810,13 +810,13 @@ sub print_usage {
    }
 
    if ( (my @rules = @{$self->{rules}}) ) {
-      $usage .= "\nRules:\n";
+      $usage .= "\nRules:\n\n";
       $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
    if ( $self->{dp} ) {
       $usage .= "\n" . $self->{dp}->usage();
    }
-   $usage .= "\nOptions and values after processing arguments:\n";
+   $usage .= "\nOptions and values after processing arguments:\n\n";
    foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
       my $val   = $opt->{value};
       my $type  = $opt->{type} || '';

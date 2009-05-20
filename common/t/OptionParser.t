@@ -642,6 +642,7 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t [OPTIONS]
 
 Options:
+
   --defaults-file -F  alignment test
   --[no]defaultset    alignment test with a very long thing that is longer than
                       80 characters wide and must be wrapped
@@ -650,6 +651,7 @@ Options:
   --love          -l  And peace
 
 Options and values after processing arguments:
+
   --defaults-file     (No value)
   --defaultset        FALSE
   --dog               (No value)
@@ -677,10 +679,12 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t <options>
 
 Options:
+
   --database        -D  Specify the database for all tables
   --[no]nouniquechecks  Set UNIQUE_CHECKS=0 before LOAD DATA INFILE
 
 Options and values after processing arguments:
+
   --database            (No value)
   --nouniquechecks      FALSE
 EOF
@@ -776,13 +780,16 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t <options>
 
 Options:
+
   --ignore  -i  Use IGNORE for INSERT statements
   --replace -r  Use REPLACE instead of INSERT statements
 
 Rules:
+
   --ignore and --replace are mutually exclusive.
 
 Options and values after processing arguments:
+
   --ignore      FALSE
   --replace     FALSE
 EOF
@@ -1176,12 +1183,14 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t <options>
 
 Options:
+
   --bar  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
          suffix, m is used.
   --foo  Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
          suffix, s is used.
 
 Options and values after processing arguments:
+
   --bar  (No value)
   --foo  (No value)
 EOF
@@ -1218,13 +1227,16 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t <options>
 
 Options:
+
   --bar  DSN bar
   --foo  DSN foo
 
 Rules:
+
   DSN values in --foo default to values in --bar if COPY is yes.
 
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
+
   KEY  COPY  MEANING
   ===  ====  =============================================
   A    yes   Default character set
@@ -1237,6 +1249,7 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   u    yes   User for login if not current user
 
 Options and values after processing arguments:
+
   --bar  (No value)
   --foo  (No value)
 EOF
@@ -1284,13 +1297,16 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t <options>
 
 Options:
+
   --bar  DSN bar
   --foo  DSN foo
 
 Rules:
+
   DSN values in --foo default to values in --bar if COPY is yes.
 
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
+
   KEY  COPY  MEANING
   ===  ====  =============================================
   A    yes   Default character set
@@ -1303,6 +1319,7 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   u    yes   User for login if not current user
 
 Options and values after processing arguments:
+
   --bar  D=DB,h=localhost,u=USER
   --foo  D=DB,h=otherhost,u=USER
 EOF
@@ -1402,6 +1419,7 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t <options>
 
 Options:
+
   --books     -b  books optional
   --columns   -C  cols required
   --databases -d  databases required
@@ -1409,6 +1427,7 @@ Options:
   --tables    -t  tables optional
 
 Options and values after processing arguments:
+
   --books         o,p
   --columns       a,b
   --databases     f,g
@@ -1458,27 +1477,34 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t <options>
 
 Options:
+
   --algorithm         Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)
   --schema            Checksum SHOW CREATE TABLE intead of table data
 
 Connection:
+
   --defaults-file -F  Only read mysql options from the given file
 
 Filter:
+
   --databases     -d  Only checksum this comma-separated list of databases
 
 Help:
+
   --explain-hosts     Explain hosts
   --help              Show help and exit
   --version           Show version and exit
 
 Output:
+
   --tab               Print tab-separated output, not column-aligned output
 
 Rules:
+
   --schema is restricted to option groups Connection, Filter, Output, Help.
 
 Options and values after processing arguments:
+
   --algorithm         (No value)
   --databases         (No value)
   --defaults-file     (No value)
@@ -1620,11 +1646,13 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t <options>
 
 Options:
+
   --cat     cat option (default a,b)
   --config  Read this comma-separated list of config files (must be the first
             option on the command line).
 
 Options and values after processing arguments:
+
   --cat     a,b
   --config  /etc/maatkit/maatkit.conf,/etc/maatkit/OptionParser.t.conf,$ENV{HOME}/.maatkit.conf,$ENV{HOME}/.OptionParser.t.conf
 EOF
@@ -1658,11 +1686,13 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t <options>
 
 Options:
+
   --cat     cat option
   --config  Read this comma-separated list of config files (must be the first
             option on the command line).
 
 Options and values after processing arguments:
+
   --cat     TRUE
   --config  samples/empty
 EOF

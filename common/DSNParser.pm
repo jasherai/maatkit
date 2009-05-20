@@ -201,7 +201,7 @@ sub as_string {
 sub usage {
    my ( $self ) = @_;
    my $usage
-      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
    my %opts = %{$self->{opts}};
