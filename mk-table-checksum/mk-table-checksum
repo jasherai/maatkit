@@ -654,7 +654,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3297
+# OptionParser package 3573
 # ###########################################################################
 package OptionParser;
 
@@ -669,10 +669,58 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
-sub pod_to_spec {
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(description) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   $program_name ||= $PROGRAM_NAME;
+
+   my $self = {
+      description    => $args{description},
+      prompt         => $args{prompt} || '<options>',
+      strict         => (exists $args{strict} ? $args{strict} : 1),
+      dp             => $args{dp}     || undef,
+      program_name   => $program_name,
+      opts           => {},
+      got_opts       => 0,
+      short_opts     => {},
+      defaults       => {},
+      groups         => {},
+      allowed_groups => {},
+      errors         => [],
+      rules          => [],  # desc of rules for --help
+      mutex          => [],  # rule: opts are mutually exclusive
+      atleast1       => [],  # rule: at least one opt is required
+      disables       => {},  # rule: opt disables other opts 
+      defaults_to    => {},  # rule: opt defaults to value of other opt
+      default_files  => [
+         "/etc/maatkit/maatkit.conf",
+         "/etc/maatkit/$program_name.conf",
+         "$ENV{HOME}/.maatkit.conf",
+         "$ENV{HOME}/.$program_name.conf",
+      ],
+   };
+   return bless $self, $class;
+}
+
+sub get_specs {
+   my ( $self, $file ) = @_;
+   my @specs = $self->_pod_to_specs($file);
+   $self->_parse_specs(@specs);
+   return;
+}
+
+sub get_defaults_files {
+   my ( $self ) = @_;
+   return @{$self->{default_files}};
+}
+
+sub _pod_to_specs {
    my ( $self, $file ) = @_;
    $file ||= __FILE__;
-   open my $fh, '<', $file or die "Can't open $file: $OS_ERROR";
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 
    my %types = (
       string => 's', # standard Getopt type
@@ -682,14 +730,13 @@ sub pod_to_spec {
       hash   => 'h', # hash as above, but only if a value is given
       Array  => 'A', # array, similar to Hash
       array  => 'a', # array, similar to hash
-      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dsn}
+      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dp}
       size   => 'z', # size with kMG suffix (powers of 2^10)
       'time' => 'm', # time, with an optional suffix of s/h/m/d
    );
    my @specs = ();
    my @rules = ();
    my $para;
-   my $option;
 
    local $INPUT_RECORD_SEPARATOR = '';
    while ( $para = <$fh> ) {
@@ -702,55 +749,60 @@ sub pod_to_spec {
       chomp $para;
       $para =~ s/\s+/ /g;
       $para =~ s/$POD_link_re/$1/go;
-      MKDEBUG && _d('First option rules:', $para);
+      MKDEBUG && _d('Option rule:', $para);
       push @rules, $para;
    }
 
+   die 'POD has no OPTIONS section' unless $para;
+
    do {
-      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         chomp $para;
          MKDEBUG && _d($para);
-         my %props;
-         $para = <$fh>;
-         if ( $para =~ m/: / ) {
+         my %attribs;
+
+         $para = <$fh>; # read next paragraph, possibly attributes
+
+         if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %props = map { split(/: /, $_) } split(/; /, $para);
-            if ( $props{'short form'} ) {
-               $props{'short form'} =~ s/-//;
+            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            if ( $attribs{'short form'} ) {
+               $attribs{'short form'} =~ s/-//;
             }
-            $para = <$fh>;
+            $para = <$fh>; # read next paragraph, probably short help desc
          }
+         else {
+            MKDEBUG && _d('Option has no attributes');
+         }
+
          $para =~ s/\s+\Z//g;
          $para =~ s/\s+/ /g;
          $para =~ s/$POD_link_re/$1/go;
-         if ( $para =~ m/^[^.]+\.$/ ) {
-            $para =~ s/\.$//;
-         }
+
+         $para =~ s/\.(?:\n.*| [A-Z].*|\Z)//s;
+         MKDEBUG && _d('Short help:', $para);
+
+         die "No description after option spec $option" if $para =~ m/^=item/;
 
          if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
             $option = $base_option;
-            $props{'negatable'} = 1;
+            $attribs{'negatable'} = 1;
          }
 
          push @specs, {
-            s => $option
-               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
-               . ( $props{'negatable'}  ? '!'                        : '' )
-               . ( $props{'cumulative'} ? '+'                        : '' )
-               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
-            d => $para
-               . (defined $props{default} ? " (default $props{default})" : ''),
+            spec  => $option
+               . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
+               . ($attribs{'negatable'}  ? '!'                          : '' )
+               . ($attribs{'cumulative'} ? '+'                          : '' )
+               . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
+            desc  => $para
+               . ($attribs{default} ? " (default $attribs{default})" : ''),
+            group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
       while ( $para = <$fh> ) {
          last unless $para;
 
-         if ( $option ) {
-            if ( my ($line)
-                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
-               1 while ( $line =~ s/$POD_link_re/$1/go );
-               push @rules, $line;
-            }
-         }
 
          if ( $para =~ m/^=head1/ ) {
             $para = undef; # Can't 'last' out of a do {} block.
@@ -760,363 +812,490 @@ sub pod_to_spec {
       }
    } while ( $para );
 
+   die 'No valid specs in POD OPTIONS' unless @specs;
+
    close $fh;
    return @specs, @rules;
 }
 
-sub new {
-   my ( $class, @opts ) = @_;
-   my %key_seen;
-   my %long_seen;
-   my %key_for;
-   my %defaults;
-   my @mutex;
-   my @atleast1;
-   my %long_for;
-   my %disables;
-   my %copyfrom;
-   my @allowed_with;
+sub _parse_specs {
+   my ( $self, @specs ) = @_;
+   my %disables; # special rule that requires deferred checking
 
-   unshift @opts,
-      { s => 'help',    d => 'Show this help message' },
-      { s => 'version', d => 'Output version information and exit' };
-
-   foreach my $opt ( @opts ) {
+   foreach my $opt ( @specs ) {
       if ( ref $opt ) { # It's an option spec, not a rule.
-         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-         $opt->{k} = $short || $long;
-         $key_for{$long} = $opt->{k};
-         $long_for{$opt->{k}} = $long;
-         $long_for{$long} = $long;
-         $opt->{l} = $long;
-         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
-         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
-         $opt->{t} = $short;
-         $opt->{n} = $opt->{s} =~ m/!/;
-         $opt->{c} = $opt->{s} =~ m/\+/;
-         $opt->{g} ||= 'o';
-         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            MKDEBUG && _d('Option', $opt->{k}, 'type:', $y);
-            $opt->{y} = $y;
-            $opt->{s} =~ s/=./=s/;
+         MKDEBUG && _d('Parsing opt spec:',
+            map { ($_, '=>', $opt->{$_}) } keys %$opt);
+
+         my ( $long, $short ) = $opt->{spec} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         if ( !$long ) {
+            die "Cannot parse long option from spec $opt->{spec}";
          }
-         if ( $opt->{d} =~ m/required/ ) {
-            $opt->{r} = 1;
-            MKDEBUG && _d('Option', $opt->{k}, 'is required');
+         $opt->{long} = $long;
+
+         die "Duplicate long option --$long" if exists $self->{opts}->{$long};
+         $self->{opts}->{$long} = $opt;
+
+         if ( length $long == 1 ) {
+            MKDEBUG && _d('Long opt', $long, 'looks like short opt');
+            $self->{short_opts}->{$long} = $long;
          }
-         if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
-            $defaults{$opt->{k}} = defined $def ? $def : 1;
-            MKDEBUG && _d('Option', $opt->{k}, 'has a default');
+
+         if ( $short ) {
+            die "Duplicate short option -$short"
+               if exists $self->{short_opts}->{$short};
+            $self->{short_opts}->{$short} = $long;
+            $opt->{short} = $short;
          }
-         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
-            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            MKDEBUG && _d('Option', $opt->{k}, $dis);
+         else {
+            $opt->{short} = undef;
          }
+
+         $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
+         $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
+         $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
+
+         $opt->{group} ||= 'default';
+         $self->{groups}->{ $opt->{group} }->{$long} = 1;
+
+         $opt->{value} = undef;
+         $opt->{got}   = 0;
+
+         my ( $type ) = $opt->{spec} =~ m/=(.)/;
+         $opt->{type} = $type;
+         MKDEBUG && _d($long, 'type:', $type);
+
+         if ( $type && $type eq 'd' && !$self->{dp} ) {
+            die "$opt->{long} is type DSN (d) but no dp argument "
+               . "was given when this OptionParser object was created";
+         }
+
+         $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
+
+         if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            $self->{defaults}->{$long} = defined $def ? $def : 1;
+            MKDEBUG && _d($long, 'default:', $def);
+         }
+
+         if ( $long eq 'config' ) {
+            $self->{defaults}->{$long} = join(',', $self->get_defaults_files());
+         }
+
+         if ( (my ($dis) = $opt->{desc} =~ m/(disables .*)/) ) {
+            $disables{$long} = $dis;
+            MKDEBUG && _d('Deferring check of disables rule for', $opt, $dis);
+         }
+
+         $self->{opts}->{$long} = $opt;
       }
       else { # It's an option rule, not a spec.
-         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
-            my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
-                  $long_for{$_};
-               } $class->get_participants($opt);
-            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
-               push @mutex, \@participants;
-               MKDEBUG && _d(@participants, 'are mutually exclusive');
-            }
-            if ( $opt =~ m/at least one|one and only one/ ) {
-               push @atleast1, \@participants;
-               MKDEBUG && _d(@participants, 'require at least one');
-            }
+         MKDEBUG && _d('Parsing rule:', $opt); 
+         push @{$self->{rules}}, $opt;
+         my @participants = $self->_get_participants($opt);
+         my $rule_ok = 0;
+
+         if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{mutex}}, \@participants;
+            MKDEBUG && _d(@participants, 'are mutually exclusive');
          }
-         elsif ( $opt =~ m/default to/ ) {
-            my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
-                  $key_for{$_};
-               } $class->get_participants($opt);
-            $copyfrom{$participants[0]} = $participants[1];
-            MKDEBUG && _d(@participants, 'copy from each other');
+         if ( $opt =~ m/at least one|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{atleast1}}, \@participants;
+            MKDEBUG && _d(@participants, 'require at least one');
          }
-         elsif ( $opt  =~ m/allowed with/ ) {
-            my @participants = map {
-                  die "No such option '$_' while processing $opt"
-                     unless $long_for{$_};
-                  $key_for{$_};
-               } $class->get_participants($opt);
-            push @allowed_with, \@participants;
+         if ( $opt =~ m/default to/ ) {
+            $rule_ok = 1;
+            $self->{defaults_to}->{$participants[0]} = $participants[1];
+            MKDEBUG && _d($participants[0], 'defaults to', $participants[1]);
          }
+         if ( $opt =~ m/restricted to option groups/ ) {
+            $rule_ok = 1;
+            my ($groups) = $opt =~ m/groups ([\w\s\,]+)/;
+            my @groups = split(',', $groups);
+            %{$self->{allowed_groups}->{$participants[0]}} = map {
+               s/\s+//;
+               $_ => 1;
+            } @groups;
+         }
+
+         die "Unrecognized option rule: $opt" unless $rule_ok;
       }
    }
 
-   foreach my $dis ( keys %disables ) {
-      $disables{$dis} = [
-            map {
-               if ( !defined $long_for{$_} ) {
-                  die "No such option '$_' while processing $dis";
-               }
-               $long_for{$_};
-            } @{$disables{$dis}}
-      ];
+   foreach my $long ( keys %disables ) {
+      my @participants = $self->_get_participants($disables{$long});
+      $self->{disables}->{$long} = \@participants;
+      MKDEBUG && _d('Option', $long, 'disables', @participants);
    }
 
-   my $self = {
-      specs        => [ grep { ref $_ } @opts ],
-      errors       => [],
-      instr        => [ grep { !ref $_ } @opts ],
-      mutex        => \@mutex,
-      defaults     => \%defaults,
-      long_for     => \%long_for,
-      atleast1     => \@atleast1,
-      disables     => \%disables,
-      key_for      => \%key_for,
-      copyfrom     => \%copyfrom,
-      strict       => 1,
-      groups       => [ { k => 'o', d => 'Options' } ],
-      allowed_with => \@allowed_with,
-      given        => {},
-   };
-
-   return bless $self, $class;
+   return; 
 }
 
-sub get_participants {
+sub _get_participants {
    my ( $self, $str ) = @_;
    my @participants;
-   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
-      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
-         push @participants, $long;
-      }
-      else {
-         foreach my $short ( $thing =~ m/([^-])/g ) {
-            push @participants, $short;
-         }
-      }
+   foreach my $long ( $str =~ m/--(?:\[no\])?([\w-]+)/g ) {
+      die "Option --$long does not exist while processing rule $str"
+         unless exists $self->{opts}->{$long};
+      push @participants, $long;
    }
    MKDEBUG && _d('Participants for', $str, ':', @participants);
    return @participants;
 }
 
-sub parse {
+sub opts {
+   my ( $self ) = @_;
+   my %opts = %{$self->{opts}};
+   return %opts;
+}
+
+sub opt_values {
+   my ( $self ) = @_;
+   my %opts = map {
+      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
+              : $_;
+      $opt => $self->{opts}->{$_}->{value}
+   } keys %{$self->{opts}};
+   return %opts;
+}
+
+sub short_opts {
+   my ( $self ) = @_;
+   my %short_opts = %{$self->{short_opts}};
+   return %short_opts;
+}
+
+sub set_defaults {
    my ( $self, %defaults ) = @_;
-   my @specs = @{$self->{specs}};
-   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-   my %opt_seen;
-   my %vals = %{$self->{defaults}};
-   @vals{keys %defaults} = values %defaults;
-   foreach my $spec ( @specs ) {
-      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
-      $opt_seen{$spec->{k}} = 1;
+   $self->{defaults} = {};
+   foreach my $long ( keys %defaults ) {
+      die "Cannot set default for nonexistent option $long"
+         unless exists $self->{opts}->{$long};
+      $self->{defaults}->{$long} = $defaults{$long};
+      MKDEBUG && _d('Default val for', $long, ':', $defaults{$long});
    }
+   return;
+}
 
-   foreach my $key ( keys %defaults ) {
-      die "Cannot set default for non-existent option '$key'\n"
-         unless $opt_seen{$key};
+sub get_defaults {
+   my ( $self ) = @_;
+   return $self->{defaults};
+}
+
+sub get_groups {
+   my ( $self ) = @_;
+   return $self->{groups};
+}
+
+sub _set_option {
+   my ( $self, $opt, $val ) = @_;
+   my $long = exists $self->{opts}->{$opt}       ? $opt
+            : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
+            : die "Getopt::Long gave a nonexistent option: $opt";
+
+   $opt = $self->{opts}->{$long};
+   if ( $opt->{is_cumulative} ) {
+      $opt->{value}++;
    }
+   else {
+      $opt->{value} = $val;
+   }
+   $opt->{got} = 1;
+   MKDEBUG && _d('Got option', $long, '=', $val);
+}
 
-   $self->{given} = {}; # in case options are re-parsed
+sub get_opts {
+   my ( $self ) = @_; 
+
+   foreach my $long ( keys %{$self->{opts}} ) {
+      $self->{opts}->{$long}->{got} = 0;
+      $self->{opts}->{$long}->{value}
+         = exists $self->{defaults}->{$long}       ? $self->{defaults}->{$long}
+         : $self->{opts}->{$long}->{is_cumulative} ? 0
+         : undef;
+   }
+   $self->{got_opts} = 0;
+
+   $self->{errors} = [];
+
+   if ( @ARGV && $ARGV[0] eq "--config" ) {
+      shift @ARGV;
+      $self->_set_option('config', shift @ARGV);
+   }
+   if ( $self->has('config') ) {
+      my @extra_args;
+      foreach my $filename ( split(',', $self->get('config')) ) {
+         eval {
+            push @ARGV, $self->_read_config_file($filename);
+         };
+         if ( $EVAL_ERROR ) {
+            if ( $self->got('config') ) {
+               die $EVAL_ERROR;
+            }
+            elsif ( MKDEBUG ) {
+               _d($EVAL_ERROR);
+            }
+         }
+      }
+      unshift @ARGV, @extra_args;
+   }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions(
-      map {
-         my $spec = $_;
-         $spec->{s} => sub {
-                          my ( $opt, $val ) = @_;
-                          if ( $spec->{c} ) {
-                             $vals{$spec->{k}}++
-                          }
-                          else {
-                             $vals{$spec->{k}} = $val;
-                          }
-                          MKDEBUG && _d('Given option:',
-                             $opt, '(',$spec->{k},') =', $val);
-                          $self->{given}->{$spec->{k}} = $vals{$spec->{k}};
-                       }
-      } @specs
-   ) or $self->error('Error parsing options');
+      map    { $_->{spec} => sub { $self->_set_option(@_); } }
+      grep   { $_->{long} ne 'config' } # --config is handled specially above.
+      values %{$self->{opts}}
+   ) or $self->_save_error('Error parsing options');
 
-   if ( $vals{version} ) {
-      my $prog = $self->prog;
+   if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+         $self->{program_name}, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+            or die "Cannot print: $OS_ERROR";
+      exit 0;
    }
 
    if ( @ARGV && $self->{strict} ) {
-      $self->error("Unrecognized command-line options @ARGV");
-   }
-
-   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
-      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
-      MKDEBUG && _d('Unsetting options:', @disses);
-      @vals{@disses} = map { undef } @disses;
-   }
-
-   foreach my $spec ( grep { $_->{r} } @specs ) {
-      if ( !defined $vals{$spec->{k}} ) {
-         $self->error("Required option --$spec->{l} must be specified");
-      }
+      $self->_save_error("Unrecognized command-line options @ARGV");
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
-      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
+      my @set = grep { $self->{opts}->{$_}->{got} } @$mutex;
       if ( @set > 1 ) {
-         my $note = join(', ',
-            map { "--$self->{long_for}->{$_}" }
-                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
-         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
-               . " are mutually exclusive.";
-         $self->error($note);
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$mutex}[ 0 .. scalar(@$mutex) - 2] )
+                 . ' and --'.$self->{opts}->{$mutex->[-1]}->{long}
+                 . ' are mutually exclusive.';
+         $self->_save_error($err);
       }
    }
 
    foreach my $required ( @{$self->{atleast1}} ) {
-      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
-      if ( !@set ) {
-         my $note = join(', ',
-            map { "--$self->{long_for}->{$_}" }
-                @{$required}[ 0 .. scalar(@$required) - 2] );
-         $note .= " or --$self->{long_for}->{$required->[-1]}";
-         $self->error("Specify at least one of $note");
+      my @set = grep { $self->{opts}->{$_}->{got} } @$required;
+      if ( @set == 0 ) {
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$required}[ 0 .. scalar(@$required) - 2] )
+                 .' or --'.$self->{opts}->{$required->[-1]}->{long};
+         $self->_save_error("Specify at least one of $err");
       }
    }
 
-   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
-      my $val = $vals{$spec->{k}};
-      if ( $spec->{y} eq 'm' ) {
-         my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
-         if ( !$suffix ) {
-            my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
-            $suffix = $s || 's';
-            MKDEBUG && _d('No suffix given; using', $suffix, 'for',
-               $spec->{k}, '(value:', $val, ')');
+   foreach my $long ( keys %{$self->{opts}} ) {
+      my $opt = $self->{opts}->{$long};
+      if ( $opt->{got} ) {
+         if ( exists $self->{disables}->{$long} ) {
+            my @disable_opts = @{$self->{disables}->{$long}};
+            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
+            MKDEBUG && _d('Unset options', @disable_opts,
+               'because', $long,'disables them');
          }
-         if ( $suffix =~ m/[smhd]/ ) {
-            $val = $suffix eq 's' ? $num            # Seconds
-                 : $suffix eq 'm' ? $num * 60       # Minutes
-                 : $suffix eq 'h' ? $num * 3600     # Hours
-                 :                  $num * 86400;   # Days
-            $vals{$spec->{k}} = $val;
-            MKDEBUG && _d('Setting option', $spec->{k}, 'to', $val);
-         }
-         else {
-            $self->error("Invalid --$spec->{l} argument");
-         }
-      }
-      elsif ( $spec->{y} eq 'd' ) {
-         MKDEBUG && _d('Parsing option', $spec->{y}, 'as a DSN');
-         my $from_key = $self->{copyfrom}->{$spec->{k}};
-         my $default = {};
-         if ( $from_key ) {
-            MKDEBUG && _d('Option', $spec->{y}, 'DSN copies from option',
-               $from_key);
-            $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
-         }
-         $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
-      }
-      elsif ( $spec->{y} eq 'z' ) {
-         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
-         if ( defined $num ) {
-            if ( $factor ) {
-               $num *= $factor_for{$factor};
-               MKDEBUG && _d('Setting option', $spec->{y},
-                  'to num', $num, '* factor', $factor);
+
+         if ( exists $self->{allowed_groups}->{$long} ) {
+
+            my @restricted_groups = grep {
+               !exists $self->{allowed_groups}->{$long}->{$_}
+            } keys %{$self->{groups}};
+
+            my @restricted_opts;
+            foreach my $restricted_group ( @restricted_groups ) {
+               RESTRICTED_OPT:
+               foreach my $restricted_opt (
+                  keys %{$self->{groups}->{$restricted_group}} )
+               {
+                  next RESTRICTED_OPT if $restricted_opt eq $long;
+                  push @restricted_opts, $restricted_opt
+                     if $self->{opts}->{$restricted_opt}->{got};
+               }
             }
-            $vals{$spec->{k}} = ($pre || '') . $num;
+
+            if ( @restricted_opts ) {
+               my $err;
+               if ( @restricted_opts == 1 ) {
+                  $err = "--$restricted_opts[0]";
+               }
+               else {
+                  $err = join(', ',
+                            map { "--$self->{opts}->{$_}->{long}" }
+                            grep { $_ } 
+                            @restricted_opts[0..scalar(@restricted_opts) - 2]
+                         )
+                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+               }
+               $self->_save_error("--$long is not allowed with $err");
+            }
          }
-         else {
-            $self->error("Invalid --$spec->{l} argument");
-         }
+
       }
+      elsif ( $opt->{is_required} ) { 
+         $self->_save_error("Required option --$long must be specified");
+      }
+
+      $self->_validate_type($opt);
    }
 
-   foreach my $spec ( grep { $_->{y} } @specs ) {
-      MKDEBUG && _d('Treating option', $spec->{k}, 'as a list');
-      my $val = $vals{$spec->{k}};
-      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
-         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
-      }
-      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
-         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
-      }
-   }
-
-   foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
-      my $opt = $allowed_opts->[0];
-      next unless $vals{$opt};
-      my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
-      delete @defined_opts{ @$allowed_opts };
-      foreach my $defined_opt ( keys %defined_opts ) {
-         MKDEBUG
-            && _d('Unsetting option', $defined_opt,
-               '; it is not allowed with option', $opt);
-         $vals{$defined_opt} = undef;
-      }
-   }
-
-   return %vals;
+   $self->{got_opts} = 1;
+   return;
 }
 
-sub error {
-   my ( $self, $note ) = @_;
-   $self->{__error__} = 1;
-   push @{$self->{errors}}, $note;
+sub _validate_type {
+   my ( $self, $opt ) = @_;
+   return unless $opt && $opt->{type};
+   my $val = $opt->{value};
+
+   if ( $val && $opt->{type} eq 'm' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
+      my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+      if ( !$suffix ) {
+         my ( $s ) = $opt->{desc} =~ m/\(suffix (.)\)/;
+         $suffix = $s || 's';
+         MKDEBUG && _d('No suffix given; using', $suffix, 'for',
+            $opt->{long}, '(value:', $val, ')');
+      }
+      if ( $suffix =~ m/[smhd]/ ) {
+         $val = $suffix eq 's' ? $num            # Seconds
+              : $suffix eq 'm' ? $num * 60       # Minutes
+              : $suffix eq 'h' ? $num * 3600     # Hours
+              :                  $num * 86400;   # Days
+         $opt->{value} = $val;
+         MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
+      }
+      else {
+         $self->_save_error("Invalid time suffix for --$opt->{long}");
+      }
+   }
+   elsif ( $val && $opt->{type} eq 'd' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a DSN');
+      my $from_key = $self->{defaults_to}->{ $opt->{long} };
+      my $default = {};
+      if ( $from_key ) {
+         MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
+         $default = $self->{dp}->parse(
+            $self->{dp}->as_string($self->{opts}->{$from_key}->{value}) );
+      }
+      $opt->{value} = $self->{dp}->parse($val, $default);
+   }
+   elsif ( $val && $opt->{type} eq 'z' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
+      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+      if ( defined $num ) {
+         if ( $factor ) {
+            $num *= $factor_for{$factor};
+            MKDEBUG && _d('Setting option', $opt->{y},
+               'to num', $num, '* factor', $factor);
+         }
+         $opt->{value} = ($pre || '') . $num;
+      }
+      else {
+         $self->_save_error("Invalid size for --$opt->{long}");
+      }
+   }
+   elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
+      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+   }
+   elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
+      $opt->{value} = [ split(',', ($val || '')) ];
+   }
+   else {
+      MKDEBUG && _d('Nothing to validate for option',
+         $opt->{long}, 'type', $opt->{type}, 'value', $val);
+   }
+
+   return;
 }
 
-sub prog {
-   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
-   return $prog || $PROGRAM_NAME;
+sub get {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{value};
+}
+
+sub got {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{got};
+}
+
+sub has {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   return defined $long ? exists $self->{opts}->{$long} : 0;
+}
+
+sub set {
+   my ( $self, $opt, $val ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   $self->{opts}->{$long}->{value} = $val;
+   return;
+}
+
+sub _save_error {
+   my ( $self, $error ) = @_;
+   push @{$self->{errors}}, $error;
+}
+
+sub errors {
+   my ( $self ) = @_;
+   return $self->{errors};
 }
 
 sub prompt {
    my ( $self ) = @_;
-   my $prog   = $self->prog;
-   my $prompt = $self->{prompt} || '<options>';
-   return "Usage: $prog $prompt\n";
+   return "Usage: $PROGRAM_NAME $self->{prompt}\n";
 }
 
 sub descr {
    my ( $self ) = @_;
-   my $prog = $self->prog;
-   my $descr  = $prog . ' ' . ($self->{descr} || '')
-          . "  For more details, please use the --help option, "
-          . "or try 'perldoc $prog' for complete documentation.";
+   my $descr  = $self->{program_name} . ' ' . ($self->{description} || '')
+              . "  For more details, please use the --help option, "
+              . "or try 'perldoc $PROGRAM_NAME' "
+              . "for complete documentation.";
    $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
    $descr =~ s/ +$//mg;
    return $descr;
 }
 
 sub usage_or_errors {
-   my ( $self, %opts ) = @_;
-   if ( $opts{help} ) {
-      print $self->usage(%opts)
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+   my ( $self ) = @_;
+   if ( $self->{opts}->{help}->{got} ) {
+      print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
+      exit 0;
    }
-   elsif ( $self->{__error__} ) {
-      print $self->errors()
-         or die "Cannot print: $OS_ERROR";
-      exit(0);
+   elsif ( scalar @{$self->{errors}} ) {
+      print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
+      exit 0;
    }
+   return;
 }
 
-sub errors {
+sub print_errors {
    my ( $self ) = @_;
    my $usage = $self->prompt() . "\n";
    if ( (my @errors = @{$self->{errors}}) ) {
-      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors) . "\n";
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors)
+              . "\n";
    }
    return $usage . "\n" . $self->descr();
 }
 
-sub usage {
-   my ( $self, %vals ) = @_;
-   my @specs = @{$self->{specs}};
+sub print_usage {
+   my ( $self ) = @_;
+   die "Run get_opts() before print_usage()" unless $self->{got_opts};
+   my @opts = values %{$self->{opts}};
 
-   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+   my $maxl = max(
+      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      @opts);
 
    my $maxs = max(0,
-      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
-      grep { $_->{t} } @specs);
+      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      values %{$self->{short_opts}});
 
    my $lcol = max($maxl, ($maxs + 3));
    my $rcol = 80 - $lcol - 6;
@@ -1125,15 +1304,21 @@ sub usage {
    $maxs = max($lcol - 3, $maxs);
 
    my $usage = $self->descr() . "\n" . $self->prompt();
-   foreach my $g ( @{$self->{groups}} ) {
-      $usage .= "\n$g->{d}:\n";
-      foreach my $spec (
-         sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs )
+
+   my @groups = reverse sort grep { $_ ne 'default'; } keys %{$self->{groups}};
+   push @groups, 'default';
+
+   foreach my $group ( reverse @groups ) {
+      $usage .= "\n".($group eq 'default' ? 'Options' : "  $group").":\n";
+      foreach my $opt (
+         sort { $a->{long} cmp $b->{long} }
+         grep { $_->{group} eq $group }
+         @opts )
       {
-         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-         my $short = $spec->{t};
-         my $desc  = $spec->{d};
-         if ( $spec->{y} && $spec->{y} eq 'm' ) {
+         my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
+         my $short = $opt->{short};
+         my $desc  = $opt->{desc};
+         if ( $opt->{type} && $opt->{type} eq 'm' ) {
             my ($s) = $desc =~ m/\(suffix (.)\)/;
             $s    ||= 's';
             $desc =~ s/\s+\(suffix .\)//;
@@ -1151,24 +1336,25 @@ sub usage {
       }
    }
 
-   if ( (my @instr = @{$self->{instr}}) ) {
-      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   if ( (my @rules = @{$self->{rules}}) ) {
+      $usage .= "\nRules:\n";
+      $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
-   if ( $self->{dsn} ) {
-      $usage .= "\n" . $self->{dsn}->usage();
+   if ( $self->{dp} ) {
+      $usage .= "\n" . $self->{dp}->usage();
    }
    $usage .= "\nOptions and values after processing arguments:\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
-      my $val   = $vals{$spec->{k}};
-      my $type  = $spec->{y} || '';
-      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+   foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
+      my $val   = $opt->{value};
+      my $type  = $opt->{type} || '';
+      my $bool  = $opt->{spec} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
       $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
                 : !defined $val             ? '(No value)'
-                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type eq 'd'              ? $self->{dp}->as_string($val)
                 : $type =~ m/H|h/           ? join(',', sort keys %$val)
                 : $type =~ m/A|a/           ? join(',', @$val)
                 :                             $val;
-      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $opt->{long}, $val);
    }
    return $usage;
 }
@@ -1194,11 +1380,6 @@ sub prompt_noecho {
    return $response;
 }
 
-sub groups {
-   my ( $self, @groups ) = @_;
-   push @{$self->{groups}}, @groups;
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -1211,6 +1392,40 @@ if ( MKDEBUG ) {
       ($main::SVN_REV || ''), __LINE__);
    print('# Arguments: ',
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+sub _read_config_file {
+   my ( $self, $filename ) = @_;
+   open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
+   my @args;
+   my $prefix = '--';
+   my $parse  = 1;
+
+   LINE:
+   while ( my $line = <$fh> ) {
+      chomp $line;
+      next LINE if $line =~ m/^\s*(?:\#|\;|$)/;
+      $line =~ s/\s+#.*$//g;
+      $line =~ s/^\s+|\s+$//g;
+      if ( $line eq '--' ) {
+         $prefix = '';
+         $parse  = 0;
+         next LINE;
+      }
+      if ( $parse
+         && (my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/)
+      ) {
+         push @args, grep { defined $_ } ("$prefix$opt", $arg);
+      }
+      elsif ( $line =~ m/./ ) {
+         push @args, $line;
+      }
+      else {
+         die "Syntax error in file $filename at line $INPUT_LINE_NUMBER";
+      }
+   }
+   close $fh;
+   return @args;
 }
 
 sub read_para_after {
@@ -1232,6 +1447,29 @@ sub read_para_after {
    return $para;
 }
 
+sub clone {
+   my ( $self ) = @_;
+
+   my %clone = map {
+      my $hashref  = $self->{$_};
+      my $val_copy = {};
+      foreach my $key ( keys %$hashref ) {
+         my $ref = ref $hashref->{$key};
+         $val_copy->{$key} = !$ref           ? $hashref->{$key}
+                           : $ref eq 'HASH'  ? { %{$hashref->{$key}} }
+                           : $ref eq 'ARRAY' ? [ @{$hashref->{$key}} ]
+                           : $hashref->{$key};
+      }
+      $_ => $val_copy;
+   } qw(opts short_opts defaults);
+
+   foreach my $scalar ( qw(got_opts) ) {
+      $clone{$scalar} = $self->{$scalar};
+   }
+
+   return bless \%clone;     
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1247,7 +1485,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3186
+# DSNParser package 3558
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1378,6 +1616,19 @@ sub parse {
    }
 
    return \%final_props;
+}
+
+sub parse_options {
+   my ( $self, $o ) = @_;
+   die 'I need an OptionParser object' unless ref $o eq 'OptionParser';
+   my $dsn_string
+      = join(',',
+          map  { "$_=".$o->get($_); }
+          grep { $o->has($_) && $o->get($_) }
+          keys %{$self->{opts}}
+        );
+   MKDEBUG && _d('DSN string made from options:', $dsn_string);
+   return $self->parse($dsn_string);
 }
 
 sub as_string {
@@ -1544,6 +1795,24 @@ sub print_active_handles {
    }
 }
 
+sub copy {
+   my ( $self, $dsn_1, $dsn_2, %args ) = @_;
+   die 'I need a dsn_1 argument' unless $dsn_1;
+   die 'I need a dsn_2 argument' unless $dsn_2;
+   my %new_dsn = map {
+      my $key = $_;
+      my $val;
+      if ( $args{overwrite} ) {
+         $val = defined $dsn_1->{$key} ? $dsn_1->{$key} : $dsn_2->{$key};
+      }
+      else {
+         $val = defined $dsn_2->{$key} ? $dsn_2->{$key} : $dsn_1->{$key};
+      }
+      $key => $val;
+   } keys %{$self->{opts}};
+   return \%new_dsn;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1608,7 +1877,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 3186
+# MySQLDump package 3312
 # ###########################################################################
 package MySQLDump;
 
@@ -3135,7 +3404,15 @@ sub _d {
 # End MasterSlave package
 # ###########################################################################
 
-package main;
+# ###########################################################################
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
+# ###########################################################################
+package mk_table_checksum;
 
 use English qw(-no_match_vars);
 use List::Util qw(max maxstr);
@@ -3148,283 +3425,353 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# ############################################################################
-# Get configuration information.
-# ############################################################################
-
-my $dsn_parser = new DSNParser();
-$dsn_parser->prop('autokey', 'h');
-$dsn_parser->prop('required', { h => 1 } );
-
-# Because of --argtable, %final_opts is the only place a lot of options are
-# used.  Thus, the following magic phrase used by trunk/maatkit/lint_check:
-# opt_container_alias:final_opts
-my @opt_spec   = OptionParser::pod_to_spec();
-my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{dsn}    = $dsn_parser;
-$opt_parser->{strict} = 0;
-$opt_parser->{prompt} = '[OPTION]... HOST [HOST...]';
-$opt_parser->{descr}
-   = 'checksums MySQL tables efficiently on one or more HOSTs.  Each HOST is '
-   . 'specified as a DSN and missing values are inherited from the first '
-   . 'HOST.  If you specify multiple HOSTs, the first is assumed to be the '
-   . 'master.';
-my %opts = $opt_parser->parse();
-$dsn_parser->prop('setvars', $opts{setvars});
-
-# This list contains all the command-line arguments that can be overridden by a
-# table that contains arguments for each table to be checksummed.  The short
-# form of each argument is given.  The values are read from the POD by finding
-# the magical token.
-my %overridable_args;
-{
-   my $para = $opt_parser->read_para_after(
-      __FILE__, qr/MAGIC_overridable_args/);
-   foreach my $arg ( $para =~ m/([\w-]+)/g ) {
-      die "Magical argument $arg mentioned in POD isn't a command-line argument"
-         unless exists $opts{$arg};
-      $overridable_args{$arg} = 1;
-   }
-};
-
-# Post-process command-line options and arguments.
-$opts{k} ||= defined $opts{w};
-$opts{l} ||= $opts{k};
-
-if ( !@ARGV ) {
-   $opt_parser->error("No hosts specified.");
-}
-
-my @hosts;
-foreach my $arg ( unique(@ARGV) ) {
-   push @hosts, $dsn_parser->parse($arg, $hosts[0], \%opts);
-}
-
-if ( $opts{explainhosts} ) {
-   foreach my $host ( @hosts ) {
-      print "Server $host->{h}:\n   ", $dsn_parser->as_string($host), "\n";
-   }
-   exit(0);
-}
-
-# Checksumming table data is the normal operation. But if we're only to
-# compare schemas, then we can skip a lot of work, like selecting an algo,
-# replication stuff, etc.
-my $checksum_table_data = $opts{schema} ? 0 : 1;
-
-
-if ( $opts{checksum} ) {
-   $opts{r} = 0;
-}
-
-if ( $opts{explain} ) {
-   @hosts = $hosts[0];
-}
-
-if ( !$opts{help} ) {
-   if ( $opts{replcheck} && !$opts{R} ) {
-      $opt_parser->error("--replcheck requires --replicate.");
-   }
-   if ( $opts{savesince} && !$opts{argtable} ) {
-      $opt_parser->error("--savesince requires --argtable.");
-   }
-   elsif ( $opts{R} && @hosts > 1 ) {
-      $opt_parser->error("You can only specify one host with --replicate.");
-   }
-
-   if ( $opts{'resume-replicate'} && !$opts{R} ) {
-      $opt_parser->error("--resume-replicate requires --replicate.");
-   }
-   if ( $opts{resume} && $opts{R} ) {
-      $opt_parser->error('--resume does not work with --replicate. Use --resume-replicate instead.');
-   }
-}
-
-$opt_parser->usage_or_errors(%opts);
-
-# ############################################################################
-# Ready to work now.
-# ############################################################################
-
-my $q           = new Quoter();
-my $tp          = new TableParser();
-my $tc          = new TableChecksum();
-my $ms          = new MasterSlave();
-my $du          = new MySQLDump( cache => 0 );
-my $ch          = new TableChunker( quoter => $q );
+# Global variables.
 my $exit_status = 0;
-my $main_dbh    = get_cxn($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
-
-my $lag_dbh;
-if ( $opts{'check-slave-lag'} ) {
-   my $dsn = $dsn_parser->parse($opts{'check-slave-lag'}, $hosts[0], \%opts);
-   $lag_dbh = get_cxn($dsn);
-}
-
-
+my $checksum_table_data;
+my ( $strat, $crc_wid, $crc_type, $func, $opt_slice );
+my ( $fetch_sth, $update_sth, $savesince_sth );
+my $md5sum_fmt;
+my $already_checksummed;
 # %tables_to_checksum has the following structure:
 #    database => [
 #       { table },
 #       ...
 #    ],
 #    ...
-# TODO: this is not desirable if there is any issue (error in mysql, problem in
-# our code).  We should get each table and checksum it.  SEE TODO 0xdeadbeef
-# below.
+# TODO: this is not desirable if there is any issue (error in mysql,
+# problem in our code).  We should get each table and checksum it.
+# See TODO 0xdeadbeef below.
 my %tables_to_checksum;
 
-# ############################################################################
-# Check replication slaves if desired. If only --replcheck is given, then
-# we will exit here. If --recheck is also given, then we'll continue through
-# the entire script but checksum only the inconsistent tables found here.
-# ############################################################################
-if ( defined $opts{replcheck} ) {
-   my $callback = $opts{recheck}
-                ? \&save_inconsistent_tbls
-                : \&print_inconsistent_tbls;
-   $ms->recurse_to_slaves(
-      {  dbh        => $main_dbh,
-         dsn        => $hosts[0],
-         dsn_parser => $dsn_parser,
-         recurse    => $opts{replcheck},
-         callback   => sub {
-            my ( $dsn, $dbh, $level, $parent ) = @_;
-            my @tbls = $tc->find_replication_differences($dbh, $opts{R});
-            return unless @tbls;
-            $exit_status = 1;
-            # Call the callback that does something useful with
-            # the inconsistent tables.
-            $callback->(@_, \@tbls);
-         }
-      }
+sub main {
+   @ARGV = @_;  # set global ARGV for this package
+
+   # ########################################################################
+   # Get configuration information.
+   # ########################################################################
+   my $dp = new DSNParser();
+   $dp->prop('autokey', 'h');
+   $dp->prop('required', { h => 1 } );
+
+   # Because of --arg-table, $final_o is the OptionParser obj used to get
+   # most options (see my $final_o below).
+   # TODO: This renders lint_check useless; do we need lint_check any longer?
+   my $o = new OptionParser(
+      dp          => $dp,
+      strict      => 0,
+      prompt      => '[OPTION]... HOST_DSN [HOST_DSN]...',
+      description => 'checksums MySQL tables efficiently on one or more hosts. '
+                   . ' Each host is specified as a DSN and missing values are '
+                   . 'inherited from the first host.  If you specify multiple '
+                   . 'hosts, the first is assumed to be the master.',
    );
-   exit($exit_status) unless $opts{recheck};
-}
+   $o->get_specs();
+   $o->get_opts();
 
-# ############################################################################
-# Otherwise get ready to checksum table data, unless we have only to check
-# schemas in which case we can skip all such work, knowing already that we
-# will use CRC32.
-# ############################################################################
-my ( $strat, $crc_wid, $crc_type, $func, $opt_slice );
-my ( $fetch_sth, $update_sth, $savesince_sth );
+   $dp->prop('setvars', $o->get('set-vars'));
 
-if ( $checksum_table_data ) {
-   my $strat_ref = determine_checksum_strat($main_dbh, $tc);
-   ( $strat, $crc_wid, $crc_type, $func, $opt_slice )
-      = @$strat_ref{ qw(strat crc_wid crc_type func opt_slice) };
+   # This list contains all the command-line arguments that can be overridden
+   # by a table that contains arguments for each table to be checksummed.
+   # The long form of each argument is given.  The values are read from the
+   # POD by finding the magical token.
+   my %overridable_args;
+   {
+      my $para = $o->read_para_after(
+         __FILE__, qr/MAGIC_overridable_args/);
+      foreach my $arg ( $para =~ m/([\w-]+)/g ) {
+         die "Magical argument $arg mentioned in POD is not a "
+            . "command-line argument" unless $o->has($arg);
+         $overridable_args{$arg} = 1;
+      }
+   };
 
-   MKDEBUG && _d("Checksum strat:", Dumper($strat_ref));
+   # Post-process command-line options and arguments.
+   $o->set('lock', 1)      if $o->get('wait');
+   $o->set('slave-lag', 1) if $o->get('lock');
 
-   # Verify that CONCAT_WS is compatible across all servers. On older versions
-   # of MySQL it skips both empty strings and NULL; on newer just NULL.
-   if ( $opts{v} && @hosts > 1 ) {
-      verify_checksum_compat(\@hosts);
+   if ( !@ARGV ) {
+      $o->_save_error("No hosts specified.");
    }
 
-   check_repl_table($main_dbh, %opts);
-}
-else {
-   $crc_wid = 16; # Wider than the widest CRC32.
-}
+   
 
-# Used for --checksum
-my $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
-
-# ############################################################################
-# Load --argtable information.
-# ############################################################################
-my %args_for;
-if ( $opts{argtable} ) {
-   my %col_in_argtable;
-   my $rows = $main_dbh->selectall_arrayref(
-      "SELECT * FROM $opts{argtable}", { Slice => {} });
-   foreach my $row ( @$rows ) {
-      die "invalid entry in --argtable: db and tbl must be set"
-         unless $row->{db} && $row->{tbl};
-      $args_for{$row->{db}}->{$row->{tbl}} = {
-         map  { $_ => $row->{$_} }
-         grep { $overridable_args{$_} && defined $row->{$_} }
-         keys %$row
-      };
-      if ( !%col_in_argtable ) { # do only once
-         foreach my $key ( keys %$row ) {
-            next if $key =~ m/^(db|tbl|ts)$/;
-            die "Column $key (from $opts{argtable} given by --argtable) is not an overridable argument"
-               unless $overridable_args{$key};
-            $col_in_argtable{$key} = 1;
-         }
+   my @hosts; 
+   {
+      # TODO: ultimately, DSNParser::parser needs to be updated.
+      my %opts = $o->opt_values();
+      foreach my $arg ( unique(@ARGV) ) {
+         push @hosts, $dp->parse($arg, $hosts[0], \%opts);
       }
    }
-   if ( $col_in_argtable{since} ) {
-      $savesince_sth = $main_dbh->prepare(
-      "UPDATE $opts{argtable} SET since=COALESCE(?, NOW()) WHERE db=? AND tbl=?");
+
+   if ( $o->get('explain-hosts') ) {
+      foreach my $host ( @hosts ) {
+         print "Server $host->{h}:\n   ", $dp->as_string($host), "\n";
+      }
+      return 0;
    }
+
+   # Checksumming table data is the normal operation. But if we're only to
+   # compare schemas, then we can skip a lot of work, like selecting an algo,
+   # replication stuff, etc.
+   $checksum_table_data = $o->get('schema') ? 0 : 1;
+
+   if ( $o->get('checksum') ) {
+      $o->set('count', 0);
+   }
+
+   if ( $o->get('explain') ) {
+      @hosts = $hosts[0];
+   }
+
+   if ( !$o->get('help') ) {
+      if ( $o->get('replicate-check') && !$o->get('replicate') ) {
+         $o->_save_error("--replicate-check requires --replicate.");
+      }
+      if ( $o->get('save-since') && !$o->get('arg-table') ) {
+         $o->_save_error("--save-since requires --arg-table.");
+      }
+      elsif ( $o->get('replicate') && @hosts > 1 ) {
+         $o->_save_error("You can only specify one host with --replicate.");
+      }
+
+      if ( $o->get('resume-replicate') && !$o->get('replicate') ) {
+         $o->_save_error("--resume-replicate requires --replicate.");
+      }
+      if ( $o->get('resume') && $o->get('replicate') ) {
+         $o->_save_error('--resume does not work with --replicate.  '
+            . 'Use --resume-replicate instead.');
+      }
+   }
+
+   $o->usage_or_errors();
+
+   # ########################################################################
+   # Ready to work now.
+   # ########################################################################
+   my $q  = new Quoter();
+   my $tp = new TableParser();
+   my $tc = new TableChecksum();
+   my $ms = new MasterSlave();
+   my $du = new MySQLDump( cache => 0 );
+   my $ch = new TableChunker( quoter => $q ); 
+   my %common_modules = (
+      ch => $ch,
+      dp => $dp,
+      du => $du,
+      o  => $o,
+      ms => $ms,
+      q  => $q,
+      tc => $tc,
+      tp => $tp,
+   );
+
+   my $main_dbh = get_cxn($hosts[0], %common_modules);
+
+   my $lag_dbh;
+   {
+      # TODO: same as above.
+      my %opts = $o->opt_values();
+      if ( $o->get('check-slave-lag') ) {
+         my $dsn = $dp->parse($o->get('check-slave-lag'), $hosts[0], \%opts);
+         $lag_dbh = get_cxn($dsn, %common_modules);
+      }
+   }
+
+   # ########################################################################
+   # Load --arg-table information.
+   # ########################################################################
+   my %args_for;
+   if ( my $arg_tbl = $o->get('arg-table') ) {
+      my %col_in_argtable;
+      my $rows = $main_dbh->selectall_arrayref(
+         "SELECT * FROM $arg_tbl", { Slice => {} });
+      foreach my $row ( @$rows ) {
+         die "Invalid entry in --arg-table: db and tbl must be set"
+            unless $row->{db} && $row->{tbl};
+         $args_for{$row->{db}}->{$row->{tbl}} = {
+            map  { $_ => $row->{$_} }
+            grep { $overridable_args{$_} && defined $row->{$_} }
+            keys %$row
+         };
+         if ( !%col_in_argtable ) { # do only once
+            foreach my $key ( keys %$row ) {
+               next if $key =~ m/^(db|tbl|ts)$/;
+               die "Column $key (from $arg_tbl given by --arg-table) is not "
+                  . "an overridable argument" unless $overridable_args{$key};
+               $col_in_argtable{$key} = 1;
+            }
+         }
+      }
+      if ( $col_in_argtable{since} ) {
+         $savesince_sth = $main_dbh->prepare(
+           "UPDATE $arg_tbl SET since=COALESCE(?, NOW()) WHERE db=? AND tbl=?");
+      }
+   }
+
+   # ########################################################################
+   # Check replication slaves if desired.  If only --replicate-check is given,
+   # then we will exit here.  If --recheck is also given, then we'll continue
+   # through the entire script but checksum only the inconsistent tables found
+   # here.
+   # ########################################################################
+   if ( $o->get('replicate-check') ) {
+      my $callback = $o->get('recheck')
+                   ? \&save_inconsistent_tbls
+                   : \&print_inconsistent_tbls;
+      $ms->recurse_to_slaves(
+         {  dbh        => $main_dbh,
+            dsn        => $hosts[0],
+            dsn_parser => $dp,
+            recurse    => $o->get('replicate-check'),
+            callback   => sub {
+               my ( $dsn, $dbh, $level, $parent ) = @_;
+               my @tbls = $tc->find_replication_differences(
+                  $dbh, $o->get('replicate'));
+               return unless @tbls;
+               $exit_status = 1;
+               # Call the callback that does something useful with
+               # the inconsistent tables.
+               # o dbh db tbl args_for
+               $callback->(
+                  dsn      => $dsn,
+                  dbh      => $dbh,
+                  level    => $level,
+                  parent   => $parent,
+                  tbls     => \@tbls,
+                  args_for => \%args_for,
+                  %common_modules
+               );
+            }
+         }
+      );
+      return $exit_status unless $o->get('recheck');
+   }
+
+   # ########################################################################
+   # Otherwise get ready to checksum table data, unless we have only to check
+   # schemas in which case we can skip all such work, knowing already that we
+   # will use CRC32.
+   # ########################################################################
+   if ( $checksum_table_data ) {
+      my $strat_ref = determine_checksum_strat(
+         dbh => $main_dbh,
+         %common_modules,
+      );
+      ( $strat, $crc_wid, $crc_type, $func, $opt_slice )
+         = @$strat_ref{ qw(strat crc_wid crc_type func opt_slice) };
+
+      MKDEBUG && _d("Checksum strat:", Dumper($strat_ref));
+
+      # Verify that CONCAT_WS is compatible across all servers. On older
+      # versions of MySQL it skips both empty strings and NULL; on newer
+      # just NULL.
+      if ( $o->get('verify') && @hosts > 1 ) {
+         verify_checksum_compat(hosts=>\@hosts, %common_modules);
+      }
+
+      ($fetch_sth, $update_sth)
+         = check_repl_table(dbh=>$main_dbh, %common_modules);
+   }
+   else {
+      $crc_wid = 16; # Wider than the widest CRC32.
+   }
+
+   # Used for --checksum
+   $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
+
+   # ########################################################################
+   # If resuming a previous run, figure out what the previous run finished.
+   # ######################################################################## 
+   if ( $o->get('replicate') && $o->get('resume-replicate') ) {
+      $already_checksummed = read_repl_table(
+         dbh  => $main_dbh,
+         host => $hosts[0]->{h},
+         %common_modules,
+      );
+   } 
+   elsif ( $o->get('resume') ) {
+      $already_checksummed = parse_resume_file($o->get('resume'));
+   }
+
+   # ########################################################################
+   # Iterate through databases and tables and do the checksums.
+   # ########################################################################
+
+   # Get table info for all hosts, all slaves, unless we're in the special
+   # "repl-re-check" mode in which case %tables_to_checksum has already the
+   # inconsistent tables that we need to re-checksum.
+   # TODO: this is not desirable if there is any issue (error in mysql,
+   # problem in our code).  We should get each table and checksum it.
+   # See TODO 0xdeadbeef above.
+   get_all_tbls_info(
+      dbh      => $main_dbh,
+      args_for => \%args_for,
+      %common_modules,
+   ) unless ($o->get('replicate-check') && $o->get('recheck'));
+
+   # Finally, checksum the tables.
+   foreach my $database ( keys %tables_to_checksum ) {
+      my $tables = $tables_to_checksum{$database};
+      checksum_tables(
+         dbh     => $main_dbh,
+         db      => $database,
+         tbls    => $tables,
+         hosts   => \@hosts,
+         lag_dbh => $lag_dbh,
+         %common_modules
+      );
+   }
+
+   return $exit_status;
 }
-
-# ############################################################################
-# If resuming a previous run, figure out what the previous run finished.
-# ############################################################################
-my $already_checksummed = undef;
-if ( $opts{R} && $opts{'resume-replicate'} ) {
-   $already_checksummed = read_repl_table($main_dbh, $hosts[0]->{h})
-} 
-elsif ( $opts{resume} ) {
-   $already_checksummed = parse_resume_file($opts{resume});
-}
-
-# ############################################################################
-# Iterate through databases and tables and do the checksums.
-# ############################################################################
-
-# Get table info for all hosts, all slaves, unless we're in the special
-# "repl-re-check" mode in which case %tables_to_checksum has already the
-# inconsistent tables that we need to re-checksum.
-# TODO: this is not desirable if there is any issue (error in mysql, problem in
-# our code).  We should get each table and checksum it.  SEE TODO 0xdeadbeef
-# above.
-get_all_tbls_info($main_dbh) unless ( $opts{replcheck} && $opts{recheck} );
-
-# Finally, do the magick: checksum the tables.
-foreach my $database ( keys %tables_to_checksum ) {
-   my $tables = $tables_to_checksum{$database};
-   checksum_tables($main_dbh, $database, $tables, \@hosts);
-}
-
-exit $exit_status;
 
 # ############################################################################
 # Subroutines
 # ############################################################################
 
 sub get_all_tbls_info {
-   my ( $dbh ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(o dbh q tp du ch args_for) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o      = $args{o};
+   my $dbh    = $args{dbh};
 
    my $finder = new MySQLFind(
-      quoter    => $q,
+      quoter    => $args{q},
       useddl    => 1,
-      parser    => $tp,
-      dumper    => $du,
+      parser    => $args{tp},
+      dumper    => $args{du},
       databases => {
-         permit => $opts{d},
-         reject => $opts{g},
+         permit => $o->get('databases'),
+         reject => $o->get('ignore-databases'),
       },
       tables => {
-         permit => $opts{t},
-         reject => $opts{n},
+         permit => $o->get('tables'),
+         reject => $o->get('ignore-tables'),
       },
       engines => {
          views  => 0,
-         permit => $opts{e},
-         reject => $opts{E},
+         permit => $o->get('engines'),
+         reject => $o->get('ignore-engines'),
       },
    );
 
    foreach my $db ( $finder->find_databases($dbh) ) {
       foreach my $tbl ( $finder->find_tables($dbh, database => $db) ) {
          MKDEBUG && _d("Examining", $db, '.', $tbl);
-         my $final_opts = get_final_opts($dbh, $db, $tbl);
-         save_tbl_to_checksum($dbh, $db, $tbl, $final_opts);
+         my $final_o = get_final_opts(
+            %args,
+            db  => $db,
+            tbl => $tbl,
+         );
+         save_tbl_to_checksum(
+            %args,
+            db      => $db,
+            tbl     => $tbl,
+            final_o => $final_o,
+         );
       }
    }
 
@@ -3432,10 +3779,22 @@ sub get_all_tbls_info {
 }
 
 sub save_tbl_to_checksum {
-   my ( $dbh, $db, $tbl, $final_opts, $given_chunks ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(q ch du final_o tp dbh db tbl du tp ch) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $du      = $args{du};
+   my $tp      = $args{tp};
+   my $ch      = $args{ch};
+   my $final_o = $args{final_o};
+   my $dbh     = $args{dbh};
+   my $db      = $args{db};
+   my $tbl     = $args{tbl};
+   my $q       = $args{q};
 
    # Skip the table in which checksums are stored.
-   return if ( $final_opts->{R} && $final_opts->{R} eq "$db.$tbl" );
+   return if ($final_o->get('replicate')
+      && $final_o->get('replicate') eq "$db.$tbl");
 
    eval { # Catch errors caused by tables being dropped during work.
 
@@ -3445,23 +3804,23 @@ sub save_tbl_to_checksum {
       my $struct        = $tp->parse($create);
       my ( $col, $idx ) = $ch->get_first_chunkable_column($struct);
 
-      $idx = undef if $final_opts->{nouseindex};
+      $idx = undef if $final_o->get('no-use-index');
 
       my @chunks = '1=1'; # Default.
       my $maxval = undef;
-      if ( defined $given_chunks ) {
-         @chunks = @$given_chunks;
+      if ( $args{given_chunks} ) {
+         @chunks = @{$args{given_chunks}};
       }
       else {      
-         if ( $final_opts->{C} && $col ) {
+         if ( $final_o->get('chunk-size') && $col ) {
             my $rows_per_chunk = $ch->size_to_rows(
-               $dbh, $db, $tbl, $final_opts->{C}, $du);
+               $dbh, $db, $tbl, $final_o->get('chunk-size'), $du);
 
             # Calculate chunks for this table.
             my %params = $ch->get_range_statistics($dbh, $db, $tbl, $col);
             if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
                @chunks = $ch->calculate_chunks(
-                  dbh      => $main_dbh,
+                  dbh      => $dbh,
                   table    => $struct,
                   col      => $col,
                   size     => $rows_per_chunk,
@@ -3473,19 +3832,19 @@ sub save_tbl_to_checksum {
       }
 
       push @{ $tables_to_checksum{$db} }, {
-         struct       => $struct,
-         create       => $create,
-         database     => $db,
-         table        => $tbl,
-         column       => $col,
-         maxval       => $maxval,
-         index        => $idx,
-         chunks       => \@chunks,
-         final_opts   => $final_opts,
+         struct   => $struct,
+         create   => $create,
+         database => $db,
+         table    => $tbl,
+         column   => $col,
+         maxval   => $maxval,
+         index    => $idx,
+         chunks   => \@chunks,
+         final_o  => $final_o,
       };
    };
    if ( $EVAL_ERROR ) {
-      print_err($EVAL_ERROR, $db, $tbl);
+      print_err($final_o, $EVAL_ERROR, $db, $tbl);
    }
 
    return;
@@ -3494,19 +3853,30 @@ sub save_tbl_to_checksum {
 # Checksum the tables in the given database.
 # A separate report for each database and its tables is printed.
 sub checksum_tables {
-   my ( $dbh, $database, $tables, $hosts ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(tc du o q db dbh hosts tbls) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $tc    = $args{tc};
+   my $du    = $args{du};
+   my $o     = $args{o};
+   my $db    = $args{db};
+   my $dbh   = $args{dbh};
+   my $hosts = $args{hosts};
+   my $tbls  = $args{tbls};
+   my $q     = $args{q};
 
    # Design and print header unless we are resuming in which case
    # we should have already re-printed the partial output of the
    # resume file in parse_resume_file().
    my ($hdr, $explain);
-   if ( $opts{b} ) {
+   if ( $o->get('tab') ) {
       $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
       $explain = "%s\t%s\t%s\n";
    }
    else {
-      my $max_tbl  = max(5, map { length($_->{table}) } @$tables);
-      my $max_db   = max(8, length($database));
+      my $max_tbl  = max(5, map { length($_->{table}) } @$tbls);
+      my $max_db   = max(8, length($db));
       my $max_host = max(4, map { length($_->{h}) } @$hosts);
       $hdr         = "%-${max_db}s %-${max_tbl}s %5s "
                    . "%-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
@@ -3514,27 +3884,31 @@ sub checksum_tables {
    }
    my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE
                      COUNT CHECKSUM TIME WAIT STAT LAG);
-   unless ( $opts{q} || $opts{explain} || $opts{checksum} || $opts{resume} ) {
+   unless ( $o->get('quiet')
+            || $o->get('explain')
+            || $o->get('checksum')
+            || $o->get('resume') )
+   {
       printf($hdr, @hdr_args)
          or die "Cannot print: $OS_ERROR";
    }
 
    # TODO: are we still inside an eval{} here, or is an error a fatal now?
    # NOTE: remember, you can't 'next TABLE' inside the eval{}.
-   # NOTE: remember to use the final_opts options embedded within each $table,
-   #       not %opts.
-   foreach my $table ( @$tables ) {
+   # NOTE: remember to use the final_o embedded within each $table, not $o
+   foreach my $table ( @$tbls ) {
       eval {
-         my $final_opts = $table->{final_opts};
+         my $final_o = $table->{final_o};
          my $do_table = 1;
-         MKDEBUG && _d("Doing", $database, '.', $table->{table});
+         MKDEBUG && _d("Doing", $db, '.', $table->{table});
          MKDEBUG && _d("Table:", Dumper($table));
 
          # Clean out the replication table entry for this table.
-         if ( $final_opts->{R} && !$final_opts->{explain} ) {
-            my $del_sql = "DELETE FROM $final_opts->{R} WHERE db=? AND tbl=?";
-            MKDEBUG && _d($main_dbh, $del_sql, $database, $table->{table});
-            $main_dbh->do($del_sql, {}, $database, $table->{table});
+         if ( (my $replicate_table = $final_o->get('replicate'))
+              && !$final_o->get('explain') ) {
+            my $del_sql = "DELETE FROM $replicate_table WHERE db=? AND tbl=?";
+            MKDEBUG && _d($dbh, $del_sql, $db, $table->{table});
+            $dbh->do($del_sql, {}, $db, $table->{table});
          }
 
          # If --since is given, figure out either
@@ -3546,15 +3920,15 @@ sub checksum_tables {
          #    whichever exists in the table, in that order.
          # Then, if --savesince is given, save either 1) the current timestamp
          # or 2) the resulting WHERE clause.
-         if ( $final_opts->{since} ) {
-            if ( is_temporal($final_opts->{since}) ) {
+         if ( $final_o->get('since') ) {
+            if ( is_temporal($final_o->get('since')) ) {
                MKDEBUG && _d('--since is temporal');
                my ( $stat )
-                  = $du->get_table_status($dbh, $q, $database, $table->{table});
+                  = $du->get_table_status($dbh, $q, $db, $table->{table});
                my $time = $stat->{update_time};
-               if ( $time && $time lt $final_opts->{since} ) {
+               if ( $time && $time lt $final_o->get('since') ) {
                   MKDEBUG && _d("Skipping table because --since value",
-                     $final_opts->{since}, "is newer than", $time);
+                     $final_o->get('since'), "is newer than", $time);
                   $do_table = 0;
                   $table->{chunks} = [];
                }
@@ -3571,18 +3945,19 @@ sub checksum_tables {
                # save_tbl_to_checksum().
                my ( $sincecol ) =
                   grep { $_ && $table->{struct}->{is_col}->{$_} }
-                     ( $table->{column}, $final_opts->{sincecolumn} );
+                     ( $table->{column}, $final_o->get('since-column') );
 
                if ( $sincecol ) {
                   MKDEBUG && _d('Column for numerical --since:',
-                     $database, '.', $table->{table}, '.', $sincecol);
+                     $db, '.', $table->{table}, '.', $sincecol);
                   # This ends up being an additional WHERE clause.
+                  print "]]] HERE since=".$final_o->get('since')."\n";
                   $table->{since} = $q->quote($sincecol)
-                     . '>=' .  $q->quote_val($final_opts->{since});
+                     . '>=' .  $q->quote_val($final_o->get('since'));
                }
                else {
                   MKDEBUG && _d('No column for numerical --since for',
-                     $database, '.', $table->{table});
+                     $db, '.', $table->{table});
                }
             }
          }
@@ -3594,21 +3969,21 @@ sub checksum_tables {
          my $query;
          if ( $checksum_table_data && $do_table ) {
             $query = $tc->make_checksum_query(
-               dbname     => $database,
+               dbname     => $db,
                tblname    => $table->{table},
                table      => $table->{struct},
-               quoter     => $q,
+               quoter     => $args{q},
                algorithm  => $strat,
                func       => $func,
                crc_wid    => $crc_wid,
                crc_type   => $crc_type,
                opt_slice  => $opt_slice,
-               cols       => $final_opts->{columns},
-               sep        => $final_opts->{s},
-               replicate  => $final_opts->{R},
-               precision  => $final_opts->{'float-precision'},
-               trim       => $final_opts->{trim},
-               ignorecols => $final_opts->{ignorecols},
+               cols       => $final_o->get('columns'),
+               sep        => $final_o->get('separator'),
+               replicate  => $final_o->get('replicate'),
+               precision  => $final_o->get('float-precision'),
+               trim       => $final_o->get('trim'),
+               ignorecols => $final_o->get('ignore-columns'),
             );
          }
          else { # --schema
@@ -3616,35 +3991,41 @@ sub checksum_tables {
          }
 
          checksum_chunks(
-            $database, $table, $hosts, $query, $hdr, $explain, $final_opts);
+            %args,
+            tbl     => $table,
+            query   => $query,
+            hdr     => $hdr,
+            explain => $explain,
+            final_o => $final_o,
+         );
 
          # Save the --since value if
          #    1) it's temporal and the tbl had changed since --since; or
          #    2) it's "numerical" and it had a chunkable or nibble-able
          #       column and it wasn't empty
          # See issues 121 and 122.
-         if ( $final_opts->{savesince} && $savesince_sth ) {
-            if ( is_temporal($final_opts->{since}) ) {
+         if ( $final_o->get('save-since') && $savesince_sth ) {
+            if ( is_temporal($final_o->get('since')) ) {
                MKDEBUG && _d(
                   "Saving temporal --since value: current timestamp for",
-                  $database, '.', $table->{table});
+                  $db, '.', $table->{table});
                $savesince_sth->execute(undef,
-                  $database, $table->{table});
+                  $db, $table->{table});
             }
             elsif ( defined $table->{maxval} ) {
                MKDEBUG && _d("Saving numerical --since value:",
-                  $table->{maxval}, "for", $database, '.', $table->{table});
+                  $table->{maxval}, "for", $db, '.', $table->{table});
                $savesince_sth->execute($table->{maxval},
-                  $database, $table->{table});
+                  $db, $table->{table});
             }
             else {
                MKDEBUG && _d("Cannot save --since value:",
-                  $table->{maxval}, "for", $database, '.', $table->{table});
+                  $table->{maxval}, "for", $db, '.', $table->{table});
             }
          }
       };
       if ( $EVAL_ERROR ) {
-         print_err($EVAL_ERROR, $database, $table->{table});
+         print_err($o, $EVAL_ERROR, $db, $table->{table});
       }
    }
 
@@ -3652,7 +4033,20 @@ sub checksum_tables {
 }
 
 sub checksum_chunks {
-   my ( $database, $table, $hosts, $query, $hdr, $explain, $final_opts ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(dp final_o ms o q db tbl hosts hdr explain) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dp      = $args{dp};
+   my $du      = $args{du};
+   my $final_o = $args{final_o};
+   my $ms      = $args{ms};
+   my $o       = $args{o};
+   my $q       = $args{q};
+   my $db      = $args{db};
+   my $dbh     = $args{dbh};
+   my @hosts   = @{$args{hosts}};
+   my $tbl     = $args{tbl}; 
 
    # ##################################################################
    # This loop may seem suboptimal, because it causes a new child to be
@@ -3662,113 +4056,127 @@ sub checksum_chunks {
    # This is by design. It lets me unlock the table on the master
    # between chunks.
    # ##################################################################
-   my $num_chunks = scalar(@{$table->{chunks}});
+   my $num_chunks = scalar(@{$tbl->{chunks}});
+   MKDEBUG && _d('Checksumming', $num_chunks, 'chunks');
    CHUNK:
    foreach my $chunk_num ( 0 .. $num_chunks - 1 ) {
 
-      if ( $lag_dbh ) {
+      if ( my $lag_dbh = $args{lag_dbh} ) {
          my $lag = $ms->get_slave_lag($lag_dbh);
-         while ( !defined $lag || $lag > $final_opts->{maxlag} ) {
-            MKDEBUG && _d("Sleeping: slave lag is", $lag);
-            sleep($opts{'check-interval'});
+         while ( !defined $lag || $lag > $final_o->get('max-lag') ) {
+            MKDEBUG && _d('Sleeping: slave lag is', $lag);
+            sleep($o->get('check-interval'));
             $lag = $ms->get_slave_lag($lag_dbh);
          }
       }
 
-      if (    ($num_chunks > 1 || $final_opts->{singlechunk})
+      if (    ($num_chunks > 1 || $final_o->get('single-chunk'))
            && $checksum_table_data
-           && defined $final_opts->{probability}
-           && rand(100) >= $final_opts->{probability} ) {
+           && defined $final_o->get('probability')
+           && rand(100) >= $final_o->get('probability') ) {
          MKDEBUG && _d('Skipping chunk because of --probability');
          next CHUNK;
       }
 
       if (    $num_chunks > 1
            && $checksum_table_data
-           && $final_opts->{M}
-           && ($chunk_num % $final_opts->{M} != $final_opts->{O}) ) {
+           && $final_o->get('modulo')
+           && ($chunk_num % $final_o->get('modulo') != $final_o->get('offset')))
+      {
          MKDEBUG && _d('Skipping chunk because of --modulo');
          next CHUNK;
       }
 
       my $chunk_start_time = gettimeofday();
-      MKDEBUG && _d("Starting at", $chunk_start_time);
+      MKDEBUG && _d('Starting chunk at', $chunk_start_time);
 
-      if ( $final_opts->{R} ) {
+      if ( $final_o->get('replicate') ) {
          # We're in --replicate mode.
-         
+
          # If resuming, check if this db.tbl.chunk.host can be skipped.
-         if ( $opts{'resume-replicate'} ) {
-            if ( already_checksummed($table->{database},
-                                     $table->{table},
+         if ( $o->get('resume-replicate') ) {
+            if ( already_checksummed($tbl->{database},
+                                     $tbl->{table},
                                      $chunk_num,
-                                     $hosts->[0]->{h}) ) {
+                                     $hosts[0]->{h}) ) {
                print "# already checksummed:"
-                  . " $table->{database}"
-                  . " $table->{table}"
+                  . " $tbl->{database}"
+                  . " $tbl->{table}"
                   . " $chunk_num "
-                  . $hosts->[0]->{h} 
+                  . $hosts[0]->{h} 
                   . "\n"
-               unless $opts{q};
+                  unless $o->get('quiet');
                next CHUNK;
             }
          }
 
-         do_tbl_replicate($hosts->[0], $query, $table,
-                          $chunk_num, $hdr, $explain, $final_opts);
+         $hosts[0]->{dbh} ||= $dbh;
+
+         do_tbl_replicate(
+            $chunk_num,
+            %args,
+            host => $hosts[0],
+         );
       }
       else {
          # We're in "normal" mode. Lock table and get position on the master.
 
-         if ( !$final_opts->{explain} ) {
-            if ( $final_opts->{k} ) {
+         if ( !$final_o->get('explain') ) {
+            if ( $final_o->get('lock') ) {
                my $sql = "LOCK TABLES "
-                  . $q->quote($database, $table->{table}) . " READ";
+                       . $q->quote($db, $tbl->{table}) . " READ";
                MKDEBUG && _d($sql);
-               $main_dbh->do($sql);
+               $dbh->do($sql);
             }
-            if ( defined $final_opts->{w} ) {
-               $table->{master_status} = $ms->get_master_status($main_dbh);
+            if ( $final_o->get('wait') ) {
+               $tbl->{master_status} = $ms->get_master_status($dbh);
             }
          }
-         
+
          my %children;
          HOST:
          foreach my $i ( 0 .. $#hosts ) {
             my $is_master = $i == 0; # First host is assumed to be master.
             my $host      = $hosts[$i];
 
+            # TODO: make sure we're using the correct host/dsn/dbh
+
             # Open a single connection for each host.  Re-use the
             # connection for the master/single host.
             if ( $is_master ) {
                # TODO: Is there a chance this can cause problems while forked?
-               $host->{dbh} ||= $main_dbh;
+               $host->{dbh} ||= $dbh;
             }
             else {
-               $host->{dbh} ||= get_cxn($host);
+               $host->{dbh} ||= get_cxn($host, %args);
             }
 
             # If resuming, check if this db.tbl.chunk.host can be skipped.
-            if ( $final_opts->{resume} ) {
-               next HOST if already_checksummed($table->{database},
-                                                $table->{table},
+            if ( $final_o->get('resume') ) {
+               next HOST if already_checksummed($tbl->{database},
+                                                $tbl->{table},
                                                 $chunk_num,
                                                 $host->{h});
             }
 
             # Fork, but only if there's more than one host.
             my $pid = @hosts > 1 ? fork() : undef;
-            
+
             if ( @hosts == 1 || (defined($pid) && $pid == 0) ) {
                # Do the work (I'm a child, or there's only one host)
                
                eval {
-                  do_tbl($host, $query, $table, $chunk_num,
-                         $is_master, $hdr, $explain, $final_opts);
+                  do_tbl(
+                     $chunk_num,
+                     $is_master,
+                     %args,
+                     dbh  => $host->{dbh},
+                     host => $host,
+                  );
                };
                if ( $EVAL_ERROR ) {
-                  print_err($EVAL_ERROR, $database, $table->{table},
-                            $dsn_parser->as_string($host));
+                  print_err($o, $EVAL_ERROR, $db, $tbl->{table},
+                            $dp->as_string($host));
                   exit(1) if @hosts > 1; # exit only if I'm a child
                }
                
@@ -3788,25 +4196,25 @@ sub checksum_chunks {
             MKDEBUG && _d("Child", $pid, "exited with", $CHILD_ERROR);
             $exit_status ||= $CHILD_ERROR >> 8;
          }
-         if ( ($final_opts->{k} && !$final_opts->{explain}) ) {
+         if ( ($final_o->get('lock') && !$final_o->get('explain')) ) {
             my $sql = "UNLOCK TABLES";
-            MKDEBUG && _d($main_dbh, $sql);
-            $main_dbh->do($sql);
+            MKDEBUG && _d($dbh, $sql);
+            $dbh->do($sql);
          }
       }
 
       my $chunk_stop_time = gettimeofday();
-      MKDEBUG && _d("Finished chunk at", $chunk_stop_time);
+      MKDEBUG && _d('Finished chunk at', $chunk_stop_time);
 
-      if ( $final_opts->{sleep} && !$final_opts->{explain} ) {
-         MKDEBUG && _d("Sleeping", $final_opts->{sleep});
-         sleep($final_opts->{sleep});
+      if ( $final_o->get('sleep') && !$final_o->get('explain') ) {
+         MKDEBUG && _d('Sleeping', $final_o->get('sleep'));
+         sleep($final_o->get('sleep'));
       }
-      elsif ( $final_opts->{'sleep-coef'} && !$final_opts->{explain} ) {
-         my $sleep_time =
-            ($chunk_stop_time - $chunk_start_time)
-            * $final_opts->{'sleep-coef'};
-         MKDEBUG && _d("Sleeping", $sleep_time);
+      elsif ( $final_o->get('sleep-coef') && !$final_o->get('explain') ) {
+         my $sleep_time
+            = ($chunk_stop_time - $chunk_start_time)
+            * $final_o->get('sleep-coef');
+         MKDEBUG && _d('Sleeping', $sleep_time);
          sleep($sleep_time);
       }
    } # End foreach CHUNK
@@ -3814,26 +4222,37 @@ sub checksum_chunks {
    return;
 }
 
-# Override the arguments with arguments from --argtable, if necessary.
+# Override the command-line arguments with those from --arg-table
+# if necessary.  Returns a cloned OptionParser object ($final_o).
+# This clone is only a partial OptionParser object.
 sub get_final_opts {
-   my ( $dbh, $db, $tbl ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(o dbh db tbl args_for) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o        = $args{o};
+   my $dbh      = $args{dbh};
+   my $db       = $args{db};
+   my $tbl      = $args{tbl};
+   my $args_for = $args{args_for};
 
-   my %final_opts = %opts;
-   if ( my $override = $args_for{$db}->{$tbl} ) {
-      @final_opts{keys %$override} = values %$override;
+   my $final_o = $o->clone();
+   if ( my $override = $args_for->{$db}->{$tbl} ) {
+      map { $final_o->set($_, $override->{$_}); } keys %$override;
    }
 
    # --since and --offset are potentially expressions that should be
    # evaluated by the DB server. This has to be done after the override
-   # from the --argtable table.
-   foreach my $opt ( qw(since O) ) {
+   # from the --arg-table table.
+   foreach my $opt ( qw(since offset) ) {
       # Don't get MySQL to evaluate if it's temporal, as 2008-08-01 --> 1999
-      if ( defined $final_opts{$opt} && !is_temporal($final_opts{$opt}) ) {
-         $final_opts{$opt} = eval_expr($opt, $final_opts{$opt}, $dbh);
+      my $val = $final_o->get($opt);
+      if ( $val && !is_temporal($val) ) {
+         $final_o->set($opt, eval_expr($opt, $val, $dbh));
       }
    }
 
-   return \%final_opts;
+   return $final_o;
 }
 
 sub is_temporal {
@@ -3842,12 +4261,19 @@ sub is_temporal {
 }
 
 sub print_inconsistent_tbls {
-   my ( $dsn, $dbh, $level, $parent, $tbls ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(o dp dsn tbls) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o      = $args{o};
+   my $dp     = $args{dp};
+   my $dsn    = $args{dsn};
+   my $tbls   = $args{tbls};
 
-   return if $opts{q};
+   return if $o->get('quiet');
 
    my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
-   print "Differences on " . $dsn_parser->as_string($dsn) . "\n";
+   print "Differences on " . $dp->as_string($dsn) . "\n";
    my $max_db   = max(5, map { length($_->{db})  } @$tbls);
    my $max_tbl  = max(5, map { length($_->{tbl}) } @$tbls);
    my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
@@ -3861,14 +4287,28 @@ sub print_inconsistent_tbls {
 }
 
 sub save_inconsistent_tbls {
-   my ( $dsn, $dbh, $level, $parent, $tbls ) = @_;
-   foreach my $table ( @$tbls ) {
-      MKDEBUG && _d("Will recheck", $table->{db}, '.', $table->{tbl},
-                    "(chunk:", $table->{boundaries}, ')');
-      my $final_opts = get_final_opts($dbh, $table->{db}, $table->{tbl});
-      my $chunks     = [ $table->{boundaries} ];
+   my ( %args ) = @_;
+   foreach my $arg ( qw(dbh tbls) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh  = $args{dbh};
+   my $tbls = $args{tbls};
+
+   foreach my $tbl ( @$tbls ) {
+      MKDEBUG && _d("Will recheck", $tbl->{db}, '.', $tbl->{tbl},
+                    "(chunk:", $tbl->{boundaries}, ')');
+      my $final_o = get_final_opts(
+         %args,
+         db  => $tbl->{db},
+         tbl => $tbl->{tbl},
+      );
+      my $chunks = [ $tbl->{boundaries} ];
       save_tbl_to_checksum(
-         $dbh, $table->{db}, $table->{tbl}, $final_opts, $chunks);
+         %args,
+         db      => $tbl->{db},
+         tbl     => $tbl->{tbl},
+         final_o => $final_o,
+      );
    }
    return;
 }
@@ -3890,7 +4330,14 @@ sub eval_expr {
 }
 
 sub determine_checksum_strat {
-   my ( $dbh, $tc ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(o dbh tc) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o   = $args{o};
+   my $dbh = $args{dbh};
+   my $tc  = $args{tc};
+
    my $vp = new VersionParser();
    my $ret = {  # return vals in easy-to-swallow hash form
       strat      => undef,
@@ -3901,46 +4348,48 @@ sub determine_checksum_strat {
    };
 
    $ret->{strat} = $tc->best_algorithm(
-      algorithm   => $opts{a},
+      algorithm   => $o->get('algorithm'),
       vp          => $vp,
       dbh         => $dbh,
-      where       => $opts{W} || $opts{since},
-      chunk       => $opts{C},
-      replicate   => $opts{R},
-      count       => $opts{r},
+      where       => $o->get('where') || $o->get('since'),
+      chunk       => $o->get('chunk-size'),
+      replicate   => $o->get('replicate'),
+      count       => $o->get('count'),
    );
 
-   if ( $opts{a} && $opts{a} ne $ret->{strat} ) {
-      warn "--algorithm=$opts{a} can't be used; falling back to $ret->{strat}\n";
+   if ( $o->get('algorithm') && $o->get('algorithm') ne $ret->{strat} ) {
+      warn "--algorithm=".$o->get('algorithm')." can't be used; "
+         . "falling back to $ret->{strat}\n";
    }
 
    # If using a cryptographic hash strategy, decide what hash function to use,
    # and if using BIT_XOR whether and which slice to place the user variable in.
    if ( $tc->is_hash_algorithm( $ret->{strat} ) ) {
       $ret->{func} = $tc->choose_hash_func(
-         func => $opts{f},
+         func => $o->get('function'),
          dbh  => $dbh,
       );
-      if ( $opts{f} && $opts{f} ne $ret->{func} ) {
-         warn "Checksum function $opts{f} cannot be used; using $ret->{func}\n";
+      if ( $o->get('function') && $o->get('function') ne $ret->{func} ) {
+         warn "Checksum function ".$o->get('function')." cannot be used; "
+            . "using $ret->{func}\n";
       }
       $ret->{crc_wid}    = $tc->get_crc_wid($dbh, $ret->{func});
       ($ret->{crc_type}) = $tc->get_crc_type($dbh, $ret->{func});
 
-      if ( $opts{o} && $ret->{strat} eq 'BIT_XOR' ) {
+      if ( $o->get('optimize-xor') && $ret->{strat} eq 'BIT_XOR' ) {
          if ( $ret->{crc_type} !~ m/int$/ ) {
             $ret->{opt_slice}
                = $tc->optimize_xor(dbh => $dbh, func => $ret->{func});
             if ( !defined $ret->{opt_slice} ) {
-               warn "Cannot use --optxor, disabling.\n";
-               $opts{o} = 0;
+               warn "Cannot use --optimize-xor, disabling";
+               $o->set('optimize-xor', 0);
             }
          }
          else {
             # FNV_64 doesn't need the optimize_xor gizmo.
             # TODO: user-specified functions should be able to take advantage
             # of this with some cmdline args.
-            $opts{o} = 0;
+            $o->get('optimize-xor', 0);
          }
       }
    }
@@ -3949,30 +4398,36 @@ sub determine_checksum_strat {
 }
 
 sub verify_checksum_compat {
-   my ( $hosts_ref ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(o hosts) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o     = $args{o};
+   my $hosts = $args{hosts};
+
    my @verify_sums;
-   foreach my $host ( @$hosts_ref ) {
-      my $dbh = get_cxn($host, ($opts{d} ? keys %{$opts{d}} : '' ));
+   foreach my $host ( @$hosts ) {
+      my $dbh = get_cxn($host, %args);
       my $sql = "SELECT MD5(CONCAT_WS(',', '1', ''))";
       MKDEBUG && _d($dbh, $sql);
       my $cks = $dbh->selectall_arrayref($sql)->[0]->[0];
       push @verify_sums, {
          host => $host->{h},
          ver  => $dbh->{mysql_serverinfo},
-         sum  => $cks
+         sum  => $cks,
       };
    }
    if ( unique(map { $_->{sum} } @verify_sums ) > 1 ) {
-      my $max = max(map { length($_->{h}) } @hosts);
-      die "Not all servers have compatible versions. Some return different\n"
-         . "checksum values for the same query, and cannot be compared. This\n"
+      my $max = max(map { length($_->{h}) } @$hosts);
+      die "Not all servers have compatible versions.  Some return different\n"
+         . "checksum values for the same query, and cannot be compared.  This\n"
          . "behavior changed in MySQL 4.0.14.  Here is info on each host:\n\n"
          . join("\n",
               map { sprintf("%-${max}s %-32s %s", @{$_}{qw(host sum ver)}) }
                  { host => 'HOST', sum => 'CHECKSUM', ver => 'VERSION'},
               @verify_sums
            )
-         . "\n\nYou can disable this check with --noverify.\n";
+         . "\n\nYou can disable this check with --no-verify.\n";
    }
    return;
 }
@@ -3980,14 +4435,21 @@ sub verify_checksum_compat {
 # Check for existence and privileges on the replication table before
 # starting, and prepare the statements that will be used to update it.
 # Also clean out the checksum table.  And create it if needed.
+# Returns fetch and update statement handles.
 sub check_repl_table {
-   my ( $dbh, %opts ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(o dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o   = $args{o};
+   my $dbh = $args{dbh};
 
-   # $opts{R} is the --replicate table.
-   return unless $opts{R};
+   my $replicate_table = $o->get('replicate');
+   return unless $replicate_table;
 
-   # Tests that a) the table exists b) we have permissions needed
-   my $sql = "REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0";
+   # Check that the replicate table exists and that we can access it.
+   my $sql = "REPLACE INTO $replicate_table "
+           . "SELECT * FROM $replicate_table LIMIT 0";
    MKDEBUG && _d($dbh, $sql);
    eval {
       $dbh->do($sql);
@@ -3995,13 +4457,15 @@ sub check_repl_table {
    if ( $EVAL_ERROR ) {
       # Replicate table does not exist.
       if ( $EVAL_ERROR =~ m/' doesn't exist/ ) {
-         if ( $opts{createreplicate} ) {
-            create_repl_table($dbh)
-               or die "--createreplicate failed to create $opts{R}";
+         if ( $o->get('create-replicate-table') ) {
+            create_repl_table(%args)
+               or die "--create-replicate-tabled failed to create "
+                  . $replicate_table;
          }
          else {
-            die  "--replicate table $opts{R} does not exist; "
-               . "read the documentation or use --createreplicate to create it.";
+            die  "--replicate table $replicate_table does not exist; "
+               . "read the documentation or use --create-replicate-table "
+               . "to create it.";
          }
       }
       else {
@@ -4009,36 +4473,46 @@ sub check_repl_table {
       }
    }
 
-   # Clean out the replication table globally.
-   if ( $opts{emptyrepltbl} ) {
-      my $del_sql = "DELETE FROM $opts{R}";
+   # Clean out the replicate table globally.
+   if ( $o->get('empty-replicate-table') ) {
+      my $del_sql = "DELETE FROM $replicate_table";
       MKDEBUG && _d($dbh, $del_sql);
       $dbh->do($del_sql);
    }
 
    # TODO: Is there a chance this can cause problems while forked?
-   $fetch_sth = $dbh->prepare(
-      "SELECT this_crc, this_cnt FROM $opts{R} "
+   my $fetch_sth = $dbh->prepare(
+      "SELECT this_crc, this_cnt FROM $replicate_table "
       . "WHERE db = ? AND tbl = ? AND chunk = ?");
-   $update_sth = $dbh->prepare(
-      "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? "
+   my $update_sth = $dbh->prepare(
+      "UPDATE $replicate_table SET master_crc = ?, master_cnt = ? "
       . "WHERE db = ? AND tbl = ? AND chunk = ?");
 
-   return;
+   return ($fetch_sth, $update_sth);
 }
 
+# Returns 1 on successful creation of the replicate table,
+# or 0 on failure.
 sub create_repl_table {
-   my ( $dbh ) = @_;
-   my $sql = $opt_parser->read_para_after(
-      __FILE__, qr/MAGIC_createreplicate/);
-   $sql =~ s/CREATE TABLE checksum/CREATE TABLE $opts{R}/;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(o dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o   = $args{o};
+   my $dbh = $args{dbh};
+
+   my $replicate_table = $o->get('replicate');
+
+   my $sql = $o->read_para_after(
+      __FILE__, qr/MAGIC_create_replicate/);
+   $sql =~ s/CREATE TABLE checksum/CREATE TABLE $replicate_table/;
    $sql =~ s/;$//;
    MKDEBUG && _d($dbh, $sql);
    eval {
       $dbh->do($sql);
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d("--createreplicate failed", $EVAL_ERROR);
+      MKDEBUG && _d('--create-replicate-table failed:', $EVAL_ERROR);
       return 0;
    }
 
@@ -4046,12 +4520,22 @@ sub create_repl_table {
 }
 
 sub read_repl_table {
-   my ( $dbh, $host ) = @_;
-   my $already_checksummed;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(o dbh host) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o    = $args{o};
+   my $dbh  = $args{dbh};
+   my $host = $args{host};
 
-   # Read checksum table.
+   my $replicate_table = $o->get('replicate');
+   die "Cannot read replicate table because --replicate was not specified"
+      unless $replicate_table;
+
+   # Read checksums from replicate table.
+   my $already_checksummed;
    my $checksums
-      = $dbh->selectall_arrayref("SELECT db, tbl, chunk FROM $opts{R}");
+      = $dbh->selectall_arrayref("SELECT db, tbl, chunk FROM $replicate_table");
 
    # Save each finished checksum.
    foreach my $checksum ( @$checksums ) {
@@ -4064,9 +4548,8 @@ sub read_repl_table {
 
 sub parse_resume_file {
    my ( $resume_file ) = @_;
-   my $already_checksummed;
 
-   open my $fh, '<', $resume_file
+   open my $resume_fh, '<', $resume_file
       or die "Cannot open resume file $resume_file: $OS_ERROR";
 
    # The resume file, being the output from a previous run, should
@@ -4075,7 +4558,8 @@ sub parse_resume_file {
    # the resume file so the end result will be the whole, finished
    # output: what the previous run got done plus what we are about
    # to resume and finish.
-   while ( my $line = <$fh> ) {
+   my $already_checksummed;
+   while ( my $line = <$resume_fh> ) {
       # Re-print every line.
       print $line;
 
@@ -4087,7 +4571,7 @@ sub parse_resume_file {
       }
    }
 
-   close $fh;
+   close $resume_fh;
    MKDEBUG && _d("Already checksummed:", Dumper($already_checksummed));
 
    return $already_checksummed;
@@ -4103,34 +4587,50 @@ sub already_checksummed {
 }
 
 sub do_tbl_replicate {
-   my ( $host, $query, $info, $chunk_num, $hdr, $explain, $final_opts ) = @_;
-   MKDEBUG && _d("do_tbl_replicate for", $info->{table});
-   my $dbh = $main_dbh;
-   $dbh->do("USE " . $q->quote($info->{database}) );
+   my ( $chunk_num, %args ) = @_;
+   foreach my $arg ( qw(q host query tbl hdr explain final_o ch) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $ch      = $args{ch};
+   my $final_o = $args{final_o};
+   my $q       = $args{q};
+   my $host    = $args{host};
+   my $hdr     = $args{hdr};
+   my $explain = $args{explain};
+   my $tbl     = $args{tbl};
+
+   MKDEBUG && _d('Replicating chunk', $chunk_num,
+      'of table', $tbl->{database}, '.', $tbl->{table},
+      'on', $host->{h}, ':', $host->{P});
+
+   my $dbh = $host->{dbh};
+   # TODO: catch error here, like when host doesn't have the db
+   $dbh->do("USE " . $q->quote($tbl->{database}));
+
    my $cnt = 'NULL';
    my $crc = 'NULL';
    my $beg = time();
    my $sql = $ch->inject_chunks(
-      query      => $query,
-      database   => $info->{database},
-      table      => $info->{table},
-      chunks     => $info->{chunks},
+      query      => $args{query},
+      database   => $tbl->{database},
+      table      => $tbl->{table},
+      chunks     => $tbl->{chunks},
       chunk_num  => $chunk_num,
-      where      => [$final_opts->{W}, $info->{since}],
-      index_hint => $info->{index},
+      where      => [$final_o->get('where'), $tbl->{since}],
+      index_hint => $tbl->{index},
    );
 
    if ( MKDEBUG && $chunk_num == 0 ) {
       _d("SQL for inject chunk 0:", $sql);
    }
 
-   my $where = $info->{chunks}->[$chunk_num];
-   if ( $final_opts->{explain} ) {
+   my $where = $tbl->{chunks}->[$chunk_num];
+   if ( $final_o->get('explain') ) {
       if ( $chunk_num == 0 ) {
-         printf($explain, @{$info}{qw(database table)}, $sql)
+         printf($explain, @{$tbl}{qw(database table)}, $sql)
             or die "Cannot print: $OS_ERROR";
       }
-      printf($explain, @{$info}{qw(database table)}, $where)
+      printf($explain, @{$tbl}{qw(database table)}, $where)
          or die "Cannot print: $OS_ERROR";
       return;
    }
@@ -4138,7 +4638,7 @@ sub do_tbl_replicate {
    # Actually run the checksum query
    $dbh->do('SET @crc := "", @cnt := 0 /*!50108 , '
           . '@@binlog_format := "STATEMENT"*/');
-   $dbh->do($sql, {}, @{$info}{qw(database table)}, $where);
+   $dbh->do($sql, {}, @{$tbl}{qw(database table)}, $where);
 
    # Catch any warnings thrown....
    $sql = 'SHOW WARNINGS';
@@ -4155,33 +4655,54 @@ sub do_tbl_replicate {
    }
 
    # Update the master_crc etc columns
-   $fetch_sth->execute(@{$info}{qw(database table)}, $chunk_num);
+   $fetch_sth->execute(@{$tbl}{qw(database table)}, $chunk_num);
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
-   $update_sth->execute($crc, $cnt, @{$info}{qw(database table)}, $chunk_num);
+   $update_sth->execute($crc, $cnt, @{$tbl}{qw(database table)}, $chunk_num);
 
    my $end = time();
    $crc  ||= 'NULL';
-   if (!$final_opts->{q} && !$final_opts->{explain}) {
-      if ( $final_opts->{checksum} ) {
+   if (!$final_o->get('quiet') && !$final_o->get('explain')) {
+      if ( $final_o->get('checksum') ) {
          printf($md5sum_fmt, $crc, $host->{h},
-            @{$info}{qw(database table)}, $chunk_num)
+            @{$tbl}{qw(database table)}, $chunk_num)
             or die "Cannot print: $OS_ERROR";
       }
       else {
          printf($hdr,
-            @{$info}{qw(database table)}, $chunk_num,
-            $host->{h}, $info->{struct}->{engine}, $cnt, $crc,
+            @{$tbl}{qw(database table)}, $chunk_num,
+            $host->{h}, $tbl->{struct}->{engine}, $cnt, $crc,
             $end - $beg, 'NULL', 'NULL', 'NULL')
                or die "Cannot print: $OS_ERROR";
       }
    }
+
+   return;
 }
 
 sub do_tbl {
-   my ($host, $query, $info, $chunk_num, $is_master, $hdr, $explain, $final_opts) = @_;
-   MKDEBUG && _d("do_tbl for", $info->{table});
+   my ( $chunk_num, $is_master, %args ) = @_;
+   foreach my $arg ( qw(du final_o ms q tc dbh host tbl hdr explain) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $du      = $args{du};
+   my $final_o = $args{final_o};
+   my $ms      = $args{ms};
+   my $tc      = $args{tc};
+   my $tp      = $args{tp};
+   my $q       = $args{q};
+   my $host    = $args{host};
+   my $tbl     = $args{tbl};
+   my $explain = $args{explain};
+   my $hdr     = $args{hdr};
+
+   MKDEBUG && _d('Checksumming chunk', $chunk_num,
+      'of table', $tbl->{database}, '.', $tbl->{table},
+      'on', $host->{h}, ':', $host->{P});
+
    my $dbh = $host->{dbh};
-   $dbh->do("USE " . $q->quote($info->{database}) );
+   # TODO: catch error here, like when host doesn't have the db
+   $dbh->do("USE " . $q->quote($tbl->{database}));
+
    my $cnt = 'NULL';
    my $crc = 'NULL';
    my $sta = 'NULL';
@@ -4189,12 +4710,21 @@ sub do_tbl {
    my $beg = time();
 
    # I'm a slave.  Wait to catch up to the master.  Calculate slave lag.
-   if ( !$is_master && defined $final_opts->{w} && !$final_opts->{explain} ) {
+   if ( !$is_master
+        && $final_o->get('wait')
+        && !$final_o->get('explain') )
+   {
+      # TODO: check that $args{dbh} will be master dbh.
+      MKDEBUG && _d('Waiting to catch up to master', $args{dbh}->{h},
+         ':', $args{dbh}->{P});
       $sta = $ms->wait_for_master(
-         $main_dbh, $dbh, $final_opts->{w}, 1, $info->{master_status});
+         $args{dbh}, $dbh, $final_o->get('wait'), 1, $tbl->{master_status});
       $sta = 'NULL' unless defined $sta;
    }
-   if ( !$is_master && $final_opts->{l} && !$final_opts->{explain} ) {
+   if ( !$is_master
+        && $final_o->get('slave-lag')
+        && !$final_o->get('explain') )
+   {
       my $res = $ms->get_slave_status($dbh);
       $lag = $res && defined $res->{seconds_behind_master}
            ? $res->{seconds_behind_master}
@@ -4205,13 +4735,13 @@ sub do_tbl {
    my $have_table = 1;
    if ( !$is_master || !$checksum_table_data ) {
       $have_table = $tp->table_exists($dbh,
-                                      $info->{database},
-                                      $info->{table},
+                                      $tbl->{database},
+                                      $tbl->{table},
                                       $q);
-      if ( !$have_table && MKDEBUG ) {
-         MKDEBUG && _d($info->{database}, '.', $info->{table},
-            "does not exist on slave", $host->{h}, $host->{P});
-      }
+      warn "$tbl->{database}.$tbl->{table} does not exist on slave"
+         . ($host->{h} ? " $host->{h}" : '')
+         . ($host->{P} ? ":$host->{P}" : '')
+         unless $have_table;
    }
 
    # Time the checksum operation and the wait-for-master operation separately.
@@ -4221,42 +4751,42 @@ sub do_tbl {
       # Do the checksum operation.
       if ( $checksum_table_data ) {
          if ( $strat eq 'CHECKSUM' ) {
-            if ( $final_opts->{c} ) {
-               $crc = do_checksum($dbh, $info, $query, $explain, $final_opts);
+            if ( $final_o->get('crc') ) {
+               $crc = do_checksum(%args);
             }
-            if ( $final_opts->{r} ) {
-               $cnt = do_count($dbh, $info, $chunk_num, $explain, $final_opts);
+            if ( $final_o->get('count') ) {
+               $cnt = do_count($chunk_num, %args);
             }
          }
-         elsif ( $final_opts->{c} ) {
-            ( $cnt, $crc ) = do_var_crc(
-               $dbh, $query, $info, $chunk_num, $explain, $final_opts);
+         elsif ( $final_o->get('crc') ) {
+            ( $cnt, $crc ) = do_var_crc($chunk_num, %args);
             $crc ||= 'NULL';
          }
          else {
-            $cnt = do_count($dbh, $info, $chunk_num, $explain);
+            $cnt = do_count($chunk_num, %args);
          }
       }
-      else { # compare schemas
-         my $create = $du->get_create_table($dbh, $q, $info->{database}, $info->{table});
+      else { # Checksum SHOW CREATE TABLE for --schema.
+         my $create
+            = $du->get_create_table($dbh, $q, $tbl->{database}, $tbl->{table});
          $create = $create->[1];
          $create = $tp->remove_auto_increment($create);
-         $crc = $tc->crc32($create);
+         $crc    = $tc->crc32($create);
       }
    }
 
    my $end = time();
 
-   if ( !$final_opts->{q} && !$final_opts->{explain} ) {
-      if ( $final_opts->{checksum} ) {
+   if ( !$final_o->get('quiet') && !$final_o->get('explain') ) {
+      if ( $final_o->get('checksum') ) {
          printf($md5sum_fmt, $crc, $host->{h},
-            @{$info}{qw(database table)}, $chunk_num)
+            @{$tbl}{qw(database table)}, $chunk_num)
             or die "Cannot print: $OS_ERROR";
       }
       else {
          printf($hdr,
-            @{$info}{qw(database table)}, $chunk_num,
-            $host->{h}, $info->{struct}->{engine}, $cnt, $crc,
+            @{$tbl}{qw(database table)}, $chunk_num,
+            $host->{h}, $tbl->{struct}->{engine}, $cnt, $crc,
             $end - $mid, $mid - $beg, $sta, $lag)
             or die "Cannot print: $OS_ERROR";
       }
@@ -4266,44 +4796,57 @@ sub do_tbl {
 }
 
 sub get_cxn {
-   my ( $info ) = @_;
-   if ( $opts{askpass} && !defined $info->{p} ) {
-      $info->{p}
-         = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
+   my ( $dsn, %args ) = @_;
+   foreach my $arg ( qw(o dp) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dp  = $args{dp};
+   my $o   = $args{o};
+
+   if ( $o->get('ask-pass') && !defined $dsn->{p} ) {
+      $dsn->{p} = OptionParser::prompt_noecho("Enter password for $dsn->{h}: ");
    }
 
-   my $ac = $opts{k} ? 0 : 1;
-   my $dbh = $dsn_parser->get_dbh(
-      $dsn_parser->get_cxn_params($info), { AutoCommit => $ac });
+   my $ac  = $o->get('lock') ? 0 : 1;
+   my $dbh = $dp->get_dbh(
+      $dp->get_cxn_params($dsn), { AutoCommit => $ac });
    $dbh->{InactiveDestroy} = 1; # Prevent destroying on fork.
    return $dbh;
 }
 
 sub do_var_crc {
-   my ( $dbh, $query, $info, $chunk_num, $explain, $final_opts ) = @_;
-   MKDEBUG && _d("do_var_crc for", $info->{table});
+   my ( $chunk_num, %args ) = @_;
+   foreach my $arg ( qw(ch dbh query tbl explain final_o) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $final_o = $args{final_o};
+   my $ch      = $args{ch};
+   my $tbl     = $args{tbl};
+   my $explain = $args{explain};
+   my $dbh     = $args{dbh};
+
+   MKDEBUG && _d("do_var_crc for", $tbl->{table});
 
    my $sql = $ch->inject_chunks(
-      query      => $query,
-      database   => $info->{database},
-      table      => $info->{table},
-      chunks     => $info->{chunks},
+      query      => $args{query},
+      database   => $tbl->{database},
+      table      => $tbl->{table},
+      chunks     => $tbl->{chunks},
       chunk_num  => $chunk_num,
-      where      => [$final_opts->{W}, $info->{since}],
-      index_hint => $info->{index},
+      where      => [$final_o->get('where'), $tbl->{since}],
+      index_hint => $tbl->{index},
    );
 
    if ( MKDEBUG && $chunk_num == 0 ) {
       _d("SQL for chunk 0:", $sql);
    }
 
-   if ( $final_opts->{explain} ) {
+   if ( $final_o->get('explain') ) {
       if ( $chunk_num == 0 ) {
-         printf($explain, @{$info}{qw(database table)}, $sql)
+         printf($explain, @{$tbl}{qw(database table)}, $sql)
             or die "Cannot print: $OS_ERROR";
       }
-      printf($explain,
-         @{$info}{qw(database table)}, $info->{chunks}->[$chunk_num])
+      printf($explain, @{$tbl}{qw(database table)},$tbl->{chunks}->[$chunk_num])
          or die "Cannot print: $OS_ERROR";
       return;
    }
@@ -4314,10 +4857,20 @@ sub do_var_crc {
 }
 
 sub do_checksum {
-   my ( $dbh, $info, $query, $explain, $final_opts ) = @_;
-   MKDEBUG && _d("do_checksum for", $info->{table});
-   if ( $final_opts->{explain} ) {
-      printf($explain, @{$info}{qw(database table)}, $query)
+   my ( %args ) = @_;
+   foreach my $arg ( qw(dbh query tbl explain final_o) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh     = $args{dbh};
+   my $final_o = $args{final_o};
+   my $tbl     = $args{tbl};
+   my $query   = $args{query};
+   my $explain = $args{explain};
+
+   MKDEBUG && _d("do_checksum for", $tbl->{table});
+
+   if ( $final_o->get('explain') ) {
+      printf($explain, @{$tbl}{qw(database table)}, $query)
          or die "Cannot print: $OS_ERROR";
    }
    else {
@@ -4327,27 +4880,42 @@ sub do_checksum {
          return defined $res->{$key} ? $res->{$key} : 'NULL';
       }
    }
+
+   return;
 }
 
 sub do_count {
-   my ( $dbh, $info, $chunk_num, $explain, $final_opts ) = @_;
-   MKDEBUG && _d("do_count for", $info->{table});
+   my ( $chunk_num, %args ) = @_;
+   foreach my $arg ( qw(q dbh tbl explain final_o) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $final_o = $args{final_o};
+   my $tbl     = $args{tbl};
+   my $explain = $args{explain};
+   my $dbh     = $args{dbh};
+   my $q       = $args{q};
+
+   MKDEBUG && _d("do_count for", $tbl->{table});
+
    my $sql = "SELECT COUNT(*) FROM "
-      . $q->quote(@{$info}{qw(database table)});
-   if ( $final_opts->{W} || $final_opts->{since} ) {
+      . $q->quote(@{$tbl}{qw(database table)});
+   if ( $final_o->get('where') || $final_o->get('since') ) {
       # TODO: this (and the code in inject_chunks) should be abstracted into
       # some SqlBuilder module or something
+      my $where_since = ($final_o->get('where'), $final_o->get('since'));
       $sql .= " WHERE ("
-         . join(" AND ", map { "($_)" } grep { $_ } @{$final_opts}{qw(W since)} )
-         . ")";
+            . join(" AND ", map { "($_)" } grep { $_ } @$where_since )
+            . ")";
    }
-   if ( $final_opts->{explain} ) {
-      printf($explain, @{$info}{qw(database table)}, $sql)
+   if ( $final_o->get('explain') ) {
+      printf($explain, @{$tbl}{qw(database table)}, $sql)
          or die "Cannot print: $OS_ERROR";
    }
    else {
       return $dbh->selectall_arrayref($sql)->[0]->[0];
    }
+
+   return;
 }
 
 sub unique {
@@ -4357,15 +4925,15 @@ sub unique {
 
 # Tries to extract the MySQL error message and print it
 sub print_err {
-   my ( $msg, $database, $table, $host ) = @_;
+   my ( $o, $msg, $db, $tbl, $host ) = @_;
    return if !defined $msg
       # Honor --quiet in the (common?) event of dropped tables or deadlocks
-      or ($opts{q}
+      or ($o->get('quiet')
          && $EVAL_ERROR =~ m/: Table .*? doesn't exist|Deadlock found/);
    $msg =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
    $msg =~ s/\s+/ /g;
-   if ( $database && $table ) {
-      $msg .= " while doing $database.$table";
+   if ( $db && $tbl ) {
+      $msg .= " while doing $db.$tbl";
    }
    if ( $host ) {
       $msg .= " on $host";
@@ -4380,6 +4948,13 @@ sub _d {
         @_;
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
+
+# ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
 
 # ############################################################################
 # Documentation
@@ -4398,7 +4973,7 @@ what L<"--replicate"> does.  It is probably the option you want to use.
 
    mk-table-checksum --replicate=mydb.checksum master-host
    ... time passses, replication catches up ...
-   mk-table-checksum --replicate=mydb.checksum --replcheck 2 master-host
+   mk-table-checksum --replicate=mydb.checksum --replicate-check 2 master-host
 
 Or,
 
@@ -4410,7 +4985,7 @@ Or,
 
 See L<"SPECIFYING HOSTS"> for more on the syntax of the host arguments.
 
-=head1 OVERVIEW
+=head1 DESCRIPTION
 
 mk-table-checksum generates table checksums for MySQL tables, typically
 useful for verifying your slaves are in sync with the master.  The checksums
@@ -4489,7 +5064,7 @@ port number:
    mk-table-checksum --port 4500 master h=slave1,P=3306 slave2 slave3
 
 If you are confused about how mk-table-checksum will connect to your servers,
-give the L<"--explainhosts"> option and it will tell you.
+give the L<"--explain-hosts"> option and it will tell you.
 
 =head1 HOW FAST IS IT?
 
@@ -4565,11 +5140,13 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
+L<"--schema"> is restricted to option groups Connection, Filter, Output, Help.
+
 =over
 
 =item --algorithm
 
-short form: -a; type: string
+type: string
 
 Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR).
 
@@ -4610,7 +5187,7 @@ If a given algorithm won't work for some reason, mk-table-checksum falls back to
 another.  The least common denominator is ACCUM, which works on MySQL 3.23.2 and
 newer.
 
-=item --argtable
+=item --arg-table
 
 type: string
 
@@ -4629,31 +5206,37 @@ following columns:
 In addition to the columns shown, it may contain any of the other columns listed
 here (Note: this list is used by the code, MAGIC_overridable_args):
 
-  a C columns r c f k nouseindex o probability s savesince
-  singlechunk since sincecolumn sleep sleep-coef trim w W
+  algorithm chunk-size columns count crc function lock no-use-index
+  optimize-xor probability separator save-since single-chunk since
+  since-column sleep sleep-coef trim wait where
 
-Each of these columns corresponds to the short form of a command-line option.
+Each of these columns corresponds to the long form of a command-line option.
 Each column should be NULL-able.  The data type does not matter, but it's
 suggested you use a sensible data type to prevent garbage data.
 
-When C<mk-table-checksum> checksums a table, it will look for a matching entry in
-this table.  Any column that has a defined value will override the corresponding
-command-line argument for the table being currently processed.  In this way it
-is possible to specify custom command-line arguments for any table.
+When C<mk-table-checksum> checksums a table, it will look for a matching entry
+in this table.  Any column that has a defined value will override the
+corresponding command-line argument for the table being currently processed.
+In this way it is possible to specify custom command-line arguments for any
+table.
 
 If you add columns to the table that aren't in the above list of allowable
 columns, it's an error.  The exceptions are C<db>, C<tbl>, and C<ts>.  The C<ts>
 column can be used as a timestamp for easy visibility into the last time the
-C<since> column was updated with L<"--savesince">.
+C<since> column was updated with L<"--save-since">.
 
 This table is assumed to be located on the first server given on the
 command-line.
 
-=item --askpass
+=item --ask-pass
+
+group: Connection
 
 Prompt for a password when connecting to MySQL.
 
 =item --checksum
+
+group: Output
 
 Print checksums and table names in the style of md5sum (disables
 L<"--[no]count">).
@@ -4673,22 +5256,22 @@ How often to check for slave lag if L<"--check-slave-lag"> is given.
 type: string
 
 Pause checksumming each chunk until the specified DSN's slave lag is less than
-L<"--maxlag">.
+L<"--max-lag">.
 
-=item --chunksize
+=item --chunk-size
 
-short form: -C; type: string
+type: string
 
 Approximate number of rows or size of data to checksum at a time.  Allowable
-suffixes are k, M, G. Disallows -a CHECKSUM.
+suffixes are k, M, G. Disallows C<--algorithm CHECKSUM>.
 
 If you specify a chunk size, mk-table-checksum will try to find an index that
-will let it split the table into ranges of approximately L<"--chunksize">
+will let it split the table into ranges of approximately L<"--chunk-size">
 rows, based on the table's index statistics.  It will checksum each range
 separately with parameters in the checksum query's WHERE clause.
 
 If mk-table-checksum cannot find a suitable index, it will do the entire
-table in one chunk as though you had not specified L<"--chunksize"> at all.
+table in one chunk as though you had not specified L<"--chunk-size"> at all.
 Each table is handled individually, so some tables may be chunked and others
 not.
 
@@ -4703,13 +5286,11 @@ of rows.
 
 =item --columns
 
-type: array
+type: array; group: Filter
 
 Checksum only this comma-separated list of columns.
 
 =item --[no]count
-
-short form: -r
 
 Count rows in tables.  This is built into ACCUM and BIT_XOR, but requires an
 extra query for CHECKSUM.
@@ -4721,15 +5302,14 @@ want to use one of the other algorithms.
 
 =item --[no]crc
 
-short form: -c; default: yes
+default: yes
 
 Do a CRC (checksum) of tables.
 
 Take the checksum of the rows as well as their count.  This is enabled by
 default.  If you disable it, you'll just get COUNT(*) queries.
 
-
-=item --createreplicate
+=item --create-replicate-table
 
 Create the replicate table given by L<"--replicate"> if it does not exist.
 
@@ -4745,18 +5325,18 @@ use a different engine, you need to create the table yourself.
 
 =item --databases
 
-short form: -d; type: hash
+short form: -d; type: hash; group: Filter
 
 Only checksum this comma-separated list of databases.
 
 =item --defaults-file
 
-short form: -F; type: string
+short form: -F; type: string; group: Connection
 
 Only read mysql options from the given file.  You must give an absolute
 pathname.
 
-=item --emptyrepltbl
+=item --empty-replicate-table
 
 Empty table given by L<"--replicate"> before starting.
 
@@ -4765,17 +5345,21 @@ work.  Ignored if L<"--replicate"> is not specified.  This can be useful to
 remove entries related to tables that no longer exist, or just to clean out the
 results of a previous run.
 
-=item --engine
+=item --engines
 
-short form: -e; type: hash
+short form: -e; type: hash; group: Filter
 
 Do only this comma-separated list of storage engines.
 
 =item --explain
 
-Show, but do not execute, checksum queries (disables L<"--emptyrepltbl">).
+group: Output
 
-=item --explainhosts
+Show, but do not execute, checksum queries (disables L<"--empty-replicate-table">).
+
+=item --explain-hosts
+
+group: Help
 
 Print connection information and exit.
 
@@ -4795,7 +5379,7 @@ the same values on different MySQL versions and hardware.
 
 =item --function
 
-short form: -f; type: string
+type: string
 
 Hash function for checksums (FNV_64, MURMUR_HASH, SHA1, MD5, CRC32, etc).
 
@@ -4813,30 +5397,36 @@ function if you compile and install that as a UDF; the source is also
 distributed with Maatkit, and it is faster and has better distribution
 than FNV_64.
 
-=item --ignorecols
+=item --help
 
-type: array
+group: Help
+
+Show help and exit.
+
+=item --ignore-columns
+
+type: array; group: Filter
 
 Ignore this comma-separated list of columns when calculating the checksum.
 
 This option only affects the checksum when using the ACCUM or BIT_XOR
 L<"--algorithm">.
 
-=item --ignoredb
+=item --ignore-databases
 
-short form: -g; type: Hash
+type: Hash; group: Filter
 
 Ignore this comma-separated list of databases.
 
-=item --ignoreengine
+=item --ignore-engines
 
-short form: -E; type: Hash; default: FEDERATED,MRG_MyISAM
+type: Hash; default: FEDERATED,MRG_MyISAM; group: Filter
 
 Ignore this comma-separated list of storage engines.
 
-=item --ignoretbl
+=item --ignore-tables
 
-short form: -n; type: Hash
+type: Hash; group: Filter
 
 Ignore this comma-separated list of tables.
 
@@ -4844,9 +5434,7 @@ Table names may be qualified with the database name.
 
 =item --lock
 
-short form: -k
-
-Lock on master until done on slaves (implies L<"--slavelag">).
+Lock on master until done on slaves (implies L<"--slave-lag">).
 
 This option can help you to get a consistent read on a master and many slaves.
 If you specify this option, mk-table-checksum will lock the table on the
@@ -4860,7 +5448,7 @@ Note: if you're checksumming a slave against its master, you should use
 L<"--replicate">.  In that case, there's no need for locking, waiting, or any of
 that.
 
-=item --maxlag
+=item --max-lag
 
 type: time; default: 1s
 
@@ -4879,7 +5467,7 @@ should eliminate the need for L<"--sleep"> or L<"--sleep-coef">.
 
 =item --modulo
 
-short form: -M; type: int
+type: int
 
 Do only every Nth chunk on chunked tables.
 
@@ -4891,17 +5479,17 @@ and then use L<"--offset"> to rotate the modulo every day of the week.
 Just like with L<"--probability">, a table that cannot be chunked is done every
 time.
 
-=item --nouseindex
+=item --no-use-index
 
 Do not add USE INDEX hint to SQL statements.
 
-By default C<mk-table-checksum> adds an USE INDEX hint to each SQL statement
+By default C<mk-table-checksum> adds a C<USE INDEX> hint to each SQL statement
 to coerce MySQL into using the index for the column by which a table will be
-chunked. This option causes C<mk-table-checksum> to omit the USE INDEX hint.
+chunked.  This option causes C<mk-table-checksum> to omit C<USE INDEX> hints.
 
 =item --offset
 
-short form: -O; type: string; default: 0
+type: string; default: 0
 
 Modulo offset expression for use with L<"--modulo">.
 
@@ -4910,9 +5498,9 @@ a number from 0 through 6).  The argument is evaluated by MySQL.  The result is
 used as follows: if chunk_num % L<"--modulo"> == L<"--offset">, the chunk will
 be checksummed.
 
-=item --[no]optxor
+=item --[no]optimize-xor
 
-short form: -o; default: yes
+default: yes
 
 Optimize BIT_XOR with user variables.
 
@@ -4944,13 +5532,13 @@ columns, such as BLOB or TEXT columns, this might make a big difference.
 
 =item --password
 
-short form: -p; type: string
+short form: -p; type: string; group: Connection
 
 Password to use when connecting.
 
 =item --port
 
-short form: -P; type: int
+short form: -P; type: int; group: Connection
 
 Port number to use for connection.
 
@@ -4966,21 +5554,21 @@ of some tables will be skipped.  This is useful for routine jobs designed to
 randomly sample bits of tables without checksumming the whole server.  By
 default, if a table is not chunkable, it will be checksummed every time even
 when the probability is less than 100.  You can override this with
-L<"--singlechunk">.
+L<"--single-chunk">.
 
 See also L<"--modulo">.
 
 =item --quiet
 
-short form: -q
+short form: -q; group: Output
 
 Do not print checksum results.
 
 =item --recheck
 
-Re-checksum chunks that L<"--replcheck"> found to be different.
+Re-checksum chunks that L<"--replicate-check"> found to be different.
 
-=item --replcheck
+=item --replicate-check
 
 type: int
 
@@ -5017,9 +5605,9 @@ exit status is 1; otherwise it is 0.
 
 =item --replicate
 
-short form: -R; type: string
+type: string
 
-Replicate checksums to slaves (disallows -a CHECKSUM).
+Replicate checksums to slaves (disallows --algorithm CHECKSUM).
 
 This option enables a completely different checksum strategy for a consistent,
 lock-free checksum across a master and its slaves.  This works only with
@@ -5034,7 +5622,7 @@ The argument to the option is the table (fully qualified: db.table) in which the
 checksums should be stored. The table must have at least these columns: db, tbl,
 chunk, boundaries, this_crc, master_crc, this_cnt, master_cnt.  The table may be
 named anything you wish.  Here is a suggested table structure, which is
-automatically use for L<"--createreplicate"> (MAGIC_createreplicate):
+automatically use for L<"--create-replicate-table"> (MAGIC_create_replicate):
 
   CREATE TABLE checksum (
      db         char(64)     NOT NULL,
@@ -5065,12 +5653,12 @@ them more efficiently.  See L<mk-table-sync> for details.
 
 This option eliminates the need to do complicated locking and unlocking, waiting
 for master binlog positions, and so on.  It disables L<"--lock">, L<"--wait">,
-and L<"--slavelag">.
+and L<"--slave-lag">.
 
 The checksum queries actually do a REPLACE into this table, so existing rows
 need not be removed before running.  However, you may wish to do this anyway to
-remove rows related to tables that don't exist anymore.  The L<"--emptyrepltbl">
-option does this for you.
+remove rows related to tables that don't exist anymore.  The
+L<"--empty-replicate-table"> option does this for you.
 
 Since mk-table-checksum uses USE to select the table's database as its
 default database before executing the checksum query, the checksum queries
@@ -5096,13 +5684,13 @@ type: string
 Resume checksum using given output file from a previously interrupted run.
 
 The given output file should be the literal output from a previous run of
-C<mk-table-checksum>. For example:
+C<mk-table-checksum>.  For example:
 
    mk-table-checksum host1 host2 -C 100 > checksum_results.txt
    mk-table-checksum host1 host2 -C 100 --resume checksum_results.txt
 
 The command line options given to the first run and the resumed run must
-be identical (except, of course, for --resume). If they are not, the result
+be identical (except, of course, for --resume).  If they are not, the result
 will be unpredictible and probably wrong.
 
 L<"--resume"> does not work with L<"--replicate">; for that, use
@@ -5113,18 +5701,18 @@ L<"--resume-replicate">.
 Resume L<"--replicate">.
 
 This option resumes a previous checksum operation using L<"--replicate">.
-It is like L<"--resume"> but does not require an output file. Instead,
+It is like L<"--resume"> but does not require an output file.  Instead,
 it uses the checksum table given to L<"--replicate"> to determine where to
 resume the checksum operation.
 
-=item --savesince
+=item --save-since
 
-When L<"--argtable"> and L<"--since"> are given, save the current L<"--since">
+When L<"--arg-table"> and L<"--since"> are given, save the current L<"--since">
 value into that table's C<since> column after checksumming.  In this way you can
 incrementally checksum tables by starting where the last one finished.
 
 The value to be saved could be the current timestamp, or it could be the maximum
-existing value of the column given by L<"--sincecolumn">.  It depends on what
+existing value of the column given by L<"--since-column">.  It depends on what
 options are in effect.  See the description of L<"--since"> to see how
 timestamps are different from ordinary values.
 
@@ -5132,21 +5720,18 @@ timestamps are different from ordinary values.
 
 Checksum C<SHOW CREATE TABLE> intead of table data.
 
-This option disables most other options since it does not require access to
-table data. Only the following options are allowed with --schema: L<"--askpass">, L<"--checksum">, L<"--databases">, L<"--defaults-file">, L<"--engine">, L<"--explain">, L<"--explainhosts">, L<"--ignoredb">, L<"--ignoreengine">, L<"--ignoretbl">, L<"--password">, L<"--port">, L<"--quiet">, L<"--setvars">, L<"--socket">, L<"--tab">, L<"--tables">, L<"--user">.
-
 =item --separator
 
-short form: -s; type: string; default: #
+type: string; default: #
 
 The separator character used for CONCAT_WS().
 
 This character is used to join the values of columns when checksumming with
 L<"--algorithm"> of BIT_XOR or ACCUM.
 
-=item --setvars
+=item --set-vars
 
-type: string; default: wait_timeout=10000
+type: string; default: wait_timeout=10000; group: Connection
 
 Set these MySQL variables.
 
@@ -5164,7 +5749,7 @@ column of the chunked or nibbled index.
 
 This is not too different to L<"--where">, but instead of universally applying a
 WHERE clause to every table, it selectively finds the right column to use and
-applies it only if such a column is found.  See also L<"--sincecolumn">.
+applies it only if such a column is found.  See also L<"--since-column">.
 
 The argument may be an expression, which is evaluated by MySQL.  For example,
 you can specify C<CURRENT_DATE - INTERVAL 7 DAY> to get the date of one week
@@ -5176,7 +5761,7 @@ modified time, for tables that report the last modified time, such as MyISAM
 tables) is newer than the value.  In this sense it's not applied as a WHERE
 clause at all.
 
-=item --sincecolumn
+=item --since-column
 
 type: string
 
@@ -5187,7 +5772,7 @@ specify a value, that will be used if possible; otherwise the best
 auto-determined one; otherwise none.  If the column doesn't exist in the table,
 it is just ignored.
 
-=item --singlechunk
+=item --single-chunk
 
 Permit skipping with L<"--probability"> if there is only one chunk.
 
@@ -5195,9 +5780,7 @@ Normally, if a table isn't split into many chunks, it will always be
 checksummed regardless of L<"--probability">.  This setting lets the
 probabilistic behavior apply to tables that aren't divided into chunks.
 
-=item --slavelag
-
-short form: -l
+=item --slave-lag
 
 Report how far slaves lag master.
 
@@ -5218,7 +5801,7 @@ Sleep time between checksums.
 
 If this option is specified, mk-table-checksum will sleep the specified
 number of seconds between checksums.  That is, it will sleep between every
-table, and if you specify L<"--chunksize">, it will also sleep between chunks.
+table, and if you specify L<"--chunk-size">, it will also sleep between chunks.
 
 This is a very crude way to throttle checksumming; see L<"--sleep-coef"> and
 L<"--check-slave-lag">.
@@ -5240,19 +5823,19 @@ master/slave replication.
 
 =item --socket
 
-short form: -S; type: string
+short form: -S; type: string; group: Connection
 
 Socket file to use for connection.
 
 =item --tab
 
-short form: -b
+group: Output
 
 Print tab-separated output, not column-aligned output.
 
 =item --tables
 
-short form: -t; type: hash
+short form: -t; type: hash; group: Filter
 
 Do only this comma-separated list of tables.
 
@@ -5272,13 +5855,13 @@ remove them.
 
 =item --user
 
-short form: -u; type: string
+short form: -u; type: string; group: Connection
 
 User for login if not current user.
 
 =item --[no]verify
 
-short form: -v; default: yes
+default: yes
 
 Verify checksum compatibility across servers.
 
@@ -5292,12 +5875,18 @@ in your table.  If you know you don't (for instance, all columns are
 integers), you can safely disable this check and you will get a reliable
 checksum even on servers with different behavior.
 
+=item --version
+
+group: Help
+
+Show version and exit.
+
 =item --wait
 
 short form: -w; type: time
 
 Wait this long for slaves to catch up to their master (implies L<"--lock">
-L<"--slavelag">).
+L<"--slave-lag">).
 
 Note: the best way to verify that a slave is in sync with its master is to use
 L<"--replicate"> instead.  The L<"--wait"> option is really only useful if
@@ -5319,9 +5908,9 @@ MASTER_POS_WAIT().
 
 =item --where
 
-short form: -W; type: string
+type: string
 
-Do only rows matching this C<WHERE> clause (disallows L<"--algorithm"> CHECKSUM).
+Do only rows matching this C<WHERE> clause (disallows --algorithm CHECKSUM).
 
 You can use this option to limit the checksum to only part of the table.  This
 is particularly useful if you have append-only tables and don't want to
@@ -5352,8 +5941,8 @@ master.  Try the following:
   WHERE master_cnt <> this_cnt OR master_crc <> this_crc
      OR ISNULL(master_crc) <> ISNULL(this_crc);
 
-The L<"--replcheck"> option can do this query for you.  If you can't use this
-method, try the following:
+The L<"--replicate-check"> option can do this query for you.  If you can't use
+this method, try the following:
 
 =over
 
@@ -5377,7 +5966,7 @@ data that's not recent.
 If you are checksumming a master and slaves, you can do a fast parallel
 checksum and assume the slaves are caught up to the master.  In practice, this
 tends to work well except for tables which are constantly updated.  You can
-use the L<"--slavelag"> option to see how far behind each slave was when it
+use the L<"--slave-lag"> option to see how far behind each slave was when it
 checksummed a given table.  This can help you decide whether to investigate
 further.
 
@@ -5433,7 +6022,7 @@ differences.
 The columns in the output are as follows.  The database, table, and chunk come
 first so you can sort by them easily (they are the "primary key").
 
-Output from L<"--replcheck"> and L<"--checksum"> are different.
+Output from L<"--replicate-check"> and L<"--checksum"> are different.
 
 =over
 
@@ -5447,7 +6036,7 @@ The table name.
 
 =item CHUNK
 
-The chunk (see L<"--chunksize">).  Zero if you are not doing chunked checksums.
+The chunk (see L<"--chunk-size">).  Zero if you are not doing chunked checksums.
 
 =item HOST
 
@@ -5489,8 +6078,8 @@ How far the slave lags the master, as reported by SHOW SLAVE STATUS.
 A successful exit status is 0.  If there is an error checksumming any table,
 the exit status is 1.
 
-When running L<"--replcheck">, if any slave has chunks that differ from the
-master, the exit status is 1.
+When running L<"--replicate-check">, if any slave has chunks that differ from
+the master, the exit status is 1.
 
 =head1 QUERIES
 
