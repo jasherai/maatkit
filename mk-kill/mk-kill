@@ -1286,7 +1286,6 @@ sub _d {
 # Transformers package 3407
 # ###########################################################################
 
-# Transformers - Common transformation and beautification subroutines
 package Transformers;
 
 use strict;
@@ -1320,12 +1319,8 @@ sub micro_t {
 
    $t = 0 if $t < 0;
 
-   # "Remove" scientific notation so the regex below does not make
-   # 6.123456e+18 into 6.123456.
    $t = sprintf('%.17f', $t) if $t =~ /e/;
 
-   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
-   # because sprintf() rounds.
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
@@ -1346,7 +1341,6 @@ sub micro_t {
    return $f;
 }
 
-# Returns what percentage $is of $of.
 sub percentage_of {
    my ( $is, $of, %args ) = @_;
    my $p   = $args{p} || 0; # float precision
@@ -1359,7 +1353,6 @@ sub secs_to_time {
    $secs ||= 0;
    return '00:00' unless $secs;
 
-   # Decide what format to use, if not given
    $fmt ||= $secs >= 86_400 ? 'd'
           : $secs >= 3_600  ? 'h'
           :                   'm';
@@ -1409,8 +1402,6 @@ sub ts {
       $year, $mon, $mday, $hour, $min, $sec);
 }
 
-# Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.  Also
-# handles a timestamp with fractions after it.
 sub parse_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s, $f)
@@ -1423,8 +1414,6 @@ sub parse_timestamp {
    return $val;
 }
 
-# Turns a properly formatted timestamp like 2007-10-15 01:43:52
-# into an int (seconds since epoch)
 sub unix_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
@@ -1435,7 +1424,6 @@ sub unix_timestamp {
    return $val;
 }
 
-# Returns the rightmost 64 bits of an MD5 checksum of the value.
 sub make_checksum {
    my ( $val ) = @_;
    my $checksum = uc substr(md5_hex($val), -16);
@@ -1458,6 +1446,235 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Processlist package 3571
+# ###########################################################################
+package Processlist;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+use constant {
+   ID      => 0,
+   USER    => 1,
+   HOST    => 2,
+   DB      => 3,
+   COMMAND => 4,
+   TIME    => 5,
+   STATE   => 6,
+   INFO    => 7,
+   START   => 8, # Calculated start time of statement
+   ETIME   => 9, # Exec time of SHOW PROCESSLIST (margin of error in START)
+   FSEEN   => 10, # First time ever seen
+};
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub parse_event {
+   my ( $self, $code, $misc, @callbacks ) = @_;
+   my $num_events = 0;
+
+   my @curr = sort { $a->[ID] <=> $b->[ID] } @{$code->()};
+   my @prev = @{$misc->{prev} ||= []};
+   my @new; # Will become next invocation's @prev
+   my ($curr, $prev); # Rows from each source
+
+   do {
+      if ( !$curr && @curr ) {
+         MKDEBUG && _d('Fetching row from curr');
+         $curr = shift @curr;
+      }
+      if ( !$prev && @prev ) {
+         MKDEBUG && _d('Fetching row from prev');
+         $prev = shift @prev;
+      }
+      if ( $curr || $prev ) {
+         if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
+            MKDEBUG && _d('$curr and $prev are the same cxn');
+            my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
+            my $is_new = 0;
+            if ( $prev->[INFO] ) {
+               if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
+                  MKDEBUG && _d('$curr has a new query');
+                  $is_new = 1;
+               }
+               elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
+                  MKDEBUG && _d('$curr time is less than $prev time');
+                  $is_new = 1;
+               }
+               elsif ( $curr->[INFO] && defined $curr->[TIME]
+                  && $misc->{time} - $curr->[TIME] - $prev->[START]
+                     - $prev->[ETIME] - $misc->{etime} > $fudge
+               ) {
+                  MKDEBUG && _d('$curr has same query that restarted');
+                  $is_new = 1;
+               }
+               if ( $is_new ) {
+                  fire_event( $prev, $misc->{time}, @callbacks );
+               }
+            }
+            if ( $curr->[INFO] ) {
+               if ( $prev->[INFO] && !$is_new ) {
+                  MKDEBUG && _d('Pushing old history item back onto $prev');
+                  push @new, [ @$prev ];
+               }
+               else {
+                  MKDEBUG && _d('Pushing new history item onto $prev');
+                  push @new,
+                     [ @$curr, int($misc->{time} - $curr->[TIME]),
+                        $misc->{etime}, $misc->{time} ];
+               }
+            }
+            $curr = $prev = undef; # Fetch another from each.
+         }
+         elsif ( !$curr
+               || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
+            MKDEBUG && _d('$curr is not in $prev');
+            fire_event( $prev, $misc->{time}, @callbacks );
+            $prev = undef;
+         }
+         else { # This else must be entered, to prevent infinite loops.
+            MKDEBUG && _d('$prev is not in $curr');
+            if ( $curr->[INFO] && defined $curr->[TIME] ) {
+               MKDEBUG && _d('Pushing new history item onto $prev');
+               push @new,
+                  [ @$curr, int($misc->{time} - $curr->[TIME]),
+                     $misc->{etime}, $misc->{time} ];
+            }
+            $curr = undef; # No infinite loops.
+         }
+      }
+   } while ( @curr || @prev || $curr || $prev );
+
+   @{$misc->{prev}} = @new;
+
+   return $num_events;
+}
+
+sub fire_event {
+   my ( $row, $time, @callbacks ) = @_;
+   my $Query_time = $row->[TIME];
+   if ( $row->[TIME] < $time - $row->[FSEEN] ) {
+      $Query_time = $time - $row->[FSEEN];
+   }
+   my $event = {
+      id         => $row->[ID],
+      db         => $row->[DB],
+      user       => $row->[USER],
+      host       => $row->[HOST],
+      arg        => $row->[INFO],
+      bytes      => length($row->[INFO]),
+      ts         => $row->[START] + $row->[TIME], # Query END time
+      Query_time => $Query_time,
+      Lock_time  => 0,               # TODO
+   };
+   foreach my $callback ( @callbacks ) {
+      last unless $event = $callback->($event);
+   }
+}
+
+sub find {
+   my ( $self, $proclist, %find_spec ) = @_;
+   my @matches;
+   QUERY:
+   foreach my $query ( @$proclist ) {
+      my $matched = 0;
+      if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
+         if ( $query->{Time} < $find_spec{busy_time} ) {
+            MKDEBUG && _d("Query isn't running long enough");
+            next QUERY;
+         }
+         $matched++;
+      }
+      PROPERTY:
+      foreach my $property ( qw(Id User Host db State Command Info) ) {
+         my $filter = "_find_match_$property";
+         if ( defined $find_spec{ignore}->{$property}
+            && $self->$filter($query, $find_spec{ignore}->{$property})
+         ) {
+            MKDEBUG && _d("Query matches 'ignore' filter on $property, skipping");
+            next QUERY;
+         }
+         if ( defined $find_spec{match}->{$property} ) {
+            if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
+               MKDEBUG && _d("Query doesn't match 'match' filter on $property, skipping");
+               next QUERY;
+            }
+            $matched++;
+         }
+      }
+      if ( $matched ) {
+         MKDEBUG && _d("Query passed all defined filters, adding");
+         push @matches, $query;
+      }
+   }
+   if ( @matches && $find_spec{only_oldest} ) {
+      my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
+      @matches = $oldest;
+   }
+   return @matches;
+}
+
+sub _find_match_Id {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Id} && $query->{Id} == $property;
+}
+
+sub _find_match_User {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{User}
+      && $query->{User} =~ m/$property/;
+}
+
+sub _find_match_Host {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Host}
+      && $query->{Host} =~ m/$property/;
+}
+
+sub _find_match_db {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{db}
+      && $query->{db} =~ m/$property/;
+}
+
+sub _find_match_State {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{State}
+      && $query->{State} =~ m/$property/;
+}
+
+sub _find_match_Command {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Command}
+      && $query->{Command} =~ m/$property/;
+}
+
+sub _find_match_Info {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Info}
+      && $query->{Info} =~ m/$property/;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Processlist package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -1468,6 +1685,8 @@ sub _d {
 package mk_kill;
 
 use English qw(-no_match_vars);
+Transformers->import qw(ts);
+use List::Util qw(max);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1497,13 +1716,13 @@ sub main {
 
    $o->get_specs();
    $o->get_opts();
-   $o->set('interval', $o->get('busy-time') / 2) unless $o->got('interval');
+   $o->set('interval', max(1, $o->get('busy-time') / 2)) unless $o->got('interval');
    $o->usage_or_errors();
 
    # ########################################################################
    # Start working.
    # ########################################################################
-   my $dbh      = get_cxn($o->opt_values(), 1);
+   my $dbh      = get_cxn({$o->opt_values()}, 1);
    my $proc_sth = $dbh->prepare('SHOW FULL PROCESSLIST');
    my $kill_sth = $dbh->prepare('KILL ?');
    my $start    = time();
@@ -1525,21 +1744,23 @@ sub main {
    my %find_spec = (
       only_oldest  => $o->get('only-oldest'),
       busy_time    => $o->get('busy-time'),
-      idle_time    => $o->get('idle-time'),
+      # TODO idle_time    => $o->get('idle-time'),
       ignore => {
          Id       => $o->get('ignore-self') ? $dbh->{mysql_thread_id} : undef,
-         User     => $o->get('ignore-users'),
+         User     => $o->get('ignore-user'),
          # TODO Host     => $o->get('ignore-hosts'),
          # TODO db       => $o->get('ignore-databases'),
-         State    => $o->get('ignore-states'),
+         Command  => $o->get('ignore-command'),
+         State    => $o->get('ignore-state'),
          # TODO Info     => $o->get('ignore-text'),
       },
       match => {
          # TODO User     => $o->get('match-users'),
          # TODO Host     => $o->get('match-hosts'),
          # TODO db       => $o->get('match-databases'),
-         State    => $o->get('match-states'),
-         Info     => $o->get('match-text'),
+         Command  => $o->get('match-command'),
+         # TODO State    => $o->get('match-states'),
+         Info     => $o->get('match-info'),
       },
    );
 
@@ -1550,20 +1771,24 @@ sub main {
    ) {
       $proc_sth->execute();
       my $proclist = $proc_sth->fetchall_arrayref({});
-      my @queries  = $pl->find_queries($proclist, %find_spec);
+      my @queries  = $pl->find($proclist, %find_spec);
       foreach my $query ( @queries ) {
          if ( $o->get('print') ) {
             printf "# %s KILL %d (%s %d sec) %s\n",
-               ts(), $query->{Id}, ($query->{Command} || 'NULL'),
+               ts(time), $query->{Id}, ($query->{Command} || 'NULL'),
                $query->{Time}, ($query->{Info} || 'NULL');
          }
-         $kill_sth->execute($query->{Id});
+         $kill_sth->execute($query->{Id}) if $o->get('kill');
       }
-      if ( @queries && $o->get('wait-after-kill') ) {
-         MKDEBUG && _d("Sleeping after killing queries");
-         sleep $o->get('wait-after-kill');
-      };
-      sleep $o->get('interval');
+
+      # Don't sleep if we're going to exit after waking up.
+      if ( $iters < $o->get('iterations') ) {
+         if ( @queries && $o->get('wait-after-kill') ) {
+            MKDEBUG && _d("Sleeping after killing queries");
+            sleep $o->get('wait-after-kill');
+         };
+         sleep $o->get('interval');
+      }
    }
 
    return 0;
@@ -1677,12 +1902,39 @@ short form: -h; type: string
 
 Connect to MySQL host.
 
-=item idle-time
+=item --idle-time
 
 type: time
 
 Kill connections that have been idle for longer than this time.  The connections
 must be in Command=Sleep status.
+
+=item --[no]ignore-self
+
+default: yes
+
+Don't kill mk-kill's own connection.
+
+=item --ignore-command
+
+type: string; default: Binlog.Dump
+
+Ignore queries whose Command matches this Perl regex.  The default is to keep the
+slave threads from being killed on the master.
+
+=item --ignore-state
+
+type: string; default: Locked
+
+Ignore queries whose State matches this Perl regex.  The default is to keep
+threads from being killed if they are locked waiting for another thread.
+
+=item --ignore-user
+
+type: string; default: system.user
+
+Ignore queries whose user matches this Perl regex.  The default is to keep the
+replication threads from being killed on the slave.
 
 =item --interval
 
@@ -1698,11 +1950,34 @@ type: int; default: 1
 How many times to iterate through the find-and-kill cycle.  If 0, iterate
 to infinity.  See also L<--run-time>.
 
+=item --[no]kill
+
+default: yes
+
+Actually kill queries.  The alternative is to just print them out.
+
 =item --log
 
 type: string
 
 Print all output to this file when daemonized.
+
+=item --match-command
+
+type: string
+
+Kill only queries whose Command matches this Perl regex.
+
+=item --match-info
+
+Kill only queries whose Info (query) matches this Perl regex.
+
+=item --[no]only-oldest
+
+default: yes
+
+Only kill the single oldest query.  This is to prevent killing queries that
+aren't really long-running, they're just long-waiting.
 
 =item --password
 
@@ -1760,6 +2035,14 @@ User for login if not current user.
 =item --version
 
 Show version and exit.
+
+=item --wait-after-kill
+
+type: time
+
+Wait after killing a query, before looking for more to kill.  The purpose of
+this is to give blocked queries a chance to execute, so we don't kill a query
+that's blocking a bunch of others, and then just afterwards kill the others too.
 
 =back
 
