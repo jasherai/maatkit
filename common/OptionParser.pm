@@ -37,24 +37,26 @@ sub new {
    }
    my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
    $program_name ||= $PROGRAM_NAME;
+
    my $self = {
-      description  => $args{description},
-      prompt       => $args{prompt} || '<options>',
-      strict       => (exists $args{strict} ? $args{strict} : 1),
-      dp           => $args{dp}     || undef,
-      program_name => $program_name,
-      opts         => {},
-      got_opts     => 0,
-      short_opts   => {},
-      defaults     => {},
-      groups       => [ { name => 'default', desc => 'Options' } ],
-      errors       => [],
-      rules        => [],  # desc of rules for --help
-      mutex        => [],  # rule: opts are mutually exclusive
-      atleast1     => [],  # rule: at least one opt is required
-      disables     => {},  # rule: opt disables other opts 
-      defaults_to  => {},  # rule: opt defaults to value of other opt
-      default_files=> [
+      description    => $args{description},
+      prompt         => $args{prompt} || '<options>',
+      strict         => (exists $args{strict} ? $args{strict} : 1),
+      dp             => $args{dp}     || undef,
+      program_name   => $program_name,
+      opts           => {},
+      got_opts       => 0,
+      short_opts     => {},
+      defaults       => {},
+      groups         => {},
+      allowed_groups => {},
+      errors         => [],
+      rules          => [],  # desc of rules for --help
+      mutex          => [],  # rule: opts are mutually exclusive
+      atleast1       => [],  # rule: at least one opt is required
+      disables       => {},  # rule: opt disables other opts 
+      defaults_to    => {},  # rule: opt defaults to value of other opt
+      default_files  => [
          "/etc/maatkit/maatkit.conf",
          "/etc/maatkit/$program_name.conf",
          "$ENV{HOME}/.maatkit.conf",
@@ -88,7 +90,7 @@ sub get_defaults_files {
 #    {
 #       spec  => GetOpt::Long specification,
 #       desc  => short description for --help
-#       group => option group (if specified)
+#       group => option group (default: 'default')
 #    }
 sub _pod_to_specs {
    my ( $self, $file ) = @_;
@@ -171,13 +173,14 @@ sub _pod_to_specs {
          }
 
          push @specs, {
-            spec => $option
+            spec  => $option
                . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
                . ($attribs{'negatable'}  ? '!'                          : '' )
                . ($attribs{'cumulative'} ? '+'                          : '' )
                . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
-            desc => $para
+            desc  => $para
                . ($attribs{default} ? " (default $attribs{default})" : ''),
+            group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
       while ( $para = <$fh> ) {
@@ -250,7 +253,9 @@ sub _parse_specs {
          $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
          $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
 
-         $opt->{group} = 'default'; # TODO: groups
+         $opt->{group} ||= 'default';
+         $self->{groups}->{ $opt->{group} }->{$long} = 1;
+
          $opt->{value} = undef;
          $opt->{got}   = 0;
 
@@ -313,8 +318,16 @@ sub _parse_specs {
             $self->{defaults_to}->{$participants[0]} = $participants[1];
             MKDEBUG && _d($participants[0], 'defaults to', $participants[1]);
          }
-         # TODO: 'allowed with' is only used in mk-table-checksum.
-         # Groups need to be used instead.
+         if ( $opt =~ m/restricted to option groups/ ) {
+            $rule_ok = 1;
+            my ($groups) = $opt =~ m/groups ([\w\s\,]+)/;
+            my @groups = split(',', $groups);
+            %{$self->{allowed_groups}->{$participants[0]}} = map {
+               s/\s+//;
+               $_ => 1;
+            } @groups;
+         }
+
          die "Unrecognized option rule: $opt" unless $rule_ok;
       }
    }
@@ -388,6 +401,11 @@ sub set_defaults {
 sub get_defaults {
    my ( $self ) = @_;
    return $self->{defaults};
+}
+
+sub get_groups {
+   my ( $self ) = @_;
+   return $self->{groups};
 }
 
 # Getopt::Long calls this sub for each opt it finds on the
@@ -507,14 +525,52 @@ sub get_opts {
             MKDEBUG && _d('Unset options', @disable_opts,
                'because', $long,'disables them');
          }
+
+         # Group restrictions.
+         if ( exists $self->{allowed_groups}->{$long} ) {
+            # This option is only allowed with other options from
+            # certain groups.  Check that no options from restricted
+            # groups were gotten.
+
+            my @restricted_groups = grep {
+               !exists $self->{allowed_groups}->{$long}->{$_}
+            } keys %{$self->{groups}};
+
+            my @restricted_opts;
+            foreach my $restricted_group ( @restricted_groups ) {
+               RESTRICTED_OPT:
+               foreach my $restricted_opt (
+                  keys %{$self->{groups}->{$restricted_group}} )
+               {
+                  next RESTRICTED_OPT if $restricted_opt eq $long;
+                  push @restricted_opts, $restricted_opt
+                     if $self->{opts}->{$restricted_opt}->{got};
+               }
+            }
+
+            if ( @restricted_opts ) {
+               my $err;
+               if ( @restricted_opts == 1 ) {
+                  $err = "--$restricted_opts[0]";
+               }
+               else {
+                  $err = join(', ',
+                            map { "--$self->{opts}->{$_}->{long}" }
+                            grep { $_ } 
+                            @restricted_opts[0..scalar(@restricted_opts) - 2]
+                         )
+                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+               }
+               $self->_save_error("--$long is not allowed with $err");
+            }
+         }
+
       }
       elsif ( $opt->{is_required} ) { 
          $self->_save_error("Required option --$long must be specified");
       }
 
       $self->_validate_type($opt);
-
-      # TODO: Check groups.
    }
 
    $self->{got_opts} = 1;
@@ -718,11 +774,16 @@ sub print_usage {
 
    # Format and return the options.
    my $usage = $self->descr() . "\n" . $self->prompt();
-   foreach my $group ( @{$self->{groups}} ) {
-      $usage .= "\n$group->{desc}:\n";
+
+   # Sort groups alphabetically but make 'default' first.
+   my @groups = reverse sort grep { $_ ne 'default'; } keys %{$self->{groups}};
+   push @groups, 'default';
+
+   foreach my $group ( reverse @groups ) {
+      $usage .= "\n".($group eq 'default' ? 'Options' : "  $group").":\n";
       foreach my $opt (
          sort { $a->{long} cmp $b->{long} }
-         grep { $_->{group} eq $group->{name} }
+         grep { $_->{group} eq $group }
          @opts )
       {
          my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
@@ -749,6 +810,7 @@ sub print_usage {
    }
 
    if ( (my @rules = @{$self->{rules}}) ) {
+      $usage .= "\nRules:\n";
       $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
    if ( $self->{dp} ) {

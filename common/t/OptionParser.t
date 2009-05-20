@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 131;
+use Test::More tests => 132;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -42,18 +42,18 @@ ok(!$o->has('time'), 'There is no --time yet');
 is_deeply(
    \@opt_specs,
    [
-      { spec => 'database|D=s', desc => 'database string'             },
-      { spec => 'port|p=i',     desc => 'port (default 3306)'         },
-      { spec => 'price=f',      desc => 'price float (default 1.23)'  },
-      { spec => 'hash-req=H',   desc => 'hash that requires a value'  },
-      { spec => 'hash-opt=h',   desc => 'hash with an optional value' },
-      { spec => 'array-req=A',  desc => 'array that requires a value' },
-      { spec => 'array-opt=a',  desc => 'array with an optional value'},
-      { spec => 'host=d',       desc => 'host DSN'                    },
-      { spec => 'chunk-size=z', desc => 'chunk size'                  },
-      { spec => 'time=m',       desc => 'time'                        },
-      { spec => 'help+',        desc => 'help cumulative'             },
-      { spec => 'other!',       desc => 'other negatable'             },
+   { spec=>'database|D=s', group=>'default', desc=>'database string',         },
+   { spec=>'port|p=i',     group=>'default', desc=>'port (default 3306)',     },
+   { spec=>'price=f',    group=>'default', desc=>'price float (default 1.23)' },
+   { spec=>'hash-req=H', group=>'default', desc=>'hash that requires a value' },
+   { spec=>'hash-opt=h', group=>'default', desc=>'hash with an optional value'},
+   { spec=>'array-req=A',group=>'default', desc=>'array that requires a value'},
+   { spec=>'array-opt=a',group=>'default',desc=>'array with an optional value'},
+   { spec=>'host=d',       group=>'default', desc=>'host DSN'           },
+   { spec=>'chunk-size=z', group=>'default', desc=>'chunk size'         },
+   { spec=>'time=m',       group=>'default', desc=>'time'               },
+   { spec=>'help+',        group=>'default', desc=>'help cumulative'    },
+   { spec=>'other!',       group=>'default', desc=>'other negatable'    },
    ],
    'Convert POD OPTIONS to opt specs (pod_sample_01.txt)',
 );
@@ -778,6 +778,8 @@ Usage: OptionParser.t <options>
 Options:
   --ignore  -i  Use IGNORE for INSERT statements
   --replace -r  Use REPLACE instead of INSERT statements
+
+Rules:
   --ignore and --replace are mutually exclusive.
 
 Options and values after processing arguments:
@@ -1218,6 +1220,8 @@ Usage: OptionParser.t <options>
 Options:
   --bar  DSN bar
   --foo  DSN foo
+
+Rules:
   DSN values in --foo default to values in --bar if COPY is yes.
 
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
@@ -1282,6 +1286,8 @@ Usage: OptionParser.t <options>
 Options:
   --bar  DSN bar
   --foo  DSN foo
+
+Rules:
   DSN values in --foo default to values in --bar if COPY is yes.
 
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
@@ -1417,19 +1423,28 @@ EOF
 # Test groups.
 # #############################################################################
 
-# TODO: refine these tests after I think more about how
-# groups will be implemented.
-SKIP: {
-   skip 'TODO: groups', 3;
-
 $o = new OptionParser(
    description  => 'parses command line options.',
 );
-$o->_parse_specs(
-   { spec  => 'help',   desc  => 'Help',                         },
-   { spec  => 'user=s', desc  => 'User',                         },
-   { spec  => 'dog',    desc  => 'dog option', group => 'Dogs',  },
-   { spec  => 'cat',    desc  => 'cat option', group => 'Cats',  },
+$o->get_specs('samples/pod_sample_05.txt');
+
+is_deeply(
+   $o->get_groups(),
+   {
+      'Help'       => {
+         'explain-hosts' => 1,
+         'help'          => 1,
+         'version'       => 1,
+      },
+      'Filter'     => { 'databases'     => 1, },
+      'Output'     => { 'tab'           => 1, },
+      'Connection' => { 'defaults-file' => 1, },
+      'default'    => {
+         'algorithm' => 1,
+         'schema'    => 1,
+      }
+   },
+   'get_groups()'
 );
 
 @ARGV = ();
@@ -1443,41 +1458,54 @@ OptionParser.t parses command line options.  For more details, please use the
 Usage: OptionParser.t <options>
 
 Options:
-  --help          Help
-  --user          user
+  --algorithm         Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)
+  --schema            Checksum SHOW CREATE TABLE intead of table data
 
-Dogs:
-  --dog           dog option
+  Connection:
+  --defaults-file -F  Only read mysql options from the given file
 
-Cats:
-  --cat           cat option
+  Filter:
+  --databases     -d  Only checksum this comma-separated list of databases
+
+  Help:
+  --explain-hosts     Explain hosts
+  --help              Show help and exit
+  --version           Show version and exit
+
+  Output:
+  --tab               Print tab-separated output, not column-aligned output
+
+Rules:
+  --schema is restricted to option groups Connection, Filter, Output, Help.
 
 Options and values after processing arguments:
-  --cat           FALSE
-  --dog           FALSE
-  --help          FALSE
-  --user          FALSE
+  --algorithm         (No value)
+  --databases         (No value)
+  --defaults-file     (No value)
+  --explain-hosts     FALSE
+  --help              FALSE
+  --schema            FALSE
+  --tab               FALSE
+  --version           FALSE
 EOF
 ,
    'Option groupings usage',
 );
 
-@ARGV = qw(--user foo --dog);
+@ARGV = qw(--schema --tab);
 $o->get_opts();
-is(
-   $o->get('user') eq 'foo' && $o->get('dog') == 1,
-   'Grouped option allowed with default group option'
+ok(
+   $o->get('schema') && $o->get('tab'),
+   'Opt allowed with opt from allowed group'
 );
 
-@ARGV = qw(--dog --cat);
-eval { $o->get_opts(); };
-like(
-   $EVAL_ERROR,
-   qr/Option --cat is not allowed with option --dog/,
-   'Options from different non-default groups not allowed together'
+@ARGV = qw(--schema --algorithm ACCUM);
+$o->get_opts();
+is_deeply(
+   $o->errors(),
+   ['--schema is not allowed with --algorithm'],
+   'Opt is not allowed with opt from restricted group'
 );
-
-};
 
 # #############################################################################
 # Test clone().
@@ -1523,8 +1551,8 @@ is(
 is_deeply(
    \@opt_specs,
    [
-      { spec => 'foo',   desc => 'Basic foo'          },
-      { spec => 'bar!',  desc => 'New negatable bar'  },
+      { spec => 'foo',   desc => 'Basic foo',         group => 'default' },
+      { spec => 'bar!',  desc => 'New negatable bar', group => 'default' },
    ],
    'New =item --[no]foo style for negatables'
 );
