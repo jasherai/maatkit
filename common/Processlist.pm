@@ -252,6 +252,87 @@ sub fire_event {
    }
 }
 
+# Accepts a PROCESSLIST and a specification of filters to use against it.
+# Returns queries that match the filters. TODO: document
+sub find {
+   my ( $self, $proclist, %find_spec ) = @_;
+   my @matches;
+   QUERY:
+   foreach my $query ( @$proclist ) {
+      if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
+         if ( $query->{Time} < $find_spec{busy_time} ) {
+            # TODO: This won't work with idle_time
+            MKDEBUG && _d("Query isn't running long enough");
+            next QUERY;
+         }
+      }
+      PROPERTY:
+      foreach my $property ( qw(Id User Host db State Command Info) ) {
+         my $filter = "_find_match_$property";
+         if ( defined $find_spec{ignore}->{$property}
+            && $self->$filter($query, $find_spec{ignore}->{$property})
+         ) {
+            MKDEBUG && _d("Query matches 'ignore' filter on $property, skipping");
+            next QUERY;
+         }
+         if ( defined $find_spec{match}->{$property}
+            && !$self->$filter($query, $find_spec{match}->{$property})
+         ) {
+            MKDEBUG && _d("Query doesn't match 'match' filter on $property, skipping");
+            next QUERY;
+         }
+      }
+      MKDEBUG && _d("Query passed all defined filters, adding");
+      push @matches, $query;
+   }
+   if ( @matches && $find_spec{only_oldest} ) {
+      my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
+      @matches = $oldest;
+   }
+   return @matches;
+}
+
+sub _find_match_Id {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Id} && $query->{Id} == $property;
+}
+
+sub _find_match_User {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{User}
+      && $query->{User} =~ m/$property/;
+}
+
+sub _find_match_Host {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Host}
+      && $query->{Host} =~ m/$property/;
+}
+
+sub _find_match_db {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{db}
+      && $query->{db} =~ m/$property/;
+}
+
+sub _find_match_State {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{State}
+      && $query->{State} =~ m/$property/;
+}
+
+sub _find_match_Command {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Command}
+      && $query->{Command} =~ m/$property/;
+}
+
+sub _find_match_Info {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Info}
+      && $query->{Info} =~ m/$property/;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }

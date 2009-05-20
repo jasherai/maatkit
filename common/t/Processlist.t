@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 16;
+use Test::More tests => 17;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -310,3 +310,124 @@ is_deeply(
    ],
    'query2_2 fired',
 );
+
+# #########################################################################
+# Tests for "find" functionality.
+# #########################################################################
+my %find_spec = (
+   only_oldest  => 1,
+   busy_time    => 60,
+   idle_time    => 0,
+   ignore => {
+      Id       => 5,
+      User     => qr/^system.user$/,
+      State    => qr/Locked/,
+      Command  => qr/Binlog Dump/,
+   },
+   match => {
+      Command  => qr/Query/,
+      Info     => qr/^(?i:select)/,
+   },
+);
+
+my @queries = $pl->find(
+   [  {  'Time'    => '488',
+         'Command' => 'Connect',
+         'db'      => undef,
+         'Id'      => '4',
+         'Info'    => undef,
+         'User'    => 'system user',
+         'State'   => 'Waiting for master to send event',
+         'Host'    => ''
+      },
+      {  'Time'    => '488',
+         'Command' => 'Connect',
+         'db'      => undef,
+         'Id'      => '5',
+         'Info'    => undef,
+         'User'    => 'system user',
+         'State' =>
+            'Has read all relay log; waiting for the slave I/O thread to update it',
+         'Host' => ''
+      },
+      {  'Time'    => '416',
+         'Command' => 'Sleep',
+         'db'      => undef,
+         'Id'      => '7',
+         'Info'    => undef,
+         'User'    => 'msandbox',
+         'State'   => '',
+         'Host'    => 'localhost'
+      },
+      {  'Time'    => '0',
+         'Command' => 'Query',
+         'db'      => undef,
+         'Id'      => '8',
+         'Info'    => 'show full processlist',
+         'User'    => 'msandbox',
+         'State'   => undef,
+         'Host'    => 'localhost:41655'
+      },
+      {  'Time'    => '467',
+         'Command' => 'Binlog Dump',
+         'db'      => undef,
+         'Id'      => '2',
+         'Info'    => undef,
+         'User'    => 'msandbox',
+         'State' =>
+            'Has sent all binlog to slave; waiting for binlog to be updated',
+         'Host' => 'localhost:56246'
+      },
+      {  'Time'    => '91',
+         'Command' => 'Sleep',
+         'db'      => undef,
+         'Id'      => '40',
+         'Info'    => undef,
+         'User'    => 'msandbox',
+         'State'   => '',
+         'Host'    => 'localhost'
+      },
+      {  'Time'    => '91',
+         'Command' => 'Query',
+         'db'      => undef,
+         'Id'      => '41',
+         'Info'    => 'optimize table foo',
+         'User'    => 'msandbox',
+         'State'   => 'Query',
+         'Host'    => 'localhost'
+      },
+      {  'Time'    => '91',
+         'Command' => 'Query',
+         'db'      => undef,
+         'Id'      => '42',
+         'Info'    => 'select * from foo',
+         'User'    => 'msandbox',
+         'State'   => 'Locked',
+         'Host'    => 'localhost'
+      },
+      {  'Time'    => '91',
+         'Command' => 'Query',
+         'db'      => undef,
+         'Id'      => '43',
+         'Info'    => 'select * from foo',
+         'User'    => 'msandbox',
+         'State'   => 'executing',
+         'Host'    => 'localhost'
+      },
+   ],
+   %find_spec,
+);
+
+my $expected = [
+      {  'Time'    => '91',
+         'Command' => 'Query',
+         'db'      => undef,
+         'Id'      => '43',
+         'Info'    => 'select * from foo',
+         'User'    => 'msandbox',
+         'State'   => 'executing',
+         'Host'    => 'localhost'
+      },
+   ];
+
+is_deeply(\@queries, $expected, 'Basic find()');
