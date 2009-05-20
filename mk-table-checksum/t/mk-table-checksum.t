@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 96;
+use Test::More tests => 99;
 use List::Util qw(sum);
 
 require '../../common/DSNParser.pm';
@@ -212,7 +212,28 @@ my $awk_slice = "awk '{print \$1,\$2,\$7}'";
 
 $cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --ignore-databases sakila --schema | $awk_slice | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
 my $ret_val = system($cmd);
-cmp_ok($ret_val, '==', 0, 'Only option --schema');
+cmp_ok($ret_val, '==', 0, '--schema basic output');
+
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --schema --quiet`;
+is(
+   $output,
+   '',
+   '--schema respects --quiet'
+);
+
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --schema --ignore-databases mysql`;
+is(
+   $output,
+   '',
+   '--schema respects --ignore-databases'
+);
+
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --schema --ignore-tables users`;
+unlike(
+   $output,
+   qr/users/,
+   '--schema respects --ignore-tables'
+);
 
 # Remember to add $#opt_combos+1 number of tests to line 6
 my @opt_combos = ( # --schema and
@@ -233,23 +254,27 @@ my @opt_combos = ( # --schema and
    '--since \'"2008-01-01" - interval 1 day\'',
    '--slave-lag',
    '--sleep=1000',
-   '--no-verify',
    '--wait=1000',
    '--where="id > 1000"',
 );
 
-`touch /tmp/mktc.out`;
 foreach my $opt_combo ( @opt_combos ) {
-   `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --ignore-databases sakila --schema $opt_combo | $awk_slice > /tmp/mktc.out`;
-   $cmd = "diff ./samples/sample_schema_opt /tmp/mktc.out 2>&1 > /dev/null";
-   $ret_val = system($cmd);
-   cmp_ok($ret_val, '==', 0, "--schema $opt_combo");
+   $output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --ignore-databases sakila --schema $opt_combo 2>&1`;
+   my ($other_opt) = $opt_combo =~ m/^([\w-]+\b)/;
+   like(
+      $output,
+      qr/--schema is not allowed with $other_opt/,
+      "--schema is not allowed with $other_opt"
+   );
 }
-`rm -rf /tmp/mktc.out`;
-
-# I awk the output to just 3 key columns because I found the full
-# output is not stable due to the TIME column: occasionally it will
-# show 1 instead of 0 and diff barfs. These 3 columns should be stable.
+# Have to do this one manually be --no-verify is --verify in the
+# error output which confuses the regex magic for $other_opt.
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --ignore-databases sakila --schema --no-verify 2>&1`;
+like(
+   $output,
+   qr/--schema is not allowed with --verify/,
+   "--schema is not allowed with --[no]verify"
+);
 
 # Check that --schema does NOT lock by default
 $output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --schema 2>&1`;
@@ -299,25 +324,25 @@ $output = `$cmd`;
 like($output, qr/foo/, '--empty-replicate-table is ignored if --replicate is not specified');
 diag(`/tmp/12345/use -D test -e "DELETE FROM checksum WHERE db = 'foo'"`);
 
-# Screw up the data on the slave and make sure --replcheck works
+# Screw up the data on the slave and make sure --replicate-check works
 $slave_dbh->do("update test.checksum set this_crc='' where test.checksum.tbl = 'issue_21'");
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 -d test --replicate test.checksum --replcheck 1 2>&1`;
-like($output, qr/issue_21/, '--replcheck works');
-cmp_ok($CHILD_ERROR>>8, '==', 1, 'Exit status is correct with --replcheck failure');
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 -d test --replicate test.checksum --replicate-check 1 2>&1`;
+like($output, qr/issue_21/, '--replicate-check works');
+cmp_ok($CHILD_ERROR>>8, '==', 1, 'Exit status is correct with --replicate-check failure');
 
 # #############################################################################
 # Issue 69: mk-table-checksum should be able to re-checksum things that differ
 # #############################################################################
 
-# This test relies on the previous test which checked that --replcheck works
+# This test relies on the previous test which checked that --replicate-check works
 # and left an inconsistent checksum on columns_priv.
-$output = `../mk-table-checksum h=127.1,P=12345 -d test --replicate test.checksum --replcheck 1 --recheck | diff samples/issue_69.txt -`;
+$output = `../mk-table-checksum h=127.1,P=12345 -d test --replicate test.checksum --replicate-check 1 --recheck | diff samples/issue_69.txt -`;
 ok(!$output, '--recheck reports inconsistent table like --replicate');
 
 # Now check that --recheck actually caused the inconsistent table to be
 # re-checksummed on the master.
 $output = 'foo';
-$output = `../mk-table-checksum h=127.1,P=12345 --replicate test.checksum --replcheck 1`;
+$output = `../mk-table-checksum h=127.1,P=12345 --replicate test.checksum --replicate-check 1`;
 ok(!$output, '--recheck re-checksummed inconsistent table; it is now consistent');
 
 $master_dbh->do('DROP TABLE test.issue_21');
@@ -371,10 +396,10 @@ diag(`/tmp/12345/use < samples/checksum_tbl.sql`);
 # #############################################################################
 diag(`$create_missing_slave_tbl_cmd`);
 
-$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -t test.only_on_master --schema 2>&1`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -t test.only_on_master --schema 2>&1`;
 like($output, qr/MyISAM\s+NULL\s+23678842/, 'Table on master checksummed with --schema');
 like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed with --schema');
-like($output, qr/test \. only_on_master does not exist on slave 127.0.0.1 12346/, 'Debug reports missing slave table with --schema');
+like($output, qr/test.only_on_master does not exist on slave 127.0.0.1:12346/, 'Debug reports missing slave table with --schema');
 
 diag(`$rm_missing_slave_tbl_cmd`);
 
@@ -398,8 +423,8 @@ unlike($output, qr/Chunk size is too small/, 'Unsigned bigint chunks (issue 47)'
 $output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -d test -t issue_47 --algorithm ACCUM 2>&1 | grep 'SQL for chunk 0:'`;
 like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47` USE INDEX \(`idx`\) WHERE/, 'Injects correct USE INDEX by default');
 
-$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -d test -t issue_47 --algorithm ACCUM --nouseindex 2>&1 | grep 'SQL for chunk 0:'`;
-like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not inject USE INDEX with --nouseindex');
+$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -d test -t issue_47 --algorithm ACCUM --no-use-index 2>&1 | grep 'SQL for chunk 0:'`;
+like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not inject USE INDEX with --no-use-index');
 
 # #############################################################################
 # Issue 36: Add --resume option to mk-table-checksum (2/2)
@@ -426,13 +451,13 @@ $output = `../mk-table-checksum h=127.0.0.1,P=12345 --ignore-databases sakila --
 like($output, qr/DATABASE\s+TABLE\s+CHUNK/, '--create-replicate-table creates the replicate table');
 
 # #############################################################################
-# Issue 94: Enhance mk-table-checksum, add a --ignorecols option
+# Issue 94: Enhance mk-table-checksum, add a --ignore-columns option
 # #############################################################################
 diag(`/tmp/12345/use < samples/issue_94.sql`);
 $output = `../mk-table-checksum -d test -t issue_94 h=127.1,P=12345 P=12346 --algorithm ACCUM | awk '{print \$7}'`;
 like($output, qr/CHECKSUM\n00000006B6BDB8E6\n00000006B6BDB8E6/, 'Checksum ok with all 3 columns (issue 94 1/2)');
 
-$output = `../mk-table-checksum -d test -t issue_94 h=127.1,P=12345 P=12346 --algorithm ACCUM --ignorecols c | awk '{print \$7}'`;
+$output = `../mk-table-checksum -d test -t issue_94 h=127.1,P=12345 P=12346 --algorithm ACCUM --ignore-columns c | awk '{print \$7}'`;
 like($output, qr/CHECKSUM\n000000066094F8AA\n000000066094F8AA/, 'Checksum ok with ignored column (issue 94 2/2)');
 
 # #############################################################################

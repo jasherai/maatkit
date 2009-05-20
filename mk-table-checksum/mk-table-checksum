@@ -5414,7 +5414,7 @@ L<"--algorithm">.
 
 =item --ignore-databases
 
-type: Hash; group: Filter
+type: hash; group: Filter
 
 Ignore this comma-separated list of databases.
 
@@ -5426,7 +5426,7 @@ Ignore this comma-separated list of storage engines.
 
 =item --ignore-tables
 
-type: Hash; group: Filter
+type: hash; group: Filter
 
 Ignore this comma-separated list of tables.
 

@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Options not allowed with --schema are no longer silently ignored.
+   * Organized options into groups (see --help output).
    * Removed the --argtable long option.  Use --arg-table instead.
    * Removed the --askpass long option.  Use --ask-pass instead.
    * Removed the --chunksize long option.  Use --chunk-size instead.
