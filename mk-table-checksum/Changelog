@@ -43,6 +43,15 @@ Changelog for mk-table-checksum and mk-checksum-filter:
    * Added the --config option for issue 231.
    * Added the --help and --verbose options for issue 318.
    * Converted script to runnable module (issue 315).
+   * mk-checksum-filter:
+   *    Removed the --equaldbs long option.  Use --equal-databases instead.
+   *    Removed the --ignoredb long option.  Use --ignore-databases instead.
+   *    Removed the -d short option.  Use --equal-databases instead.
+   *    Removed the -h short option.  Use --header instead.
+   *    Removed the -i short option.  Use --ignore-databases instead.
+   *    Removed the -m short option.  Use --master instead.
+   *    Removed the -u short option.  Use --unique instead.
+   *    Added the --help and --verbose options for issue 318.
 
 2009-05-03: version 1.2.5
 

@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 3573
+# OptionParser package 3581
 # ###########################################################################
 package OptionParser;
 
@@ -247,6 +247,11 @@ sub _parse_specs {
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            if ( $opt->{is_negatable} ) {
+               $def = $def eq 'yes' ? 1
+                    : $def eq 'no'  ? 0
+                    : $def;
+            }
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
          }
@@ -683,7 +688,7 @@ sub print_usage {
    push @groups, 'default';
 
    foreach my $group ( reverse @groups ) {
-      $usage .= "\n".($group eq 'default' ? 'Options' : "  $group").":\n";
+      $usage .= "\n".($group eq 'default' ? 'Options' : $group).":\n\n";
       foreach my $opt (
          sort { $a->{long} cmp $b->{long} }
          grep { $_->{group} eq $group }
@@ -711,13 +716,13 @@ sub print_usage {
    }
 
    if ( (my @rules = @{$self->{rules}}) ) {
-      $usage .= "\nRules:\n";
+      $usage .= "\nRules:\n\n";
       $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
    if ( $self->{dp} ) {
       $usage .= "\n" . $self->{dp}->usage();
    }
-   $usage .= "\nOptions and values after processing arguments:\n";
+   $usage .= "\nOptions and values after processing arguments:\n\n";
    foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
       my $val   = $opt->{value};
       my $type  = $opt->{type} || '';
@@ -870,26 +875,30 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec   = OptionParser::pod_to_spec();
-my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{strict} = 0;
-$opt_parser->{prompt} = '<options> FILE';
-$opt_parser->{descr}
-   = 'filters checksums from mk-table-checksum and prints those that '
-   . 'differ.  With no FILE, or when FILE is -, read standard input.';
-my %opts = $opt_parser->parse();
-$opts{m} ||= '';
-if ( $opts{u} && $opts{u} !~ m/^(?:host|db|table)$/ ) {
-   $opt_parser->error('--host must be one of host|db|table');
+my $o = new OptionParser(
+   strict      => 0,
+   prompt      => '[OPTION]... FILE',
+   description => 'filters checksums from mk-table-checksum and prints those '
+                . 'that differ.  With no FILE, or when FILE is -, read '
+                . 'standard input.',
+);
+$o->get_specs();
+$o->get_opts();
+
+$o->set('master', '') unless $o->get('master');
+
+my $unique = $o->get('unique');
+if ( $unique && $unique !~ m/^(?:host|db|table)$/ ) {
+   $o->_save_error('--unique must be one of host|db|table');
 }
-$opt_parser->usage_or_errors(%opts);
+$o->usage_or_errors();
 
 # ############################################################################
 # Ready to work now.
 # ############################################################################
 
 my $exit_status = 0;
-my $one_file    = @ARGV < 2 && !($opts{i} || %{$opts{d}});
+my $one_file    = @ARGV < 2 && !($o->get('ignore-databases') || %{$o->get('equal-databases')});
 
 my $DATABASE = 0;
 my $TABLE    = 1;
@@ -911,19 +920,19 @@ my %lines_for;          # All lines from all files, !$one_file
 my $last_chunk;         # db.tbl.chunk of last line read
 my $current_set = [];   # working set of lines to process
 
-# For use with $opts{u}.
+# For use with --unique.
 my %unique_items;
-my $unique_idx = !$opts{u}          ? undef
-               : $opts{u} eq 'host' ? $HOST
-               : $opts{u} eq 'db'   ? $DATABASE
-               :                      $TABLE;
+my $unique_idx = !$unique          ? undef
+               : $unique eq 'host' ? $HOST
+               : $unique eq 'db'   ? $DATABASE
+               :                     $TABLE;
 
 LINE:
 while ( my $line = <> ) {    # Magically reads STDIN or files in @ARGV
    chomp $line;
    next unless $line;
 
-   if ( $one_file && $line =~ m/^DATABASE/ && $opts{h} ) {
+   if ( $one_file && $line =~ m/^DATABASE/ && $o->get('header') ) {
       print $line, "\n";
       next LINE;
    }
@@ -932,7 +941,7 @@ while ( my $line = <> ) {    # Magically reads STDIN or files in @ARGV
    next unless @cols == $num_cols;
    push @cols, $line;
    my $chunk
-      = $opts{i} || $opts{d}->{$cols[$DATABASE]}
+      = $o->get('ignore-databases') || $o->get('equal-databases')->{$cols[$DATABASE]}
       ? join('.', '-------', @cols[$TABLE, $CHUNK])
       : join('.', @cols[$DATABASE, $TABLE, $CHUNK]);
 
@@ -967,8 +976,8 @@ sub process_set {
 
    # Sort the "master" to the front, all others in aphabetical order
    @$set = sort {
-           $a->[$HOST] eq $opts{m} ? -1
-         : $b->[$HOST] eq $opts{m} ? 1
+           $a->[$HOST] eq $o->get('master') ? -1
+         : $b->[$HOST] eq $o->get('master') ? 1
          : $a->[$HOST] cmp $b->[$HOST]
    } @$set;
 
@@ -980,9 +989,9 @@ sub process_set {
    } @{$set}[ 1 .. ( scalar(@$set) - 1 ) ];
    $exit_status = 1 if $is_diff;
 
-   if ( $opts{v} || $is_diff ) {
+   if ( $o->get('verbose') || $is_diff ) {
       foreach my $line (@$set) {
-         if ( $opts{u} ) {
+         if ( $unique ) {
             $unique_items{$line->[$unique_idx]}++;
          }
          else {
@@ -993,7 +1002,7 @@ sub process_set {
 }
 
 # Deferred processing: print out unique items
-if ( $opts{u} ) {
+if ( $unique ) {
    foreach my $thing ( sort keys %unique_items ) {
       print $thing, "\n";
    }
@@ -1014,7 +1023,7 @@ mk-checksum-filter - Filter checksums from mk-table-checksum.
 
    mk-checksum-filter checksums.txt
    mk-table-checksum host1 host2 | mk-checksum-filter
-   mk-checksum-filter db1-checksums.txt db2-checksums.txt --ignoredb
+   mk-checksum-filter db1-checksums.txt db2-checksums.txt --ignore-databases
 
 =head1 DESCRIPTION
 
@@ -1046,17 +1055,17 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
---ignoredb and --equaldbs are mutually exclusive.
+L<"--ignore-databases"> and L<"--equal-databases"> are mutually exclusive.
 
 =over
 
-=item --equaldbs
+=item --equal-databases
 
-short form: -d; type: Hash
+type: Hash
 
 This comma-separated list of databases are equal.
 
-These database names is always considered to have the same tables.  In other
+These database names are always considered to have the same tables.  In other
 words, this makes C<database1.table1.chunk1> equal to C<database2.table1.chunk1>
 if they have the same checksum.
 
@@ -1069,9 +1078,11 @@ short form: -h
 
 Preserves headers output by mk-table-checksum.
 
-=item --ignoredb
+=item --help
 
-short form: -i
+Show help and exit.
+
+=item --ignore-databases
 
 Ignore the database name when comparing lines.
 
@@ -1080,7 +1091,7 @@ input is processed.
 
 =item --master
 
-short form: -m; type: string
+type: string
 
 The name of the master server.
 
@@ -1090,7 +1101,7 @@ slave.
 
 =item --unique
 
-short form: -u; type: string
+type: string
 
 Show unique differing host/db/table names.
 
@@ -1101,6 +1112,10 @@ The argument must be one of host, db, or table.
 short form: -v
 
 Output all lines, even those that have no differences, except for header lines.
+
+=item --version
+
+Show version and exit.
 
 =back
 

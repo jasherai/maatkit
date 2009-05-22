@@ -221,7 +221,7 @@ is(
    '--schema respects --quiet'
 );
 
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --schema --ignore-databases mysql`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --schema --ignore-databases mysql,sakila`;
 is(
    $output,
    '',

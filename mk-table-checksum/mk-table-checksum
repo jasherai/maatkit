@@ -654,7 +654,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3577
+# OptionParser package 3581
 # ###########################################################################
 package OptionParser;
 
@@ -873,6 +873,11 @@ sub _parse_specs {
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            if ( $opt->{is_negatable} ) {
+               $def = $def eq 'yes' ? 1
+                    : $def eq 'no'  ? 0
+                    : $def;
+            }
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
          }
