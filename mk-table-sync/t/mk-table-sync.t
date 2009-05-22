@@ -25,7 +25,7 @@ sub query_slave {
 sub run {
    my ($src, $dst, $other) = @_;
    my $output;
-   my $cmd = "../mk-table-sync -px h=127.1,P=12345,D=test,t=$src h=127.1,P=12346,D=test,t=$dst $other 2>&1";
+   my $cmd = "../mk-table-sync --print --execute h=127.1,P=12345,D=test,t=$src h=127.1,P=12346,D=test,t=$dst $other 2>&1";
    chomp($output=`$cmd`);
    return $output;
 }
@@ -37,7 +37,7 @@ $sb->load_file('master', 'samples/before.sql');
 $output = run('test1', 'test2', '');
 like($output, qr/Can't make changes/, 'It dislikes changing a slave');
 
-$output = run('test1', 'test2', '--skipbinlog');
+$output = run('test1', 'test2', '--no-bin-log');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'No alg sync');
 is_deeply(
@@ -47,7 +47,7 @@ is_deeply(
 );
 
 $sb->load_file('master', 'samples/before.sql');
-$output = run('test1', 'test2', '-a Stream --skipbinlog');
+$output = run('test1', 'test2', '--algorithm Stream --no-bin-log');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Stream sync');
 is_deeply(
@@ -57,7 +57,7 @@ is_deeply(
 );
 
 $sb->load_file('master', 'samples/before.sql');
-$output = run('test1', 'test2', '-a GroupBy --skipbinlog');
+$output = run('test1', 'test2', '--algorithm GroupBy --no-bin-log');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic GroupBy sync');
 is_deeply(
@@ -67,7 +67,7 @@ is_deeply(
 );
 
 $sb->load_file('master', 'samples/before.sql');
-$output = run('test1', 'test2', '-a Chunk --skipbinlog');
+$output = run('test1', 'test2', '--algorithm Chunk --no-bin-log');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Chunk sync');
 is_deeply(
@@ -77,7 +77,7 @@ is_deeply(
 );
 
 $sb->load_file('master', 'samples/before.sql');
-$output = run('test1', 'test2', '-a Nibble --skipbinlog');
+$output = run('test1', 'test2', '--algorithm Nibble --no-bin-log');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
 is_deeply(
@@ -88,7 +88,7 @@ is_deeply(
 
 $sb->load_file('master', 'samples/before.sql');
 $ENV{MKDEBUG} = 1;
-$output = run('test1', 'test2', '-a Nibble --skipbinlog --chunksize 1 --transaction -k 1');
+$output = run('test1', 'test2', '--algorithm Nibble --no-bin-log --chunk-size 1 --transaction --lock 1');
 delete $ENV{MKDEBUG};
 like(
    $output,
@@ -103,7 +103,7 @@ is_deeply(
 
 # Sync tables that have values with leading zeroes
 $ENV{MKDEBUG} = 1;
-$output = run('test3', 'test4', '--print --skipbinlog --verbose -f MD5');
+$output = run('test3', 'test4', '--print --no-bin-log --verbose --function MD5');
 delete $ENV{MKDEBUG};
 like(
    $output,
@@ -122,7 +122,7 @@ like(
 );
 
 # Sync a table with Nibble and a chunksize in data size, not number of rows
-$output = run('test3', 'test4', '--algorithm Nibble --chunksize 1k --print --verbose -f MD5');
+$output = run('test3', 'test4', '--algorithm Nibble --chunk-size 1k --print --verbose --function MD5');
 # If it lived, it's OK.
 ok($output, 'Synced with Nibble and data-size chunksize');
 
@@ -136,7 +136,7 @@ diag(`/tmp/12348/use < samples/before.sql`);
 diag(`/tmp/12349/use -e 'set sql_log_bin=0;update test.test1 set b="mm" where a=1'`);
 # This will make master1's data match the changed data on master2 (that is not
 # a typo).
-`perl ../mk-table-sync --synctomaster -px h=127.0.0.1,P=12348,D=test,t=test1`;
+`perl ../mk-table-sync --sync-to-master --print --execute h=127.0.0.1,P=12348,D=test,t=test1`;
 $output = `/tmp/12348/use -e 'select b from test.test1 where a=1' -N`;
 like($output, qr/mm/, 'Master-master sync worked');
 diag(`../../sandbox/stop_master-master`);
@@ -149,23 +149,23 @@ $sb->use('master', '-e "SET SQL_LOG_BIN=0; INSERT INTO test.issue_37 VALUES (1),
 $sb->load_file('master', 'samples/checksum_tbl.sql');
 `../../mk-table-checksum/mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum 2>&1 > /dev/null`;
 
-$output = `../mk-table-sync --skipslavecheck --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 2>&1`;
+$output = `../mk-table-sync --no-slave-check --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 2>&1`;
 like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with one table (1/4, issue 37)');
 
-$output = `../mk-table-sync -R test.checksum --synctomaster --execute h=127.1,P=12346 2>&1`;
-like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with --replicate --synctomaster (2/4, issue 37)');
+$output = `../mk-table-sync --replicate test.checksum --sync-to-master --execute h=127.1,P=12346 2>&1`;
+like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with --replicate --sync-to-master (2/4, issue 37)');
 
-$output = `../mk-table-sync -R test.checksum --execute h=127.1,P=12345 2>&1`;
+$output = `../mk-table-sync --replicate test.checksum --execute h=127.1,P=12345 2>&1`;
 like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with --replicate (3/4, issue 37)');
 
-$output = `../mk-table-sync --execute -g mysql h=127.0.0.1,P=12345 h=127.1,P=12346 2>&1`;
+$output = `../mk-table-sync --execute --ignore-databases mysql h=127.0.0.1,P=12345 h=127.1,P=12346 2>&1`;
 like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with no opts (4/4, issue 37)');
 
 $output = `/tmp/12346/use -D test -e 'SELECT * FROM issue_37'`;
 ok(!$output, 'Table with trigger was not written');
 
-$output = `../mk-table-sync --skipslavecheck --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 --ignore-triggers 2>&1`;
-unlike($output, qr/Cannot write to table with triggers/, 'Writes to tbl with trigger with --ignore-triggers (issue 37)');
+$output = `../mk-table-sync --no-slave-check --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 --with-triggers 2>&1`;
+unlike($output, qr/Cannot write to table with triggers/, 'Writes to tbl with trigger with --with-triggers (issue 37)');
 
 $output = `/tmp/12346/use -D test -e 'SELECT * FROM issue_37'`;
 like($output, qr/a.+1.+2/ms, 'Table with trigger was written');
@@ -175,11 +175,11 @@ like($output, qr/a.+1.+2/ms, 'Table with trigger was written');
 # #############################################################################
 $sb->use('master', '-e \'INSERT INTO test.issue_37 VALUES (5), (6), (7), (8), (9);\'');
 
-$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers --print 2>&1 | grep 'src: '`;
+$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 --algorithm Chunk --chunk-size 3 --with-triggers --print 2>&1 | grep 'src: '`;
 like($output, qr/FROM `test`\.`issue_37` USE INDEX \(`idx_a`\) WHERE/, 'Injects USE INDEX hint by default');
 
-$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers --nouseindex --print 2>&1 | grep 'src: '`;
-like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --nouseindex');
+$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 --algorithm Chunk --chunk-size 3 --with-triggers --no-use-index --print 2>&1 | grep 'src: '`;
+like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --no-use-index');
 
 # #############################################################################
 # Issue 22: mk-table-sync fails with uninitialized value at line 2330
@@ -195,7 +195,7 @@ $output = 'foo'; # To make explicitly sure that the following command
 $output = `/tmp/12345/use -D test2 -e 'SELECT * FROM messages'`;
 ok(!$output, 'test2.messages is empty before sync (issue 22)');
 
-$output = `../mk-table-sync --skipslavecheck -x u=msandbox,p=msandbox,P=12345,h=127.1,D=test,t=messages u=msandbox,p=msandbox,P=12345,h=127.1,D=test2,t=messages`;
+$output = `../mk-table-sync --no-slave-check --execute u=msandbox,p=msandbox,P=12345,h=127.1,D=test,t=messages u=msandbox,p=msandbox,P=12345,h=127.1,D=test2,t=messages`;
 ok(!$output, 'Synced test.messages to test2.messages on same host (issue 22)');
 
 $output     = `/tmp/12345/use -D test  -e 'SELECT * FROM messages'`;
@@ -216,7 +216,7 @@ diag(`../../mk-table-checksum/mk-table-checksum --replicate=test.checksum h=127.
 # "Table names may be qualified with the database name."
 # In the code, a qualified db.tbl name is used.
 # So we'll test first an unqualified tbl name.
-$output = `../mk-table-sync h=127.1,P=12345 -R test.checksum -x -d test -t test2 -v`;
+$output = `../mk-table-sync h=127.1,P=12345 --replicate test.checksum --execute -d test -t test2 -v`;
 unlike($output, qr/messages/, '--replicate honors --tables (1/4)');
 like($output,   qr/test2/,    '--replicate honors --tables (2/4)');
 
@@ -224,7 +224,7 @@ like($output,   qr/test2/,    '--replicate honors --tables (2/4)');
 $sb->use('slave1', '-D test -e "TRUNCATE TABLE test2; TRUNCATE TABLE messages"');
 diag(`../../mk-table-checksum/mk-table-checksum --replicate=test.checksum h=127.1,P=12345 -d test > /dev/null`);
 
-$output = `../mk-table-sync h=127.1,P=12345 -R test.checksum -x -d test -t test.test2 -v`;
+$output = `../mk-table-sync h=127.1,P=12345 --replicate test.checksum --execute -d test -t test.test2 -v`;
 unlike($output, qr/messages/, '--replicate honors --tables (3/4)');
 like($output,   qr/test2/,    '--replicate honors --tables (4/4)');
 
@@ -235,16 +235,16 @@ like($output,   qr/test2/,    '--replicate honors --tables (4/4)');
 # diag(`/tmp/12345/use -D test < samples/issue_96.sql`);
 # sleep 1;
 # diag(`/tmp/12345/use -D test -e "DELETE FROM issue_96 WHERE 1 LIMIT 5"`);
-# $output = `../mk-table-sync h=127.1,P=12345 P=12346 -a Nibble --chunksize 2 -x`;
+# $output = `../mk-table-sync h=127.1,P=12345 P=12346 --algorithm Nibble --chunk-size 2 --execute`;
 
 # #############################################################################
-# Issue 111: Make mk-table-sync require --print or --execute or --test
+# Issue 111: Make mk-table-sync require --print or --execute or --dry-run
 # #############################################################################
 
 # This test reuses the test.message table created above for issue 22.
 $output = `../mk-table-sync h=127.1,P=12345,D=test,t=messages P=12346`;
-like($output, qr/Specify at least one of --print, --execute or --test/,
-   'Requires --print, --execute or --test');
+like($output, qr/Specify at least one of --print, --execute or --dry-run/,
+   'Requires --print, --execute or --dry-run');
 
 # #############################################################################
 # Issue 262
@@ -267,15 +267,15 @@ $output = `perl ../mk-table-sync h=localhost,D=test 2>&1`;
 like($output, qr/Are you trying to sync/, 'Throws error on D=');
 
 # #############################################################################
-# Test --explainhosts (issue 293).
+# Test --explain-hosts (issue 293).
 # #############################################################################
-$output = `perl ../mk-table-sync --explainhosts localhost,D=foo,t=bar t=baz`;
+$output = `perl ../mk-table-sync --explain-hosts localhost,D=foo,t=bar t=baz`;
 is($output,
 <<EOF
 # DSN: A=utf8,D=foo,h=localhost,t=bar
 # DSN: A=utf8,D=foo,h=localhost,t=baz
 EOF
-, '--explainhosts');
+, '--explain-hosts');
 
 # #############################################################################
 # Issue 218: Two NULL column values don't compare properly w/ Stream/GroupBy
@@ -337,3 +337,4 @@ like($output, qr/COMMENT='test1'/, '--lock-and-rename worked');
 # #############################################################################
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
+exit;

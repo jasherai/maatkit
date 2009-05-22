@@ -5076,7 +5076,7 @@ sub _d {
 # Check at the end of this package for the call to main() which actually runs
 # the program.
 # ###########################################################################
-package mk_table_synce;
+package mk_table_sync;
 
 # TODO
 # * make it more efficient.  Ideas: profile the Perl, use prepared statements,
@@ -5098,18 +5098,7 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my @opt_spec = OptionParser::pod_to_spec();
-
-   my $du         = new MySQLDump();
-   my $tp         = new TableParser();
-   my $q          = new Quoter();
-   my $vp         = new VersionParser();
-   my $chunker    = new TableChunker( quoter => $q );
-   my $nibbler    = new TableNibbler();
-   my $checksum   = new TableChecksum();
-   my $ms         = new MasterSlave();
-   my $syncer     = new TableSyncer();
-   my $dsn_parser = new DSNParser(
+   my $dp = new DSNParser(
       {
          key  => 'D',
          desc => 'Database containing the table to be synced',
@@ -5123,88 +5112,121 @@ sub main {
          copy => 1,
       },
    );
-   $dsn_parser->prop('autokey', 'h');
-   my $opt_parser = new OptionParser(@opt_spec);
-   $opt_parser->{dsn}    = $dsn_parser;
-   $opt_parser->{strict} = 0;
-   $opt_parser->{prompt} = '[OPTION].. DSN [DSN...]';
-   $opt_parser->{descr} = 'synchronizes data efficiently between MySQL tables.';
-   my %opts = $opt_parser->parse();
-   $dsn_parser->prop('setvars', $opts{setvars});
+   $dp->prop('autokey', 'h');
 
-   if ( $opts{R} || $opts{s} ) {
-      $opts{w} = 60 unless defined $opts{w};
+   my $o = new OptionParser(
+      dp          => $dp,
+      strict      => 0,
+      prompt      => '[OPTION]... DSN [DSN]...',
+      description => 'synchronizes data efficiently between MySQL tables.',
+   );
+   $o->get_specs();
+   $o->get_opts();
+
+   $dp->prop('setvars', $o->get('set-vars'));
+
+   if ( $o->get('replicate') || $o->get('sync-to-master') ) {
+      $o->set('wait', 60) unless $o->got('wait');
    }
-   if ( $opts{w} ) {
-      $opts{k} = 1 unless defined $opts{k};
+   if ( $o->get('wait') ) {
+      $o->set('lock', 1) unless $o->got('lock');
    }
-   if ( $opts{test} ) {
-      $opts{v} = 1;
+   if ( $o->get('dry-run') ) {
+      $o->set('verbose', 1);
    }
 
    my @dsns;
    while ( my $arg = shift(@ARGV) ) {
-      if ( $opts{utf8} ) {
+      if ( $o->get('utf8') ) {
          $arg .= ',A=utf8';
       }
-      my $dsn = $dsn_parser->parse($arg, $dsns[0]);
+      my $dsn = $dp->parse($arg, $dsns[0]);
       die "You specified a t part, but not a D part in $arg"
          if ($dsn->{t} && !$dsn->{D});
       if ( $dsn->{D} && !$dsn->{t} ) {
-         die "You specified a database but not a table in $arg.  Are you trying "
-            . "to sync only tables in the '$dsn->{D}' database?  If so, use "
-            . "'--databases $dsn->{D}' instead.\n";
+         die "You specified a database but not a table in $arg.  Are you "
+            . "trying to sync only tables in the '$dsn->{D}' database?  "
+            . "If so, use '--databases $dsn->{D}' instead.\n";
       }
       push @dsns, $dsn;
    }
 
-   if ( !@dsns || (@dsns ==1 && !$opts{R} && !$opts{s}) ) {
-      $opt_parser->error('At least one DSN is required, and at least two are '
+   if ( !@dsns
+        || (@dsns ==1 && !$o->get('replicate') && !$o->get('sync-to-master'))) {
+      $o->_save_error('At least one DSN is required, and at least two are '
          . 'required unless --sync-to-master or --replicate is specified');
    }
 
-   if ( $opts{'lock-and-rename'} ) {
+   if ( $o->get('lock-and-rename') ) {
       if ( @dsns != 2 || !$dsns[0]->{t} || !$dsns[1]->{t} ) {
-      $opt_parser->error("--lock-and-rename requires exactly two DSNs and they "
-         . "must each specify a table.");
+         $o->_save_error("--lock-and-rename requires exactly two DSNs and they "
+            . "must each specify a table.");
       }
    }
 
-   if ( $opts{explainhosts} ) {
+   if ( $o->get('explain-hosts') ) {
       foreach my $host ( @dsns ) {
-         print "# DSN: ", $dsn_parser->as_string($host), "\n";
+         print "# DSN: ", $dp->as_string($host), "\n";
       }
-      exit(0);
+      return 0;
    }
 
-   $opt_parser->usage_or_errors(%opts);
+   $o->usage_or_errors();
 
    # ########################################################################
    # Do the work.
    # ########################################################################
+   my $du        = new MySQLDump();
+   my $tp        = new TableParser();
+   my $q         = new Quoter();
+   my $vp        = new VersionParser();
+   my $chunker   = new TableChunker( quoter => $q );
+   my $nibbler   = new TableNibbler();
+   my $checksum  = new TableChecksum();
+   my $ms        = new MasterSlave();
+   my $syncer    = new TableSyncer();
+   my %common_modules = (
+      o        => $o,
+      dp       => $dp,
+      du       => $du,
+      tp       => $tp,
+      q        => $q,
+      vp       => $vp,
+      chunker  => $chunker,
+      nibbler  => $nibbler,
+      checksum => $checksum,
+      ms       => $ms,
+      syncer   => $syncer,
+   );
+
+   my $hdr = "# %6s %7s %6s %6s %-9s %s.%s\n";
+   my %output_formats = (
+      hdr => $hdr,
+   );
+
    my $exit_status = 0; # 1: internal error, 2: tables differed, 3: both
-   my $hdr         = "# %6s %7s %6s %6s %-9s %s.%s\n";
 
-   if ( $opts{'lock-and-rename'} ) {
+   if ( $o->get('lock-and-rename') ) {
       MKDEBUG && _d('Locking and syncing ONE TABLE with rename');
-      $dsns[0]->{dbh} = get_cxn($dsns[0]);
-      $dsns[1]->{dbh} = get_cxn($dsns[1]);
+      $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
+      $dsns[1]->{dbh} = get_cxn($dsns[1], %common_modules);
 
-      if ( !$opts{'ignore-triggers'} ) {
+      if ( !$o->get('with-triggers') ) {
          check_tables_for_triggers(
             [ @dsns[1 .. $#dsns] ],
-            [ { db => $dsns[0]->{D}, tbl => $dsns[0]->{t} } ]
+            [ { db => $dsns[0]->{D}, tbl => $dsns[0]->{t} } ],
+            %common_modules,
          );
       }
 
-      if ( $opts{v} ) {
-         print "# Lock and rename ", $dsn_parser->as_string($dsns[0]), "\n";
+      if ( $o->get('verbose') ) {
+         print "# Lock and rename ", $dp->as_string($dsns[0]), "\n";
          printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
       }
 
-      my %args = (
-         src     => $dsns[0],
-         dst     => $dsns[1],
+      my %src_and_dst = (
+         src => $dsns[0],
+         dst => $dsns[1],
       );
 
       # We don't use lock_server() here because it does the usual stuff wrt
@@ -5218,15 +5240,18 @@ sub main {
       $sql = "LOCK TABLES $dst_db_tbl WRITE";
       MKDEBUG && _d($sql);
       $dsns[1]->{dbh}->do($sql);
-      sync_a_table(
-         %args,
+
+      $exit_status = sync_a_table(
+         %src_and_dst,
          lock       => 0,
          src_db     => $dsns[0]->{D},
          src_tbl    => $dsns[0]->{t},
          dst_db     => $dsns[1]->{D},
          dst_tbl    => $dsns[1]->{t},
-         where      => $opts{W},
-         index_hint => !$opts{nouseindex},
+         where      => $o->get('where'),
+         index_hint => !$o->get('no-use-index'),
+         %common_modules,
+         %output_formats,
       );
 
       # Now rename the tables to swap them.
@@ -5243,68 +5268,75 @@ sub main {
       MKDEBUG && _d($sql);
       $dsns[0]->{dbh}->do($sql);
 
-      unlock_server(%args);
+      unlock_server(%src_and_dst, %common_modules);
    }
    elsif ( $dsns[0]->{t} ) {
       MKDEBUG && _d('DSN has t part; syncing ONE TABLE between servers');
       if ( @dsns == 1 ) {
-         die "You specified one DSN with a t part, but not --sync-to-master.\n"
-            unless $opts{s};
-         $dsns[0]->{dbh} = get_cxn($dsns[0]);
-         my $master = $ms->get_master_dsn($dsns[0]->{dbh},
-            $dsns[0], $dsn_parser)
-            or die "Can't determine master of "
-               . $dsn_parser->as_string($dsns[0]);
+         die "You specified one DSN with a t part, but not --sync-to-master"
+            unless $o->get('sync-to-master');
+         $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
+         my $master = $ms->get_master_dsn(
+            $dsns[0]->{dbh},
+            $dsns[0],
+            $dp
+         ) or die "Can't determine master of ". $dp->as_string($dsns[0]);
          unshift @dsns, $master;
-         $dsns[0]->{dbh} = get_cxn($dsns[0]);
+         $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
          $ms->is_master_of($dsns[0]->{dbh}, $dsns[1]->{dbh});
       }
 
       if ( $dsns[0]->{t} ne $dsns[1]->{t}
-            && -t STDIN && -t STDOUT
-            && (  (($dsns[0]->{h} || '') ne ($dsns[1]->{h} || ''))
-               || (($dsns[0]->{P} || '') ne ($dsns[1]->{P} || '')) ))
+           && -t STDIN
+           && -t STDOUT
+           && ( (($dsns[0]->{h} || '') ne ($dsns[1]->{h} || ''))
+                || (($dsns[0]->{P} || '') ne ($dsns[1]->{P} || '')) ))
       {
          print "Continue syncing tables with different names?  y/n: ";
          my $answer = <STDIN>;
          if ( $answer !~ m/y/i ) {
-            exit(1);
+            return 1;
          }
       }
 
-      if ( !$opts{'ignore-triggers'} ) {
+      if ( !$o->get('with-triggers') ) {
          check_tables_for_triggers(
             [ @dsns[1 .. $#dsns] ],
-            [ { db => $dsns[0]->{D}, tbl => $dsns[0]->{t} } ]
+            [ { db => $dsns[0]->{D}, tbl => $dsns[0]->{t} } ],
+            %common_modules,
          );
       }
 
       foreach my $dsn ( @dsns[1 .. $#dsns] ) {
 
-         if ( $opts{v} ) {
-            print "# Syncing ", $dsn_parser->as_string($dsn), "\n";
+         if ( $o->get('verbose') ) {
+            print "# Syncing ", $dp->as_string($dsn), "\n";
             printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
          }
 
-         my %args = (
-            src     => $dsns[0],
-            dst     => $dsn,
+         my %src_and_dst = (
+            src => $dsns[0],
+            dst => $dsn,
          );
 
-         lock_server(%args);
-         sync_a_table(
-            %args,
+         lock_server(%src_and_dst, %common_modules);
+
+         $exit_status = sync_a_table(
+            %src_and_dst,
             src_db     => $dsns[0]->{D},
             src_tbl    => $dsns[0]->{t},
             dst_db     => $dsn->{D},
             dst_tbl    => $dsn->{t},
-            where      => $opts{W},
-            index_hint => !$opts{nouseindex},
+            where      => $o->get('where'),
+            index_hint => !$o->get('no-use-index'),
+            %common_modules,
+            %output_formats,
          );
-         unlock_server(%args);
+
+         unlock_server(%src_and_dst, %common_modules);
       }
    }
-   elsif ( $opts{R} ) {
+   elsif ( $o->get('replicate') ) {
 
       if ( @dsns > 1 ) {
          die "You should specify only one DSN with --replicate\n";
@@ -5312,61 +5344,70 @@ sub main {
 
       # Connect to the master and treat it as the source, then find
       # differences on the slave and sync them.
-      if ( $opts{s} ) {
+      if ( $o->get('sync-to-master') ) {
 
-         $dsns[0]->{dbh} = get_cxn($dsns[0]);
+         $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
          my $master = $ms->get_master_dsn($dsns[0]->{dbh},
-            $dsns[0], $dsn_parser)
+            $dsns[0], $dp)
             or die "Can't determine master of "
-               . $dsn_parser->as_string($dsns[0]);
+               . $dp->as_string($dsns[0]);
          unshift @dsns, $master;
-         $dsns[0]->{dbh} = get_cxn($dsns[0]);
+         $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
          $ms->is_master_of($dsns[0]->{dbh}, $dsns[1]->{dbh});
-         my %args = (
-            src     => $dsns[0],
-            dst     => $dsns[1],
+
+         my %src_and_dst = (
+            src => $dsns[0],
+            dst => $dsns[1],
          );
 
          # First, check that the master (source) has no discrepancies itself,
          # and ignore tables that do.
          my %skip_table;
          foreach my $diff (
-            $checksum->find_replication_differences($dsns[0]->{dbh}, $opts{R}) )
+            $checksum->find_replication_differences($dsns[0]->{dbh}, $o->get('replicate')) )
          {
             $skip_table{$diff->{db}}->{$diff->{tbl}}++;
          }
 
          # Now check the slave for differences and sync them if necessary.
          my @diffs = $checksum
-            ->find_replication_differences($dsns[1]->{dbh}, $opts{R});
+            ->find_replication_differences($dsns[1]->{dbh}, $o->get('replicate'));
          @diffs = grep { !$skip_table{$_->{db}}->{$_->{tbl}} } @diffs;
-         if ( $opts{v} ) {
-            print "# Syncing ", $dsn_parser->as_string($dsns[1]), "\n";
+         if ( $o->get('verbose') ) {
+            print "# Syncing ", $dp->as_string($dsns[1]), "\n";
             printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
          }
 
          if ( @diffs ) {
 
-            if ( !$opts{'ignore-triggers'} ) {
+            if ( !$o->get('with-triggers') ) {
                # Turn @diffs into an array of hashes having keys db and tbl
                my @dbs_tbls = map +{ db => $_->{db}, tbl => $_->{tbl} }, @diffs;
-               check_tables_for_triggers([$args{dst}], \@dbs_tbls);
+               check_tables_for_triggers(
+                  [$src_and_dst{dst}],
+                  \@dbs_tbls,
+                  %common_modules
+               );
             }
 
-            lock_server(%args);
+            lock_server(%src_and_dst, %common_modules);
             foreach my $diff ( @diffs ) {
-               next if !tbl_permitted($diff->{db}, $diff->{tbl});
-               sync_a_table(
-                  %args,
+               next unless tbl_permitted($diff->{db}, $diff->{tbl}, o=>$o);
+
+               $exit_status = sync_a_table(
+                  %src_and_dst,
                   src_db     => $diff->{db},
                   src_tbl    => $diff->{tbl},
                   dst_db     => $diff->{db},
                   dst_tbl    => $diff->{tbl},
                   where      => $diff->{boundaries},
-                  index_hint => !$opts{nouseindex},
+                  index_hint => !$o->get('no-use-index'),
+                  %common_modules,
+                  %output_formats,
                );
+
             }
-            unlock_server(%args);
+            unlock_server(%src_and_dst, %common_modules);
          }
       }
 
@@ -5374,16 +5415,16 @@ sub main {
       # sync them.
       else {
          my %skip_table;
-         $dsns[0]->{dbh} = get_cxn($dsns[0]);
+         $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
          $ms->recurse_to_slaves(
             {  dbh        => $dsns[0]->{dbh},
                dsn        => $dsns[0],
-               dsn_parser => $dsn_parser,
+               dsn_parser => $dp,
                recurse    => 1,
                callback   => sub {
                   my ( $dsn, $dbh, $level, $parent ) = @_;
                   my @diffs = $checksum
-                     ->find_replication_differences($dbh, $opts{R});
+                     ->find_replication_differences($dbh, $o->get('replicate'));
                   if ( !$level ) {
                      # This is the master; don't sync any tables that are wrong
                      # here, for obvious reasons.
@@ -5395,36 +5436,44 @@ sub main {
                      push @dsns, $dsn;
                      @diffs = grep { !$skip_table{$_->{db}}->{$_->{tbl}} } @diffs;
                      return unless @diffs;
-                     if ( $opts{v} ) {
-                        print "# Syncing ", $dsn_parser->as_string($dsn), "\n";
+                     if ( $o->get('verbose') ) {
+                        print "# Syncing ", $dp->as_string($dsn), "\n";
                         printf($hdr, @ChangeHandler::ACTIONS,
                            qw(ALGORITHM DATABASE TABLE));
                      }
-                     my %args = (
+                     my %src_and_dst = (
                         src     => $dsns[0],
                         dst     => $dsn,
                      );
-                     if ( !$opts{'ignore-triggers'} ) {
+                     if ( !$o->get('with-triggers') ) {
                         # Turn @diffs into an array of hashes
                         # having keys db and tbl
                         my @dbs_tbls
                            = map +{ db => $_->{db}, tbl => $_->{tbl} }, @diffs;
-                        check_tables_for_triggers([$args{dst}], \@dbs_tbls);
+                        check_tables_for_triggers(
+                           [$src_and_dst{dst}],
+                           \@dbs_tbls,
+                           %common_modules
+                        );
                      }
-                     lock_server(%args);
+                     lock_server(%src_and_dst, %common_modules);
                      foreach my $diff ( @diffs ) {
-                        next if !tbl_permitted($diff->{db}, $diff->{tbl});
-                        sync_a_table(
-                           %args,
+                        next unless tbl_permitted($diff->{db}, $diff->{tbl}, o=>$o);
+
+                        $exit_status = sync_a_table(
+                           %src_and_dst,
                            src_db     => $diff->{db},
                            src_tbl    => $diff->{tbl},
                            dst_db     => $diff->{db},
                            dst_tbl    => $diff->{tbl},
                            where      => $diff->{boundaries},
-                           index_hint => !$opts{nouseindex},
+                           index_hint => !$o->get('no-use-index'),
+                           %common_modules,
+                           %output_formats,
                         );
+
                      }
-                     unlock_server(%args);
+                     unlock_server(%src_and_dst, %common_modules);
                   }
                },
             }
@@ -5433,16 +5482,16 @@ sub main {
 
    }
    else {
-      $dsns[0]->{dbh} = get_cxn($dsns[0]);
+      $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
 
       if ( @dsns == 1 ) {
-         if ( $opts{s} ) {
+         if ( $o->get('sync-to-master') ) {
             my $master = $ms->get_master_dsn($dsns[0]->{dbh},
-               $dsns[0], $dsn_parser)
+               $dsns[0], $dp)
                or die "Can't determine master of "
-                  . $dsn_parser->as_string($dsns[0]);
+                  . $dp->as_string($dsns[0]);
             unshift @dsns, $master;
-            $dsns[0]->{dbh} = get_cxn($dsns[0]);
+            $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
             $ms->is_master_of($dsns[0]->{dbh}, $dsns[1]->{dbh});
          }
          else {
@@ -5457,17 +5506,17 @@ sub main {
          parser    => $tp,
          dumper    => $du,
          databases => {
-            permit => $opts{d},
-            reject => $opts{g},
+            permit => $o->get('databases'),
+            reject => $o->get('ignore-databases'),
          },
          tables => {
-            permit => $opts{t},
-            reject => $opts{n},
+            permit => $o->get('tables'),
+            reject => $o->get('ignore-tables'),
          },
          engines => {
             views  => 0,
-            permit => $opts{e},
-            reject => $opts{E},
+            permit => $o->get('engines'),
+            reject => $o->get('ignore-engines'),
          },
       );
 
@@ -5480,44 +5529,52 @@ sub main {
          }
       }
 
-      if ( !$opts{'ignore-triggers'} ) {
-         check_tables_for_triggers([ @dsns[1 .. $#dsns] ], \@dbs_tbls);
+      if ( !$o->get('with-triggers') ) {
+         check_tables_for_triggers(
+            [ @dsns[1 .. $#dsns] ],
+            \@dbs_tbls,
+            %common_modules
+         );
       }
 
       foreach my $dsn ( @dsns[1 .. $#dsns] ) {
 
-         if ( $opts{v} ) {
-            print "# Syncing ", $dsn_parser->as_string($dsn), "\n";
+         if ( $o->get('verbose') ) {
+            print "# Syncing ", $dp->as_string($dsn), "\n";
             printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
          }
 
-         my %args = (
+         my %src_and_dst = (
             src     => $dsns[0],
             dst     => $dsn,
          );
 
-         lock_server(%args);
+         lock_server(%src_and_dst, %common_modules);
          foreach my $db_tbl ( @dbs_tbls ) {
-            sync_a_table(
-               %args,
+
+            $exit_status = sync_a_table(
+               %src_and_dst,
                src_db     => $db_tbl->{db},
                src_tbl    => $db_tbl->{tbl},
                dst_db     => $db_tbl->{db},
                dst_tbl    => $db_tbl->{tbl},
-               where      => $opts{W},
-               index_hint => !$opts{nouseindex},
+               where      => $o->get('where'),
+               index_hint => !$o->get('no-use-index'),
+               %common_modules,
+               %output_formats,
             );
+
          }
-         unlock_server(%args);
+         unlock_server(%src_and_dst, %common_modules);
       }
    }
 
-   foreach my $dsn (@dsns) {
+   foreach my $dsn ( @dsns ) {
       foreach my $thing ( qw(dbh misc_dbh) ) {
          my $dbh = $dsn->{$thing};
          next unless $dbh;
-         $dbh->commit unless $dbh->{AutoCommit};
-         $dsn_parser->disconnect($dbh);
+         $dbh->commit() unless $dbh->{AutoCommit};
+         $dp->disconnect($dbh);
       }
    }
 
@@ -5528,40 +5585,63 @@ sub main {
 # Subroutines
 # ############################################################################
 sub lock_server {
-   my (%args) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(src dst o dp syncer) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    eval {
       # Open connections as needed.
-      $args{src}->{dbh}      ||= get_cxn($args{src});
-      $args{dst}->{dbh}      ||= get_cxn($args{dst});
-      $args{src}->{misc_dbh} ||= get_cxn($args{src});
-      $syncer->lock_and_wait(%args, lock_level => 3);
+      $args{src}->{dbh}      ||= get_cxn($args{src}, %args);
+      $args{dst}->{dbh}      ||= get_cxn($args{dst}, %args);
+      $args{src}->{misc_dbh} ||= get_cxn($args{src}, %args);
+      $args{syncer}->lock_and_wait(%args, lock_level => 3);
    }
 }
 
 sub unlock_server {
-   my (%args) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(src dst o dp syncer) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    eval {
       # Open connections as needed.
-      $args{src}->{dbh}      ||= get_cxn($args{src});
-      $args{dst}->{dbh}      ||= get_cxn($args{dst});
-      $args{src}->{misc_dbh} ||= get_cxn($args{src});
-      $syncer->unlock(%args, lock_level => 3);
+      $args{src}->{dbh}      ||= get_cxn($args{src}, %args);
+      $args{dst}->{dbh}      ||= get_cxn($args{dst}, %args);
+      $args{src}->{misc_dbh} ||= get_cxn($args{src}, %args);
+      $args{syncer}->unlock(%args, lock_level => 3);
    }
 }
 
+# This is the primary subroutine which actually makes the table syncs
+# happen by calling $syncer->sync_table().  It is, therefore, a big
+# wrapper around $syncer->sync_table(); it does pre- and post-sync
+# stuff.  It returns an exit status; see EXIT STATUS in the POD.
 sub sync_a_table {
-   my (%args) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(src src_db src_tbl dst dst_db dst_tbl o dp q
+                        du tp syncer checksum chunker nibbler ms hdr) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o      = $args{o};
+   my $q      = $args{q};
+   my $du     = $args{du};
+   my $tp     = $args{tp};
+   my $syncer = $args{syncer};
+
+   my $exit_status = 0; 
 
    eval {
       # Open connections as needed.
-      $args{src}->{dbh}      ||= get_cxn($args{src});
-      $args{dst}->{dbh}      ||= get_cxn($args{dst});
-      $args{src}->{misc_dbh} ||= get_cxn($args{src});
+      $args{src}->{dbh}      ||= get_cxn($args{src}, %args);
+      $args{dst}->{dbh}      ||= get_cxn($args{dst}, %args);
+      $args{src}->{misc_dbh} ||= get_cxn($args{src}, %args);
+
+      my @dbhs = ($args{src}->{dbh}, $args{dst}->{dbh}, $args{src}->{misc_dbh});
 
       # Disable auto-increment on zero (bug #1919897).
       my $no_auto_val_sql = '/*!40101 SET @@SQL_MODE := CONCAT(@@SQL_MODE, '
          . '",NO_AUTO_VALUE_ON_ZERO")*/';
-      foreach my $dbh ( $args{src}->{dbh}, $args{dst}->{dbh}, $args{src}->{misc_dbh} ) {
+      foreach my $dbh ( @dbhs ) {
          MKDEBUG && _d($dbh, $no_auto_val_sql);
          $dbh->do($no_auto_val_sql);
       }
@@ -5569,69 +5649,67 @@ sub sync_a_table {
       my $tbl_struct = $tp->parse(
          $du->get_create_table($args{src}->{dbh}, $q, @args{qw(src_db src_tbl)}));
       my @possible_keys = $tp->find_possible_keys(
-         $args{src}->{dbh}, @args{qw(src_db src_tbl)}, $q, $opts{W});
+         $args{src}->{dbh}, @args{qw(src_db src_tbl)}, $q, $o->get('where'));
 
       # If the table is InnoDB, prefer to sync it with transactions, unless
       # the user explicitly said not to.
-      my $use_txn = defined $opts{transaction}        ? $opts{transaction}
+      my $use_txn = $o->got('transaction')            ? $o->get('transaction')
                   : $tbl_struct->{engine} eq 'InnoDB' ? 1
                   :                                     0;
 
       # If we're using transactions, turn on AutoCommit on the handles.
-      foreach my $dbh (
-         $args{src}->{dbh},
-         $args{dst}->{dbh},
-         $args{src}->{misc_dbh},
-      ) {
+      foreach my $dbh ( @dbhs ) {
          $dbh->{AutoCommit} = !$use_txn;
       }
 
       # Determine which columns to compare.
+      my $ignore_columns  = $o->get('ignore-columns');
       my @compare_columns = grep {
-         !$opts{'ignore-columns'}->{lc $_};
-      } @{$opts{c} || $tbl_struct->{cols}};
+         !$ignore_columns->{lc $_};
+      } @{$o->get('columns') || $tbl_struct->{cols}};
 
       my %status = $syncer->sync_table(
-         algorithm     => $opts{a} || '',
-         buffer        => $opts{bufferresults} || 0,
-         bufferinmysql => $opts{bufferinmysql} || 0,
-         checksum      => $checksum,
-         chunker       => $chunker,
-         chunksize     => $opts{chunksize},
+         algorithm     => $o->get('algorithm') || '',
+         buffer        => $o->get('buffer-results')  || 0,
+         bufferinmysql => $o->get('buffer-in-mysql') || 0,
+         checksum      => $args{checksum},
+         chunker       => $args{chunker},
+         chunksize     => $o->get('chunk-size'),
          cols          => \@compare_columns,
          dst_db        => $args{dst_db},
          dst_dbh       => $args{dst}->{dbh},
          dst_tbl       => $args{dst_tbl},
          dumper        => $du,
-         execute       => $opts{x} || 0,
+         execute       => $o->get('execute') || 0,
          index_hint    => $args{index_hint},
-         lock          => $opts{k} || 0,
+         lock          => $o->get('lock') || 0,
          misc_dbh      => $args{src}->{misc_dbh},
-         nibbler       => $nibbler,
+         nibbler       => $args{nibbler},
          possible_keys => \@possible_keys,
          parser        => $tp,
-         print         => $opts{p} || 0,
+         print         => $o->get('print') || 0,
          quoter        => $q,
-         replace       => $opts{r} || 0,
-         replicate     => ($opts{R} || $opts{s}) || 0,
+         replace       => $o->get('replace') || 0,
+         replicate     => ($o->get('replicate') || $o->get('sync-to-master'))
+                          || 0,
          transaction   => $use_txn,
          src_db        => $args{src_db},
          src_dbh       => $args{src}->{dbh},
          src_tbl       => $args{src_tbl},
-         test          => $opts{test} || 0,
+         test          => $o->get('dry-run') || 0,
          tbl_struct    => $tbl_struct,
-         timeoutok     => $opts{timeoutok} || 0,
-         trim          => $opts{trim} || 0,
-         versionparser => $vp,
-         wait          => $opts{w} || 0,
+         timeoutok     => $o->get('timeout-ok') || 0,
+         trim          => $o->get('trim') || 0,
+         versionparser => $args{vp},
+         wait          => $o->get('wait') || 0,
          where         => $args{where} || '',
-         master_slave  => $ms,
-         func          => $opts{f} || '',
-         skipslavecheck=> $opts{skipslavecheck} || 0,
+         master_slave  => $args{ms},
+         func          => $o->get('function') || '',
+         skipslavecheck=> ($o->get('slave-check') ? 0 : 1),
       );
 
-      if ( $opts{v} ) {
-         printf($hdr,
+      if ( $o->get('verbose') ) {
+         printf($args{hdr},
             @status{@ChangeHandler::ACTIONS, 'ALGORITHM'},
             @args{qw(src_db src_tbl)});
       }
@@ -5645,6 +5723,8 @@ sub sync_a_table {
       print_err($EVAL_ERROR, @args{qw(dst_db dst_tbl)}, $args{dst_dsn}->{h} );
       $exit_status |= 1;
    }
+
+   return $exit_status;
 }
 
 # Tries to extract the MySQL error message and print it
@@ -5663,27 +5743,32 @@ sub print_err {
 }
 
 sub get_cxn {
-   my ( $info ) = @_;
-   my $db_options = {};
-
-   if ( !$info->{p} && $opts{askpass} ) {
-      $info->{p}
-         = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
+   my ( $dsn, %args ) = @_;
+   foreach my $arg ( qw(o dp) ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
-   my $dbh = $dsn_parser->get_dbh(
-      $dsn_parser->get_cxn_params($info), $db_options);
+   my $dp  = $args{dp};
+   my $o   = $args{o};
+
+   my $db_options = {};  # TODO: is this used for something?
+
+   if ( !$dsn->{p} && $o->get('ask-pass') ) {
+      $dsn->{p} = OptionParser::prompt_noecho("Enter password for $dsn->{h}: ");
+   }
+   my $dbh = $dp->get_dbh(
+      $dp->get_cxn_params($dsn), $db_options);
    my $sql;
-   if ( $opts{skipbinlog} ) {
+   if ( $o->get('bin-log') == 0 ) {
       $sql = "/*!32316 SET SQL_LOG_BIN=0 */";
       MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
    }
-   if ( $opts{skipuniquekey} ) {
+   if ( $o->get('unique-key-checks') == 0 ) {
       $sql = "/*!40014 SET UNIQUE_CHECKS=0 */";
       MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
    }
-   if ( $opts{K} ) {
+   if ( $o->get('foreign-key-checks') == 0 ) {
       $sql = "/*!40014 SET FOREIGN_KEY_CHECKS=0 */";
       MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
@@ -5696,55 +5781,64 @@ sub get_cxn {
 # $dsns is an array ref to a list of DSNs.
 # $dbs_tbls is an array ref to a list of hashes containing a db and tbl key.
 sub check_tables_for_triggers {
-   my ( $dsns, $dbs_tbls ) = @_;
+   my ( $dsns, $dbs_tbls, %args ) = @_;
+   foreach my $arg ( qw(o dp q du) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $du = $args{du};
+   my $dp = $args{dp};
 
    foreach my $dsn ( @$dsns ) {
-      my $dbh = get_cxn($dsn);
+      my $dbh = get_cxn($dsn, %args);
       foreach my $db_tbl ( @$dbs_tbls ) {
          # If table exists on destination, check it for triggers.
          my $create;
          eval {
-            $create = $du->get_create_table($dbh, $q,
+            $create = $du->get_create_table($dbh, $args{q},
                                             $db_tbl->{db}, $db_tbl->{tbl});
          };
          if ( ref $create eq 'ARRAY' ) {
             # TODO: this is a fugly hack that must die.
             # MySQLDump.pm is really fscked up.  MUST FIX.
-            my $triggers = $du->get_triggers($dbh, $q,
+            my $triggers = $du->get_triggers($dbh, $args{q},
                                              $db_tbl->{db}, $db_tbl->{tbl});
             if ( $triggers) {
                $dbh->disconnect();
                die "Cannot write to table with triggers: "
-                  . "$db_tbl->{db}\.$db_tbl->{tbl}\n"
-                  . "Use --ignore-triggers to force writing.\n";
+                  . "$db_tbl->{db}.$db_tbl->{tbl}.\n"
+                  . "Use --with-triggers to allow writing to "
+                  . "tables with triggers.\n";
             }
          }
          else {
-            my $msg = "$db_tbl->{db}.$db_tbl->{tbl} does not exist on "
-                    . $dsn_parser->as_string($dsn);
-            MKDEBUG && _d($msg);
+            warn "$db_tbl->{db}.$db_tbl->{tbl} does not exist on "
+               . $dp->as_string($dsn);
          }
       }
       $dbh->disconnect();
    }
 
-   return 0;
+   return;
 }
 
 sub tbl_permitted {
-   my ( $db, $tbl ) = @_;
-   
+   my ( $db, $tbl, %args ) = @_;
+   foreach my $arg ( qw(o) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o = $args{o};
+
    # Any tbl is permitted if --tables wasn't given.
-   return 1 if !$opts{t}; 
+   return 1 if !$o->got('tables'); 
    
    # Exact match: --tables has qualified db.tbl names.
-   return 1 if $opts{t}->{"$db.$tbl"};
+   return 1 if $o->get('tables')->{"$db.$tbl"};
 
    # Try to match tbl for any db.
-   return 1 if $opts{t}->{$tbl};
+   return 1 if $o->get('tables')->{$tbl};
 
    # Else, table is not permitted.
-   MKDEBUG && _d("Table not permitted by --tables:", $db, $tbl);
+   MKDEBUG && _d('Table not permitted by --tables:', $db, $tbl);
    return 0;
 }
 
@@ -6046,6 +6140,13 @@ short form: -c; type: array
 
 Compare this comma-separated list of columns.
 
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
+
 =item --databases
 
 short form: -d; type: hash
@@ -6101,7 +6202,7 @@ Specifying C<--no-foreign-key-checks> will C<SET FOREIGN_KEY_CHECKS=0>.
 
 =item --function
 
-type; string
+type: string
 
 Which hash function you'd like to use for checksums.
 
@@ -6336,6 +6437,8 @@ later all retain trailing spaces in C<VARCHAR>, while previous versions would
 remove them.
 
 =item --[no]unique-key-checks
+
+default: yes
 
 Enable unique key checks (C<SET UNIQUE_CHECKS=1>).
 
