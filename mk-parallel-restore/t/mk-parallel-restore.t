@@ -2,7 +2,6 @@
 
 use strict;
 use warnings FATAL => 'all';
-
 use English qw(-no_match_vars);
 use Test::More tests => 28;
 
@@ -65,7 +64,7 @@ SKIP: {
    skip 'Sandbox master does not have the sakila database', 5
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
-   $output = `perl ../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d sakila -t film,film_actor,payment,rental`;
+   $output = `perl ../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir /tmp -d sakila -t film,film_actor,payment,rental`;
    like($output, qr/0 failures/, 'Dumped sakila tables');
 
    $output = `MKDEBUG=1 $cmd -D test /tmp/default/ 2>&1 | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$4}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
@@ -99,7 +98,7 @@ SKIP: {
 # #############################################################################
 $sb->load_file('master', 'samples/issue_30.sql');
 `rm -rf /tmp/default`;
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 -C 25`;
+`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir /tmp -d test -t issue_30 --chunk-size 25`;
 # The above makes the following chunks:
 #
 # #   WHERE                         SIZE  FILE
@@ -133,7 +132,7 @@ like($output, qr/Resuming restore of `test`.`issue_30` from chunk 3 with 20\d\d 
 
 # Test that resume doesn't do anything on a tab dump because there's
 # no chunks file
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 --tab`;
+`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir /tmp -d test -t issue_30 --tab`;
 $output = `MKDEBUG=1 $cmd --noatomicresume -D test --local --tab /tmp/default/test/ 2>&1`;
 like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab dump (issue 30)');
 
@@ -141,7 +140,7 @@ like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab 
 
 # Test that resume doesn't do anything on non-chunked dump because
 # there's only 1 chunk: where 1=1
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 -C 10000`;
+`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir /tmp -d test -t issue_30 --chunk-size 10000`;
 $output = `MKDEBUG=1 $cmd --noatomicresume -D test /tmp/default/test/ 2>&1`;
 like($output, qr/Cannot resume restore: only 1 chunk \(1=1\)/, 'Does not resume single chunk where 1=1 (issue 30)');
 
@@ -152,7 +151,7 @@ like($output, qr/Cannot resume restore: only 1 chunk \(1=1\)/, 'Does not resume 
 # #############################################################################
 
 # Test that resume does not die if the table isn't present.
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 -C 25`;
+`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir /tmp -d test -t issue_30 --chunk-size 25`;
 `$mysql -D test -e 'DROP TABLE issue_30'`;
 $output = `MKDEBUG=1 $cmd -D test /tmp/default/test/ 2>&1 | grep Restoring`;
 like($output, qr/Restoring from chunk 0 because table `test`.`issue_30` does not exist/, 'Resume does not die when table is not present (issue 221)');
@@ -169,7 +168,7 @@ my $slave_dbh = $sb->get_dbh_for('slave1');
 SKIP: {
    skip 'Cannot connect to sandbox slave', 2 unless $slave_dbh;
 
-   `../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 --tab`;
+   `../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir /tmp -d test -t issue_30 --tab`;
 
    # By default a --tab restore should not replicate.
    diag(`/tmp/12345/use -e 'DROP TABLE IF EXISTS test.issue_30'`);
@@ -203,7 +202,7 @@ SKIP: {
 
    # Check that non-tab restores do replicate by default.
    `rm -rf /tmp/default/`;
-   `../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 -C 25`;
+   `../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir /tmp -d test -t issue_30 --chunk-size 25`;
 
    diag(`/tmp/12345/use -e 'DROP TABLE IF EXISTS test.issue_30'`);
    `$cmd /tmp/default`;
