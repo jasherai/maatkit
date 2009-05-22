@@ -2,9 +2,8 @@
 
 use strict;
 use warnings FATAL => 'all';
-
 use English qw(-no_match_vars);
-use Test::More tests => 30;
+use Test::More tests => 31;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -24,7 +23,9 @@ SKIP: {
    skip 'Sandbox master does not have the sakila database', 24
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
-   $output = `$cmd --C 100 --basedir /tmp -T --d sakila --t film`;
+   `rm -rf /tmp/default`;
+
+   $output = `$cmd --chunk-size 100 --base-dir /tmp --tab -d sakila -t film`;
    my ($tbl, $chunk) = $output =~ m/default:\s+(\d+) tables,\s+(\d+) chunks,\s+\2 successes/;
    is($tbl, 1, 'One table dumped');
    ok($chunk >= 5 && $chunk <= 15, 'Got some chunks');
@@ -38,14 +39,15 @@ SKIP: {
    `$mysql -e 'create table foo.bar(a int) engine=myisam'`;
    `$mysql -e 'insert into foo.bar(a) values(123)'`;
    `$mysql -e 'create table foo.mrg(a int) engine=merge union=(foo.bar)'`;
-   $output = `$cmd -C 100 --basedir /tmp -T --d foo`;
+   $output = `$cmd --chunk-size 100 --base-dir /tmp --tab -d foo`;
    ok(-f '/tmp/default/foo/mrg.000000.sql.gz', 'Merge table was dumped');
    $output = `zgrep 123 /tmp/default/foo/mrg.000000.sql.gz`;
    chomp $output;
    ok(!-f '/tmp/default/foo/mrg.000000.txt.gz',
       'No tab-delim file found, so no data dumped');
+
    # And again, without --tab
-   $output = `$cmd -C 100 --basedir /tmp --d foo`;
+   $output = `$cmd --chunk-size 100 --base-dir /tmp -d foo`;
    ok(-f '/tmp/default/foo/mrg.000000.sql.gz', 'Merge table was dumped');
    $output = `zgrep 123 /tmp/default/foo/mrg.000000.sql.gz`;
    chomp $output;
@@ -55,14 +57,14 @@ SKIP: {
 
    # Fixes bug #1850998 (workaround for MySQL bug #29408)
    `$mysql < samples/bug_29408.sql`;
-   $output = `$cmd -E foo -C 100 --basedir /tmp -T --d mk_parallel_dump_foo 2>&1`;
+   $output = `$cmd --ignore-engines foo --chunk-size 100 --base-dir /tmp --tab -d mk_parallel_dump_foo 2>&1`;
    unlike($output, qr/No database selected/, 'Bug did not affect it');
    `$mysql -e 'drop database if exists mk_parallel_dump_foo'`;
    `rm -rf /tmp/default`;
 
    # Make sure subsequent chunks don't have DROP/CREATE in them (fixes bug
    # #1863949).
-   $output = `$cmd -C 100 --no-gzip --basedir /tmp -d sakila -t film 2>&1`;
+   $output = `$cmd --chunk-size 100 --no-gzip --base-dir /tmp -d sakila -t film 2>&1`;
    ok(-f '/tmp/default/sakila/film.000000.sql', 'first chunk file exists');
    ok(-f '/tmp/default/sakila/film.000001.sql', 'second chunk file exists');
    $output = `grep -i 'DROP TABLE' /tmp/default/sakila/film.000000.sql`;
@@ -77,7 +79,7 @@ SKIP: {
 
    # But also make sure mysqldump gets the --no-create-info argument, not
    # gzip...! (fixes bug #1866137)
-   $output = `$cmd --quiet -C 100 --basedir /tmp -d sakila -t film 2>&1`;
+   $output = `$cmd --quiet --chunk-size 100 --base-dir /tmp -d sakila -t film 2>&1`;
    is($output, '', 'There is no output');
    ok(-f '/tmp/default/sakila/film.000000.sql.gz', 'first chunk file exists');
    ok(-f '/tmp/default/sakila/film.000001.sql.gz', 'second chunk file exists');
@@ -97,7 +99,7 @@ SKIP: {
    # ##########################################################################
    # Issue 31: Make mk-parallel-dump and mk-parallel-restore do biggest-first
    ############################################################################
-   $output = `MKDEBUG=1 $cmd --basedir /tmp -d sakila 2>&1 | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$4}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
+   $output = `MKDEBUG=1 $cmd --base-dir /tmp -d sakila 2>&1 | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$4}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
    unlike($output, qr/disorder/, 'Tables dumped biggest-first by default');   
    `rm -rf /tmp/default`;
 }
@@ -109,7 +111,7 @@ $sb->load_file('master', 'samples/issue_223.sql');
 diag(`rm -rf /tmp/default/`);
 
 # Dump table t1 and make sure its trig def is not in any chunk.
-diag(`MKDEBUG=1 $cmd --basedir /tmp/ -C 30 -d test 1>/dev/null 2>/dev/null`);
+diag(`MKDEBUG=1 $cmd --base-dir /tmp/ --chunk-size 30 -d test 1>/dev/null 2>/dev/null`);
 is(
    `zcat /tmp/default/test/t1.000000.sql.gz | grep TRIGGER`,
    '',
@@ -119,6 +121,10 @@ is(
    `zcat /tmp/default/test/t1.000001.sql.gz | grep TRIGGER`,
    '',
    'No trigger def in chunk 1 (issue 223)'
+);
+ok(
+   -f '/tmp/default/test/t1.000000.trg.gz',
+   'Triggers dumped'
 );
 
 # Restore t1 and make sure t2 is not affected by the t1 trigger.
@@ -147,12 +153,12 @@ is_deeply(
 
 # This test relies on issue_223.sql loaded above which creates test.t1.
 
-# There should be 56 rows total, so -C 28 should make 2 chunks.
+# There should be 56 rows total, so --chunk-size 28 should make 2 chunks.
 # And since the range of vals is 1..999, those chunks will be
 # < 500 and >= 500. Furthermore, the top 2 vals are 100 and 999,
 # so the 2nd chunk should contain only 999.
 diag(`rm -rf /tmp/default/`);
-diag(`$cmd --basedir /tmp/ --csv -C 28 -d test -t t1 > /dev/null`);
+diag(`$cmd --base-dir /tmp/ --csv --chunk-size 28 -d test -t t1 > /dev/null`);
 
 $output = `gzip -d -c /tmp/default/test/t1.000000.txt.gz | wc -l`;
 like($output, qr/55/, 'First chunk of csv dump (issue 275)');

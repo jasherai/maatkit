@@ -2677,12 +2677,7 @@ Transformers->import( qw(shorten secs_to_time ts) );
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-# Globals -- as few as possible.
-my %opts = (
-   basedir  => File::Spec->curdir(),
-   C        => '',
-   gzip     => $OSNAME =~ m/Win32/ ? 0 : 1,
-);
+# Global variables.
 my @mysqldump_args;
 my @mysqldump_args_nodata;
 
@@ -2726,6 +2721,8 @@ sub main {
    # ########################################################################
    $o->set('base-dir', File::Spec->rel2abs($o->get('base-dir')));
 
+   $o->set('gzip', 0) if $OSNAME eq 'MSWin32';
+
    # TODO: modularize these.
    if ( !$o->get('help') ) {
       if ( $o->get('default-set') && !$o->get('sets') ) {
@@ -2740,7 +2737,7 @@ sub main {
          $o->_save_error("--losslessfp requires --tab");
       }
 
-      if ( !$o->get('help') && $o->get('sets') && !$o->get('set-table') ) {
+      if ( $o->get('sets') && !$o->get('set-table') ) {
          $o->_save_error("--sets requires --set-table");
       }
 
@@ -2779,8 +2776,8 @@ sub main {
       [qw(--socket        S)],
       [qw(--user          u)],
    );
-   @conn_params = map  { "$_->[0]='$opts{$_->[1]}'" }
-                  grep { defined $o->get($_->[1])   }
+   @conn_params = map  { "$_->[0]='".$o->get($_->[1])."'"; }
+                  grep { $o->got($_->[1]); }
                   @conn_params;
 
    # ########################################################################
@@ -3079,14 +3076,14 @@ sub main {
          my $i      = 0;
          my @chunks = get_chunks(
             set => $set,
-            db  => $db_tbl[0],
-            tbl => $db_tbl[1],
+            db  => $db_tbl->[0],
+            tbl => $db_tbl->[1],
             dbh => $dbh,
             %common_modules,
          );
          my $cols   = join(', ', get_columns(
-               db  => $db_tbl[0],
-               tbl => $db_tbl[1],
+               db  => $db_tbl->[0],
+               tbl => $db_tbl->[1],
                dbh => $dbh,
                %common_modules)
          );
@@ -3206,7 +3203,7 @@ sub main {
          while ( !$dbh->ping && $tries++ < $o->get('wait') ) {
             sleep(1);
             eval {
-               $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts));
+               $dbh = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
             };
             if ( $EVAL_ERROR ) {
                info($o, 0, 'Waiting: ' . scalar(localtime)
@@ -3240,7 +3237,12 @@ sub main {
                $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
                MKDEBUG && _d("PID", $PID, "got", Dumper($todo));
                my $exit_status = 0;
-               $exit_status = do_table($todo, $filename) || $exit_status;
+               $exit_status = do_table(
+                  $todo,
+                  $filename,
+                  $has_triggers,
+                  %common_modules,
+               ) || $exit_status;
                exit($exit_status);
             }
          }
@@ -3489,7 +3491,7 @@ sub get_chunks {
 # Prints a message.
 sub info {
    my ( $o, $level, $msg ) = @_;
-   if ( $level <= ($o->get{'verbose') || 0) ) {
+   if ( $level <= ($o->get('verbose') || 0) ) {
       print $msg, "\n";
    }
 }
@@ -3512,7 +3514,7 @@ sub interp {
 
 # Actually dumps a table.
 sub do_table {
-   my ( $todo, $filename ) = @_;
+   my ( $todo, $filename, $has_triggers, %args ) = @_;
    foreach my $arg ( qw(o q dp du) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -3525,6 +3527,8 @@ sub do_table {
    my $D         = $q->quote($todo->{D});
    my $N         = $q->quote($todo->{N});
 
+   MKDEBUG && $todo->{C} == 0 && _d('Dumping', $D, '.', $N);
+
    # Since we're forked we need to create our own DBH.  Not doing so leads to
    # re-using the parent's (global) DBH, which leads to really hard-to-find bugs
    # with forking and zombies.  Bleh.
@@ -3535,12 +3539,16 @@ sub do_table {
       $localdbh ||= $dp->get_dbh( $dp->get_cxn_params($dp->parse_options($o)) );
       my $trg = $du->dump($localdbh, $q, $todo->{D}, $todo->{N}, 'triggers');
       if ( $trg ) {
+         MKDEBUG && _d('Table has triggers');
          my $fspec = $o->get('gzip')
             ? "| gzip --force --fast > $filename.trg.gz"
             : "> $filename.trg";
-         open my $file, $fspec or die "Couldn't open $fspec: $OS_ERROR";
-         print {$file} $trg    or die "Couldn't print to $fspec: $OS_ERROR";
-         close $file           or die "Couldn't close $fspec: $OS_ERROR";
+         open my $file, $fspec or die "Cannot open $fspec: $OS_ERROR";
+         print {$file} $trg    or die "Cannot print to $fspec: $OS_ERROR";
+         close $file           or die "Cannot close $fspec: $OS_ERROR";
+      }
+      else {
+         MKDEBUG && _d('Table does not have triggers');
       }
    }
 
@@ -3565,7 +3573,7 @@ sub do_table {
       }
 
       # Dump the data.
-      if ( !$opts{E}->{$todo->{E}} ) { # Don't dump data for these engines...
+      if ( !$o->get('ignore-engines')->{$todo->{E}} ) { # Don't dump data for these engines...
          my $sql
            = $o->get('csv')
            ?    "SELECT $todo->{L} INTO OUTFILE '$filename.txt' "
@@ -3589,6 +3597,9 @@ sub do_table {
                'gzip', '--force', '--fast', "$filename.txt");
          }
       }
+      else {
+         MKDEBUG && _d('Ignoring table because of --ignore-engines');
+      }
    }
    else {
       # It's either a custom command, or it's a regular SQL dump and we're going
@@ -3603,7 +3614,7 @@ sub do_table {
       }
 
       my @args
-         = $opts{E}->{$todo->{E}} ? @mysqldump_args_nodata : @mysqldump_args;
+         = $o->get('ignore-engines')->{$todo->{E}} ? @mysqldump_args_nodata : @mysqldump_args;
       # Do a DROP/CREATE only for the first chunk.
       if ( !@ARGV && $todo->{C} == 0 ) {
          @args = grep { $_ !~ m/--no-create-info/ } @args;
@@ -3975,8 +3986,6 @@ L<"--lock-tables"> and L<"--[no]flush-lock"> are mutually exclusive.
 
 L<"--sets"> and L<"--set-per-database"> are mutually exclusive.
 
-L<"--lossless-floats"> requires L<"--tab">.
-
 =over
 
 =item --ask-pass
@@ -4118,6 +4127,8 @@ it causes the MySQL server to rotate its error log, potentially overwriting
 error messages.
 
 =item --[no]gzip
+
+default: yes
 
 Compress files with gzip.
 
