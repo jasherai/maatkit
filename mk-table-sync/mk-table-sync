@@ -5763,7 +5763,7 @@ sub get_cxn {
       MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
    }
-   if ( $o->get('unique-key-checks') == 0 ) {
+   if ( $o->get('unique-checks') == 0 ) {
       $sql = "/*!40014 SET UNIQUE_CHECKS=0 */";
       MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
@@ -6436,13 +6436,13 @@ MySQL versions which vary in their handling of trailing spaces. MySQL 5.0 and
 later all retain trailing spaces in C<VARCHAR>, while previous versions would 
 remove them.
 
-=item --[no]unique-key-checks
+=item --[no]unique-checks
 
 default: yes
 
 Enable unique key checks (C<SET UNIQUE_CHECKS=1>).
 
-Specifying C<--no-unique-key-checks> will C<SET UNIQUE_CHECKS=0>.
+Specifying C<--no-unique-checks> will C<SET UNIQUE_CHECKS=0>.
 
 =item --[no]utf8
 

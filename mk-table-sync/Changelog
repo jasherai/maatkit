@@ -16,7 +16,7 @@ Changelog for mk-table-sync:
    * Removed the --skipbinlog long option.  Use --[no]bin-log instead.
    * Removed the --skipforeignkey long option.  Use --[no]foreign-key-checks.
    * Removed the --skipslavecheck long option.  Use --[no]slave-check instead.
-   * Removed the --skipuniquekey long option.  Use --[no]unique-key-checks.
+   * Removed the --skipuniquekey long option.  Use --[no]unique-checks.
    * Removed the --synctomaster long option.  Use --sync-to-master instead.
    * Removed the --timeoutok long option.  Use --timeout-ok instead.
    * Removed the -a short option.  Use --algorithm instead.
