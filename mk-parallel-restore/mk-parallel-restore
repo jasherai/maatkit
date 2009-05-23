@@ -1453,92 +1453,101 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 Transformers->import(qw(shorten secs_to_time ts));
 
+# Global variables.
+my $last_bytes_done = 0;
+
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   my @opt_spec   = OptionParser::pod_to_spec();
-   my $opt_parser = new OptionParser(@opt_spec);
-   $opt_parser->{strict} = 0;
-   $opt_parser->{prompt} = '<options> PATH [PATH...]';
-   $opt_parser->{descr} = 'loads files into MySQL in parallel.';
-
-   my %opts = (
-      basedir  => File::Spec->curdir(),
+   my $dp = new DSNParser();
+   my $o  = new OptionParser(
+      strict      => 0,
+      prompt      => '[OPTION]... PATH [PATH]...',
+      description => 'loads files into MySQL in parallel.',
    );
+   $o->get_specs();
+   $o->get_opts();
+
+   $dp->prop('setvars', $o->get('set-vars'));
+
    eval {
-      # Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This
-      # only works on GNU/Linux.
+      # Try to read --threads from the number of CPUs in /proc/cpuinfo.
+      # This only works on GNU/Linux.
       open my $file, "<", "/proc/cpuinfo"
          or die $OS_ERROR;
       local $INPUT_RECORD_SEPARATOR = undef;
       my $contents = <$file>;
       close $file;
-      $opts{m} = scalar( map { $_ } $contents =~ m/(processor)/g );
+      my $threads = scalar( map { $_ } $contents =~ m/(processor)/g );
+
+      # Alternatives to /proc/cpuinfo.
+      $threads ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
+      $threads = max(2, $threads || 0);
+
+      $o->set('threads', $threads);
    };
-   $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
-   $opts{m} = max(2, $opts{m} || 0);
-
-   %opts = $opt_parser->parse(%opts);
-
-   my $dp = new DSNParser;
-   $dp->prop('setvars', $opts{setvars});
 
    # ########################################################################
    # Process options.
    # ########################################################################
-   $opts{basedir} = File::Spec->rel2abs($opts{basedir});
+   $o->set('base-dir', File::Spec->rel2abs($o->get('base-dir')));
 
-   if ( $opts{q} ) {
-      # TODO: 'sets --verbose 0'
-      $opts{v} = 0;
+   if ( $o->get('quiet') ) {
+      $o->set('verbose', 0);
    }
 
-   if ( $opts{csv} ) {
-      # TODO: 'implies --tab'
-      $opts{T} = 1;
+   if ( $o->get('csv') ) {
+      $o->set('tab', 1);
    }
 
-   if ( $opts{T} ) { # TODO 'implies
-      $opts{disablekeys}    = 1 unless $opt_parser->{given}->{disablekeys};
-      $opts{noautovalon0}   = 1 unless $opt_parser->{given}->{noautovalon0};
-      $opts{binlog}         = 0 unless $opt_parser->{given}->{binlog};
-      $opts{nouniquechecks} = 1 unless $opt_parser->{given}->{nouniquechecks};
-      $opts{noforeignkeys}  = 1 unless $opt_parser->{given}->{noforeignkeys};
+   if ( $o->get('tab') ) {
+      $o->set('commit', 1)             unless $o->get('commit');
+      $o->set('disable-keys', 1)       unless $o->got('disable-keys');
+      $o->set('no-auto-value-on-0', 1) unless $o->got('no-auto-value-on-0');
+      $o->set('bin-log', 0)            unless $o->got('bin-log');
+      $o->set('unique-checks', 0)      unless $o->got('unique-checks');
+      $o->set('foreign-key-checks', 0) unless $o->got('foreign-key-checks');
    }
 
    if ( !@ARGV ) {
-      $opt_parser->error("You did not specify any files to restore");
+      $o->_save_error("You did not specify any files to restore");
    }
 
-   foreach my $opt ( qw(locktables truncate disablekeys noautovalon0
-                        nouniquechecks noforeignkeys
-                        bulkinsbufsize commit L i r) ) {
-      if ( defined $opts{$opt} && !$opts{T} ) {
-         $opt_parser->error('Option ' . (length($opt) > 1 ? '--' : '-')
-            . "$opt is ineffective without --tab or --csv");
+   foreach my $opt ( qw(lock-tables truncate disable-keys no-auto-value-on-0
+                        unique-checks foreign-key-checks
+                        bulk-insert-buffer-size commit local ignore replace) )
+   {
+      if ( $o->got($opt) && !$o->get('tab') ) {
+         $o->_save_error("Option --$opt is ineffective without --tab or --csv");
       }
    }
 
-   if ( $opts{fifo} ) {
-      if ( !defined $opts{umask} ) {
-         $opts{umask} = 0;
+   if ( $o->get('fifo') ) {
+      if ( !$o->got('umask') ) {
+         $o->set('umask', 0);
       }
    }
 
-   if ( defined $opts{umask} ) {
-      umask oct($opts{umask});
+   if ( $o->get('umask') ) {
+      umask oct($o->get('umask'));
    }
 
-   $opt_parser->usage_or_errors(%opts);
+   # See issue 31.
+   my $biggest_first = $o->got('biggest-first') ? $o->get('biggest-first')
+                     : @ARGV > 1                ? 0
+                     : $o->get('biggest-first'); # default from POD
+   $o->set('biggest-first', $biggest_first);
+
+   $o->usage_or_errors();
 
    # ########################################################################
    # Connect.
    # ########################################################################
-   if ( !defined $opts{p} && $opts{askpass} ) {
-      $opts{p} = OptionParser::prompt_noecho("Enter password: ");
+   if ( $o->get('ask-pass') ) {
+      $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
 
    # TODO: remove this again when issue with loading .trg is fixed
@@ -1551,11 +1560,11 @@ sub main {
       [qw(--socket        S)],
       [qw(--user          u)],
    );
-   @conn_params = map  { "$_->[0]='$opts{$_->[1]}'" }
-                  grep { defined $opts{$_->[1]}     }
+   @conn_params = map  { "$_->[0]='".$o->get($_->[1])."'"; }
+                  grep { $o->got($_->[1]); }
                   @conn_params;
 
-   my $dbh = get_cxn();
+   my $dbh = get_cxn(o=>$o, dp=>$dp);
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
 
@@ -1572,6 +1581,13 @@ sub main {
    my $known_filetypes = 'sql|txt|csv|trg';
    my $bytes = 0; # For progress measurements
 
+   {
+   # These vars aren't needed outside this local scope.
+   my $databases       = $o->get('databases');
+   my $databases_regex = $o->get('databases-regex');
+   my $tables          = $o->get('tables');
+   my $tables_regex    = $o->get('tables-regex');
+
    # Find directories and files and save them.
    File::Find::find(
       {  no_chdir => 1,
@@ -1581,18 +1597,18 @@ sub main {
                my ($vol, $dirs, $file) = File::Spec->splitpath( $filename );
                if ( $file =~ m/\.(?:$known_filetypes)(?:\.\d+)?(?:\.gz)?$/ ) {
                   my @dirs  = grep { $_ } File::Spec->splitdir($dir);
-                  my $db    = $opts{D} || $dirs[-1];
+                  my $db    = $o->get('database') || $dirs[-1];
                   my ($tbl) = $file =~ m/^([^.]+)/;
 
-                  if ( ( !$opts{d} || exists($opts{d}->{$db}) )
-                     && ( !$opts{dbregex} || $db =~ m/$opts{dbregex}/ )
-                     && ( !exists $opts{g}->{$db} )
-                     && ( !exists $opts{n}->{$tbl} )
-                     && ( !exists $opts{n}->{"$db.$tbl"} )
-                     && ( !$opts{t} || exists($opts{t}->{$tbl}) )
-                     && ( !$opts{tblregex} || $tbl =~ m/$opts{tblregex}/ )
-                  ) {
-                     if ( filetype($file) !~ m/sql|trg/ && !$opts{T} ) {
+                  if ( ( !$databases || exists($databases->{$db}) )
+                     && ( !$databases_regex || $db =~ m/$databases_regex/ )
+                     && ( !exists $o->get('ignore-databases')->{$db} )
+                     && ( !exists $o->get('ignore-tables')->{$tbl} )
+                     && ( !exists $o->get('ignore-tables')->{"$db.$tbl"} )
+                     && ( !$tables || exists($tables->{$tbl}) )
+                     && ( !$tables_regex || $tbl =~ m/$tables_regex/ ) )
+                  {
+                     if ( filetype($file) !~ m/sql|trg/ && !$o->get('tab') ) {
                         die "$filename isn't a SQL file and you didn't tell me "
                            . "to load tab-delimited files.  Maybe you should "
                            . "specify the --tab option.\n";
@@ -1603,25 +1619,25 @@ sub main {
                      $bytes += $size;
                      $size_for_table{$db}->{$tbl} += $size;
                      $size_for_file{$filename} = $size;
-                     push @tables_to_do, {   # This pushes a dupe, filtered later.
+                     push @tables_to_do, { # This pushes a dupe, filtered later.
                         D => $db,
                         N => $tbl,
                      };
                   }
 
-                  # Check if a chunks file for this table exits. This file is used
-                  # for resuming interrupted restores.
+                  # Check if a chunks file for this table exits. This file
+                  # is used for resuming interrupted restores.
                   my $chunks_file = $dirs . $tbl . '.chunks';
                   if ( !exists $chunks_for_table{$db}->{$tbl}
                        && -f $chunks_file ) {
                      open my $CHUNKS_FILE, "< $chunks_file"
-                        or die "Cannot read $file: $OS_ERROR";
+                        or die "Cannot open $file: $OS_ERROR";
                      my $chunks = do { local $/ = undef; <$CHUNKS_FILE> };
-                     close $CHUNKS_FILE;
+                     close $CHUNKS_FILE
+                        or die "Cannot close $file: $OS_ERROR";
                      push @{ $chunks_for_table{$db}->{$tbl} },
                         split(/\n/, $chunks);
                   }
-
                }
             }
             elsif ( $filename =~ m/00_views.sql/ ) {
@@ -1629,12 +1645,13 @@ sub main {
                push @view_files, $filename;
             }
             elsif ( ! -d $filename && $filename !~ m/00_master_data.sql/ ) {
-               info(1, "Skipping file $filename");
+               info($o, 1, "Skipping file $filename");
             }
          },
       },
       map { File::Spec->rel2abs($_) } @ARGV
    );
+   }
 
    # ########################################################################
    # Canonicalize table list in the order they were discovered, filtering out
@@ -1646,14 +1663,13 @@ sub main {
       @tables_to_do = grep { !$seen{$_->{D}}->{$_->{N}}++ } @tables_to_do;
       $stats{tables} = scalar(@tables_to_do);
 
-      if ( $opts{createdb} ) {
+      if ( $o->get('create-databases') ) {
          my %dbs;
          map { $dbs{ $_->{D} }++ } @tables_to_do;
          foreach my $db ( keys %dbs ) {
             $dbh->do("CREATE DATABASE IF NOT EXISTS " . $q->quote($db));
          }
       }
-
    }
 
    # #########################################################################
@@ -1663,7 +1679,7 @@ sub main {
    $maxdb  = max(8, map { length($_->{D}) } @tables_to_do);
    $maxtbl = max(5, map { length($_->{N}) } @tables_to_do);
    my $format = "%-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
-   info(2, sprintf($format, qw(DATABASE TABLE FILES TIME STATUS THREADS)));
+   info($o, 2, sprintf($format, qw(DATABASE TABLE FILES TIME STATUS THREADS)));
 
    # This signal handler will do nothing but wake up the sleeping parent process
    # and record the exit status and time of the child that exited (as a side
@@ -1680,20 +1696,13 @@ sub main {
       }
    };
 
-   # #########################################################################
-   # Sort tables biggest-first if either:
-   #    1) only 1 file/dir name was given (biggestfirst is 'yes' by default); or
-   #    2) more than 1 file/dir name was given but biggestfirst was explicitly
-   #       given, in which case it will be '1'
-   # #########################################################################
-
-   # In either case, save the table sizes to make testing more reliable
+   # Save the table sizes to make testing more reliable.
+   # TODO: why does this make *testing* more reliable?
    foreach my $tbl ( @tables_to_do ) {
       $tbl->{Z} = $size_for_table{ $tbl->{D} }->{ $tbl->{N} };
    }
 
-   if (    (@ARGV == 1 && $opts{biggestfirst})
-        || $opts{biggestfirst} eq '1' ) {
+   if ( $o->get('biggest-first') ) {
       @tables_to_do = reverse sort { $a->{Z} <=> $b->{Z} } @tables_to_do;
    }
 
@@ -1702,31 +1711,35 @@ sub main {
    # number of children.  Each child that exits will trigger a new one to start
    # after that.
    # #########################################################################
-   my $start           = time();
-   my $done            = 0; # For progress measurements.
-   my $last_bytes_done = 0;
+   my %common_modules = (
+      o  => $o,
+      dp => $dp,
+      q  => $q,
+   );
+   my $start = time();
+   my $done  = 0; # For progress measurements. 
 
    my %kids;
    while ( @tables_to_do || %kids ) {
 
       # Wait for the MySQL server to become responsive.
       my $tries = 0;
-      while ( !$dbh->ping && $tries++ < $opts{w} ) {
+      while ( !$dbh->ping && $tries++ < $o->get('wait') ) {
          sleep(1);
          eval {
-            $dbh = get_cxn();
+            $dbh = get_cxn(%common_modules);
          };
          if ( $EVAL_ERROR ) {
-            info(0, 'Waiting: ' . scalar(localtime) . ' '
+            info($o, 0, 'Waiting: ' . scalar(localtime) . ' '
                . mysql_error_msg($EVAL_ERROR));
          }
       }
-      if ( $tries >= $opts{w} ) {
+      if ( $tries >= $o->get('wait') ) {
          die "Too many retries, exiting.\n";
       }
 
       # Start a new child process.
-      while ( @tables_to_do && $opts{m} > keys %kids ) {
+      while ( @tables_to_do && $o->get('threads') > keys %kids ) {
          my $todo = shift @tables_to_do;
          $todo->{time} = time;
          my $pid = fork();
@@ -1739,8 +1752,14 @@ sub main {
             MKDEBUG && _d("PID", $PID, "got", Dumper($todo));
             my $exit_status = 0;
             $exit_status = do_table(
-               @{$todo}{qw(D N)},
-               @{$files_for_table{$todo->{D}}->{$todo->{N}}}
+               file_types  => $known_filetypes,
+               db          => $todo->{D},
+               tbl         => $todo->{N},
+               files       => $files_for_table{$todo->{D}}->{$todo->{N}},
+               file_size   => \%size_for_file,
+               tbl_chunks  => \%chunks_for_table,
+               conn_params => \@conn_params,
+               %common_modules,
             ) || $exit_status;
             exit($exit_status);
          }
@@ -1753,7 +1772,7 @@ sub main {
          my $todo   = $kids{$kid};
          my $stat   = $status->{exit_status};
          my $time   = $status->{exit_time} - $todo->{time};
-         info(2, sprintf($format, @{$todo}{qw(D N)},
+         info($o, 2, sprintf($format, @{$todo}{qw(D N)},
             scalar(@{$files_for_table{$todo->{D}}->{$todo->{N}}}),
             sprintf('%.2f', $time), $stat, scalar(keys %kids)));
          $stats{ $stat ? 'failure' : 'success' }++;
@@ -1763,7 +1782,8 @@ sub main {
          $reaped = 1;
          $done += $todo->{Z};
          # Reap progress report. See sub bytes_done_from_processlist() below.
-         print_progress_report($done, $dbh, $bytes, $start) if $opts{progress};
+         print_progress_report($o, $done, $dbh, $bytes, $start)
+            if $o->get('progress');
       }
 
       if ( !$reaped ) {
@@ -1772,28 +1792,31 @@ sub main {
          # not get the signal.
          sleep(1);
          # Sleep progress report. See sub bytes_done_from_processlist() below.
-         print_progress_report($done, $dbh, $bytes, $start) if $opts{progress};
+         print_progress_report($o, $done, $dbh, $bytes, $start)
+            if $o->get('progress');
       }
    }
 
    # Print final progress report which will show 100% done.
    # undef for the dbh param prevents checking the proclist
    # because all children are supposed to be done at this point.
-   print_progress_report($done, undef, $bytes, $start) if $opts{progress};
+   print_progress_report($o, $done, undef, $bytes, $start)
+      if $o->get('progress');
 
    # Load views.
    foreach my $file ( @view_files ) {
       my $exit_status = do_sql_file(
          dbh  => $dbh,
          file => $file,
-         type => 'views'
+         type => 'views',
+         %common_modules,
       );
       $stats{ $exit_status ? 'failure' : 'success' }++;
    }
 
    $stats{wallclock} = time() - $start;
 
-   info(1, sprintf(
+   info($o, 1, sprintf(
       '%5d tables, %5d files, %5d successes, %2d failures, '
       . '%6.2f wall-clock time, %6.2f load time',
          map {
@@ -1802,7 +1825,7 @@ sub main {
       ));
 
    # Exit status is 1 if there were any failures.
-   exit( $stats{failure} ? 1 : 0 );
+   return ($stats{failure} ? 1 : 0);
 }
 
 # ############################################################################
@@ -1810,16 +1833,18 @@ sub main {
 # ############################################################################
 
 sub makefifo {
-   my $filename = File::Spec->catfile($opts{basedir}, "mpr_fifo_$PID");
+   my ( $o ) = @_;
+   my $filename = File::Spec->catfile($o->get('base-dir'), "mpr_fifo_$PID");
    if ( !-p $filename ) {
       if ( -e $filename ) {
          die "Cannot make fifo: $filename exists";
       }
-      if ( $opts{test} ) {
+      if ( $o->get('dry-run') ) {
          print "mkfifo $filename\n";
       }
       else {
-         POSIX::mkfifo($filename, 0777) or die "Cannot make fifo $filename: $OS_ERROR";
+         POSIX::mkfifo($filename, 0777)
+            or die "Cannot make fifo $filename: $OS_ERROR";
       }
    }
    return $filename;
@@ -1833,15 +1858,25 @@ sub mysql_error_msg {
 
 # Prints a message.
 sub info {
-   my ( $level, $msg ) = @_;
-   if ( $level <= $opts{v} ) {
+   my ( $o, $level, $msg ) = @_;
+   if ( $level <= $o->get('verbose') ) {
       print $msg, "\n";
    }
 }
 
 # Actually restores a table.
 sub do_table {
-   my ( $db, $tbl, @files ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(file_types db tbl files o dp file_size) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $file_types = $args{file_types};
+   my $db         = $args{db};
+   my $tbl        = $args{tbl};
+   my @files      = @{$args{files}};
+   my $o          = $args{o};
+   my $file_size  = $args{file_size};
+
    my $exit_status  = 0;
    my $trigger_file = undef; # TODO: rm this hack
 
@@ -1859,15 +1894,22 @@ sub do_table {
       if ( $a_type eq 'trg' || $b_type eq 'trg' ) {
          $trigger_file = $a_type eq 'trg' ? $a : $b;
       }
-      (index($known_filetypes, $a_type) <=> index($known_filetypes, $b_type))
+      (index($file_types, $a_type) <=> index($file_types, $b_type))
          || ($a cmp $b);
    } @files;
 
-   my $dbh;
+   my $dbh = get_cxn(%args);
    my ($fifo, $load_from, $loaded);
    my $bytes_done = 0;
 
-   $bytes_done = skip_finished_chunks($db, $tbl, \@files) unless $opts{noresume};
+   if ( $o->get('resume') ) {
+      $dbh ||= get_cxn(%args);
+      $bytes_done = skip_finished_chunks(
+         \@files,
+         dbh => $dbh,
+         %args,
+      );
+   }
 
    # TODO: rm this hack 
    my $set_bin_log_fh;
@@ -1875,7 +1917,8 @@ sub do_table {
    if ( $trigger_file ) {
       $set_bin_log_fh   = new File::Temp();
       $set_bin_log_file = $set_bin_log_fh->filename;
-      `echo 'SET SQL_LOG_BIN=$opts{binlog};' > $set_bin_log_file`; 
+      my $bin_log       = $o->get('bin-log');
+      `echo 'SET SQL_LOG_BIN=$bin_log;' > $set_bin_log_file`; 
       if ( $trigger_file =~ m/\.gz/ ) {
          # gzipping the file changes its name so File::Temp will no longer
          # be able to automatically unlink the file for us. Thus, we have
@@ -1889,41 +1932,42 @@ sub do_table {
    foreach my $file ( @files ) {
 
       # skip_finished_chunks() undefs files which are already restored
-      next if !defined $file;
+      next unless $file;
 
       if ( filetype($file) eq 'sql' ) {
-         $dbh ||= get_cxn();
+         $dbh ||= get_cxn(%args);
          $exit_status = do_sql_file(
             dbh  => $dbh,
             file => $file,
             type => 'tables',
-            db   => $db,
-            tbl  => $tbl
+            %args,
          );
       }
       elsif ( filetype($file) eq 'trg' ) {
+         my $decompress = $o->get('decompress');
          # TODO: rm this hack
          my @args = (
-            ($file =~ m/\.gz/ ? "$opts{decompress}" : 'cat'),
+            ($file =~ m/\.gz/ ? "$decompress" : 'cat'),
             qq{'$set_bin_log_file'},
             qq{'$file'},
             qw(| mysql),
-            @conn_params,
+            @{$args{conn_params}},
             $db
          );
-         $exit_status = system_call( @args ) || $exit_status;
+         $exit_status = system_call($o, @args) || $exit_status;
       }
       else {
          if ( $file =~ m/\.gz$/ ) {
-            if ( $opts{fifo} ) {
-               $fifo ||= makefifo();
+            if ( $o->get('fifo') ) {
+               $fifo ||= makefifo($o);
                $exit_status
-                  = system_call(qq{gunzip --stdout '$file' > '$fifo' &})
+                  = system_call($o, qq{gunzip --stdout '$file' > '$fifo' &})
                      || $exit_status;
                $load_from = $fifo;
             }
             else {
-               $exit_status = system_call(qq{gunzip '$file'}) || $exit_status;
+               $exit_status = system_call($o, qq{gunzip '$file'})
+                  || $exit_status;
                ( $load_from = $file ) =~ s/\.gz$//;
             }
          }
@@ -1932,68 +1976,71 @@ sub do_table {
          }
 
          my $sql;
-         my $LOCAL = $opts{L} ? ' LOCAL' : '';
-         my $OPT   = $opts{i} ? 'IGNORE' : $opts{r} ? 'REPLACE' : '';
-         if ( $opts{csv} ) {
+         my $charset = $o->get('charset');
+         my $LOCAL   = $o->get('local') ? ' LOCAL' : '';
+         my $OPT     = $o->get('ignore')  ? 'IGNORE'
+                     : $o->get('replace') ? 'REPLACE'
+                     : '';
+         if ( $o->get('csv') ) {
             $sql  = qq{LOAD DATA$LOCAL INFILE /*done:$bytes_done $db\.$tbl*/ ? }
                   . qq{$OPT INTO TABLE `$db`.`$tbl` }
-                  . qq{/*!50038 CHARACTER SET $opts{A} */ }
+                  . qq{/*!50038 CHARACTER SET $charset */ }
                   . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
                   . qq{LINES TERMINATED BY '\\n'};
          }
-         elsif ( $opts{T} ) {
+         elsif ( $o->get('tab') ) {
             $sql  = qq{LOAD DATA$LOCAL INFILE /*done:$bytes_done $db\.$tbl*/ ? }
                   . qq{$OPT INTO TABLE `$db`.`$tbl` }
-                  . qq{/*!50038 CHARACTER SET $opts{A} */};
+                  . qq{/*!50038 CHARACTER SET $charset */};
          }
 
          if ( $sql ) {
-            if ( $opts{test} ) {
+            if ( $o->get('dry-run') ) {
                print $sql, "\n";
             }
             else {
 
                # First loop through.
                if ( !$loaded++ ) {
-                  $dbh ||= get_cxn();
-                  if ( $opts{locktables} ) {
+                  $dbh ||= get_cxn(%args);
+                  if ( $o->get('lock-tables') ) {
                      $dbh->do("LOCK TABLES `$db`.`$tbl` WRITE");
                   }
-                  if ( $opts{truncate} ) {
+                  if ( $o->get('truncate') ) {
                      $dbh->do("TRUNCATE TABLE `$db`.`$tbl`");
                   }
                }
 
                # Every loop through, set options.
-               $dbh ||= get_cxn();
+               $dbh ||= get_cxn(%args);
                $dbh->do("USE `$db`"); # For binary logging.
-               if ( $opts{disablekeys} ) {
+               if ( $o->get('disable-keys') ) {
                   $dbh->do("/*!40000 ALTER TABLE `$db`.`$tbl` DISABLE KEYS */");
                }
-               if ( $opts{noautovalon0} ) {
+               if ( $o->get('no-auto-value-on-0') ) {
                   $dbh->do('/*!40101 SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO" */');
                }
-               if ( $opts{nouniquechecks} ) {
+               if ( !$o->get('unique-checks') ) {
                   $dbh->do('SET UNIQUE_CHECKS=0');
                }
-               if ( $opts{noforeignkeys} ) {
+               if ( !$o->get('foreign-key-checks') ) {
                   $dbh->do('SET FOREIGN_KEY_CHECKS=0');
                }
-               if ( $opts{binlog} == 0 ) {
+               if ( !$o->get('bin-log') ) {
                   $dbh->do('SET SQL_LOG_BIN=0');
                }
-               if ( $opts{bulkinsbufsize} ) {
-                  $dbh->do("SET SESSION bulk_insert_buffer_size=$opts{bulkinsbufsize}");
+               if ( my $bibs = $o->get('bulk-insert-buffer-size') ) {
+                  $dbh->do("SET SESSION bulk_insert_buffer_size=$bibs");
                }
 
                eval {
                   $dbh->do($sql, {}, $load_from);
-                  $dbh->commit if $opts{commit};
+                  $dbh->commit() if $o->get('commit');
                };
                if ( $EVAL_ERROR ) {
-                  die mysql_error_msg($EVAL_ERROR) . " while restoring $db.$tbl";
+                  die mysql_error_msg($EVAL_ERROR)." while restoring $db.$tbl";
                }
-               $bytes_done += $size_for_file{$file};
+               $bytes_done += $file_size->{$file};
             }
          }
          else {
@@ -2004,16 +2051,16 @@ sub do_table {
       }
    }
 
-   if ( $dbh && $opts{T} ) {
-      if ( $opts{disablekeys} ) {
+   if ( $dbh && $o->get('tab') ) {
+      if ( $o->get('disable-keys') ) {
          $dbh->do("/*!40000 ALTER TABLE `$db`.`$tbl` ENABLE KEYS */");
       }
-      if ( $opts{locktables} ) {
+      if ( $o->get('lock-tables') ) {
          $dbh->do("LOCK TABLES `$db`.`$tbl` WRITE");
       }
    }
 
-   if ( !$opts{test} && $fifo ) {
+   if ( !$o->get('dry-run') && $fifo ) {
       unlink $fifo;
    }
 
@@ -2029,23 +2076,25 @@ sub do_table {
 # status of older code).
 sub do_sql_file {
    my ( %args ) = @_;
-   foreach my $arg ( qw(dbh file type) ) {
+   foreach my $arg ( qw(o dbh file type) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    if ( $args{type} eq 'tables' ) {
       die "I need a db and tbl argument for tables"
          unless $args{db} && $args{tbl};
    }
+   my $o   = $args{o};
+   my $dbh = $args{dbh};
+
+   my $decompress = $o->get('decompress');
 
    MKDEBUG && _d("Doing", $args{type}, "in", $args{file});
-
-   my $dbh = $args{dbh}; # brevity
 
    local $INPUT_RECORD_SEPARATOR = ";\n";
 
    my $fh;
    if ( $args{file} =~ m/\.gz/ ) {
-      if ( !open $fh, '-|', "$opts{decompress} $args{file}" ) {
+      if ( !open $fh, '-|', "$decompress $args{file}" ) {
          warn "Cannot zcat $args{file}: $OS_ERROR";
          return 1;
       }
@@ -2057,15 +2106,15 @@ sub do_sql_file {
       }
    }
 
-   if ( !$opts{test} ) {
+   if ( !$o->get('dry-run') ) {
       if ( $args{type} eq 'tables') {
          $dbh->do("USE `$args{db}`");
       }
-      $dbh->do('SET SQL_LOG_BIN=0') if $opts{binlog} == 0;
+      $dbh->do('SET SQL_LOG_BIN=0') unless $o->get('bin-log');
    }
 
    while ( my $sql = <$fh> ) {
-      if ( $opts{test} ) {
+      if ( $o->get('dry-run') ) {
          print $sql;
       }
       else {
@@ -2091,23 +2140,32 @@ sub do_sql_file {
 # Returns the number of bytes "done" (already restored) in order to
 # keep --progress accurate.
 sub skip_finished_chunks {
-   my ( $db, $tbl, $files_ref ) = @_;
-   my $chunks_ref = $chunks_for_table{$db}->{$tbl};
+   my ( $files, %args ) = @_;
+   foreach my $arg ( qw(dbh db tbl tbl_chunks file_size o dp q) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $db        = $args{db};
+   my $tbl       = $args{tbl};
+   my $file_size = $args{file_size};
+   my $o         = $args{o};
+   my $chunks    = $args{tbl_chunks}->{$db}->{$tbl};
+   my $q         = $args{q};
+   my $dbh       = $args{dbh};
+
    my $db_tbl = $q->quote($db, $tbl);
 
    MKDEBUG && _d("Checking if restore of", $db_tbl, "can be resumed");
 
-   if ( !defined $chunks_ref ) {
+   if ( !defined $chunks ) {
       MKDEBUG && _d('Cannot resume restore: no chunks file');
       return 0;
    }
 
-   if ( $chunks_ref->[0] eq '1=1' ) {
+   if ( $chunks->[0] eq '1=1' ) {
       MKDEBUG && _d('Cannot resume restore: only 1 chunk (1=1)');
       return 0;
    }
 
-   $dbh ||= get_cxn();
    $dbh->do("USE `$db`");
 
    my $first_missing_chunk = 0;
@@ -2119,7 +2177,7 @@ sub skip_finished_chunks {
    };
    if ( !$EVAL_ERROR ) {
       # Table exists, so figure out the first missing chunk.
-      foreach my $chunk ( @$chunks_ref ) {
+      foreach my $chunk ( @$chunks ) {
          my $select_chunk   = "SELECT 1 FROM $db_tbl WHERE ( $chunk ) LIMIT 1";
          my $chunk_restored = $dbh->selectall_arrayref($select_chunk);
          last if scalar @$chunk_restored == 0;
@@ -2132,18 +2190,15 @@ sub skip_finished_chunks {
 
    my $bytes_done = 0;
    if ( $first_missing_chunk ) {
-      $first_missing_chunk -= 1 unless $opts{'atomicresume'};
+      $first_missing_chunk -= 1 unless $o->get('atomic-resume');
 
       # We need to DELETE the first missing chunk otherwise we may try to
       # INSERT dupliate values.
-      # TODO: Use of uninitialized value in concatenation (.) or string at
-      # ./mk-parallel-restore line 1808 with --test and tables already
-      # exist; doesn't happen if tables do not exist
-      $dbh->do("DELETE FROM $db_tbl WHERE "
-               . $chunks_ref->[$first_missing_chunk]);
+      # TODO: issue 406.
+      $dbh->do("DELETE FROM $db_tbl WHERE " . $chunks->[$first_missing_chunk]);
 
-      foreach my $file ( @$files_ref[0..($first_missing_chunk-1)] ) {
-         $bytes_done += $size_for_file{$file};
+      foreach my $file ( @$files[0..($first_missing_chunk-1)] ) {
+         $bytes_done += $file_size->{$file};
          $file = undef;
       }
    }
@@ -2188,18 +2243,18 @@ sub bytes_done_from_processlist {
 }
 
 sub print_progress_report {
-   my ( $done, $dbh, $bytes, $start ) = @_;
+   my ( $o, $done, $dbh, $bytes, $start ) = @_;
 
    my $done_from_proclist
       =  defined $dbh ? bytes_done_from_processlist($dbh) : 0;
    return if $done_from_proclist < 0;
 
    my $done_and_doing = $done + $done_from_proclist;
-   my $pct = $done_and_doing / $bytes;
-   my $now = time();
-   my $remaining = ($now - $start) / $pct;
+   my $pct            = $done_and_doing / $bytes;
+   my $now            = time();
+   my $remaining      = ($now - $start) / $pct;
 
-   info(1, sprintf("done: %s/%s %6.2f%% %s remain (%s)",
+   info($o, 1, sprintf("done: %s/%s %6.2f%% %s remain (%s)",
         shorten($done_and_doing), shorten($bytes), $pct * 100,
         secs_to_time($remaining), ts($now + $remaining)));
 
@@ -2213,19 +2268,33 @@ sub filetype {
 }
 
 sub get_cxn {
-   my %params = %opts;
-   delete $params{D}; # Because it has a special meaning; see documentation.
+   my ( %args ) = @_;
+   foreach my $arg ( qw(o dp) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o  = $args{o};
+   my $dp = $args{dp};
+
+   # DSNParser will interpret D has the default database for the connection,
+   # but in this script D means the database into which all files are loaded.
+   # Therefore, we must get the opt values and manually remove D.
+   # TODO: must we?  If all tables are to be restored to foo, and foo is
+   # the default db for the connection, isn't the result the same?
+   my %params = $o->opt_values();
+   delete $params{D};
+
    my $dbh = $dp->get_dbh($dp->get_cxn_params(\%params));
-   if ( $opts{A} ) {
-      $dbh->do("/*!40101 SET character_set_database=$opts{A} */");
+   # TODO: isn't this handled automatically by DSNParser?
+   if ( my $charset = $o->get('charset') ) {
+      $dbh->do("/*!40101 SET character_set_database=$charset */");
    }
    return $dbh;
 }
 
 sub system_call {
-   my ( @cmd ) = @_;
+   my ( $o, @cmd ) = @_;
    my $exit_status = 0;
-   if ( $opts{test} ) {
+   if ( $o->get('dry-run') ) {
       print join(' ', @cmd), "\n";
    }
    else {
@@ -2245,6 +2314,13 @@ sub _d {
         @_;
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
+
+# ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
 
 # ############################################################################
 # Documentation.
@@ -2619,7 +2695,7 @@ And the following options are disabled (C<--no-bin-log>, etc.) unless they
 are specifically enabled on the command line:
 
    L<"--[no]bin-log">
-   L<"--[no]unique-key-checks">
+   L<"--[no]unique-checks">
    L<"--[no]foreign-key-checks">
 
 =item --tables
@@ -2663,7 +2739,7 @@ Set the program's C<umask> to this octal value.
 This is useful when you want created files (such as FIFO files) to be readable
 or writable by other users (for example, the MySQL server itself).
 
-=item --[no]unique-key-checks
+=item --[no]unique-checks
 
 default: yes
 
