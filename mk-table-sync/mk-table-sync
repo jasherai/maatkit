@@ -6428,7 +6428,7 @@ by L<"--lock">.
 
 =item --trim
 
-TRIM()> C<VARCHAR> columns in C<BIT_XOR> and C<ACCUM> modes.  Helps when
+C<TRIM()> C<VARCHAR> columns in C<BIT_XOR> and C<ACCUM> modes.  Helps when
 comparing MySQL 4.1 to >= 5.0.
 
 This is useful when you don't care about the trailing space differences between
