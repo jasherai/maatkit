@@ -6095,7 +6095,7 @@ the master, the exit status is 1.
 
 =head1 QUERIES
 
-If you are using innotop (see L<http://innotop.sourceforge.net/>),
+If you are using innotop (see L<http://code.google.com/p/innotop>),
 mytop, or another tool to watch currently running MySQL queries, you may see
 the checksum queries.  They look similar to this:
 
