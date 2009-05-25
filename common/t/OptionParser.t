@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 136;
+use Test::More tests => 137;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1796,4 +1796,26 @@ is(
    0,
    '--[no]foo default yes given --nofoo == 0'
 );
+
+# #############################################################################
+# Issue 409: OptionParser modifies second value of
+# ' -- .*','(\w+): ([^,]+)' for array type opt
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+);
+$o->_parse_specs(
+   { spec => 'foo=a', desc => 'foo' },
+);
+@ARGV = ('--foo', ' -- .*,(\w+): ([^,]+)');
+$o->get_opts();
+is_deeply(
+   $o->get('foo'),
+   [
+      ' -- .*',
+      '(\w+): ([^,]+)',
+   ],
+   'Get array of regex patterns (issue 409)'
+);
+
 exit;
