@@ -1807,15 +1807,15 @@ $o = new OptionParser(
 $o->_parse_specs(
    { spec => 'foo=a', desc => 'foo' },
 );
-@ARGV = ('--foo', ' -- .*,(\w+): ([^,]+)');
+@ARGV = ('--foo', ' -- .*,(\w+): ([^\,]+)');
 $o->get_opts();
 is_deeply(
    $o->get('foo'),
    [
       ' -- .*',
-      '(\w+): ([^,]+)',
+      '(\w+): ([^\,]+)',
    ],
-   'Get array of regex patterns (issue 409)'
+   'Array of vals with internal commas (issue 409)'
 );
 
 exit;
