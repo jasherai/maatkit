@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 15;
+use Test::More tests => 17;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -159,7 +159,7 @@ like(
    'Requires source host'
 );
 
-$output = `../mk-deadlock-logger h=127 --dest t=deadlocks 2>&1`;
+$output = `../mk-deadlock-logger h=127.1 --dest t=deadlocks 2>&1`;
 like(
    $output,
    qr/Destination DSN requires database/,
@@ -173,5 +173,26 @@ like(
    'Dest DSN requires t'
 );
 
+# #############################################################################
+# Test --clear-deadlocks
+# #############################################################################
+
+# The clear-deadlocks table comes and goes quickly so we can really
+# only search the debug output for evidence that it was created.
+$output = `MKDEBUG=1 ../mk-deadlock-logger h=127.1,P=12345,D=test --clear-deadlocks test.make_deadlock 2>&1`;
+like(
+   $output,
+   qr/INSERT INTO test.make_deadlock/,
+   'Create --clear-deadlocks table (output)'
+);
+like(
+   $output,
+   qr/CREATE TABLE test.make_deadlock/,
+   'Create --clear-deadlocks table (debug)'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 $sb->wipe_clean($dbh1);
 exit;
