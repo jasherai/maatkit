@@ -6,13 +6,17 @@ use English qw(-no_match_vars);
 use Test::More tests => 8;
 
 require '../Daemon.pm';
+require '../OptionParser.pm';
 
-my $d = new Daemon();
+my $o = new OptionParser(
+   description => 'foo',
+);
+my $d = new Daemon(o=>$o);
 
 isa_ok($d, 'Daemon');
 
 my $cmd     = 'samples/daemonizes.pl';
-my $ret_val = system("$cmd 2 >/dev/null 2>/dev/null");
+my $ret_val = system("$cmd 2 --daemonize --pid /tmp/daemonizes.pl.pid >/dev/null 2>/dev/null");
 SKIP: {
    skip 'Cannot test Daemon.pm because t/daemonizes.pl is not working',
       8 unless $ret_val == 0;
@@ -29,7 +33,7 @@ SKIP: {
    ok(! -f '/tmp/daemonizes.pl.pid', 'Removes PID file upon exit');
 
    # Check that STDOUT can be redirected
-   system("$cmd 2 'log_file => /tmp/mk-daemon.log'");
+   system("$cmd 2 --daemonize --log /tmp/mk-daemon.log");
    ok(-f '/tmp/mk-daemon.log', 'Log file exists');
 
    sleep 2;
@@ -37,7 +41,7 @@ SKIP: {
    like($output, qr/STDOUT\nSTDERR\n/, 'STDOUT and STDERR went to log file');
 
    # Check that the log file is appended to.
-   system("$cmd 0 'log_file => /tmp/mk-daemon.log'");
+   system("$cmd 0 --daemonize --log /tmp/mk-daemon.log");
    $output = `cat /tmp/mk-daemon.log`;
    like(
       $output,

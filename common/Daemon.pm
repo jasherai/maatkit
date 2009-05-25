@@ -29,12 +29,23 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+# The required o arg is an OptionParser object.
 sub new {
    my ( $class, %args ) = @_;
+   foreach my $arg ( qw(o) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o = $args{o};
    my $self = {
-      log_file => $args{'log_file'} || undef,
-      PID_file => undef,  # set with create_PID_file()
+      o        => $o,
+      log_file => $o->has('log') ? $o->get('log') : undef,
+      PID_file => $o->has('pid') ? $o->get('pid') : undef,
    };
+
+   if ( $self->{PID_file} && -f $self->{PID_file} ) {
+      die "The PID file $self->{PID_file} already exists"
+   }
+
    MKDEBUG && _d('Daemonized child will log to', $self->{log_file});
    return bless $self, $class;
 }
@@ -50,41 +61,55 @@ sub daemonize {
    }
 
    # I'm daemonized now.
+   $self->{child} = 1;
+
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
-   chdir '/' or die "Cannot chdir to /: $OS_ERROR";
+   chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
+
+   $self->_create_PID_file();
+
    if ( $self->{log_file} ) {
       open STDOUT, '>>', $self->{log_file}
          or die "Cannot open log file $self->{log_file}: $OS_ERROR";
       open STDERR, ">&STDOUT"
          or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
    }
+
    MKDEBUG && _d('I am the child and now I live daemonized');
    return;
 }
 
-# PID_file must be set with this sub and not in new() because if it is
-# already set then the parent will unlink it when its copy of the daemon
-# obj is destoryed.
-sub create_PID_file {
-   my ( $self, $PID_file ) = @_;
-   return unless $PID_file;
+sub _create_PID_file {
+   my ( $self ) = @_;
+
+   my $PID_file = $self->{PID_file};
+   if ( !$PID_file ) {
+      MKDEBUG && _d('No PID file to create');
+      return;
+   }
+
+   # We checked this in new() but we'll double check here.
+   if ( -f $self->{PID_file} ) {
+      die "The PID file $self->{PID_file} already exists"
+   }
+
    open my $PID_FH, '>', $PID_file
       or die "Cannot open PID file $PID_file: $OS_ERROR";
    print $PID_FH $PID
       or die "Cannot print to PID file $PID_file: $OS_ERROR";
    close $PID_FH
       or die "Cannot close PID file $PID_file: $OS_ERROR";
-   $self->{PID_file} = $PID_file; # save for unlink in DESTORY()
-   MKDEBUG && _d('PID file:', $self->{PID_file});
+
+   MKDEBUG && _d('Created PID file:', $self->{PID_file});
    return;
 }
 
-sub remove_PID_file {
+sub _remove_PID_file {
    my ( $self ) = @_;
-   if ( defined $self->{PID_file} && -f $self->{PID_file} ) {
-      MKDEBUG && _d('Removing PID file');
+   if ( $self->{PID_file} && -f $self->{PID_file} ) {
       unlink $self->{PID_file}
          or warn "Cannot remove PID file $self->{PID_file}: $OS_ERROR";
+      MKDEBUG && _d('Removed PID file');
    }
    else {
       MKDEBUG && _d('No PID to remove');
@@ -94,7 +119,8 @@ sub remove_PID_file {
 
 sub DESTROY {
    my ( $self ) = @_;
-   $self->remove_PID_file();
+   # Remove the PID only if we're the child.
+   $self->_remove_PID_file() if $self->{child};
    return;
 }
 

@@ -11,29 +11,64 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 require '../Daemon.pm';
+require '../OptionParser.pm';
+
+my $o = new OptionParser(
+   strict      => 0,
+   description => 'daemonizes, prints to STDOUT and STDERR, sleeps and exits.',
+   prompt      => 'SLEEP_TIME [ARGS]',
+);
+$o->get_specs('samples/daemonizes.pl');
+$o->get_opts();
 
 if ( scalar @ARGV < 1 ) {
-   die "Usage: daemonizes.pl sleep_time [args]\n";
+   $o->_save_error('No SLEEP_TIME specified');
 }
-my ( $t, $args ) = ( $ARGV[0], $ARGV[1] );
-my $d;
 
-# Turn comma-separated args from cmd line into a hash that
-# we pass to new(). Each arg should be a quoted string like
-# 'key => val' (must quote to preserve spaces).
-if ( defined $args ) {
-   my %args = map {
-      my ( $k, $v ) = m/(.*) \=\> (.*)/;
-      $k => $v;
-   } split /,/, $args;
-   $d = new Daemon(%args);
+$o->usage_or_errors();
+
+my $daemon;
+if ( $o->get('daemonize') ) {
+   $daemon = new Daemon(o=>$o);
+   $daemon->daemonize();
+
+   print "STDOUT\n";
+   print STDERR "STDERR\n";
+
+   sleep $ARGV[0];
 }
-else {
-   $d = new Daemon();
-}
-$d->daemonize();
-$d->create_PID_file('/tmp/daemonizes.pl.pid');
-print "STDOUT\n";
-print STDERR "STDERR\n";
-sleep $t;
+
 exit;
+
+# ############################################################################
+# Documentation.
+# ############################################################################
+
+=pod
+
+=head1 OPTIONS
+
+=over
+
+=item --daemonize
+
+Fork to background and detach (POSIX only).  This probably doesn't work on
+Microsoft Windows.
+
+=item --help
+
+Show help and exit.
+
+=item --log
+
+type: string
+
+Print all output to this file when daemonized.
+
+=item --pid
+
+type: string 
+
+Create the given PID file when daemonized.
+
+=back
