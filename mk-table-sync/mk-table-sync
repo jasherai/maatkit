@@ -5789,8 +5789,34 @@ sub check_tables_for_triggers {
    my $dp = $args{dp};
 
    foreach my $dsn ( @$dsns ) {
+      my %missing_db;
       my $dbh = get_cxn($dsn, %args);
+
+      DB_TBL:
       foreach my $db_tbl ( @$dbs_tbls ) {
+         if ( $missing_db{ $db_tbl->{db} } ) {
+            MKDEBUG && _d('Skipping trigger check on',
+               $db_tbl->{db}, '.', $db_tbl->{tbl},
+               'host', $dsn->{h}, ':', $dsn->{P},
+               'because the db does not exist');
+            next DB_TBL;
+         }
+
+         # Check that database exists on destination.
+         eval { $dbh->do("USE `$db_tbl->{db}`"); };
+         if ( $EVAL_ERROR ) {
+            if ( $EVAL_ERROR =~ m/Unknown database/ ) {
+               warn "Database $db_tbl->{db} does not exist on "
+                  . $dp->as_string($dsn);
+               $missing_db{ $db_tbl->{db} } = 1;
+               next DB_TBL;
+            }
+            else {
+               print_err($EVAL_ERROR, $db_tbl->{db}, $db_tbl->{tbl}, $dsn->{h});
+               next DB_TBL;
+            }
+         }
+
          # If table exists on destination, check it for triggers.
          my $create;
          eval {

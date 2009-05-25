@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 46;
+use Test::More tests => 47;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -14,7 +14,6 @@ my $master_dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 my $slave_dbh   = $sb->get_dbh_for('slave1')
    or BAIL_OUT('Cannot connect to sandbox slave1');
-$slave_dbh->do('START SLAVE');
 
 $sb->create_dbs($master_dbh, [qw(test)]);
 
@@ -29,6 +28,10 @@ sub run {
    chomp($output=`$cmd`);
    return $output;
 }
+
+# Pre-create a second host while the other test are running
+# so we won't have to wait for it to load when we need it.
+diag(`../../sandbox/make_sandbox 12347 >/dev/null &`);
 
 # #############################################################################
 # Test basic master-slave syncing
@@ -137,9 +140,10 @@ diag(`/tmp/12349/use -e 'set sql_log_bin=0;update test.test1 set b="mm" where a=
 # This will make master1's data match the changed data on master2 (that is not
 # a typo).
 `perl ../mk-table-sync --sync-to-master --print --execute h=127.0.0.1,P=12348,D=test,t=test1`;
+sleep 1;
 $output = `/tmp/12348/use -e 'select b from test.test1 where a=1' -N`;
 like($output, qr/mm/, 'Master-master sync worked');
-diag(`../../sandbox/stop_master-master`);
+diag(`../../sandbox/stop_master-master >/dev/null &`);
 
 # #############################################################################
 # Issue 37: mk-table-sync should warn about triggers
@@ -331,6 +335,29 @@ diag $output if $output;
 
 $output = `/tmp/12345/use -e 'show create table test.test2'`;
 like($output, qr/COMMENT='test1'/, '--lock-and-rename worked');
+
+# #############################################################################
+# Issue 408: DBD::mysql::st execute failed: Unknown database 'd1' at
+# ./mk-table-sync line 2015.
+# #############################################################################
+
+# It's not really slave2, we just use slave2's port.
+my $dbh2 = $sb->get_dbh_for('slave2');
+SKIP: {
+   skip 'Cannot connect to second sandbox server', 1
+      unless $dbh2;
+
+   $output = `perl ../mk-table-sync --databases test --execute h=127.1,P=12345 h=127.1,P=12347 2>&1`;
+   like(
+      $output,
+      qr/Database test does not exist on.+P=12347.+/,
+      'Warn about --databases missing on dest host'
+   );
+
+   $dbh2->disconnect();
+   diag(`/tmp/12347/stop`);
+   diag(`rm -rf /tmp/12347/`);
+};
 
 # #############################################################################
 # Done

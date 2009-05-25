@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * Missing --databases on destination hosts caused crash (issue 408).
    * Removed the --test long option.  Use --dry-run instead.
    * Removed the --askpass long option.  Use --ask-pass instead.
    * Removed the --bufferresults long option.  Use --buffer-results instead.
