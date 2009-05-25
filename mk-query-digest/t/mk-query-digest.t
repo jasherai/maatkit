@@ -36,14 +36,14 @@ ok(
 );
 
 ok(
-   no_diff($run_with.'slow001.txt --expectedrange 2,10', 'samples/slow001_report.txt'),
-   'Analysis for slow001 with --expectedrange'
+   no_diff($run_with.'slow001.txt --expected-range 2,10', 'samples/slow001_report.txt'),
+   'Analysis for slow001 with --expected-range'
 );
 
 ok(
-   no_diff($run_with.'slow001.txt --groupby tables --report tables',
+   no_diff($run_with.'slow001.txt --group-by tables --report tables',
       'samples/slow001_tablesreport.txt'),
-   'Analysis for slow001 with --groupby tables'
+   'Analysis for slow001 with --group-by tables'
 );
 
 ok(
@@ -76,9 +76,9 @@ ok(
 );
 
 ok(
-   no_diff($run_with.'slow002.txt --orderby Query_time:cnt --limit 2',
+   no_diff($run_with.'slow002.txt --order-by Query_time:cnt --limit 2',
       'samples/slow002_orderbyreport.txt'),
-   'Analysis for slow002 --orderby --limit'
+   'Analysis for slow002 --order-by --limit'
 );
 
 ok(
@@ -104,8 +104,8 @@ ok(
 ok(
    no_diff(
       $run_with
-         . 'slow010.txt --embeddedattr \' -- .*\' --embeddedattrcapt '
-         . '\'(\w+): ([^,]+)\' --report file',
+         . 'slow010.txt --embedded-attributes \' -- .*\',\'(\w+): ([^\,]+)\' '
+         . '--report file',
       'samples/slow010_reportbyfile.txt'),
    'Analysis for slow010'
 );
@@ -121,15 +121,15 @@ ok(
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --groupby user --report user',
+   no_diff($run_with.'slow013.txt --group-by user --report user',
       'samples/slow013_report_user.txt'),
-   'Analysis for slow013 with --groupby user'
+   'Analysis for slow013 with --group-by user'
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --limit 1 --report-format header,query_report --orderby Query_time:sum,Query_time:sum --groupby fingerprint,user --report fingerprint,user',
+   no_diff($run_with.'slow013.txt --limit 1 --report-format header,query_report --order-by Query_time:sum,Query_time:sum --group-by fingerprint,user --report fingerprint,user',
       'samples/slow013_report_fingerprint_user.txt'),
-   'Analysis for slow013 with --groupby fingerprint,user'
+   'Analysis for slow013 with --group-by fingerprint,user'
 );
 
 ok(
@@ -139,7 +139,7 @@ ok(
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --groupby user --report user --outliers Query_time:.0000001:1',
+   no_diff($run_with.'slow013.txt --group-by user --report user --outliers Query_time:.0000001:1',
       'samples/slow013_report_outliers.txt'),
    'Analysis for slow013 with --outliers'
 );
@@ -162,12 +162,12 @@ ok(
 
 ok(
    no_diff($run_with.'slow019.txt', 'samples/slow019_report.txt'),
-   '--zeroadmin works'
+   '--zero-admin works'
 );
 
 ok(
-   no_diff($run_with.'slow019.txt --nozeroadmin', 'samples/slow019_report_noza.txt'),
-   '--nozeroadmin works'
+   no_diff($run_with.'slow019.txt --nozero-admin', 'samples/slow019_report_noza.txt'),
+   '--nozero-admin works'
 );
 
 # This was fixed at some point by checking the fingerprint to see if the
@@ -182,9 +182,9 @@ ok(
    'Long inserts/replaces are truncated (issue 216)',
 );
 
-# Issue 244, no output when --orderby doesn't exist
+# Issue 244, no output when --order-by doesn't exist
 ok(
-   no_diff($run_with . 'slow002.txt --orderby Rows_read:sum',
+   no_diff($run_with . 'slow002.txt --order-by Rows_read:sum',
       'samples/slow002-orderbynonexistent.txt'),
    'Order by non-existent falls back to default',
 );
@@ -211,18 +211,18 @@ ok(
 # #############################################################################
 # Test cmd line op sanity.
 # #############################################################################
-my $output = `../mk-query-digest -R h=127.1,P=12345`;
+my $output = `../mk-query-digest --review h=127.1,P=12345`;
 like($output, qr/--review DSN requires a D/, 'Dies if no D part in --review DSN');
-$output = `../mk-query-digest -R h=127.1,P=12345,D=test`;
+$output = `../mk-query-digest --review h=127.1,P=12345,D=test`;
 like($output, qr/--review DSN requires a D/, 'Dies if no t part in --review DSN');
 
 # #############################################################################
-# Test that --report cascades to --groupby which cascades to --orderby.
+# Test that --report cascades to --group-by which cascades to --order-by.
 # #############################################################################
-$output = `../mk-query-digest --report foo,bar --groupby bar --help`;
-like($output, qr/--groupby\s+bar,foo/, '--report cascades to --groupby');
-like($output, qr/--orderby\s+Query_time:sum,Query_time:sum/,
-   '--groupby cascades to --orderby');
+$output = `../mk-query-digest --report foo,bar --group-by bar --help`;
+like($output, qr/--group-by\s+bar,foo/, '--report cascades to --group-by');
+like($output, qr/--order-by\s+Query_time:sum,Query_time:sum/,
+   '--group-by cascades to --order-by');
 
 # #############################################################################
 # Tests for query reviewing and other stuff that requires a DB server.
@@ -277,22 +277,22 @@ SKIP: {
       );
    };
 
-   # Test --createreview and --create-review-history
+   # Test --create-review and --create-review-history-table
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow006.txt --createreview -R "
-      . "h=127.1,P=12345,D=test,t=query_review --create-review-history "
+   $cmd = "${run_with}slow006.txt --create-review-table --review "
+      . "h=127.1,P=12345,D=test,t=query_review --create-review-history-table "
       . "--review-history t=query_review_history";
    $output = `$cmd >/dev/null 2>&1`;
 
    my ($table) = $dbh1->selectrow_array(
       'show tables from test like "query_review"');
-   is($table, 'query_review', '--createreview');
+   is($table, 'query_review', '--create-review');
    ($table) = $dbh1->selectrow_array(
       'show tables from test like "query_review_history"');
-   is($table, 'query_review_history', '--create-review-history');
+   is($table, 'query_review_history', '--create-review-history-table');
 
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow006.txt -R h=127.1,P=12345,D=test,t=query_review "
+   $cmd = "${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review "
       . "--review-history t=query_review_history";
    $output = `$cmd`;
    my $res = $dbh1->selectall_arrayref( 'SELECT * FROM test.query_review',
@@ -392,7 +392,7 @@ SKIP: {
    # have been reviewed, the report should include both of them with
    # their respective query review info added to the report.
    ok(
-      no_diff($run_with.'slow006.txt -R h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_1.txt'),
+      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_1.txt'),
       'Analyze-review pass 1 reports not-reviewed queries'
    );
 
@@ -402,16 +402,16 @@ SKIP: {
       SET reviewed_by="daniel", reviewed_on="2008-12-24 12:00:00", comments="foo_tbl is ok, so are cranberries"
       WHERE checksum=11676753765851784517');
    ok(
-      no_diff($run_with.'slow006.txt -R h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_2.txt'),
+      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_2.txt'),
       'Analyze-review pass 2 does not report the reviewed query'
    );
 
-   # And a 4th pass with --reportall which should cause the reviewed query
+   # And a 4th pass with --report-all which should cause the reviewed query
    # to re-appear in the report with the reviewed_by, reviewed_on and comments
    # info included.
    ok(
-      no_diff($run_with.'slow006.txt -R h=127.1,P=12345,D=test,t=query_review   --reportall', 'samples/slow006_AR_4.txt'),
-      'Analyze-review pass 4 with --reportall reports reviewed query'
+      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,D=test,t=query_review   --report-all', 'samples/slow006_AR_4.txt'),
+      'Analyze-review pass 4 with --report-all reports reviewed query'
    );
 
    # Test that reported review info gets all meta-columns dynamically.
@@ -419,7 +419,7 @@ SKIP: {
    $dbh1->do('UPDATE test.query_review
       SET foo=42 WHERE checksum=15334040482108055940');
    ok(
-      no_diff($run_with.'slow006.txt -R h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_5.txt'),
+      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_5.txt'),
       'Analyze-review pass 5 reports new review info column'
    );
 
@@ -428,7 +428,7 @@ SKIP: {
    $dbh1->do("update test.query_review set first_seen='0000-00-00 00:00:00', "
       . " last_seen='0000-00-00 00:00:00'");
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow022.txt -R h=127.1,P=12345,D=test,t=query_review"; 
+   $cmd = "${run_with}slow022.txt --review h=127.1,P=12345,D=test,t=query_review"; 
    $output = `$cmd`;
    unlike($output, qr/last_seen/, 'no last_seen when 0000 timestamp');
    unlike($output, qr/first_seen/, 'no first_seen when 0000 timestamp');
@@ -442,7 +442,7 @@ SKIP: {
    # Make sure a missing Time property does not cause a crash.  Don't test data
    # in table, because it varies based on when you run the test.
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow021.txt -R h=127.1,P=12345,D=test,t=query_review"; 
+   $cmd = "${run_with}slow021.txt --review h=127.1,P=12345,D=test,t=query_review"; 
    $output = `$cmd`;
    unlike($output, qr/Use of uninitialized value/, 'didnt crash due to undef ts');
 
@@ -450,7 +450,7 @@ SKIP: {
    # crash.  Don't test data in table, because it varies based on when you run
    # the test.
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow022.txt -R h=127.1,P=12345,D=test,t=query_review"; 
+   $cmd = "${run_with}slow022.txt --review h=127.1,P=12345,D=test,t=query_review"; 
    $output = `$cmd`;
    # Don't test data in table, because it varies based on when you run the test.
    unlike($output, qr/Use of uninitialized value/, 'no crash due to totally missing ts');

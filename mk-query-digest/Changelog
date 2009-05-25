@@ -1,10 +1,26 @@
 Changelog for mk-query-digest:
 
+   * Removed the --header long option.  Use --report-format instead.
+   * Removed the --rusage long option.  Use --report-format instead.
+   * Removed the --attriblimit long option.  Use --attribute-limit instead.
+   * Removed the --createreview long option.  Use --create-review-table instead.
+   * Removed the --create-review-history long option.  Use
+     --create-review-history-table instead.
+   * Removed the --embeddedattr long option.  Use --embedded-attributes instead.
+   * Removed the --embeddedattrcapt long option.  Use --embedded--atributes.
+   * Removed the --expectedrange long option.  Use --expected-range instead.
+   * Removed the --[no]forexplain long option.  Use --[no]for-explain instead.
+   * Removed the --groupby long option.  Use --group-by instead.
+   * Removed the --orderby long option.  Use --order-by instead.
+   * Removed the --reportall long option.  Use --report-all instead.
+   * Removed the --[no]zeroadmin long option.  Use --[no]zero-admin instead.
+   * Removed the -f short option.  Use --fingerprints instead.
+   * Removed the -i short option.  Use --interval instead.
+   * Removed the -R short option.  Use --review instead.
    * Added --report-format option.
-   * Removed --header option; use --report-format instead.
-   * Removed --rusage option; use --report-format instead.
    * Added a response-time profile (issue 381).
    * Added --iterations and --run-time (issue 173, issue 361).
+   * Converted script to runnable module (issue 315).
 
 2009-05-03: version 0.9.5
 

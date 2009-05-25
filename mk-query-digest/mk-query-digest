@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 3421
+# DSNParser package 3577
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -183,7 +183,7 @@ sub as_string {
 sub usage {
    my ( $self ) = @_;
    my $usage
-      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
    my %opts = %{$self->{opts}};
@@ -335,6 +335,24 @@ sub print_active_handles {
    }
 }
 
+sub copy {
+   my ( $self, $dsn_1, $dsn_2, %args ) = @_;
+   die 'I need a dsn_1 argument' unless $dsn_1;
+   die 'I need a dsn_2 argument' unless $dsn_2;
+   my %new_dsn = map {
+      my $key = $_;
+      my $val;
+      if ( $args{overwrite} ) {
+         $val = defined $dsn_1->{$key} ? $dsn_1->{$key} : $dsn_2->{$key};
+      }
+      else {
+         $val = defined $dsn_2->{$key} ? $dsn_2->{$key} : $dsn_1->{$key};
+      }
+      $key => $val;
+   } keys %{$self->{opts}};
+   return \%new_dsn;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -407,7 +425,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3436
+# OptionParser package 3609
 # ###########################################################################
 package OptionParser;
 
@@ -429,24 +447,26 @@ sub new {
    }
    my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
    $program_name ||= $PROGRAM_NAME;
+
    my $self = {
-      description  => $args{description},
-      prompt       => $args{prompt} || '<options>',
-      strict       => (exists $args{strict} ? $args{strict} : 1),
-      dp           => $args{dp}     || undef,
-      program_name => $program_name,
-      opts         => {},
-      got_opts     => 0,
-      short_opts   => {},
-      defaults     => {},
-      groups       => [ { name => 'default', desc => 'Options' } ],
-      errors       => [],
-      rules        => [],  # desc of rules for --help
-      mutex        => [],  # rule: opts are mutually exclusive
-      atleast1     => [],  # rule: at least one opt is required
-      disables     => {},  # rule: opt disables other opts 
-      defaults_to  => {},  # rule: opt defaults to value of other opt
-      default_files=> [
+      description    => $args{description},
+      prompt         => $args{prompt} || '<options>',
+      strict         => (exists $args{strict} ? $args{strict} : 1),
+      dp             => $args{dp}     || undef,
+      program_name   => $program_name,
+      opts           => {},
+      got_opts       => 0,
+      short_opts     => {},
+      defaults       => {},
+      groups         => {},
+      allowed_groups => {},
+      errors         => [],
+      rules          => [],  # desc of rules for --help
+      mutex          => [],  # rule: opts are mutually exclusive
+      atleast1       => [],  # rule: at least one opt is required
+      disables       => {},  # rule: opt disables other opts 
+      defaults_to    => {},  # rule: opt defaults to value of other opt
+      default_files  => [
          "/etc/maatkit/maatkit.conf",
          "/etc/maatkit/$program_name.conf",
          "$ENV{HOME}/.maatkit.conf",
@@ -541,13 +561,14 @@ sub _pod_to_specs {
          }
 
          push @specs, {
-            spec => $option
+            spec  => $option
                . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
                . ($attribs{'negatable'}  ? '!'                          : '' )
                . ($attribs{'cumulative'} ? '+'                          : '' )
                . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
-            desc => $para
+            desc  => $para
                . ($attribs{default} ? " (default $attribs{default})" : ''),
+            group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
       while ( $para = <$fh> ) {
@@ -605,7 +626,9 @@ sub _parse_specs {
          $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
          $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
 
-         $opt->{group} = 'default'; # TODO: groups
+         $opt->{group} ||= 'default';
+         $self->{groups}->{ $opt->{group} }->{$long} = 1;
+
          $opt->{value} = undef;
          $opt->{got}   = 0;
 
@@ -621,6 +644,11 @@ sub _parse_specs {
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            if ( $opt->{is_negatable} ) {
+               $def = $def eq 'yes' ? 1
+                    : $def eq 'no'  ? 0
+                    : $def;
+            }
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
          }
@@ -657,6 +685,16 @@ sub _parse_specs {
             $self->{defaults_to}->{$participants[0]} = $participants[1];
             MKDEBUG && _d($participants[0], 'defaults to', $participants[1]);
          }
+         if ( $opt =~ m/restricted to option groups/ ) {
+            $rule_ok = 1;
+            my ($groups) = $opt =~ m/groups ([\w\s\,]+)/;
+            my @groups = split(',', $groups);
+            %{$self->{allowed_groups}->{$participants[0]}} = map {
+               s/\s+//;
+               $_ => 1;
+            } @groups;
+         }
+
          die "Unrecognized option rule: $opt" unless $rule_ok;
       }
    }
@@ -719,6 +757,11 @@ sub set_defaults {
 sub get_defaults {
    my ( $self ) = @_;
    return $self->{defaults};
+}
+
+sub get_groups {
+   my ( $self ) = @_;
+   return $self->{groups};
 }
 
 sub _set_option {
@@ -822,13 +865,48 @@ sub get_opts {
             MKDEBUG && _d('Unset options', @disable_opts,
                'because', $long,'disables them');
          }
+
+         if ( exists $self->{allowed_groups}->{$long} ) {
+
+            my @restricted_groups = grep {
+               !exists $self->{allowed_groups}->{$long}->{$_}
+            } keys %{$self->{groups}};
+
+            my @restricted_opts;
+            foreach my $restricted_group ( @restricted_groups ) {
+               RESTRICTED_OPT:
+               foreach my $restricted_opt (
+                  keys %{$self->{groups}->{$restricted_group}} )
+               {
+                  next RESTRICTED_OPT if $restricted_opt eq $long;
+                  push @restricted_opts, $restricted_opt
+                     if $self->{opts}->{$restricted_opt}->{got};
+               }
+            }
+
+            if ( @restricted_opts ) {
+               my $err;
+               if ( @restricted_opts == 1 ) {
+                  $err = "--$restricted_opts[0]";
+               }
+               else {
+                  $err = join(', ',
+                            map { "--$self->{opts}->{$_}->{long}" }
+                            grep { $_ } 
+                            @restricted_opts[0..scalar(@restricted_opts) - 2]
+                         )
+                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+               }
+               $self->_save_error("--$long is not allowed with $err");
+            }
+         }
+
       }
       elsif ( $opt->{is_required} ) { 
          $self->_save_error("Required option --$long must be specified");
       }
 
       $self->_validate_type($opt);
-
    }
 
    $self->{got_opts} = 1;
@@ -892,7 +970,7 @@ sub _validate_type {
       $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
-      $opt->{value} = [ split(',', ($val || '')) ];
+      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
    }
    else {
       MKDEBUG && _d('Nothing to validate for option',
@@ -1002,11 +1080,15 @@ sub print_usage {
    $maxs = max($lcol - 3, $maxs);
 
    my $usage = $self->descr() . "\n" . $self->prompt();
-   foreach my $group ( @{$self->{groups}} ) {
-      $usage .= "\n$group->{desc}:\n";
+
+   my @groups = reverse sort grep { $_ ne 'default'; } keys %{$self->{groups}};
+   push @groups, 'default';
+
+   foreach my $group ( reverse @groups ) {
+      $usage .= "\n".($group eq 'default' ? 'Options' : $group).":\n\n";
       foreach my $opt (
          sort { $a->{long} cmp $b->{long} }
-         grep { $_->{group} eq $group->{name} }
+         grep { $_->{group} eq $group }
          @opts )
       {
          my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
@@ -1031,12 +1113,13 @@ sub print_usage {
    }
 
    if ( (my @rules = @{$self->{rules}}) ) {
+      $usage .= "\nRules:\n\n";
       $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
    if ( $self->{dp} ) {
       $usage .= "\n" . $self->{dp}->usage();
    }
-   $usage .= "\nOptions and values after processing arguments:\n";
+   $usage .= "\nOptions and values after processing arguments:\n\n";
    foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
       my $val   = $opt->{value};
       my $type  = $opt->{type} || '';
@@ -1121,7 +1204,7 @@ sub _read_config_file {
    return @args;
 }
 
-sub _read_para_after {
+sub read_para_after {
    my ( $self, $file, $regex ) = @_;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
    local $INPUT_RECORD_SEPARATOR = '';
@@ -1138,6 +1221,29 @@ sub _read_para_after {
    chomp($para);
    close $fh or die "Can't close $file: $OS_ERROR";
    return $para;
+}
+
+sub clone {
+   my ( $self ) = @_;
+
+   my %clone = map {
+      my $hashref  = $self->{$_};
+      my $val_copy = {};
+      foreach my $key ( keys %$hashref ) {
+         my $ref = ref $hashref->{$key};
+         $val_copy->{$key} = !$ref           ? $hashref->{$key}
+                           : $ref eq 'HASH'  ? { %{$hashref->{$key}} }
+                           : $ref eq 'ARRAY' ? [ @{$hashref->{$key}} ]
+                           : $hashref->{$key};
+      }
+      $_ => $val_copy;
+   } qw(opts short_opts defaults);
+
+   foreach my $scalar ( qw(got_opts) ) {
+      $clone{$scalar} = $self->{$scalar};
+   }
+
+   return bless \%clone;     
 }
 
 sub _d {
@@ -1576,7 +1682,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 3186
+# Processlist package 3571
 # ###########################################################################
 package Processlist;
 
@@ -1705,6 +1811,89 @@ sub fire_event {
    foreach my $callback ( @callbacks ) {
       last unless $event = $callback->($event);
    }
+}
+
+sub find {
+   my ( $self, $proclist, %find_spec ) = @_;
+   my @matches;
+   QUERY:
+   foreach my $query ( @$proclist ) {
+      my $matched = 0;
+      if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
+         if ( $query->{Time} < $find_spec{busy_time} ) {
+            MKDEBUG && _d("Query isn't running long enough");
+            next QUERY;
+         }
+         $matched++;
+      }
+      PROPERTY:
+      foreach my $property ( qw(Id User Host db State Command Info) ) {
+         my $filter = "_find_match_$property";
+         if ( defined $find_spec{ignore}->{$property}
+            && $self->$filter($query, $find_spec{ignore}->{$property})
+         ) {
+            MKDEBUG && _d("Query matches 'ignore' filter on $property, skipping");
+            next QUERY;
+         }
+         if ( defined $find_spec{match}->{$property} ) {
+            if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
+               MKDEBUG && _d("Query doesn't match 'match' filter on $property, skipping");
+               next QUERY;
+            }
+            $matched++;
+         }
+      }
+      if ( $matched ) {
+         MKDEBUG && _d("Query passed all defined filters, adding");
+         push @matches, $query;
+      }
+   }
+   if ( @matches && $find_spec{only_oldest} ) {
+      my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
+      @matches = $oldest;
+   }
+   return @matches;
+}
+
+sub _find_match_Id {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Id} && $query->{Id} == $property;
+}
+
+sub _find_match_User {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{User}
+      && $query->{User} =~ m/$property/;
+}
+
+sub _find_match_Host {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Host}
+      && $query->{Host} =~ m/$property/;
+}
+
+sub _find_match_db {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{db}
+      && $query->{db} =~ m/$property/;
+}
+
+sub _find_match_State {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{State}
+      && $query->{State} =~ m/$property/;
+}
+
+sub _find_match_Command {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Command}
+      && $query->{Command} =~ m/$property/;
+}
+
+sub _find_match_Info {
+   my ( $self, $query, $property ) = @_;
+   return defined $property && defined $query->{Info}
+      && $query->{Info} =~ m/$property/;
 }
 
 sub _d {
@@ -4284,10 +4473,15 @@ sub _d {
 # End Daemon package
 # ###########################################################################
 
-# #############################################################################
-# mk-query-digest
-# #############################################################################
-package main;
+# ###########################################################################
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
+# ###########################################################################
+package mk_query_digest;
 
 # TODO: sort by ninetyfive, stddev and med.
 # TODO: reverse sorting.
@@ -4306,9 +4500,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # TODO: use sigtrap
 $SIG{INT} = \&sig_int;
 
-# #############################################################################
 # Global variables.  Only really essential variables should be here.
-# #############################################################################
 my $oktorun = 1;
 my $dp = new DSNParser (
    { key => 'D', copy => 1, desc => 'Database that contains the query review table' },
@@ -4325,7 +4517,8 @@ my $ep_dbh;  # For --explain
 my $ps_dbh;  # For Processlist
 my %ea;      # EventAggregators
 
-{ # Begin a global scope to avoid poisoning subroutines with global variables.
+sub main {
+   @ARGV = @_;  # set global ARGV for this package
 
    # ##########################################################################
    # Get configuration information.
@@ -4344,8 +4537,8 @@ my %ea;      # EventAggregators
    my $review_dsn = $o->get('review'); 
    my $report     = $o->get('report');
    my $timeline   = $o->get('timeline');
-   my $groupby    = $o->get('groupby');
-   my $orderby    = $o->get('orderby');
+   my $groupby    = $o->get('group-by');
+   my $orderby    = $o->get('order-by');
 
    if ( !$o->get('help') ) {
       if ( $review_dsn
@@ -4364,7 +4557,7 @@ my %ea;      # EventAggregators
       }
    }
 
-   # --report and --timeline cascades to --groupby which cascades to --orderby.
+   # --report and --timeline cascade to --group-by which cascades to --order-by.
    foreach my $r ( @$report, @{$timeline} ) {
       if ( !grep { $_ eq $r } @$groupby ) {
          push @$groupby, $r;
@@ -4396,8 +4589,8 @@ my %ea;      # EventAggregators
       my $db_tbl = $q->quote(@db_tbl);
 
       # Create the review table if desired
-      if ( $o->get('createreview') ) {
-         my $sql = $o->_read_para_after(
+      if ( $o->get('create-review-table') ) {
+         my $sql = $o->read_para_after(
             __FILE__, qr/MAGIC_create_review/);
          $sql =~ s/query_review/IF NOT EXISTS $db_tbl/;
          MKDEBUG && _d($sql);
@@ -4428,8 +4621,8 @@ my %ea;      # EventAggregators
          my $hdb_tbl = $q->quote(@hdb_tbl);
 
          # Create the review-history table if desired
-         if ( $o->get('create-review-history') ) {
-            my $sql = $o->_read_para_after(
+         if ( $o->get('create-review-history-table') ) {
+            my $sql = $o->read_para_after(
                __FILE__, qr/MAGIC_create_review_history/);
             $sql =~ s/query_review_history/IF NOT EXISTS $hdb_tbl/;
             MKDEBUG && _d($sql);
@@ -4445,7 +4638,7 @@ my %ea;      # EventAggregators
 
          # Inspect for MAGIC_history_cols.  Add them to the --select list.
          my $tbl = $tp->parse($du->get_create_table($qv_dbh2, $q, @hdb_tbl));
-         my $pat = $o->_read_para_after(__FILE__, qr/MAGIC_history_cols/);
+         my $pat = $o->read_para_after(__FILE__, qr/MAGIC_history_cols/);
          $pat    =~ s/\s+//g;
          $pat    = qr/^(.*?)_($pat)$/;
          my %select = map { $_ => 1 } @{$o->get('select')};
@@ -4508,7 +4701,7 @@ my %ea;      # EventAggregators
             map {
                # Canonicalize and add the db name in front
                $_ =~ s/`//g;
-               if ( $_ !~ m/\./ && ( my $db = $event->{db} || $event->{Schema}) ) {
+               if ($_ !~ m/\./ && (my $db = $event->{db} || $event->{Schema})) {
                   $_ = "$db.$_";
                }
                $_;
@@ -4581,7 +4774,7 @@ my %ea;      # EventAggregators
       };
    }
 
-   if ( $o->get('zeroadmin') ) {
+   if ( $o->get('zero-admin') ) {
       push @callbacks, sub {
          my ( $event ) = @_;
          if ( $event->{arg} && $event->{arg} =~ m/^# administrator/ ) {
@@ -4596,7 +4789,7 @@ my %ea;      # EventAggregators
    my $i = 0;
    foreach my $i ( 0 .. @$groupby - 1 ) {
       my $groupby = $groupby->[$i];
-      die "You need to specify an --orderby for each --groupby"
+      die "You need to specify an --order-by for each --group-by"
          unless $orderby->[$i];
       my ( $attrib, $orderby ) = split(/:/, $orderby->[$i]);
       my %attributes = map {
@@ -4609,7 +4802,7 @@ my %ea;      # EventAggregators
             groupby      => $groupby,
             attributes   => { %attributes },
             worst        => $attrib,
-            attrib_limit => $o->get('attriblimit'),
+            attrib_limit => $o->get('attribute-limit'),
          );
       }
       elsif ( @{$timeline} ) {
@@ -4708,9 +4901,11 @@ my %ea;      # EventAggregators
       my $parser = $o->get('type') eq 'slowlog' ? new SlowLogParser()
                  : $o->get('type') eq 'tcpdump' ? new TcpdumpParser()
                  : die("Unknown type " . $o->get('type'));
-      if ( $o->get('embeddedattr') ) {
-         $misc->{embed}   = $o->get('embeddedattr');
-         $misc->{capture} = $o->get('embeddedattrcapt');
+      if ( my $patterns = $o->get('embedded-attributes') ) {
+         $misc->{embed}   = qr/$patterns->[0]/o;
+         $misc->{capture} = qr/$patterns->[1]/o;
+         MKDEBUG && _d('Patterns for embedded attributes:', $misc->{embed},
+            $misc->{capture});
       }
       if ( $o->get('type') eq 'tcpdump' && $o->get('tcpdump') ) {
          ($misc->{watching} = $o->get('tcpdump')) =~ s/:/./;
@@ -4771,9 +4966,9 @@ my %ea;      # EventAggregators
          # TODO: progress report (issue 169)
       }
 
-      # ##########################################################################
+      # ######################################################################
       # Finish up.
-      # ##########################################################################
+      # ######################################################################
       my $query_report = $o->get('report-format')->{query_report};
       if ( @$report ) {
          # Pick the first one and run the global report.
@@ -4815,9 +5010,9 @@ my %ea;      # EventAggregators
             # $attrib is the attribute by which the report is ordered.
             my ( $attrib, $orderby ) = split(/:/, $orderby->[$i]);
             if ( !$ea->type_for($attrib) && $attrib ne 'Query_time' ) {
-               # This fixes issue 244: missing --orderby
+               # This fixes issue 244: missing --order-by
                # TODO: get the default from the $o, here and in the "if"
-               print "--orderby attribute $attrib doesn't exist, using Query_time\n"
+               print "--order-by attribute $attrib doesn't exist, using Query_time\n"
                   if $query_report;
                $attrib = 'Query_time'; # Fall back to the default.
             }
@@ -4846,7 +5041,7 @@ my %ea;      # EventAggregators
 
             # Find the items to include in the report
             my @worst          = $ea->top_events(%top_spec);
-            my $expected_range = $o->get('expectedrange');
+            my $expected_range = $o->get('expected-range');
             my $explain_why
                = $expected_range
                && (@worst < $expected_range->[0] || @worst > $expected_range->[1]);
@@ -4882,7 +5077,7 @@ my %ea;      # EventAggregators
                my $review_vals;
                if ( $local_qv ) {
                   $review_vals = $local_qv->get_review_info($item);
-                  if ( $review_vals->{reviewed_by} && !$o->get('reportall') ) {
+                  if ( $review_vals->{reviewed_by} && !$o->get('report-all') ) {
                      # This item has already been reviewed, skip it.  But before
                      # doing so, save the history if necessary.
                      if ( $o->get('review-history') ) {
@@ -4946,11 +5141,11 @@ my %ea;      # EventAggregators
                      $samp_query = $qr->shorten($samp_query, $o->get('shorten'));
                   }
 
-                  # Print out tables for the query, and if it's a SELECT statement,
-                  # print out its EXPLAIN...
+                  # Print out tables for the query, and if it's a SELECT
+                  # statement, print out its EXPLAIN...
                   my ($db_for_show) = $sample->{db} ? $sample->{db}
                                     : keys %{$stats->{db}->{unq}};
-                  if ( $o->get('forexplain') ) {
+                  if ( $o->get('for-explain') ) {
                      print_tables(extract_tables($samp_query, $db_for_show))
                         if $query_report;
                   }
@@ -4970,7 +5165,7 @@ my %ea;      # EventAggregators
                      print "$samp_query\\G\n"
                         if $query_report;
                      my $converted = $qr->convert_to_select($samp_query);
-                     if ( $o->get('forexplain')
+                     if ( $o->get('for-explain')
                           && $converted
                           && $converted =~ m/^[\(\s]*select/i ) {
                         # It converted OK to a SELECT
@@ -5143,6 +5338,13 @@ sub _d {
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
+# ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
+
 # #############################################################################
 # Documentation.
 # #############################################################################
@@ -5230,7 +5432,7 @@ following will all be one paragraph, but we'll break it up for commentary.
  # Query 2: 0.01 QPS, 0.02x conc, ID 0xFDEA8D2993C9CAF3 at byte 160665
 
 This line identifies the sequential number of the query in the sort order
-specified by L<"--orderby">.  Then there's the queries per second, and the
+specified by L<"--order-by">.  Then there's the queries per second, and the
 approximate concurrency for this query (calculated as a function of the timespan
 and total Query_time).  Next there's a query ID.  This ID is a hex version of
 the query's checksum in the database, if you're using L<"--review">.  You can
@@ -5307,7 +5509,7 @@ These are copy-and-paste-ready commands to do that.
 
 Finally, we see a sample of the queries in this class of query.  This is not a
 random sample.  It is the query that performed the worst, according to the sort
-order given by L<"--orderby">.  You will normally see a commented C<# EXPLAIN>
+order given by L<"--order-by">.  You will normally see a commented C<# EXPLAIN>
 line just before it, so you can copy-paste the query to examine its EXPLAIN
 plan. But for non-SELECT queries that isn't possible to do, so the tool tries to
 transform the query into a roughly equivalent SELECT query, and adds that below.
@@ -5365,7 +5567,7 @@ Next time you run it with the same option, it will do the following:
 
 It won't show you queries you've already reviewed.  A query is considered to be
 already reviewed if you've set a value for the C<reviewed_by> column.  (If you
-want to see queries you've already reviewed, use the L<"--reportall"> option.)
+want to see queries you've already reviewed, use the L<"--report-all"> option.)
 
 =item *
 
@@ -5378,7 +5580,7 @@ output.
 =item *
 
 If you want to see the queries you've already reviewed, you can specify
-L<"--reportall">.  Then you'll see the normal analysis output, but you'll also see
+L<"--report-all">.  Then you'll see the normal analysis output, but you'll also see
 the information from the review table, just below the execution time graph.  For
 example,
 
@@ -5421,7 +5623,7 @@ What C<mk-query-digest> does is analogous to a GROUP BY statement in SQL.  If yo
 command-line looks like this,
 
   mk-query-digest /path/to/slow.log --select Rows_read,Rows_sent \
-      --groupby fingerprint --orderby Query_time:sum --limit 10
+      --group-by fingerprint --order-by Query_time:sum --limit 10
 
 The corresponding pseudo-SQL looks like this:
 
@@ -5432,7 +5634,7 @@ The corresponding pseudo-SQL looks like this:
   LIMIT 10
 
 You can also use the value C<distill>, which is a kind of super-fingerprint.
-See L<"--groupby"> for more.
+See L<"--group-by"> for more.
 
 =head1 OPTIONS
 
@@ -5441,7 +5643,7 @@ is yes.
 
 =over
 
-=item --attriblimit
+=item --attribute-limit
 
 type: int; default: 4294967296
 
@@ -5458,52 +5660,56 @@ type: Array
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
 
-=item --createreview
+=item --create-review-table
 
 Create the L<"--review"> table if it does not exist.
 
-This option causes the table specified by --review to be created with the
+This option causes the table specified by L<"--review"> to be created with the
 default structure shown in the documentation for that option.
 
-=item --create-review-history
+=item --create-review-history-table
 
 Create the L<"--review-history"> table if it does not exist.
 
-This option causes the table specified by --review-history to be created with
-the default structure shown in the documentation for that option.
+This option causes the table specified by L<"--review-history"> to be created
+with the default structure shown in the documentation for that option.
 
 =item --daemonize
 
 Fork to the background and detach from the shell.  POSIX only.
 
-=item --embeddedattr
+=item --embedded-attributes
 
-type: string
+type: array
 
-Perl regex to capture pseudo-attributes in queries.
+Two Perl regex patterns to capture pseudo-attributes embedded in queries.
 
-Embedded attributes might be special name-value pairs that you've hidden in
-comments.  This regex should match the entire set of attributes (in case there
-are multiples).  See also L<"--embeddedattrcapt">.
-
-=item --embeddedattrcapt
-
-type: string
-
-Perl regex to extract pseudo-attribute names and values from the string captured
-by L<"--embeddedattr">.
+Embedded attributes might be special attribute-value pairs that you've hidden
+in comments.  The first regex should match the entire set of attributes (in
+case there are multiple).  The second regex should match and capture
+attribute-value pairs from the first regex.
 
 For example, suppose your query looks like the following:
 
   SELECT * from users -- file: /login.php, line: 493;
 
-You might run mk-query-digest with the following options:
+You might run mk-query-digest with the following option:
 
-  mk-query-digest --embeddedattr ' -- .*' \
-      --embeddedattrcapt '(\w+): ([^,]+)'
+  mk-query-digest --embedded-attributes ' -- .*','(\w+): ([^\,]+)'
 
-The first regular expression captures the comment; the second one splits it into
-name-value pairs and adds them as attributes of the event.
+The first regular expression captures the whole comment:
+
+  " -- file: /login.php, line: 493;"
+
+The second one splits it into attribute-value pairs and adds them to the event:
+
+   ATTRIBUTE  VALUE
+   =========  ==========
+   file       /login.php
+   line       493
+
+B<NOTE>: All commas in the regex patterns must be escaped with \ otherwise
+the pattern will break.
 
 =item --execute
 
@@ -5516,10 +5722,10 @@ are executed on this DSN.  If they are successful, the time they take to execute
 overwrites the event's Query_time attribute.  If unsuccessful, the callback
 returns false and terminates the chain.
 
-If the connection fails, mk-query-digest tries to reconnect once per second.  See
-also L<"--mirror">.
+If the connection fails, mk-query-digest tries to reconnect once per second.
+See also L<"--mirror">.
 
-=item --expectedrange
+=item --expected-range
 
 type: array; default: 5,10
 
@@ -5565,12 +5771,10 @@ It is permissible for the code to have side effects (to alter $event).
 
 =item --fingerprints
 
-short form: -f
-
 Add query fingerprints to the L<"--report">.  This is mostly useful
 for debugging purposes.
 
-=item --[no]forexplain
+=item --[no]for-explain
 
 default: yes
 
@@ -5581,7 +5785,7 @@ TABLE STATUS for the query's tables.  It also rewrites non-SELECT queries into a
 SELECT that might be helpful for determining the non-SELECT statement's index
 usage.
 
-=item --groupby
+=item --group-by
 
 type: Array
 
@@ -5595,13 +5799,14 @@ query, such as C<user> or C<db>, which will by default show you which users
 and which databases get the most C<Query_time>.
 
 Every value must have a corresponding value in the same position in
-L<"--orderby">.  However, adding values to --groupby will automatically add
-values to --orderby, for your convenience.  And, since L<"--report">
-automatically adds values to --groupby, these cascade through to --orderby.  So
-you generally don't need to think about anything except --report.
+L<"--order-by">.  However, adding values to L<"--group-by"> will automatically
+add values to L<"--order-by">, for your convenience.  And, since L<"--report">
+automatically adds values to L<"--group-by">, these cascade through to
+L<"--order-by">.  So you generally don't need to think about anything except
+L<"--report">.
 
-There are several magical values that cause some extra data mining to happen before
-the grouping takes place:
+There are several magical values that cause some extra data mining to happen
+before the grouping takes place:
 
 =over
 
@@ -5631,7 +5836,7 @@ Show help and exit.
 
 =item --interval
 
-short form: -i; type: float; default: .1
+type: float; default: .1
 
 How frequently to poll the processlist, in seconds.
 
@@ -5680,7 +5885,7 @@ replication.  The L<http://code.google.com/p/mysql-master-master/> master-master
 toolkit does this. The aim is to keep the passive server ready for failover,
 which is impossible without putting it under a realistic workload.
 
-=item --orderby
+=item --order-by
 
 type: Array; default: Query_time:sum
 
@@ -5690,7 +5895,7 @@ This is a comma-separated list of order-by expressions, one for each attribute
 you wish to report by (see L<"--report">).  The syntax is attribute:aggregate.
 Valid aggregates are sum, min, max, cnt.  See the default value for an example.
 
-This option is automatically altered by L<"--groupby">.  If you specify an
+This option is automatically altered by L<"--group-by">.  If you specify an
 attribute that doesn't exist in the events that are parsed and aggregated,
 mk-query-digest falls back to the default with a notice just at the beginning
 of the per-item report.
@@ -5721,8 +5926,8 @@ type: string
 
 Create the given PID file when daemonized.
 
-For example, C<--daemonize --pid /tmp/mk-query-digest.pid>.  /var/run/ is usually
-not writable by non-root users, so /tmp/ is a more reliable alternative.
+For example, C<--daemonize --pid /tmp/mk-query-digest.pid>.  /var/run/ is
+usually not writable by non-root users, so /tmp/ is a more reliable alternative.
 
 The PID file is removed when the daemonized instance exits.
 
@@ -5743,15 +5948,15 @@ also L<"--mirror">.
 
 type: Array; default: fingerprint
 
-Print out reports on the aggregate results from L<"--groupby">.
+Print out reports on the aggregate results from L<"--group-by">.
 
-This is the standard slow-log analysis functionality.  See OUTPUT for the
+This is the standard slow-log analysis functionality.  See L<"OUTPUT"> for the
 description of what this does and what the results look like.
 
 Any value you specify here automatically adds a corresponding value to
-L<"--groupby">.
+L<"--group-by">.
 
-=item --reportall
+=item --report-all
 
 Include all queries, even if they have already been reviewed.
 
@@ -5771,14 +5976,14 @@ See L<"OUTPUT"> for more information on the various parts of the query report.
 
 =item --review
 
-short form: -R; type: DSN
+type: DSN
 
 Store a sample of each class of query in this DSN.
 
 The argument specifies a table to store all unique query fingerprints in.  The
 table must have at least the following columns, but you can add any more columns
 you wish.  The following CREATE TABLE definition is also used for
-L<"--createreview">.  MAGIC_create_review:
+L<"--create-review-table">.  MAGIC_create_review:
 
   CREATE TABLE query_review (
      checksum     BIGINT UNSIGNED NOT NULL PRIMARY KEY,
@@ -5855,7 +6060,7 @@ you could also just add a ts_min column and make it a DATE type, so you'd get
 one row per class of queries per day.
 
 The default table structure follows.  The following MAGIC_create_review_history
-table definition is used for L<"--create-review-history">:
+table definition is used for L<"--create-review-history-table">:
 
  CREATE TABLE query_review_history (
    checksum             BIGINT UNSIGNED NOT NULL,
@@ -5971,10 +6176,10 @@ specified attribute is the same, they are aggregated together.  At the end, the
 report prints out the timestamp, interval, count and value of each aggregated
 group of events.
 
-The setting cascades to L<"--orderby"> and L<"--groupby"> just like
-L<"--report"> does.  At this time, --timeline and --report are mutually
-exclusive, and since --report has a default value, setting --timeline will
-merely unset --report.
+The setting cascades to L<"--order-by"> and L<"--group-by"> just like
+L<"--report"> does.  At this time, L<"--timeline"> and L<"--report"> are
+mutually exclusive, and since L<"--report"> has a default value, setting
+L<"--timeline"> will merely unset L<"--report">.
 
 Example:
 
@@ -5984,7 +6189,7 @@ Example:
 
 Show version and exit.
 
-=item --[no]zeroadmin
+=item --[no]zero-admin
 
 default: yes
 
