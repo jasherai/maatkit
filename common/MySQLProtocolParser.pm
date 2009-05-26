@@ -135,282 +135,314 @@ sub parse_packet {
    my $client = $from eq $self->{server} ? $to : $from;
    MKDEBUG && _d('Client:', $client);
 
-   my $data = $packet->{data};
-   my $ts   = $packet->{ts};
-
-   my $sess = $self->{sessions}->{$client} ||= {
-      client => $client,
-      ts     => $ts,
-      state  => undef,
+   if ( !exists $self->{sessions}->{$client} ) {
+      MKDEBUG && _d('New session');
+      $self->{sessions}->{$client} = {
+         client => $client,
+         ts     => $packet->{ts},
+         state  => undef,
+      };
    };
+   my $session = $self->{sessions}->{$client};
 
-   if ( $data ) {
-
-      # Now we're down to the MySQL protocol.  A single TCP packet can
-      # contain many MySQL protocol packets!  The first 4 bytes are the
-      # packet header: a 3-byte length and a 1-byte sequence.  After that, it
-      # depends on what type of packet this is.  NOTE: the data is modified
-      # by the inmost substr call here!  If we had all the data in the TCP
-      # packets, we could change this to a while loop; while
-      # get-a-packet-from-$data, do stuff, etc.  But we don't, and we don't
-      # want to either.
-      my $packet_len = to_num(substr(substr($data, 0, 8, ''), 0, 6));
-      MKDEBUG && _d('Packet/data length:', $packet_len, length($data)/2);
-
-      # If it's from the server to the client, I care about
-      # 1) during the initialization sequence, the thread_id.
-      # 2) after that, I care about things like the warning count, etc.
-      if ( $from eq $self->{server} ) { # From server to client
-         MKDEBUG && _d('Packet is from server to client');
-
-         # The first byte in the packet indicates whether it's an OK,
-         # ERROR, EOF packet.  If it's not one of those, we test
-         # whether it's an initialization packet (the first thing the
-         # server ever sends the client).  If it's not that, it could
-         # be a result set header, field, row data, etc.
-         my ( $first_byte ) = substr($data, 0, 2, '');
-         MKDEBUG && _d("First byte of packet:", $first_byte);
-         if ( $first_byte eq '00' ) {
-            MKDEBUG && _d('Got an OK packet', $data);
-
-            # TODO: First byte is technically the "field count" which
-            # can be non-zero for "tabular responses" like the proclist.
-            # A reliable OK fingerprint would be first byte 00, len 7.
-
-            # Gather all the data from the packet.
-            my $affected_rows = get_lcb(\$data);
-            my $insert_id     = get_lcb(\$data);
-            my $status   = to_num(substr($data, 0, 4, ''));
-            my $warnings = to_num(substr($data, 0, 4, ''));
-            my $message  = to_string($data);
-            # Note: $message is discarded.  It might be something like
-            # Records: 2  Duplicates: 0  Warnings: 0
-            MKDEBUG && _d('OK data: affected_rows', $affected_rows,
-               'insert_id', $insert_id, 'status', $status, 'warnings',
-               $warnings, 'message', $message);
-
-            if ( ($sess->{state} || '') eq 'client_auth' ) {
-               # We logged in OK!  Trigger an admin Connect command.
-               MKDEBUG && _d('Admin command: Connect');
-               fire_event(
-                  {  cmd => 'Admin',
-                     arg => 'administrator command: Connect',
-                     ts  => $ts, # Events are timestamped when they end
-                  },
-                  $packet, $sess, @callbacks
-               );
-            }
-            elsif ( $sess->{cmd} ) { # It should be a query or something
-               my $com = $sess->{cmd}->{cmd};
-               my $arg;
-               if ( $com eq COM_QUERY ) {
-                  $com = 'Query';
-                  $arg = $sess->{cmd}->{arg};
-               }
-               else {
-                  $arg = 'administrator command: '
-                       . ucfirst(lc(substr($com_for{$com}, 4)));
-                  $com = 'Admin';
-               }
-               fire_event(
-                  {  cmd           => $com,
-                     arg           => $arg,
-                     ts            => $ts,
-                     Insert_id     => $insert_id,
-                     Warning_count => $warnings,
-                     Rows_affected => $affected_rows,
-                  },
-                  $packet, $sess, @callbacks
-               );
-            }
-            $sess->{state} = 'ready';
-            return $packet;
-         }
-         elsif ( $first_byte eq 'ff' ) {
-            MKDEBUG && _d('Got an ERROR packet');
-            my $errno = to_num(substr($data, 0, 4));
-            my $messg = to_string(substr($data, 4));
-            MKDEBUG && _d('ERROR', $errno, $messg);
-            my $event;
-            if ( $sess->{state} eq 'client_auth' ) {
-               MKDEBUG && _d('Connection failed');
-               $event = {
-                  cmd       => 'Admin',
-                  arg       => 'administrator command: Connect',
-                  ts        => $ts,
-                  Error_no  => $errno,
-               };
-               $sess->{state} = 'closing';
-            }
-            elsif ( $sess->{cmd} ) { # It should be a query or something
-               my $com = $sess->{cmd}->{cmd};
-               my $arg;
-               if ( $com eq COM_QUERY ) {
-                  $com = 'Query';
-                  $arg = $sess->{cmd}->{arg};
-               }
-               else {
-                  $arg = 'administrator command: '
-                       . ucfirst(lc(substr($com_for{$com}, 4)));
-                  $com = 'Admin';
-               }
-               $event = {
-                  cmd       => $com,
-                  arg       => $arg,
-                  ts        => $ts,
-                  Error_no  => $errno,
-               };
-               $sess->{state} = 'ready';
-            }
-            fire_event($event, $packet, $sess, @callbacks);
-            return $packet;
-         }
-         elsif ( $first_byte eq 'fe' && $packet_len < 9 ) {
-            MKDEBUG && _d('Got an EOF packet');
-            die "You should not have gotten here";
-            # ^^^ We shouldn't reach this because EOF should come after a
-            # header, field, or row data packet; and we should be firing the
-            # event and returning when we see that.  See SVN history for some
-            # good stuff we could do if we wanted to handle EOF packets.
-         }
-         elsif ( !$sess->{state}
-                 && (my ($thread_id) = $data =~ m/$handshake_pat/o ) ) {
-            # It's the handshake packet from the server to the client.
-            MKDEBUG && _d('Got a handshake for thread_id', $thread_id);
-            $sess->{thread_id} = to_num($thread_id);
-            $sess->{state}     = 'server_handshake';
-         }
-         else { # Row data, field, result set header.
-            MKDEBUG && _d('Got a row/field/result packet');
-            # Since we do NOT always have all the data the server sent to the
-            # client, we can't always do any processing of results.  So when
-            # we get one of these, we just fire the event even if the query
-            # is not done.  This means we will NOT process EOF packets
-            # themselves (see above).
-            if ( $sess->{cmd} ) {
-               my $com = $sess->{cmd}->{cmd};
-               my $event = { ts  => $ts };
-               if ( $com eq COM_QUERY ) {
-                  $event->{cmd} = 'Query';
-                  $event->{arg} = $sess->{cmd}->{arg};
-               }
-               else {
-                  $event->{arg} = 'administrator command: '
-                       . ucfirst(lc(substr($com_for{$com}, 4)));
-                  $event->{cmd} = 'Admin';
-               }
-
-               # We DID get all the data in the packet.
-               if ( $packet->{complete} ) {
-                  # Look to see if the end of the data appears to be an EOF
-                  # packet.
-                  my ( $warning_count, $status_flags )
-                     = $data =~ m/fe(.{4})(.{4})\Z/;
-                  if ( $warning_count ) { 
-                     $event->{Warnings} = to_num($warning_count);
-                     my $flags = to_num($status_flags); # TODO set all flags?
-                     $event->{No_good_index_used}
-                        = $flags & SERVER_QUERY_NO_GOOD_INDEX_USED ? 1 : 0;
-                     $event->{No_index_used}
-                        = $flags & SERVER_QUERY_NO_INDEX_USED ? 1 : 0;
-                  }
-               }
-
-               fire_event($event, $packet, $sess, @callbacks);
-               $sess->{state} = 'ready';
-               return $packet;
-            }
-         }
-      } # From server to client
-
-      # If it's from the client to the server, I care about
-      # 1) during the initialization sequence, I want to know the user
-      #    and the initial database.  It looks like the best way to
-      #    detect this command is by looking for the 23-byte 0x00...
-      #    filler.  I only need to do this for sessions that aren't yet
-      #    initialized.
-      # 2) after that, I want to know the query text.
-      elsif ( $from eq $client ) {  # From client to server
-         MKDEBUG && _d('Packet is from client');
-         if ( ($sess->{state} || '') eq 'server_handshake' ) {
-            MKDEBUG && _d('Expect client authentication packet');
-            my ( $user, $buff_len ) = $data =~ m{
-               ^.{18}         # Client flags, max packet size, charset
-               (?:00){23}     # Filler
-               ((?:..)+?)00   # Null-terminated user name
-               (..)           # Length-coding byte for scramble buff
-            }x;
-            if ( defined $buff_len ) {
-               # This length-coded binary doesn't seem to be a normal one, it
-               # seems more like a length-coded string actually.
-               MKDEBUG && _d('Found user', $user, 'buff_len', $buff_len);
-               my $code_len = hex($buff_len);
-               my ( $database ) = $data =~ m!
-                  ^.{64}${user}00..   # Everything matched before
-                  (?:..){$code_len}   # The scramble buffer
-                  (.*)00\Z            # The database name
-               !x;
-               MKDEBUG && _d('Found databasename', $database);
-
-               # The connection is a 3-way handshake:
-               #    server > client  (capabilities, protocol version, etc.)
-               #    client > server  (user, pass, default db, etc.)
-               #    server > client  OK if login succeeds
-               # log_in_pos refers to 2nd handshake from the client.
-               # A connection is logged even if the client fails to
-               # login (bad password, etc.).
-               $sess->{pos_in_log} = $packet->{pos_in_log};
-               $sess->{state}      = 'client_auth';
-               $sess->{user}       = to_string($user);
-               $sess->{db}         = to_string($database || '');
-            }
-            else {
-               MKDEBUG && _d('Did not match client auth packet');
-            }
-         }
-
-         # Otherwise, it should be a query.  We ignore the commands
-         # that take arguments (COM_CHANGE_USER, COM_PROCESS_KILL).
-         else {
-            my $COM = substr($data, 0, 2);
-            $data   = to_string(substr($data, 2));
-            MKDEBUG && _d('COM:', $com_for{$COM}, 'data:', $data);
-
-            $sess->{ts}         = $ts;
-            $sess->{state}      = 'awaiting_reply';
-            $sess->{pos_in_log} = $packet->{pos_in_log};
-            $sess->{cmd}        = {
-               cmd => $COM,
-               arg => $data,
-            };
-
-            if ( $COM eq COM_QUIT ) { # Fire right away; will cleanup later.
-               MKDEBUG && _d('Got a COM_QUIT');
-               fire_event(
-                  {  cmd       => 'Admin',
-                     arg       => 'administrator command: Quit',
-                     ts        => $ts,
-                  },
-                  $packet, $sess, @callbacks
-               );
-               $sess->{state} = 'closing';
-               return $packet;
-            }
-         }
-      } # From client to server
-      else {
-         MKDEBUG && _d('Packet origin unknown');
-      }
-   } # There was data in the TCP packet.
-   else {
+   # Use ref so we modify $packet->{data} in substr(substr($data, ...)) below.
+   my $data = \$packet->{data};
+   if ( !$$data  ) {
       MKDEBUG && _d('No data in TCP packet');
       # Is the session ready to close?
-      if ( ($sess->{state} || '') eq 'closing' ) {
-         delete $self->{sessions}->{$sess->{client}};
+      if ( ($session->{state} || '') eq 'closing' ) {
+         delete $self->{sessions}->{$session->{client}};
       }
+      return $packet;
+   }
+
+   # A single TCP packet can contain many MySQL packets, but we only
+   # look at the first.  The 2nd and subsequent packets are usually
+   # parts of a resultset returned by the server, but we're not interested
+   # in resultsets.  The first 4 bytes are the packet header: a 3-byte
+   # length and a 1-byte sequence.  After that, it depends on what type
+   # of packet this is.
+   #
+   # NOTE: the data is modified by the inmost substr call here!  If we
+   # had all the data in the TCP packets, we could change this to a while
+   # loop; while get-a-packet-from-$data, do stuff, etc.  But we don't,
+   # and we don't want to either.
+   my $data_len = to_num(substr(substr($$data, 0, 8, ''), 0, 6));
+   $packet->{data_len} = $data_len;
+   MKDEBUG && _d('Packet/data length:', $data_len, length($data)/2);
+
+   if ( $from eq $self->{server} ) {
+      _packet_from_server($packet, $session, $misc, @callbacks);
+   }
+   elsif ( $from eq $client ) {
+      _packet_from_client($packet, $session, $misc, @callbacks);
+   }
+   else {
+      MKDEBUG && _d('Packet origin unknown');
    }
 
    return $packet;
+}
+
+# Handles a packet from the server given the state of the session.
+# The server can send back a lot of different stuff, but luckily
+# we're only interested in
+#    * Connection handshake packets for the thread_id
+#    * OK and Error packets for errors, warnings, etc.
+# Anything else is ignored.
+sub _packet_from_server {
+   my ( $packet, $session, $misc, @callbacks ) = @_;
+   die "I need a packet"  unless $packet;
+   die "I need a session" unless $session;
+
+   MKDEBUG && _d('Packet is from server to client');
+
+   my $data = $packet->{data};
+   my $ts   = $packet->{ts};
+
+   # The first byte in the packet indicates whether it's an OK,
+   # ERROR, EOF packet.  If it's not one of those, we test
+   # whether it's an initialization packet (the first thing the
+   # server ever sends the client).  If it's not that, it could
+   # be a result set header, field, row data, etc.
+   # TODO: First byte is technically the "field count" which
+   # can be non-zero for "tabular responses" like the proclist.
+   # A reliable OK fingerprint would be first byte 00, len 7.
+
+   my ( $first_byte ) = substr($data, 0, 2, '');
+   MKDEBUG && _d("First byte of packet:", $first_byte);
+
+   if ( $first_byte eq '00' ) {
+      MKDEBUG && _d('Got an OK packet', $data);
+
+      # Gather all the data from the packet.
+      my $affected_rows = get_lcb(\$data);
+      my $insert_id     = get_lcb(\$data);
+      my $status   = to_num(substr($data, 0, 4, ''));
+      my $warnings = to_num(substr($data, 0, 4, ''));
+      my $message  = to_string($data);
+      # Note: $message is discarded.  It might be something like
+      # Records: 2  Duplicates: 0  Warnings: 0
+      MKDEBUG && _d('OK data: affected_rows', $affected_rows,
+         'insert_id', $insert_id, 'status', $status, 'warnings',
+         $warnings, 'message', $message);
+
+      if ( ($session->{state} || '') eq 'client_auth' ) {
+         # We logged in OK!  Trigger an admin Connect command.
+         MKDEBUG && _d('Admin command: Connect');
+         fire_event(
+            {  cmd => 'Admin',
+               arg => 'administrator command: Connect',
+               ts  => $ts, # Events are timestamped when they end
+            },
+            $packet, $session, @callbacks
+         );
+      }
+      elsif ( $session->{cmd} ) { # It should be a query or something
+         my $com = $session->{cmd}->{cmd};
+         my $arg;
+         if ( $com eq COM_QUERY ) {
+            $com = 'Query';
+            $arg = $session->{cmd}->{arg};
+         }
+         else {
+            $arg = 'administrator command: '
+                 . ucfirst(lc(substr($com_for{$com}, 4)));
+            $com = 'Admin';
+         }
+         fire_event(
+            {  cmd           => $com,
+               arg           => $arg,
+               ts            => $ts,
+               Insert_id     => $insert_id,
+               Warning_count => $warnings,
+               Rows_affected => $affected_rows,
+            },
+            $packet, $session, @callbacks
+         );
+      }
+      $session->{state} = 'ready';
+   }
+   elsif ( $first_byte eq 'ff' ) {
+      my $errno = to_num(substr($data, 0, 4));
+      my $messg = to_string(substr($data, 4));
+      MKDEBUG && _d('ERROR', $errno, $messg);
+
+      my $event;
+      if ( $session->{state} eq 'client_auth' ) {
+         MKDEBUG && _d('Connection failed');
+         $event = {
+            cmd       => 'Admin',
+            arg       => 'administrator command: Connect',
+            ts        => $ts,
+            Error_no  => $errno,
+         };
+         $session->{state} = 'closing';
+      }
+      elsif ( $session->{cmd} ) { # It should be a query or something
+         my $com = $session->{cmd}->{cmd};
+         my $arg;
+         if ( $com eq COM_QUERY ) {
+            $com = 'Query';
+            $arg = $session->{cmd}->{arg};
+         }
+         else {
+            $arg = 'administrator command: '
+                 . ucfirst(lc(substr($com_for{$com}, 4)));
+            $com = 'Admin';
+         }
+         $event = {
+            cmd       => $com,
+            arg       => $arg,
+            ts        => $ts,
+            Error_no  => $errno,
+         };
+         $session->{state} = 'ready';
+      }
+
+      fire_event($event, $packet, $session, @callbacks);
+   }
+   elsif ( $first_byte eq 'fe' && $packet->{data_len} < 9 ) {
+      MKDEBUG && _d('Got an EOF packet');
+      die "You should not have gotten here";
+      # ^^^ We shouldn't reach this because EOF should come after a
+      # header, field, or row data packet; and we should be firing the
+      # event and returning when we see that.  See SVN history for some
+      # good stuff we could do if we wanted to handle EOF packets.
+   }
+   elsif ( !$session->{state}
+           && (my ($thread_id) = $data =~ m/$handshake_pat/o ) ) {
+      # It's the handshake packet from the server to the client.
+      MKDEBUG && _d('Got a handshake for thread_id', $thread_id);
+      $session->{thread_id} = to_num($thread_id);
+      $session->{state}     = 'server_handshake';
+   }
+   else { # Row data, field, result set header.
+      MKDEBUG && _d('Got a row/field/result packet');
+      # Since we do NOT always have all the data the server sent to the
+      # client, we can't always do any processing of results.  So when
+      # we get one of these, we just fire the event even if the query
+      # is not done.  This means we will NOT process EOF packets
+      # themselves (see above).
+      if ( $session->{cmd} ) {
+         my $com = $session->{cmd}->{cmd};
+         MKDEBUG && _d('COM:', $com_for{$com});
+         my $event = { ts  => $ts };
+         if ( $com eq COM_QUERY ) {
+            $event->{cmd} = 'Query';
+            $event->{arg} = $session->{cmd}->{arg};
+         }
+         else {
+            $event->{arg} = 'administrator command: '
+                 . ucfirst(lc(substr($com_for{$com}, 4)));
+            $event->{cmd} = 'Admin';
+         }
+
+         # We DID get all the data in the packet.
+         if ( $packet->{complete} ) {
+            # Look to see if the end of the data appears to be an EOF
+            # packet.
+            my ( $warning_count, $status_flags )
+               = $data =~ m/fe(.{4})(.{4})\Z/;
+            if ( $warning_count ) { 
+               $event->{Warnings} = to_num($warning_count);
+               my $flags = to_num($status_flags); # TODO set all flags?
+               $event->{No_good_index_used}
+                  = $flags & SERVER_QUERY_NO_GOOD_INDEX_USED ? 1 : 0;
+               $event->{No_index_used}
+                  = $flags & SERVER_QUERY_NO_INDEX_USED ? 1 : 0;
+            }
+         }
+
+         fire_event($event, $packet, $session, @callbacks);
+         $session->{state} = 'ready';
+      }
+   }
+
+   return;
+}
+
+# Handles a packet from the client given the state of the session.
+# The client doesn't send a wide and exotic array of packets like
+# the server.  Even so, we're only interested in:
+#    * Users and dbs from connection handshake packets
+#    * SQL statments from COM_QUERY commands
+# Anything else is ignored.
+sub _packet_from_client {
+   my ( $packet, $session, $misc, @callbacks ) = @_;
+   die "I need a packet"  unless $packet;
+   die "I need a session" unless $session;
+
+   MKDEBUG && _d('Packet is from client');
+
+   my $data = $packet->{data};
+   my $ts   = $packet->{ts};
+ 
+   if ( ($session->{state} || '') eq 'server_handshake' ) {
+      MKDEBUG && _d('Expect client authentication packet');
+      my ( $user, $buff_len ) = $data =~ m{
+         ^.{18}         # Client flags, max packet size, charset
+         (?:00){23}     # Filler
+         ((?:..)+?)00   # Null-terminated user name
+         (..)           # Length-coding byte for scramble buff
+      }x;
+      if ( defined $buff_len ) {
+         # This length-coded binary doesn't seem to be a normal one, it
+         # seems more like a length-coded string actually.
+         MKDEBUG && _d('Found user', $user, 'buff_len', $buff_len);
+         my $code_len = hex($buff_len);
+         my ( $database ) = $data =~ m!
+            ^.{64}${user}00..   # Everything matched before
+            (?:..){$code_len}   # The scramble buffer
+            (.*)00\Z            # The database name
+         !x;
+         MKDEBUG && _d('Found databasename', $database);
+
+         # The connection is a 3-way handshake:
+         #    server > client  (capabilities, protocol version, etc.)
+         #    client > server  (user, pass, default db, etc.)
+         #    server > client  OK if login succeeds
+         # log_in_pos refers to 2nd handshake from the client.
+         # A connection is logged even if the client fails to
+         # login (bad password, etc.).
+         $session->{pos_in_log} = $packet->{pos_in_log};
+         $session->{state}      = 'client_auth';
+         $session->{user}       = to_string($user);
+         $session->{db}         = to_string($database || '');
+      }
+      else {
+         MKDEBUG && _d('Did not match client auth packet');
+      }
+   }
+   else {
+      # Otherwise, it should be a query.  We ignore the commands
+      # that take arguments (COM_CHANGE_USER, COM_PROCESS_KILL).
+      my $COM = substr($data, 0, 2);
+      $data   = to_string(substr($data, 2));
+      MKDEBUG && _d('COM:', $com_for{$COM}, 'data:', $data);
+
+      $session->{ts}         = $ts;
+      $session->{state}      = 'awaiting_reply';
+      $session->{pos_in_log} = $packet->{pos_in_log};
+      $session->{cmd}        = {
+         cmd => $COM,
+         arg => $data,
+      };
+
+      if ( $COM eq COM_QUIT ) { # Fire right away; will cleanup later.
+         MKDEBUG && _d('Got a COM_QUIT');
+         fire_event(
+            {  cmd       => 'Admin',
+               arg       => 'administrator command: Quit',
+               ts        => $ts,
+            },
+            $packet, $session, @callbacks
+         );
+         $session->{state} = 'closing';
+      }
+   }
+
+   return;
 }
 
 # Create event from the given packet and session and then
