@@ -87,7 +87,7 @@ sub run_test {
    my ( $file, $result ) = @_;
    @packets = ();
    open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
-   $p->parse_packet($fh, undef, \&save_packet);
+   $p->parse_event($fh, undef, \&save_packet);
    is_deeply(
       \@packets,
       $result,

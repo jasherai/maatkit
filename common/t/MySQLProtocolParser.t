@@ -43,7 +43,7 @@ sub run_test {
    eval {
       open my $fh, "<", $def->{file}
          or BAIL_OUT("Cannot open $def->{file}: $OS_ERROR");
-      $num_events++ while $tcpdump->parse_packet($fh, undef, $callback);
+      $num_events++ while $tcpdump->parse_event($fh, undef, $callback);
       close $fh;
    };
    is($EVAL_ERROR, '', "No error on $def->{file}");

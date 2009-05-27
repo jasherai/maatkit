@@ -59,7 +59,7 @@ sub new {
 #  };
 #
 # Returns the number of packets parsed.
-sub parse_packet {
+sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
 
    my $num_packets = 0;
