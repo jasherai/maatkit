@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 17;
+use Test::More tests => 20;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -102,8 +102,32 @@ $output = `cat /tmp/mk-deadlock-logger.pid`;
 is($output, $pid, 'PID file has correct PID');
 
 # Kill it
-sleep 1;
+sleep 2;
 ok(! -f '/tmp/mk-deadlock-logger.pid', 'PID file removed');
+
+# Check that it won't run if the PID file already exists (issue 383).
+diag(`touch /tmp/mk-deadlock-logger.pid`);
+ok(
+   -f '/tmp/mk-deadlock-logger.pid',
+   'PID file already exists'
+);
+
+$cmd = '../mk-deadlock-logger --dest D=test,t=deadlocks h=127.1,P=12345 --daemonize --run-time 1s --interval 1s --pid /tmp/mk-deadlock-logger.pid';
+$output = `$cmd 2>&1`;
+like(
+   $output,
+   qr/PID file .+ already exists/,
+   'Does not run if PID file already exists'
+);
+
+$output = `ps -eaf | grep 'mk-deadlock-logger \-\-dest '`;
+unlike(
+   $output,
+   qr/$cmd/,
+   'It does not lived daemonized'
+);
+
+diag(`rm -rf /tmp/mk-deadlock-logger.pid`);
 
 # #############################################################################
 # Check that deadlocks from previous test were stored in table.
