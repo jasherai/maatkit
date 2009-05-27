@@ -2128,6 +2128,10 @@ logs, for example.  Note: must check error log and see what the real position of
 the log file is.
 http://www.pythian.com/blogs/876/when-show-slave-status-and-the-error-log-disagree
 
+=item --read-only
+
+TODO: detect read-only setting and change it after moving servers.
+
 =back
 
 =head1 SYSTEM REQUIREMENTS
