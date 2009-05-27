@@ -1,5 +1,6 @@
 Changelog for mk-deadlock-logger:
 
+   * Dies if --pid file already exists (issue 383).
    * Removed the --source option; source DSN or --host, etc. is required.
    * Made --print default unless --dest or --print is explicitly given.
    * 'h' DSN part is no longer required (this prevented use of 'S').
