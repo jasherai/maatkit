@@ -40,7 +40,7 @@ sub new {
 }
 
 # This method accepts an open filehandle and callback functions.
-# It reads events from the filehandle and calls the callbacks with each packet.
+# It reads packets from the filehandle and calls the callbacks with each packet.
 # $misc is some placeholder for the future and for compatibility with other
 # query sources.
 #
@@ -57,8 +57,9 @@ sub new {
 #     data        => '...',  # TCP data
 #     pos_in_log  => 10,     # Position of this packet in the log
 #  };
-#
-# Returns the number of packets parsed.
+# Returns the number of packets parsed.  The sub is called parse_event
+# instead of parse_packet because mk-query-digest expects this for its
+# modular parser objects.
 sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
 
