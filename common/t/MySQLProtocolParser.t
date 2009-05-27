@@ -3,15 +3,16 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 18;
+use Test::More tests => 19;
 use English qw(-no_match_vars);
+
+require "../MySQLProtocolParser.pm";
+require "../TcpdumpParser.pm";
+
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Indent    = 1;
-
-require "../MySQLProtocolParser.pm";
-require "../TcpdumpParser.pm";
 
 my $tcpdump  = new TcpdumpParser();
 my $protocol = new MySQLProtocolParser(
@@ -314,6 +315,7 @@ MySQLProtocolParser->import(qw(
    parse_ok_packet
    parse_server_handshake_packet
    parse_client_handshake_packet
+   parse_com_packet
 ));
  
 is_deeply(
@@ -355,6 +357,31 @@ is_deeply(
    },
    'Parse client handshake packet'
 );
+
+is_deeply(
+   parse_com_packet('0373686f77207761726e696e67738d2dacbc', 14),
+   {
+      code => '03',
+      com  => 'COM_QUERY',
+      data => 'show warnings',
+   },
+   'Parse COM_QUERY packet'
+);
+
+# #############################################################################
+# Peter's sample.
+# #############################################################################
+# This sample has private data.
+#$protocol = new MySQLProtocolParser(
+#   server => '10.55.200.15:3306',
+#);
+#run_test({
+#   file   => 'samples/tcpdump00x.txt',
+#   result => [
+#      {
+#      },
+#   ],
+#});
 
 # #############################################################################
 # Done.

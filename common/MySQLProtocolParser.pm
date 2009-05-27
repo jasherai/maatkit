@@ -34,6 +34,7 @@ our @EXPORT_OK   = qw(
    parse_ok_packet
    parse_server_handshake_packet
    parse_client_handshake_packet
+   parse_com_packet
 );
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -402,19 +403,16 @@ sub _packet_from_client {
    else {
       # Otherwise, it should be a query.  We ignore the commands
       # that take arguments (COM_CHANGE_USER, COM_PROCESS_KILL).
-      my $COM = substr($data, 0, 2);
-      $data   = to_string(substr($data, 2));
-      MKDEBUG && _d('COM:', $com_for{$COM}, 'data:', $data);
-
+      my $com = parse_com_packet($data, $packet->{data_len});
       $session->{state}      = 'awaiting_reply';
       $session->{pos_in_log} = $packet->{pos_in_log};
       $session->{ts}         = $ts;
       $session->{cmd}        = {
-         cmd => $COM,
-         arg => $data,
+         cmd => $com->{code},
+         arg => $com->{data},
       };
 
-      if ( $COM eq COM_QUIT ) { # Fire right away; will cleanup later.
+      if ( $com->{code} eq COM_QUIT ) { # Fire right away; will cleanup later.
          MKDEBUG && _d('Got a COM_QUIT');
          fire_event(
             {  cmd       => 'Admin',
@@ -643,6 +641,26 @@ sub parse_client_handshake_packet {
       db   => $db ? to_string($db) : '',
    };
    MKDEBUG && _d('Client handshake packet:', Dumper($pkt));
+   return $pkt;
+}
+
+# COM data is not 00-terminated, but the the MySQL client appends \0,
+# so we have to use the packet length to know where the data ends.
+sub parse_com_packet {
+   my ( $data, $len ) = @_;
+   die "I need data"  unless $data;
+   die "I need a len" unless $len;
+   MKDEBUG && _d('COM data:', $data, 'len:', $len);
+   my $code = substr($data, 0, 2);
+   my $com  = $com_for{$code};
+   die "Did not match COM packet" unless $com;
+   $data    = to_string(substr($data, 2, ($len - 1) * 2));
+   my $pkt = {
+      code => $code,
+      com  => $com,
+      data => $data,
+   };
+   MKDEBUG && _d('COM packet:', Dumper($pkt));
    return $pkt;
 }
 
