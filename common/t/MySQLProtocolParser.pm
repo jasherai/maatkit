@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 16;
+use Test::More tests => 18;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -18,7 +18,7 @@ my $protocol = new MySQLProtocolParser(
    server => '127.0.0.1:3306',
 );
 
-sub load_data_sample {
+sub load_data {
    my ( $file ) = @_;
    open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
    my $contents = do { local $/ = undef; <$fh> };
@@ -312,11 +312,12 @@ run_test({
 MySQLProtocolParser->import(qw(
    parse_error_packet
    parse_ok_packet
+   parse_server_handshake_packet
+   parse_client_handshake_packet
 ));
-
-my $data = load_data_sample('samples/mysql_proto_001.txt');
+ 
 is_deeply(
-   parse_error_packet($data),
+   parse_error_packet(load_data('samples/mysql_proto_001.txt')),
    {
       errno    => '1046',
       sqlstate => '#3D000',
@@ -335,6 +336,24 @@ is_deeply(
       message       => '',
    },
    'Parse ok packet'
+);
+
+is_deeply(
+   parse_server_handshake_packet(load_data('samples/mysql_proto_002.txt')),
+   {
+      thread_id      => '9',
+      server_version => '5.0.67-0ubuntu6-log',
+   },
+   'Parse server handshake packet'
+);
+
+is_deeply(
+   parse_client_handshake_packet(load_data('samples/mysql_proto_003.txt')),
+   {
+      db   => 'mysql',
+      user => 'msandbox',
+   },
+   'Parse client handshake packet'
 );
 
 # #############################################################################

@@ -23,6 +23,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Data::Dumper;
+$Data::Dumper::Indent = 1;
 
 require Exporter;
 our @ISA         = qw(Exporter);
@@ -31,6 +32,8 @@ our @EXPORT      = ();
 our @EXPORT_OK   = qw(
    parse_error_packet
    parse_ok_packet
+   parse_server_handshake_packet
+   parse_client_handshake_packet
 );
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -179,6 +182,7 @@ sub parse_packet {
       MKDEBUG && _d('Packet origin unknown');
    }
 
+   MKDEBUG && _d('state:', $session->{state});
    return $packet;
 }
 
@@ -193,7 +197,7 @@ sub _packet_from_server {
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
-   MKDEBUG && _d('Packet is from server to client');
+   MKDEBUG && _d('Packet is from server; state:', $session->{state});
 
    my $data = $packet->{data};
    my $ts   = $packet->{ts};
@@ -307,10 +311,10 @@ sub _packet_from_server {
       # handshake packet.  It's probably a lot longer.  Other packets
       # may start with 0a, but none that can would be >= 33.
       my $handshake = parse_server_handshake_packet($data);
-      $session->{thread_id} = $handshake->{thread_id};
       $session->{state}     = 'server_handshake';
+      $session->{thread_id} = $handshake->{thread_id};
    }
-   else { # Row data, field, result set header.
+   else {
       MKDEBUG && _d('Got a row/field/result packet');
       # Since we do NOT always have all the data the server sent to the
       # client, we can't always do any processing of results.  So when
@@ -366,48 +370,25 @@ sub _packet_from_client {
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
-   MKDEBUG && _d('Packet is from client');
+   MKDEBUG && _d('Packet is from client; state:', $session->{state});
 
    my $data = $packet->{data};
    my $ts   = $packet->{ts};
  
    if ( ($session->{state} || '') eq 'server_handshake' ) {
-      MKDEBUG && _d('Expect client authentication packet');
-      my ( $user, $buff_len ) = $data =~ m{
-         ^.{18}         # Client flags, max packet size, charset
-         (?:00){23}     # Filler
-         ((?:..)+?)00   # Null-terminated user name
-         (..)           # Length-coding byte for scramble buff
-      }x;
-      if ( defined $buff_len ) {
-         # This length-coded binary doesn't seem to be a normal one, it
-         # seems more like a length-coded string actually.
-         MKDEBUG && _d('Found user', $user, 'buff_len', $buff_len);
-         my $code_len = hex($buff_len);
-         my ( $database ) = $data =~ m!
-            ^.{64}${user}00..   # Everything matched before
-            (?:..){$code_len}   # The scramble buffer
-            (.*)00\Z            # The database name
-         !x;
-         MKDEBUG && _d('Found databasename', $database);
-
-         # The connection is a 3-way handshake:
-         #    server > client  (capabilities, protocol version, etc.)
-         #    client > server  (user, pass, default db, etc.)
-         #    server > client  OK if login succeeds
-         # pos_in_log refers to 2nd handshake from the client.
-         # A connection is logged even if the client fails to
-         # login (bad password, etc.).
-         $session->{pos_in_log} = $packet->{pos_in_log};
-         $session->{state}      = 'client_auth';
-         $session->{user}       = to_string($user);
-         $session->{db}         = to_string($database || '');
-      }
-      else {
-         MKDEBUG && _d('Did not match client auth packet');
-         # TODO: should we die here if MKDEBUG is on?  Or _d the packet and
-         # pos_in_log at so we can debug what happened?
-      }
+      MKDEBUG && _d('Expecting client authentication packet');
+      # The connection is a 3-way handshake:
+      #    server > client  (protocol version, thread id, etc.)
+      #    client > server  (user, pass, default db, etc.)
+      #    server > client  OK if login succeeds
+      # pos_in_log refers to 2nd handshake from the client.
+      # A connection is logged even if the client fails to
+      # login (bad password, etc.).
+      my $handshake = parse_client_handshake_packet($data);
+      $session->{state}      = 'client_auth';
+      $session->{pos_in_log} = $packet->{pos_in_log};
+      $session->{user}       = $handshake->{user};
+      $session->{db}         = $handshake->{db};
    }
    else {
       # Otherwise, it should be a query.  We ignore the commands
@@ -416,9 +397,9 @@ sub _packet_from_client {
       $data   = to_string(substr($data, 2));
       MKDEBUG && _d('COM:', $com_for{$COM}, 'data:', $data);
 
-      $session->{ts}         = $ts;
       $session->{state}      = 'awaiting_reply';
       $session->{pos_in_log} = $packet->{pos_in_log};
+      $session->{ts}         = $ts;
       $session->{cmd}        = {
          cmd => $COM,
          arg => $data,
@@ -469,7 +450,7 @@ sub fire_event {
    foreach my $callback ( @callbacks ) {
       last unless $event = $callback->($event);
    }
-   return 1;
+   return;
 }
 
 # Extracts a slow-log-formatted timestamp from the tcpdump timestamp format.
@@ -554,13 +535,13 @@ sub parse_error_packet {
    my $errno    = to_num(substr($data, 0, 4));
    my $sqlstate = to_string(substr($data, 4, 12));
    my $message  = to_string(substr($data, 16));
-   MKDEBUG && _d('ERROR packet: errno', $errno, 'sqlstate', $sqlstate,
-      'message', $message);
-   return {
+   my $pkt = {
       errno    => $errno,
       sqlstate => $sqlstate,
       message  => $message,
    };
+   MKDEBUG && _d('Error packet:', Dumper($pkt));
+   return $pkt;
 }
 
 # OK packet structure:
@@ -585,27 +566,26 @@ sub parse_ok_packet {
    my $message       = to_string($data);
    # Note: $message is discarded.  It might be something like
    # Records: 2  Duplicates: 0  Warnings: 0
-   MKDEBUG && _d('OK packet: affected_rows', $affected_rows,
-      'insert_id', $insert_id, 'status', $status, 'warnings',
-      $warnings, 'message', $message);
-   return {
+   my $pkt = {
       affected_rows => $affected_rows,
       insert_id     => $insert_id,
       status        => $status,
       warnings      => $warnings,
       message       => $message,
-   }
+   };
+   MKDEBUG && _d('OK packet:', Dumper($pkt));
+   return $pkt;
 }
 
 # Currently we only capture and return the thread id.
 sub parse_server_handshake_packet {
    my ( $data ) = @_;
    die "I need data" unless $data;
+   MKDEBUG && _d('Server handshake data:', $data);
    my $handshake_pattern = qr{
                         # Bytes                Name
       ^                 # -----                ----
-      ..                # 1                    protocol_version
-      (?:..)+?00        # n Null-Term String   server_version
+      (.+?)00           # n Null-Term String   server_version
       (.{8})            # 4                    thread_id
       .{16}             # 8                    scramble_buff
       .{2}              # 1                    filler: always 0x00
@@ -615,12 +595,48 @@ sub parse_server_handshake_packet {
       .{26}             # 13                   filler: always 0x00
                         # 13                   rest of scramble_buff
    }x;
-   my ( $thread_id ) = $data =~ m/$handshake_pattern/;
-   return {
-      thread_id => to_num($thread_id),
+   my ( $server_version, $thread_id ) = $data =~ m/$handshake_pattern/;
+   my $pkt = {
+      server_version => to_string($server_version),
+      thread_id      => to_num($thread_id),
    };
+   MKDEBUG && _d('Server handshake packet:', Dumper($pkt));
+   return $pkt;
 }
- 
+
+# Currently we only capture and return the user and default database.
+sub parse_client_handshake_packet {
+   my ( $data ) = @_;
+   die "I need data" unless $data;
+   MKDEBUG && _d('Client handshake data:', $data);
+   my ( $user, $buff_len ) = $data =~ m{
+      ^.{18}         # Client flags, max packet size, charset
+      (?:00){23}     # Filler
+      ((?:..)+?)00   # Null-terminated user name
+      (..)           # Length-coding byte for scramble buff
+   }x;
+
+   # This packet is easy to detect because it's the only case where
+   # the server sends the client a packet first (its handshake) and
+   # then the client only and ever sends back its handshake.
+   die "Did not match client handshake packet" unless $buff_len;
+
+   # This length-coded binary doesn't seem to be a normal one, it
+   # seems more like a length-coded string actually.
+   my $code_len = hex($buff_len);
+   my ( $db ) = $data =~ m!
+      ^.{64}${user}00..   # Everything matched before
+      (?:..){$code_len}   # The scramble buffer
+      (.*)00\Z            # The database name
+   !x;
+   my $pkt = {
+      user => to_string($user),
+      db   => $db ? to_string($db) : '',
+   };
+   MKDEBUG && _d('Client handshake packet:', Dumper($pkt));
+   return $pkt;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
