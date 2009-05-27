@@ -103,36 +103,21 @@ my %com_for = (
 # Required args:
 #    server:  The "host:port" of the sever being watched
 #
-# proto_version is a placeholder for handling differences between
-# v9 and v10.  At present, we only handle v10 (MySQL 4.1+).
+# version is a placeholder for handling differences between
+# MySQL v4.0 and older and v4.1 and newer.  Currently, we
+# only handle v4.1.
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(server) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
-      server        => $args{server},
-      proto_version => 10,
-      sessions      => {},
+      server    => $args{server},
+      version   => '41',
+      sessions  => {},
    };
    return bless $self, $class;
 }
-
-my $handshake_pat = qr{
-                        # Bytes                Name
-      ^                 # -----                ----
-      ..                # 1                    protocol_version
-      (?:..)+?00        # n Null-Term String   server_version
-      (.{8})            # 4                    thread_id
-      .{16}             # 8                    scramble_buff
-      .{2}              # 1                    filler: always 0x00
-      .{4}              # 2                    server_capabilities
-      .{2}              # 1                    server_language
-      .{4}              # 2                    server_status
-      .{26}             # 13                   filler: always 0x00
-                        # 13                   rest of scramble_buff
-   }x;
-
 
 # The packet arg should be a hashref from TcpdumpParser.  Normally,
 # this sub will be passed as a callback to TcpdumpParser::parse_packet();
@@ -218,9 +203,6 @@ sub _packet_from_server {
    # whether it's an initialization packet (the first thing the
    # server ever sends the client).  If it's not that, it could
    # be a result set header, field, row data, etc.
-   # TODO: First byte is technically the "field count" which
-   # can be non-zero for "tabular responses" like the proclist.
-   # A reliable OK fingerprint would be first byte 00, len 7.
 
    my ( $first_byte ) = substr($data, 0, 2, '');
    MKDEBUG && _d("First byte of packet:", $first_byte);
@@ -238,7 +220,8 @@ sub _packet_from_server {
          );
       }
       elsif ( $session->{cmd} ) {
-         # It should be a query or something
+         # This OK should be ack'ing a query or something sent earlier
+         # by the client.
          my $ok  = parse_ok_packet($data);
          my $com = $session->{cmd}->{cmd};
          my $arg;
@@ -268,8 +251,8 @@ sub _packet_from_server {
    }
    elsif ( $first_byte eq 'ff' ) {
       my $error = parse_error_packet($data);
-
       my $event;
+
       if ( $session->{state} eq 'client_auth' ) {
          MKDEBUG && _d('Connection failed');
          $event = {
@@ -280,9 +263,12 @@ sub _packet_from_server {
          };
          $session->{state} = 'closing';
       }
-      elsif ( $session->{cmd} ) { # It should be a query or something
+      elsif ( $session->{cmd} ) {
+         # This error should be in response to a query or something
+         # sent earlier by the client.
          my $com = $session->{cmd}->{cmd};
          my $arg;
+
          if ( $com eq COM_QUERY ) {
             $com = 'Query';
             $arg = $session->{cmd}->{arg};
@@ -312,10 +298,16 @@ sub _packet_from_server {
       # good stuff we could do if we wanted to handle EOF packets.
    }
    elsif ( !$session->{state}
-           && (my ($thread_id) = $data =~ m/$handshake_pat/o ) ) {
+           && $first_byte eq '0a'
+           && length $data >= 33 )
+   {
       # It's the handshake packet from the server to the client.
-      MKDEBUG && _d('Got a handshake for thread_id', $thread_id);
-      $session->{thread_id} = to_num($thread_id);
+      # 0a is protocol v10 which is essentially the only version used
+      # today.  33 is the minimum possible length for a valid server
+      # handshake packet.  It's probably a lot longer.  Other packets
+      # may start with 0a, but none that can would be >= 33.
+      my $handshake = parse_server_handshake_packet($data);
+      $session->{thread_id} = $handshake->{thread_id};
       $session->{state}     = 'server_handshake';
    }
    else { # Row data, field, result set header.
@@ -605,6 +597,30 @@ sub parse_ok_packet {
    }
 }
 
+# Currently we only capture and return the thread id.
+sub parse_server_handshake_packet {
+   my ( $data ) = @_;
+   die "I need data" unless $data;
+   my $handshake_pattern = qr{
+                        # Bytes                Name
+      ^                 # -----                ----
+      ..                # 1                    protocol_version
+      (?:..)+?00        # n Null-Term String   server_version
+      (.{8})            # 4                    thread_id
+      .{16}             # 8                    scramble_buff
+      .{2}              # 1                    filler: always 0x00
+      .{4}              # 2                    server_capabilities
+      .{2}              # 1                    server_language
+      .{4}              # 2                    server_status
+      .{26}             # 13                   filler: always 0x00
+                        # 13                   rest of scramble_buff
+   }x;
+   my ( $thread_id ) = $data =~ m/$handshake_pattern/;
+   return {
+      thread_id => to_num($thread_id),
+   };
+}
+ 
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
