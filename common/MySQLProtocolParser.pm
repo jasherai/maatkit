@@ -24,6 +24,15 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Data::Dumper;
 
+require Exporter;
+our @ISA         = qw(Exporter);
+our %EXPORT_TAGS = ();
+our @EXPORT      = ();
+our @EXPORT_OK   = qw(
+   parse_error_packet
+   parse_ok_packet
+);
+
 use constant MKDEBUG => $ENV{MKDEBUG};
 use constant {
    COM_SLEEP               => '00',
@@ -93,14 +102,18 @@ my %com_for = (
 
 # Required args:
 #    server:  The "host:port" of the sever being watched
+#
+# proto_version is a placeholder for handling differences between
+# v9 and v10.  At present, we only handle v10 (MySQL 4.1+).
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(server) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
-      server   => $args{server},
-      sessions => {},
+      server        => $args{server},
+      proto_version => 10,
+      sessions      => {},
    };
    return bless $self, $class;
 }
@@ -212,21 +225,7 @@ sub _packet_from_server {
    my ( $first_byte ) = substr($data, 0, 2, '');
    MKDEBUG && _d("First byte of packet:", $first_byte);
 
-   if ( $first_byte eq '00' ) {
-      MKDEBUG && _d('Got an OK packet', $data);
-
-      # Gather all the data from the packet.
-      my $affected_rows = get_lcb(\$data);
-      my $insert_id     = get_lcb(\$data);
-      my $status   = to_num(substr($data, 0, 4, ''));
-      my $warnings = to_num(substr($data, 0, 4, ''));
-      my $message  = to_string($data);
-      # Note: $message is discarded.  It might be something like
-      # Records: 2  Duplicates: 0  Warnings: 0
-      MKDEBUG && _d('OK data: affected_rows', $affected_rows,
-         'insert_id', $insert_id, 'status', $status, 'warnings',
-         $warnings, 'message', $message);
-
+   if ( $first_byte eq '00' ) { 
       if ( ($session->{state} || '') eq 'client_auth' ) {
          # We logged in OK!  Trigger an admin Connect command.
          MKDEBUG && _d('Admin command: Connect');
@@ -238,9 +237,12 @@ sub _packet_from_server {
             $packet, $session, @callbacks
          );
       }
-      elsif ( $session->{cmd} ) { # It should be a query or something
+      elsif ( $session->{cmd} ) {
+         # It should be a query or something
+         my $ok  = parse_ok_packet($data);
          my $com = $session->{cmd}->{cmd};
          my $arg;
+
          if ( $com eq COM_QUERY ) {
             $com = 'Query';
             $arg = $session->{cmd}->{arg};
@@ -250,13 +252,14 @@ sub _packet_from_server {
                  . ucfirst(lc(substr($com_for{$com}, 4)));
             $com = 'Admin';
          }
+
          fire_event(
             {  cmd           => $com,
                arg           => $arg,
                ts            => $ts,
-               Insert_id     => $insert_id,
-               Warning_count => $warnings,
-               Rows_affected => $affected_rows,
+               Insert_id     => $ok->{insert_id},
+               Warning_count => $ok->{warnings},
+               Rows_affected => $ok->{affected_rows},
             },
             $packet, $session, @callbacks
          );
@@ -264,9 +267,7 @@ sub _packet_from_server {
       $session->{state} = 'ready';
    }
    elsif ( $first_byte eq 'ff' ) {
-      my $errno = to_num(substr($data, 0, 4));
-      my $messg = to_string(substr($data, 4));
-      MKDEBUG && _d('ERROR', $errno, $messg);
+      my $error = parse_error_packet($data);
 
       my $event;
       if ( $session->{state} eq 'client_auth' ) {
@@ -275,7 +276,7 @@ sub _packet_from_server {
             cmd       => 'Admin',
             arg       => 'administrator command: Connect',
             ts        => $ts,
-            Error_no  => $errno,
+            Error_no  => $error->{errno},
          };
          $session->{state} = 'closing';
       }
@@ -295,7 +296,7 @@ sub _packet_from_server {
             cmd       => $com,
             arg       => $arg,
             ts        => $ts,
-            Error_no  => $errno,
+            Error_no  => $error->{errno},
          };
          $session->{state} = 'ready';
       }
@@ -538,6 +539,67 @@ sub get_lcb {
    }
    elsif ( $first_byte == 254 ) {
       return to_num(substr($$string, 0, 16, ''));
+   }
+}
+
+# Error packet structure:
+# Offset  Bytes               Field
+# ======  =================   ====================================
+#         00 00 00 01         MySQL proto header (already removed)
+#         ff                  Error  (already removed)
+# 0       00 00               Error number
+# 4       00                  SQL state maker, always '#'
+# 6       00 00 00 00 00      SQL state
+# 16      00 ...              Error message
+# The sqlstate marker and actual sqlstate are combined into one value. 
+sub parse_error_packet {
+   my ( $data ) = @_;
+   die "I need data" unless $data;
+   MKDEBUG && _d('ERROR data:', $data);
+   die "Error packet is too short: $data" if length $data < 16;
+   my $errno    = to_num(substr($data, 0, 4));
+   my $sqlstate = to_string(substr($data, 4, 12));
+   my $message  = to_string(substr($data, 16));
+   MKDEBUG && _d('ERROR packet: errno', $errno, 'sqlstate', $sqlstate,
+      'message', $message);
+   return {
+      errno    => $errno,
+      sqlstate => $sqlstate,
+      message  => $message,
+   };
+}
+
+# OK packet structure:
+# Offset  Bytes               Field
+# ======  =================   ====================================
+#         00 00 00 01         MySQL proto header (already removed)
+#         00                  OK  (already removed)
+#         1-9                 Affected rows (LCB)
+#         1-9                 Insert ID (LCB)
+#         00 00               Server status
+#         00 00               Warning count
+#         00 ...              Message (optional)
+sub parse_ok_packet {
+   my ( $data ) = @_;
+   die "I need data" unless $data;
+   MKDEBUG && _d('OK data:', $data);
+   die "OK packet is too short: $data" if length $data < 12;
+   my $affected_rows = get_lcb(\$data);
+   my $insert_id     = get_lcb(\$data);
+   my $status        = to_num(substr($data, 0, 4, ''));
+   my $warnings      = to_num(substr($data, 0, 4, ''));
+   my $message       = to_string($data);
+   # Note: $message is discarded.  It might be something like
+   # Records: 2  Duplicates: 0  Warnings: 0
+   MKDEBUG && _d('OK packet: affected_rows', $affected_rows,
+      'insert_id', $insert_id, 'status', $status, 'warnings',
+      $warnings, 'message', $message);
+   return {
+      affected_rows => $affected_rows,
+      insert_id     => $insert_id,
+      status        => $status,
+      warnings      => $warnings,
+      message       => $message,
    }
 }
 

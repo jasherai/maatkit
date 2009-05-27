@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 14;
+use Test::More tests => 16;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -17,6 +17,15 @@ my $tcpdump  = new TcpdumpParser();
 my $protocol = new MySQLProtocolParser(
    server => '127.0.0.1:3306',
 );
+
+sub load_data_sample {
+   my ( $file ) = @_;
+   open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
+   my $contents = do { local $/ = undef; <$fh> };
+   close $fh;
+   (my $data = join('', $contents =~ m/(.*)/g)) =~ s/\s+//g;
+   return $data;
+}
 
 sub run_test {
    my ( $def ) = @_;
@@ -296,6 +305,37 @@ run_test({
       },
    ],
 });
+
+# #############################################################################
+# Check the individual packet parsing subs.
+# #############################################################################
+MySQLProtocolParser->import(qw(
+   parse_error_packet
+   parse_ok_packet
+));
+
+my $data = load_data_sample('samples/mysql_proto_001.txt');
+is_deeply(
+   parse_error_packet($data),
+   {
+      errno    => '1046',
+      sqlstate => '#3D000',
+      message  => 'No database selected',
+   },
+   'Parse error packet'
+);
+
+is_deeply(
+   parse_ok_packet('010002000100'),
+   {
+      affected_rows => 1,
+      insert_id     => 0,
+      status        => 2,
+      warnings      => 1,
+      message       => '',
+   },
+   'Parse ok packet'
+);
 
 # #############################################################################
 # Done.
