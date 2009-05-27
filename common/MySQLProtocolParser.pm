@@ -136,7 +136,7 @@ my $handshake_pat = qr{
 
 # The packet arg should be a hashref from TcpdumpParser.  Normally,
 # this sub will be passed as a callback to TcpdumpParser::parse_packet();
-# see MySQLProtocolPaser.t for an example.  misc is a placeholder for
+# see MySQLProtocolParser.t for an example.  misc is a placeholder for
 # future features.  Events are created from the packet's contents
 # and then passed to every callback.  Somtimes it takes several packets
 # before an event is created.  The packet is returned.
@@ -367,7 +367,7 @@ sub _packet_from_server {
 # The client doesn't send a wide and exotic array of packets like
 # the server.  Even so, we're only interested in:
 #    * Users and dbs from connection handshake packets
-#    * SQL statments from COM_QUERY commands
+#    * SQL statements from COM_QUERY commands
 # Anything else is ignored.
 sub _packet_from_client {
    my ( $packet, $session, $misc, @callbacks ) = @_;
@@ -403,7 +403,7 @@ sub _packet_from_client {
          #    server > client  (capabilities, protocol version, etc.)
          #    client > server  (user, pass, default db, etc.)
          #    server > client  OK if login succeeds
-         # log_in_pos refers to 2nd handshake from the client.
+         # pos_in_log refers to 2nd handshake from the client.
          # A connection is logged even if the client fails to
          # login (bad password, etc.).
          $session->{pos_in_log} = $packet->{pos_in_log};
@@ -413,6 +413,8 @@ sub _packet_from_client {
       }
       else {
          MKDEBUG && _d('Did not match client auth packet');
+         # TODO: should we die here if MKDEBUG is on?  Or _d the packet and
+         # pos_in_log at so we can debug what happened?
       }
    }
    else {
@@ -548,7 +550,7 @@ sub get_lcb {
 #         00 00 00 01         MySQL proto header (already removed)
 #         ff                  Error  (already removed)
 # 0       00 00               Error number
-# 4       00                  SQL state maker, always '#'
+# 4       00                  SQL state marker, always '#'
 # 6       00 00 00 00 00      SQL state
 # 16      00 ...              Error message
 # The sqlstate marker and actual sqlstate are combined into one value. 
