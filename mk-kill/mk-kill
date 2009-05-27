@@ -1745,6 +1745,11 @@ sub main {
       only_oldest  => $o->get('only-oldest'),
       busy_time    => $o->get('busy-time'),
       # TODO idle_time    => $o->get('idle-time'),
+      # =item --idle-time
+      # type: time
+      # Kill connections that have been idle for longer than this time.  The
+      # connections must be in Command=Sleep status.  This is not yet
+      # implemented.
       ignore => {
          Id       => $o->get('ignore-self') ? $dbh->{mysql_thread_id} : undef,
          User     => $o->get('ignore-user'),
@@ -1834,6 +1839,18 @@ mk-kill - Kill MySQL queries.
 
 =head1 DESCRIPTION
 
+mk-kill captures queries from SHOW PROCESSLIST, applies filtering and rules to
+them, and then does something with them.  By default, it kills one or more of
+them.
+
+This is also known as a "slow query sniper" in some circles.  The idea is to
+watch for queries that might be consuming too many resources, and kill them.
+
+There are lots of special rules to follow, such as "don't kill replication
+threads."
+
+mk-kill is a work in progress, and there is much more it could do.
+
 =head1 DOWNLOADING
 
 You can download Maatkit from Google Code at
@@ -1883,7 +1900,8 @@ first option on the command line.
 
 =item --daemonize
 
-Fork and run in the background; POSIX OSes only.
+Detach from the terminal and run in the background.  Works only on POSIX
+operating systems.
 
 =item --defaults-file
 
@@ -1902,25 +1920,18 @@ short form: -h; type: string
 
 Connect to MySQL host.
 
-=item --idle-time
+=item --ignore-command
 
-type: time
+type: string; default: Binlog.Dump
 
-Kill connections that have been idle for longer than this time.  The connections
-must be in Command=Sleep status.
+Ignore queries whose Command matches this Perl regex.  The default is to keep
+the slave threads from being killed on the master.
 
 =item --[no]ignore-self
 
 default: yes
 
 Don't kill mk-kill's own connection.
-
-=item --ignore-command
-
-type: string; default: Binlog.Dump
-
-Ignore queries whose Command matches this Perl regex.  The default is to keep the
-slave threads from being killed on the master.
 
 =item --ignore-state
 
@@ -1990,9 +2001,8 @@ Password to use for MySQL connection.
 type: string
 
 Create the given PID file when daemonized.  For example, '--daemonize --pid
-/tmp/mk-deadlock-logger.pid' would cause mk-deadlock-logger to create the PID
-file /tmp/mk-deadlock-logger.pid.  The PID file is removed when the daemonized
-instance of mk-deadlock-logger exits.
+/tmp/maatkit.pid' would create the PID file /tmp/maatkit.pid.  The PID file is
+removed when the daemonized instance exits.
 
 /var/run/ is usually not writable by non-root users, therefore /tmp/ is a
 more reliable alternative.
@@ -2007,6 +2017,12 @@ Port number to use for MySQL connection.
 
 Print killed queries on standard output.
 
+=item --run-time
+
+type: time
+
+How long to run before exiting.
+
 =item --set-vars
 
 type: string; default: wait_timeout=10000
@@ -2019,12 +2035,6 @@ after connecting to MySQL.  These will be included in a C<SET> command.
 short form: -S; type: string
 
 Socket file to use for MySQL connection.
-
-=item --run-time
-
-type: time
-
-How long to run before exiting.
 
 =item --user
 
@@ -2042,7 +2052,8 @@ type: time
 
 Wait after killing a query, before looking for more to kill.  The purpose of
 this is to give blocked queries a chance to execute, so we don't kill a query
-that's blocking a bunch of others, and then just afterwards kill the others too.
+that's blocking a bunch of others, and then kill the others immediately
+afterwards.
 
 =back
 
