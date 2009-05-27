@@ -168,9 +168,18 @@ sub parse_packet {
    # had all the data in the TCP packets, we could change this to a while
    # loop; while get-a-packet-from-$data, do stuff, etc.  But we don't,
    # and we don't want to either.
-   my $data_len = to_num(substr(substr($$data, 0, 8, ''), 0, 6));
+   my $mysql_hdr = substr($$data, 0, 8, '');
+   my $data_len  = to_num(substr($mysql_hdr, 0, 6));
+   my $pkt_num   = oct('0x'.substr($mysql_hdr, 6, 2));
+   MKDEBUG && _d('MySQL packet: header data', $mysql_hdr,
+      'data len (bytes)', $data_len, 'number', $pkt_num);
+
    $packet->{data_len} = $data_len;
-   MKDEBUG && _d('Packet/data length:', $data_len, length($data)/2);
+
+   if ( !$$data ) {
+      MKDEBUG && _d('No MySQL data');
+      return $packet;
+   }
 
    if ( $from eq $self->{server} ) {
       _packet_from_server($packet, $session, $misc, @callbacks);
@@ -182,7 +191,7 @@ sub parse_packet {
       MKDEBUG && _d('Packet origin unknown');
    }
 
-   MKDEBUG && _d('state:', $session->{state});
+   MKDEBUG && _d('Done parsing packet; client state:', $session->{state});
    return $packet;
 }
 
@@ -197,7 +206,7 @@ sub _packet_from_server {
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
-   MKDEBUG && _d('Packet is from server; state:', $session->{state});
+   MKDEBUG && _d('Packet is from server; client state:', $session->{state});
 
    my $data = $packet->{data};
    my $ts   = $packet->{ts};

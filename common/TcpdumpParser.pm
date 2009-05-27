@@ -28,6 +28,8 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Data::Dumper;
+$Data::Dumper::Indent   = 1;
+$Data::Dumper::Sortkeys = 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -97,7 +99,6 @@ sub _parse_packet {
    my ( $ts, $source, $dest )  = $packet =~ m/\A(\S+ \S+) IP (\S+) > (\S+):/;
    my ( $src_host, $src_port ) = $source =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
    my ( $dst_host, $dst_port ) = $dest   =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
-   MKDEBUG && _d($src_host, ':', $src_port, '>', $dst_host, ':', $dst_port);
 
    (my $data = join('', $packet =~ m/\t0x[0-9a-f]+:  (.*)/g)) =~ s/\s+//g; 
 
@@ -113,11 +114,9 @@ sub _parse_packet {
    # http://en.wikipedia.org/wiki/Transmission_Control_Protocol.
    my $tcp_hlen = hex(substr($data, ($ip_hlen + 3) * 8, 1));
    # Throw away the IP and TCP headers.
-   MKDEBUG && _d('Header len: IP', $ip_hlen, 'TCP', $tcp_hlen,
-      'complete:', $complete);
    $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
 
-   return {
+   my $pkt = {
       ts       => $ts,
       src_host => $src_host,
       src_port => $src_port,
@@ -126,8 +125,12 @@ sub _parse_packet {
       complete => $complete,
       ip_hlen  => $ip_hlen,
       tcp_hlen => $tcp_hlen,
-      data     => $data,
+      data     => $data ? substr($data, 0, 8).(length $data > 8 ? '...' : '')
+                        : '',
    };
+   MKDEBUG && _d('packet:', Dumper($pkt));
+   $pkt->{data} = $data;
+   return $pkt;
 }
 
 sub _d {
