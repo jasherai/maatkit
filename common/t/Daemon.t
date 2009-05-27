@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 11;
 
 require '../Daemon.pm';
 require '../OptionParser.pm';
@@ -19,7 +19,7 @@ my $cmd     = 'samples/daemonizes.pl';
 my $ret_val = system("$cmd 2 --daemonize --pid /tmp/daemonizes.pl.pid >/dev/null 2>/dev/null");
 SKIP: {
    skip 'Cannot test Daemon.pm because t/daemonizes.pl is not working',
-      8 unless $ret_val == 0;
+      11 unless $ret_val == 0;
 
    my $output = `ps x | grep '$cmd 2' | grep -v grep`;
    like($output, qr/$cmd/, 'Daemonizes');
@@ -50,6 +50,31 @@ SKIP: {
    );
 
    `rm -f /tmp/mk-daemon.log`;
+
+   # ##########################################################################
+   # Issue 383: mk-deadlock-logger should die if --pid file specified exists
+   # ##########################################################################
+   diag(`touch /tmp/daemonizes.pl.pid`);
+   ok(
+      -f  '/tmp/daemonizes.pl.pid',
+      'PID file already exists'
+   );
+   
+   $output = `$cmd 0 --daemonize --pid /tmp/daemonizes.pl.pid 2>&1`;
+   like(
+      $output,
+      qr{The PID file /tmp/daemonizes\.pl\.pid already exists},
+      'Dies if PID file already exists'
+   );
+
+    $output = `ps x | grep '$cmd 0' | grep -v grep`;
+    unlike(
+      $output,
+      qr/$cmd/,
+      'Does not daemonizes'
+   );
+   
+   diag(`rm -rf /tmp/daemonizes.pl.pid`);  
 }
 
 exit;
