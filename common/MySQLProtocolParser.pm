@@ -19,6 +19,22 @@
 # ###########################################################################
 package MySQLProtocolParser;
 
+# This creates events suitable for mk-query-digest from raw MySQL packets.
+# The packets come from TcpdumpParser.  MySQLProtocolParse::parse_packet()
+# should be first in the callback chain because it creates events for
+# subsequent callbacks.  So the sequence is:
+#    1. mk-query-digest calls TcpdumpParser::parse_event($fh, ..., @callbacks)
+#    2. TcpdumpParser::parse_event() extracts raw MySQL packets from $fh and
+#       passes them to the callbacks, the first of which is
+#       MySQLProtocolParser::parse_packet().
+#    3. MySQLProtocolParser::parse_packet() makes events from the packets
+#       and returns them to TcpdumpParser::parse_event().
+#    4. TcpdumpParser::parse_event() passes the newly created events to
+#       the subsequent callbacks.
+# At times MySQLProtocolParser::parse_packet() will not return an event
+# because it usually takes a few packets to create one event.  In such
+# cases, TcpdumpParser::parse_event() will not call the other callbacks.
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -123,14 +139,10 @@ sub new {
    return bless $self, $class;
 }
 
-# The packet arg should be a hashref from TcpdumpParser.  Normally,
-# this sub will be passed as a callback to TcpdumpParser::parse_packet();
-# see MySQLProtocolParser.t for an example.  misc is a placeholder for
-# future features.  Events are created from the packet's contents
-# and then passed to every callback.  Somtimes it takes several packets
-# before an event is created.  The packet is returned.
+# The packet arg should be a hashref from TcpdumpParser::parse_event().
+# misc is a placeholder for future features.
 sub parse_packet {
-   my ( $self, $packet, $misc, @callbacks ) = @_;
+   my ( $self, $packet, $misc ) = @_;
 
    my $from   = "$packet->{src_host}:$packet->{src_port}";
    my $to     = "$packet->{dst_host}:$packet->{dst_port}";
@@ -155,7 +167,7 @@ sub parse_packet {
       if ( ($session->{state} || '') eq 'closing' ) {
          delete $self->{sessions}->{$session->{client}};
       }
-      return $packet;
+      return;
    }
 
    # A single TCP packet can contain many MySQL packets, but we only
@@ -179,21 +191,23 @@ sub parse_packet {
 
    if ( !$$data ) {
       MKDEBUG && _d('No MySQL data');
-      return $packet;
+      return;
    }
 
+   # The returned event may be empty if no event was ready to be created.
+   my $event;
    if ( $from eq $self->{server} ) {
-      _packet_from_server($packet, $session, $misc, @callbacks);
+      $event = _packet_from_server($packet, $session, $misc);
    }
    elsif ( $from eq $client ) {
-      _packet_from_client($packet, $session, $misc, @callbacks);
+      $event = _packet_from_client($packet, $session, $misc);
    }
    else {
       MKDEBUG && _d('Packet origin unknown');
    }
 
    MKDEBUG && _d('Done parsing packet; client state:', $session->{state});
-   return $packet;
+   return $event;
 }
 
 # Handles a packet from the server given the state of the session.
@@ -201,9 +215,10 @@ sub parse_packet {
 # we're only interested in
 #    * Connection handshake packets for the thread_id
 #    * OK and Error packets for errors, warnings, etc.
-# Anything else is ignored.
+# Anything else is ignored.  Returns an event if one was ready to be
+# created, otherwise returns nothing.
 sub _packet_from_server {
-   my ( $packet, $session, $misc, @callbacks ) = @_;
+   my ( $packet, $session, $misc ) = @_;
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
@@ -224,13 +239,14 @@ sub _packet_from_server {
    if ( $first_byte eq '00' ) { 
       if ( ($session->{state} || '') eq 'client_auth' ) {
          # We logged in OK!  Trigger an admin Connect command.
+         $session->{state} = 'ready';
          MKDEBUG && _d('Admin command: Connect');
-         fire_event(
+         return _make_event(
             {  cmd => 'Admin',
                arg => 'administrator command: Connect',
                ts  => $ts, # Events are timestamped when they end
             },
-            $packet, $session, @callbacks
+            $packet, $session
          );
       }
       elsif ( $session->{cmd} ) {
@@ -250,7 +266,8 @@ sub _packet_from_server {
             $com = 'Admin';
          }
 
-         fire_event(
+         $session->{state} = 'ready';
+         return _make_event(
             {  cmd           => $com,
                arg           => $arg,
                ts            => $ts,
@@ -258,10 +275,9 @@ sub _packet_from_server {
                Warning_count => $ok->{warnings},
                Rows_affected => $ok->{affected_rows},
             },
-            $packet, $session, @callbacks
+            $packet, $session
          );
-      }
-      $session->{state} = 'ready';
+      } 
    }
    elsif ( $first_byte eq 'ff' ) {
       my $error = parse_error_packet($data);
@@ -301,7 +317,7 @@ sub _packet_from_server {
          $session->{state} = 'ready';
       }
 
-      fire_event($event, $packet, $session, @callbacks);
+      return _make_event($event, $packet, $session);
    }
    elsif ( $first_byte eq 'fe' && $packet->{data_len} < 9 ) {
       MKDEBUG && _d('Got an EOF packet');
@@ -361,8 +377,8 @@ sub _packet_from_server {
             }
          }
 
-         fire_event($event, $packet, $session, @callbacks);
          $session->{state} = 'ready';
+         return _make_event($event, $packet, $session);
       }
    }
 
@@ -374,9 +390,10 @@ sub _packet_from_server {
 # the server.  Even so, we're only interested in:
 #    * Users and dbs from connection handshake packets
 #    * SQL statements from COM_QUERY commands
-# Anything else is ignored.
+# Anything else is ignored.  Returns an event if one was ready to be
+# created, otherwise returns nothing.
 sub _packet_from_client {
-   my ( $packet, $session, $misc, @callbacks ) = @_;
+   my ( $packet, $session, $misc ) = @_;
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
@@ -414,28 +431,26 @@ sub _packet_from_client {
 
       if ( $com->{code} eq COM_QUIT ) { # Fire right away; will cleanup later.
          MKDEBUG && _d('Got a COM_QUIT');
-         fire_event(
+         $session->{state} = 'closing';
+         return _make_event(
             {  cmd       => 'Admin',
                arg       => 'administrator command: Quit',
                ts        => $ts,
             },
-            $packet, $session, @callbacks
+            $packet, $session
          );
-         $session->{state} = 'closing';
       }
    }
 
    return;
 }
 
-# Create event from the given packet and session and then
-# pass that event to all the callbacks.
-sub fire_event {
-   my ( $event, $packet, $session, @callbacks ) = @_;
-   MKDEBUG && _d('Firing event');
-
+# Make and return an event from the given packet and session.
+sub _make_event {
+   my ( $event, $packet, $session ) = @_;
+   MKDEBUG && _d('Making event');
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
-   $event = {
+   return $event = {
       cmd        => $event->{cmd},
       arg        => $event->{arg},
       bytes      => length( $event->{arg} ),
@@ -454,10 +469,6 @@ sub fire_event {
       No_good_index_used => ($event->{No_good_index_used} ? 'Yes' : 'No'),
       No_index_used      => ($event->{No_index_used}      ? 'Yes' : 'No'),
    };
-   foreach my $callback ( @callbacks ) {
-      last unless $event = $callback->($event);
-   }
-   return;
 }
 
 # Extracts a slow-log-formatted timestamp from the tcpdump timestamp format.

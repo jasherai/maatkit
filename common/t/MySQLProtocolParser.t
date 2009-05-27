@@ -35,15 +35,20 @@ sub run_test {
       keys %$def;
    my @e;
    my $num_events = 0;
-   my $callback   = sub {
+
+   my @callbacks;
+   push @callbacks, sub {
       my ( $packet ) = @_;
-      $protocol->parse_packet($packet, undef, sub { push @e, @_; });
-      return $packet;
+      return $protocol->parse_packet($packet, undef);
    };
+   push @callbacks, sub {
+      push @e, @_;
+   };
+
    eval {
       open my $fh, "<", $def->{file}
          or BAIL_OUT("Cannot open $def->{file}: $OS_ERROR");
-      $num_events++ while $tcpdump->parse_event($fh, undef, $callback);
+      $num_events++ while $tcpdump->parse_event($fh, undef, @callbacks);
       close $fh;
    };
    is($EVAL_ERROR, '', "No error on $def->{file}");
@@ -110,7 +115,7 @@ run_test({
       {  Query_time => '0.000265',
          Thread_id  => 8,
          arg        => 'select @@version_comment limit 1',
-         bytes      => 32,
+         bytes      => length('select @@version_comment limit 1'),
          cmd        => 'Query',
          db         => 'mysql',
          host       => '127.0.0.1',
@@ -128,7 +133,7 @@ run_test({
       {  Query_time => '0.000167',
          Thread_id  => 8,
          arg        => 'select "paris in the the spring" as trick',
-         bytes      => 41,
+         bytes      => length('select "paris in the the spring" as trick'),
          cmd        => 'Query',
          db         => 'mysql',
          host       => '127.0.0.1',
