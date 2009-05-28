@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 110;
+use Test::More tests => 111;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -428,6 +428,21 @@ is_deeply(
    'Dest table has different column order (issue 131)'
 );
 
-# Clean up.
+# #############################################################################
+# Issue 391: Add --pid option to mk-table-sync
+# #############################################################################
+`touch /tmp/mk-archiver.pid`;
+$output = `perl ../mk-archiver -W 1=1 --source h=127.1,P=12345,D=test,t=issue_131_src --statistics --dest t=issue_131_dst --pid /tmp/mk-archiver.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-archiver.pid already exists},
+   'Dies if PID file already exists (issue 391)'
+);
+
+`rm -rf /tmp/mk-archiver.pid`;
+
+# #############################################################################
+# Done.
+# #############################################################################
 $sb->wipe_clean($dbh);
 exit;
