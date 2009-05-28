@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 86;
+use Test::More tests => 89;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -432,6 +432,16 @@ test_query(
    'Does not think IN() list has table names',
 );
 
+test_query(
+   'INSERT INTO my.tbl VALUES("I got this FROM the newspaper today")',
+   {
+      'tbl' => 'tbl',
+      DATABASE => { 'tbl' => 'my' },
+   },
+   [qw(my.tbl)],
+   'Not confused by quoted string'
+);
+
 is_deeply(
    [
    $qp->get_tables(
@@ -477,6 +487,14 @@ is_deeply(
    ],
    [qw(foo)],
    'get_tables on simple subquery'
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'INSERT INTO my.tbl VALUES("I got this from the newspaper")')
+   ],
+   [qw(my.tbl)],
+   'Not confused by quoted string'
 );
 
 ok($qp->has_derived_table(

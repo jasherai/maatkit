@@ -63,6 +63,10 @@ sub get_tables {
    # They need to be removed so that they are not mistaken for tables.
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
+   $query =~ s/\\["']//g;                # quoted strings
+   $query =~ s/".*?"/?/sg;               # quoted strings
+   $query =~ s/'.*?'/?/sg;               # quoted strings
+
    my @tables;
    foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
       MKDEBUG && _d('Match tables:', $tbls);
