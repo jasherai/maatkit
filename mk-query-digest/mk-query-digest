@@ -2007,7 +2007,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 3634
+# MySQLProtocolParser package 3640
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2099,9 +2099,6 @@ my %com_for = (
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(server) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
    my $self = {
       server    => $args{server},
       version   => '41',
@@ -2115,6 +2112,11 @@ sub parse_packet {
 
    my $from   = "$packet->{src_host}:$packet->{src_port}";
    my $to     = "$packet->{dst_host}:$packet->{dst_port}";
+
+   $self->{server} ||= $from =~ m/:(?:3306|mysql)$/ ? $from
+                     : $to   =~ m/:(?:3306|mysql)$/ ? $to
+                     :                                undef;
+
    my $client = $from eq $self->{server} ? $to : $from;
    MKDEBUG && _d('Client:', $client);
 
@@ -4896,13 +4898,13 @@ sub main {
    my @callbacks;
 
    my $mysql_proto;
-   if ( $o->get('type') eq 'tcpdump' && $o->get('tcpdump') ) {
+   if ( $o->get('type') eq 'tcpdump' ) {
       # If we're parsing tcpdump output, we'll create a TcpdumpParser
       # obj later, but first we need a callback for MySQLProtocolParser
       # which will make events out of the tcpdump data.  This callback
       # must be first because it creates the events for subsequent callbacks.
       $mysql_proto = new MySQLProtocolParser(
-         server => $o->get('tcpdump'),
+         server => $o->get('watch-server'),
       );
       push @callbacks, sub {
          # Returns an event only when one is ready (it takes a few
@@ -6364,37 +6366,6 @@ such list in the statement will be shortened.
 If it shortens something beyond recognition, you can find the original statement
 in the log, at the offset shown in the report header (see L<"OUTPUT">).
 
-=item --tcpdump
-
-type: string
-
-Which IP address and port to watch (default 127.0.0.1:3306).  This option tells
-mk-query-digest whether a given TCP packet is from client to server or server to
-client.  If you get this wrong, nothing works right.
-
-mk-query-digest does not actually watch the network (i.e. it does NOT "sniff
-packets").  Instead, it's just parsing the output of tcpdump.  You are
-responsible for generating this output; mk-query-digest does not do it for you.
-Then you send this to mk-query-digest as you would any log file: as files on the
-command line or to STDIN.
-
-The parser expects the input to be formatted with the following options: C<-x -n
--q -tttt>.  For example, if you want to capture output from your local machine,
-you can do something like
-
-  tcpdump -i lo port 3306 -s 65535 -c 1000 -x -n -q -tttt \
-    | mk-query-digest --type tcpdump
-
-The other tcpdump parameters, such as -s, -c, and -i, are up to you.  Just make
-sure the output looks like this:
-
-  2009-04-12 09:50:16.804849 IP 127.0.0.1.42167 > 127.0.0.1.3306: tcp 37
-      0x0000:  4508 0059 6eb2 4000 4006 cde2 7f00 0001
-      0x0010:  ....
-
-Remember tcpdump has a handy -c option to stop after it captures some number of
-packets!  That's very useful for testing your tcpdump command.
-
 =item --timeline
 
 type: Array
@@ -6430,8 +6401,54 @@ Zero out the Rows_XXX properties for administrator command events.
 
 type: string
 
-The type of input to parse (default slowlog).  You can also specify tcpdump; if
-you do, see also L<"--tcpdump">.
+The type of input to parse (default slowlog).  The permitted types are
+
+=over
+
+=item slowlog
+
+Parse a log file in any varation of MySQL slow-log format.
+
+=item tcpdump
+
+mk-query-digest does not actually watch the network (i.e. it does NOT "sniff
+packets").  Instead, it's just parsing the output of tcpdump.  You are
+responsible for generating this output; mk-query-digest does not do it for you.
+Then you send this to mk-query-digest as you would any log file: as files on the
+command line or to STDIN.
+
+The parser expects the input to be formatted with the following options: C<-x -n
+-q -tttt>.  For example, if you want to capture output from your local machine,
+you can do something like
+
+  tcpdump -i eth0 port 3306 -s 65535 -c 1000 -x -n -q -tttt \
+    | mk-query-digest --type tcpdump
+
+The other tcpdump parameters, such as -s, -c, and -i, are up to you.  Just make
+sure the output looks like this:
+
+  2009-04-12 09:50:16.804849 IP 127.0.0.1.42167 > 127.0.0.1.3306: tcp 37
+      0x0000:  4508 0059 6eb2 4000 4006 cde2 7f00 0001
+      0x0010:  ....
+
+Remember tcpdump has a handy -c option to stop after it captures some number of
+packets!  That's very useful for testing your tcpdump command.
+
+If you're analyzing traffic to a non-standard port, see L<"--watch-server">.
+
+=back
+
+=item --watch-server
+
+type: string
+
+Which IP address and port is the server when parsing tcpdump output. This option
+tells mk-query-digest whether a given TCP packet is from client to server, or
+server to client.  If you don't specify it, mk-query-digest tries to guess the
+host and port of the server by looking for port 3306 or port "mysql".  If you're
+watching a server with a non-standard port, this won't work, and you'll need to
+specify the IP address and port to watch.  If mk-query-digest doesn't know what
+to watch, nothing works right.
 
 =back
 

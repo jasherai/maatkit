@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Removed the --tcpdump long option.  Use --watch-server instead.
+   * Made --type=tcpdump auto-detect the server and host to watch.
    * The tool tried to parse database/table names inside quoted strings.
    * Removed the --header long option.  Use --report-format instead.
    * Removed the --rusage long option.  Use --report-format instead.
