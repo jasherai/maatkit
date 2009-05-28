@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 28;
+use Test::More tests => 30;
 
 require '../LogSplitter.pm';
 require '../SlowLogParser.pm';
@@ -147,6 +147,44 @@ like(
    $output,
    qr/Events saved\s+6/,
    'Counts saved events'
+);
+
+# #############################################################################
+# Issue 418: mk-log-player dies trying to play statements with blank lines
+# #############################################################################
+
+# LogSplitter should pre-process queries before writing them so that they
+# do not contain blank lines.
+diag(`rm -rf $tmpdir/*`);
+$ls = new LogSplitter(
+   attribute  => 'Thread_id',
+   saveto_dir => "$tmpdir/",
+   lp         => $lp,
+   verbose    => 0,
+);
+$ls->split_logs(['samples/slow020.txt' ]);
+$output = `diff $tmpdir/1/mysql_log_session_0001 samples/split_slow020.txt`;
+is(
+   $output,
+   '',
+   'Collapse multiple \n and \s (issue 418)'
+);
+
+# Make sure it works for --maxsessionfiles
+diag(`rm -rf $tmpdir/*`);
+$ls = new LogSplitter(
+   attribute       => 'Thread_id',
+   saveto_dir      => "$tmpdir/",
+   lp              => $lp,
+   verbose         => 0,
+   maxsessionfiles => 1,
+);
+$ls->split_logs(['samples/slow020.txt' ]);
+$output = `diff $tmpdir/1/mysql_log_session_0001 samples/split_slow020_msf.txt`;
+is(
+   $output,
+   '',
+   'Collapse multiple \n and \s with --maxsessionfiles (issue 418)'
 );
 
 diag(`rm -rf $tmpdir`);

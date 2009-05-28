@@ -91,7 +91,7 @@ sub split_logs {
             push @{$session->{queries}}, "USE `$db`";
             $session->{db} = $db;
          }
-         push @{$session->{queries}}, $event->{arg};
+         push @{$session->{queries}}, flatten($event->{arg});
          $self->{n_events_saved}++;
          return;
       };
@@ -168,7 +168,7 @@ sub split_logs {
             $session->{db} = $db;
          }
 
-         print $session_fh "$event->{arg}\n\n";
+         print $session_fh flatten($event->{arg}), "\n\n";
          $self->{n_events_saved}++;
 
          return;
@@ -362,6 +362,14 @@ sub _next_session_file {
                     . $self->{session_file_name} . $session_n;
    MKDEBUG && _d('Next session file', $session_file);
    return $session_file;
+}
+
+# Flattens multiple new-line and spaces to single new-lines and spaces.
+sub flatten {
+   my ( $query ) = @_;
+   return unless $query;
+   $query =~ s/\s{2,}/ /g;
+   return $query;
 }
 
 sub _d {
