@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 2;
+use Test::More tests => 6;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -35,3 +35,38 @@ system("mysql -h127.1 -P12345 -e 'select sleep(10)' >/dev/null&");
 $output = `perl ../mk-kill -P 12345 -h 127.1 --busy-time 1s --no-kill --print --iterations 0 --run-time 11s`;
 @times = $output =~ m/\(Query (\d+) sec\)/g;
 ok(@times > 7 && @times < 12, 'Approximately 9 or 10 captures with --iterations 0');
+
+# #############################################################################
+# Check that it daemonizes.
+# #############################################################################
+
+# There's no hung queries so we'll just make sure it outputs anything,
+# its debug stuff in this case.
+`../mk-kill -F /tmp/12345/my.sandbox.cnf --interval 1s --iterations 2 --pid /tmp/mk-kill.pid --log /tmp/mk-kill.log --daemonize`;
+$output = `ps -eaf | grep 'mk-kill \-F'`;
+like(
+   $output,
+   qr/mk-kill -F /,
+   'It lives daemonized'
+);
+ok(
+   -f '/tmp/mk-kill.pid',
+   'PID file created'
+);
+ok(
+   -f '/tmp/mk-kill.log',
+   'Log file created'
+);
+
+sleep 2;
+ok(
+   !-f '/tmp/mk-kill.pid',
+   'PID file removed'
+);
+
+diag(`rm -rf /tmp/mk-kill.log`);
+
+# #############################################################################
+# Done.
+# #############################################################################
+exit;
