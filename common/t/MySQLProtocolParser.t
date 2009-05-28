@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 19;
+use Test::More tests => 21;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -15,9 +15,7 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Indent    = 1;
 
 my $tcpdump  = new TcpdumpParser();
-my $protocol = new MySQLProtocolParser(
-   server => '127.0.0.1:3306',
-);
+my $protocol; # Create a new MySQLProtocolParser for each test.
 
 sub load_data {
    my ( $file ) = @_;
@@ -66,6 +64,7 @@ sub run_test {
 }
 
 # Check that I can parse a really simple session.
+$protocol = new MySQLProtocolParser();
 run_test({
    file   => 'samples/tcpdump001.txt',
    result => [
@@ -91,6 +90,7 @@ run_test({
 });
 
 # A more complex session with a complete login/logout cycle.
+$protocol = new MySQLProtocolParser();
 run_test({
    file   => 'samples/tcpdump002.txt',
    result => [
@@ -103,7 +103,7 @@ run_test({
          arg        => 'administrator command: Connect',
          Query_time => '0.011152',
          Thread_id  => 8,
-         pos_in_log => 1455,
+         pos_in_log => 1470,
          bytes      => length('administrator command: Connect'),
          cmd        => 'Admin',
          Error_no   => 0,
@@ -121,7 +121,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '57890',
-         pos_in_log => 2425,
+         pos_in_log => 2449,
          ts         => '090412 11:00:13.118643',
          user       => 'msandbox',
          Error_no   => 0,
@@ -139,7 +139,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '57890',
-         pos_in_log => 3268,
+         pos_in_log => 3298,
          ts         => '090412 11:00:13.119079',
          user       => 'msandbox',
          Error_no   => 0,
@@ -157,7 +157,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '57890',
-         pos_in_log => '4150',
+         pos_in_log => '4186',
          ts         => '090412 11:00:13.119487',
          user       => 'msandbox',
          Error_no   => 0,
@@ -170,6 +170,7 @@ run_test({
 });
 
 # A session that has an error during login.
+$protocol = new MySQLProtocolParser();
 run_test({
    file   => 'samples/tcpdump003.txt',
    result => [
@@ -195,6 +196,7 @@ run_test({
 });
 
 # A session that has an error executing a query
+$protocol = new MySQLProtocolParser();
 run_test({
    file   => 'samples/tcpdump004.txt',
    result => [
@@ -220,6 +222,7 @@ run_test({
 });
 
 # A session that has a single-row insert and a multi-row insert
+$protocol = new MySQLProtocolParser();
 run_test({
    file   => 'samples/tcpdump005.txt',
    result => [
@@ -263,6 +266,7 @@ run_test({
 });
 
 # A session that causes a slow query because it doesn't use an index.
+$protocol = new MySQLProtocolParser();
 run_test({
    file   => 'samples/tcpdump006.txt',
    result => [
@@ -288,6 +292,7 @@ run_test({
 });
 
 # A session that truncates an insert.
+$protocol = new MySQLProtocolParser();
 run_test({
    file   => 'samples/tcpdump007.txt',
    result => [
@@ -373,20 +378,34 @@ is_deeply(
    'Parse COM_QUERY packet'
 );
 
-# #############################################################################
-# Peter's sample.
-# #############################################################################
-# This sample has private data.
-#$protocol = new MySQLProtocolParser(
-#   server => '10.55.200.15:3306',
-#);
-#run_test({
-#   file   => 'samples/tcpdump00x.txt',
-#   result => [
-#      {
-#      },
-#   ],
-#});
+# Test that we can parse with a non-standard port etc.
+$protocol = new MySQLProtocolParser(
+   server => '192.168.1.1:3307',
+);
+run_test({
+   file   => 'samples/tcpdump012.txt',
+   result => [
+      {  ts            => '090412 09:50:16.805123',
+         db            => undef,
+         user          => undef,
+         Thread_id     => undef,
+         host          => '127.0.0.1',
+         ip            => '127.0.0.1',
+         port          => '42167',
+         arg           => 'select "hello world" as greeting',
+         Query_time    => sprintf('%.6f', .805123 - .804849),
+         pos_in_log    => 0,
+         bytes         => length('select "hello world" as greeting'),
+         cmd           => 'Query',
+         Error_no      => 0,
+         Rows_affected => 0,
+         Warning_count      => 0,
+         No_good_index_used => 'No',
+         No_index_used      => 'No',
+      },
+   ],
+});
+
 
 # #############################################################################
 # Done.

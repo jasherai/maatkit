@@ -120,17 +120,11 @@ my %com_for = (
    '1c' => 'COM_STMT_FETCH',
 );
 
-# Required args:
-#    server:  The "host:port" of the sever being watched
-#
-# version is a placeholder for handling differences between
-# MySQL v4.0 and older and v4.1 and newer.  Currently, we
-# only handle v4.1.
+# server is the "host:port" of the sever being watched.  It's auto-guessed if
+# not specified.  version is a placeholder for handling differences between
+# MySQL v4.0 and older and v4.1 and newer.  Currently, we only handle v4.1.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(server) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
    my $self = {
       server    => $args{server},
       version   => '41',
@@ -146,6 +140,14 @@ sub parse_packet {
 
    my $from   = "$packet->{src_host}:$packet->{src_port}";
    my $to     = "$packet->{dst_host}:$packet->{dst_port}";
+
+   # Auto-detect the server by looking for port 3306 or port "mysql" (sometimes
+   # tcpdump will substitute the port by a lookup in /etc/protocols or
+   # something).
+   $self->{server} ||= $from =~ m/:(?:3306|mysql)$/ ? $from
+                     : $to   =~ m/:(?:3306|mysql)$/ ? $to
+                     :                                undef;
+
    my $client = $from eq $self->{server} ? $to : $from;
    MKDEBUG && _d('Client:', $client);
 
