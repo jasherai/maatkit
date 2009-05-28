@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More tests => 13;
 
 require '../Daemon.pm';
 require '../OptionParser.pm';
@@ -75,6 +75,43 @@ SKIP: {
    );
    
    diag(`rm -rf /tmp/daemonizes.pl.pid`);  
+
+   # ##########################################################################
+   # Issue 417: --daemonize doesn't let me log out of terminal cleanly
+   # ##########################################################################
+   SKIP: {
+      skip 'No /proc', 2 unless -d '/proc';
+
+      $output = `$cmd 1 --daemonize --pid /tmp/daemonizes.pl.pid --log /tmp/daemonizes.output 2>&1`;
+      chomp($pid = `cat /tmp/daemonizes.pl.pid`);
+      my $proc_fd_0 = -l "/proc/$pid/0"    ? "/proc/$pid/0"
+                    : -l "/proc/$pid/fd/0" ? "/proc/$pid/fd/0"
+                    : BAIL_OUT("Cannot find fd 0 symlink in /proc/$pid");
+      my $stdin = readlink $proc_fd_0;
+      is(
+         $stdin,
+         '/dev/null',
+         'Reopens STDIN to /dev/null if not piped',
+      );
+
+      sleep 1;
+      $output = `echo "foo" | $cmd 1 --daemonize --pid /tmp/daemonizes.pl.pid --log /tmp/daemonizes.output 2>&1`;
+      chomp($pid = `cat /tmp/daemonizes.pl.pid`);
+      $proc_fd_0 = -l "/proc/$pid/0"    ? "/proc/$pid/0"
+                 : -l "/proc/$pid/fd/0" ? "/proc/$pid/fd/0"
+                 : BAIL_OUT("Cannot find fd 0 symlink in /proc/$pid");
+      $stdin = readlink $proc_fd_0;
+      like(
+         $stdin,
+         qr/pipe/,
+         'Does not reopen STDIN to /dev/null when piped',
+      );
+
+   };
 }
 
+# #############################################################################
+# Done.
+# #############################################################################
+diag(`rm -rf /tmp/daemonizes.*`);
 exit;

@@ -68,6 +68,13 @@ sub daemonize {
 
    $self->_create_PID_file();
 
+   # Only reopen STDIN to /dev/null if it's a tty.  It may be a pipe,
+   # in which case we don't want to break it.
+   if ( -t STDIN ) {
+      open STDIN, '/dev/null'
+         or die "Cannot reopen STDIN to /dev/null";
+   }
+
    if ( $self->{log_file} ) {
       open STDOUT, '>>', $self->{log_file}
          or die "Cannot open log file $self->{log_file}: $OS_ERROR";
