@@ -1769,10 +1769,11 @@ sub main {
       },
    );
 
-   my $iters = 0;
-   while (                            # Quit if:
-      ($start == $end || $now < $end) # time is exceeded
-      && (!$o->get('iterations') || $iters++ < $o->get('iterations') )
+   my $iters_done = 0;
+   my $iters_todo = $o->get('iterations');
+   while (                                              # Quit if:
+      ($start == $end || $now < $end)                   # time is exceeded
+      && (!$iters_todo || $iters_done++ < $iters_todo ) # or iterations exceeded
    ) {
       $proc_sth->execute();
       my $proclist = $proc_sth->fetchall_arrayref({});
@@ -1786,14 +1787,19 @@ sub main {
          $kill_sth->execute($query->{Id}) if $o->get('kill');
       }
 
-      # Don't sleep if we're going to exit after waking up.
-      if ( $iters < $o->get('iterations') ) {
+      # Don't sleep if we're going to exit after waking up.  If $iters_todo is
+      # 0 (infinity), always sleep.
+      if ( !$iters_todo || $iters_done < $iters_todo ) {
          if ( @queries && $o->get('wait-after-kill') ) {
             MKDEBUG && _d("Sleeping after killing queries");
             sleep $o->get('wait-after-kill');
-         };
-         sleep $o->get('interval');
+         }
+         else {
+            MKDEBUG && _d("Sleeping normal interval");
+            sleep $o->get('interval');
+         }
       }
+      $now = time();
    }
 
    return 0;
