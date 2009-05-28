@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 13;
+use Test::More tests => 14;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -97,6 +97,18 @@ SKIP: {
 
    $sb->wipe_clean($dbh);
 };
+
+# #############################################################################
+# Issue 418: mk-log-player dies trying to play statements with blank lines
+# #############################################################################
+diag(`rm -rf $tmpdir/*`);
+$output = `../mk-log-player --split Thread_id --saveto $tmpdir ../../common/t/samples/slow020.txt`;
+$output = `../mk-log-player --play $tmpdir/1 --print | diff samples/play_slow020.txt -`;
+is(
+   $output,
+   '',
+   'Play session from log with blank lines in queries (issue 418)' 
+);
 
 diag(`rm -rf $tmpdir`);
 exit;

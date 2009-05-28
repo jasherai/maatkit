@@ -1,0 +1,6 @@
+/* session 1 query 1 */ USE `db1`
+/* session 1 query 2 */ SELECT * FROM foo WHERE bar = 'bar'
+/* session 1 query 3 */ USE `db`
+/* session 1 query 4 */ INSERT INTO tbl VALUES (1), (2), (3)
+/* session 1 query 5 */ USE `db2`
+/* session 1 query 6 */ SELECT * FROM foo

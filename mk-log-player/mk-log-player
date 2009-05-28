@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 3436
+# OptionParser package 3609
 # ###########################################################################
 package OptionParser;
 
@@ -47,24 +47,26 @@ sub new {
    }
    my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
    $program_name ||= $PROGRAM_NAME;
+
    my $self = {
-      description  => $args{description},
-      prompt       => $args{prompt} || '<options>',
-      strict       => (exists $args{strict} ? $args{strict} : 1),
-      dp           => $args{dp}     || undef,
-      program_name => $program_name,
-      opts         => {},
-      got_opts     => 0,
-      short_opts   => {},
-      defaults     => {},
-      groups       => [ { name => 'default', desc => 'Options' } ],
-      errors       => [],
-      rules        => [],  # desc of rules for --help
-      mutex        => [],  # rule: opts are mutually exclusive
-      atleast1     => [],  # rule: at least one opt is required
-      disables     => {},  # rule: opt disables other opts 
-      defaults_to  => {},  # rule: opt defaults to value of other opt
-      default_files=> [
+      description    => $args{description},
+      prompt         => $args{prompt} || '<options>',
+      strict         => (exists $args{strict} ? $args{strict} : 1),
+      dp             => $args{dp}     || undef,
+      program_name   => $program_name,
+      opts           => {},
+      got_opts       => 0,
+      short_opts     => {},
+      defaults       => {},
+      groups         => {},
+      allowed_groups => {},
+      errors         => [],
+      rules          => [],  # desc of rules for --help
+      mutex          => [],  # rule: opts are mutually exclusive
+      atleast1       => [],  # rule: at least one opt is required
+      disables       => {},  # rule: opt disables other opts 
+      defaults_to    => {},  # rule: opt defaults to value of other opt
+      default_files  => [
          "/etc/maatkit/maatkit.conf",
          "/etc/maatkit/$program_name.conf",
          "$ENV{HOME}/.maatkit.conf",
@@ -159,13 +161,14 @@ sub _pod_to_specs {
          }
 
          push @specs, {
-            spec => $option
+            spec  => $option
                . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
                . ($attribs{'negatable'}  ? '!'                          : '' )
                . ($attribs{'cumulative'} ? '+'                          : '' )
                . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
-            desc => $para
+            desc  => $para
                . ($attribs{default} ? " (default $attribs{default})" : ''),
+            group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
          };
       }
       while ( $para = <$fh> ) {
@@ -223,7 +226,9 @@ sub _parse_specs {
          $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
          $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
 
-         $opt->{group} = 'default'; # TODO: groups
+         $opt->{group} ||= 'default';
+         $self->{groups}->{ $opt->{group} }->{$long} = 1;
+
          $opt->{value} = undef;
          $opt->{got}   = 0;
 
@@ -239,6 +244,11 @@ sub _parse_specs {
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            if ( $opt->{is_negatable} ) {
+               $def = $def eq 'yes' ? 1
+                    : $def eq 'no'  ? 0
+                    : $def;
+            }
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
          }
@@ -275,6 +285,16 @@ sub _parse_specs {
             $self->{defaults_to}->{$participants[0]} = $participants[1];
             MKDEBUG && _d($participants[0], 'defaults to', $participants[1]);
          }
+         if ( $opt =~ m/restricted to option groups/ ) {
+            $rule_ok = 1;
+            my ($groups) = $opt =~ m/groups ([\w\s\,]+)/;
+            my @groups = split(',', $groups);
+            %{$self->{allowed_groups}->{$participants[0]}} = map {
+               s/\s+//;
+               $_ => 1;
+            } @groups;
+         }
+
          die "Unrecognized option rule: $opt" unless $rule_ok;
       }
    }
@@ -337,6 +357,11 @@ sub set_defaults {
 sub get_defaults {
    my ( $self ) = @_;
    return $self->{defaults};
+}
+
+sub get_groups {
+   my ( $self ) = @_;
+   return $self->{groups};
 }
 
 sub _set_option {
@@ -440,13 +465,48 @@ sub get_opts {
             MKDEBUG && _d('Unset options', @disable_opts,
                'because', $long,'disables them');
          }
+
+         if ( exists $self->{allowed_groups}->{$long} ) {
+
+            my @restricted_groups = grep {
+               !exists $self->{allowed_groups}->{$long}->{$_}
+            } keys %{$self->{groups}};
+
+            my @restricted_opts;
+            foreach my $restricted_group ( @restricted_groups ) {
+               RESTRICTED_OPT:
+               foreach my $restricted_opt (
+                  keys %{$self->{groups}->{$restricted_group}} )
+               {
+                  next RESTRICTED_OPT if $restricted_opt eq $long;
+                  push @restricted_opts, $restricted_opt
+                     if $self->{opts}->{$restricted_opt}->{got};
+               }
+            }
+
+            if ( @restricted_opts ) {
+               my $err;
+               if ( @restricted_opts == 1 ) {
+                  $err = "--$restricted_opts[0]";
+               }
+               else {
+                  $err = join(', ',
+                            map { "--$self->{opts}->{$_}->{long}" }
+                            grep { $_ } 
+                            @restricted_opts[0..scalar(@restricted_opts) - 2]
+                         )
+                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+               }
+               $self->_save_error("--$long is not allowed with $err");
+            }
+         }
+
       }
       elsif ( $opt->{is_required} ) { 
          $self->_save_error("Required option --$long must be specified");
       }
 
       $self->_validate_type($opt);
-
    }
 
    $self->{got_opts} = 1;
@@ -510,7 +570,7 @@ sub _validate_type {
       $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
-      $opt->{value} = [ split(',', ($val || '')) ];
+      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
    }
    else {
       MKDEBUG && _d('Nothing to validate for option',
@@ -620,11 +680,15 @@ sub print_usage {
    $maxs = max($lcol - 3, $maxs);
 
    my $usage = $self->descr() . "\n" . $self->prompt();
-   foreach my $group ( @{$self->{groups}} ) {
-      $usage .= "\n$group->{desc}:\n";
+
+   my @groups = reverse sort grep { $_ ne 'default'; } keys %{$self->{groups}};
+   push @groups, 'default';
+
+   foreach my $group ( reverse @groups ) {
+      $usage .= "\n".($group eq 'default' ? 'Options' : $group).":\n\n";
       foreach my $opt (
          sort { $a->{long} cmp $b->{long} }
-         grep { $_->{group} eq $group->{name} }
+         grep { $_->{group} eq $group }
          @opts )
       {
          my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
@@ -649,12 +713,13 @@ sub print_usage {
    }
 
    if ( (my @rules = @{$self->{rules}}) ) {
+      $usage .= "\nRules:\n\n";
       $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
    if ( $self->{dp} ) {
       $usage .= "\n" . $self->{dp}->usage();
    }
-   $usage .= "\nOptions and values after processing arguments:\n";
+   $usage .= "\nOptions and values after processing arguments:\n\n";
    foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
       my $val   = $opt->{value};
       my $type  = $opt->{type} || '';
@@ -739,7 +804,7 @@ sub _read_config_file {
    return @args;
 }
 
-sub _read_para_after {
+sub read_para_after {
    my ( $self, $file, $regex ) = @_;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
    local $INPUT_RECORD_SEPARATOR = '';
@@ -756,6 +821,29 @@ sub _read_para_after {
    chomp($para);
    close $fh or die "Can't close $file: $OS_ERROR";
    return $para;
+}
+
+sub clone {
+   my ( $self ) = @_;
+
+   my %clone = map {
+      my $hashref  = $self->{$_};
+      my $val_copy = {};
+      foreach my $key ( keys %$hashref ) {
+         my $ref = ref $hashref->{$key};
+         $val_copy->{$key} = !$ref           ? $hashref->{$key}
+                           : $ref eq 'HASH'  ? { %{$hashref->{$key}} }
+                           : $ref eq 'ARRAY' ? [ @{$hashref->{$key}} ]
+                           : $hashref->{$key};
+      }
+      $_ => $val_copy;
+   } qw(opts short_opts defaults);
+
+   foreach my $scalar ( qw(got_opts) ) {
+      $clone{$scalar} = $self->{$scalar};
+   }
+
+   return bless \%clone;     
 }
 
 sub _d {
@@ -1201,7 +1289,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 3483
+# LogSplitter package 3643
 # ###########################################################################
 
 package LogSplitter;
@@ -1270,7 +1358,7 @@ sub split_logs {
             push @{$session->{queries}}, "USE `$db`";
             $session->{db} = $db;
          }
-         push @{$session->{queries}}, $event->{arg};
+         push @{$session->{queries}}, flatten($event->{arg});
          $self->{n_events_saved}++;
          return;
       };
@@ -1336,7 +1424,7 @@ sub split_logs {
             $session->{db} = $db;
          }
 
-         print $session_fh "$event->{arg}\n\n";
+         print $session_fh flatten($event->{arg}), "\n\n";
          $self->{n_events_saved}++;
 
          return;
@@ -1508,6 +1596,13 @@ sub _next_session_file {
    return $session_file;
 }
 
+sub flatten {
+   my ( $query ) = @_;
+   return unless $query;
+   $query =~ s/\s{2,}/ /g;
+   return $query;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1523,7 +1618,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3421
+# DSNParser package 3577
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1681,7 +1776,7 @@ sub as_string {
 sub usage {
    my ( $self ) = @_;
    my $usage
-      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
    my %opts = %{$self->{opts}};
@@ -1831,6 +1926,24 @@ sub print_active_handles {
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles( $handle, $level + 1 );
    }
+}
+
+sub copy {
+   my ( $self, $dsn_1, $dsn_2, %args ) = @_;
+   die 'I need a dsn_1 argument' unless $dsn_1;
+   die 'I need a dsn_2 argument' unless $dsn_2;
+   my %new_dsn = map {
+      my $key = $_;
+      my $val;
+      if ( $args{overwrite} ) {
+         $val = defined $dsn_1->{$key} ? $dsn_1->{$key} : $dsn_2->{$key};
+      }
+      else {
+         $val = defined $dsn_2->{$key} ? $dsn_2->{$key} : $dsn_1->{$key};
+      }
+      $key => $val;
+   } keys %{$self->{opts}};
+   return \%new_dsn;
 }
 
 sub _d {
@@ -2011,7 +2124,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3434
+# EventAggregator package 3543
 # ###########################################################################
 package EventAggregator;
 
@@ -2052,6 +2165,19 @@ sub new {
    }, $class;
 }
 
+sub reset_aggregated_data {
+   my ( $self ) = @_;
+   foreach my $class ( values %{$self->{result_classes}} ) {
+      foreach my $attrib ( values %$class ) {
+         delete @{$attrib}{keys %$attrib};
+      }
+   }
+   foreach my $class ( values %{$self->{result_globals}} ) {
+      delete @{$class}{keys %$class};
+   }
+   delete @{$self->{result_samples}}{keys %{$self->{result_samples}}};
+}
+
 sub aggregate {
    my ( $self, $event ) = @_;
 
@@ -2067,7 +2193,7 @@ sub aggregate {
    foreach my $attrib ( @attrs ) {
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
-         my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
+         my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
          my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
          my $samples       = $self->{result_samples};
          my $handler = $self->{handlers}->{ $attrib };
@@ -2097,7 +2223,7 @@ sub aggregate {
          'my ( $self, $event, $group_by ) = @_;',
          'my ($val, $class, $global, $idx);',
          (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
-         'my $temp = $self->{result_class}->{ $group_by }
+         'my $temp = $self->{result_classes}->{ $group_by }
             ||= { map { $_ => { } } @attrs };',
          '$samples->{$group_by} ||= $event;', # Always start with the first.
       );
@@ -2126,7 +2252,7 @@ sub aggregate {
 sub results {
    my ( $self ) = @_;
    return {
-      classes => $self->{result_class},
+      classes => $self->{result_classes},
       globals => $self->{result_globals},
       samples => $self->{result_samples},
    };
@@ -2422,7 +2548,7 @@ sub metrics {
 
 sub top_events {
    my ( $self, %args ) = @_;
-   my $classes = $self->{result_class};
+   my $classes = $self->{result_classes};
    my @sorted = reverse sort { # Sorted list of $groupby values
       $classes->{$a}->{$args{attrib}}->{$args{orderby}}
          <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
