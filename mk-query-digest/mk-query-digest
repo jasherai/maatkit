@@ -3721,7 +3721,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 3186
+# QueryParser package 3637
 # ###########################################################################
 package QueryParser;
 
@@ -3754,6 +3754,10 @@ sub get_tables {
    MKDEBUG && _d('Getting tables for', $query);
 
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
+
+   $query =~ s/\\["']//g;                # quoted strings
+   $query =~ s/".*?"/?/sg;               # quoted strings
+   $query =~ s/'.*?'/?/sg;               # quoted strings
 
    my @tables;
    foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {

@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * The tool tried to parse database/table names inside quoted strings.
    * Removed the --header long option.  Use --report-format instead.
    * Removed the --rusage long option.  Use --report-format instead.
    * Removed the --attriblimit long option.  Use --attribute-limit instead.
