@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 47;
+use Test::More tests => 48;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -358,6 +358,19 @@ SKIP: {
    diag(`/tmp/12347/stop`);
    diag(`rm -rf /tmp/12347/`);
 };
+
+# #############################################################################
+# Issue 391: Add --pid option to mk-table-sync
+# #############################################################################
+`touch /tmp/mk-table-sync.pid`;
+$output = `../mk-table-sync h=127.1,P=12346 --sync-to-master --print --with-triggers --pid /tmp/mk-table-sync.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-table-sync.pid already exists},
+   'Dies if PID file already exists (issue 391)'
+);
+
+`rm -rf /tmp/mk-table-sync.pid`;
 
 # #############################################################################
 # Done
