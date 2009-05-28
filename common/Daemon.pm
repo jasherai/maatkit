@@ -66,7 +66,7 @@ sub daemonize {
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
    chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
 
-   $self->_create_PID_file();
+   $self->_make_PID_file();
 
    # Only reopen STDIN to /dev/null if it's a tty.  It may be a pipe,
    # in which case we don't want to break it.
@@ -86,7 +86,22 @@ sub daemonize {
    return;
 }
 
-sub _create_PID_file {
+# Call this for non-daemonized scripts to make a PID file.
+sub make_PID_file {
+   my ( $self ) = @_;
+   if ( exists $self->{child} ) {
+      die "Do not call Daemon::make_PID_file() for daemonized scripts";
+   }
+   $self->_make_PID_file();
+   # This causes the PID file to be auto-removed when this obj is destroyed.
+   $self->{rm_PID_file} = 1;
+   return;
+}
+
+# Do not call this sub directly.  For daemonized scripts, it's called
+# automatically from daemonize() if there's a --pid opt.  For non-daemonized
+# scripts, call make_PID_file().
+sub _make_PID_file {
    my ( $self ) = @_;
 
    my $PID_file = $self->{PID_file};
@@ -127,7 +142,7 @@ sub _remove_PID_file {
 sub DESTROY {
    my ( $self ) = @_;
    # Remove the PID only if we're the child.
-   $self->_remove_PID_file() if $self->{child};
+   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
    return;
 }
 

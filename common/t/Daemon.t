@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 13;
+use Test::More tests => 16;
 
 require '../Daemon.pm';
 require '../OptionParser.pm';
@@ -108,6 +108,46 @@ SKIP: {
       );
 
    };
+}
+
+# #############################################################################
+# Test auto-PID file removal without having to daemonize (for issue 391).
+# #############################################################################
+{
+   @ARGV = qw(--pid /tmp/d2.pid);
+   $o->get_specs('samples/daemonizes.pl');
+   $o->get_opts();
+   my $d2 = new Daemon(o=>$o);
+   $d2->make_PID_file();
+   ok(
+      -f '/tmp/d2.pid',
+      'PID file for non-daemon exists'
+   );
+}
+# Since $d2 was locally scoped, it should have been destoryed by now.
+# This should have caused the PID file to be automatically removed.
+ok(
+   !-f '/tmpo/d2.pid',
+   'PID file auto-removed for non-daemon'
+);
+
+# We should still die if the PID file already exists,
+# even if we're not a daemon.
+{
+   `touch /tmp/d2.pid`;
+   @ARGV = qw(--pid /tmp/d2.pid);
+   $o->get_opts();
+   eval {
+      my $d2 = new Daemon(o=>$o);  # should die here actually
+      $d2->make_PID_file();
+   };
+   like(
+      $EVAL_ERROR,
+      qr{PID file /tmp/d2.pid already exists},
+      'Dies if PID file already exists for non-daemon'
+   );
+
+   `rm -rf /tmp/d2.pid`;
 }
 
 # #############################################################################
