@@ -22,7 +22,7 @@ use warnings FATAL => 'all';
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", (q$Revision: 3644 $ =~ m/(\d+)/g, 0));
+our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # OptionParser package 3609
@@ -3452,6 +3452,6 @@ Daniel Nichter
 
 =head1 VERSION
 
-This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision: 3644 $.
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 =cut

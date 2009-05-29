@@ -1,0 +1,1750 @@
+#!/usr/bin/env perl
+
+# This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
+
+# ###########################################################################
+# OptionParser package 3609
+# ###########################################################################
+package OptionParser;
+
+use strict;
+use warnings FATAL => 'all';
+
+use Getopt::Long;
+use List::Util qw(max);
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(description) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   $program_name ||= $PROGRAM_NAME;
+
+   my $self = {
+      description    => $args{description},
+      prompt         => $args{prompt} || '<options>',
+      strict         => (exists $args{strict} ? $args{strict} : 1),
+      dp             => $args{dp}     || undef,
+      program_name   => $program_name,
+      opts           => {},
+      got_opts       => 0,
+      short_opts     => {},
+      defaults       => {},
+      groups         => {},
+      allowed_groups => {},
+      errors         => [],
+      rules          => [],  # desc of rules for --help
+      mutex          => [],  # rule: opts are mutually exclusive
+      atleast1       => [],  # rule: at least one opt is required
+      disables       => {},  # rule: opt disables other opts 
+      defaults_to    => {},  # rule: opt defaults to value of other opt
+      default_files  => [
+         "/etc/maatkit/maatkit.conf",
+         "/etc/maatkit/$program_name.conf",
+         "$ENV{HOME}/.maatkit.conf",
+         "$ENV{HOME}/.$program_name.conf",
+      ],
+   };
+   return bless $self, $class;
+}
+
+sub get_specs {
+   my ( $self, $file ) = @_;
+   my @specs = $self->_pod_to_specs($file);
+   $self->_parse_specs(@specs);
+   return;
+}
+
+sub get_defaults_files {
+   my ( $self ) = @_;
+   return @{$self->{default_files}};
+}
+
+sub _pod_to_specs {
+   my ( $self, $file ) = @_;
+   $file ||= __FILE__;
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+
+   my %types = (
+      string => 's', # standard Getopt type
+      'int'  => 'i', # standard Getopt type
+      float  => 'f', # standard Getopt type
+      Hash   => 'H', # hash, formed from a comma-separated list
+      hash   => 'h', # hash as above, but only if a value is given
+      Array  => 'A', # array, similar to Hash
+      array  => 'a', # array, similar to hash
+      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dp}
+      size   => 'z', # size with kMG suffix (powers of 2^10)
+      'time' => 'm', # time, with an optional suffix of s/h/m/d
+   );
+   my @specs = ();
+   my @rules = ();
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $para =~ s/$POD_link_re/$1/go;
+      MKDEBUG && _d('Option rule:', $para);
+      push @rules, $para;
+   }
+
+   die 'POD has no OPTIONS section' unless $para;
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         chomp $para;
+         MKDEBUG && _d($para);
+         my %attribs;
+
+         $para = <$fh>; # read next paragraph, possibly attributes
+
+         if ( $para =~ m/: / ) { # attributes
+            $para =~ s/\s+\Z//g;
+            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            if ( $attribs{'short form'} ) {
+               $attribs{'short form'} =~ s/-//;
+            }
+            $para = <$fh>; # read next paragraph, probably short help desc
+         }
+         else {
+            MKDEBUG && _d('Option has no attributes');
+         }
+
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/$POD_link_re/$1/go;
+
+         $para =~ s/\.(?:\n.*| [A-Z].*|\Z)//s;
+         MKDEBUG && _d('Short help:', $para);
+
+         die "No description after option spec $option" if $para =~ m/^=item/;
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $attribs{'negatable'} = 1;
+         }
+
+         push @specs, {
+            spec  => $option
+               . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
+               . ($attribs{'negatable'}  ? '!'                          : '' )
+               . ($attribs{'cumulative'} ? '+'                          : '' )
+               . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
+            desc  => $para
+               . ($attribs{default} ? " (default $attribs{default})" : ''),
+            group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+
+
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   die 'No valid specs in POD OPTIONS' unless @specs;
+
+   close $fh;
+   return @specs, @rules;
+}
+
+sub _parse_specs {
+   my ( $self, @specs ) = @_;
+   my %disables; # special rule that requires deferred checking
+
+   foreach my $opt ( @specs ) {
+      if ( ref $opt ) { # It's an option spec, not a rule.
+         MKDEBUG && _d('Parsing opt spec:',
+            map { ($_, '=>', $opt->{$_}) } keys %$opt);
+
+         my ( $long, $short ) = $opt->{spec} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         if ( !$long ) {
+            die "Cannot parse long option from spec $opt->{spec}";
+         }
+         $opt->{long} = $long;
+
+         die "Duplicate long option --$long" if exists $self->{opts}->{$long};
+         $self->{opts}->{$long} = $opt;
+
+         if ( length $long == 1 ) {
+            MKDEBUG && _d('Long opt', $long, 'looks like short opt');
+            $self->{short_opts}->{$long} = $long;
+         }
+
+         if ( $short ) {
+            die "Duplicate short option -$short"
+               if exists $self->{short_opts}->{$short};
+            $self->{short_opts}->{$short} = $long;
+            $opt->{short} = $short;
+         }
+         else {
+            $opt->{short} = undef;
+         }
+
+         $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
+         $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
+         $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
+
+         $opt->{group} ||= 'default';
+         $self->{groups}->{ $opt->{group} }->{$long} = 1;
+
+         $opt->{value} = undef;
+         $opt->{got}   = 0;
+
+         my ( $type ) = $opt->{spec} =~ m/=(.)/;
+         $opt->{type} = $type;
+         MKDEBUG && _d($long, 'type:', $type);
+
+         if ( $type && $type eq 'd' && !$self->{dp} ) {
+            die "$opt->{long} is type DSN (d) but no dp argument "
+               . "was given when this OptionParser object was created";
+         }
+
+         $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
+
+         if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            if ( $opt->{is_negatable} ) {
+               $def = $def eq 'yes' ? 1
+                    : $def eq 'no'  ? 0
+                    : $def;
+            }
+            $self->{defaults}->{$long} = defined $def ? $def : 1;
+            MKDEBUG && _d($long, 'default:', $def);
+         }
+
+         if ( $long eq 'config' ) {
+            $self->{defaults}->{$long} = join(',', $self->get_defaults_files());
+         }
+
+         if ( (my ($dis) = $opt->{desc} =~ m/(disables .*)/) ) {
+            $disables{$long} = $dis;
+            MKDEBUG && _d('Deferring check of disables rule for', $opt, $dis);
+         }
+
+         $self->{opts}->{$long} = $opt;
+      }
+      else { # It's an option rule, not a spec.
+         MKDEBUG && _d('Parsing rule:', $opt); 
+         push @{$self->{rules}}, $opt;
+         my @participants = $self->_get_participants($opt);
+         my $rule_ok = 0;
+
+         if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{mutex}}, \@participants;
+            MKDEBUG && _d(@participants, 'are mutually exclusive');
+         }
+         if ( $opt =~ m/at least one|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{atleast1}}, \@participants;
+            MKDEBUG && _d(@participants, 'require at least one');
+         }
+         if ( $opt =~ m/default to/ ) {
+            $rule_ok = 1;
+            $self->{defaults_to}->{$participants[0]} = $participants[1];
+            MKDEBUG && _d($participants[0], 'defaults to', $participants[1]);
+         }
+         if ( $opt =~ m/restricted to option groups/ ) {
+            $rule_ok = 1;
+            my ($groups) = $opt =~ m/groups ([\w\s\,]+)/;
+            my @groups = split(',', $groups);
+            %{$self->{allowed_groups}->{$participants[0]}} = map {
+               s/\s+//;
+               $_ => 1;
+            } @groups;
+         }
+
+         die "Unrecognized option rule: $opt" unless $rule_ok;
+      }
+   }
+
+   foreach my $long ( keys %disables ) {
+      my @participants = $self->_get_participants($disables{$long});
+      $self->{disables}->{$long} = \@participants;
+      MKDEBUG && _d('Option', $long, 'disables', @participants);
+   }
+
+   return; 
+}
+
+sub _get_participants {
+   my ( $self, $str ) = @_;
+   my @participants;
+   foreach my $long ( $str =~ m/--(?:\[no\])?([\w-]+)/g ) {
+      die "Option --$long does not exist while processing rule $str"
+         unless exists $self->{opts}->{$long};
+      push @participants, $long;
+   }
+   MKDEBUG && _d('Participants for', $str, ':', @participants);
+   return @participants;
+}
+
+sub opts {
+   my ( $self ) = @_;
+   my %opts = %{$self->{opts}};
+   return %opts;
+}
+
+sub opt_values {
+   my ( $self ) = @_;
+   my %opts = map {
+      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
+              : $_;
+      $opt => $self->{opts}->{$_}->{value}
+   } keys %{$self->{opts}};
+   return %opts;
+}
+
+sub short_opts {
+   my ( $self ) = @_;
+   my %short_opts = %{$self->{short_opts}};
+   return %short_opts;
+}
+
+sub set_defaults {
+   my ( $self, %defaults ) = @_;
+   $self->{defaults} = {};
+   foreach my $long ( keys %defaults ) {
+      die "Cannot set default for nonexistent option $long"
+         unless exists $self->{opts}->{$long};
+      $self->{defaults}->{$long} = $defaults{$long};
+      MKDEBUG && _d('Default val for', $long, ':', $defaults{$long});
+   }
+   return;
+}
+
+sub get_defaults {
+   my ( $self ) = @_;
+   return $self->{defaults};
+}
+
+sub get_groups {
+   my ( $self ) = @_;
+   return $self->{groups};
+}
+
+sub _set_option {
+   my ( $self, $opt, $val ) = @_;
+   my $long = exists $self->{opts}->{$opt}       ? $opt
+            : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
+            : die "Getopt::Long gave a nonexistent option: $opt";
+
+   $opt = $self->{opts}->{$long};
+   if ( $opt->{is_cumulative} ) {
+      $opt->{value}++;
+   }
+   else {
+      $opt->{value} = $val;
+   }
+   $opt->{got} = 1;
+   MKDEBUG && _d('Got option', $long, '=', $val);
+}
+
+sub get_opts {
+   my ( $self ) = @_; 
+
+   foreach my $long ( keys %{$self->{opts}} ) {
+      $self->{opts}->{$long}->{got} = 0;
+      $self->{opts}->{$long}->{value}
+         = exists $self->{defaults}->{$long}       ? $self->{defaults}->{$long}
+         : $self->{opts}->{$long}->{is_cumulative} ? 0
+         : undef;
+   }
+   $self->{got_opts} = 0;
+
+   $self->{errors} = [];
+
+   if ( @ARGV && $ARGV[0] eq "--config" ) {
+      shift @ARGV;
+      $self->_set_option('config', shift @ARGV);
+   }
+   if ( $self->has('config') ) {
+      my @extra_args;
+      foreach my $filename ( split(',', $self->get('config')) ) {
+         eval {
+            push @ARGV, $self->_read_config_file($filename);
+         };
+         if ( $EVAL_ERROR ) {
+            if ( $self->got('config') ) {
+               die $EVAL_ERROR;
+            }
+            elsif ( MKDEBUG ) {
+               _d($EVAL_ERROR);
+            }
+         }
+      }
+      unshift @ARGV, @extra_args;
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions(
+      map    { $_->{spec} => sub { $self->_set_option(@_); } }
+      grep   { $_->{long} ne 'config' } # --config is handled specially above.
+      values %{$self->{opts}}
+   ) or $self->_save_error('Error parsing options');
+
+   if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
+      printf("%s  Ver %s Distrib %s Changeset %s\n",
+         $self->{program_name}, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+            or die "Cannot print: $OS_ERROR";
+      exit 0;
+   }
+
+   if ( @ARGV && $self->{strict} ) {
+      $self->_save_error("Unrecognized command-line options @ARGV");
+   }
+
+   foreach my $mutex ( @{$self->{mutex}} ) {
+      my @set = grep { $self->{opts}->{$_}->{got} } @$mutex;
+      if ( @set > 1 ) {
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$mutex}[ 0 .. scalar(@$mutex) - 2] )
+                 . ' and --'.$self->{opts}->{$mutex->[-1]}->{long}
+                 . ' are mutually exclusive.';
+         $self->_save_error($err);
+      }
+   }
+
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { $self->{opts}->{$_}->{got} } @$required;
+      if ( @set == 0 ) {
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$required}[ 0 .. scalar(@$required) - 2] )
+                 .' or --'.$self->{opts}->{$required->[-1]}->{long};
+         $self->_save_error("Specify at least one of $err");
+      }
+   }
+
+   foreach my $long ( keys %{$self->{opts}} ) {
+      my $opt = $self->{opts}->{$long};
+      if ( $opt->{got} ) {
+         if ( exists $self->{disables}->{$long} ) {
+            my @disable_opts = @{$self->{disables}->{$long}};
+            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
+            MKDEBUG && _d('Unset options', @disable_opts,
+               'because', $long,'disables them');
+         }
+
+         if ( exists $self->{allowed_groups}->{$long} ) {
+
+            my @restricted_groups = grep {
+               !exists $self->{allowed_groups}->{$long}->{$_}
+            } keys %{$self->{groups}};
+
+            my @restricted_opts;
+            foreach my $restricted_group ( @restricted_groups ) {
+               RESTRICTED_OPT:
+               foreach my $restricted_opt (
+                  keys %{$self->{groups}->{$restricted_group}} )
+               {
+                  next RESTRICTED_OPT if $restricted_opt eq $long;
+                  push @restricted_opts, $restricted_opt
+                     if $self->{opts}->{$restricted_opt}->{got};
+               }
+            }
+
+            if ( @restricted_opts ) {
+               my $err;
+               if ( @restricted_opts == 1 ) {
+                  $err = "--$restricted_opts[0]";
+               }
+               else {
+                  $err = join(', ',
+                            map { "--$self->{opts}->{$_}->{long}" }
+                            grep { $_ } 
+                            @restricted_opts[0..scalar(@restricted_opts) - 2]
+                         )
+                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+               }
+               $self->_save_error("--$long is not allowed with $err");
+            }
+         }
+
+      }
+      elsif ( $opt->{is_required} ) { 
+         $self->_save_error("Required option --$long must be specified");
+      }
+
+      $self->_validate_type($opt);
+   }
+
+   $self->{got_opts} = 1;
+   return;
+}
+
+sub _validate_type {
+   my ( $self, $opt ) = @_;
+   return unless $opt && $opt->{type};
+   my $val = $opt->{value};
+
+   if ( $val && $opt->{type} eq 'm' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
+      my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+      if ( !$suffix ) {
+         my ( $s ) = $opt->{desc} =~ m/\(suffix (.)\)/;
+         $suffix = $s || 's';
+         MKDEBUG && _d('No suffix given; using', $suffix, 'for',
+            $opt->{long}, '(value:', $val, ')');
+      }
+      if ( $suffix =~ m/[smhd]/ ) {
+         $val = $suffix eq 's' ? $num            # Seconds
+              : $suffix eq 'm' ? $num * 60       # Minutes
+              : $suffix eq 'h' ? $num * 3600     # Hours
+              :                  $num * 86400;   # Days
+         $opt->{value} = $val;
+         MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
+      }
+      else {
+         $self->_save_error("Invalid time suffix for --$opt->{long}");
+      }
+   }
+   elsif ( $val && $opt->{type} eq 'd' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a DSN');
+      my $from_key = $self->{defaults_to}->{ $opt->{long} };
+      my $default = {};
+      if ( $from_key ) {
+         MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
+         $default = $self->{dp}->parse(
+            $self->{dp}->as_string($self->{opts}->{$from_key}->{value}) );
+      }
+      $opt->{value} = $self->{dp}->parse($val, $default);
+   }
+   elsif ( $val && $opt->{type} eq 'z' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
+      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+      if ( defined $num ) {
+         if ( $factor ) {
+            $num *= $factor_for{$factor};
+            MKDEBUG && _d('Setting option', $opt->{y},
+               'to num', $num, '* factor', $factor);
+         }
+         $opt->{value} = ($pre || '') . $num;
+      }
+      else {
+         $self->_save_error("Invalid size for --$opt->{long}");
+      }
+   }
+   elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
+      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+   }
+   elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
+      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
+   }
+   else {
+      MKDEBUG && _d('Nothing to validate for option',
+         $opt->{long}, 'type', $opt->{type}, 'value', $val);
+   }
+
+   return;
+}
+
+sub get {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{value};
+}
+
+sub got {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{got};
+}
+
+sub has {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   return defined $long ? exists $self->{opts}->{$long} : 0;
+}
+
+sub set {
+   my ( $self, $opt, $val ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   $self->{opts}->{$long}->{value} = $val;
+   return;
+}
+
+sub _save_error {
+   my ( $self, $error ) = @_;
+   push @{$self->{errors}}, $error;
+}
+
+sub errors {
+   my ( $self ) = @_;
+   return $self->{errors};
+}
+
+sub prompt {
+   my ( $self ) = @_;
+   return "Usage: $PROGRAM_NAME $self->{prompt}\n";
+}
+
+sub descr {
+   my ( $self ) = @_;
+   my $descr  = $self->{program_name} . ' ' . ($self->{description} || '')
+              . "  For more details, please use the --help option, "
+              . "or try 'perldoc $PROGRAM_NAME' "
+              . "for complete documentation.";
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr =~ s/ +$//mg;
+   return $descr;
+}
+
+sub usage_or_errors {
+   my ( $self ) = @_;
+   if ( $self->{opts}->{help}->{got} ) {
+      print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
+      exit 0;
+   }
+   elsif ( scalar @{$self->{errors}} ) {
+      print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
+      exit 0;
+   }
+   return;
+}
+
+sub print_errors {
+   my ( $self ) = @_;
+   my $usage = $self->prompt() . "\n";
+   if ( (my @errors = @{$self->{errors}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors)
+              . "\n";
+   }
+   return $usage . "\n" . $self->descr();
+}
+
+sub print_usage {
+   my ( $self ) = @_;
+   die "Run get_opts() before print_usage()" unless $self->{got_opts};
+   my @opts = values %{$self->{opts}};
+
+   my $maxl = max(
+      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      @opts);
+
+   my $maxs = max(0,
+      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      values %{$self->{short_opts}});
+
+   my $lcol = max($maxl, ($maxs + 3));
+   my $rcol = 80 - $lcol - 6;
+   my $rpad = ' ' x ( 80 - $rcol );
+
+   $maxs = max($lcol - 3, $maxs);
+
+   my $usage = $self->descr() . "\n" . $self->prompt();
+
+   my @groups = reverse sort grep { $_ ne 'default'; } keys %{$self->{groups}};
+   push @groups, 'default';
+
+   foreach my $group ( reverse @groups ) {
+      $usage .= "\n".($group eq 'default' ? 'Options' : $group).":\n\n";
+      foreach my $opt (
+         sort { $a->{long} cmp $b->{long} }
+         grep { $_->{group} eq $group }
+         @opts )
+      {
+         my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
+         my $short = $opt->{short};
+         my $desc  = $opt->{desc};
+         if ( $opt->{type} && $opt->{type} eq 'm' ) {
+            my ($s) = $desc =~ m/\(suffix (.)\)/;
+            $s    ||= 's';
+            $desc =~ s/\s+\(suffix .\)//;
+            $desc .= ".  Optional suffix s=seconds, m=minutes, h=hours, "
+                   . "d=days; if no suffix, $s is used.";
+         }
+         $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+         $desc =~ s/ +$//mg;
+         if ( $short ) {
+            $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+         }
+         else {
+            $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+         }
+      }
+   }
+
+   if ( (my @rules = @{$self->{rules}}) ) {
+      $usage .= "\nRules:\n\n";
+      $usage .= join("\n", map { "  $_" } @rules) . "\n";
+   }
+   if ( $self->{dp} ) {
+      $usage .= "\n" . $self->{dp}->usage();
+   }
+   $usage .= "\nOptions and values after processing arguments:\n\n";
+   foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
+      my $val   = $opt->{value};
+      my $type  = $opt->{type} || '';
+      my $bool  = $opt->{spec} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val             ? '(No value)'
+                : $type eq 'd'              ? $self->{dp}->as_string($val)
+                : $type =~ m/H|h/           ? join(',', sort keys %$val)
+                : $type =~ m/A|a/           ? join(',', @$val)
+                :                             $val;
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $opt->{long}, $val);
+   }
+   return $usage;
+}
+
+sub prompt_noecho {
+   shift @_ if ref $_[0] eq __PACKAGE__;
+   my ( $prompt ) = @_;
+   local $OUTPUT_AUTOFLUSH = 1;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
+   my $response;
+   eval {
+      require Term::ReadKey;
+      Term::ReadKey::ReadMode('noecho');
+      chomp($response = <STDIN>);
+      Term::ReadKey::ReadMode('normal');
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
+   }
+   return $response;
+}
+
+if ( MKDEBUG ) {
+   print '# ', $^X, ' ', $], "\n";
+   my $uname = `uname -a`;
+   if ( $uname ) {
+      $uname =~ s/\s+/ /g;
+      print "# $uname\n";
+   }
+   printf("# %s  Ver %s Distrib %s Changeset %s line %d\n",
+      $PROGRAM_NAME, ($main::VERSION || ''), ($main::DISTRIB || ''),
+      ($main::SVN_REV || ''), __LINE__);
+   print('# Arguments: ',
+      join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+sub _read_config_file {
+   my ( $self, $filename ) = @_;
+   open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
+   my @args;
+   my $prefix = '--';
+   my $parse  = 1;
+
+   LINE:
+   while ( my $line = <$fh> ) {
+      chomp $line;
+      next LINE if $line =~ m/^\s*(?:\#|\;|$)/;
+      $line =~ s/\s+#.*$//g;
+      $line =~ s/^\s+|\s+$//g;
+      if ( $line eq '--' ) {
+         $prefix = '';
+         $parse  = 0;
+         next LINE;
+      }
+      if ( $parse
+         && (my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/)
+      ) {
+         push @args, grep { defined $_ } ("$prefix$opt", $arg);
+      }
+      elsif ( $line =~ m/./ ) {
+         push @args, $line;
+      }
+      else {
+         die "Syntax error in file $filename at line $INPUT_LINE_NUMBER";
+      }
+   }
+   close $fh;
+   return @args;
+}
+
+sub read_para_after {
+   my ( $self, $file, $regex ) = @_;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=pod$/m;
+      last;
+   }
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/$regex/;
+      last;
+   }
+   $para = <$fh>;
+   chomp($para);
+   close $fh or die "Can't close $file: $OS_ERROR";
+   return $para;
+}
+
+sub clone {
+   my ( $self ) = @_;
+
+   my %clone = map {
+      my $hashref  = $self->{$_};
+      my $val_copy = {};
+      foreach my $key ( keys %$hashref ) {
+         my $ref = ref $hashref->{$key};
+         $val_copy->{$key} = !$ref           ? $hashref->{$key}
+                           : $ref eq 'HASH'  ? { %{$hashref->{$key}} }
+                           : $ref eq 'ARRAY' ? [ @{$hashref->{$key}} ]
+                           : $hashref->{$key};
+      }
+      $_ => $val_copy;
+   } qw(opts short_opts defaults);
+
+   foreach my $scalar ( qw(got_opts) ) {
+      $clone{$scalar} = $self->{$scalar};
+   }
+
+   return bless \%clone;     
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
+
+# ###########################################################################
+# Transformers package 3407
+# ###########################################################################
+
+package Transformers;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Time::Local qw(timelocal);
+use Digest::MD5 qw(md5_hex);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+require Exporter;
+our @ISA         = qw(Exporter);
+our %EXPORT_TAGS = ();
+our @EXPORT      = ();
+our @EXPORT_OK   = qw(
+   micro_t
+   percentage_of
+   secs_to_time
+   shorten
+   ts
+   parse_timestamp
+   unix_timestamp
+   make_checksum
+);
+
+sub micro_t {
+   my ( $t, %args ) = @_;
+   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
+   my $f;
+
+   $t = 0 if $t < 0;
+
+   $t = sprintf('%.17f', $t) if $t =~ /e/;
+
+   $t =~ s/\.(\d{1,6})\d*/\.$1/;
+
+   if ($t > 0 && $t <= 0.000999) {
+      $f = ($t * 1000000) . 'us';
+   }
+   elsif ($t >= 0.001000 && $t <= 0.999999) {
+      $f = sprintf("%.${p_ms}f", $t * 1000);
+      $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
+   }
+   elsif ($t >= 1) {
+      $f = sprintf("%.${p_s}f", $t);
+      $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
+   }
+   else {
+      $f = 0;  # $t should = 0 at this point
+   }
+
+   return $f;
+}
+
+sub percentage_of {
+   my ( $is, $of, %args ) = @_;
+   my $p   = $args{p} || 0; # float precision
+   my $fmt = $p ? "%.${p}f" : "%d";
+   return sprintf $fmt, ($is * 100) / ($of ||= 1);
+}
+
+sub secs_to_time {
+   my ( $secs, $fmt ) = @_;
+   $secs ||= 0;
+   return '00:00' unless $secs;
+
+   $fmt ||= $secs >= 86_400 ? 'd'
+          : $secs >= 3_600  ? 'h'
+          :                   'm';
+
+   return
+      $fmt eq 'd' ? sprintf(
+         "%d+%02d:%02d:%02d",
+         int($secs / 86_400),
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : $fmt eq 'h' ? sprintf(
+         "%02d:%02d:%02d",
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : sprintf(
+         "%02d:%02d",
+         int(($secs % 3_600) / 60),
+         $secs % 60);
+}
+
+sub shorten {
+   my ( $num, %args ) = @_;
+   my $p = defined $args{p} ? $args{p} : 2;     # float precision
+   my $d = defined $args{d} ? $args{d} : 1_024; # divisor
+   my $n = 0;
+   my @units = ('', qw(k M G T P E Z Y));
+   while ( $num >= $d && $n < @units - 1 ) {
+      $num /= $d;
+      ++$n;
+   }
+   return sprintf(
+      $num =~ m/\./ || $n
+         ? "%.${p}f%s"
+         : '%d',
+      $num, $units[$n]);
+}
+
+sub ts {
+   my ( $time ) = @_;
+   my ( $sec, $min, $hour, $mday, $mon, $year )
+      = localtime($time);
+   $mon  += 1;
+   $year += 1900;
+   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+      $year, $mon, $mday, $hour, $min, $sec);
+}
+
+sub parse_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s, $f)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?$/ )
+   {
+      return sprintf "%d-%02d-%02d %02d:%02d:"
+                     . (defined $f ? '%02.6f' : '%02d'),
+                     $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
+   }
+   return $val;
+}
+
+sub unix_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
+   {
+      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   }
+   return $val;
+}
+
+sub make_checksum {
+   my ( $val ) = @_;
+   my $checksum = uc substr(md5_hex($val), -16);
+   MKDEBUG && _d($checksum, 'checksum for', $val);
+   return $checksum;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Transformers package
+# ###########################################################################
+
+# ###########################################################################
+# EventAggregator package 3543
+# ###########################################################################
+package EventAggregator;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG      => $ENV{MKDEBUG};
+use constant BUCK_SIZE    => 1.05;
+use constant BASE_LOG     => log(BUCK_SIZE);
+use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
+use constant NUM_BUCK     => 1000;
+use constant MIN_BUCK     => .000001;
+
+our @buckets  = map { 0 } (0..NUM_BUCK-1);
+
+my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(groupby worst attributes) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   return bless {
+      groupby      => $args{groupby},
+      attributes   => {
+         map  { $_ => $args{attributes}->{$_} }
+         grep { $_ ne $args{groupby} }
+         keys %{$args{attributes}}
+      },
+      worst        => $args{worst},
+      unroll_limit => $args{unroll_limit} || 50,
+      attrib_limit => $args{attrib_limit},
+      result_classes => {},
+      result_globals => {},
+      result_samples => {},
+   }, $class;
+}
+
+sub reset_aggregated_data {
+   my ( $self ) = @_;
+   foreach my $class ( values %{$self->{result_classes}} ) {
+      foreach my $attrib ( values %$class ) {
+         delete @{$attrib}{keys %$attrib};
+      }
+   }
+   foreach my $class ( values %{$self->{result_globals}} ) {
+      delete @{$class}{keys %$class};
+   }
+   delete @{$self->{result_samples}}{keys %{$self->{result_samples}}};
+}
+
+sub aggregate {
+   my ( $self, $event ) = @_;
+
+   my $group_by = $event->{$self->{groupby}};
+   return unless defined $group_by;
+
+   if ( exists $self->{unrolled_loops} ) {
+      return $self->{unrolled_loops}->($self, $event, $group_by);
+   }
+
+   my @attrs = sort keys %{$self->{attributes}};
+   ATTRIB:
+   foreach my $attrib ( @attrs ) {
+      GROUPBY:
+      foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
+         my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
+         my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+         my $samples       = $self->{result_samples};
+         my $handler = $self->{handlers}->{ $attrib };
+         if ( !$handler ) {
+            $handler = $self->make_handler(
+               $attrib,
+               $event,
+               wor => $self->{worst} eq $attrib,
+               alt => $self->{attributes}->{$attrib},
+            );
+            $self->{handlers}->{$attrib} = $handler;
+         }
+         next GROUPBY unless $handler;
+         $samples->{$val} ||= $event; # Initialize to the first event.
+         $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
+      }
+   }
+
+   if ( $self->{n_queries}++ > 50 # Give up waiting after 50 events.
+      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs
+   ) {
+      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
+      my $globs = $self->{result_globals}; # Global stats for each
+      my $samples = $self->{result_samples};
+
+      my @lines = (
+         'my ( $self, $event, $group_by ) = @_;',
+         'my ($val, $class, $global, $idx);',
+         (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
+         'my $temp = $self->{result_classes}->{ $group_by }
+            ||= { map { $_ => { } } @attrs };',
+         '$samples->{$group_by} ||= $event;', # Always start with the first.
+      );
+      foreach my $i ( 0 .. $#attrs ) {
+         push @lines, (
+            '$class  = $temp->{"'  . $attrs[$i] . '"};',
+            '$global = $globs->{"' . $attrs[$i] . '"};',
+            $self->{unrolled_for}->{$attrs[$i]},
+         );
+      }
+      if ( ref $group_by ) {
+         push @lines, '}'; # Close the loop opened above
+      }
+      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+      unshift @lines, 'sub {';
+      push @lines, '}';
+
+      my $code = join("\n", @lines);
+      MKDEBUG && _d('Unrolled subroutine:', @lines);
+      my $sub = eval $code;
+      die if $EVAL_ERROR;
+      $self->{unrolled_loops} = $sub;
+   }
+}
+
+sub results {
+   my ( $self ) = @_;
+   return {
+      classes => $self->{result_classes},
+      globals => $self->{result_globals},
+      samples => $self->{result_samples},
+   };
+}
+
+sub attributes {
+   my ( $self ) = @_;
+   return $self->{type_for};
+}
+
+sub type_for {
+   my ( $self, $attrib ) = @_;
+   return $self->{type_for}->{$attrib};
+}
+
+sub make_handler {
+   my ( $self, $attrib, $event, %args ) = @_;
+   die "I need an attrib" unless defined $attrib;
+   my ($val) = grep { defined $_ } map { $event->{$_} } @{ $args{alt} };
+   my $is_array = 0;
+   if (ref $val eq 'ARRAY') {
+      $is_array = 1;
+      $val      = $val->[0];
+   }
+   return unless defined $val; # Can't decide type if it's undef.
+
+   my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
+   my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
+            : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
+            :                                    'string';
+   MKDEBUG && _d('Type for', $attrib, 'is', $type,
+      '(sample:', $val, '), is array:', $is_array);
+   $self->{type_for}->{$attrib} = $type;
+
+   %args = ( # Set up defaults
+      min => 1,
+      max => 1,
+      sum => $type =~ m/num|bool/    ? 1 : 0,
+      cnt => 1,
+      unq => $type =~ m/bool|string/ ? 1 : 0,
+      all => $type eq 'num'          ? 1 : 0,
+      glo => 1,
+      trf => ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0} : undef,
+      wor => 0,
+      alt => [],
+      %args,
+   );
+
+   my @lines = ("# type: $type"); # Lines of code for the subroutine
+   if ( $args{trf} ) {
+      push @lines, q{$val = } . $args{trf} . ';';
+   }
+
+   foreach my $place ( qw($class $global) ) {
+      my @tmp;
+      if ( $args{min} ) {
+         my $op   = $type eq 'num' ? '<' : 'lt';
+         push @tmp, (
+            'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+               . $op . ' PLACE->{min};',
+         );
+      }
+      if ( $args{max} ) {
+         my $op = ($type eq 'num') ? '>' : 'gt';
+         push @tmp, (
+            'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+               . $op . ' PLACE->{max};',
+         );
+      }
+      if ( $args{sum} ) {
+         push @tmp, 'PLACE->{sum} += $val;';
+      }
+      if ( $args{cnt} ) {
+         push @tmp, '++PLACE->{cnt};';
+      }
+      if ( $args{all} ) {
+         push @tmp, (
+            'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
+            '++PLACE->{all}->[ EventAggregator::bucket_idx($val) ];',
+         );
+      }
+      push @lines, map { s/PLACE/$place/g; $_ } @tmp;
+   }
+
+   if ( $args{unq} ) {
+      push @lines, '++$class->{unq}->{$val};';
+   }
+   if ( $args{wor} ) {
+      my $op = $type eq 'num' ? '>=' : 'ge';
+      push @lines, (
+         'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
+         '   $samples->{$group_by} = $event;',
+         '}',
+      );
+   }
+
+   my @limit;
+   if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
+      push @limit, (
+         "if ( \$val > $self->{attrib_limit} ) {",
+         '   $val = $class->{last} ||= 0;',
+         '}',
+         '$class->{last} = $val;',
+      );
+   }
+
+   my @unrolled = (
+      "\$val = \$event->{'$attrib'};",
+      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
+      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
+         grep { $_ ne $attrib } @{$args{alt}}),
+      'defined $val && do {',
+      ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
+      '};',
+      ($is_array ? ('}') : ()),
+   );
+   $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
+
+   unshift @lines, (
+      'sub {',
+      'my ( $event, $class, $global, $samples, $group_by ) = @_;',
+      'my ($val, $idx);', # NOTE: define all variables here
+      "\$val = \$event->{'$attrib'};",
+      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
+         grep { $_ ne $attrib } @{$args{alt}}),
+      'return unless defined $val;',
+      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
+      @limit,
+      ($is_array ? ('}') : ()),
+   );
+   push @lines, '}';
+   my $code = join("\n", @lines);
+   $self->{code_for}->{$attrib} = $code;
+
+   MKDEBUG && _d('Metric handler for', $attrib, ':', @lines);
+   my $sub = eval join("\n", @lines);
+   die if $EVAL_ERROR;
+   return $sub;
+}
+
+sub bucket_idx {
+   my ( $val ) = @_;
+   return 0 if $val < MIN_BUCK;
+   my $idx = int(BASE_OFFSET + log($val)/BASE_LOG);
+   return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
+}
+
+sub bucket_value {
+   my ( $bucket ) = @_;
+   return 0 if $bucket == 0;
+   die "Invalid bucket: $bucket" if $bucket < 0 || $bucket > (NUM_BUCK-1);
+   return (BUCK_SIZE**($bucket-1)) * MIN_BUCK;
+}
+
+{
+   my @buck_tens;
+   sub buckets_of {
+      return @buck_tens if @buck_tens;
+
+      my $start_bucket  = 0;
+      my @base10_starts = (0);
+      map { push @base10_starts, (10**$_)*MIN_BUCK } (1..7);
+
+      for my $base10_bucket ( 0..($#base10_starts-1) ) {
+         my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
+         MKDEBUG && _d('Base 10 bucket $base10_bucket maps to',
+            'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
+         for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
+            $buck_tens[$base1_05_bucket] = $base10_bucket;
+         }
+         $start_bucket = $next_bucket;
+      }
+
+      map { $buck_tens[$_] = 7 } ($start_bucket..(NUM_BUCK-1));
+
+      return @buck_tens;
+   }
+}
+
+sub calculate_statistical_metrics {
+   my ( $self, $vals, $args ) = @_;
+   my $statistical_metrics = {
+      pct_95    => 0,
+      stddev    => 0,
+      median    => 0,
+      cutoff    => undef,
+   };
+
+   return $statistical_metrics
+      unless defined $vals && @$vals && $args->{cnt};
+
+   my $n_vals = $args->{cnt};
+   if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
+      my $v      = $args->{max} || 0;
+      my $bucket = int(6 + ( log($v > 0 ? $v : MIN_BUCK) / log(10)));
+      $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+      return {
+         pct_95 => $v,
+         stddev => 0,
+         median => $v,
+         cutoff => $n_vals,
+      };
+   }
+   elsif ( $n_vals == 2 ) {
+      foreach my $v ( $args->{min}, $args->{max} ) {
+         my $bucket = int(6 + ( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)));
+         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+      }
+      my $v      = $args->{max} || 0;
+      my $mean = (($args->{min} || 0) + $v) / 2;
+      return {
+         pct_95 => $v,
+         stddev => sqrt((($v - $mean) ** 2) *2),
+         median => $mean,
+         cutoff => $n_vals,
+      };
+   }
+
+   my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
+   $statistical_metrics->{cutoff} = $cutoff;
+
+   my $total_left = $n_vals;
+   my $top_vals   = $n_vals - $cutoff; # vals > 95th
+   my $sum_excl   = 0;
+   my $sum        = 0;
+   my $sumsq      = 0;
+   my $mid        = int($n_vals / 2);
+   my $median     = 0;
+   my $prev       = NUM_BUCK-1; # Used for getting median when $cutoff is odd
+   my $bucket_95  = 0; # top bucket in 95th
+
+   MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals, 'mid:', $mid);
+
+   BUCKET:
+   for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
+      my $val = $vals->[$bucket];
+      next BUCKET unless $val; 
+
+      $total_left -= $val;
+      $sum_excl   += $val;
+      $bucket_95   = $bucket if !$bucket_95 && $sum_excl > $top_vals;
+
+      if ( !$median && $total_left <= $mid ) {
+         $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
+                 : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
+      }
+
+      $sum    += $val * $buck_vals[$bucket];
+      $sumsq  += $val * ($buck_vals[$bucket]**2);
+      $prev   =  $bucket;
+   }
+
+   my $var      = $sumsq/$n_vals - ( ($sum/$n_vals) ** 2 );
+   my $stddev   = $var > 0 ? sqrt($var) : 0;
+   my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
+   $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
+
+   MKDEBUG && _d('sum:', $sum, 'sumsq:', $sumsq, 'stddev:', $stddev,
+      'median:', $median, 'prev bucket:', $prev,
+      'total left:', $total_left, 'sum excl', $sum_excl,
+      'bucket 95:', $bucket_95, $buck_vals[$bucket_95]);
+
+   $statistical_metrics->{stddev} = $stddev;
+   $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
+   $statistical_metrics->{median} = $median;
+
+   return $statistical_metrics;
+}
+
+sub metrics {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(attrib where) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $stats = $self->results;
+   my $store = $stats->{classes}->{$args{where}}->{$args{attrib}};
+
+   my $global_cnt = $stats->{globals}->{$args{attrib}}->{cnt};
+   my $metrics    = $self->calculate_statistical_metrics($store->{all}, $store);
+
+   return {
+      cnt    => $store->{cnt},
+      pct    => $global_cnt && $store->{cnt} ? $store->{cnt} / $global_cnt : 0,
+      sum    => $store->{sum},
+      min    => $store->{min},
+      max    => $store->{max},
+      avg    => $store->{sum} && $store->{cnt} ? $store->{sum} / $store->{cnt} : 0,
+      median => $metrics->{median},
+      pct_95 => $metrics->{pct_95},
+      stddev => $metrics->{stddev},
+   };
+}
+
+sub top_events {
+   my ( $self, %args ) = @_;
+   my $classes = $self->{result_classes};
+   my @sorted = reverse sort { # Sorted list of $groupby values
+      $classes->{$a}->{$args{attrib}}->{$args{orderby}}
+         <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
+      } grep {
+         defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
+      } keys %$classes;
+   my @chosen;
+   my ($total, $count) = (0, 0);
+   foreach my $groupby ( @sorted ) {
+      if ( 
+         (!$args{total} || $total < $args{total} )
+         && ( !$args{count} || $count < $args{count} )
+      ) {
+         push @chosen, [$groupby, 'top'];
+      }
+
+      elsif ( $args{ol_attrib} && (!$args{ol_freq}
+         || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
+      ) {
+         MKDEBUG && _d('Calculating statistical_metrics');
+         my $stats = $self->calculate_statistical_metrics(
+            $classes->{$groupby}->{$args{ol_attrib}}->{all},
+            $classes->{$groupby}->{$args{ol_attrib}}
+         );
+         if ( $stats->{pct_95} >= $args{ol_limit} ) {
+            push @chosen, [$groupby, 'outlier'];
+         }
+      }
+
+      $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
+      $count++;
+   }
+   return @chosen;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End EventAggregator package
+# ###########################################################################
+
+# ###########################################################################
+# And now for the "program".
+# ###########################################################################
+package main;
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+Transformers->import( qw(micro_t shorten) );
+
+# #############################################################################
+# Get configuration information.
+# #############################################################################
+my $o = new OptionParser(
+   strict       => 0,
+   prompt       => '[OPTION]... FILE...',
+   description  => q{totals and summarizes per-session values }
+                 . q{reported by mk-log-player.},
+);
+$o->get_specs();
+$o->get_opts();
+
+$o->usage_or_errors();
+
+# #############################################################################
+# Read the given result files or STDIN.
+# #############################################################################
+
+my $ea = new EventAggregator(
+   groupby    => 'session number',
+   attributes => {
+      'total time'         => ['total time'],
+      'min query time'     => ['min query time'],
+      'max query time'     => ['max query time'],
+      'avg query time'     => ['avg query time'],
+      'number of queries'  => ['number of queries'],
+      'queries per second' => ['queries per second'],
+      'number of rows'     => ['number of rows'],
+      'rows per second',   => ['rows per second'],
+   },
+   worst => 'total time',
+);
+
+my @result_files = @ARGV ? @ARGV : qw(-);
+foreach my $result_file ( @result_files ) {
+   MKDEBUG && _d("Reading result file", $result_file);
+   my $fh;
+   if ( $result_file eq '-' ) {
+      $fh = *STDIN;
+   }
+   else {
+      open $fh, '<', $result_file
+         or warn "Cannot open $result_file: $OS_ERROR\n";
+   }
+   parse_result_file($fh, $ea) if $fh;
+}
+
+print_results( $ea->results() );
+
+exit;
+
+# #############################################################################
+# Subroutines.
+# #############################################################################
+
+sub parse_result_file {
+   my ( $fh, $ea ) = @_;
+   # In a result file, each paragraph corresponds to one session. Each session
+   # paragraph is has two parts. The first is total session values. The second
+   # is per-query values. We only want the first part which is two lines
+   # (header, values).  Therefore we take only the second line of each
+   # paragraph. For example:
+   #    session number, total time, ...
+   #    1, 10.3, ...                         <-- we want this line
+   #    query count, total time, ...
+   #    2, 0.234568, ...
+   #
+   #    session number, total time, ...
+   #    2, 2.2, ...                          <-- and this line
+   #    query count, total time, ...
+   #    1, 1.203845, ...
+
+   my @attribs;  # result headers
+   my @vals;     # result values
+   my $s;        # tab or comma separated results (auto-determined)
+
+   local $INPUT_RECORD_SEPARATOR = '';
+
+   while ( my $results = <$fh> ) {
+      my @result_lines = split(qr/\n/, $results);
+
+      # Determine if the results are tab or comma separated.
+      if ( !$s ) {
+         ($s) = $result_lines[0] =~ m/\w([\t,])\w/;
+         MKDEBUG && _d('Result values are '
+            . ($s eq ',' ? 'comma' : 'tab')
+            . ' separated');
+      }
+
+      # The result headers should not change from session to session,
+      # so we only compile them once.
+      if ( !@attribs ) {
+         @attribs = split(qr/$s/o, $result_lines[0]);
+         MKDEBUG && _d("Result headers:", @attribs);
+      }
+
+      @vals = split(qr/$s/o, $result_lines[1]);
+      my %event;
+      @event{@attribs} = @vals;
+      $ea->aggregate(\%event);
+   }
+
+   return;
+}
+
+sub print_results {
+   my ( $results ) = @_;
+   my $global = $results->{globals};
+
+   my $s = $o->get('csv') ? ',' : "\t";
+
+   my $n_sessions = scalar keys %{$results->{classes}};
+   print "$n_sessions sessions total\n\n";
+
+   foreach my $val ( keys %$global ) {
+      print "$val:\n"
+         . "min: $global->{$val}->{min}\n"
+         . "max: $global->{$val}->{max}\n"
+         . "sum: $global->{$val}->{sum}\n\n";
+   }
+
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+# ############################################################################
+# Documentation.
+# ############################################################################
+
+=pod
+
+=head1 NAME
+
+mk-sum-sessions - Total and summarize mk-log-player per-session data.
+
+=head1 SYNOPSIS
+
+   mk-log-player --play session h=host1 > results
+   mk-sum-sessions results
+
+   mk-log-player --play session h=host1 | mk-sum-sessions
+
+=head1 DESCRIPTION
+
+=head1 DOWNLOADING
+
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
+
+=head1 OPTIONS
+
+=over
+
+=item --csv
+
+Comma-separate output of performance metrics.
+
+=item --help
+
+Show help and exit.
+
+=item --version
+
+Show version and exit.
+
+=back
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 ENVIRONMENT
+
+The environment variable C<MKDEBUG> enables verbose debugging output in all of
+the Maatkit tools:
+
+   MKDEBUG=1 mk-....
+
+=head1 BUGS
+
+Please use Google Code Issues and Groups to report bugs or request support:
+L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
+discuss Maatkit.
+
+Please include the complete command-line used to reproduce the problem you are
+seeing, the version of all MySQL servers involved, the complete output of the
+tool when run with L<"--version">, and if possible, debugging output produced by
+running with the C<MKDEBUG=1> environment variable.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Daniel Nichter
+
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
+
+=cut
