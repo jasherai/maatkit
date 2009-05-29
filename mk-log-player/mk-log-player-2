@@ -3005,8 +3005,7 @@ sub report_session_stats {
 
    # Stats for all queries (global).
    my $s = $o->get('csv') ? ',' : "\t";
-   print "proc"
-      .  "$s"."session number"
+   print "proc-session number"
       .  "$s"."total time"
       .  "$s"."min query time"
       .  "$s"."max query time"
@@ -3017,8 +3016,7 @@ sub report_session_stats {
       .  "$s"."rows per second"
       .  "\n";
 
-   print $childno
-      .  "$s$session_n"
+   print "$childno-$session_n"
       .  "$s$global->{query_time}->{sum}"
       .  "$s$global->{query_time}->{min}"
       .  "$s$global->{query_time}->{max}"

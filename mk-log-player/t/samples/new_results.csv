@@ -1,0 +1,23 @@
+proc-session number	total time	min query time	max query time	avg query time	number of queries	queries per second	number of rows	rows per second
+1-1	0.000150918960571289	0.000150918960571289	0.000150918960571289	0.000151	1	0.000151	0	0.000151
+query count	total time	min time	max time	avg time	total rows	min rows	max rows	sample
+1	0.000150918960571289	0.000150918960571289	0.000150918960571289	0.000151	0	0	0	INSERT INTO mk_log_player_1.tbl1 VALUES (555)
+
+proc-session number	total time	min query time	max query time	avg query time	number of queries	queries per second	number of rows	rows per second
+1-2	0.00103521347045898	0.000168085098266602	0.0005950927734375	0.000345	3	0.000345	30	0.000035
+query count	total time	min time	max time	avg time	total rows	min rows	max rows	sample
+1	0.000272035598754883	0.000272035598754883	0.000272035598754883	0.000272	12	12	12	SELECT a FROM mk_log_player_2.tbl2
+1	0.0005950927734375	0.0005950927734375	0.0005950927734375	0.000595	18	18	18	SELECT a FROM tbl1
+1	0.000168085098266602	0.000168085098266602	0.000168085098266602	0.000168	0	0	0	UPDATE mk_log_player_1.tbl1 SET a = 100 WHERE a = 1
+
+proc-session number	total time	min query time	max query time	avg query time	number of queries	queries per second	number of rows	rows per second
+2-1	0.000568866729736328	0.000568866729736328	0.000568866729736328	0.000569	1	0.000569	1	0.000569
+query count	total time	min time	max time	avg time	total rows	min rows	max rows	sample
+1	0.000568866729736328	0.000568866729736328	0.000568866729736328	0.000569	1	1	1	SELECT a FROM tbl1 WHERE a = 3
+
+proc-session number	total time	min query time	max query time	avg query time	number of queries	queries per second	number of rows	rows per second
+2-2	0.000810146331787109	0.000318050384521484	0.000492095947265625	0.000405	2	0.000405	12	0.000068
+query count	total time	min time	max time	avg time	total rows	min rows	max rows	sample
+1	0.000492095947265625	0.000492095947265625	0.000492095947265625	0.000492	0	0	0	DELETE FROM mk_log_player_2.tbl2 WHERE a IS NULL
+1	0.000318050384521484	0.000318050384521484	0.000318050384521484	0.000318	12	12	12	SELECT a FROM tbl2
+

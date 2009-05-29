@@ -91,7 +91,7 @@ SKIP: {
    # Issue 356: mk-log-player doesn't calculate queries per second correctly
    # #########################################################################
    $output = `../mk-log-player-2 --play samples/one_big_msf.txt --csv --host 127.1 --port 12345 --concurrency 1 > $tmpdir/res`;
-   my $res = `head -n 2 $tmpdir/res | tail -n 1 | cut -d',' -f 3,7,8`;
+   my $res = `head -n 2 $tmpdir/res | tail -n 1 | cut -d',' -f 2,6,7`;
    my ($total_time, $n_queries, $qps) = split(',', $res);
    is(
       sprintf('%.6f', $qps),

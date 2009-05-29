@@ -1532,7 +1532,7 @@ $o->usage_or_errors();
 # #############################################################################
 
 my $ea = new EventAggregator(
-   groupby    => 'session number',
+   groupby    => 'proc-session number',
    attributes => {
       'total time'         => ['total time'],
       'min query time'     => ['min query time'],
@@ -1575,13 +1575,13 @@ sub parse_result_file {
    # is per-query values. We only want the first part which is two lines
    # (header, values).  Therefore we take only the second line of each
    # paragraph. For example:
-   #    session number, total time, ...
-   #    1, 10.3, ...                         <-- we want this line
+   #    proc, session number, total time, ...
+   #    1, 1, 10.3, ...                         <-- we want this line
    #    query count, total time, ...
    #    2, 0.234568, ...
    #
-   #    session number, total time, ...
-   #    2, 2.2, ...                          <-- and this line
+   #    proc, session number, total time, ...
+   #    1, 2, 2.2, ...                          <-- and this line
    #    query count, total time, ...
    #    1, 1.203845, ...
 
@@ -1592,6 +1592,7 @@ sub parse_result_file {
    local $INPUT_RECORD_SEPARATOR = '';
 
    while ( my $results = <$fh> ) {
+      MKDEBUG && _d('Read session:', $results);
       my @result_lines = split(qr/\n/, $results);
 
       # Determine if the results are tab or comma separated.
