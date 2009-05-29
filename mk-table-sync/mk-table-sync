@@ -6040,9 +6040,11 @@ mk-table-sync - Synchronize MySQL tables efficiently.
 
 =head1 SYNOPSIS
 
-It is a good idea to back up your data and run C<mk-table-sync> with
-L<"--dry-run"> first to see what will happen.  If you want to see which rows
-are different without changing the tables, use L<"--print"> instead of
+B<WARNING>: back up your data before you use this tool.
+
+It is a good idea to B<back up your data> and run C<mk-table-sync> with
+L<"--dry-run"> to see what will happen.  If you want to see which rows
+are different, without changing any data, use L<"--print"> instead of
 L<"--execute">.
 
 To sync db.tbl1 from host1 to host2:
@@ -6057,12 +6059,11 @@ Resolve differences L<mk-table-checksum> found on this master's slaves:
 
    mk-table-sync --execute --replicate test.checksum master1
 
-Sync this slave to its replication master:
+Make slave1 have the same data as its replication master:
 
    mk-table-sync --execute --sync-to-master slave1
 
-Sync this slave to its replication master, resolving differences
-L<mk-table-checksum> found:
+Ditto, resolving differences L<mk-table-checksum> found:
 
    mk-table-sync --execute --sync-to-master --replicate test.checksum slave1
 
