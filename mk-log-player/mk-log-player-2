@@ -2621,10 +2621,6 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 my $o;
 my $dp;
 
-# These vars are mostly used by get_next_session_itr().
-# TODO: modularize this; something like SessionItr.pm.
-my @session_files;
-
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
@@ -2695,6 +2691,7 @@ sub main {
    # Make list of session files to play. If playing a whole, the log is
    # treated as one big session file.
    # ######################################################################### 
+   my @session_files;
    foreach my $session_file ( split ',', $o->get('play') ) {
       # The session "file" might actually be a dir, in which case we
       # read ALL files in that dir.
@@ -2864,110 +2861,122 @@ sub play_session {
    my $dbh = get_cxn($dsn) unless $o->get('print');
    my @queries;
 
-   SESSION_FILE:
-   foreach my $session_file ( @$session_files ) {
-      my $fh;
-      if ( !open $fh, '<', $session_file ) {
-         warn "Cannot open session file $session_file";
-         next SESSION_FILE;
-      }
+   # Frequently used opts.
+   my $only_select   = $o->get('onlyselect');
+   my $delay_queries = $o->get('delayqueries');
+   my $print         = $o->get('print');
+   my $report        = $o->get('report');
 
-      my $first_line = <$fh>;
-      if ( $first_line !~ m/-- MULTIPLE SESSIONS/ ) {
-         warn "$session_file is not a multi-session file";
-         next SESSION_FILE;
-      }
+   ITERATION:
+   for my $iteration_n ( 1..$o->get('iterations') ) {
+      MKDEBUG && _d('Proc', $childno, 'starting iteration', $iteration_n);
 
-      {
-      my $session_n = 0;
-      local $INPUT_RECORD_SEPARATOR = "\n-- END SESSION\n\n";
-      while ( my $session = <$fh> ) {
-         MKDEBUG && _d('Read a session in', $session_file);
-         $session_n++;
-         chomp $session;
-         @queries       = split("\n\n", $session);
-         my $query_n    = 0;
-         my $ea         = new EventAggregator(
-            groupby      => 'arg',
-            attributes   => {
-               query_time => [qw(query_time)],
-               n_rows     => [qw(n_rows)],
-            },
-            worst=>       => 'query_time',
-         );
-
-         # Frequently used opts.
-         my $only_select   = $o->get('onlyselect');
-         my $delay_queries = $o->get('delayqueries');
-         my $print         = $o->get('print');
-
-         my $total_time = time;
-         QUERY:
-         foreach my $query ( @queries ) {
-            if ( $only_select && $query !~ m/^(?:SELECT|USE) /i ) {
-               MKDEBUG && _d('Skipping query for --onlyselect:', $query);
-               next QUERY;
-            }
-
-            $query_n++;
-            $query =~ s/\n+$//;
-
-            if ( $print ) {
-               print "/* proc $childno session $session_n query $query_n */ $query\n";
-               next QUERY;
-            }
-
-            # USE statements are not timed.
-            if ( $query =~ /^USE /i ) {
-               eval { $dbh->do($query); };
-               if ( $EVAL_ERROR ) {
-                  warn_error($childno, $session_n, $query_n, $query, $dbh->errstr());
-               }
-               next QUERY;
-            }
-
-            usleep( get_delay($delay_queries) );
-
-            my $n_rows           = 0;
-            my $query_start_time = time;
-
-            if ( $query =~ m/^SELECT /i ) {
-               # Count number of rows returned by SELECTs.
-               my $results;
-               eval { $results = $dbh->selectall_arrayref($query); };
-               if ( $EVAL_ERROR ) {
-                  warn_error($childno, $session_n, $query_n, $query, $dbh->errstr());
-                  next QUERY;
-               }
-               $n_rows = scalar @$results;
-            }
-            else {
-               # Non-SELECTs do not return anything, therefore we can
-               # just do() them.
-               eval { $dbh->do($query); };
-               if ( $EVAL_ERROR ) {
-                  warn_error($childno, $session_n, $query_n, $query, $dbh->errstr());
-                  next QUERY;
-               }
-            }
-
-            my $event = {
-               arg        => $query,
-               query_time => time - $query_start_time,
-               n_rows     => $n_rows,
-            };
-            $ea->aggregate($event);
+      SESSION_FILE:
+      foreach my $session_file ( @$session_files ) {
+         my $fh;
+         if ( !open $fh, '<', $session_file ) {
+            warn "Cannot open session file $session_file";
+            next SESSION_FILE;
          }
 
-         if ( !$print ) {
-            $total_time = time - $total_time;
-            my $results = $ea->results();
-            report_session_stats($childno, $session_n, $total_time, $results);
-        } 
+         my $first_line = <$fh>;
+         if ( $first_line !~ m/-- MULTIPLE SESSIONS/ ) {
+            warn "$session_file is not a multi-session file";
+            next SESSION_FILE;
+         }
+
+         {  # To localize $INPUT_RECORD_SEPARATOR
+         my $session_n = 0;
+         local $INPUT_RECORD_SEPARATOR = "\n-- END SESSION\n\n";
+         while ( my $session = <$fh> ) {
+            MKDEBUG && _d('Read a session in', $session_file);
+            $session_n++;
+            chomp $session;
+            @queries     = split("\n\n", $session);
+            my $query_n = 0;
+
+            my $ea;
+            if ( !$print && $report ) {
+               $ea = new EventAggregator(
+                  groupby      => 'arg',
+                  attributes   => {
+                     query_time => [qw(query_time)],
+                     n_rows     => [qw(n_rows)],
+                  },
+                  worst=>       => 'query_time',
+               );
+            }
+
+            my $total_time = time;
+            QUERY:
+            foreach my $query ( @queries ) {
+               if ( $only_select && $query !~ m/^(?:SELECT|USE) /i ) {
+                  MKDEBUG && _d('Skipping query for --onlyselect:', $query);
+                  next QUERY;
+               }
+
+               $query_n++;
+               $query =~ s/\n+$//;
+
+               if ( $print ) {
+                  print "/* proc $childno session $session_n query $query_n */ $query\n";
+                  next QUERY;
+               }
+
+               # USE statements are not timed.
+               if ( $query =~ /^USE /i ) {
+                  eval { $dbh->do($query); };
+                  if ( $EVAL_ERROR ) {
+                     warn_error($childno, $session_n, $query_n, $query, $dbh->errstr());
+                  }
+                  next QUERY;
+               }
+
+               usleep( get_delay($delay_queries) );
+
+               my $n_rows           = 0;
+               my $query_start_time = time;
+
+               if ( $query =~ m/^SELECT /i ) {
+                  # Count number of rows returned by SELECTs.
+                  my $results;
+                  eval { $results = $dbh->selectall_arrayref($query); };
+                  if ( $EVAL_ERROR ) {
+                     warn_error($childno, $session_n, $query_n, $query, $dbh->errstr());
+                     next QUERY;
+                  }
+                  $n_rows = scalar @$results;
+               }
+               else {
+                  # Non-SELECTs do not return anything, therefore we can
+                  # just do() them.
+                  eval { $dbh->do($query); };
+                  if ( $EVAL_ERROR ) {
+                     warn_error($childno, $session_n, $query_n, $query, $dbh->errstr());
+                     next QUERY;
+                  }
+               }
+
+               if ( !$print && $report ) {
+                  my $event = {
+                     arg        => $query,
+                     query_time => time - $query_start_time,
+                     n_rows     => $n_rows,
+                  };
+                  $ea->aggregate($event);
+               }
+            }
+
+            if ( !$print && $report ) {
+               $total_time = time - $total_time;
+               my $results = $ea->results();
+               report_session_stats($childno, $session_n, $total_time, $results);
+           } 
+         }
+         }
+         MKDEBUG && _d('No more sessions in', $session_file);
+         close $fh;
       }
-      }
-      MKDEBUG && _d('No more sessions in', $session_file);
-      close $fh;
    }
 
    $dbh->disconnect() if $dbh;
@@ -3216,6 +3225,12 @@ short form: -h; type: string
 
 Connect to host.
 
+=item --iterations
+
+type: int; default: 1
+
+How many times each process should play its session files.
+
 =item --maxdirs
 
 type: int; default: 100
@@ -3306,6 +3321,14 @@ ALL files in that directory will be played.
 =item --print
 
 Print queries instead of playing them.
+
+=item --[no]report
+
+default: yes
+
+Report per-process, per-session performance metrics.
+
+See also L<"--csv">.
 
 =item --saveto
 
