@@ -1,0 +1,13 @@
+-- MULTIPLE SESSIONS
+USE `board`
+
+SET f2 s1 q2
+
+INSERT f2 s1 q3
+
+-- END SESSION
+
+DELETE f2 s2 q1
+
+-- END SESSION
+

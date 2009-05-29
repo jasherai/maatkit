@@ -1,0 +1,10 @@
+/* proc 1 session 1 query 1 */ USE `board`
+/* proc 1 session 1 query 2 */ SET f2 s1 q2
+/* proc 1 session 1 query 3 */ INSERT f2 s1 q3
+/* proc 1 session 2 query 1 */ DELETE f2 s2 q1
+/* proc 2 session 1 query 1 */ USE `board`
+/* proc 2 session 1 query 2 */ SELECT f1 s1 q2
+/* proc 2 session 1 query 3 */ SELECT f1 s1 q3
+/* proc 2 session 2 query 1 */ USE `board`
+/* proc 2 session 2 query 2 */ SELECT f1 s2 q2
+/* proc 2 session 2 query 3 */ SELECT f1 s2 q3

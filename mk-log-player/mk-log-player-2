@@ -2624,9 +2624,6 @@ my $dp;
 # These vars are mostly used by get_next_session_itr().
 # TODO: modularize this; something like SessionItr.pm.
 my @session_files;
-my $session_file;
-my $session_fh;
-my $done_reading_session_file = 1;
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -2723,6 +2720,37 @@ sub main {
       return 0;
    }
 
+   my $n_session_files = scalar @session_files;
+   print STDERR "Found $n_session_files session files.\n"
+      if $o->get('verbose');
+
+   if ( $o->get('concurrency') > $n_session_files ) {
+      warn "--concurrency is greater than the number of session files.  "
+         . "Only $n_session_files concurrent process will be ran";
+      $o->set('concurrency', $n_session_files);
+   }
+   my $concurrency = $o->get('concurrency');
+
+   my $files_per_child  = int( $n_session_files / $concurrency );
+   print STDERR "Each process will play $files_per_child multi-session files.\n"
+      if $o->get('verbose');
+
+   my @child_tasks;
+   my $n = 0;
+   for my $childno ( 0..($concurrency-1) ) {
+      my $i = 0;
+      while ( $i++ < $files_per_child
+              && (my $session_file = pop @session_files) ) {
+         push @{$child_tasks[$childno]}, $session_file;
+         $n++;
+         print STDERR "Process ", $childno+1, " assigned $session_file ($n)\n"
+            if $o->get('verbose');
+      }
+   }
+
+   # Shouldn't happen...
+   warn "There are unassigned session files" if @session_files > 0;
+
    # #########################################################################
    # Connect parent to MySQL.
    # #########################################################################
@@ -2754,42 +2782,44 @@ sub main {
    };
 
    my $qr = new QueryRewriter(); # shared by the children
-   my $session_n = 0;
-   my $session_itr;
 
+   wait_for_server($parent_dbh, $dsn) unless $o->get('print');
 
-   # Some opts that we use frequently.
-   my $concurrency    = $o->get('concurrency');
-   my $delay_sessions = $o->get('delaysessions');
+   # Fork the child processes.
+   print STDERR "Running processes...\n" if $o->get('verbose');
+   for my $childno ( 0..($concurrency-1) ) {
+      my $child_tasks = $child_tasks[$childno];
 
+      my $pid = fork();
+      die "Cannot fork process $childno: $OS_ERROR" unless defined $pid;
+      if ( $pid ) {              # I'm the parent.
+         $children{$pid} = $childno + 1;
+      }
+      else {                     # I'm the child.
+         $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
+         MKDEBUG && _d('Child PID', $PID, 'started');
+         play_session($dsn, ($childno + 1), $child_tasks);
+         MKDEBUG && _d('Child PID', $PID, 'finished');
+         return 0;
+      }
+
+      usleep( get_delay($o->get('delaysessions')) );
+   } 
+   print STDERR "All processes are running; now waiting for them to finish...\n"
+      if $o->get('verbose');
+
+   # Wait for and reap the child processes.
    do {
-      wait_for_server($parent_dbh, $dsn) unless $o->get('print');
-
-      while ( $concurrency > keys %children
-              && ($session_itr = get_next_session_itr()) ) {
-         usleep( get_delay($delay_sessions) );
-         $session_n++;
-         my $pid = fork();
-         die "Cannot fork: $OS_ERROR" unless defined $pid;
-         if ( $pid ) {              # I'm the parent.
-            $children{$pid} = $session_file;
-         }
-         else {                     # I'm the child.
-            $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
-            MKDEBUG && _d('Child PID', $PID, 'got', $session_file, $session_n);
-            play_session($dsn, $session_n, $session_itr);
-            MKDEBUG && _d('Child PID', $PID, 'done');
-            return 0;
-         }
-      } 
-
       # Possibly wait for child.
       my $reaped = 0;
       foreach my $pid ( keys %exited_children ) { 
+         $reaped = 1;
+         print "Process ", $children{$pid}, " finished with exit status ",
+            $exited_children{$pid}->{exit_status}, ".\n"
+            if $o->get('verbose');
+         MKDEBUG && _d('Reaped child PID', $pid);
          delete $children{$pid};
          delete $exited_children{$pid};
-         $reaped = 1;
-         MKDEBUG && _d('Reaped child PID', $pid);
       }
 
       if ( keys %children && !$reaped ) {
@@ -2801,7 +2831,7 @@ sub main {
       }
       MKDEBUG && _d(scalar keys %children, 'children are still working');
 
-   } while ( $session_itr || keys %children );
+   } while ( keys %children );
 
    return 0;
 }
@@ -2829,164 +2859,130 @@ sub wait_for_server {
    return;
 }
 
-sub get_next_session_itr {
-   if ( $done_reading_session_file ) {
-      MKDEBUG && _d("Done reading session file",
-         ($session_file || '(opening first session file)'));
-      close $session_fh if defined $session_fh;
-      $session_file = shift @session_files;
-      return unless defined $session_file;
-      MKDEBUG && _d('Opened session file', $session_file);
-
-      if ( $session_file eq '-' ) {
-         $session_fh = *STDIN;
-      }
-      else {
-         if ( !open $session_fh, '<', $session_file ) {
-            warn "Cannot open session file $session_file: $OS_ERROR";
-            $done_reading_session_file = 1;
-            return get_next_session_itr();
-         }
-      }
-
-      # TODO: don't hard-code the delimiters below. Make them constants
-      # or something in LogSplitter.
-      # TODO: will this even work if reading STDIN?
-      my $first_line = <$session_fh>;
-      if ( $first_line =~ m/-- MULTIPLE SESSIONS/ ) {
-         MKDEBUG && _d('Multiple sessions in this file');
-         $done_reading_session_file = 0;
-         return get_next_session_itr();
-      }
-      elsif ( $first_line =~ m/-- ONE SESSION/ ) {
-         MKDEBUG && _d('One session in this file');
-         $done_reading_session_file = 1;
-         return sub {
-            local $INPUT_RECORD_SEPARATOR = '';
-            my $query = <$session_fh>;
-            $query =~ s/\n+$// if $query;
-            return $query;
-         };
-      }
-      else {
-         warn "Malformed session file: $session_file\n"
-            . "First line is not -- MULTIPLE SESSION or -- ONE SESSION";
-         $done_reading_session_file = 1;
-         return get_next_session_itr();
-      }
-   }
-   else {
-      local $INPUT_RECORD_SEPARATOR = "\n-- END SESSION\n\n";
-      my $session = <$session_fh>;
-      if ( $session ) {
-         MKDEBUG && _d('Read a session in', $session_file);
-         $done_reading_session_file = 0;
-         chomp $session;
-         my @queries = split("\n\n", $session);
-         return sub { return shift @queries; };
-      }
-      else {
-         MKDEBUG && _d('No more sessions in', $session_file);
-         $done_reading_session_file = 1;
-         return get_next_session_itr();
-      }
-   }
-}
-
 sub play_session {
-   my ( $dsn, $session_n, $get_next_query ) = @_;
-   my $dbh        = get_cxn($dsn) unless $o->get('print');
-   my $query_n    = 0;
-   my $ea         = new EventAggregator(
-      groupby      => 'arg',
-      attributes   => {
-         query_time => [qw(query_time)],
-         n_rows     => [qw(n_rows)],
-      },
-      worst=>       => 'query_time',
-   );
+   my ( $dsn, $childno, $session_files ) = @_;
+   my $dbh = get_cxn($dsn) unless $o->get('print');
+   my @queries;
 
-   # Frequently used opts.
-   my $only_select   = $o->get('onlyselect');
-   my $delay_queries = $o->get('delayqueries');
-   my $print         = $o->get('print');
-
-   my $total_time = time;
-   QUERY:
-   while ( defined (my $query = $get_next_query->()) ) {
-
-      if ( $only_select && $query !~ m/^(?:SELECT|USE) /i ) {
-         MKDEBUG && _d('Skipping query for --onlyselect:', $query);
-         next QUERY;
+   SESSION_FILE:
+   foreach my $session_file ( @$session_files ) {
+      my $fh;
+      if ( !open $fh, '<', $session_file ) {
+         warn "Cannot open session file $session_file";
+         next SESSION_FILE;
       }
 
-      $query_n++;
-
-      if ( $print ) {
-         print "/* session $session_n query $query_n */ $query\n";
-         next QUERY;
+      my $first_line = <$fh>;
+      if ( $first_line !~ m/-- MULTIPLE SESSIONS/ ) {
+         warn "$session_file is not a multi-session file";
+         next SESSION_FILE;
       }
 
-      # USE statements are not timed.
-      if ( $query =~ /^USE /i ) {
-         eval { $dbh->do($query); };
-         if ( $EVAL_ERROR ) {
-            warn_error($session_n, $query_n, $query, $dbh->errstr());
+      {
+      my $session_n = 0;
+      local $INPUT_RECORD_SEPARATOR = "\n-- END SESSION\n\n";
+      while ( my $session = <$fh> ) {
+         MKDEBUG && _d('Read a session in', $session_file);
+         $session_n++;
+         chomp $session;
+         @queries       = split("\n\n", $session);
+         my $query_n    = 0;
+         my $ea         = new EventAggregator(
+            groupby      => 'arg',
+            attributes   => {
+               query_time => [qw(query_time)],
+               n_rows     => [qw(n_rows)],
+            },
+            worst=>       => 'query_time',
+         );
+
+         # Frequently used opts.
+         my $only_select   = $o->get('onlyselect');
+         my $delay_queries = $o->get('delayqueries');
+         my $print         = $o->get('print');
+
+         my $total_time = time;
+         QUERY:
+         foreach my $query ( @queries ) {
+            if ( $only_select && $query !~ m/^(?:SELECT|USE) /i ) {
+               MKDEBUG && _d('Skipping query for --onlyselect:', $query);
+               next QUERY;
+            }
+
+            $query_n++;
+            $query =~ s/\n+$//;
+
+            if ( $print ) {
+               print "/* proc $childno session $session_n query $query_n */ $query\n";
+               next QUERY;
+            }
+
+            # USE statements are not timed.
+            if ( $query =~ /^USE /i ) {
+               eval { $dbh->do($query); };
+               if ( $EVAL_ERROR ) {
+                  warn_error($childno, $session_n, $query_n, $query, $dbh->errstr());
+               }
+               next QUERY;
+            }
+
+            usleep( get_delay($delay_queries) );
+
+            my $n_rows           = 0;
+            my $query_start_time = time;
+
+            if ( $query =~ m/^SELECT /i ) {
+               # Count number of rows returned by SELECTs.
+               my $results;
+               eval { $results = $dbh->selectall_arrayref($query); };
+               if ( $EVAL_ERROR ) {
+                  warn_error($childno, $session_n, $query_n, $query, $dbh->errstr());
+                  next QUERY;
+               }
+               $n_rows = scalar @$results;
+            }
+            else {
+               # Non-SELECTs do not return anything, therefore we can
+               # just do() them.
+               eval { $dbh->do($query); };
+               if ( $EVAL_ERROR ) {
+                  warn_error($childno, $session_n, $query_n, $query, $dbh->errstr());
+                  next QUERY;
+               }
+            }
+
+            my $event = {
+               arg        => $query,
+               query_time => time - $query_start_time,
+               n_rows     => $n_rows,
+            };
+            $ea->aggregate($event);
          }
-         next QUERY;
+
+         if ( !$print ) {
+            $total_time = time - $total_time;
+            my $results = $ea->results();
+            report_session_stats($childno, $session_n, $total_time, $results);
+        } 
       }
-
-      usleep( get_delay($delay_queries) );
-
-      my $n_rows           = 0;
-      my $query_start_time = time;
-
-      if ( $query =~ m/^SELECT /i ) {
-         # Count number of rows returned by SELECTs.
-         my $results;
-         eval { $results = $dbh->selectall_arrayref($query); };
-         if ( $EVAL_ERROR ) {
-            warn_error($session_n, $query_n, $query, $dbh->errstr());
-            next QUERY;
-         }
-         $n_rows = scalar @$results;
       }
-      else {
-         # Non-SELECTs do not return anything, therefore we can
-         # just do() them.
-         eval { $dbh->do($query); };
-         if ( $EVAL_ERROR ) {
-            warn_error($session_n, $query_n, $query, $dbh->errstr());
-            next QUERY;
-         }
-      }
-
-      my $event = {
-         arg        => $query,
-         query_time => time - $query_start_time,
-         n_rows     => $n_rows,
-      };
-      $ea->aggregate($event);
+      MKDEBUG && _d('No more sessions in', $session_file);
+      close $fh;
    }
 
-   if ( !$print ) {
-      $total_time = time - $total_time;
-      $dbh->disconnect();
-      my $results = $ea->results();
-      report_session_stats($session_n, $total_time, $results);
-  } 
-
+   $dbh->disconnect() if $dbh;
    return;
 }
 
 sub report_session_stats {
-   my ( $session_n, $total_time, $results ) = @_;
+   my ( $childno, $session_n, $total_time, $results ) = @_;
    my $global = $results->{globals};
 
    if ( !$global->{query_time}->{cnt} ) {
       # This can happen if a session was all non-SELECTs and
       # --onlyselect was given.
-      MKDEBUG && _d("Session", $session_n, "has no valid queries");
+      MKDEBUG && _d('Proc', $childno, 'session', $session_n,
+         'has no valid queries');
       return;
    }
 
@@ -3000,7 +2996,8 @@ sub report_session_stats {
 
    # Stats for all queries (global).
    my $s = $o->get('csv') ? ',' : "\t";
-   print "session number"
+   print "proc"
+      .  "$s"."session number"
       .  "$s"."total time"
       .  "$s"."min query time"
       .  "$s"."max query time"
@@ -3011,7 +3008,8 @@ sub report_session_stats {
       .  "$s"."rows per second"
       .  "\n";
 
-   print "$session_n"
+   print $childno
+      .  "$s$session_n"
       .  "$s$global->{query_time}->{sum}"
       .  "$s$global->{query_time}->{min}"
       .  "$s$global->{query_time}->{max}"
@@ -3079,9 +3077,9 @@ sub get_cxn {
 }
 
 sub warn_error {
-   my ( $session_n, $query_n, $query, $warning ) = @_;
+   my ( $childno, $session_n, $query_n, $query, $warning ) = @_;
    return unless $o->get('warn-errors');
-   warn "Query $query_n '$query' in session $session_n caused an error: "
+   warn "Query $query_n '$query' in proc $childno session $session_n caused an error: "
       . "$warning\n";
    return;
 }
@@ -3163,7 +3161,7 @@ connecting to MySQL.
 
 =item --concurrency
 
-type: int; default: 1
+type: int; default: 2
 
 Number of concurrent sessions to play.
 
