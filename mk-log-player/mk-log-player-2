@@ -2651,6 +2651,10 @@ sub main {
       }
    }
 
+   if ( !-d $o->get('output-dir') ) {
+      $o->_save_error('Invalid --output-dir: ' . $o->get('output-dir') . ' is not a directory');
+   }
+
    $o->usage_or_errors();
 
    # #########################################################################
@@ -2867,6 +2871,14 @@ sub play_session {
    my $print         = $o->get('print');
    my $report        = $o->get('report');
 
+   my $output_dir  = $o->get('output-dir');
+   my $output_file = $output_dir . "output.$PID";
+   if ( -f $output_file ) {
+      warn "Output file $output_file for process $childno already exists; overwriting";
+   }
+   open my $output_fh, '>', $output_file
+      or die "Cannot open $output_file for writing: $OS_ERROR";
+
    ITERATION:
    for my $iteration_n ( 1..$o->get('iterations') ) {
       MKDEBUG && _d('Proc', $childno, 'starting iteration', $iteration_n);
@@ -2919,7 +2931,7 @@ sub play_session {
                $query =~ s/\n+$//;
 
                if ( $print ) {
-                  print "/* proc $childno session $session_n query $query_n */ $query\n";
+                  print $output_fh "/* proc $childno session $session_n query $query_n */ $query\n";
                   next QUERY;
                }
 
@@ -2970,7 +2982,7 @@ sub play_session {
             if ( !$print && $report ) {
                $total_time = time - $total_time;
                my $results = $ea->results();
-               report_session_stats($childno, $session_n, $total_time, $results);
+               report_session_stats($childno, $session_n, $total_time, $results, $output_fh);
            } 
          }
          }
@@ -2979,12 +2991,13 @@ sub play_session {
       }
    }
 
+   close $output_fh;
    $dbh->disconnect() if $dbh;
    return;
 }
 
 sub report_session_stats {
-   my ( $childno, $session_n, $total_time, $results ) = @_;
+   my ( $childno, $session_n, $total_time, $results, $fh ) = @_;
    my $global = $results->{globals};
 
    if ( !$global->{query_time}->{cnt} ) {
@@ -3005,7 +3018,7 @@ sub report_session_stats {
 
    # Stats for all queries (global).
    my $s = $o->get('csv') ? ',' : "\t";
-   print "proc-session number"
+   print $fh "proc-session number"
       .  "$s"."total time"
       .  "$s"."min query time"
       .  "$s"."max query time"
@@ -3016,7 +3029,7 @@ sub report_session_stats {
       .  "$s"."rows per second"
       .  "\n";
 
-   print "$childno-$session_n"
+   print $fh "$childno-$session_n"
       .  "$s$global->{query_time}->{sum}"
       .  "$s$global->{query_time}->{min}"
       .  "$s$global->{query_time}->{max}"
@@ -3028,7 +3041,7 @@ sub report_session_stats {
       .  "\n";
 
    # Per-query stats.
-   print "query count"
+   print $fh "query count"
       .  "$s"."total time"
       .  "$s"."min time"
       .  "$s"."max time"
@@ -3044,7 +3057,7 @@ sub report_session_stats {
          $query->{query_time}->{sum} / $query->{query_time}->{cnt});
       my $sample = $results->{samples}->{$class}->{arg};
 
-      print "$query->{query_time}->{cnt}"
+      print $fh "$query->{query_time}->{cnt}"
          .  "$s$query->{query_time}->{sum}"
          .  "$s$query->{query_time}->{min}"
          .  "$s$query->{query_time}->{max}"
@@ -3055,7 +3068,7 @@ sub report_session_stats {
          .  "$s$sample"
          .  "\n";
    }
-   print "\n";
+   print $fh "\n";
 
    return;
 }
@@ -3305,6 +3318,12 @@ Port number to use for connection.
 =item --onlyselect
 
 Play only SELECT queries.
+
+=item --output-dir
+
+type: string; default: ./
+
+Each process writes its output to this directory/output.PID.
 
 =item --play
 
