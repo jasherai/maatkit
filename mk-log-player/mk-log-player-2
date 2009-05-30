@@ -3010,7 +3010,7 @@ sub report_session_stats {
 
    # Global Queries and Rows per second, and avg query time.
    my $qps = sprintf '%.6f',
-      $global->{query_time}->{sum} / ($global->{query_time}->{cnt} || 1);
+      $global->{query_time}->{cnt} / ($global->{query_time}->{sum} || 1);
    my $avg = sprintf '%.6f',
       $global->{query_time}->{sum} / ($global->{query_time}->{cnt} || 1);
    my $rps = sprintf '%.6f',
