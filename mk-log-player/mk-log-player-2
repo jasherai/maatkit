@@ -2872,7 +2872,7 @@ sub play_session {
    my $report        = $o->get('report');
 
    my $output_dir  = $o->get('output-dir');
-   my $output_file = $output_dir . "output.$PID";
+   my $output_file = $output_dir . "/output.$PID";
    if ( -f $output_file ) {
       warn "Output file $output_file for process $childno already exists; overwriting";
    }
