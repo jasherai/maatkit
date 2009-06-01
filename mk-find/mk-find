@@ -278,8 +278,8 @@ sub get_dbh {
                }
             }
 
-            if ( $self->prop('setvars') ) {
-               $sql = "SET " . $self->prop('setvars');
+            if ( $self->prop('set-vars') ) {
+               $sql = "SET " . $self->prop('set-vars');
                MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
@@ -1295,12 +1295,12 @@ $o->get_opts();
 # Make sure OptionParser understands that these options are used.
 # cmin ctime empty kmin ktime mmin mtime exec printf 
 
-if ( $o->get('pid') && $o->get('pid') !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
-   $o->_save_error("--pid regex doesn't capture digits with (\\d+)");
+if ( $o->get('connection-id') && $o->get('connection-id') !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
+   $o->_save_error("--connection-id regex doesn't capture digits with (\\d+)");
 }
 
-if ( $o->get('sid') && $o->get('sid') !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
-   $o->_save_error("--sid regex doesn't capture digits with (\\d+)");
+if ( $o->get('server-id') && $o->get('server-id') !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
+   $o->_save_error("--server-id regex doesn't capture digits with (\\d+)");
 }
 
 $o->usage_or_errors();
@@ -1353,7 +1353,7 @@ my %time_for;     # Holds time constants for mmin, mtime etc
 my %connections;  # Holds a list of thread IDs connected
 my $server_id;    # Holds the server's @@SERVER_ID
 my $dbh;          # This program's $dbh
-my $exec_dbh;     # The $dbh to use for exec and exec_plus
+my $exec_dbh;     # The $dbh to use for exec and exec-plus
 
 # Functions to call while evaluating tests.
 my %test_for = (
@@ -1429,10 +1429,10 @@ my %test_for = (
       my ( $table ) = @_;
       return test_date($table, 'Update_time', 'mtime');
    },
-   pid => sub {
+   'connection-id' => sub {
       my ( $table ) = @_;
-      my $test = $o->get('case-insensitive') ? "(?i)".$o->get('pid')
-               : $o->get('pid');
+      my $test = $o->get('case-insensitive') ? "(?i)".$o->get('connection-id')
+               : $o->get('connection-id');
       my ( $pid ) = $table->{Name} =~ m/$test/;
       return $pid && !exists $connections{$pid};
    },
@@ -1444,10 +1444,10 @@ my %test_for = (
       my ( $table ) = @_;
       return test_regex($table, 'Row_format', $o->get('rowformat'));
    },
-   sid => sub {
+   'server-id' => sub {
       my ( $table ) = @_;
-      my $test = $o->get('case-insensitive') ? "(?i)".$o->get('sid')
-               : $o->get('sid');
+      my $test = $o->get('case-insensitive') ? "(?i)".$o->get('server-id')
+               : $o->get('server-id');
       my ( $sid ) = $table->{Name} =~ m/$test/;
       return $sid && $sid == $server_id;
    },
@@ -1492,16 +1492,16 @@ my %action_for = (
 # ############################################################################
 
 # Connect to the database
-if ( !$o->get('password') && $o->get('askpass') ) {
+if ( !$o->get('password') && $o->get('ask-pass') ) {
    $o->set('password', OptionParser::prompt_noecho("Enter password: "));
 }
 
-$dp->prop('setvars', $o->get('setvars'));
+$dp->prop('setvars', $o->get('set-vars'));
 $dbh = $dp->get_dbh(
    $dp->get_cxn_params($dp->parse_options($o)), { AutoCommit => 1 } );
-if ( $o->get('exec_dsn') ) {
+if ( $o->get('exec-dsn') ) {
    $exec_dbh = $dp->get_dbh(
-      $dp->get_cxn_params($dp->parse($o->get('exec_dsn'), {$o->opt_values()})),
+      $dp->get_cxn_params($dp->parse($o->get('exec-dsn'), {$o->opt_values()})),
       { AutoCommit => 1 },
    );
 }
@@ -1510,7 +1510,7 @@ else {
 }
 
 # If no other action was given, the default action is to print.
-if ( !grep { $o->get($_) } qw( exec exec_plus print printf ) ) {
+if ( !grep { $o->get($_) } qw( exec exec-plus print printf ) ) {
    $o->set('print', 1);
 }
 
@@ -1520,7 +1520,7 @@ foreach my $option ( grep { defined $o->get($_) } qw(cmin ctime kmin ktime mmin 
    # Initialize a consistent point in time
    $basetime ||=
       $dbh->selectcol_arrayref(
-         "SELECT ".($o->get('daystart') ? 'CURRENT_DATE' : 'CURRENT_TIMESTAMP')
+         "SELECT ".($o->get('day-start') ? 'CURRENT_DATE' : 'CURRENT_TIMESTAMP')
       )->[0];
 
    my ($val) = $o->get($option) =~ m/(\d+)/;
@@ -1530,13 +1530,13 @@ foreach my $option ( grep { defined $o->get($_) } qw(cmin ctime kmin ktime mmin 
 }
 
 # Fetch and save a list of processes currently running.
-if ( $o->get('pid') ) {
+if ( $o->get('connection-id') ) {
    # Ensure I have the PROCESS privilege.
    my $proc =
       grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
       @{$dbh->selectcol_arrayref('SHOW GRANTS')};
    if ( !$proc ) {
-      die "--pid requires the PROCESS privilege for safety.\n";
+      die "--connection-id requires the PROCESS privilege for safety.\n";
    }
 }
 
@@ -1564,7 +1564,7 @@ foreach my $database ( @databases ) {
 
    # Must re-fetch every time; there are too many ways things can go wrong
    # otherwise (for example, the counter wraps over the unsigned int boundary).
-   if ( $o->get('pid') ) {
+   if ( $o->get('connection-id') ) {
       %connections = map { $_ => 1 }
          @{$dbh->selectcol_arrayref('SHOW FULL PROCESSLIST')};
    }
@@ -1611,10 +1611,10 @@ foreach my $database ( @databases ) {
    push @exec_plus, @tables;
 }
 
-# Handle exec_plus
-if ( $o->get('exec_plus') ) {
+# Handle exec-plus
+if ( $o->get('exec-plus') ) {
    my $table_list = join(', ', map { "$_->{Database}.$_->{Name}" } @exec_plus);
-   (my $sql = $o->get('exec_plus')) =~ s/%s/$table_list/g;
+   (my $sql = $o->get('exec-plus')) =~ s/%s/$table_list/g;
    $exec_dbh->do($sql);
 }
 
@@ -1755,7 +1755,7 @@ dashes in front of long option names, unlike GNU find.
 
 =over
 
-=item --askpass
+=item --ask-pass
 
 Prompt for a password when connecting to MySQL.
 
@@ -1780,9 +1780,10 @@ DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
 value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
 connecting to MySQL.
 
-=item --daystart
+=item --day-start
 
-Measure times (for L<"--mmin">, etc) from the beginning of today rather than from the current time.
+Measure times (for L<"--mmin">, etc) from the beginning of today rather than
+from the current time.
 
 =item --defaults-file
 
@@ -1833,7 +1834,7 @@ Quotes MySQL identifier names with MySQL's standard backtick character.
 
 Quoting happens after tests are run, and before actions are run.
 
-=item --setvars
+=item --set-vars
 
 type: string; default: wait_timeout=10000
 
@@ -1873,7 +1874,7 @@ Dates and times are all measured relative to the same instant, when mk-find
 first asks the database server what time it is.  All date and time manipulation
 is done in SQL, so if you say to find tables modified 5 days ago, that
 translates to SELECT DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 5 DAY).  If you
-specify L<"--daystart">, if course it's relative to CURRENT_DATE instead.
+specify L<"--day-start">, if course it's relative to CURRENT_DATE instead.
 
 However, table sizes and other metrics are not consistent at an instant in
 time.  It can take some time for MySQL to process all the SHOW queries, and
@@ -2000,44 +2001,6 @@ type: size; group: Tests
 
 Table was last modified n days ago.  This tests the Update_time column.
 
-=item --pid
-
-type: string; group: Tests
-
-Table name has nonexistent MySQL connection ID.  This tests the table name for
-a pattern.  The argument to this test must be a Perl regular expression that
-captures digits like this: (\d+).  If the table name matches the pattern,
-these captured digits are taken to be the MySQL connection ID of some process.
-If the connection doesn't exist according to SHOW FULL PROCESSLIST, the test
-returns true.  If the connection ID is greater than mk-find's own
-connection ID, the test returns false for safety.
-
-Why would you want to do this?  If you use MySQL statement-based replication,
-you probably know the trouble temporary tables can cause.  You might choose to
-work around this by creating real tables with unique names, instead of
-temporary tables.  One way to do this is to append your connection ID to the
-end of the table, thusly: scratch_table_12345.  This assures the table name is
-unique and lets you have a way to find which connection it was associated
-with.  And perhaps most importantly, if the connection no longer exists, you
-can assume the connection died without cleaning up its tables, and this table
-is a candidate for removal.
-
-This how I manage scratch tables, and that's why I included this test in
-mk-find.
-
-The argument I use to L<"--pid"> is "\D_(\d+)$".  That finds tables with a series of
-numbers at the end, preceded by an underscore and some non-number character (the
-latter criterion prevents me from examining tables with a date at the end, which
-people tend to do: baron_scratch_2007_05_07 for example).  It's better to keep
-the scratch tables separate of course.
-
-If you do this, make sure the user mk-find runs as has the PROCESS privilege!
-Otherwise it will only see connections from the same user, and might think some
-tables are ready to remove when they're still in use.  For safety, mk-find
-checks this for you.
-
-See also L<"--sid">.
-
 =item --rows
 
 type: size; group: Tests
@@ -2050,12 +2013,12 @@ type: string; group: Tests
 
 Table row format matches pattern.  This tests the Row_format column.
 
-=item --sid
+=item --server-id
 
 type: string; group: Tests
 
 Table name contains the server ID.  If you create temporary tables with the
-naming convention explained in L<"--pid">, but also add the server ID of the
+naming convention explained in L<"--connection-id">, but also add the server ID of the
 server on which the tables are created, then you can use this pattern match to
 ensure tables are dropped only on the server they're created on.  This prevents
 a table from being accidentally dropped on a slave while it's in use (provided
@@ -2065,7 +2028,7 @@ work).
 For example, on the master (server ID 22) you create a table called
 scratch_table_22_12345.  If you see this table on the slave (server ID 23), you
 might think it can be dropped safely if there's no such connection 12345.  But
-if you also force the name to match the server ID with C<--sid '\D_(\d+)_\d+$'>,
+if you also force the name to match the server ID with C<--server-id '\D_(\d+)_\d+$'>,
 the table won't be dropped on the slave.
 
 =item --tablesize
@@ -2093,11 +2056,49 @@ type: size; group: Tests
 
 Table version is n.  This tests the Version column.
 
+=item --connection-id
+
+type: string; group: Tests
+
+Table name has nonexistent MySQL connection ID.  This tests the table name for
+a pattern.  The argument to this test must be a Perl regular expression that
+captures digits like this: (\d+).  If the table name matches the pattern,
+these captured digits are taken to be the MySQL connection ID of some process.
+If the connection doesn't exist according to SHOW FULL PROCESSLIST, the test
+returns true.  If the connection ID is greater than mk-find's own
+connection ID, the test returns false for safety.
+
+Why would you want to do this?  If you use MySQL statement-based replication,
+you probably know the trouble temporary tables can cause.  You might choose to
+work around this by creating real tables with unique names, instead of
+temporary tables.  One way to do this is to append your connection ID to the
+end of the table, thusly: scratch_table_12345.  This assures the table name is
+unique and lets you have a way to find which connection it was associated
+with.  And perhaps most importantly, if the connection no longer exists, you
+can assume the connection died without cleaning up its tables, and this table
+is a candidate for removal.
+
+This how I manage scratch tables, and that's why I included this test in
+mk-find.
+
+The argument I use to L<"--connection-id"> is "\D_(\d+)$".  That finds tables with a series of
+numbers at the end, preceded by an underscore and some non-number character (the
+latter criterion prevents me from examining tables with a date at the end, which
+people tend to do: baron_scratch_2007_05_07 for example).  It's better to keep
+the scratch tables separate of course.
+
+If you do this, make sure the user mk-find runs as has the PROCESS privilege!
+Otherwise it will only see connections from the same user, and might think some
+tables are ready to remove when they're still in use.  For safety, mk-find
+checks this for you.
+
+See also L<"--server-id">.
+
 =back
 
 =head2 ACTIONS
 
-The exec_plus action happens after everything else, but otherwise actions
+The L<"--exec-plus"> action happens after everything else, but otherwise actions
 happen in an indeterminate order.  If you need determinism, file a bug report
 and I'll add this feature.
 
@@ -2110,15 +2111,15 @@ type: string; group: Actions
 Execute this SQL with each item found.  The SQL can contain escapes and
 formatting directives (see L<"--printf">).
 
-=item --exec_dsn
+=item --exec-dsn
 
 type: string; group: Actions
 
 Specify a DSN in key-value format to use when executing SQL with L<"--exec"> and
-L<"--exec_plus">.  Any values not specified are inherited from command-line
+L<"--exec-plus">.  Any values not specified are inherited from command-line
 arguments.
 
-=item --exec_plus
+=item --exec-plus
 
 type: string; group: Actions
 
@@ -2195,14 +2196,14 @@ MyISAM storage engine (data warehousing, anyone?):
 
   mk-find --mtime +30 --engine InnoDB --exec "ALTER TABLE %D.%N ENGINE=MyISAM"
 
-Find tables created by a process that no longer exists, following the name_sid_pid
-naming convention, and remove them.
+Find tables created by a process that no longer exists, following the
+name_sid_pid naming convention, and remove them.
 
-  mk-find --pid '\D_\d+_(\d+)$' --sid '\D_(\d+)_\d+$' --exec_plus "DROP TABLE %s"
+  mk-find --connection-id '\D_\d+_(\d+)$' --server-id '\D_(\d+)_\d+$' --exec-plus "DROP TABLE %s"
 
 Find empty tables in the test and junk databases, and delete them:
 
-  mk-find --empty junk test --exec_plus "DROP TABLE %s"
+  mk-find --empty junk test --exec-plus "DROP TABLE %s"
 
 Find tables more than five gigabytes in total size:
 

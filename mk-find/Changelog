@@ -1,5 +1,14 @@
 Changelog for mk-find:
 
+   * Removed the --askpass long option.  Use --ask-pass instead.
+   * Removed the --daystart long option.  Use --day-start instead.
+   * Removed the --setvars long option.  Use --set-vars instead.
+   * Removed the --pid long option.  Use --connection-id instead.
+   * Removed the --sid long option.  Use --session-id instead.
+   * Removed the --exec_dsn long option.  Use --exec-dsn instead.
+   * Removed the --exec_plus long option.  Use --exec-plus instead.
+   * Updates to shared code.
+
 2009-03-31: version 0.9.15
 
    * Send debugging output to STDERR (issue 308).
