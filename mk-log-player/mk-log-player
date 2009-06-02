@@ -3120,7 +3120,7 @@ mk-log-player - Split and play MySQL slow logs.
 
 =head1 DESCRIPTION
 
-mk-log-player splits and play MySQL slow logs.
+mk-log-player splits and plays MySQL slow logs.
 
 =head1 DOWNLOADING
 
@@ -3229,7 +3229,7 @@ starting with 1/.
 
 L<"--maxdirs"> and L<"--maxfiles"> and L<"--maxsessions"> are never exceeded.
 If one option limits another, the most restrictive option is respected and
-the other options will not reach their maxes. The default values for
+the other options will not reach their maximums. The default values for
 L<"--maxdirs"> and L<"--maxfiles"> allow for 100,000 sessions: 100 files
 in 100 directories.
 
@@ -3241,7 +3241,7 @@ Max number of session failes to create per directory.
 
 L<"--maxdirs"> and L<"--maxfiles"> and L<"--maxsessions"> are never exceeded.
 If one option limits another, the most restrictive option is respected and
-the other options will not reach their maxes. The default values for
+the other options will not reach their maximums. The default values for
 L<"--maxdirs"> and L<"--maxfiles"> allow for 100,000 sessions: 100 files
 in 100 directories.
 

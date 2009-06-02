@@ -2345,7 +2345,7 @@ mk-heartbeat - Monitor MySQL replication delay.
 
  mk-heartbeat -D test --update -h master-server
  mk-heartbeat -D test --monitor -h slave-server
- mk-heartbeat -D test --monitor -h slave-server --dbidriver Pg
+ mk-heartbeat -D test --monitor -h slave-server --dbi-driver Pg
 
 =head1 DESCRIPTION
 
