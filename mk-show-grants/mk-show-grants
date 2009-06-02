@@ -1221,7 +1221,7 @@ sub main {
    $o->get_opts();
 
    my $dp = new DSNParser();
-   $dp->prop('setvars', $o->get('set-vars'));
+   $dp->prop('setvars', $o->get('setvars'));
 
    $o->usage_or_errors();
 
@@ -1502,12 +1502,10 @@ Prompt for a password when connecting to MySQL.
 
 short form: -A; type: string
 
-Default character set.
-
-Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
-Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
-DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
-value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
+runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
+binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
 
 =item --config
@@ -1586,7 +1584,7 @@ The default output from MySQL's SHOW GRANTS command lists many privileges on a
 single line.  With L<"--flush">, places a FLUSH PRIVILEGES after each user,
 instead of once at the end of all the output.
 
-=item --set-vars
+=item --setvars
 
 type: string; default: wait_timeout=10000
 

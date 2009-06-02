@@ -1763,13 +1763,6 @@ Prompt for a password when connecting to MySQL.
 
 Specifies that all regular expression searches are case-insensitive.
 
-=item --config
-
-type: Array
-
-Read this comma-separated list of config files; if specified, this must be the
-first option on the command line.
-
 =item --charset
 
 short form: -A; type: string
@@ -1778,6 +1771,13 @@ Default character set.  If the value is utf8, sets Perl's binmode on
 STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
 NAMES UTF8 after connecting to MySQL.  Any other value sets binmode on STDOUT
 without the utf8 layer, and runs SET NAMES after connecting to MySQL.
+
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
 
 =item --day-start
 
@@ -1917,6 +1917,44 @@ type: string; group: Tests
 
 Table comment matches pattern.  This tests the Comment column.
 
+=item --connection-id
+
+type: string; group: Tests
+
+Table name has nonexistent MySQL connection ID.  This tests the table name for
+a pattern.  The argument to this test must be a Perl regular expression that
+captures digits like this: (\d+).  If the table name matches the pattern,
+these captured digits are taken to be the MySQL connection ID of some process.
+If the connection doesn't exist according to SHOW FULL PROCESSLIST, the test
+returns true.  If the connection ID is greater than mk-find's own
+connection ID, the test returns false for safety.
+
+Why would you want to do this?  If you use MySQL statement-based replication,
+you probably know the trouble temporary tables can cause.  You might choose to
+work around this by creating real tables with unique names, instead of
+temporary tables.  One way to do this is to append your connection ID to the
+end of the table, thusly: scratch_table_12345.  This assures the table name is
+unique and lets you have a way to find which connection it was associated
+with.  And perhaps most importantly, if the connection no longer exists, you
+can assume the connection died without cleaning up its tables, and this table
+is a candidate for removal.
+
+This how I manage scratch tables, and that's why I included this test in
+mk-find.
+
+The argument I use to L<"--connection-id"> is "\D_(\d+)$".  That finds tables with a series of
+numbers at the end, preceded by an underscore and some non-number character (the
+latter criterion prevents me from examining tables with a date at the end, which
+people tend to do: baron_scratch_2007_05_07 for example).  It's better to keep
+the scratch tables separate of course.
+
+If you do this, make sure the user mk-find runs as has the PROCESS privilege!
+Otherwise it will only see connections from the same user, and might think some
+tables are ready to remove when they're still in use.  For safety, mk-find
+checks this for you.
+
+See also L<"--server-id">.
+
 =item --createopts
 
 type: string; group: Tests
@@ -1929,17 +1967,17 @@ type: size; group: Tests
 
 Table was created n days ago.  This tests the Create_time column.
 
-=item --datasize
-
-type: size; group: Tests
-
-Table data uses n bytes of space.  This tests the Data_length column.
-
 =item --datafree
 
 type: size; group: Tests
 
 Table has n bytes of free space.  This tests the Data_free column.
+
+=item --datasize
+
+type: size; group: Tests
+
+Table data uses n bytes of space.  This tests the Data_length column.
 
 =item --dblike
 
@@ -1996,17 +2034,17 @@ type: size; group: Tests
 
 Table was last modified n days ago.  This tests the Update_time column.
 
-=item --rows
-
-type: size; group: Tests
-
-Table has n rows.  This tests the Rows column.
-
 =item --rowformat
 
 type: string; group: Tests
 
 Table row format matches pattern.  This tests the Row_format column.
+
+=item --rows
+
+type: size; group: Tests
+
+Table has n rows.  This tests the Rows column.
 
 =item --server-id
 
@@ -2050,44 +2088,6 @@ Table name matches this pattern.
 type: size; group: Tests
 
 Table version is n.  This tests the Version column.
-
-=item --connection-id
-
-type: string; group: Tests
-
-Table name has nonexistent MySQL connection ID.  This tests the table name for
-a pattern.  The argument to this test must be a Perl regular expression that
-captures digits like this: (\d+).  If the table name matches the pattern,
-these captured digits are taken to be the MySQL connection ID of some process.
-If the connection doesn't exist according to SHOW FULL PROCESSLIST, the test
-returns true.  If the connection ID is greater than mk-find's own
-connection ID, the test returns false for safety.
-
-Why would you want to do this?  If you use MySQL statement-based replication,
-you probably know the trouble temporary tables can cause.  You might choose to
-work around this by creating real tables with unique names, instead of
-temporary tables.  One way to do this is to append your connection ID to the
-end of the table, thusly: scratch_table_12345.  This assures the table name is
-unique and lets you have a way to find which connection it was associated
-with.  And perhaps most importantly, if the connection no longer exists, you
-can assume the connection died without cleaning up its tables, and this table
-is a candidate for removal.
-
-This how I manage scratch tables, and that's why I included this test in
-mk-find.
-
-The argument I use to L<"--connection-id"> is "\D_(\d+)$".  That finds tables with a series of
-numbers at the end, preceded by an underscore and some non-number character (the
-latter criterion prevents me from examining tables with a date at the end, which
-people tend to do: baron_scratch_2007_05_07 for example).  It's better to keep
-the scratch tables separate of course.
-
-If you do this, make sure the user mk-find runs as has the PROCESS privilege!
-Otherwise it will only see connections from the same user, and might think some
-tables are ready to remove when they're still in use.  For safety, mk-find
-checks this for you.
-
-See also L<"--server-id">.
 
 =back
 

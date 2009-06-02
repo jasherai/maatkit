@@ -2736,11 +2736,11 @@ Prompt for a password when connecting to MySQL.
 
 short form: -A; type: string
 
-Default character set.  Enables character set settings in Perl and MySQL.  If
-the value is C<utf8>, sets Perl's binmode on STDOUT to utf8, passes the
-C<mysql_enable_utf8> option to DBD::mysql, and runs C<SET NAMES UTF8> after
-connecting to MySQL.  Any other value sets binmode on STDOUT without the utf8
-layer, and runs C<SET NAMES> after connecting to MySQL.
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
+runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
+binmode on STDOUT without the utf8 layer, and runs SET NAMES after
+connecting to MySQL.
 
 =item --check-interval
 
@@ -2763,7 +2763,8 @@ first option on the command line.
 
 =item --daemonize
 
-Fork and run in the background; POSIX OSes only.
+Fork to the background and detach from the shell.  POSIX
+operating systems only.
 
 =item --database
 
@@ -2806,7 +2807,7 @@ Show help and exit.
 
 short form: -h; type: string
 
-Host to connect to.
+Connect to host.
 
 =item --io-lag
 
@@ -2884,7 +2885,7 @@ ahead of the SQL thread.  See also L<"--window">.
 
 short form: -p; type: string
 
-The password to use when connecting.
+Password to use when connecting.
 
 =item --permit-regexp
 
@@ -2897,17 +2898,13 @@ events matching the regular expression.
 
 =item --pid
 
-type: string 
+type: string
 
-Create the given PID file when daemonized.
-
-For example, '--daemonize --pid /tmp/mk-slave-prefetch.pid' would cause
-mk-slave-prefetch to create the PID file /tmp/mk-slave-prefetch.pid.
-
-/var/run/ is usually not writable by non-root users, therefore /tmp/ is a
-more reliable alternative.
-
-The PID file is removed when the daemonized instance of mk-slave-prefetch exits.
+Create the given PID file when daemonized.  The file contains the process
+ID of the daemonized instance.  The PID file is removed when the
+daemonized instance exits.  The program checks for the existence of the
+PID file when starting; if it exists and the process with the matching PID
+exists, the program exits.
 
 =item --port
 
@@ -2961,8 +2958,8 @@ Exit if this file exists.
 
 type: string; default: wait_timeout=10000
 
-Set these MySQL variables.  Specify any variables you want to be set immediately
-after connecting to MySQL.  These will be included in a C<SET> command.
+Set these MySQL variables.  Immediately after connecting to MySQL, this
+string will be appended to SET and executed.
 
 =item --socket
 

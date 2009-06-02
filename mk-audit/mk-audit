@@ -3936,6 +3936,8 @@ Show help and exit.
 
 type: string
 
+short form: -h; type: string
+
 Connect to host.
 
 TODO: Not implemented yet.
