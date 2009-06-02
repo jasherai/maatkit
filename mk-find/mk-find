@@ -371,7 +371,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3609
+# OptionParser package 3695
 # ###########################################################################
 package OptionParser;
 
@@ -768,7 +768,7 @@ sub get_opts {
       map    { $_->{spec} => sub { $self->_set_option(@_); } }
       grep   { $_->{long} ne 'config' } # --config is handled specially above.
       values %{$self->{opts}}
-   ) or $self->_save_error('Error parsing options');
+   ) or $self->save_error('Error parsing options');
 
    if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
       printf("%s  Ver %s Distrib %s Changeset %s\n",
@@ -778,7 +778,7 @@ sub get_opts {
    }
 
    if ( @ARGV && $self->{strict} ) {
-      $self->_save_error("Unrecognized command-line options @ARGV");
+      $self->save_error("Unrecognized command-line options @ARGV");
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
@@ -788,7 +788,7 @@ sub get_opts {
                       @{$mutex}[ 0 .. scalar(@$mutex) - 2] )
                  . ' and --'.$self->{opts}->{$mutex->[-1]}->{long}
                  . ' are mutually exclusive.';
-         $self->_save_error($err);
+         $self->save_error($err);
       }
    }
 
@@ -798,7 +798,7 @@ sub get_opts {
          my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
                       @{$required}[ 0 .. scalar(@$required) - 2] )
                  .' or --'.$self->{opts}->{$required->[-1]}->{long};
-         $self->_save_error("Specify at least one of $err");
+         $self->save_error("Specify at least one of $err");
       }
    }
 
@@ -843,13 +843,13 @@ sub get_opts {
                          )
                        . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
                }
-               $self->_save_error("--$long is not allowed with $err");
+               $self->save_error("--$long is not allowed with $err");
             }
          }
 
       }
       elsif ( $opt->{is_required} ) { 
-         $self->_save_error("Required option --$long must be specified");
+         $self->save_error("Required option --$long must be specified");
       }
 
       $self->_validate_type($opt);
@@ -882,7 +882,7 @@ sub _validate_type {
          MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
       }
       else {
-         $self->_save_error("Invalid time suffix for --$opt->{long}");
+         $self->save_error("Invalid time suffix for --$opt->{long}");
       }
    }
    elsif ( $val && $opt->{type} eq 'd' ) {
@@ -909,7 +909,7 @@ sub _validate_type {
          $opt->{value} = ($pre || '') . $num;
       }
       else {
-         $self->_save_error("Invalid size for --$opt->{long}");
+         $self->save_error("Invalid size for --$opt->{long}");
       }
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
@@ -957,7 +957,7 @@ sub set {
    return;
 }
 
-sub _save_error {
+sub save_error {
    my ( $self, $error ) = @_;
    push @{$self->{errors}}, $error;
 }
@@ -1296,11 +1296,11 @@ $o->get_opts();
 # cmin ctime empty kmin ktime mmin mtime exec printf 
 
 if ( $o->get('connection-id') && $o->get('connection-id') !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
-   $o->_save_error("--connection-id regex doesn't capture digits with (\\d+)");
+   $o->save_error("--connection-id regex doesn't capture digits with (\\d+)");
 }
 
 if ( $o->get('server-id') && $o->get('server-id') !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
-   $o->_save_error("--server-id regex doesn't capture digits with (\\d+)");
+   $o->save_error("--server-id regex doesn't capture digits with (\\d+)");
 }
 
 $o->usage_or_errors();

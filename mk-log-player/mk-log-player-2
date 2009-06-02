@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 3609
+# OptionParser package 3695
 # ###########################################################################
 package OptionParser;
 
@@ -422,7 +422,7 @@ sub get_opts {
       map    { $_->{spec} => sub { $self->_set_option(@_); } }
       grep   { $_->{long} ne 'config' } # --config is handled specially above.
       values %{$self->{opts}}
-   ) or $self->_save_error('Error parsing options');
+   ) or $self->save_error('Error parsing options');
 
    if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
       printf("%s  Ver %s Distrib %s Changeset %s\n",
@@ -432,7 +432,7 @@ sub get_opts {
    }
 
    if ( @ARGV && $self->{strict} ) {
-      $self->_save_error("Unrecognized command-line options @ARGV");
+      $self->save_error("Unrecognized command-line options @ARGV");
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
@@ -442,7 +442,7 @@ sub get_opts {
                       @{$mutex}[ 0 .. scalar(@$mutex) - 2] )
                  . ' and --'.$self->{opts}->{$mutex->[-1]}->{long}
                  . ' are mutually exclusive.';
-         $self->_save_error($err);
+         $self->save_error($err);
       }
    }
 
@@ -452,7 +452,7 @@ sub get_opts {
          my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
                       @{$required}[ 0 .. scalar(@$required) - 2] )
                  .' or --'.$self->{opts}->{$required->[-1]}->{long};
-         $self->_save_error("Specify at least one of $err");
+         $self->save_error("Specify at least one of $err");
       }
    }
 
@@ -497,13 +497,13 @@ sub get_opts {
                          )
                        . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
                }
-               $self->_save_error("--$long is not allowed with $err");
+               $self->save_error("--$long is not allowed with $err");
             }
          }
 
       }
       elsif ( $opt->{is_required} ) { 
-         $self->_save_error("Required option --$long must be specified");
+         $self->save_error("Required option --$long must be specified");
       }
 
       $self->_validate_type($opt);
@@ -536,7 +536,7 @@ sub _validate_type {
          MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
       }
       else {
-         $self->_save_error("Invalid time suffix for --$opt->{long}");
+         $self->save_error("Invalid time suffix for --$opt->{long}");
       }
    }
    elsif ( $val && $opt->{type} eq 'd' ) {
@@ -563,7 +563,7 @@ sub _validate_type {
          $opt->{value} = ($pre || '') . $num;
       }
       else {
-         $self->_save_error("Invalid size for --$opt->{long}");
+         $self->save_error("Invalid size for --$opt->{long}");
       }
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
@@ -611,7 +611,7 @@ sub set {
    return;
 }
 
-sub _save_error {
+sub save_error {
    my ( $self, $error ) = @_;
    push @{$self->{errors}}, $error;
 }
@@ -2647,12 +2647,12 @@ sub main {
       MKDEBUG && _d('Got host from opts:', $dsn ? 'yes' : 'no');
       if ( !$dsn ) {
          @ARGV ? $dsn = $dp->parse(shift @ARGV)
-               : $o->_save_error('Missing or invalid host');
+               : $o->save_error('Missing or invalid host');
       }
    }
 
    if ( !-d $o->get('output-dir') ) {
-      $o->_save_error('Invalid --output-dir: ' . $o->get('output-dir') . ' is not a directory');
+      $o->save_error('Invalid --output-dir: ' . $o->get('output-dir') . ' is not a directory');
    }
 
    $o->usage_or_errors();
@@ -3131,14 +3131,44 @@ mk-log-player - Split and play MySQL slow logs.
 
 =head1 SYNOPSIS
 
-   # Split mysql-slow.log into sessions grouped by Thread_id 
-   # (one session per file). Then play all those sessions against host1.
+   # Split mysql-slow.log into sessions grouped by Thread_id.
    mk-log-player --split Thread_id mysql-slow.log
-   mk-log-player --play  /tmp/mysql_log_session_* h=host1
+
+   # Play all those sessions against host1.
+   mk-log-player --play /tmp/mysql_log_session_* h=host1
 
 =head1 DESCRIPTION
 
-mk-log-player splits and play MySQL slow logs.
+mk-log-player does two things: it splits MySQL slow logs into session files
+and it plays (executes) queries in session files on a MySQL server.  Only
+session files can be played; slow logs cannot be played directly without
+being split.
+
+A session is a group of queries from the slow log that all
+share a common attribute.  Usually this attribute is Thead_id.  This common
+attribute is specified with the L<"--split"> option.  All sessions are
+saved into files named like C<mysql_log_session_N> where C<N> increments from
+1 to however many sessions are split.  (See L<"--sessionfilename">.)
+
+There are two types of session files: single and multi.  Single session
+files have only the queries for a single session (for example, only the queries
+for one Thread_id).  This is the default type of session file that
+mk-log-player creates.  For big logs, there can be hundres of thousands
+of single session files.  To manage all these files, mk-log-player
+automatically distributes the files in a hierarchy of directories.  See
+L<"--maxdirs"> and L<"--maxfiles">.
+
+Multi-statement session files contain many different sessions in a single
+file.  Mutlti-statement session files are only created when the
+L<"--maxsessionfiles"> option is specified.
+
+If you need to split hundreds of thousands to millions of sessions, you
+must use single session files; do not use L<"--maxsessionfiles">.  Single
+session files require very little memory to create, but multi-session files
+require nearly as much memory as the log file is big.  Therefore, splitting
+a 60G slow log into multi-session files will require about 60G of RAM!
+Single session files can be merged later into several multi-session files;
+see L<MERGING SINGLE SESSION FILES>.
 
 =head1 DOWNLOADING
 
