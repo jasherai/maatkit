@@ -4040,12 +4040,10 @@ used to dump it in chunks.
 
 short form: -A; type: string
 
-Default character set.
-
-Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
-Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
-DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
-value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
+runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
+binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
 
 =item --chunk-size
@@ -4091,19 +4089,20 @@ type: string
 
 Dump only databases whose names match this Perl regex.
 
+=item --[no]default-set
+
+When L<"--sets"> given, dump tables not in any set.
+
+The result will be a C<default> set consisting of tables not explicitly
+included
+in any set.
+
 =item --defaults-file
 
 short form: -F; type: string
 
 Only read mysql options from the given file.  You must give an absolute
 pathname.
-
-=item --[no]default-set
-
-When L<"--sets"> given, dump tables not in any set.
-
-The result will be a C<default> set consisting of tables not explicitly included
-in any set.
 
 =item --dry-run
 
@@ -4225,15 +4224,6 @@ Dump each database as a separate set.
 
 Each set is named the same as the database.  Implies L<"--lock-tables">.
 
-=item --sets
-
-type: array
-
-Dump this comma-separated list of backup sets.
-
-Requires L<"--set-table">.  See L<"BACKUP SETS">.  The special C<default> set is
-reserved; don't use it as a set name.
-
 =item --set-table
 
 type: string
@@ -4248,10 +4238,18 @@ is given.
 
 type: string; default: wait_timeout=10000
 
-Set these MySQL variables.
+Set these MySQL variables.  Immediately after connecting to MySQL, this
+string will be appended to SET and executed.
 
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+=item --sets
+
+type: array
+
+Dump this comma-separated list of backup sets.
+
+Requires L<"--set-table">.  See L<"BACKUP SETS">.  The special C<default> set
+is
+reserved; don't use it as a set name.
 
 =item --since
 
@@ -4363,11 +4361,11 @@ short form: -v; cumulative: yes; default: 1
 
 Be verbose; can specify multiple times.
 
+See L<"OUTPUT">.
+
 =item --version
 
 Show version and exit.
-
-See L<"OUTPUT">.
 
 =item --wait
 

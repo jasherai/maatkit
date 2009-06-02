@@ -1066,18 +1066,6 @@ type: Array
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
 
-=item --queries
-
-type: hash
-
-Process only this comma-separated list of queries.
-
-=item --mode
-
-type: string
-
-What type of reports (EXTERNAL, QUERY, SUMMARY) to process.
-
 =item --headers
 
 type: int; default: 2000
@@ -1087,6 +1075,18 @@ Reprint headers every N queries.
 =item --help
 
 Show help and exit.
+
+=item --mode
+
+type: string
+
+What type of reports (EXTERNAL, QUERY, SUMMARY) to process.
+
+=item --queries
+
+type: hash
+
+Process only this comma-separated list of queries.
 
 =item --version
 

@@ -2667,10 +2667,8 @@ not chunked.
 
 type: string; default: wait_timeout=10000
 
-Set these MySQL variables.
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+Set these MySQL variables.  Immediately after connecting to MySQL, this
+string will be appended to SET and executed.
 
 =item --socket
 
@@ -2760,6 +2758,10 @@ Verbosity; can specify multiple times.
 Repeatedly specifying it increments the verbosity.  Default is 1 if not
 specified.  See L<"OUTPUT">.
 
+=item --version
+
+Show version and exit.
+
 =item --wait
 
 short form: -w; type: time; default: 5m
@@ -2770,10 +2772,6 @@ If the MySQL server crashes during loading, waits until the server comes back
 and then continues with the rest of the files.  C<mk-parallel-restore> will
 check the server every second until this time is exhausted, at which point it
 will give up and exit.
-
-=item --version
-
-Show version and exit.
 
 =back
 

@@ -5908,19 +5908,19 @@ type: Array
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
 
-=item --create-review-table
-
-Create the L<"--review"> table if it does not exist.
-
-This option causes the table specified by L<"--review"> to be created with the
-default structure shown in the documentation for that option.
-
 =item --create-review-history-table
 
 Create the L<"--review-history"> table if it does not exist.
 
 This option causes the table specified by L<"--review-history"> to be created
 with the default structure shown in the documentation for that option.
+
+=item --create-review-table
+
+Create the L<"--review"> table if it does not exist.
+
+This option causes the table specified by L<"--review"> to be created with the
+default structure shown in the documentation for that option.
 
 =item --daemonize
 
@@ -6402,16 +6402,6 @@ Example:
 
   mk-query-digest /path/to/log --timeline distill
 
-=item --version
-
-Show version and exit.
-
-=item --[no]zero-admin
-
-default: yes
-
-Zero out the Rows_XXX properties for administrator command events.
-
 =item --type
 
 type: string
@@ -6453,6 +6443,10 @@ If you're analyzing traffic to a non-standard port, see L<"--watch-server">.
 
 =back
 
+=item --version
+
+Show version and exit.
+
 =item --watch-server
 
 type: string
@@ -6464,6 +6458,12 @@ host and port of the server by looking for port 3306 or port "mysql".  If you're
 watching a server with a non-standard port, this won't work, and you'll need to
 specify the IP address and port to watch.  If mk-query-digest doesn't know what
 to watch, nothing works right.
+
+=item --[no]zero-admin
+
+default: yes
+
+Zero out the Rows_XXX properties for administrator command events.
 
 =back
 

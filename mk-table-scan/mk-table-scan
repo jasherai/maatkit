@@ -2095,15 +2095,6 @@ short form: -P; type: int
 
 Port number to use for connection.
 
-=item --verbosity
-
-short form: -v; cumulative: yes
-
-Print what is being done.
-
-Level 0 is silent.  Level 1 prints every table.  Level 2 prints every SQL
-statement.
-
 =item --setvars
 
 type: string
@@ -2141,6 +2132,15 @@ of the insert buffer.
 short form: -u; type: string
 
 User for login if not current user.
+
+=item --verbosity
+
+short form: -v; cumulative: yes
+
+Print what is being done.
+
+Level 0 is silent.  Level 1 prints every table.  Level 2 prints every SQL
+statement.
 
 =item --where
 

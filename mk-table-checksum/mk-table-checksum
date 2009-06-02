@@ -5239,17 +5239,6 @@ group: Connection
 
 Prompt for a password when connecting to MySQL.
 
-=item --checksum
-
-group: Output
-
-Print checksums and table names in the style of md5sum (disables
-L<"--[no]count">).
-
-Makes the output behave more like the output of C<md5sum>.  The checksum is
-first on the line, followed by the host, database, table, and chunk number,
-concatenated with dots.
-
 =item --check-interval
 
 type: time; default: 1s
@@ -5262,6 +5251,17 @@ type: string
 
 Pause checksumming each chunk until the specified DSN's slave lag is less than
 L<"--max-lag">.
+
+=item --checksum
+
+group: Output
+
+Print checksums and table names in the style of md5sum (disables
+L<"--[no]count">).
+
+Makes the output behave more like the output of C<md5sum>.  The checksum is
+first on the line, followed by the host, database, table, and chunk number,
+concatenated with dots.
 
 =item --chunk-size
 
@@ -5580,41 +5580,6 @@ Do not print checksum results.
 
 Re-checksum chunks that L<"--replicate-check"> found to be different.
 
-=item --replicate-check
-
-type: int
-
-Check results in L<"--replicate"> table, to the specified depth.
-
-Recursively finds differences recorded in the table given by L<"--replicate">.
-Recurses to the depth you specify: 0 is no recursion (check only the server
-you specify), 1 is check the server and its slaves, 2 is check the slaves of
-its slaves, and so on.
-
-It finds differences by running the query shown in L<"CONSISTENT CHECKSUMS">,
-and prints results.  Exits after printing.  This is just a convenient way of
-running the query so you don't have to do it manually.
-
-The output is one informational line per slave host, followed by the results
-of the query, if any.  If L<"--quiet"> is specified, there is no output.
-
-This option makes C<mk-table-checksum> looks for slaves by running C<SHOW
-PROCESSLIST>.  If it finds connections that appear to be from slaves, it derives
-connection information for each slave the same default-and-override method
-described in L<"SPECIFYING HOSTS">.
-
-If C<SHOW PROCESSLIST> doesn't return any rows, C<mk-table-checksum> looks at
-C<SHOW SLAVE HOSTS> instead.  The host and port, and user and password if
-available, from C<SHOW SLAVE HOSTS> are combined into a DSN and used as the
-argument.  This requires slaves to be configured with C<report-host>,
-C<report-port> and so on.
-
-This requires the @@SERVER_ID system variable, so it works only on MySQL
-3.23.26 or newer.
-
-If any slave has chunks that differ from the master, mk-table-checksum's
-exit status is 1; otherwise it is 0.
-
 =item --replicate
 
 type: string
@@ -5689,6 +5654,42 @@ rules, see L<http://dev.mysql.com/doc/en/replication-rules.html>.
 
 The table specified by L<"--replicate"> will never be checksummed itself.
 
+=item --replicate-check
+
+type: int
+
+Check results in L<"--replicate"> table, to the specified depth.
+
+Recursively finds differences recorded in the table given by L<"--replicate">.
+Recurses to the depth you specify: 0 is no recursion (check only the server
+you specify), 1 is check the server and its slaves, 2 is check the slaves of
+its slaves, and so on.
+
+It finds differences by running the query shown in L<"CONSISTENT CHECKSUMS">,
+and prints results.  Exits after printing.  This is just a convenient way of
+running the query so you don't have to do it manually.
+
+The output is one informational line per slave host, followed by the results
+of the query, if any.  If L<"--quiet"> is specified, there is no output.
+
+This option makes C<mk-table-checksum> looks for slaves by running C<SHOW
+PROCESSLIST>.  If it finds connections that appear to be from slaves, it
+derives
+connection information for each slave the same default-and-override method
+described in L<"SPECIFYING HOSTS">.
+
+If C<SHOW PROCESSLIST> doesn't return any rows, C<mk-table-checksum> looks at
+C<SHOW SLAVE HOSTS> instead.  The host and port, and user and password if
+available, from C<SHOW SLAVE HOSTS> are combined into a DSN and used as the
+argument.  This requires slaves to be configured with C<report-host>,
+C<report-port> and so on.
+
+This requires the @@SERVER_ID system variable, so it works only on MySQL
+3.23.26 or newer.
+
+If any slave has chunks that differ from the master, mk-table-checksum's
+exit status is 1; otherwise it is 0.
+
 =item --resume
 
 type: string
@@ -5745,10 +5746,8 @@ L<"--algorithm"> of BIT_XOR or ACCUM.
 
 type: string; default: wait_timeout=10000; group: Connection
 
-Set these MySQL variables.
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+Set these MySQL variables.  Immediately after connecting to MySQL, this
+string will be appended to SET and executed.
 
 =item --since
 

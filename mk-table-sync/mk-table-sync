@@ -6261,15 +6261,13 @@ L<"ALGORITHMS">.
 
 Prompt for a password when connecting to MySQL.
 
-=item --buffer-results
+=item --[no]bin-log
 
-Fetch all rows from MySQL before comparing.
+default: yes
 
-This is disabled by default.  If enabled, all rows will be fetched into memory
-for comparing.  This may result in the results "cursor" being held open for a
-shorter time on the server, but if the tables are large, it could take a long
-time anyway, and eat all your memory.  For most non-trivial data sizes, you
-want to leave this disabled.
+Log to the binary log (C<SET SQL_LOG_BIN=1>).
+
+Specifying C<--no-bin-log> will C<SET SQL_LOG_BIN=0>.
 
 =item --buffer-in-mysql
 
@@ -6283,18 +6281,20 @@ lot of memory inside the Perl process, while releasing locks on the MySQL table
 (to reduce contention with other queries).  The disadvantage is that it uses
 more memory on the MySQL server instead.
 
-You probably want to enable L<"--buffer-results"> too, because buffering into a
-temp table and then fetching it all into Perl's memory is probably a silly thing
-to do.  This option is most useful for the GroupBy and Stream algorithms, which
-may fetch a lot of data from the server.
+You probably want to enable L<"--buffer-results"> too, because buffering into
+a temp table and then fetching it all into Perl's memory is probably a silly
+thing to do.  This option is most useful for the GroupBy and Stream algorithms,
+which may fetch a lot of data from the server.
 
-=item --[no]bin-log
+=item --buffer-results
 
-default: yes
+Fetch all rows from MySQL before comparing.
 
-Log to the binary log (C<SET SQL_LOG_BIN=1>).
-
-Specifying C<--no-bin-log> will C<SET SQL_LOG_BIN=0>.
+This is disabled by default.  If enabled, all rows will be fetched into memory
+for comparing.  This may result in the results "cursor" being held open for a
+shorter time on the server, but if the tables are large, it could take a long
+time anyway, and eat all your memory.  For most non-trivial data sizes, you
+want to leave this disabled.
 
 =item --chunk-size
 
@@ -6479,14 +6479,13 @@ algorithms never use an index hint.
 
 =item --pid
 
-type: string 
+type: string
 
-Create the given PID file; die if it already exists.
-
-The PID file is removed when the instance of mk-table-sync exits.
-
-/var/run/ is usually not writable by non-root users, therefore /tmp/ is a
-more reliable alternative.
+Create the given PID file when daemonized.  The file contains the process
+ID of the daemonized instance.  The PID file is removed when the
+daemonized instance exits.  The program checks for the existence of the
+PID file when starting; if it exists and the process with the matching PID
+exists, the program exits.
 
 =item --print
 
@@ -6541,12 +6540,10 @@ sync that table on servers C and D.
 
 =item --set-vars
 
-type: string; default: wait_timeout=10000 /*!40001 ,QUERY_CACHE_TYPE=0 */ 
+type: string; default: wait_timeout=10000
 
-Set these MySQL variables.
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+Set these MySQL variables.  Immediately after connecting to MySQL, this
+string will be appended to SET and executed.
 
 =item --[no]slave-check
 
