@@ -1774,11 +1774,10 @@ first option on the command line.
 
 short form: -A; type: string
 
-Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
-Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
-DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
-value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
-connecting to MySQL.
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
+NAMES UTF8 after connecting to MySQL.  Any other value sets binmode on STDOUT
+without the utf8 layer, and runs SET NAMES after connecting to MySQL.
 
 =item --day-start
 
@@ -1789,14 +1788,12 @@ from the current time.
 
 short form: -F; type: string
 
-Only read mysql options from the given file.
-
-If you specify this option, only this file is read for MySQL default options;
-otherwise all the default files will be read.
+Only read mysql options from the given file.  You must give an absolute
+pathname.
 
 =item --help
 
-Displays a help message.
+Show help and exit.
 
 =item --host
 
@@ -1818,13 +1815,13 @@ complicated expressions with parentheses and mixtures of OR and AND.
 
 short form: -p; type: string
 
-The password to use when connecting.
+Password to use when connecting.
 
 =item --port
 
 short form: -P; type: int
 
-The port number to use for the connection.
+Port number to use for connection.
 
 =item --[no]quote
 
@@ -1838,26 +1835,24 @@ Quoting happens after tests are run, and before actions are run.
 
 type: string; default: wait_timeout=10000
 
-Set these MySQL variables.
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+Set these MySQL variables.  Immediately after connecting to MySQL, this string
+will be appended to SET and executed.
 
 =item --socket
 
 short form: -S; type: string
 
-The socket file to use for the connection.
+Socket file to use for connection.
 
 =item --user
 
 short form: -u; type: string
 
-The user for login if not the current user.
+User for login if not current user.
 
 =item --version
 
-Output version information and exit.
+Show version and exit.
 
 =back
 

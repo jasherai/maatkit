@@ -3410,13 +3410,10 @@ option, but L<"--delayedins"> does not.
 
 short form: -A; type: string
 
-Default character set.
-
-Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
-Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
-DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
-value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
-connecting to MySQL.
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
+NAMES UTF8 after connecting to MySQL.  Any other value sets binmode on STDOUT
+without the utf8 layer, and runs SET NAMES after connecting to MySQL.
 
 =item --[no]chkcols
 
@@ -3651,14 +3648,12 @@ TABLE.
 
 =item --pid
 
-type: string 
+type: string
 
-Create the given PID file; die if it already exists.
-
-The PID file is removed when the instance of mk-archiver exits.
-
-/var/run/ is usually not writable by non-root users, therefore /tmp/ is a
-more reliable alternative.
+Create the given PID file when daemonized.  The file contains the process ID of
+the daemonized instance.  The PID file is removed when the daemonized instance
+exits.  The program checks for the existence of the PID file when starting; if
+it exists and the process with the matching PID exists, the program exits.
 
 =item --pkonly
 

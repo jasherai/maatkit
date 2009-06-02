@@ -3821,13 +3821,10 @@ Prompt for a password when connecting to MySQL.
 
 short form: -A; type: string
 
-Default character set.
-
-Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
-Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
-DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
-value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
-connecting to MySQL.
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
+NAMES UTF8 after connecting to MySQL.  Any other value sets binmode on STDOUT
+without the utf8 layer, and runs SET NAMES after connecting to MySQL.
 
 =item --config
 
@@ -3840,7 +3837,8 @@ first option on the command line.
 
 short form: -F; type: string
 
-Only read mysql options from the given file.
+Only read mysql options from the given file.  You must give an absolute
+pathname.
 
 =item --help
 
@@ -3850,7 +3848,9 @@ Show help and exit.
 
 type: string
 
-Connect to host (not implemented yet).
+Connect to host.
+
+TODO: Not implemented yet.
 
 =item --password
 
@@ -3868,10 +3868,8 @@ Port number to use for connection.
 
 type: string; default: wait_timeout=10000
 
-Set these MySQL variables.
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+Set these MySQL variables.  Immediately after connecting to MySQL, this string
+will be appended to SET and executed.
 
 =item --top
 

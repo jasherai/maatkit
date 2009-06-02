@@ -114,7 +114,7 @@ foreach my $prog ( @progs ) {
          if ( $standard_opts{$option} ) { # it's an option we care about
             my $text;
             while ( $para = <$fh> ) { # Grab the text of the option
-               if ( $para =~ m/^=item --|^=head1/ ) { # quit if we see the next one
+               if ( $para =~ m/^=item --|^=head/ ) { # quit if we see the next one
                   push @pending, $para;
                   last;
                }
