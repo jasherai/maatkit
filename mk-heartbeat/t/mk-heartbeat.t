@@ -95,6 +95,7 @@ is(
 # #############################################################################
 # Issue 352: Add port to mk-heartbeat --check output
 # #############################################################################
+sleep 1;
 $output = `../mk-heartbeat --host 127.1 --port 12345 -D test --check --recurse 1`;
 like(
    $output,
