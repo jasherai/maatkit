@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Script did not die if --pid file already existed (issue 383).
    * Removed the --tcpdump long option.  Use --watch-server instead.
    * Made --type=tcpdump auto-detect the server and host to watch.
    * The tool tried to parse database/table names inside quoted strings.

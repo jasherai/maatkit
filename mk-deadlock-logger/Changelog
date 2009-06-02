@@ -1,7 +1,7 @@
 Changelog for mk-deadlock-logger:
 
    * Sort options alphabetically in the POD
-   * Dies if --pid file already exists (issue 383).
+   * Script did not die if --pid file already existed (issue 383).
    * Removed the --source option; source DSN or --host, etc. is required.
    * Made --print default unless --dest or --print is explicitly given.
    * 'h' DSN part is no longer required (this prevented use of 'S').

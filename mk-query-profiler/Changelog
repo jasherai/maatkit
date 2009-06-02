@@ -1,6 +1,7 @@
 Changelog for mk-query-profiler and mk-profile-compact:
 
-   * Standardized options
+   * Standardized options.
+
 2009-05-03: version 1.1.15
 
    * Added the --config option for issue 231.

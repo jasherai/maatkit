@@ -1,5 +1,6 @@
 Changelog for mk-heartbeat:
 
+   * Script did not die if --pid file already existed (issue 383).
    * Sort options alphabetically in the POD
    * Removed the --askpass long option.  Use --ask-pass instead.
    * Removed the --dbidriver long option.  Use --dbi-driver instead.

@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+   * Script did not die if --pid file already existed (issue 383).
+
 2009-05-03: version 1.0.7
 
    * Removed the --askpass long option.  Use --ask-pass instead.
