@@ -4238,26 +4238,17 @@ is given.
 
 type: string; default: wait_timeout=10000
 
-<<<<<<< .mine
 Set these MySQL variables.  Immediately after connecting to MySQL, this string
 will be appended to SET and executed.
-=======
-Set these MySQL variables.  Immediately after connecting to MySQL, this
-string will be appended to SET and executed.
->>>>>>> .r3710
 
-<<<<<<< .mine
-=======
 =item --sets
 
->>>>>>> .r3710
 type: array
 
 Dump this comma-separated list of backup sets.
 
 Requires L<"--set-table">.  See L<"BACKUP SETS">.  The special C<default> set
-is
-reserved; don't use it as a set name.
+is reserved; don't use it as a set name.
 
 =item --since
 
