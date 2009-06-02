@@ -2502,7 +2502,7 @@ Connect to host.
 
 =item --interval
 
-orm: -i; type: time; default: 1s
+type: time; default: 1s
 
 Interval between updates and checks.
 
