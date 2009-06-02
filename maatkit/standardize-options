@@ -1,0 +1,162 @@
+#!/usr/bin/env perl
+
+# This script reads a specified file (or all mk-* files if none is specified)
+# and complains if any of the POD options don't match the standardized format.
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+my @progs = @ARGV;
+if ( !@progs ) {
+   @progs = <../mk-*/mk-*>;
+}
+
+my %standard_opts = (
+   'ask-pass' => q{
+      Prompt for a password when connecting to MySQL.
+   },
+   'charset' => q{
+      short form: -A; type: string
+
+      Default character set.  If the value is utf8, sets Perl's binmode on
+      STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
+      runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
+      binmode on STDOUT without the utf8 layer, and runs SET NAMES after
+      connecting to MySQL.
+   },
+   'config' => q{
+      type: Array
+
+      Read this comma-separated list of config files; if specified, this must be
+      the first option on the command line.
+   },
+   'daemonize' => q{
+      Fork to the background and detach from the shell.  POSIX
+      operating systems only.
+   },
+   'defaults-file' => q{
+      short form: -F; type: string
+
+      Only read mysql options from the given file.  You must give an absolute
+      pathname.
+   },
+   'help' => q{
+      Show help and exit.
+   },
+   'host' => q{
+      short form: -h; type: string
+
+      Connect to host.
+   },
+   'password' => q{
+      short form: -p; type: string
+
+      Password to use when connecting.
+   },
+   'log' => q{
+      type: string
+
+      Print all output to this file when daemonized.
+   },
+   'pid' => q{
+      type: string
+
+      Create the given PID file when daemonized.  The file contains the process
+      ID of the daemonized instance.  The PID file is removed when the
+      daemonized instance exits.  The program checks for the existence of the
+      PID file when starting; if it exists and the process with the matching PID
+      exists, the program exits.
+   },
+   'port' => q{
+      short form: -P; type: int
+
+      Port number to use for connection.
+   },
+   'set-vars' => q{
+      type: string; default: wait_timeout=10000
+
+      Set these MySQL variables.  Immediately after connecting to MySQL, this
+      string will be appended to SET and executed.
+   },
+   'socket' => q{
+      short form: -S; type: string
+
+      Socket file to use for connection.
+   },
+   'user' => q{
+      short form: -u; type: string
+
+      User for login if not current user.
+   },
+   'version' => q{
+      Show version and exit.
+   },
+);
+
+foreach my $prog ( @progs ) {
+   open my $fh, "<", $prog or die $OS_ERROR;
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $para;
+
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   # Find each option
+   my @pending;
+   my @wrong;
+   my $whitespace;
+   while ( defined($para = shift @pending) or defined($para = <$fh>) ) {
+      last if $para =~ m/^=head1/; # We ran off the end of the list
+      if ( my ($option) = $para =~ m/^=item --(?:\[no\])?(.*)/ ) {
+         if ( $standard_opts{$option} ) { # it's an option we care about
+            my $text;
+            while ( $para = <$fh> ) { # Grab the text of the option
+               if ( $para =~ m/^=item --|^=head1/ ) { # quit if we see the next one
+                  push @pending, $para;
+                  last;
+               }
+               $text .= $para
+                  # special case: don't let the last option end with end of the
+                  # option list!
+                  unless $option eq 'version' && $para =~ m/^=back/;
+            }
+
+            # Now we have the text of the option and the name of it.  Compare.
+            compare_option($text, $option)
+               or push @wrong, $option;
+            if ( $text =~ m/ $/m ) {
+               $whitespace++;
+            }
+         }
+      }
+   }
+
+   close $fh;
+   if ( @wrong ) {
+      print "$prog has wrong option text: ", join(', ', @wrong), "\n";
+      if ( $whitespace ) {
+         print "   Hint: there is trailing whitespace.\n";
+      }
+   }
+}
+
+sub compare_option {
+   my ( $text, $name ) = @_;
+   $text = normalize($text);
+   my $standard = normalize($standard_opts{$name});
+   return $text eq $standard;
+}
+
+# Make the text into a normalized format
+sub normalize {
+   my ( $text ) = @_;
+   $text =~ s/(\S)\n *(\S)/$1 $2/g; # Join all lines in a paragraph;
+   $text =~ s/^ *//gm;              # Remove leading whitespace;
+   $text =~ s/  */ /g;              # Collapse spaces to a single space.
+   $text =~ s/\A\s*//;              # Remove all leading/trailing whitespace.
+   $text =~ s/\s*\Z//;
+   return $text;
+}
