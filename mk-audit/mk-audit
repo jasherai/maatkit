@@ -3934,8 +3934,6 @@ Show help and exit.
 
 =item --host
 
-type: string
-
 short form: -h; type: string
 
 Connect to host.
