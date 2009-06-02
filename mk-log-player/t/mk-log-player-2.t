@@ -3,7 +3,8 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 13;
+use Test::More skip_all => 'Special non-released, development script';
+#use Test::More tests => 13;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
