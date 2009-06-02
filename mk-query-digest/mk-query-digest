@@ -5924,7 +5924,8 @@ with the default structure shown in the documentation for that option.
 
 =item --daemonize
 
-Fork to the background and detach from the shell.  POSIX only.
+Fork to the background and detach from the shell.  POSIX
+operating systems only.
 
 =item --embedded-attributes
 
@@ -6170,14 +6171,13 @@ You can specify an --outliers option for each value in L<"--report">.
 
 =item --pid
 
-type: string 
+type: string
 
-Create the given PID file when daemonized.
-
-For example, C<--daemonize --pid /tmp/mk-query-digest.pid>.  /var/run/ is
-usually not writable by non-root users, so /tmp/ is a more reliable alternative.
-
-The PID file is removed when the daemonized instance exits.
+Create the given PID file when daemonized.  The file contains the process
+ID of the daemonized instance.  The PID file is removed when the
+daemonized instance exits.  The program checks for the existence of the
+PID file when starting; if it exists and the process with the matching PID
+exists, the program exits.
 
 =item --print
 

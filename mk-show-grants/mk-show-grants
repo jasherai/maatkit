@@ -1221,7 +1221,7 @@ sub main {
    $o->get_opts();
 
    my $dp = new DSNParser();
-   $dp->prop('setvars', $o->get('setvars'));
+   $dp->prop('setvars', $o->get('set-vars'));
 
    $o->usage_or_errors();
 
@@ -1584,14 +1584,12 @@ The default output from MySQL's SHOW GRANTS command lists many privileges on a
 single line.  With L<"--flush">, places a FLUSH PRIVILEGES after each user,
 instead of once at the end of all the output.
 
-=item --setvars
+=item --set-vars
 
 type: string; default: wait_timeout=10000
 
-Set these MySQL variables.
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+Set these MySQL variables.  Immediately after connecting to MySQL, this
+string will be appended to SET and executed.
 
 =item --socket
 

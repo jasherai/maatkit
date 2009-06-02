@@ -2014,13 +2014,11 @@ Prompt for a password when connecting to MySQL.
 
 short form: -A; type: string
 
-Default character set.
-
-Enables character set settings in Perl and MySQL. If the value is C<utf8>,
-sets Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option
-to DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL. Any other
-value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES>
-after connecting to MySQL.
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
+runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
+binmode on STDOUT without the utf8 layer, and runs SET NAMES after
+connecting to MySQL.
 
 =item --databases
 
@@ -2032,9 +2030,8 @@ Check only this comma-separated list of databases.
 
 short form: -F; type: string
 
-Only read mysql options from the given file.
-
-You must give an absolute pathname.
+Only read mysql options from the given file.  You must give an absolute
+pathname.
 
 =item --engine
 
