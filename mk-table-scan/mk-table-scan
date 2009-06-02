@@ -1857,7 +1857,7 @@ if ( !defined $opts{p} && $opts{askpass} ) {
 }
 
 my $dp = new DSNParser;
-$dp->prop('setvars', $opts{setvars});
+$dp->prop('setvars', $opts{'set-vars'});
 my $dbh = $dp->get_dbh( $dp->get_cxn_params(\%opts), { AutoCommit => 1 } );
 
 my $q  = new Quoter();
@@ -2095,14 +2095,12 @@ short form: -P; type: int
 
 Port number to use for connection.
 
-=item --setvars
+=item --set-vars
 
-type: string
+type: string; default: wait_timeout=10000
 
-Set these MySQL variables (default wait_timeout=10000).
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+Set these MySQL variables.  Immediately after connecting to MySQL, this string
+will be appended to SET and executed.
 
 =item --socket
 

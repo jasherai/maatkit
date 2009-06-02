@@ -1,5 +1,6 @@
 Changelog for mk-slave-delay:
 
+   * Standardized options
 2009-05-03: version 1.0.13
 
    * Removed the --askpass long option.  Use --ask-pass instead.

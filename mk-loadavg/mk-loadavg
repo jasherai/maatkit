@@ -1372,7 +1372,7 @@ $opt_parser->{prompt} = '<options>';
 $opt_parser->{descr}  = 'watches the load on a MySQL server and takes action '
                       . 'if it is too high.';
 my %opts = $opt_parser->parse();
-$dp->prop('setvars', $opts{setvars});
+$dp->prop('setvars', $opts{'set-vars'});
 
 $opt_parser->usage_or_errors(%opts);
 
@@ -1664,14 +1664,12 @@ type: int
 
 How many samples to use for calculating the trevorprice L<"--metrics">.
 
-=item --setvars
+=item --set-vars
 
 type: string; default: wait_timeout=10000
 
-Set these MySQL variables.
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
+Set these MySQL variables.  Immediately after connecting to MySQL, this string
+will be appended to SET and executed.
 
 =item --sleep
 

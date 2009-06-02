@@ -1,5 +1,6 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Standardized options
    * Columns with backticks in comments caused a crash (issue 330)
    * Connection options were not read from the [client] section (issue 249).
    * Set connection options immediately after connecting (issue 286).

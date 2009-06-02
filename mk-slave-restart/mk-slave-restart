@@ -2665,8 +2665,13 @@ Exit if this file exists.
 
 type: string; default: wait_timeout=10000
 
+<<<<<<< .mine
+Set these MySQL variables.  Immediately after connecting to MySQL, this string
+will be appended to SET and executed.
+=======
 Set these MySQL variables.  Immediately after connecting to MySQL, this
 string will be appended to SET and executed.
+>>>>>>> .r3710
 
 =item --skip-count
 

@@ -1,5 +1,6 @@
 Changelog for mk-slave-restart:
 
+   * Standardized options
 2009-05-03: version 1.0.13
 
    * Added the --log option for issue 241.
