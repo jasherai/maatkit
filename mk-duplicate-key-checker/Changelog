@@ -1,6 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
-   * Sort options alphabetically in the POD
+   * Sorted options alphabetically in the POD.
+
 2009-05-03: version 1.2.3
 
    * Columns with backticks in comments caused a crash (issue 330)
