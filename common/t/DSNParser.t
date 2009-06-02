@@ -103,6 +103,7 @@ is (
 is ($dp->usage(),
 <<EOF
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
+
   KEY  COPY  MEANING
   ===  ====  =============================================
   A    yes   Default character set
@@ -169,6 +170,7 @@ is_deeply(
 is ($dp->usage(),
 <<EOF
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
+
   KEY  COPY  MEANING
   ===  ====  =============================================
   A    yes   Default character set
