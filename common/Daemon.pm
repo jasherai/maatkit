@@ -71,14 +71,22 @@ sub daemonize {
    # Only reopen STDIN to /dev/null if it's a tty.  It may be a pipe,
    # in which case we don't want to break it.
    if ( -t STDIN ) {
-      open STDIN, '/dev/null'
+      close STDIN;
+      open  STDIN, '/dev/null'
          or die "Cannot reopen STDIN to /dev/null";
    }
 
    if ( $self->{log_file} ) {
-      open STDOUT, '>>', $self->{log_file}
+      close STDOUT;
+      open  STDOUT, '>>', $self->{log_file}
          or die "Cannot open log file $self->{log_file}: $OS_ERROR";
-      open STDERR, ">&STDOUT"
+
+      # If we don't close STDERR explicitly, then prove Daemon.t fails
+      # because STDERR gets written before STDOUT even though we print
+      # to STDOUT first in the tests.  I don't know why, but it's probably
+      # best that we just explicitly close all fds before reopening them.
+      close STDERR;
+      open  STDERR, ">&STDOUT"
          or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
    }
 
