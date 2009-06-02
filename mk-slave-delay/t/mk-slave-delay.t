@@ -88,7 +88,6 @@ like(
 # Check --log.
 # #############################################################################
 `../mk-slave-delay --run-time 1s --interval 1s -h 127.1 -P 12346 --log /tmp/mk-slave-delay.log --daemonize`;
-sleep 2;
 $output = `cat /tmp/mk-slave-delay.log`;
 `rm -f /tmp/mk-slave-delay.log`;
 like(
