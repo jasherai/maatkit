@@ -1,29 +1,9 @@
 #!/usr/bin/perl
 
-# This program is copyright 2008 Percona Inc.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
-
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 11;
 use English qw(-no_match_vars);
-
-use DBI;
+use Test::More tests => 11;
 
 require '../MySQLAdvisor.pm';
 require '../MySQLInstance.pm';
@@ -32,6 +12,7 @@ require '../DSNParser.pm';
 require '../MySQLDump.pm';
 require '../Quoter.pm';
 require '../TableParser.pm';
+require '../VersionParser.pm';
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -57,16 +38,17 @@ $myi->load_status_vals($dbh);
 # #############################################################################
 # Next, we need a SchemaDiscover.
 # #############################################################################
-my $d = new MySQLDump();
-my $q = new Quoter();
-my $t = new TableParser();
+my $vp = new VersionParser();
+my $d  = new MySQLDump();
+my $q  = new Quoter();
+my $t  = new TableParser();
 my $sd = new SchemaDiscover(
-   dbh         => $dbh,
-   MySQLDump   => $d,
-   Quoter      => $q,
-   TableParser => $t,
+   du  => $d,
+   q   => $q,
+   tp  => $t,
+   vp  => $vp,
 );
-
+$sd->discover($dbh);
 
 # #############################################################################
 # Now, begin checking MySQLAdvisor.
