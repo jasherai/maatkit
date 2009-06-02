@@ -71,7 +71,7 @@ unlike(
 );
 
 clear_output();
-mk_show_grants::main('-F', $cnf, '--ignore', 'baron,msandbox,root,root@localhost');
+mk_show_grants::main('-F', $cnf, '--ignore', 'baron,msandbox,root,root@localhost,user');
 unlike(
    $output,
    qr/uninitialized/,
