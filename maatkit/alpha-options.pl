@@ -12,6 +12,7 @@ if ( !@progs ) {
 foreach my $prog ( @progs ) {
    open my $fh, "<", $prog or die $OS_ERROR;
    my ($program) = $prog =~ m{/([a-z-]+)$};
+   next unless $program;
    local $INPUT_RECORD_SEPARATOR = '';
    my $para;
 

@@ -10,7 +10,8 @@ my %opts;
 
 foreach my $prog ( <../mk-*/mk-*> ) {
    open my $fh, "<", $prog or die $OS_ERROR;
-   my ($program) = $prog =~ m{/([a-z-]+)$};
+   my ($program) = $prog =~ m{/([a-z\d-]+)$};
+   next unless $program;
    local $INPUT_RECORD_SEPARATOR = '';
    my $para;
 
