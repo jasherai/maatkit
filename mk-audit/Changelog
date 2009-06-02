@@ -1,5 +1,7 @@
 Changelog for mk-audit:
 
+2009-06-02: version 0.9.8
+
    * Sorted options alphabetically in the POD.
 
 2009-05-03: version 0.9.7

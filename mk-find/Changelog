@@ -1,5 +1,7 @@
 Changelog for mk-find:
 
+2009-06-02: version 0.9.16
+
    * Removed the --askpass long option.  Use --ask-pass instead.
    * Removed the --daystart long option.  Use --day-start instead.
    * Removed the --setvars long option.  Use --set-vars instead.

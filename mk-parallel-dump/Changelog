@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+2009-06-02: version 1.0.16
+
    * Standardized options.
    * Removed the --age long option.  Use --since instead.
    * Removed the --numthreads long option.  Use --threads instead.

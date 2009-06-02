@@ -1,5 +1,7 @@
 Changelog for mk-deadlock-logger:
 
+2009-06-02: version 1.0.15
+
    * Sorted options alphabetically in the POD.
    * Script did not die if --pid file already existed (issue 383).
    * Removed the --source option; source DSN or --host, etc. is required.

@@ -1,5 +1,7 @@
 Changelog for mk-show-grants:
 
+2009-06-02: version 1.0.16
+
    * Removed the --askpass long option.  Use --ask-pass instead.
    * Removed the --setvars long option.  Use --set-vars instead.
    * Removed the -d short option.  Use --drop instead.

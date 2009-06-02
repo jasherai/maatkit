@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+2009-06-02: version 1.0.14
+
    * Removed the --test long option.  Use --dry-run instead.
    * Removed the --askpass long option.  Use --ask-pass instead.
    * Removed the --[no]atomicresume long option.  Use --[no]atomic-resume.

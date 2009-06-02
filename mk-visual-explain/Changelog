@@ -1,5 +1,7 @@
 Changelog for mk-visual-explain:
 
+2009-06-02: version 1.0.15
+
    * Optional input files were not read (issue 394).
 
 2009-05-03: version 1.0.14

@@ -1,5 +1,7 @@
 Changelog for mk-fifo-split:
 
+2009-06-02: version 1.0.4
+
    * Sorted options alphabetically in the POD.
    * Removed -f short option; use --fifo instead.
    * Removed -l short option; use --lines instead.

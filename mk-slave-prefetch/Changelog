@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+2009-06-02: version 1.0.8
+
    * Script did not die if --pid file already existed (issue 383).
 
 2009-05-03: version 1.0.7

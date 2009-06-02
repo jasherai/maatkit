@@ -1,5 +1,7 @@
 Changelog for mk-slave-delay:
 
+2009-06-02: version 1.0.14
+
    * Standardized options.
    * Script did not die if --pid file already existed (issue 383).
 

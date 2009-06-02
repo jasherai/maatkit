@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2009-06-02: version 1.0.16
+
    * Added --pid option to make script die if PID file exists (issue 391).
    * Missing --databases on destination hosts caused crash (issue 408).
    * Removed the --test long option.  Use --dry-run instead.

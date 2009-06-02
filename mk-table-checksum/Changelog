@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2009-06-02: version 1.2.6
+
    * Options not allowed with --schema are no longer silently ignored.
    * Organized options into groups (see --help output).
    * Removed the --argtable long option.  Use --arg-table instead.
