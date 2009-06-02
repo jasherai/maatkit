@@ -1905,14 +1905,14 @@ printed by default.  If only L<"--dest"> is given, then the deadlock
 information is only stored.  If both options are given, then the deadlock
 informat is printed and stored.
 
-The source host can specified using one of two methods.  The first method is
+The source host can be specified using one of two methods.  The first method is
 to use at least one of the standard connection-related command line options:
 L<"--defaults-file">, L<"--password">, L<"--host">, L<"--port">, L<"--socket">
 or L<"--user">.  These options only apply to the source host; they cannot be
 used to specify the destination host.
 
 The second method to specifiy the source host, or the optional destination host
-with L<"--dest">, is a DSN.  A DSN is a special syntax that can be either just
+using L<"--dest">, is a DSN.  A DSN is a special syntax that can be either just
 a hostname (like C<server.domain.com> or C<1.2.3.4>), or a
 C<key=value,key=value> string. Keys are a single letter:
 

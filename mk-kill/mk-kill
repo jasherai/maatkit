@@ -2088,6 +2088,8 @@ Kill only queries whose Command matches this Perl regex.
 
 =item --match-info
 
+type: string
+
 Kill only queries whose Info (query) matches this Perl regex.
 
 =item --[no]only-oldest

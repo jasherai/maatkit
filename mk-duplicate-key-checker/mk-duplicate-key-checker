@@ -3026,7 +3026,7 @@ Only read mysql options from the given file.  You must give an absolute pathname
 
 short form: -e; type: hash
 
-Do only tables whose storage engine is in this comma-separated list.
+Check only tables whose storage engine is in this comma-separated list.
 
 =item --help
 

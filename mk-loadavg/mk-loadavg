@@ -1537,7 +1537,7 @@ mk-loadavg - Watch MySQL load and take action when it gets too high.
 
 =head1 SYNOPSIS
 
-  mk-loadavg --metrics num_locked:5 --info status,processlist \
+  mk-loadavg --metrics num_locked:5 --info status,processlist
 
 =head1 DESCRIPTION
 
@@ -1605,7 +1605,7 @@ Calculate the L<"--status"> metric over a 1-second interval.
 
 =item --info
 
-type:Array
+type: Array
 
 A list of info to print when L<"--metrics"> are exceeded.
 
@@ -1660,7 +1660,7 @@ Print metrics even if they don't exceed limits.
 
 =item --samples
 
-type:int
+type: int
 
 How many samples to use for calculating the trevorprice L<"--metrics">.
 
