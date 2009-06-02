@@ -3028,12 +3028,6 @@ short form: -e; type: hash
 
 Do only tables whose storage engine is in this comma-separated list.
 
-=item --key-types
-
-type: string; default: fk
-
-Check for duplicate f=foreign keys, k=keys or fk=both.
-
 =item --help
 
 Show help and exit.
@@ -3064,9 +3058,14 @@ Ignore index order so KEY(a,b) duplicates KEY(b,a).
 
 type: Hash
 
-Ignore this comma-separated list of tables.
+Ignore this comma-separated list of tables.  Table names may be qualified with
+the database name.
 
-Table names may be qualified with the database name.
+=item --key-types
+
+type: string; default: fk
+
+Check for duplicate f=foreign keys, k=keys or fk=both.
 
 =item --password
 
@@ -3093,23 +3092,21 @@ short form: -S; type: string
 
 Socket file to use for connection.
 
+=item --[no]sql
+
+default: yes
+
+Print DROP KEY statement for each duplicate key.  By default an ALTER TABLE
+DROP KEY statement is printed below each duplicate key so that, if you want to
+remove the duplicate key, you can copy-paste the statement into MySQL.
+
+To disable printing these statements, specify --nosql.
+
 =item --[no]summary
 
 default: yes
 
 Print summary of indexes at end of output.
-
-=item --[no]sql
-
-default: yes
-
-Print DROP KEY statement for each duplicate key.
-
-By default an ALTER TABLE  DROP KEY statement is printed below each duplicate
-key so that, if you want to remove the duplicate key, you can copy-paste the
-statement into MySQL.
-
-To disable printing these statements, specify --nosql.
 
 =item --tables
 

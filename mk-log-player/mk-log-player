@@ -3184,29 +3184,25 @@ short form: -F; type: string
 
 Only read mysql options from the given file.
 
-=item --delaysessions
-
-type: array; default: 0
-
-Amount of delay time between playing sessions.
-
-Delay time is given in seconds (with microsecond precision) and can either be
-a single value or a range. Single values cause an exact delay of the value time
-(example: 0.010 = delay 10 milliseconds). Ranges cause a random delay between
-the given value times (example: 0.001,1 = random delay from 1 millisecond to
-1 second).
-
 =item --delayqueries
 
 type: array; default: 0
 
-Amount of delay time between executing queries in each session.
+Amount of delay time between executing queries in each session.  Delay time is
+given in seconds (with microsecond precision) and can either be a single value
+or a range. Single values cause an exact delay of the value time (example: 0.010
+= delay 10 milliseconds). Ranges cause a random delay between the given value
+times (example: 0.001,1 = random delay from 1 millisecond to 1 second).
 
-Delay time is given in seconds (with microsecond precision) and can either be
-a single value or a range. Single values cause an exact delay of the value time
-(example: 0.010 = delay 10 milliseconds). Ranges cause a random delay between
-the given value times (example: 0.001,1 = random delay from 1 millisecond to
-1 second).
+=item --delaysessions
+
+type: array; default: 0
+
+Amount of delay time between playing sessions.  Delay time is given in seconds
+(with microsecond precision) and can either be a single value or a range. Single
+values cause an exact delay of the value time (example: 0.010 = delay 10
+milliseconds). Ranges cause a random delay between the given value times
+(example: 0.001,1 = random delay from 1 millisecond to 1 second).
 
 =item --help
 
@@ -3249,27 +3245,14 @@ the other options will not reach their maxes. The default values for
 L<"--maxdirs"> and L<"--maxfiles"> allow for 100,000 sessions: 100 files
 in 100 directories.
 
-=item --maxsessions
-
-type: int
-
-Max number of sessions to save with --split.
-
-By default, C<mk-log-player> tries to save every session from the main
-log file. For huge logs, however, this can result in hundreds of thousands of
-sessions. This option causes only the first N number of sessions to be saved.
-
-See also L<"--maxdirs"> and L<"--maxfiles">.
-
 =item --maxsessionfiles
 
 type: int; default: 0
 
-Max number of session files in which sessions are saved with --split.
-
-By default, one session is saved in one file up to L<"--maxsessions">
-(and L<"--maxfiles"> and L<"--maxdirs">). This option causes several sessions
-to be saved to a limited number of files up to L<"--maxsessions">.
+Max number of session files in which sessions are saved with --split.  By
+default, one session is saved in one file up to L<"--maxsessions"> (and
+L<"--maxfiles"> and L<"--maxdirs">). This option causes several sessions to be
+saved to a limited number of files up to L<"--maxsessions">.
 
 For example, if you want to split a lot with 10,000 sessions into only two
 session files, each one containing 5,000 session, then specify
@@ -3279,31 +3262,38 @@ If, for the same 10,000 session log, you specify --maxsessionfiles 2
 and --maxsessions 2000, then the two session files will each contain 1,000
 sessions.
 
+=item --maxsessions
+
+type: int
+
+Max number of sessions to save with --split.  By default, C<mk-log-player> tries
+to save every session from the main log file. For huge logs, however, this can
+result in hundreds of thousands of sessions. This option causes only the first N
+number of sessions to be saved.  See also L<"--maxdirs"> and L<"--maxfiles">.
+
+=item --onlyselect
+
+Play only SELECT queries.
+
 =item --password
 
 short form: -p; type: string
 
 Password to use when connecting.
 
+=item --play
+
+type: string
+
+Play (execute) session files created by --split.  The argument to play must be a
+comma-separated list of session files created by L<"--split"> or a directory.
+If the argument is a directory, ALL files in that directory will be played.
+
 =item --port
 
 short form: -P; type: int
 
 Port number to use for connection.
-
-=item --onlyselect
-
-Play only SELECT queries.
-
-=item --play
-
-type: string
-
-Play (execute) session files created by --split.
-
-The argument to play must be a commaxn-separated list of session files
-created by L<"--split"> or a directory. If the argument is a directory,
-ALL files in that directory will be played.
 
 =item --print
 

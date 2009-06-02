@@ -2418,6 +2418,13 @@ utf8 layer, and runs SET NAMES after connecting to MySQL.
 
 Check slave delay once and exit.
 
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
+
 =item --create-table
 
 Create the heartbeat L<"--table"> if it does not exist.
@@ -2440,13 +2447,6 @@ This is done automatically by --create-table.
 =item --daemonize
 
 Fork to the background and detach from the shell.  POSIX operating systems only.
-
-=item --config
-
-type: Array
-
-Read this comma-separated list of config files; if specified, this must be the
-first option on the command line.
 
 =item --database
 

@@ -1,5 +1,6 @@
 Changelog for mk-heartbeat:
 
+   * Sort options alphabetically in the POD
    * Removed the --askpass long option.  Use --ask-pass instead.
    * Removed the --dbidriver long option.  Use --dbi-driver instead.
    * Removed the --setvars long option.  Use --set-vars instead.

@@ -2099,6 +2099,12 @@ Port number to use for connection.
 Print results on standard output.  See L<"OUTPUT"> for more.  By default,
 enables L<"--[no]collapse"> unless you explicitly disable it.
 
+=item --run-time
+
+type: time
+
+How long to run before exiting.
+
 =item --set-vars
 
 type: string; default: wait_timeout=10000
@@ -2115,12 +2121,6 @@ Socket file to use for connection.
 =item --tab
 
 Print tab-separated columns, instead of aligned.
-
-=item --run-time
-
-type: time
-
-How long to run before exiting.
 
 =item --user
 

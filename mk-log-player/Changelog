@@ -1,5 +1,6 @@
 Changelog for mk-log-player:
 
+   * Sort options alphabetically in the POD
    * Could not play queries with blank lines (issue 418).
    * Removed the --askpass long option.  Use --ask-pass instead.
    * Removed the --verbosity long option.  Use --verbose instead.

@@ -1013,6 +1013,10 @@ type: string; default: /tmp/mk-fifo-split
 
 The name of the fifo from which the lines can be read.
 
+=item --force
+
+Remove the fifo if it exists already, then create it again.
+
 =item --help
 
 Show help and exit.
@@ -1022,10 +1026,6 @@ Show help and exit.
 type: int; default: 1000
 
 The number of lines to read in each chunk.
-
-=item --force
-
-Remove the fifo if it exists already, then create it again.
 
 =item --offset
 

@@ -1,5 +1,6 @@
 Changelog for mk-audit:
 
+   * Sort options alphabetically in the POD
 2009-05-03: version 0.9.7
 
    * Removed the --askpass long option.  Use --ask-pass instead.
