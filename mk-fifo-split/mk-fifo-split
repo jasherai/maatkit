@@ -868,83 +868,92 @@ use IO::File;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-# ############################################################################
-# Get configuration information.
-# ############################################################################
-my $o = new OptionParser(
-   strict      => 0,
-   prompt      => '[options] [FILE ...]',
-   description => q{splits FILE and pipes lines to a fifo.  With no FILE, }
-                . q{or when FILE is -, read standard input.},
-);
-$o->get_specs();
-$o->get_opts();
+sub main {
+      @ARGV = @_;  # set global ARGV for this package
 
-if ( !$o->get('lines') || $o->get('lines') <= 0 ) {
-   $o->_save_error('--lines must be a positive integer');
-}
-$o->usage_or_errors();
+   # ############################################################################
+   # Get configuration information.
+   # ############################################################################
+   my $o = new OptionParser(
+      strict      => 0,
+      prompt      => '[options] [FILE ...]',
+      description => q{splits FILE and pipes lines to a fifo.  With no FILE, }
+                   . q{or when FILE is -, read standard input.},
+   );
+   $o->get_specs();
+   $o->get_opts();
 
-# TODO: binmode
-# TODO: add limit arguments so you can read a splice out of the middle.
-# TODO: print out $. on exit (including exit by CTRL-C).
-# TODO make progress messages the default
-# TODO: use tell to figure out percentage, and print %complete and ETA.  See
-# http://www.perlmonks.org/?node_id=698607 for inspiration.  This would probably
-# only work when a single file is named in @ARGV (would not work when <> is
-# reading STDIN, for example).
+   if ( !$o->get('lines') || $o->get('lines') <= 0 ) {
+      $o->_save_error('--lines must be a positive integer');
+   }
+   $o->usage_or_errors();
 
-my $file = $o->get('fifo');
+   # TODO: binmode
+   # TODO: add limit arguments so you can read a splice out of the middle.
+   # TODO: print out $. on exit (including exit by CTRL-C).
+   # TODO make progress messages the default
+   # TODO: use tell to figure out percentage, and print %complete and ETA.  See
+   # http://www.perlmonks.org/?node_id=698607 for inspiration.  This would probably
+   # only work when a single file is named in @ARGV (would not work when <> is
+   # reading STDIN, for example).
 
-if ( $o->get('force') && -e $file ) {
+   my $file = $o->get('fifo');
+
+   if ( $o->get('force') && -e $file ) {
+      unlink($file) or die "Can't unlink $file: $OS_ERROR";
+   }
+   mkfifo($file, 0777) or die "Can't make fifo $file: $OS_ERROR";
+
+   my $fh;
+
+   $fh = IO::File->new($file, '>') or die "Can't open $file: $OS_ERROR";
+   $fh->autoflush(1);
+
+   if ( $o->get('statistics') ) {
+      printf("%5s %9s %5s %8s %8s\n", qw(chunks lines time overall current));
+   }
+
+   # This is for runtime efficiency.
+   my $OFFSET = $o->get('offset');
+   my $LINES  = $o->get('lines');
+
+   my $lines  = 0;
+   my $chunks = 0;
+   my $start  = time();
+   my $cstart = time();
+   while ( my $line = <> ) {
+      $lines++;
+      next if $OFFSET && $lines < $OFFSET;
+      if ( $lines % $LINES == 0 ) {
+         close $fh or die "Can't close: $OS_ERROR";
+
+         unlink($file) or die "Can't unlink $file: $OS_ERROR";
+         mkfifo($file, 0777) or die "Can't make fifo $file: $OS_ERROR";
+
+         $fh = IO::File->new($file, '>') or die "Can't open $file: $OS_ERROR";
+         $fh->autoflush(1);
+
+         $chunks++;
+         my $end = time();
+         if ( $o->get('statistics') ) {
+            my $overall = ($end - $start)  || 1;
+            my $current = ($end - $cstart) || 1;
+            printf("%5d %9d %5d %5.2f %5.2f\n", $chunks, $lines, ($end - $start),
+               ($lines / $overall), ($LINES / $current));
+         }
+         $cstart = $end;
+      }
+      print $fh $line or die "Can't print: $OS_ERROR";
+   }
+   close $fh or die "Can't close: $OS_ERROR";
+
    unlink($file) or die "Can't unlink $file: $OS_ERROR";
 }
-mkfifo($file, 0777) or die "Can't make fifo $file: $OS_ERROR";
 
-my $fh;
-
-$fh = IO::File->new($file, '>') or die "Can't open $file: $OS_ERROR";
-$fh->autoflush(1);
-
-if ( $o->get('statistics') ) {
-   printf("%5s %9s %5s %8s %8s\n", qw(chunks lines time overall current));
-}
-
-# This is for runtime efficiency.
-my $OFFSET = $o->get('offset');
-my $LINES  = $o->get('lines');
-
-my $lines  = 0;
-my $chunks = 0;
-my $start  = time();
-my $cstart = time();
-while ( my $line = <> ) {
-   $lines++;
-   next if $OFFSET && $lines < $OFFSET;
-   if ( $lines % $LINES == 0 ) {
-      close $fh or die "Can't close: $OS_ERROR";
-
-      unlink($file) or die "Can't unlink $file: $OS_ERROR";
-      mkfifo($file, 0777) or die "Can't make fifo $file: $OS_ERROR";
-
-      $fh = IO::File->new($file, '>') or die "Can't open $file: $OS_ERROR";
-      $fh->autoflush(1);
-
-      $chunks++;
-      my $end = time();
-      if ( $o->get('statistics') ) {
-         my $overall = ($end - $start)  || 1;
-         my $current = ($end - $cstart) || 1;
-         printf("%5d %9d %5d %5.2f %5.2f\n", $chunks, $lines, ($end - $start),
-            ($lines / $overall), ($LINES / $current));
-      }
-      $cstart = $end;
-   }
-   print $fh $line or die "Can't print: $OS_ERROR";
-}
-close $fh or die "Can't close: $OS_ERROR";
-
-unlink($file) or die "Can't unlink $file: $OS_ERROR";
+# ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
 
 # ############################################################################
 # Documentation
