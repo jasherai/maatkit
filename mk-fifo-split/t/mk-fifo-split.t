@@ -27,7 +27,7 @@ unlink('/tmp/mk-fifo-split');
 my $output = `perl ../mk-fifo-split --help`;
 like($output, qr/Options and values/, 'It lives');
 
-my $cmd = 'perl ../mk-fifo-split ../mk-fifo-split > /dev/null 2>&1 < /dev/null';
+my $cmd = 'perl ../mk-fifo-split --lines 10000 ../mk-fifo-split > /dev/null 2>&1 < /dev/null';
 system("($cmd)&");
 sleep(1);
 

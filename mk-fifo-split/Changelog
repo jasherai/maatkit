@@ -1,6 +1,12 @@
 Changelog for mk-fifo-split:
 
+   * Removed -f short option; use --fifo instead.
+   * Removed -l short option; use --lines instead.
+   * Removed -F short option; use --force instead.
+   * Removed -O short option; use --offset instead.
+   * Removed -S short option; use --statistics instead.
    * Removed string interpolation from debugging calls (issue 308).
+   * Added the --config option (issue 231).
    * Updates to shared code.
 
 2008-12-01: version 1.0.3
