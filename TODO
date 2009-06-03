@@ -1,61 +1,3 @@
-mk-table-sync should say it's not syncing if you don't say --execute
-
-If binlog-do-db is set, checksumming won't work in some databases.  Same for
-binlog-ignore-db.  is it possible to make it stay in one DB?
-
-Estimate query completion times (mk-how-long).  Check processlist, grab handler
-stats, assume only a single query running, look at show table status, look at
-explain and SHOW INDEX FROM to estimate rows.  Rows per second will probably
-decay logarithmically.  Take that into account.  Also look at innodb rollbacks.
-Estimate how long they will take.
-
-A script to check upgrade-readiness:  check-upgrade script that looks for suspicious things: DECIMAL data  types,  GROUP BY queries with aggregate functions over non-integer types, BIT  data  types, queries that mix comma-join with ansi-join syntaxes , BINARY type
-
-A bad query pattern: derived tables that don't have any aggregation/distinct
-  Example:LEFT JOIN (SELECT user_id,
-  >                                 date_occurred
-  >                         FROM    object_events
-  >                         ) oe2
-
-Detect queries like
-http://www.mysqlperformanceblog.com/2008/04/04/multi-column-in-clause-unexpected-mysql-issue/
-
-log-parser can autodetect the slow log.
-
-Include the DSN options in POD.
-
-Make a way to get a list of DSNs out of a database table, and iterate over them.
-This would be useful for mk-find, mk-table-checksum and several other tools.
-
-Tool to automate InnoDB recovery: start mysqld, dump table in chunks until it
-crashes, start again, ....
-
-A tool (or a feature on mk-slave-prefetch or mk-heartbeat) to watch how fast a
-slave is replicating, in bytes/sec.
-
-Add timezone to DSN syntax
-
-Integrate mk-slave-delay with mk-heartbeat.
-
-Make mk-slave-delay implement a different definition of 'delay' as per Defition
-2 in sourceforge.net bug report #1959496.
-
-a tool to load tables/indexes into cache by the techniques Peter mentioned:
-http://www.mysqlperformanceblog.com/2008/05/01/quickly-preloading-innodb-tables-in-the-buffer-pool/
-
-Add a --charset option to all tools, like mk-table-sync has.
-
-mk-log-server: start a server that can serve the given binlog files.
-
-mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
-http://www.mysqldiff.org/
-(mk-schema-sync or similar tool should be in SVN history)
-
-Log parsing and coloring:
-
-   Swallow a log file and output only the selected fields.  This could be
-   piped to a colorizer or pushed into mk-query-profiler.
-
 A script to copy files in parallel with netcat.
 
 #!/bin/bash
@@ -92,25 +34,8 @@ for file in `ssh $SRC "du $SDIR/*" | grep -v "'$EXCL'" | sort -nr | awk '{print 
    copyfile $file $port;
 done
 
-Progress calculations:
-   *  Look at PROCESSLIST, grab the query, EXPLAIN it, watch handlers, do the
-   * the problem is really it only works for some query types 
-   * If second query would be Ref for example you would not find it
-   because you can't see first table Ref from second table Ref
-   * But in particular case of FT Scan + bunch of refs it is very helpful
-   * Yes, true: but, you could calculate from the rows and access types
-   how many of each type of Handler operation you expect to see for the whole
-   query, right?
-   * It would be very hard to do for subqueries, though :)
-   * what about progress for mysqldump ?
-   * and reverse - mysql < from_dump.sql
-
-Make visual-explain tell which columns are used in the index.
-
 Show the difference between query plans.  Some type of explain diff.  EXPLAIN
 EXTENDED can help catch things like differing charsets, too.
-
-Query formatter/pretty printer
 
 timestamp column names: (updat|insert|delet|creat)ed
 
