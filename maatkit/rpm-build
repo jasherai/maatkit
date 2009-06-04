@@ -7,7 +7,7 @@ VERSION=`head -n 1 packlist | awk '{print $2}'`
 
 RELEASE_TAR=release/maatkit-$VERSION.tar.gz
 
- Build the source tarball if necessary
+# Build the source tarball if necessary
 if [ -f $RELEASE_TAR ]; then
    echo "Tarball already exists"
 else
