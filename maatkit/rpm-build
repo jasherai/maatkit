@@ -21,7 +21,7 @@ mkdir release-rpm
 cd release-rpm
 
 # Extract and debianize source folders
-cp ../$RELEASE_TAR maatkit_$VERSION.tar.gz
+cp ../$RELEASE_TAR maatkit-$VERSION.tar.gz
 
 # Build RPM package from the tarball
 cd maatkit-$VERSION
