@@ -51,6 +51,7 @@ our @EXPORT_OK   = qw(
    parse_server_handshake_packet
    parse_client_handshake_packet
    parse_com_packet
+   parse_flags
 );
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -118,6 +119,27 @@ my %com_for = (
    '1a' => 'COM_STMT_RESET',
    '1b' => 'COM_SET_OPTION',
    '1c' => 'COM_STMT_FETCH',
+);
+
+my %flag_for = (
+   'CLIENT_LONG_PASSWORD'     => 1,       # new more secure passwords 
+   'CLIENT_FOUND_ROWS'        => 2,       # Found instead of affected rows 
+   'CLIENT_LONG_FLAG'         => 4,       # Get all column flags 
+   'CLIENT_CONNECT_WITH_DB'   => 8,       # One can specify db on connect 
+   'CLIENT_NO_SCHEMA'         => 16,      # Don't allow database.table.column 
+   'CLIENT_COMPRESS'          => 32,      # Can use compression protocol 
+   'CLIENT_ODBC'              => 64,      # Odbc client 
+   'CLIENT_LOCAL_FILES'       => 128,     # Can use LOAD DATA LOCAL 
+   'CLIENT_IGNORE_SPACE'      => 256,     # Ignore spaces before '(' 
+   'CLIENT_PROTOCOL_41'       => 512,     # New 4.1 protocol 
+   'CLIENT_INTERACTIVE'       => 1024,    # This is an interactive client 
+   'CLIENT_SSL'               => 2048,    # Switch to SSL after handshake 
+   'CLIENT_IGNORE_SIGPIPE'    => 4096,    # IGNORE sigpipes 
+   'CLIENT_TRANSACTIONS'      => 8192,    # Client knows about transactions 
+   'CLIENT_RESERVED'          => 16384,   # Old flag for 4.1 protocol  
+   'CLIENT_SECURE_CONNECTION' => 32768,   # New 4.1 authentication 
+   'CLIENT_MULTI_STATEMENTS'  => 65536,   # Enable/disable multi-stmt support 
+   'CLIENT_MULTI_RESULTS'     => 131072,  # Enable/disable multi-results 
 );
 
 # server is the "host:port" of the sever being watched.  It's auto-guessed if
@@ -190,6 +212,7 @@ sub parse_packet {
       'data len (bytes)', $data_len, 'number', $pkt_num);
 
    $packet->{data_len} = $data_len;
+   $packet->{number}   = $pkt_num;
 
    if ( !$$data ) {
       MKDEBUG && _d('No MySQL data');
@@ -242,6 +265,11 @@ sub _packet_from_server {
       if ( ($session->{state} || '') eq 'client_auth' ) {
          # We logged in OK!  Trigger an admin Connect command.
          $session->{state} = 'ready';
+
+         # The client may or may not start compressing its packets now,
+         # so we must check when we get its first command.
+         $session->{compressed} = undef;
+
          MKDEBUG && _d('Admin command: Connect');
          return _make_event(
             {  cmd => 'Admin',
@@ -322,12 +350,22 @@ sub _packet_from_server {
       return _make_event($event, $packet, $session);
    }
    elsif ( $first_byte eq 'fe' && $packet->{data_len} < 9 ) {
-      MKDEBUG && _d('Got an EOF packet');
-      die "You should not have gotten here";
-      # ^^^ We shouldn't reach this because EOF should come after a
-      # header, field, or row data packet; and we should be firing the
-      # event and returning when we see that.  See SVN history for some
-      # good stuff we could do if we wanted to handle EOF packets.
+      if ( $packet->{data_len} == 1
+           && $session->{state} eq 'client_auth'
+           && $packet->{number} == 2 )
+      {
+         MKDEBUG && _d('Server has old password table;',
+            'client will resend password using old algorithm');
+         $session->{state} = 'client_auth_resend';
+      }
+      else {
+         MKDEBUG && _d('Got an EOF packet');
+         die "You should not have gotten here";
+         # ^^^ We shouldn't reach this because EOF should come after a
+         # header, field, or row data packet; and we should be firing the
+         # event and returning when we see that.  See SVN history for some
+         # good stuff we could do if we wanted to handle EOF packets.
+      }
    }
    elsif ( !$session->{state}
            && $first_byte eq '0a'
@@ -403,7 +441,8 @@ sub _packet_from_client {
 
    my $data = $packet->{data};
    my $ts   = $packet->{ts};
- 
+
+
    if ( ($session->{state} || '') eq 'server_handshake' ) {
       MKDEBUG && _d('Expecting client authentication packet');
       # The connection is a 3-way handshake:
@@ -419,7 +458,15 @@ sub _packet_from_client {
       $session->{user}       = $handshake->{user};
       $session->{db}         = $handshake->{db};
    }
+   elsif ( $session->{state} eq 'client_auth_resend' ) {
+      # Don't know how to parse this packet.
+      MKDEBUG && _d('Client resending password using old algorithm');
+      $session->{state} = 'client_auth';
+   }
    else {
+      _check_for_compression($session, $packet)
+         unless defined $session->{compressed};
+
       # Otherwise, it should be a query.  We ignore the commands
       # that take arguments (COM_CHANGE_USER, COM_PROCESS_KILL).
       my $com = parse_com_packet($data, $packet->{data_len});
@@ -444,6 +491,33 @@ sub _packet_from_client {
       }
    }
 
+   return;
+}
+
+sub _check_for_compression {
+   my ( $session, $packet ) = @_;
+   MKDEBUG && _d('Checking for client compression');
+   # This is a hack.  If the client is compressing its packet, there will
+   # be an extra 7 bytes before the regular MySQL hdr; the doc says:
+   #    "A compressed packet header is: packet length (3 bytes), packet
+   #    number (1 byte), and Uncompressed Packet Length (3 bytes). The
+   #    Uncompressed Packet Length is the number of bytes in the original,
+   #    uncompressed packet. If this is zero then the data is not
+   #    compressed."
+   # Ideally, the client should have set its CLIENT_COMPRESS flag, but
+   # it seems not to do this.  So instead, if we parse this packet and
+   # comes back looking like a COM_SLEEP which is only an internal state
+   # (not a command the client can send), then chances are the client
+   # is using compression.
+   my $com = parse_com_packet($packet->{data}, $packet->{data_len});
+   if ( $com->{code} eq COM_SLEEP ) {
+      $session->{compressed} = 1;
+      MKDEBUG && _d('Client is using compression');
+   }
+   else {
+      $session->{compressed} = 0;
+      MKDEBUG && _d('Client is NOT using compression');
+   }
    return;
 }
 
@@ -609,16 +683,17 @@ sub parse_server_handshake_packet {
       (.{8})            # 4                    thread_id
       .{16}             # 8                    scramble_buff
       .{2}              # 1                    filler: always 0x00
-      .{4}              # 2                    server_capabilities
+      (.{4})            # 2                    server_capabilities
       .{2}              # 1                    server_language
       .{4}              # 2                    server_status
       .{26}             # 13                   filler: always 0x00
                         # 13                   rest of scramble_buff
    }x;
-   my ( $server_version, $thread_id ) = $data =~ m/$handshake_pattern/;
+   my ( $server_version, $thread_id, $flags ) = $data =~ m/$handshake_pattern/;
    my $pkt = {
       server_version => to_string($server_version),
       thread_id      => to_num($thread_id),
+      flags          => parse_flags($flags),
    };
    MKDEBUG && _d('Server handshake packet:', Dumper($pkt));
    return $pkt;
@@ -629,8 +704,10 @@ sub parse_client_handshake_packet {
    my ( $data ) = @_;
    die "I need data" unless $data;
    MKDEBUG && _d('Client handshake data:', $data);
-   my ( $user, $buff_len ) = $data =~ m{
-      ^.{18}         # Client flags, max packet size, charset
+   my ( $flags, $user, $buff_len ) = $data =~ m{
+      ^
+      (.{8})         # Client flags
+      .{10}          # Max packet size, charset
       (?:00){23}     # Filler
       ((?:..)+?)00   # Null-terminated user name
       (..)           # Length-coding byte for scramble buff
@@ -650,8 +727,9 @@ sub parse_client_handshake_packet {
       (.*)00\Z            # The database name
    !x;
    my $pkt = {
-      user => to_string($user),
-      db   => $db ? to_string($db) : '',
+      user  => to_string($user),
+      db    => $db ? to_string($db) : '',
+      flags => parse_flags($flags),
    };
    MKDEBUG && _d('Client handshake packet:', Dumper($pkt));
    return $pkt;
@@ -675,6 +753,19 @@ sub parse_com_packet {
    };
    MKDEBUG && _d('COM packet:', Dumper($pkt));
    return $pkt;
+}
+
+sub parse_flags {
+   my ( $flags ) = @_;
+   die "I need flags" unless $flags;
+   MKDEBUG && _d('Flag data:', $flags);
+   my %flags     = %flag_for;
+   my $flags_dec = hex $flags ;
+   foreach my $flag ( keys %flag_for ) {
+      my $flagno    = $flag_for{$flag};
+      $flags{$flag} = ($flags_dec & $flagno ? 1 : 0);
+   }
+   return \%flags;
 }
 
 sub _d {

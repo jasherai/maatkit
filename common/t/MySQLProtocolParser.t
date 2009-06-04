@@ -60,6 +60,10 @@ sub run_test {
    if ( defined $def->{num_events} ) {
       is($num_events, $def->{num_events}, "$def->{file} num_events");
    }
+
+   # Uncomment this if you're hacking the unknown.
+   # print "Events for $def->{file}: ", Dumper(\@e);
+
    return;
 }
 
@@ -406,6 +410,20 @@ run_test({
    ],
 });
 
+# #############################################################################
+# Issue 447: MySQLProtocolParser does not handle old password algo or
+# compressed packets  
+# #############################################################################
+$protocol = new MySQLProtocolParser(
+   server => '10.55.200.15:3306',
+);
+run_test({
+   file   => 'samples/tcpdump013.txt',
+   result => [
+      {
+      },
+   ],
+});
 
 # #############################################################################
 # Done.
