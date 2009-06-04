@@ -7,6 +7,10 @@ all: dist debian
 debian: dist
 	./debian-build
 
+.PHONY: rpm
+rpm: dist
+	./rpm-build
+
 clean:
 	rm -rf release release-debian
 

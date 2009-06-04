@@ -1,6 +1,6 @@
 Summary: Maatkit is a collection of essential command-line utilities for MySQL
 Name: maatkit
-Version: 2152
+Version: @DISTRIB@
 Release: 1%{?dist}
 Source: %{name}-%{version}.tar.gz
 License: GPL
