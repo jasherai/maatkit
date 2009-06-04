@@ -34,6 +34,7 @@ rm -rf $RPM_BUILD_ROOT
 make pure_install PERL_INSTALL_ROOT=$RPM_BUILD_ROOT
 find $RPM_BUILD_ROOT -type f -name .packlist -exec rm -f {} ';'
 find $RPM_BUILD_ROOT -type d -depth -exec rmdir {} 2>/dev/null ';'
+find $RPM_BUILD_ROOT -type f -name maatkit.pod -exec rm -f {} ';'
 chmod -R u+w $RPM_BUILD_ROOT/*
 
 
@@ -46,9 +47,6 @@ rm -rf $RPM_BUILD_ROOT
 %doc COPYING INSTALL Changelog*
 %{_bindir}/*
 %{_mandir}/man1/*.1*
-%{_mandir}/man3/*.3*
-%{perl_vendorlib}/maatkit.pm
-%{perl_vendorlib}/maatkitdsn.pm
 
 
 %changelog
