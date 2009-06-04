@@ -2951,13 +2951,13 @@ sub play_session {
 
                if ( $query =~ m/^SELECT /i ) {
                   # Count number of rows returned by SELECTs.
-                  my $results;
-                  eval { $results = $dbh->selectall_arrayref($query); };
+                  # my $results;
+                  eval { $dbh->do($query); };
                   if ( $EVAL_ERROR ) {
                      warn_error($childno, $session_n, $query_n, $query, $dbh->errstr());
                      next QUERY;
                   }
-                  $n_rows = scalar @$results;
+                  $n_rows = 0; # scalar @$results;
                }
                else {
                   # Non-SELECTs do not return anything, therefore we can
