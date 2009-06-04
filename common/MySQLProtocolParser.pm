@@ -760,7 +760,7 @@ sub parse_flags {
    die "I need flags" unless $flags;
    MKDEBUG && _d('Flag data:', $flags);
    my %flags     = %flag_for;
-   my $flags_dec = hex $flags ;
+   my $flags_dec = to_num($flags);
    foreach my $flag ( keys %flag_for ) {
       my $flagno    = $flag_for{$flag};
       $flags{$flag} = ($flags_dec & $flagno ? 1 : 0);
