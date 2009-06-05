@@ -160,6 +160,12 @@ sub new {
 sub parse_packet {
    my ( $self, $packet, $misc ) = @_;
 
+   if ( $packet->{data_len} == 0 ) {
+      # These are usually ACK packets.
+      MKDEBUG && _d('No TCP data');
+      return;
+   }
+
    my $from   = "$packet->{src_host}:$packet->{src_port}";
    my $to     = "$packet->{dst_host}:$packet->{dst_port}";
 
@@ -176,9 +182,10 @@ sub parse_packet {
    if ( !exists $self->{sessions}->{$client} ) {
       MKDEBUG && _d('New session');
       $self->{sessions}->{$client} = {
-         client => $client,
-         ts     => $packet->{ts},
-         state  => undef,
+         client   => $client,
+         ts       => $packet->{ts},
+         state    => undef,
+         compress => 0,
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -194,6 +201,26 @@ sub parse_packet {
       return;
    }
 
+   if ( $session->{compress} ) {
+      # From the doc: "A compressed packet header is: packet length
+      # (3 bytes), packet number (1 byte), and Uncompressed Packet
+      # Length (3 bytes). The Uncompressed Packet Length is the number
+      # of bytes in the original, uncompressed packet. If this is zero
+      # then the data is not compressed.
+      my $comp_hdr        = substr($$data, 0, 14, '');
+      my $comp_data_len   = to_num(substr($comp_hdr, 0, 6));
+      my $pkt_num         = to_num(substr($comp_hdr, 6, 2));
+      my $uncomp_data_len = to_num(substr($comp_hdr, 8, 6));
+      MKDEBUG && _d('Compression header data:', $comp_hdr,
+         'compressed data len (bytes)', $comp_data_len,
+         'number', $pkt_num,
+         'uncompressed data len (bytes)', $uncomp_data_len);
+
+      if ( $uncomp_data_len ) {
+         $data = decompress_data($data);
+      }
+   }
+
    # A single TCP packet can contain many MySQL packets, but we only
    # look at the first.  The 2nd and subsequent packets are usually
    # parts of a resultset returned by the server, but we're not interested
@@ -205,19 +232,14 @@ sub parse_packet {
    # had all the data in the TCP packets, we could change this to a while
    # loop; while get-a-packet-from-$data, do stuff, etc.  But we don't,
    # and we don't want to either.
-   my $mysql_hdr = substr($$data, 0, 8, '');
-   my $data_len  = to_num(substr($mysql_hdr, 0, 6));
-   my $pkt_num   = oct('0x'.substr($mysql_hdr, 6, 2));
+   my $mysql_hdr      = substr($$data, 0, 8, '');
+   my $mysql_data_len = to_num(substr($mysql_hdr, 0, 6));
+   my $pkt_num        = to_num(substr($mysql_hdr, 6, 2));
    MKDEBUG && _d('MySQL packet: header data', $mysql_hdr,
-      'data len (bytes)', $data_len, 'number', $pkt_num);
+      'data len (bytes)', $mysql_data_len, 'number', $pkt_num);
 
-   $packet->{data_len} = $data_len;
-   $packet->{number}   = $pkt_num;
-
-   if ( !$$data ) {
-      MKDEBUG && _d('No MySQL data');
-      return;
-   }
+   $packet->{mysql_data_len} = $mysql_data_len;
+   $packet->{number}         = $pkt_num;
 
    # The returned event may be empty if no event was ready to be created.
    my $event;
@@ -266,9 +288,8 @@ sub _packet_from_server {
          # We logged in OK!  Trigger an admin Connect command.
          $session->{state} = 'ready';
 
-         # The client may or may not start compressing its packets now,
-         # so we must check when we get its first command.
-         $session->{compressed} = undef;
+         $session->{compress} = $session->{will_compress};
+         delete $session->{will_compress};
 
          MKDEBUG && _d('Admin command: Connect');
          return _make_event(
@@ -349,8 +370,8 @@ sub _packet_from_server {
 
       return _make_event($event, $packet, $session);
    }
-   elsif ( $first_byte eq 'fe' && $packet->{data_len} < 9 ) {
-      if ( $packet->{data_len} == 1
+   elsif ( $first_byte eq 'fe' && $packet->{mysql_data_len} < 9 ) {
+      if ( $packet->{mysql_data_len} == 1
            && $session->{state} eq 'client_auth'
            && $packet->{number} == 2 )
       {
@@ -439,9 +460,8 @@ sub _packet_from_client {
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
 
-   my $data = $packet->{data};
-   my $ts   = $packet->{ts};
-
+   my $data  = $packet->{data};
+   my $ts    = $packet->{ts};
 
    if ( ($session->{state} || '') eq 'server_handshake' ) {
       MKDEBUG && _d('Expecting client authentication packet');
@@ -453,23 +473,21 @@ sub _packet_from_client {
       # A connection is logged even if the client fails to
       # login (bad password, etc.).
       my $handshake = parse_client_handshake_packet($data);
-      $session->{state}      = 'client_auth';
-      $session->{pos_in_log} = $packet->{pos_in_log};
-      $session->{user}       = $handshake->{user};
-      $session->{db}         = $handshake->{db};
+      $session->{state}         = 'client_auth';
+      $session->{pos_in_log}    = $packet->{pos_in_log};
+      $session->{user}          = $handshake->{user};
+      $session->{db}            = $handshake->{db};
+      $session->{will_compress} = $handshake->{flags}->{CLIENT_COMPRESS};
    }
-   elsif ( $session->{state} eq 'client_auth_resend' ) {
+   elsif ( ($session->{state} || '') eq 'client_auth_resend' ) {
       # Don't know how to parse this packet.
       MKDEBUG && _d('Client resending password using old algorithm');
       $session->{state} = 'client_auth';
    }
    else {
-      _check_for_compression($session, $packet)
-         unless defined $session->{compressed};
-
       # Otherwise, it should be a query.  We ignore the commands
       # that take arguments (COM_CHANGE_USER, COM_PROCESS_KILL).
-      my $com = parse_com_packet($data, $packet->{data_len});
+      my $com = parse_com_packet($data, $packet->{mysql_data_len});
       $session->{state}      = 'awaiting_reply';
       $session->{pos_in_log} = $packet->{pos_in_log};
       $session->{ts}         = $ts;
@@ -491,33 +509,6 @@ sub _packet_from_client {
       }
    }
 
-   return;
-}
-
-sub _check_for_compression {
-   my ( $session, $packet ) = @_;
-   MKDEBUG && _d('Checking for client compression');
-   # This is a hack.  If the client is compressing its packet, there will
-   # be an extra 7 bytes before the regular MySQL hdr; the doc says:
-   #    "A compressed packet header is: packet length (3 bytes), packet
-   #    number (1 byte), and Uncompressed Packet Length (3 bytes). The
-   #    Uncompressed Packet Length is the number of bytes in the original,
-   #    uncompressed packet. If this is zero then the data is not
-   #    compressed."
-   # Ideally, the client should have set its CLIENT_COMPRESS flag, but
-   # it seems not to do this.  So instead, if we parse this packet and
-   # comes back looking like a COM_SLEEP which is only an internal state
-   # (not a command the client can send), then chances are the client
-   # is using compression.
-   my $com = parse_com_packet($packet->{data}, $packet->{data_len});
-   if ( $com->{code} eq COM_SLEEP ) {
-      $session->{compressed} = 1;
-      MKDEBUG && _d('Client is using compression');
-   }
-   else {
-      $session->{compressed} = 0;
-      MKDEBUG && _d('Client is NOT using compression');
-   }
    return;
 }
 
@@ -766,6 +757,10 @@ sub parse_flags {
       $flags{$flag} = ($flags_dec & $flagno ? 1 : 0);
    }
    return \%flags;
+}
+
+sub decompress_data {
+   my ( $data ) = @_;
 }
 
 sub _d {

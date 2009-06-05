@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 23;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -105,7 +105,7 @@ run_test({
          ip         => '127.0.0.1',
          port       => '57890',
          arg        => 'administrator command: Connect',
-         Query_time => '0.011152',
+         Query_time => '0.010617',
          Thread_id  => 8,
          pos_in_log => 1470,
          bytes      => length('administrator command: Connect'),
@@ -185,7 +185,7 @@ run_test({
          ip         => '127.0.0.1',
          port       => '44488',
          arg        => 'administrator command: Connect',
-         Query_time => '0.010753',
+         Query_time => '0.010432',
          Thread_id  => 9,
          pos_in_log => 1455,
          bytes      => length('administrator command: Connect'),
@@ -359,6 +359,26 @@ is_deeply(
    {
       thread_id      => '9',
       server_version => '5.0.67-0ubuntu6-log',
+      flags          => {
+         CLIENT_COMPRESS          => 1,
+         CLIENT_CONNECT_WITH_DB   => 1,
+         CLIENT_FOUND_ROWS        => 0,
+         CLIENT_IGNORE_SIGPIPE    => 0,
+         CLIENT_IGNORE_SPACE      => 0,
+         CLIENT_INTERACTIVE       => 0,
+         CLIENT_LOCAL_FILES       => 0,
+         CLIENT_LONG_FLAG         => 1,
+         CLIENT_LONG_PASSWORD     => 0,
+         CLIENT_MULTI_RESULTS     => 0,
+         CLIENT_MULTI_STATEMENTS  => 0,
+         CLIENT_NO_SCHEMA         => 0,
+         CLIENT_ODBC              => 0,
+         CLIENT_PROTOCOL_41       => 1,
+         CLIENT_RESERVED          => 0,
+         CLIENT_SECURE_CONNECTION => 1,
+         CLIENT_SSL               => 0,
+         CLIENT_TRANSACTIONS      => 1,
+      }
    },
    'Parse server handshake packet'
 );
@@ -366,8 +386,28 @@ is_deeply(
 is_deeply(
    parse_client_handshake_packet(load_data('samples/mysql_proto_003.txt')),
    {
-      db   => 'mysql',
-      user => 'msandbox',
+      db    => 'mysql',
+      user  => 'msandbox',
+      flags => {
+         CLIENT_COMPRESS          => 0,
+         CLIENT_CONNECT_WITH_DB   => 1,
+         CLIENT_FOUND_ROWS        => 0,
+         CLIENT_IGNORE_SIGPIPE    => 0,
+         CLIENT_IGNORE_SPACE      => 0,
+         CLIENT_INTERACTIVE       => 0,
+         CLIENT_LOCAL_FILES       => 1,
+         CLIENT_LONG_FLAG         => 1,
+         CLIENT_LONG_PASSWORD     => 1,
+         CLIENT_MULTI_RESULTS     => 1,
+         CLIENT_MULTI_STATEMENTS  => 1,
+         CLIENT_NO_SCHEMA         => 0,
+         CLIENT_ODBC              => 0,
+         CLIENT_PROTOCOL_41       => 1,
+         CLIENT_RESERVED          => 0,
+         CLIENT_SECURE_CONNECTION => 1,
+         CLIENT_SSL               => 0,
+         CLIENT_TRANSACTIONS      => 1,
+      },
    },
    'Parse client handshake packet'
 );
@@ -420,7 +460,23 @@ $protocol = new MySQLProtocolParser(
 run_test({
    file   => 'samples/tcpdump013.txt',
    result => [
-      {
+      {  Error_no => 0,
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.022237',
+         Rows_affected => 0,
+         Thread_id => 36947020,
+         Warning_count => 0,
+         arg => 'administrator command: Connect',
+         bytes => 30,
+         cmd => 'Admin',
+         db => '',
+         host => '10.54.212.171',
+         ip => '10.54.212.171',
+         port => '49663',
+         pos_in_log => 1834,
+         ts => '090603 10:52:24.578817',
+         user => 'luck'
       },
    ],
 });
