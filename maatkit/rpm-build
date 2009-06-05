@@ -19,14 +19,14 @@ fi
 rm -rf release-rpm
 mkdir release-rpm
 cd release-rpm
+mkdir -p ./{BUILD,RPMS,S{OURCE,PEC,RPM}S}
+RELEASE_DIR=`pwd`
 
 # Build RPM package from the tarball
-rpmbuild -ta ../$RELEASE_TAR
+rpmbuild --define "_topdir $RELEASE_DIR" -ta ../$RELEASE_TAR
 
 # Copy RPM package to release-rpm directory
-if [ -f /usr/src/rpm/RPMS/noarch/maatkit-$VERSION-1.noarch.rpm ]; then
-   cp /usr/src/rpm/RPMS/noarch/maatkit-$VERSION-1.noarch.rpm  .
-else
+if [ ! -f $RELEASE_DIR/RPMS/noarch/maatkit-$VERSION-1.noarch.rpm ]; then
    echo "RPM was not built"
 fi
 
