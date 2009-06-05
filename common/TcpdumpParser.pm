@@ -118,16 +118,18 @@ sub _parse_packet {
    $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
 
    my $pkt = {
-      ts       => $ts,
-      src_host => $src_host,
-      src_port => $src_port,
-      dst_host => $dst_host,
-      dst_port => $dst_port,
-      complete => $complete,
-      ip_hlen  => $ip_hlen,
-      tcp_hlen => $tcp_hlen,
-      data     => $data ? substr($data, 0, 8).(length $data > 8 ? '...' : '')
-                        : '',
+      ts        => $ts,
+      src_host  => $src_host,
+      src_port  => $src_port,
+      dst_host  => $dst_host,
+      dst_port  => $dst_port,
+      complete  => $complete,
+      ip_hlen   => $ip_hlen,
+      tcp_hlen  => $tcp_hlen,
+      dgram_len => $ip_plen,
+      data_len  => $ip_plen - (($ip_hlen + $tcp_hlen) * 4),
+      data      => $data ? substr($data, 0, 8).(length $data > 8 ? '...' : '')
+                         : '',
    };
    MKDEBUG && _d('packet:', Dumper($pkt));
    $pkt->{data} = $data;
