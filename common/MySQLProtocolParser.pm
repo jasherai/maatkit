@@ -38,6 +38,13 @@ package MySQLProtocolParser;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
+# Check if IO:Uncompress::AnyInflate module is available.
+eval {
+   use IO::Uncompress::AnyInflate qw(anyinflate $AnyInflateError);
+};
+my $can_uncompress = ($EVAL_ERROR ? 0 : 1);
+
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
@@ -217,7 +224,19 @@ sub parse_packet {
          'uncompressed data len (bytes)', $uncomp_data_len);
 
       if ( $uncomp_data_len ) {
-         $data = decompress_data($data);
+         if ( $can_uncompress ) {
+            $data = uncompress_data($data);
+            $packet->{data} = $$data;
+         }
+         else {
+            # TODO: handle this.  Not being able to peek inside the packets
+            # makes it very difficult to keep the session state correct.
+            MKDEBUG && _d('Skipping packet because we cannot uncompress');
+            return;
+         }
+      }
+      else {
+         MKDEBUG && _d('Packet is not really compressed');
       }
    }
 
@@ -272,7 +291,6 @@ sub _packet_from_server {
    MKDEBUG && _d('Packet is from server; client state:', $session->{state});
 
    my $data = $packet->{data};
-   my $ts   = $packet->{ts};
 
    # The first byte in the packet indicates whether it's an OK,
    # ERROR, EOF packet.  If it's not one of those, we test
@@ -290,12 +308,13 @@ sub _packet_from_server {
 
          $session->{compress} = $session->{will_compress};
          delete $session->{will_compress};
+         MKDEBUG && $session->{compress} && _d('Packets will be compressed');
 
          MKDEBUG && _d('Admin command: Connect');
          return _make_event(
             {  cmd => 'Admin',
                arg => 'administrator command: Connect',
-               ts  => $ts, # Events are timestamped when they end
+               ts  => $packet->{ts}, # Events are timestamped when they end
             },
             $packet, $session
          );
@@ -321,7 +340,7 @@ sub _packet_from_server {
          return _make_event(
             {  cmd           => $com,
                arg           => $arg,
-               ts            => $ts,
+               ts            => $packet->{ts},
                Insert_id     => $ok->{insert_id},
                Warning_count => $ok->{warnings},
                Rows_affected => $ok->{affected_rows},
@@ -339,7 +358,7 @@ sub _packet_from_server {
          $event = {
             cmd       => 'Admin',
             arg       => 'administrator command: Connect',
-            ts        => $ts,
+            ts        => $packet->{ts},
             Error_no  => $error->{errno},
          };
          $session->{state} = 'closing';
@@ -362,7 +381,7 @@ sub _packet_from_server {
          $event = {
             cmd       => $com,
             arg       => $arg,
-            ts        => $ts,
+            ts        => $packet->{ts},
             Error_no  => $error->{errno},
          };
          $session->{state} = 'ready';
@@ -411,7 +430,7 @@ sub _packet_from_server {
       if ( $session->{cmd} ) {
          my $com = $session->{cmd}->{cmd};
          MKDEBUG && _d('COM:', $com_for{$com});
-         my $event = { ts  => $ts };
+         my $event = { ts  => $packet->{ts} };
          if ( $com eq COM_QUERY ) {
             $event->{cmd} = 'Query';
             $event->{arg} = $session->{cmd}->{arg};
@@ -477,6 +496,11 @@ sub _packet_from_client {
       $session->{pos_in_log}    = $packet->{pos_in_log};
       $session->{user}          = $handshake->{user};
       $session->{db}            = $handshake->{db};
+
+      # $session->{will_compress} will become $session->{compress} when
+      # the server's final handshake packet is received.  This prevents
+      # parse_packet() from trying to decompress that final packet.
+      # Compressed packets can only begin after the full handshake is done.
       $session->{will_compress} = $handshake->{flags}->{CLIENT_COMPRESS};
    }
    elsif ( ($session->{state} || '') eq 'client_auth_resend' ) {
@@ -759,8 +783,29 @@ sub parse_flags {
    return \%flags;
 }
 
-sub decompress_data {
+# Takes a scalarref to a hex string of compressed data.
+# Returns a scalarref to a hex string of the uncompressed data.
+# The given hex string of compressed data is not modified.
+sub uncompress_data {
    my ( $data ) = @_;
+   die "I need data" unless $data;
+   die "I need a scalar reference" unless ref $data eq 'SCALAR';
+   MKDEBUG && _d('Uncompressing packet');
+
+   # Pack hex string into compressed binary data.
+   my $comp_bin_data = pack('H*', $$data);
+
+   # Uncompress the compressed binary data.
+   my $uncomp_bin_data = '';
+   my $status          = anyinflate(
+      \$comp_bin_data => \$uncomp_bin_data,
+   ) or die "anyinflate failed: $AnyInflateError";
+
+   # Unpack the uncompressed binary data back into a hex string.
+   # This is the original MySQL packet(s).
+   my $uncomp_data = unpack('H*', $uncomp_bin_data);
+
+   return \$uncomp_data;
 }
 
 sub _d {
