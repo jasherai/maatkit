@@ -309,6 +309,10 @@ sub _packet_from_server {
    }
    elsif ( $first_byte eq 'ff' ) {
       my $error = parse_error_packet($data);
+      if ( !$error ) {
+         MKDEBUG && _d('Not an error packet');
+         return;
+      }
       my $event;
 
       if ( $session->{state} eq 'client_auth' ) {
@@ -367,13 +371,15 @@ sub _packet_from_server {
    }
    elsif ( !$session->{state}
            && $first_byte eq '0a'
-           && length $data >= 33 )
+           && length $data >= 33
+           && $data =~ m/00{13}/ )
    {
       # It's the handshake packet from the server to the client.
       # 0a is protocol v10 which is essentially the only version used
       # today.  33 is the minimum possible length for a valid server
       # handshake packet.  It's probably a lot longer.  Other packets
-      # may start with 0a, but none that can would be >= 33.
+      # may start with 0a, but none that can would be >= 33.  The 13-byte
+      # 00 scramble buffer is another indicator.
       my $handshake = parse_server_handshake_packet($data);
       $session->{state}     = 'server_handshake';
       $session->{thread_id} = $handshake->{thread_id};
@@ -468,6 +474,12 @@ sub _packet_from_client {
       # Don't know how to parse this packet.
       MKDEBUG && _d('Client resending password using old algorithm');
       $session->{state} = 'client_auth';
+   }
+   elsif ( ($session->{state} || '') eq 'awaiting_reply' ) {
+      my $arg = $session->{cmd}->{arg} ? substr($session->{cmd}->{arg}, 0, 50)
+              : 'unknown';
+      MKDEBUG && _d('More data for previous command:', $arg, '...'); 
+      return;
    }
    else {
       # Otherwise, it should be a query.  We ignore the commands
@@ -612,11 +624,13 @@ sub parse_error_packet {
    MKDEBUG && _d('ERROR data:', $data);
    die "Error packet is too short: $data" if length $data < 16;
    my $errno    = to_num(substr($data, 0, 4));
-   my $sqlstate = to_string(substr($data, 4, 12));
+   my $marker   = to_string(substr($data, 4, 2));
+   return unless $marker eq '#';
+   my $sqlstate = to_string(substr($data, 6, 10));
    my $message  = to_string(substr($data, 16));
    my $pkt = {
       errno    => $errno,
-      sqlstate => $sqlstate,
+      sqlstate => $marker . $sqlstate,
       message  => $message,
    };
    MKDEBUG && _d('Error packet:', Dumper($pkt));
