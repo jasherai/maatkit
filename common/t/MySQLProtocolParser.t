@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 23;
+use Test::More tests => 25;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -29,7 +29,7 @@ sub load_data {
 sub run_test {
    my ( $def ) = @_;
    map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:misc|file|result|num_events)$/ }
+      grep { $_ !~ m/^(?:misc|file|result|num_events|desc)$/ }
       keys %$def;
    my @e;
    my $num_events = 0;
@@ -54,7 +54,7 @@ sub run_test {
       is_deeply(
          \@e,
          $def->{result},
-         $def->{file}
+         $def->{file} . ($def->{desc} ? ": $def->{desc}" : '')
       ) or print "Got: ", Dumper(\@e);
    }
    if ( defined $def->{num_events} ) {
@@ -105,7 +105,7 @@ run_test({
          ip         => '127.0.0.1',
          port       => '57890',
          arg        => 'administrator command: Connect',
-         Query_time => '0.010617',
+         Query_time => '0.011152',
          Thread_id  => 8,
          pos_in_log => 1470,
          bytes      => length('administrator command: Connect'),
@@ -185,7 +185,7 @@ run_test({
          ip         => '127.0.0.1',
          port       => '44488',
          arg        => 'administrator command: Connect',
-         Query_time => '0.010432',
+         Query_time => '0.010753',
          Thread_id  => 9,
          pos_in_log => 1455,
          bytes      => length('administrator command: Connect'),
@@ -459,11 +459,12 @@ $protocol = new MySQLProtocolParser(
 );
 run_test({
    file   => 'samples/tcpdump013.txt',
+   desc   => 'old password and compression',
    result => [
       {  Error_no => 0,
          No_good_index_used => 'No',
          No_index_used => 'No',
-         Query_time => '0.022237',
+         Query_time => '0.034355',
          Rows_affected => 0,
          Thread_id => 36947020,
          Warning_count => 0,
@@ -477,6 +478,36 @@ run_test({
          pos_in_log => 1834,
          ts => '090603 10:52:24.578817',
          user => 'luck'
+      },
+   ],
+});
+
+# Check in-stream compression detection.
+$protocol = new MySQLProtocolParser(
+   server => '10.55.200.15:3306',
+);
+run_test({
+   file   => 'samples/tcpdump014.txt',
+   desc   => 'in-stream compression detection',
+   result => [
+      {
+         Error_no           => 0,
+         No_good_index_used => 'No',
+         No_index_used      => 'No',
+         Query_time         => '0.001375',
+         Rows_affected      => 0,
+         Thread_id          => undef,
+         Warning_count      => 0,
+         arg                => 'show databases',
+         bytes              => 14,
+         cmd                => 'Query',
+         db                 => undef,
+         host               => '10.54.212.171',
+         ip                 => '10.54.212.171',
+         port               => '49663',
+         pos_in_log         => 0,
+         ts                 => '090603 10:52:24.587685',
+         user               => undef,
       },
    ],
 });

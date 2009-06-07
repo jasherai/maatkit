@@ -168,99 +168,56 @@ sub new {
 sub parse_packet {
    my ( $self, $packet, $misc ) = @_;
 
-   if ( $packet->{data_len} == 0 ) {
-      # These are usually ACK packets.
-      MKDEBUG && _d('No TCP data');
-      return;
-   }
-
-   my $from   = "$packet->{src_host}:$packet->{src_port}";
-   my $to     = "$packet->{dst_host}:$packet->{dst_port}";
-
    # Auto-detect the server by looking for port 3306 or port "mysql" (sometimes
    # tcpdump will substitute the port by a lookup in /etc/protocols or
    # something).
+   my $from  = "$packet->{src_host}:$packet->{src_port}";
+   my $to    = "$packet->{dst_host}:$packet->{dst_port}";
    $self->{server} ||= $from =~ m/:(?:3306|mysql)$/ ? $from
                      : $to   =~ m/:(?:3306|mysql)$/ ? $to
                      :                                undef;
-
    my $client = $from eq $self->{server} ? $to : $from;
    MKDEBUG && _d('Client:', $client);
 
+   # Get the client's session info or create a new session if the
+   # client hasn't been seen before.
    if ( !exists $self->{sessions}->{$client} ) {
       MKDEBUG && _d('New session');
       $self->{sessions}->{$client} = {
          client   => $client,
          ts       => $packet->{ts},
          state    => undef,
-         compress => 0,
+         compress => undef,
       };
    };
    my $session = $self->{sessions}->{$client};
 
-   # Use ref so we modify $packet->{data} in substr(substr($data, ...)) below.
-   my $data = \$packet->{data};
-   if ( !$$data  ) {
-      MKDEBUG && _d('No data in TCP packet');
+   # Return early if there's TCP/MySQL data.  These are usually ACK
+   # packets, but they could also be FINs in which case, we should close
+   # and delete the client's session.
+   if ( $packet->{data_len} == 0 ) {
+      MKDEBUG && _d('No TCP/MySQL data');
       # Is the session ready to close?
       if ( ($session->{state} || '') eq 'closing' ) {
          delete $self->{sessions}->{$session->{client}};
+         MKDEBUG && _d('Session deleted'); 
       }
       return;
    }
 
+   # Return unless the compressed packet can be uncompressed.
+   # If it cannot, then we're helpless and must return.
    if ( $session->{compress} ) {
-      # From the doc: "A compressed packet header is: packet length
-      # (3 bytes), packet number (1 byte), and Uncompressed Packet
-      # Length (3 bytes). The Uncompressed Packet Length is the number
-      # of bytes in the original, uncompressed packet. If this is zero
-      # then the data is not compressed.
-      my $comp_hdr        = substr($$data, 0, 14, '');
-      my $comp_data_len   = to_num(substr($comp_hdr, 0, 6));
-      my $pkt_num         = to_num(substr($comp_hdr, 6, 2));
-      my $uncomp_data_len = to_num(substr($comp_hdr, 8, 6));
-      MKDEBUG && _d('Compression header data:', $comp_hdr,
-         'compressed data len (bytes)', $comp_data_len,
-         'number', $pkt_num,
-         'uncompressed data len (bytes)', $uncomp_data_len);
-
-      if ( $uncomp_data_len ) {
-         if ( $can_uncompress ) {
-            $data = uncompress_data($data);
-            $packet->{data} = $$data;
-         }
-         else {
-            # TODO: handle this.  Not being able to peek inside the packets
-            # makes it very difficult to keep the session state correct.
-            MKDEBUG && _d('Skipping packet because we cannot uncompress');
-            return;
-         }
-      }
-      else {
-         MKDEBUG && _d('Packet is not really compressed');
-      }
+      return unless uncompress_packet($packet);
    }
 
-   # A single TCP packet can contain many MySQL packets, but we only
-   # look at the first.  The 2nd and subsequent packets are usually
-   # parts of a resultset returned by the server, but we're not interested
-   # in resultsets.  The first 4 bytes are the packet header: a 3-byte
-   # length and a 1-byte sequence.  After that, it depends on what type
-   # of packet this is.
-   #
-   # NOTE: the data is modified by the inmost substr call here!  If we
-   # had all the data in the TCP packets, we could change this to a while
-   # loop; while get-a-packet-from-$data, do stuff, etc.  But we don't,
-   # and we don't want to either.
-   my $mysql_hdr      = substr($$data, 0, 8, '');
-   my $mysql_data_len = to_num(substr($mysql_hdr, 0, 6));
-   my $pkt_num        = to_num(substr($mysql_hdr, 6, 2));
-   MKDEBUG && _d('MySQL packet: header data', $mysql_hdr,
-      'data len (bytes)', $mysql_data_len, 'number', $pkt_num);
+   # Remove the first MySQL header.  A single TCP packet can contain many
+   # MySQL packets, but we only look at the first.  The 2nd and subsequent
+   # packets are usually parts of a resultset returned by the server, but
+   # we're not interested in resultsets.
+   remove_mysql_header($packet);
 
-   $packet->{mysql_data_len} = $mysql_data_len;
-   $packet->{number}         = $pkt_num;
-
+   # Finally, parse the packet and maybe create an event.
    # The returned event may be empty if no event was ready to be created.
    my $event;
    if ( $from eq $self->{server} ) {
@@ -422,15 +379,15 @@ sub _packet_from_server {
       $session->{thread_id} = $handshake->{thread_id};
    }
    else {
-      MKDEBUG && _d('Got a row/field/result packet');
       # Since we do NOT always have all the data the server sent to the
       # client, we can't always do any processing of results.  So when
       # we get one of these, we just fire the event even if the query
       # is not done.  This means we will NOT process EOF packets
       # themselves (see above).
       if ( $session->{cmd} ) {
+         MKDEBUG && _d('Got a row/field/result packet');
          my $com = $session->{cmd}->{cmd};
-         MKDEBUG && _d('COM:', $com_for{$com});
+         MKDEBUG && _d('Responding to client', $com_for{$com});
          my $event = { ts  => $packet->{ts} };
          if ( $com eq COM_QUERY ) {
             $event->{cmd} = 'Query';
@@ -460,6 +417,9 @@ sub _packet_from_server {
 
          $session->{state} = 'ready';
          return _make_event($event, $packet, $session);
+      }
+      else {
+         MKDEBUG && _d('Unknown in-stream server response');
       }
    }
 
@@ -512,6 +472,15 @@ sub _packet_from_client {
    else {
       # Otherwise, it should be a query.  We ignore the commands
       # that take arguments (COM_CHANGE_USER, COM_PROCESS_KILL).
+
+      # Detect compression in-stream only if $session->{compress} is
+      # not defined.  This means we didn't see the client handshake.
+      # If we had seen it, $session->{compress} would be defined as 0 or 1.
+      if ( !defined $session->{compress} ) {
+         return unless detect_compression($packet, $session);
+         $data = $packet->{data};
+      }
+
       my $com = parse_com_packet($data, $packet->{mysql_data_len});
       $session->{state}      = 'awaiting_reply';
       $session->{pos_in_log} = $packet->{pos_in_log};
@@ -807,6 +776,107 @@ sub uncompress_data {
    my $uncomp_data = unpack('H*', $uncomp_bin_data);
 
    return \$uncomp_data;
+}
+
+# Returns 1 on success or 0 on failure.  Failure is probably
+# detecting compression but not being able to uncompress
+# (uncompress_packet() returns 0).
+sub detect_compression {
+   my ( $packet, $session ) = @_;
+   MKDEBUG && _d('Checking for client compression');
+   # This is a necessary hack for detecting compression in-stream without
+   # having seen the client handshake and CLIENT_COMPRESS flag.  If the
+   # client is compressing packets, there will be an extra 7 bytes before
+   # the regular MySQL header.  For short COM_QUERY commands, these 7 bytes
+   # are usually zero where we'd expect to see 03 for COM_QUERY.  So if we
+   # parse this packet and it looks like a COM_SLEEP (00) which is not a
+   # command that the client can send, then chances are the client is using
+   # compression.
+   my $com = parse_com_packet($packet->{data}, $packet->{data_len});
+   if ( $com->{code} eq COM_SLEEP ) {
+      MKDEBUG && _d('Client is using compression');
+      $session->{compress} = 1;
+
+      # Since parse_packet() didn't know the packet was compressed, it
+      # called remove_mysql_header() which removed the first 4 of 7 bytes
+      # of the compression header.  We must restore these 4 bytes, then
+      # uncompress and remove the MySQL header.  We only do this once.
+      $packet->{data} = $packet->{mysql_hdr} . $packet->{data};
+      return 0 unless uncompress_packet($packet);
+      remove_mysql_header($packet);
+   }
+   else {
+      MKDEBUG && _d('Client is NOT using compression');
+      $session->{compress} = 0;
+   }
+   return 1;
+}
+
+# Returns 1 if the packet was uncompressed or 0 if we can't uncompress.
+# Failure is usually due to IO::Uncompress not being available.
+sub uncompress_packet {
+   my ( $packet ) = @_;
+   die "I need a packet" unless $packet;
+
+   # From the doc: "A compressed packet header is:
+   #    packet length (3 bytes),
+   #    packet number (1 byte),
+   #    and Uncompressed Packet Length (3 bytes).
+   # The Uncompressed Packet Length is the number of bytes
+   # in the original, uncompressed packet. If this is zero
+   # then the data is not compressed."
+
+   my $data            = \$packet->{data};
+   my $comp_hdr        = substr($$data, 0, 14, '');
+   my $comp_data_len   = to_num(substr($comp_hdr, 0, 6));
+   my $pkt_num         = to_num(substr($comp_hdr, 6, 2));
+   my $uncomp_data_len = to_num(substr($comp_hdr, 8, 6));
+   MKDEBUG && _d('Compression header data:', $comp_hdr,
+      'compressed data len (bytes)', $comp_data_len,
+      'number', $pkt_num,
+      'uncompressed data len (bytes)', $uncomp_data_len);
+
+   if ( $uncomp_data_len ) {
+      if ( $can_uncompress ) {
+         $data = uncompress_data($data);
+         $packet->{data} = $$data;
+      }
+      else {
+         # TODO: handle this.  Not being able to peek inside the packets
+         # makes it very difficult to keep the session state correct.
+         MKDEBUG && _d('Skipping packet because we cannot uncompress');
+         return 0;
+      }
+   }
+   else {
+      MKDEBUG && _d('Packet is not really compressed');
+      $packet->{data} = $$data;
+   }
+
+   return 1;
+}
+
+# Removes the first 4 bytes of the packet data which should be
+# a MySQL header: 3 bytes packet length, 1 byte packet number.
+sub remove_mysql_header {
+   my ( $packet ) = @_;
+   die "I need a packet" unless $packet;
+
+   # NOTE: the data is modified by the inmost substr call here!  If we
+   # had all the data in the TCP packets, we could change this to a while
+   # loop; while get-a-packet-from-$data, do stuff, etc.  But we don't,
+   # and we don't want to either.
+   my $mysql_hdr      = substr($packet->{data}, 0, 8, '');
+   my $mysql_data_len = to_num(substr($mysql_hdr, 0, 6));
+   my $pkt_num        = to_num(substr($mysql_hdr, 6, 2));
+   MKDEBUG && _d('MySQL packet: header data', $mysql_hdr,
+      'data len (bytes)', $mysql_data_len, 'number', $pkt_num);
+
+   $packet->{mysql_hdr}      = $mysql_hdr;
+   $packet->{mysql_data_len} = $mysql_data_len;
+   $packet->{number}         = $pkt_num;
+
+   return;
 }
 
 sub _d {
