@@ -40,10 +40,11 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 # Check if IO:Uncompress::AnyInflate module is available.
-eval {
-   use IO::Uncompress::AnyInflate qw(anyinflate $AnyInflateError);
-};
+eval { require IO::Uncompress::AnyInflate; };
 my $can_uncompress = ($EVAL_ERROR ? 0 : 1);
+if ( $can_uncompress ) {
+   use IO::Uncompress::AnyInflate qw(anyinflate $AnyInflateError);
+}
 
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
