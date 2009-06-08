@@ -2272,11 +2272,15 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# And now for the "program".
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
 # ###########################################################################
-package main;
+package mk_archiver;
 
-use DBI;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use IO::File;
@@ -2295,6 +2299,7 @@ my $can_retry = 1;
 my $archive_fh;
 my $get_sth;
 my ( $OUT_OF_RETRIES, $ROLLED_BACK, $ALL_IS_WELL ) = ( 0, -1, 1 );
+my ( $src, $dst );
 
 # Holds the arguments for the $sth's bind variables, so it can be re-tried
 # easily.
@@ -2311,540 +2316,521 @@ $dp->prop('required', { t => 1 });
 my $vp = new VersionParser;
 my $q  = new Quoter;
 
-# ############################################################################
-# Get configuration information.
-# ############################################################################
-my $o = new OptionParser(
-   prompt      => '--source DSN --where WHERE <options>',
-   dp          => $dp,
-   description => q{nibbles records from a MySQL table.  The --source }
-                . q{and --dest arguments use DSN syntax; if COPY is }
-                . q{yes, --dest defaults to the key's value from --source.},
-);
-$o->get_specs();
-$o->get_opts();
+sub main {
+   @ARGV = @_;  # set global ARGV for this package
 
-$dp->prop('setvars', $o->get('setvars'));
-
-# Frequently used options.
-my $src          = $o->get('source');
-my $dst          = $o->get('dest');
-my $sentinel     = $o->get('sentinel');
-my $bulk_del     = $o->get('bulkdel');
-my $commit_each  = $o->get('commit-each');
-my $limit        = $o->get('limit');
-my $archive_file = $o->get('file');
-my $txnsize      = $o->get('txnsize');
-my $quiet        = $o->get('quiet');
-
-# First things first: if --stop was given, create the sentinel file.
-if ( $o->get('stop') ) {
-   my $sentinel_fh = IO::File->new($sentinel, ">>")
-      or die "Cannot open $sentinel: $OS_ERROR\n";
-   print $sentinel_fh "Remove this file to permit mk-archiver to run\n"
-      or die "Cannot write to $sentinel: $OS_ERROR\n";
-   close $sentinel_fh
-      or die "Cannot close $sentinel: $OS_ERROR\n";
-   print STDOUT "Successfully created file $sentinel\n"
-      unless $quiet;
-   exit(0);
-}
-
-# Generate a filename with sprintf-like formatting codes.
-if ( $archive_file ) {
-   my @time = localtime();
-   my %fmt = (
-      d => sprintf('%02d', $time[3]),
-      H => sprintf('%02d', $time[2]),
-      i => sprintf('%02d', $time[1]),
-      m => sprintf('%02d', $time[4] + 1),
-      s => sprintf('%02d', $time[0]),
-      Y => $time[5] + 1900,
-      D => $src && $src->{D} ? $src->{D} : '',
-      t => $src && $src->{t} ? $src->{t} : '',
+   # ########################################################################
+   # Get configuration information.
+   # ########################################################################
+   my $o = new OptionParser(
+      prompt      => '--source DSN --where WHERE <options>',
+      dp          => $dp,
+      description => q{nibbles records from a MySQL table.  The --source }
+                   . q{and --dest arguments use DSN syntax; if COPY is }
+                   . q{yes, --dest defaults to the key's value from --source.},
    );
-   $archive_file =~ s/%([dHimsYDt])/$fmt{$1}/g;
-}
+   $o->get_specs();
+   $o->get_opts();
 
-if ( !$o->got('help') ) {
-   if ( $dst ) {
-      # Ensure --source and --dest don't point to the same place
-      my $same = 1;
-      foreach my $arg ( qw(h P D t S) ) {
-         if ( defined $src->{$arg} && defined $dst->{$arg}
-              && $src->{$arg} ne $dst->{$arg} ) {
-            $same = 0;
-            last;
+   $dp->prop('setvars', $o->get('set-vars'));
+
+   # Frequently used options.
+   $src             = $o->get('source');
+   $dst             = $o->get('dest');
+   my $sentinel     = $o->get('sentinel');
+   my $bulk_del     = $o->get('bulk-delete');
+   my $commit_each  = $o->get('commit-each');
+   my $limit        = $o->get('limit');
+   my $archive_file = $o->get('file');
+   my $txnsize      = $o->get('txn-size');
+   my $quiet        = $o->get('quiet');
+
+   # First things first: if --stop was given, create the sentinel file.
+   if ( $o->get('stop') ) {
+      my $sentinel_fh = IO::File->new($sentinel, ">>")
+         or die "Cannot open $sentinel: $OS_ERROR\n";
+      print $sentinel_fh "Remove this file to permit mk-archiver to run\n"
+         or die "Cannot write to $sentinel: $OS_ERROR\n";
+      close $sentinel_fh
+         or die "Cannot close $sentinel: $OS_ERROR\n";
+      print STDOUT "Successfully created file $sentinel\n"
+         unless $quiet;
+      return 0;
+   }
+
+   # Generate a filename with sprintf-like formatting codes.
+   if ( $archive_file ) {
+      my @time = localtime();
+      my %fmt = (
+         d => sprintf('%02d', $time[3]),
+         H => sprintf('%02d', $time[2]),
+         i => sprintf('%02d', $time[1]),
+         m => sprintf('%02d', $time[4] + 1),
+         s => sprintf('%02d', $time[0]),
+         Y => $time[5] + 1900,
+         D => $src && $src->{D} ? $src->{D} : '',
+         t => $src && $src->{t} ? $src->{t} : '',
+      );
+      $archive_file =~ s/%([dHimsYDt])/$fmt{$1}/g;
+   }
+
+   if ( !$o->got('help') ) {
+      if ( $dst ) {
+         # Ensure --source and --dest don't point to the same place
+         my $same = 1;
+         foreach my $arg ( qw(h P D t S) ) {
+            if ( defined $src->{$arg} && defined $dst->{$arg}
+                 && $src->{$arg} ne $dst->{$arg} ) {
+               $same = 0;
+               last;
+            }
+         }
+         if ( $same ) {
+            $o->save_error("--source and --dest refer to the same table");
          }
       }
-      if ( $same ) {
-         $o->save_error("--source and --dest refer to the same table");
+      if ( $o->get('bulk-insert') ) {
+         $o->save_error("--bulk-insert is meaningless without a destination")
+            unless $dst;
+         $bulk_del = 1; # VERY IMPORTANT for safety.
+      }
+      if ( $bulk_del && $limit < 2 ) {
+         $o->save_error("--bulk-delete is meaningless with --limit 1");
+      }
+
+   }
+
+   if ( $bulk_del || $o->get('bulk-insert') ) {
+      $o->set('commit-each', 1);
+   }
+
+   $o->usage_or_errors();
+
+   # ########################################################################
+   # If --pid, check it first since we'll die if it already exits.
+   # ########################################################################
+   my $daemon;
+   if ( $o->get('pid') ) {
+      # We're not daemoninzing, it just handles PID stuff.  Keep $daemon
+      # in the the scope of main() because when it's destroyed it automatically
+      # removes the PID file.
+      $daemon = new Daemon(o=>$o);
+      $daemon->make_PID_file();
+   }
+      
+   # ########################################################################
+   # Set up statistics.
+   # ########################################################################
+   my %statistics = ();
+   my $stat_start;
+
+   if ( $o->get('statistics') ) {
+      require Time::HiRes;
+      my $start    = Time::HiRes::gettimeofday();
+      my $obs_cost = Time::HiRes::gettimeofday() - $start; # cost of observation
+
+      *trace = sub {
+         my ( $thing, $sub ) = @_;
+         my $start = Time::HiRes::gettimeofday();
+         $sub->();
+         $statistics{$thing . '_time'}
+            += (Time::HiRes::gettimeofday() - $start - $obs_cost);
+         ++$statistics{$thing . '_count'};
+         $stat_start ||= $start;
       }
    }
-   if ( $o->get('bulkins') ) {
-      $o->save_error("--bulkins is meaningless without a destination")
-         unless $dst;
-      $bulk_del = 1; # VERY IMPORTANT for safety.
-   }
-   if ( $bulk_del && $limit < 2 ) {
-      $o->save_error("--bulkdel is meaningless with --limit 1");
+   else { # Generate a version that doesn't do any timing
+      *trace = sub {
+         my ( $thing, $sub ) = @_;
+         $sub->();
+      }
    }
 
-}
+   # ########################################################################
+   # Inspect DB servers and tables.
+   # ########################################################################
 
-if ( $bulk_del || $o->get('bulkins') ) {
-   $o->set('commit-each', 1);
-}
+   my $tp = new TableParser();
+   my $du = new MySQLDump();
+   foreach my $table ( grep { $_ } ($src, $dst) ) {
+      my $ac = !$txnsize && !$commit_each;
+      if ( !defined $table->{p} && $o->get('ask-pass') ) {
+         $table->{p} = OptionParser::prompt_noecho("Enter password: ");
+      }
+      my $dbh = $dp->get_dbh(
+         $dp->get_cxn_params($table), { AutoCommit => $ac });
 
-$o->usage_or_errors();
+      # Set options that can enable removing data on the master and archiving it
+      # on the slaves.
+      if ( $table->{a} ) {
+         $dbh->do("USE $table->{a}");
+      }
+      if ( $table->{b} ) {
+         $dbh->do("SET SQL_LOG_BIN=0");
+      }
 
-# ########################################################################
-# If --pid, check it first since we'll die if it already exits.
-# ########################################################################
-my $daemon;
-if ( $o->get('pid') ) {
-   # We're not daemoninzing, it just handles PID stuff.  Keep $daemon
-   # in the the scope of main() because when it's destroyed it automatically
-   # removes the PID file.
-   $daemon = new Daemon(o=>$o);
-   $daemon->make_PID_file();
-}
-   
-# ############################################################################
-# Set up statistics.
-# ############################################################################
-my %statistics = ();
-my $stat_start;
+      $table->{dbh}  = $dbh;
+      $table->{irot} = get_irot($dbh);
 
-if ( $o->get('statistics') ) {
-   require Time::HiRes;
-   my $start    = Time::HiRes::gettimeofday();
-   my $obs_cost = Time::HiRes::gettimeofday() - $start; # cost of observation
+      $can_retry = $can_retry && !$table->{irot};
 
-   *trace = sub {
-      my ( $thing, $sub ) = @_;
-      my $start = Time::HiRes::gettimeofday();
-      $sub->();
-      $statistics{$thing . '_time'}
-         += (Time::HiRes::gettimeofday() - $start - $obs_cost);
-      ++$statistics{$thing . '_count'};
-      $stat_start ||= $start;
-   }
-}
-else { # Generate a version that doesn't do any timing
-   *trace = sub {
-      my ( $thing, $sub ) = @_;
-      $sub->();
-   }
-}
+      $table->{db_tbl} = $q->quote(
+         map  { $_ =~ s/(^`|`$)//g; $_; }
+         grep { $_ }
+         ( $table->{D}, $table->{t} )
+      );
 
-# ############################################################################
-# Inspect DB servers and tables.
-# ############################################################################
+      # Create objects for archivable and dependency handling, BEFORE getting
+      # the tbl structure (because the object might do some setup, including
+      # creating the table to be archived).
+      if ( $table->{m} ) {
+         eval "require $table->{m}";
+         die $EVAL_ERROR if $EVAL_ERROR;
 
-my $tp = new TableParser();
-my $du = new MySQLDump();
-foreach my $table ( grep { $_ } ($src, $dst) ) {
-   my $ac = !$txnsize && !$commit_each;
-   if ( !defined $table->{p} && $o->get('askpass') ) {
-      $table->{p} = OptionParser::prompt_noecho("Enter password: ");
-   }
-   my $dbh = $dp->get_dbh(
-      $dp->get_cxn_params($table), { AutoCommit => $ac });
+         trace('plugin_start', sub {
+            $table->{plugin} = $table->{m}->new(
+               dbh => $table->{dbh},
+               db  => $table->{D},
+               tbl => $table->{t},
+            );
+         });
+      }
 
-   # Set options that can enable removing data on the master and archiving it
-   # on the slaves.
-   if ( $table->{a} ) {
-      $dbh->do("USE $table->{a}");
-   }
-   if ( $table->{b} ) {
-      $dbh->do("SET SQL_LOG_BIN=0");
+      $table->{info} = $tp->parse(
+         $du->get_create_table($dbh, $q, $table->{D}, $table->{t}));
    }
 
-   $table->{dbh}  = $dbh;
-   $table->{irot} = get_irot($dbh);
+   if ( $dst && $o->get('check-columns') ) {
+      my @not_in_src = grep {
+         !$src->{info}->{is_col}->{$_}
+      } @{$dst->{info}->{cols}};
+      if ( @not_in_src ) {
+         die "The following columns exist in --dest but not --source: "
+            . join(', ', @not_in_src)
+            . "\n";
+      }
+      my @not_in_dst = grep {
+         !$dst->{info}->{is_col}->{$_}
+      } @{$src->{info}->{cols}};
+      if ( @not_in_dst ) {
+         die "The following columns exist in --source but not --dest: "
+            . join(', ', @not_in_dst)
+            . "\n";
+      }
+   }
 
-   $can_retry = $can_retry && !$table->{irot};
-
-   $table->{db_tbl} = $q->quote(
-      map  { $_ =~ s/(^`|`$)//g; $_; }
-      grep { $_ }
-      ( $table->{D}, $table->{t} )
-   );
-
-   # Create objects for archivable and dependency handling, BEFORE getting the
-   # tbl structure (because the object might do some setup, including creating
-   # the table to be archived).
-   if ( $table->{m} ) {
-      eval "require $table->{m}";
+   # ########################################################################
+   # Set up general plugin.
+   # ########################################################################
+   my $plugin;
+   if ( $o->get('plugin') ) {
+      eval "require " . $o->get('plugin');
       die $EVAL_ERROR if $EVAL_ERROR;
+      my %opts = $o->opt_values();
+      $plugin = $o->get('plugin')->new(
+         src  => $src,
+         dst  => $dst,
+         opts => \%opts,
+      );
+   }
 
-      trace('plugin_start', sub {
-         $table->{plugin} = $table->{m}->new(
-            dbh => $table->{dbh},
-            db  => $table->{D},
-            tbl => $table->{t},
+   # ########################################################################
+   # Design SQL statements.
+   # ########################################################################
+   my $dbh = $src->{dbh};
+   my $nibbler = new TableNibbler;
+   my ($first_sql, $next_sql, $del_sql, $ins_sql);
+   my ($sel_stmt, $ins_stmt, $del_stmt);
+   my (@asc_slice, @sel_slice, @del_slice, @bulkdel_slice, @ins_slice);
+   my @sel_cols = $o->get('columns')          ? @{$o->get('columns')}    # Explicit
+                : $o->get('primary-key-only') ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} 
+                :                               @{$src->{info}->{cols}}; # All
+   MKDEBUG && _d("sel cols: " . @sel_cols);
+
+   $del_stmt = $nibbler->generate_del_stmt(
+      parser => $tp,
+      tbl    => $src->{info},
+      cols   => \@sel_cols,
+      quoter => $q,
+      index  => $src->{i},
+   );
+   @del_slice = @{$del_stmt->{slice}};
+
+   # Generate statement for ascending index, if desired
+   if ( !$o->get('no-ascend') ) {
+      $sel_stmt = $nibbler->generate_asc_stmt(
+         parser   => $tp,
+         tbl      => $src->{info},
+         cols     => $del_stmt->{cols},
+         index    => $del_stmt->{index},
+         ascfirst => $o->get('ascend-first'),
+         quoter   => $q,
+         # Might prevent rows in the source from being deleted.
+         asconly  => $src->{m} || $o->get('no-delete'),
+      );
+   }
+   else {
+      $sel_stmt = {
+         cols  => $del_stmt->{cols},
+         index => undef,
+         where => '1=1',
+         slice => [], # No-ascend = no bind variables in the WHERE clause.
+         scols => [], # No-ascend = no bind variables in the WHERE clause.
+      };
+   }
+   @asc_slice = @{$sel_stmt->{slice}};
+   @sel_slice = 0..$#sel_cols;
+
+   $first_sql
+      = 'SELECT' . ( $o->get('high-priority-select') ? ' HIGH_PRIORITY' : '' )
+      . ' /*!40001 SQL_NO_CACHE */ '
+      . join(',', map { $q->quote($_) } @{$sel_stmt->{cols}} )
+      . " FROM $src->{db_tbl}"
+      . ( $sel_stmt->{index}
+         ? (($vp->version_ge($dbh, '4.0.9') ? " FORCE" : " USE")
+            . " INDEX(`$sel_stmt->{index}`)")
+         : '')
+      . " WHERE (".$o->get('where').")";
+
+   if ( $o->get('safe-auto-increment')
+         && $sel_stmt->{index}
+         && scalar(@{$src->{info}->{keys}->{$sel_stmt->{index}}->{cols}}) == 1
+         && $src->{info}->{is_autoinc}->{
+            $src->{info}->{keys}->{$sel_stmt->{index}}->{cols}->[0]
+         }
+   ) {
+      my $col = $q->quote($sel_stmt->{scols}->[0]);
+      my ($val) = $dbh->selectrow_array("SELECT MAX($col) FROM $src->{db_tbl}");
+      $first_sql .= " AND ($col < " . $q->quote_val($val) . ")";
+   }
+
+   $next_sql = $first_sql;
+   if ( !$o->get('no-ascend') ) {
+      $next_sql .= " AND $sel_stmt->{where}";
+   }
+
+   foreach my $thing ( $first_sql, $next_sql ) {
+      $thing .= " LIMIT $limit";
+      if ( $o->get('for-update') ) {
+         $thing .= ' FOR UPDATE';
+      }
+      elsif ( $o->get('share-lock') ) {
+         $thing .= ' LOCK IN SHARE MODE';
+      }
+   }
+
+   if ( !$bulk_del ) {
+      # The LIMIT is *always* 1 here, because even though a SELECT can return
+      # many rows, an INSERT only does one at a time.  It would not be safe to
+      # iterate over a SELECT that was LIMIT-ed to 500 rows, read and INSERT
+      # one, and then delete with a LIMIT of 500.  Only one row would be written
+      # to the file; only one would be INSERT-ed at the destination.  Every
+      # DELETE must be LIMIT 1.
+      $del_sql = 'DELETE'
+         . ($o->get('low-priority-delete') ? ' LOW_PRIORITY' : '')
+         . ($o->get('quick-delete')        ? ' QUICK'        : '')
+         . " FROM $src->{db_tbl} WHERE $del_stmt->{where}"
+         . " LIMIT 1";
+   }
+   else {
+      # Unless, of course, it's a bulk DELETE, in which case the 500 rows have
+      # already been INSERT-ed.
+      my $asc_stmt = $nibbler->generate_asc_stmt(
+         parser   => $tp,
+         tbl      => $src->{info},
+         cols     => $del_stmt->{cols},
+         index    => $del_stmt->{index},
+         ascfirst => 0,
+         quoter   => $q,
+      );
+      $del_sql = 'DELETE'
+         . ($o->get('low-priority-delete') ? ' LOW_PRIORITY' : '')
+         . ($o->get('quick-delete')        ? ' QUICK'        : '')
+         . " FROM $src->{db_tbl} WHERE ("
+         . $asc_stmt->{boundaries}->{'>='}
+         . ') AND (' . $asc_stmt->{boundaries}->{'<='}
+         # Unlike the row-at-a-time DELETE, this one must include the user's
+         # specified WHERE clause and an appropriate LIMIT clause.
+         . ") AND (".$o->get('where').") LIMIT $limit";
+      @bulkdel_slice = @{$asc_stmt->{slice}};
+   }
+
+   if ( $dst ) {
+      $ins_stmt = $nibbler->generate_ins_stmt(
+         ins_tbl  => $dst->{info},
+         sel_cols => \@sel_cols,
+      );
+      MKDEBUG && _d("inst stmt: ", Dumper($ins_stmt));
+      @ins_slice = @{$ins_stmt->{slice}};
+      if ( $o->get('bulk-insert') ) {
+         $ins_sql = 'LOAD DATA'
+                  . ($o->get('low-priority-insert') ? ' LOW_PRIORITY' : '')
+                  . ' LOCAL INFILE ?'
+                  . ($o->get('replace')    ? ' REPLACE'      : '')
+                  . ($o->get('ignore')     ? ' IGNORE'       : '')
+                  . " INTO TABLE $dst->{db_tbl}("
+                  . join(",", map { $q->quote($_) } @{$ins_stmt->{cols}} )
+                  . ")";
+      }
+      else {
+         $ins_sql = ($o->get('replace')             ? 'REPLACE'      : 'INSERT')
+                  . ($o->get('low-priority-insert') ? ' LOW_PRIORITY' : '')
+                  . ($o->get('delayed-insert')      ? ' DELAYED'      : '')
+                  . ($o->get('ignore')              ? ' IGNORE'       : '')
+                  . " INTO $dst->{db_tbl}("
+                  . join(",", map { $q->quote($_) } @{$ins_stmt->{cols}} )
+                  . ") VALUES ("
+                  . join(",", map { "?" } @{$ins_stmt->{cols}} ) . ")";
+      }
+   }
+   else {
+      $ins_sql = '';
+   }
+
+   if ( $o->get('dry-run') ) {
+      if ( !$quiet ) {
+         print join("\n", ($archive_file || ''),
+               $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
+      }
+      return 0;
+   }
+
+   if ( MKDEBUG ) {
+      _d("get first sql:", $first_sql);
+      _d("get next sql:", $next_sql);
+      _d("del row sql:", $del_sql);
+      _d("ins row sql:", $ins_sql);
+   }
+
+   my $get_first = $dbh->prepare($first_sql);
+   my $get_next  = $dbh->prepare($next_sql);
+   my $del_row   = $dbh->prepare($del_sql);
+   my $ins_row   = $dst->{dbh}->prepare($ins_sql) if $dst; # Different $dbh!
+
+   # ########################################################################
+   # Set MySQL options.
+   # ########################################################################
+
+   if ( $o->get('skip-foreign-key-checks') ) {
+      $src->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+      if ( $dst ) {
+         $dst->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+      }
+   }
+
+   # ########################################################################
+   # Set up the plugins
+   # ########################################################################
+   foreach my $table ( $dst, $src ) {
+      next unless $table && $table->{plugin};
+      trace ('before_begin', sub {
+         $table->{plugin}->before_begin(
+            cols    => \@sel_cols,
+            allcols => $sel_stmt->{cols},
          );
       });
    }
 
-   $table->{info} = $tp->parse(
-      $du->get_create_table($dbh, $q, $table->{D}, $table->{t}));
-}
+   # ########################################################################
+   # Start archiving.
+   # ########################################################################
+   my $start = time();
+   my $end   = $start + ($o->get('run-time') || 0); # When mk-archiver should exit
+   my $now     = $start;
+   my $retries = $o->get('retries');
+   printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT')
+      if $o->get('progress') && !$quiet;
+   printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt)
+      if $o->get('progress') && !$quiet;
 
-if ( $dst && $o->get('chkcols') ) {
-   my @not_in_src = grep {
-      !$src->{info}->{is_col}->{$_}
-   } @{$dst->{info}->{cols}};
-   if ( @not_in_src ) {
-      die "The following columns exist in --dest but not --source: "
-         . join(', ', @not_in_src)
-         . "\n";
-   }
-   my @not_in_dst = grep {
-      !$dst->{info}->{is_col}->{$_}
-   } @{$src->{info}->{cols}};
-   if ( @not_in_dst ) {
-      die "The following columns exist in --source but not --dest: "
-         . join(', ', @not_in_dst)
-         . "\n";
-   }
-}
-
-# ############################################################################
-# Set up general plugin.
-# ############################################################################
-my $plugin;
-if ( $o->get('plugin') ) {
-   eval "require " . $o->get('plugin');
-   die $EVAL_ERROR if $EVAL_ERROR;
-   my %opts = $o->opt_values();
-   $plugin = $o->get('plugin')->new(
-      src  => $src,
-      dst  => $dst,
-      opts => \%opts,
-   );
-}
-
-# ############################################################################
-# Design SQL statements.
-# ############################################################################
-my $dbh = $src->{dbh};
-my $nibbler = new TableNibbler;
-my ($first_sql, $next_sql, $del_sql, $ins_sql);
-my ($sel_stmt, $ins_stmt, $del_stmt);
-my (@asc_slice, @sel_slice, @del_slice, @bulkdel_slice, @ins_slice);
-my @sel_cols = $o->get('columns') ? @{$o->get('columns')}    # Explicit
-             : $o->get('pkonly')  ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} 
-             :                      @{$src->{info}->{cols}}; # All
-MKDEBUG && _d("sel cols: " . @sel_cols);
-
-$del_stmt = $nibbler->generate_del_stmt(
-   parser => $tp,
-   tbl    => $src->{info},
-   cols   => \@sel_cols,
-   quoter => $q,
-   index  => $src->{i},
-);
-@del_slice = @{$del_stmt->{slice}};
-
-# Generate statement for ascending index, if desired
-if ( !$o->get('noascend') ) {
-   $sel_stmt = $nibbler->generate_asc_stmt(
-      parser   => $tp,
-      tbl      => $src->{info},
-      cols     => $del_stmt->{cols},
-      index    => $del_stmt->{index},
-      ascfirst => $o->get('ascendfirst'),
-      quoter   => $q,
-      # Might prevent rows in the source from being deleted.
-      asconly  => $src->{m} || $o->get('nodelete'),
-   );
-}
-else {
-   $sel_stmt = {
-      cols  => $del_stmt->{cols},
-      index => undef,
-      where => '1=1',
-      slice => [], # No-ascend = no bind variables in the WHERE clause.
-      scols => [], # No-ascend = no bind variables in the WHERE clause.
-   };
-}
-@asc_slice = @{$sel_stmt->{slice}};
-@sel_slice = 0..$#sel_cols;
-
-$first_sql
-   = 'SELECT' . ( $o->get('hpselect') ? ' HIGH_PRIORITY' : '' )
-   . ' /*!40001 SQL_NO_CACHE */ '
-   . join(',', map { $q->quote($_) } @{$sel_stmt->{cols}} )
-   . " FROM $src->{db_tbl}"
-   . ( $sel_stmt->{index}
-      ? (($vp->version_ge($dbh, '4.0.9') ? " FORCE" : " USE")
-         . " INDEX(`$sel_stmt->{index}`)")
-      : '')
-   . " WHERE (".$o->get('where').")";
-
-if ( $o->get('safeautoinc')
-      && $sel_stmt->{index}
-      && scalar(@{$src->{info}->{keys}->{$sel_stmt->{index}}->{cols}}) == 1
-      && $src->{info}->{is_autoinc}->{
-         $src->{info}->{keys}->{$sel_stmt->{index}}->{cols}->[0]
-      }
-) {
-   my $col = $q->quote($sel_stmt->{scols}->[0]);
-   my ($val) = $dbh->selectrow_array("SELECT MAX($col) FROM $src->{db_tbl}");
-   $first_sql .= " AND ($col < " . $q->quote_val($val) . ")";
-}
-
-$next_sql = $first_sql;
-if ( !$o->get('noascend') ) {
-   $next_sql .= " AND $sel_stmt->{where}";
-}
-
-foreach my $thing ( $first_sql, $next_sql ) {
-   $thing .= " LIMIT $limit";
-   if ( $o->get('forupdate') ) {
-      $thing .= ' FOR UPDATE';
-   }
-   elsif ( $o->get('sharelock') ) {
-      $thing .= ' LOCK IN SHARE MODE';
-   }
-}
-
-if ( !$bulk_del ) {
-   # The LIMIT is *always* 1 here, because even though a SELECT can return many
-   # rows, an INSERT only does one at a time.  It would not be safe to iterate
-   # over a SELECT that was LIMIT-ed to 500 rows, read and INSERT one, and then
-   # delete with a LIMIT of 500.  Only one row would be written to the file;
-   # only one would be INSERT-ed at the destination.  Every DELETE must be LIMIT
-   # 1.
-   $del_sql = 'DELETE'
-      . ($o->get('lpdel')    ? ' LOW_PRIORITY' : '')
-      . ($o->get('quickdel') ? ' QUICK'        : '')
-      . " FROM $src->{db_tbl} WHERE $del_stmt->{where}"
-      . " LIMIT 1";
-}
-else {
-   # Unless, of course, it's a bulk DELETE, in which case the 500 rows have
-   # already been INSERT-ed.
-   my $asc_stmt = $nibbler->generate_asc_stmt(
-      parser   => $tp,
-      tbl      => $src->{info},
-      cols     => $del_stmt->{cols},
-      index    => $del_stmt->{index},
-      ascfirst => 0,
-      quoter   => $q,
-   );
-   $del_sql = 'DELETE'
-      . ($o->get('lpdel')    ? ' LOW_PRIORITY' : '')
-      . ($o->get('quickdel') ? ' QUICK'        : '')
-      . " FROM $src->{db_tbl} WHERE ("
-      . $asc_stmt->{boundaries}->{'>='}
-      . ') AND (' . $asc_stmt->{boundaries}->{'<='}
-      # Unlike the row-at-a-time DELETE, this one must include the user's
-      # specified WHERE clause and an appropriate LIMIT clause.
-      . ") AND (".$o->get('where').") LIMIT $limit";
-   @bulkdel_slice = @{$asc_stmt->{slice}};
-}
-
-if ( $dst ) {
-   $ins_stmt = $nibbler->generate_ins_stmt(
-      ins_tbl  => $dst->{info},
-      sel_cols => \@sel_cols,
-   );
-   MKDEBUG && _d("inst stmt: ", Dumper($ins_stmt));
-   @ins_slice = @{$ins_stmt->{slice}};
-   if ( $o->get('bulkins') ) {
-      $ins_sql = 'LOAD DATA'
-               . ($o->get('lpins')      ? ' LOW_PRIORITY' : '')
-               . ' LOCAL INFILE ?'
-               . ($o->get('replace')    ? ' REPLACE'      : '')
-               . ($o->get('ignore')     ? ' IGNORE'       : '')
-               . " INTO TABLE $dst->{db_tbl}("
-               . join(",", map { $q->quote($_) } @{$ins_stmt->{cols}} )
-               . ")";
-   }
-   else {
-      $ins_sql = ($o->get('replace')    ? 'REPLACE'       : 'INSERT')
-               . ($o->get('lpins')      ? ' LOW_PRIORITY' : '')
-               . ($o->get('delayedins') ? ' DELAYED'      : '')
-               . ($o->get('ignore')     ? ' IGNORE'       : '')
-               . " INTO $dst->{db_tbl}("
-               . join(",", map { $q->quote($_) } @{$ins_stmt->{cols}} )
-               . ") VALUES ("
-               . join(",", map { "?" } @{$ins_stmt->{cols}} ) . ")";
-   }
-}
-else {
-   $ins_sql = '';
-}
-
-if ( $o->get('test') ) {
-   if ( !$quiet ) {
-      print join("\n", ($archive_file || ''),
-            $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
-   }
-   exit(0);
-}
-
-if ( MKDEBUG ) {
-   _d("get first sql:", $first_sql);
-   _d("get next sql:", $next_sql);
-   _d("del row sql:", $del_sql);
-   _d("ins row sql:", $ins_sql);
-}
-
-my $get_first = $dbh->prepare($first_sql);
-my $get_next  = $dbh->prepare($next_sql);
-my $del_row   = $dbh->prepare($del_sql);
-my $ins_row   = $dst->{dbh}->prepare($ins_sql) if $dst; # Different $dbh!
-
-# ############################################################################
-# Set MySQL options.
-# ############################################################################
-
-if ( $o->get('skipfkchk') ) {
-   $src->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
-   if ( $dst ) {
-      $dst->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
-   }
-}
-
-# ############################################################################
-# Set up the plugins
-# ############################################################################
-foreach my $table ( $dst, $src ) {
-   next unless $table && $table->{plugin};
-   trace ('before_begin', sub {
-      $table->{plugin}->before_begin(
-         cols    => \@sel_cols,
-         allcols => $sel_stmt->{cols},
-      );
+   $get_sth = $get_first; # Later it may be assigned $get_next
+   trace('select', sub {
+      $get_sth->execute;
+      $statistics{SELECT} += $get_sth->rows;
    });
-}
-
-# ############################################################################
-# Start archiving.
-# ############################################################################
-my $start   = time();
-my $end     = $start + ($o->get('time') || 0); # When mk-archiver should exit
-my $now     = $start;
-my $retries = $o->get('retries');
-printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT')
-   if $o->get('progress') && !$quiet;
-printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt)
-   if $o->get('progress') && !$quiet;
-
-$get_sth = $get_first; # Later it may be assigned $get_next
-trace('select', sub {
-   $get_sth->execute;
-   $statistics{SELECT} += $get_sth->rows;
-});
-my $row = $get_sth->fetchrow_arrayref();
-MKDEBUG && _d("First row: ", Dumper($row));
-if ( !$row ) {
-   $get_sth->finish;
-   $src->{dbh}->disconnect();
-   $dst->{dbh}->disconnect() if $dst;
-   exit(0);
-}
-
-# Open the file and print the header to it.
-if ( $archive_file ) {
-   my $need_hdr = $o->get('header') && !-f $archive_file;
-   $archive_fh = IO::File->new($archive_file, ">>")
-      or die "Cannot open $archive_file: $OS_ERROR\n";
-   $archive_fh->autoflush(1) unless $o->get('buffer');
-   if ( $need_hdr ) {
-      print $archive_fh '', escape(\@sel_cols), "\n"
-         or die "Cannot write to $archive_file: $OS_ERROR\n";
+   my $row = $get_sth->fetchrow_arrayref();
+   MKDEBUG && _d("First row: ", Dumper($row));
+   if ( !$row ) {
+      $get_sth->finish;
+      $src->{dbh}->disconnect();
+      $dst->{dbh}->disconnect() if $dst;
+      return 0;
    }
-}
 
-# Open the bulk insert file, which doesn't get any header info.
-my $bulkins_file;
-if ( $o->get('bulkins') ) {
-   require File::Temp;
-   $bulkins_file = File::Temp->new( SUFFIX => 'mk-archiver' )
-      or die "Cannot open temp file: $OS_ERROR\n";
-}
-
-# This row is the first row fetched from each 'chunk'.
-my $first_row = [ @$row ];
-my $csv_row;
-
-ROW:
-while (                                 # Quit if:
-   $row                                 # There is no data
-   && $retries >= 0                     # or retries are exceeded
-   && (!$o->get('time') || $now < $end) # or time is exceeded
-   && !-f $sentinel                     # or the sentinel is set
-   && $oktorun                          # or instructed to quit
-   )
-{
-   my $lastrow = $row;
-
-   if ( !$src->{plugin}
-      || trace('is_archivable', sub {
-         $src->{plugin}->is_archivable(row => $row)
-      })
-   ) {
-
-      # Do the archiving.  Write to the file first, since like the file, MyISAM
-      # and other tables cannot be rolled back etc.  If there is a problem,
-      # hopefully the data has at least made it to the file.
-      my $escaped_row;
-      if ( $archive_fh || $bulkins_file ) {
-         $escaped_row = escape([@{$row}[@sel_slice]]);
+   # Open the file and print the header to it.
+   if ( $archive_file ) {
+      my $need_hdr = $o->get('header') && !-f $archive_file;
+      $archive_fh = IO::File->new($archive_file, ">>")
+         or die "Cannot open $archive_file: $OS_ERROR\n";
+      $archive_fh->autoflush(1) unless $o->get('buffer');
+      if ( $need_hdr ) {
+         print $archive_fh '', escape(\@sel_cols), "\n"
+            or die "Cannot write to $archive_file: $OS_ERROR\n";
       }
-      if ( $archive_fh ) {
-         trace('print_file', sub {
-            print $archive_fh $escaped_row, "\n"
-               or die "Cannot write to $archive_file: $OS_ERROR\n";
-         });
-      }
+   }
 
-      # #######################################################################
-      # This code is for the row-at-a-time archiving functionality.
-      # #######################################################################
-      # INSERT must come first, to be as safe as possible.
-      if ( $dst && !$bulkins_file ) {
-         my $ins_sth; # Let the plugin change which sth is used for the INSERT.
-         if ( $dst->{plugin} ) {
-            trace('before_insert', sub {
-               $dst->{plugin}->before_insert(row => $row);
-            });
-            trace('custom_sth', sub {
-               $ins_sth = $dst->{plugin}->custom_sth(
-                  row => $row, sql => $ins_sql);
+   # Open the bulk insert file, which doesn't get any header info.
+   my $bulkins_file;
+   if ( $o->get('bulk-insert') ) {
+      require File::Temp;
+      $bulkins_file = File::Temp->new( SUFFIX => 'mk-archiver' )
+         or die "Cannot open temp file: $OS_ERROR\n";
+   }
+
+   # This row is the first row fetched from each 'chunk'.
+   my $first_row = [ @$row ];
+   my $csv_row;
+
+   ROW:
+   while (                                 # Quit if:
+      $row                                 # There is no data
+      && $retries >= 0                     # or retries are exceeded
+      && (!$o->get('run-time') || $now < $end) # or time is exceeded
+      && !-f $sentinel                     # or the sentinel is set
+      && $oktorun                          # or instructed to quit
+      )
+   {
+      my $lastrow = $row;
+
+      if ( !$src->{plugin}
+         || trace('is_archivable', sub {
+            $src->{plugin}->is_archivable(row => $row)
+         })
+      ) {
+
+         # Do the archiving.  Write to the file first, since like the file, MyISAM
+         # and other tables cannot be rolled back etc.  If there is a problem,
+         # hopefully the data has at least made it to the file.
+         my $escaped_row;
+         if ( $archive_fh || $bulkins_file ) {
+            $escaped_row = escape([@{$row}[@sel_slice]]);
+         }
+         if ( $archive_fh ) {
+            trace('print_file', sub {
+               print $archive_fh $escaped_row, "\n"
+                  or die "Cannot write to $archive_file: $OS_ERROR\n";
             });
          }
-         $ins_sth ||= $ins_row; # Default to the sth decided before.
-         my $success = do_with_retries( 'inserting', sub {
-            $ins_sth->execute(@{$row}[@ins_slice]);
-            $statistics{INSERT} += $ins_sth->rows;
-         });
-         if ( $success == $OUT_OF_RETRIES ) {
-            $retries = -1;
-            last ROW;
-         }
-         elsif ( $success == $ROLLED_BACK ) {
-            --$retries;
-            next ROW;
-         }
-      }
 
-      if ( !$bulk_del ) {
-         # DELETE comes after INSERT for safety.
-         if ( $src->{plugin} ) {
-            trace('before_delete', sub {
-               $src->{plugin}->before_delete(row => $row);
-            });
-         }
-         if ( !$o->get('nodelete') ) {
-            my $success = do_with_retries( 'deleting', sub {
-               $del_row->execute(@{$row}[@del_slice]);
-               $statistics{DELETE} += $del_row->rows;
+         # ###################################################################
+         # This code is for the row-at-a-time archiving functionality.
+         # ###################################################################
+         # INSERT must come first, to be as safe as possible.
+         if ( $dst && !$bulkins_file ) {
+            my $ins_sth; # Let the plugin change which sth is used for the INSERT.
+            if ( $dst->{plugin} ) {
+               trace('before_insert', sub {
+                  $dst->{plugin}->before_insert(row => $row);
+               });
+               trace('custom_sth', sub {
+                  $ins_sth = $dst->{plugin}->custom_sth(
+                     row => $row, sql => $ins_sql);
+               });
+            }
+            $ins_sth ||= $ins_row; # Default to the sth decided before.
+            my $success = do_with_retries($o, 'inserting', sub {
+               $ins_sth->execute(@{$row}[@ins_slice]);
+               $statistics{INSERT} += $ins_sth->rows;
             });
             if ( $success == $OUT_OF_RETRIES ) {
                $retries = -1;
@@ -2855,219 +2841,244 @@ while (                                 # Quit if:
                next ROW;
             }
          }
-      }
 
-      # #######################################################################
-      # This code is for the bulk archiving functionality.
-      # #######################################################################
-      if ( $bulkins_file ) {
-         trace('print_bulkfile', sub {
-            print $bulkins_file $escaped_row, "\n"
-               or die "Cannot write to bulk file: $OS_ERROR\n";
-         });
-      }
+         if ( !$bulk_del ) {
+            # DELETE comes after INSERT for safety.
+            if ( $src->{plugin} ) {
+               trace('before_delete', sub {
+                  $src->{plugin}->before_delete(row => $row);
+               });
+            }
+            if ( !$o->get('no-delete') ) {
+               my $success = do_with_retries($o, 'deleting', sub {
+                  $del_row->execute(@{$row}[@del_slice]);
+                  $statistics{DELETE} += $del_row->rows;
+               });
+               if ( $success == $OUT_OF_RETRIES ) {
+                  $retries = -1;
+                  last ROW;
+               }
+               elsif ( $success == $ROLLED_BACK ) {
+                  --$retries;
+                  next ROW;
+               }
+            }
+         }
 
-   }
-
-   $now = time();
-   ++$cnt;
-   ++$txn_cnt;
-   $retries = $o->get('retries');
-
-   # Possibly flush the file and commit the insert and delete.
-   commit() unless $commit_each;
-
-   # Report on progress.
-   if ( !$quiet && $o->get('progress') && $cnt % $o->get('progress') == 0 ) {
-      printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
-   }
-
-   # Get the next row.
-   if ( $get_sth->{Active} ) { # Fetch until exhausted
-      $row = $get_sth->fetchrow_arrayref();
-   }
-   if ( !$row ) {
-
-      # #######################################################################
-      # This code is for the bulk archiving functionality.
-      # #######################################################################
-      if ( $bulkins_file ) {
-         $bulkins_file->close()
-            or die "Cannot close bulk insert file: $OS_ERROR\n";
-         my $ins_sth; # Let the plugin change which sth is used for the INSERT.
-         if ( $dst->{plugin} ) {
-            trace('before_bulk_insert', sub {
-               $dst->{plugin}->before_bulk_insert(
-                  first_row => $first_row,
-                  last_row  => $lastrow,
-               );
-            });
-            trace('custom_sth', sub {
-               $ins_sth = $dst->{plugin}->custom_sth_bulk(
-                  first_row => $first_row,
-                  last_row  => $lastrow,
-                  sql       => $ins_sql,
-               );
+         # ###################################################################
+         # This code is for the bulk archiving functionality.
+         # ###################################################################
+         if ( $bulkins_file ) {
+            trace('print_bulkfile', sub {
+               print $bulkins_file $escaped_row, "\n"
+                  or die "Cannot write to bulk file: $OS_ERROR\n";
             });
          }
-         $ins_sth ||= $ins_row; # Default to the sth decided before.
-         my $success = do_with_retries( 'bulk_inserting', sub {
-            $ins_sth->execute($bulkins_file->filename());
-            $statistics{INSERT} += $ins_sth->rows;
-         });
-         if ( $success != $ALL_IS_WELL ) {
-            $retries = -1;
-            last ROW; # unlike other places, don't do 'next'
-         }
+
       }
 
-      if ( $bulk_del ) {
-         if ( $src->{plugin} ) {
-            trace('before_bulk_delete', sub {
-               $src->{plugin}->before_bulk_delete(
-                  first_row => $first_row,
-                  last_row  => $lastrow,
-               );
-            });
-         }
-         if ( !$o->get('nodelete') ) {
-            my $success = do_with_retries( 'bulk_deleting', sub {
-               $del_row->execute(
-                  @{$first_row}[@bulkdel_slice],
-                  @{$lastrow}[@bulkdel_slice],
-               );
-               $statistics{DELETE} += $del_row->rows;
+      $now = time();
+      ++$cnt;
+      ++$txn_cnt;
+      $retries = $o->get('retries');
+
+      # Possibly flush the file and commit the insert and delete.
+      commit($o) unless $commit_each;
+
+      # Report on progress.
+      if ( !$quiet && $o->get('progress') && $cnt % $o->get('progress') == 0 ) {
+         printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
+      }
+
+      # Get the next row.
+      if ( $get_sth->{Active} ) { # Fetch until exhausted
+         $row = $get_sth->fetchrow_arrayref();
+      }
+      if ( !$row ) {
+
+         # ###################################################################
+         # This code is for the bulk archiving functionality.
+         # ###################################################################
+         if ( $bulkins_file ) {
+            $bulkins_file->close()
+               or die "Cannot close bulk insert file: $OS_ERROR\n";
+            my $ins_sth; # Let the plugin change which sth is used for the INSERT.
+            if ( $dst->{plugin} ) {
+               trace('before_bulk_insert', sub {
+                  $dst->{plugin}->before_bulk_insert(
+                     first_row => $first_row,
+                     last_row  => $lastrow,
+                  );
+               });
+               trace('custom_sth', sub {
+                  $ins_sth = $dst->{plugin}->custom_sth_bulk(
+                     first_row => $first_row,
+                     last_row  => $lastrow,
+                     sql       => $ins_sql,
+                  );
+               });
+            }
+            $ins_sth ||= $ins_row; # Default to the sth decided before.
+            my $success = do_with_retries($o, 'bulk_inserting', sub {
+               $ins_sth->execute($bulkins_file->filename());
+               $statistics{INSERT} += $ins_sth->rows;
             });
             if ( $success != $ALL_IS_WELL ) {
                $retries = -1;
                last ROW; # unlike other places, don't do 'next'
             }
          }
-      }
 
-      # #######################################################################
-      # This code is for normal operation AND bulk operation.
-      # #######################################################################
-      commit(1) if $commit_each;
-      if( $o->get('sleep') ) {
-         trace('sleep', sub {
-            sleep($o->get('sleep'));
+         if ( $bulk_del ) {
+            if ( $src->{plugin} ) {
+               trace('before_bulk_delete', sub {
+                  $src->{plugin}->before_bulk_delete(
+                     first_row => $first_row,
+                     last_row  => $lastrow,
+                  );
+               });
+            }
+            if ( !$o->get('no-delete') ) {
+               my $success = do_with_retries($o, 'bulk_deleting', sub {
+                  $del_row->execute(
+                     @{$first_row}[@bulkdel_slice],
+                     @{$lastrow}[@bulkdel_slice],
+                  );
+                  $statistics{DELETE} += $del_row->rows;
+               });
+               if ( $success != $ALL_IS_WELL ) {
+                  $retries = -1;
+                  last ROW; # unlike other places, don't do 'next'
+               }
+            }
+         }
+
+         # ###################################################################
+         # This code is for normal operation AND bulk operation.
+         # ###################################################################
+         commit($o, 1) if $commit_each;
+         if( $o->get('sleep') ) {
+            trace('sleep', sub {
+               sleep($o->get('sleep'));
+            });
+         }
+         $get_sth = $get_next;
+
+         trace('select', sub {
+            $get_next->execute(@{$lastrow}[@asc_slice]);
+            $statistics{SELECT} += $get_next->rows;
+         });
+
+         @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
+         $row              = $get_sth->fetchrow_arrayref();
+         $first_row        = $row ? [ @$row ] : undef;
+
+         if ( $o->get('bulk-insert') ) {
+            $bulkins_file = File::Temp->new( SUFFIX => 'mk-archiver' )
+               or die "Cannot open temp file: $OS_ERROR\n";
+         }
+      }
+   }
+
+   # Transactions might still be open, etc
+   commit($o, $txnsize || $commit_each);
+   if ( $archive_file && $archive_fh ) {
+      close $archive_fh
+         or die "Cannot close $archive_file: $OS_ERROR\n";
+   }
+
+   if ( !$quiet && $o->get('progress') ) {
+      printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
+   }
+
+   # Tear down the plugins.
+   foreach my $table ( $dst, $src ) {
+      next unless $table && $table->{plugin};
+      trace('after_finish', sub {
+         $table->{plugin}->after_finish();
+      });
+   }
+
+   # Run ANALYZE or OPTIMIZE.
+   if ( $oktorun && ($o->get('analyze') || $o->get('optimize')) ) {
+      my $action = $o->get('analyze') || $o->get('optimize');
+      my $maint  = ($o->get('analyze') ? 'ANALYZE' : 'OPTIMIZE')
+                 . ($o->get('local') ? ' /*!40101 NO_WRITE_TO_BINLOG*/' : '');
+      if ( $action =~ m/s/i ) {
+         trace($maint, sub {
+            $src->{dbh}->do("$maint TABLE $src->{db_tbl}");
          });
       }
-      $get_sth = $get_next;
-
-      trace('select', sub {
-         $get_next->execute(@{$lastrow}[@asc_slice]);
-         $statistics{SELECT} += $get_next->rows;
-      });
-
-      @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
-      $row              = $get_sth->fetchrow_arrayref();
-      $first_row        = $row ? [ @$row ] : undef;
-
-      if ( $o->get('bulkins') ) {
-         $bulkins_file = File::Temp->new( SUFFIX => 'mk-archiver' )
-            or die "Cannot open temp file: $OS_ERROR\n";
+      if ( $action =~ m/d/i && $dst ) {
+         trace($maint, sub {
+            $dst->{dbh}->do("$maint TABLE $dst->{db_tbl}");
+         });
       }
    }
-}
 
-# Transactions might still be open, etc
-commit($txnsize || $commit_each);
-if ( $archive_file && $archive_fh ) {
-   close $archive_fh
-      or die "Cannot close $archive_file: $OS_ERROR\n";
-}
-
-if ( !$quiet && $o->get('progress') ) {
-   printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
-}
-
-# Tear down the plugins.
-foreach my $table ( $dst, $src ) {
-   next unless $table && $table->{plugin};
-   trace('after_finish', sub {
-      $table->{plugin}->after_finish();
-   });
-}
-
-# Run ANALYZE or OPTIMIZE.
-if ( $oktorun && ($o->get('analyze') || $o->get('optimize')) ) {
-   my $action = $o->get('analyze') || $o->get('optimize');
-   my $maint  = ($o->get('analyze') ? 'ANALYZE' : 'OPTIMIZE')
-              . ($o->get('local') ? ' /*!40101 NO_WRITE_TO_BINLOG*/' : '');
-   if ( $action =~ m/s/i ) {
-      trace($maint, sub {
-         $src->{dbh}->do("$maint TABLE $src->{db_tbl}");
-      });
+   # ########################################################################
+   # Print statistics
+   # ########################################################################
+   if ( $plugin ) {
+      $plugin->statistics(\%statistics, $stat_start);
    }
-   if ( $action =~ m/d/i && $dst ) {
-      trace($maint, sub {
-         $dst->{dbh}->do("$maint TABLE $dst->{db_tbl}");
-      });
-   }
-}
 
-# ############################################################################
-# Print statistics
-# ############################################################################
-if ( $plugin ) {
-   $plugin->statistics(\%statistics, $stat_start);
-}
+   if ( !$quiet && $o->get('statistics') ) {
+      my $stat_stop  = Time::HiRes::gettimeofday();
+      my $stat_total = $stat_stop - $stat_start;
 
-if ( !$quiet && $o->get('statistics') ) {
-   my $stat_stop  = Time::HiRes::gettimeofday();
-   my $stat_total = $stat_stop - $stat_start;
+      my $total2 = 0;
+      my $maxlen = 0;
+      my %summary;
 
-   my $total2 = 0;
-   my $maxlen = 0;
-   my %summary;
+      printf("Started at %s, ended at %s\n", ts($stat_start), ts($stat_stop));
+      print("Source: ", $dp->as_string($src), "\n");
+      print("Dest:   ", $dp->as_string($dst), "\n") if $dst;
+      print(join("\n", map { "$_ " . ($statistics{$_} || 0) }
+            qw(SELECT INSERT DELETE)), "\n");
 
-   printf("Started at %s, ended at %s\n", ts($stat_start), ts($stat_stop));
-   print("Source: ", $dp->as_string($src), "\n");
-   print("Dest:   ", $dp->as_string($dst), "\n") if $dst;
-   print(join("\n", map { "$_ " . ($statistics{$_} || 0) }
-         qw(SELECT INSERT DELETE)), "\n");
+      foreach my $thing ( grep { m/_(count|time)/ } keys %statistics ) {
+         my ( $action, $type ) = $thing =~ m/^(.*?)_(count|time)$/;
+         $summary{$action}->{$type}  = $statistics{$thing};
+         $summary{$action}->{action} = $action;
+         $maxlen                     = max($maxlen, length($action));
+         # Just in case I get only one type of statistic for a given action (in
+         # case there was a crash or CTRL-C or something).
+         $summary{$action}->{time}  ||= 0;
+         $summary{$action}->{count} ||= 0;
+      }
+      printf("%-${maxlen}s \%10s %10s %10s\n", qw(Action Count Time Pct));
+      my $fmt = "%-${maxlen}s \%10d %10.4f %10.2f\n";
 
-   foreach my $thing ( grep { m/_(count|time)/ } keys %statistics ) {
-      my ( $action, $type ) = $thing =~ m/^(.*?)_(count|time)$/;
-      $summary{$action}->{$type}  = $statistics{$thing};
-      $summary{$action}->{action} = $action;
-      $maxlen                     = max($maxlen, length($action));
-      # Just in case I get only one type of statistic for a given action (in
-      # case there was a crash or CTRL-C or something).
-      $summary{$action}->{time}  ||= 0;
-      $summary{$action}->{count} ||= 0;
+      foreach my $stat (
+         reverse sort { $a->{time} <=> $b->{time} } values %summary )
+      {
+         my $pct = $stat->{time} / $stat_total * 100;
+         printf($fmt, @{$stat}{qw(action count time)}, $pct);
+         $total2 += $stat->{time};
+      }
+      printf($fmt, 'other', 0, $stat_total - $total2,
+         ($stat_total - $total2) / $stat_total * 100);
    }
-   printf("%-${maxlen}s \%10s %10s %10s\n", qw(Action Count Time Pct));
-   my $fmt = "%-${maxlen}s \%10d %10.4f %10.2f\n";
 
-   foreach my $stat (
-      reverse sort { $a->{time} <=> $b->{time} } values %summary )
-   {
-      my $pct = $stat->{time} / $stat_total * 100;
-      printf($fmt, @{$stat}{qw(action count time)}, $pct);
-      $total2 += $stat->{time};
+   # Optionally print the reason for exiting.  Do this even if --quiet is
+   # specified.
+   if ( $o->get('why-quit') ) {
+      if ( $retries < 0 ) {
+         print "Exiting because retries exceeded.\n";
+      }
+      elsif ( $o->get('run-time') && $now >= $end ) {
+         print "Exiting because time exceeded.\n";
+      }
+      elsif ( -f $sentinel ) {
+         print "Exiting because sentinel file $sentinel exists.\n";
+      }
+      elsif ( $o->get('statistics') ) {
+         print "Exiting because there are no more rows.\n";
+      }
    }
-   printf($fmt, 'other', 0, $stat_total - $total2,
-      ($stat_total - $total2) / $stat_total * 100);
-}
 
-# Optionally print the reason for exiting.  Do this even if --quiet is
-# specified.
-if ( $o->get('whyquit') ) {
-   if ( $retries < 0 ) {
-      print "Exiting because retries exceeded.\n";
-   }
-   elsif ( $o->get('time') && $now >= $end ) {
-      print "Exiting because time exceeded.\n";
-   }
-   elsif ( -f $sentinel ) {
-      print "Exiting because sentinel file $sentinel exists.\n";
-   }
-   elsif ( $o->get('statistics') ) {
-      print "Exiting because there are no more rows.\n";
-   }
+   return 0;
 }
 
 # ############################################################################
@@ -3083,9 +3094,11 @@ sub finish {
 
 # Accesses globals, but I wanted the code in one place.
 sub commit {
-   my ( $force ) = @_;
+   my ( $o, $force ) = @_;
+   my $txnsize = $o->get('txn-size');
    if ( $force || ($txnsize && $txn_cnt && $cnt % $txnsize == 0) ) {
       if ( $o->get('buffer') && $archive_fh ) {
+         my $archive_file = $o->get('file');
          trace('flush', sub {
             $archive_fh->flush or die "Cannot flush $archive_file: $OS_ERROR\n";
          });
@@ -3106,8 +3119,9 @@ sub commit {
 # happens, or it succeeds.  This sub uses lots of global variables; I only wrote
 # it to factor out some repeated code.
 sub do_with_retries {
-   my ( $doing, $code ) = @_;
+   my ( $o, $doing, $code ) = @_;
    my $retries = $o->get('retries');
+   my $txnsize = $o->get('txn-size');
    my $success = $OUT_OF_RETRIES;
 
    RETRY:
@@ -3120,7 +3134,10 @@ sub do_with_retries {
          if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded|Deadlock found/ ) {
             if (
                # More than one row per txn
-               (($txnsize && $txnsize > 1) || ($commit_each && $limit > 1))
+               (
+                  ($txnsize && $txnsize > 1)
+                  || ($o->get('commit-each') && $o->get('limit') > 1)
+               )
                # Not first row
                && $txn_cnt
                # And it's not retry-able
@@ -3209,6 +3226,13 @@ sub _d {
 }
 
 # ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
+
+# ############################################################################
 # Documentation.
 # ############################################################################
 
@@ -3239,20 +3263,20 @@ dependent data, applying complex business rules, or building a data warehouse
 during the archiving process.
 
 You need to choose values carefully for some options.  The most important are
-L<"--limit">, L<"--retries">, and L<"--txnsize">.
+L<"--limit">, L<"--retries">, and L<"--txn-size">.
 
 The strategy is to find the first row(s), then scan some index forward-only to
 find more rows efficiently.  Each subsequent query should not scan the entire
 table; it should seek into the index, then scan until it finds more archivable
 rows.  Specifying the index with the 'i' part of the L<"--source"> argument can
-be crucial for this; use L<"--test"> to examine the generated queries and be
+be crucial for this; use L<"--dry-run"> to examine the generated queries and be
 sure to EXPLAIN them to see if they are efficient (most of the time you probably
 want to scan the PRIMARY key, which is the default).  Even better, profile
 mk-archiver with mk-query-profiler and make sure it is not scanning the whole
 table every query.
 
 You can disable the seek-then-scan optimizations partially or wholly with
-L<"--noascend"> and L<"--ascendfirst">.  Sometimes this may be more efficient
+L<"--no-ascend"> and L<"--ascend-first">.  Sometimes this may be more efficient
 for multi-column keys.
 
 =head1 ERROR-HANDLING
@@ -3288,15 +3312,15 @@ Specify at least one of L<"--dest">, L<"--file">, or L<"--purge">.
 
 L<"--ignore"> and L<"--replace"> are mutually exclusive.
 
-L<"--txnsize"> and L<"--commit-each"> are mutually exclusive.
+L<"--txn-size"> and L<"--commit-each"> are mutually exclusive.
 
-L<"--lpins"> and L<"--delayedins"> are mutually exclusive.
+L<"--low-priority-insert"> and L<"--delayed-insert"> are mutually exclusive.
 
-L<"--sharelock"> and L<"--forupdate"> are mutually exclusive.
+L<"--share-lock"> and L<"--for-update"> are mutually exclusive.
 
 L<"--analyze"> and L<"--optimize"> are mutually exclusive.
 
-L<"--noascend"> and L<"--nodelete"> are mutually exclusive.
+L<"--no-ascend"> and L<"--no-delete"> are mutually exclusive.
 
 DSN values in L<"--dest"> default to values from L<"--source"> if COPY is yes.
 
@@ -3304,9 +3328,9 @@ DSN values in L<"--dest"> default to values from L<"--source"> if COPY is yes.
 
 =item --analyze
 
-short form: -Z; type: string
+type: string
 
-Run ANALYZE TABLE afterwards on --source and/or --dest.
+Run ANALYZE TABLE afterwards on L<"--source"> and/or L<"--dest">.
 
 Runs ANALYZE TABLE after finishing.  The argument is an arbitrary string.  If it
 contains the letter 's', the source will be analyzed.  If it contains 'd', the
@@ -3318,14 +3342,11 @@ following will analyze both:
 See L<http://dev.mysql.com/doc/en/analyze-table.html> for details on ANALYZE
 TABLE.
 
-This option's short form used to be -A, but that conflicted with L<"--charset">
-so I changed it to -Z.
-
-=item --ascendfirst
+=item --ascend-first
 
 Ascend only first column of index.
 
-If you do want to use the ascending index optimization (see L<"--noascend">),
+If you do want to use the ascending index optimization (see L<"--no-ascend">),
 but do not want to incur the overhead of ascending a large multi-column index,
 you can use this option to tell mk-archiver to ascend only the leftmost column
 of the index.  This can provide a significant performance boost over not
@@ -3334,15 +3355,13 @@ index.
 
 See L<"EXTENDING"> for a discussion of how this interacts with plugins.
 
-=item --askpass
+=item --ask-pass
 
 Prompt for a password when connecting to MySQL.
 
 =item --buffer
 
-short form: -b
-
-Buffer output to --file and flush at commit.
+Buffer output to L<"--file"> and flush at commit.
 
 Disables autoflushing to L<"--file"> and flushes L<"--file"> to disk only when a
 transaction commits.  This typically means the file is block-flushed by the
@@ -3354,9 +3373,9 @@ The danger is that a crash might cause lost data.
 The performance increase I have seen from using L<"--buffer"> is around 5 to 15
 percent.  Your mileage may vary.
 
-=item --bulkdel
+=item --bulk-delete
 
-Delete each chunk with a single statement (implies --commit-each).
+Delete each chunk with a single statement (implies L<"--commit-each">).
 
 Delete each chunk of rows in bulk with a single C<DELETE> statement.  The
 statement deletes every row between the first and last row of the chunk,
@@ -3376,9 +3395,9 @@ true from C<is_archivable()>, you should use this option only if you understand
 what it does.  If the plugin instructs C<mk-archiver> not to archive a row,
 it'll still be deleted by the bulk delete!
 
-=item --bulkins
+=item --bulk-insert
 
-Insert each chunk with LOAD DATA INFILE (implies --bulkdel --commit-each).
+Insert each chunk with LOAD DATA INFILE (implies L<"--bulk-delete"> L<"--commit-each">).
 
 Insert each chunk of rows with C<LOAD DATA LOCAL INFILE>.  This may be much
 faster than inserting a row at a time with C<INSERT> statements.  It is
@@ -3391,8 +3410,8 @@ It would be unsafe to delete each row as it is found, before inserting the rows
 into the destination first.  Forcing bulk deletes guarantees that the deletion
 waits until the insertion is successful.
 
-The L<"--lpins">, L<"--replace">, and L<"--ignore"> options work with this
-option, but L<"--delayedins"> does not.
+The L<"--low-priority-insert">, L<"--replace">, and L<"--ignore"> options work
+with this option, but L<"--delayed-insert"> does not.
 
 =item --charset
 
@@ -3403,11 +3422,11 @@ STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
 NAMES UTF8 after connecting to MySQL.  Any other value sets binmode on STDOUT
 without the utf8 layer, and runs SET NAMES after connecting to MySQL.
 
-=item --[no]chkcols
+=item --[no]check-columns
 
-short form: -C; default: yes
+default: yes
 
-Ensure --source and --dest have same columns.
+Ensure L<"--source"> and L<"--dest"> have same columns.
 
 Enabled by default; causes mk-archiver to check that the source and destination
 tables have the same columns.  It does not check column order, data type, etc.
@@ -3415,7 +3434,7 @@ It just checks that all columns in the source exist in the destination and
 vice versa.  If there are any differences, mk-archiver will exit with an
 error.
 
-To disable this check, specify --nochkcols.
+To disable this check, specify --no-check-columns.
 
 =item --columns
 
@@ -3430,21 +3449,21 @@ index or deleting rows.  It fetches and uses these extra columns internally, but
 does not write them to the file or to the destination table.  It I<does> pass
 them to plugins.
 
-See also --pkonly.
+See also L<"--primary-key-only">.
 
 =item --commit-each
 
-Commit each set of fetched and archived rows (disables -z).
+Commit each set of fetched and archived rows (disables L<"--txn-size">).
 
 Commits transactions and flushes L<"--file"> after each set of rows has been
 archived, before fetching the next set of rows, and before sleeping if
-L<"--sleep"> is specified.  Disables L<"--txnsize">; use L<"--limit"> to control
-the transaction size with L<"--commit-each">.
+L<"--sleep"> is specified.  Disables L<"--txn-size">; use L<"--limit"> to
+control the transaction size with L<"--commit-each">.
 
-This option is useful as a shortcut to make L<"--limit"> and L<"--txnsize"> the
+This option is useful as a shortcut to make L<"--limit"> and L<"--txn-size"> the
 same value, but more importantly it avoids transactions being held open while
 searching for more rows.  For example, imagine you are archiving old rows from
-the beginning of a very large table, with L<"--limit"> 1000 and L<"--txnsize">
+the beginning of a very large table, with L<"--limit"> 1000 and L<"--txn-size">
 1000.  After some period of finding and archiving 1000 rows at a time,
 mk-archiver finds the last 999 rows and archives them, then executes the next
 SELECT to find more rows.  This scans the rest of the table, but never finds any
@@ -3458,7 +3477,7 @@ type: Array
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
 
-=item --delayedins
+=item --delayed-insert
 
 Add the DELAYED modifier to INSERT statements.
 
@@ -3467,7 +3486,7 @@ L<http://dev.mysql.com/doc/en/insert.html> for details.
 
 =item --dest
 
-short form: -d; type: DSN
+type: DSN
 
 DSN specifying the table to archive to.
 
@@ -3478,9 +3497,16 @@ L<"--source">, so you don't have to repeat options that are the same in
 L<"--source"> and L<"--dest">.  Use the L<"--help"> option to see which values
 are copied from L<"--source">.
 
+=item --dry-run
+
+Print queries and exit without doing anything.
+
+Causes mk-archiver to exit after printing the filename and SQL statements
+it will use.
+
 =item --file
 
-short form: -f; type: string
+type: string
 
 File to archive to, with DATE_FORMAT()-like formatting.
 
@@ -3512,7 +3538,7 @@ INFILE's default settings.
 If you want a column header at the top of the file, see L<"--header">.  The file
 is auto-flushed by default; see L<"--buffer">.
 
-=item --forupdate
+=item --for-update
 
 Adds the FOR UPDATE modifier to SELECT statements.
 
@@ -3520,9 +3546,7 @@ For details, see L<http://dev.mysql.com/doc/en/innodb-locking-reads.html>.
 
 =item --header
 
-short form: -h
-
-Print column header at top of --file.
+Print column header at top of L<"--file">.
 
 Writes column names as the first line in the file given by L<"--file">.  If the
 file exists, does not write headers; this keeps the file loadable with LOAD
@@ -3532,7 +3556,7 @@ DATA INFILE in case you append more output to it.
 
 Show help and exit.
 
-=item --hpselect
+=item --high-priority-select
 
 Adds the HIGH_PRIORITY modifier to SELECT statements.
 
@@ -3540,15 +3564,13 @@ See L<http://dev.mysql.com/doc/en/select.html> for details.
 
 =item --ignore
 
-short form: -i
-
 Use IGNORE for INSERT statements.
 
 Causes INSERTs into L<"--dest"> to be INSERT IGNORE.
 
 =item --limit
 
-short form: -l; type: int; default: 1
+type: int; default: 1
 
 Number of rows to fetch and archive per statement.
 
@@ -3557,30 +3579,28 @@ to archive.  Default is one row.  It may be more efficient to increase the
 limit, but be careful if you are archiving sparsely, skipping over many rows;
 this can potentially cause more contention with other queries, depending on the
 storage engine, transaction isolation level, and options such as
-L<"--forupdate">.
+L<"--for-update">.
 
 =item --local
-
-short form: -L
 
 Do not write OPTIMIZE or ANALYZE queries to binlog.
 
 Adds the NO_WRITE_TO_BINLOG modifier to ANALYZE and OPTIMIZE queries.  See
 L<"--analyze"> for details.
 
-=item --lpdel
+=item --low-priority-delete
 
 Adds the LOW_PRIORITY modifier to DELETE statements.
 
 See L<http://dev.mysql.com/doc/en/delete.html> for details.
 
-=item --lpins
+=item --low-priority-insert
 
 Adds the LOW_PRIORITY modifier to INSERT or REPLACE statements.
 
 See L<http://dev.mysql.com/doc/en/insert.html> for details.
 
-=item --noascend
+=item --no-ascend
 
 Do not use ascending index optimization.
 
@@ -3610,15 +3630,15 @@ rows from the beginning of the table in chunks, but not leaving any holes, so
 starting at the beginning of the table is actually the most efficient thing to
 do.
 
-See also L<"--ascendfirst">.  See L<"EXTENDING"> for a discussion of how this
+See also L<"--ascend-first">.  See L<"EXTENDING"> for a discussion of how this
 interacts with plugins.
 
-=item --nodelete
+=item --no-delete
 
 Do not delete archived rows.
 
 Causes C<mk-archiver> not to delete rows after processing them.  This disallows
-L<"--noascend">, because enabling them both would cause an infinite loop.
+L<"--no-ascend">, because enabling them both would cause an infinite loop.
 
 If there is a plugin on the source DSN, its C<before_delete> method is called
 anyway, even though C<mk-archiver> will not execute the delete.  See
@@ -3626,9 +3646,9 @@ L<"EXTENDING"> for more on plugins.
 
 =item --optimize
 
-short form: -O; type: string
+type: string
 
-Run OPTIMIZE TABLE afterwards on --source and/or --dest.
+Run OPTIMIZE TABLE afterwards on L<"--source"> and/or L<"--dest">.
 
 Runs OPTIMIZE TABLE after finishing.  See L<"--analyze"> for the option syntax
 and L<http://dev.mysql.com/doc/en/optimize-table.html> for details on OPTIMIZE
@@ -3643,9 +3663,7 @@ the daemonized instance.  The PID file is removed when the daemonized instance
 exits.  The program checks for the existence of the PID file when starting; if
 it exists and the process with the matching PID exists, the program exits.
 
-=item --pkonly
-
-short form: -k
+=item --primary-key-only
 
 Primary key columns only.
 
@@ -3673,7 +3691,7 @@ collected by the archiving job, and the time the whole job started.
 
 =item --progress
 
-short form: -P; type: int
+type: int
 
 Print progress information every X rows.
 
@@ -3681,18 +3699,16 @@ Prints current time, elapsed time, and rows archived every X rows.
 
 =item --purge
 
-short form: -p
-
-Purge instead of archiving; allows omitting --file and --dest.
+Purge instead of archiving; allows omitting L<"--file"> and L<"--dest">.
 
 Allows archiving without a L<"--file"> or L<"--dest"> argument, which is
 effectively a purge since the rows are just deleted.
 
 If you just want to purge rows, consider specifying the table's primary key
-columns with L<"--pkonly">.  This will prevent fetching all columns from the
-server for no reason.
+columns with L<"--primary-key-only">.  This will prevent fetching all columns
+from the server for no reason.
 
-=item --quickdel
+=item --quick-delete
 
 Adds the QUICK modifier to DELETE statements.
 
@@ -3702,20 +3718,18 @@ OPTIMIZE TABLE.  You can use L<"--optimize"> for this.
 
 =item --quiet
 
-Do not print any output, such as for --statistics.
+Do not print any output, such as for L<"--statistics">.
 
 Suppresses normal output, including the output of L<"--statistics">, but doesn't
-suppress the output from L<"--whyquit">.
+suppress the output from L<"--why-quit">.
 
 =item --replace
-
-short form: -r
 
 Causes INSERTs into L<"--dest"> to be written as REPLACE.
 
 =item --retries
 
-short form: -R; type: int; default: 1
+type: int; default: 1
 
 Number of retries per timeout or deadlock.
 
@@ -3734,7 +3748,15 @@ connections.
 At this time I have not written any code to handle errors with transactional
 storage engines other than InnoDB.  Request that feature if you need it.
 
-=item --[no]safeautoinc
+=item --run-time
+
+type: time
+
+Time to run before exiting.
+
+Optional suffix s=seconds, m=minutes, h=hours, d=days; if no suffix, s is used.
+
+=item --[no]safe-auto-increment
 
 default: yes
 
@@ -3751,16 +3773,16 @@ mk-archiver is running, it will not see them.
 
 =item --sentinel
 
-short form: -S; type: string; default: /tmp/mk-archiver-sentinel
+type: string; default: /tmp/mk-archiver-sentinel
 
-Sentinel file.
+Exit if this file exists.
 
 The presence of the file specified by L<"--sentinel"> will cause mk-archiver to
 stop archiving and exit.  The default is /tmp/mk-archiver-sentinel.  You
 might find this handy to stop cron jobs gracefully if necessary.  See also
 L<"--stop">.
 
-=item --setvars
+=item --set-vars
 
 type: string; default: wait_timeout=10000
 
@@ -3769,34 +3791,32 @@ Set these MySQL variables.
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
-=item --sharelock
+=item --share-lock
 
 Adds the LOCK IN SHARE MODE modifier to SELECT statements.
 
 See L<http://dev.mysql.com/doc/en/innodb-locking-reads.html>.
 
-=item --skipfkchk
-
-short form: -K
+=item --skip-foreign-key-checks
 
 Disables foreign key checks with SET FOREIGN_KEY_CHECKS=0.
 
 =item --sleep
 
-short form: -e; type: int
+type: int
 
 Sleep time between fetches.
 
 Specifies how long to sleep between SELECT statements.  Default is not to
 sleep at all.  Transactions are NOT committed, and the L<"--file"> file is NOT
-flushed, before sleeping.  See L<"--txnsize"> to control that.
+flushed, before sleeping.  See L<"--txn-size"> to control that.
 
 If L<"--commit-each"> is specified, committing and flushing happens before
 sleeping.
 
 =item --source
 
-short form: -s; type: DSN
+type: DSN
 
 DSN specifying the table to archive from (required).
 
@@ -3895,7 +3915,7 @@ percent of the program's total runtime.  The rows are sorted in order of
 descending total time.  The last row is the rest of the time not explicitly
 attributed to anything.  Actions will vary depending on command-line options.
 
-If L<"--whyquit"> is given, its behavior is changed slightly.  This option
+If L<"--why-quit"> is given, its behavior is changed slightly.  This option
 causes it to print the reason for exiting even when it's just because there are
 no more rows.
 
@@ -3910,26 +3930,9 @@ Causes mk-archiver to create the sentinel file specified by L<"--sentinel"> and
 exit.  This should have the effect of stopping all running instances which are
 watching the same sentinel file.
 
-=item --test
+=item --txn-size
 
-short form: -t
-
-Print queries and exit without doing anything.
-
-Causes mk-archiver to exit after printing the filename and SQL statements
-it will use.
-
-=item --time
-
-short form: -m; type: time
-
-Time to run before exiting.
-
-Optional suffix s=seconds, m=minutes, h=hours, d=days; if no suffix, s is used.
-
-=item --txnsize
-
-short form: -z; type: int; default: 1
+type: int; default: 1
 
 Number of rows per transaction.
 
@@ -3958,7 +3961,7 @@ Show version and exit.
 
 =item --where
 
-short form: -W; type: string
+type: string
 
 WHERE clause to limit which rows to archive (required).
 
@@ -3971,15 +3974,13 @@ interpreting it.  For example:
 For safety, L<"--where"> is required.  If you do not require a WHERE clause, use
 L<"--where"> 1=1.
 
-=item --whyquit
-
-short form: -q
+=item --why-quit
 
 Print reason for exiting unless rows exhausted.
 
 Causes mk-archiver to print a message if it exits for any reason other than
 running out of rows to archive.  This can be useful if you have a cron job with
-L<"--time"> specified, for example, and you want to be sure mk-archiver is
+L<"--run-time"> specified, for example, and you want to be sure mk-archiver is
 finishing before running out of time.
 
 If L<"--statistics"> is given, the behavior is changed slightly.  It will print
@@ -4050,14 +4051,14 @@ indexes such as primary keys, but it may skip rows (leave holes) on non-unique
 indexes or when ascending only the first column of an index.
 
 C<mk-archiver> will change the clause in the same way if you specify
-L<"--nodelete">, because again an infinite loop is possible.
+L<"--no-delete">, because again an infinite loop is possible.
 
-If you specify the L<"--bulkdel"> option and return false from this method,
+If you specify the L<"--bulk-delete"> option and return false from this method,
 C<mk-archiver> may not do what you want.  The row won't be archived, but it will
 be deleted, since bulk deletes operate on ranges of rows and don't know which
 rows the plugin selected to keep.
 
-If you specify the L<"--bulkins"> option, this method's return value will
+If you specify the L<"--bulk-insert"> option, this method's return value will
 influence whether the row is written to the temporary file for the bulk insert,
 so bulk inserts will work as expected.  However, bulk inserts require bulk
 deletes.
@@ -4069,14 +4070,14 @@ to L<"--source">.  This is a good place for you to handle dependencies, such as
 deleting things that are foreign-keyed to the row you are about to delete.  You
 could also use this to recursively archive all dependent tables.
 
-This plugin method is called even if L<"--nodelete"> is given, but not if
-L<"--bulkdel"> is given.
+This plugin method is called even if L<"--no-delete"> is given, but not if
+L<"--bulk-delete"> is given.
 
 =item before_bulk_delete(first_row => \@row, last_row => \@row)
 
 This method is called just before a bulk delete is executed.  It is similar to
 the C<before_delete> method, except its arguments are the first and last row of
-the range to be deleted.  It is called even if L<"--nodelete"> is given.
+the range to be deleted.  It is called even if L<"--no-delete"> is given.
 
 =item before_insert(row => \@row)
 
@@ -4085,7 +4086,7 @@ only to L<"--dest">.  You could use this to insert the row into multiple tables,
 perhaps with an ON DUPLICATE KEY UPDATE clause to build summary tables in a data
 warehouse.
 
-This method is not called if L<"--bulkins"> is given.
+This method is not called if L<"--bulk-insert"> is given.
 
 =item before_bulk_insert(first_row => \@row, last_row => \@row)
 
@@ -4099,7 +4100,8 @@ This method is called just before inserting the row, but after
 L<"before_insert()">.  It allows the plugin to specify different C<INSERT>
 statement if desired.  The return value (if any) should be a DBI statement
 handle.  The C<sql> parameter is the SQL text used to prepare the default
-C<INSERT> statement.  This method is not called if you specify L<"--bulkins">.
+C<INSERT> statement.  This method is not called if you specify
+L<"--bulk-insert">.
 
 If no value is returned, the default C<INSERT> statement handle is used.
 
@@ -4109,8 +4111,9 @@ destination and not the source.
 
 =item custom_sth_bulk(first_row => \@row, last_row => \@row, sql => $sql)
 
-If you've specified L<"--bulkins">, this method is called just before the bulk
-insert, but after L<"before_bulk_insert()">, and the arguments are different.
+If you've specified L<"--bulk-insert">, this method is called just before the
+bulk insert, but after L<"before_bulk_insert()">, and the arguments are
+different.
 
 This method's return value etc is similar to the L<"custom_sth()"> method.
 
