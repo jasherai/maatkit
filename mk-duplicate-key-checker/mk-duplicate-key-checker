@@ -2771,7 +2771,7 @@ sub main {
    my %opts     = $o->opts();
 
    # Connect to the database
-   if ( $o->got('ask-pass') && !$o->got('pass') ) {
+   if ( $o->got('ask-pass') && !$o->got('password') ) {
       my $pass = OptionParser::prompt_noecho("Enter password: ");
       $o->set('pass', $pass);
    }

@@ -1,12 +1,14 @@
 Changelog for mk-duplicate-key-checker:
 
+   * --ask-pass did not work (issue 453).
+
 2009-06-02: version 1.2.4
 
    * Sorted options alphabetically in the POD.
 
 2009-05-03: version 1.2.3
 
-   * Columns with backticks in comments caused a crash (issue 330)
+   * Columns with backticks in comments caused a crash (issue 330).
    * Changed the --allstruct option to --all-structs.
    * Changed the --askpass option to --ask-pass.
    * Changed the --engine option to --engines.
