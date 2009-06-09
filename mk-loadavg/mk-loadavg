@@ -122,7 +122,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3609
+# OptionParser package 3695
 # ###########################################################################
 package OptionParser;
 
@@ -519,7 +519,7 @@ sub get_opts {
       map    { $_->{spec} => sub { $self->_set_option(@_); } }
       grep   { $_->{long} ne 'config' } # --config is handled specially above.
       values %{$self->{opts}}
-   ) or $self->_save_error('Error parsing options');
+   ) or $self->save_error('Error parsing options');
 
    if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
       printf("%s  Ver %s Distrib %s Changeset %s\n",
@@ -529,7 +529,7 @@ sub get_opts {
    }
 
    if ( @ARGV && $self->{strict} ) {
-      $self->_save_error("Unrecognized command-line options @ARGV");
+      $self->save_error("Unrecognized command-line options @ARGV");
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
@@ -539,7 +539,7 @@ sub get_opts {
                       @{$mutex}[ 0 .. scalar(@$mutex) - 2] )
                  . ' and --'.$self->{opts}->{$mutex->[-1]}->{long}
                  . ' are mutually exclusive.';
-         $self->_save_error($err);
+         $self->save_error($err);
       }
    }
 
@@ -549,7 +549,7 @@ sub get_opts {
          my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
                       @{$required}[ 0 .. scalar(@$required) - 2] )
                  .' or --'.$self->{opts}->{$required->[-1]}->{long};
-         $self->_save_error("Specify at least one of $err");
+         $self->save_error("Specify at least one of $err");
       }
    }
 
@@ -594,13 +594,13 @@ sub get_opts {
                          )
                        . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
                }
-               $self->_save_error("--$long is not allowed with $err");
+               $self->save_error("--$long is not allowed with $err");
             }
          }
 
       }
       elsif ( $opt->{is_required} ) { 
-         $self->_save_error("Required option --$long must be specified");
+         $self->save_error("Required option --$long must be specified");
       }
 
       $self->_validate_type($opt);
@@ -633,7 +633,7 @@ sub _validate_type {
          MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
       }
       else {
-         $self->_save_error("Invalid time suffix for --$opt->{long}");
+         $self->save_error("Invalid time suffix for --$opt->{long}");
       }
    }
    elsif ( $val && $opt->{type} eq 'd' ) {
@@ -660,7 +660,7 @@ sub _validate_type {
          $opt->{value} = ($pre || '') . $num;
       }
       else {
-         $self->_save_error("Invalid size for --$opt->{long}");
+         $self->save_error("Invalid size for --$opt->{long}");
       }
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
@@ -708,7 +708,7 @@ sub set {
    return;
 }
 
-sub _save_error {
+sub save_error {
    my ( $self, $error ) = @_;
    push @{$self->{errors}}, $error;
 }
@@ -1349,7 +1349,153 @@ sub _d {
 # End DSNParser package
 # ###########################################################################
 
-package main;
+# ###########################################################################
+# Daemon package 3694
+# ###########################################################################
+
+package Daemon;
+
+use strict;
+use warnings FATAL => 'all';
+
+use POSIX qw(setsid);
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(o) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o = $args{o};
+   my $self = {
+      o        => $o,
+      log_file => $o->has('log') ? $o->get('log') : undef,
+      PID_file => $o->has('pid') ? $o->get('pid') : undef,
+   };
+
+   if ( $self->{PID_file} && -f $self->{PID_file} ) {
+      die "The PID file $self->{PID_file} already exists"
+   }
+
+   MKDEBUG && _d('Daemonized child will log to', $self->{log_file});
+   return bless $self, $class;
+}
+
+sub daemonize {
+   my ( $self ) = @_;
+
+   MKDEBUG && _d('About to fork and daemonize');
+   defined (my $pid = fork()) or die "Cannot fork: $OS_ERROR";
+   if ( $pid ) {
+      MKDEBUG && _d('I am the parent and now I die');
+      exit;
+   }
+
+   $self->{child} = 1;
+
+   POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
+   chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
+
+   $self->_make_PID_file();
+
+   if ( -t STDIN ) {
+      close STDIN;
+      open  STDIN, '/dev/null'
+         or die "Cannot reopen STDIN to /dev/null";
+   }
+
+   if ( $self->{log_file} ) {
+      close STDOUT;
+      open  STDOUT, '>>', $self->{log_file}
+         or die "Cannot open log file $self->{log_file}: $OS_ERROR";
+
+      close STDERR;
+      open  STDERR, ">&STDOUT"
+         or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
+   }
+
+   MKDEBUG && _d('I am the child and now I live daemonized');
+   return;
+}
+
+sub make_PID_file {
+   my ( $self ) = @_;
+   if ( exists $self->{child} ) {
+      die "Do not call Daemon::make_PID_file() for daemonized scripts";
+   }
+   $self->_make_PID_file();
+   $self->{rm_PID_file} = 1;
+   return;
+}
+
+sub _make_PID_file {
+   my ( $self ) = @_;
+
+   my $PID_file = $self->{PID_file};
+   if ( !$PID_file ) {
+      MKDEBUG && _d('No PID file to create');
+      return;
+   }
+
+   if ( -f $self->{PID_file} ) {
+      die "The PID file $self->{PID_file} already exists"
+   }
+
+   open my $PID_FH, '>', $PID_file
+      or die "Cannot open PID file $PID_file: $OS_ERROR";
+   print $PID_FH $PID
+      or die "Cannot print to PID file $PID_file: $OS_ERROR";
+   close $PID_FH
+      or die "Cannot close PID file $PID_file: $OS_ERROR";
+
+   MKDEBUG && _d('Created PID file:', $self->{PID_file});
+   return;
+}
+
+sub _remove_PID_file {
+   my ( $self ) = @_;
+   if ( $self->{PID_file} && -f $self->{PID_file} ) {
+      unlink $self->{PID_file}
+         or warn "Cannot remove PID file $self->{PID_file}: $OS_ERROR";
+      MKDEBUG && _d('Removed PID file');
+   }
+   else {
+      MKDEBUG && _d('No PID to remove');
+   }
+   return;
+}
+
+sub DESTROY {
+   my ( $self ) = @_;
+   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Daemon package
+# ###########################################################################
+
+# ###########################################################################
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
+# ###########################################################################
+package mk_loadavg;
 
 use English qw(-no_match_vars);
 use IO::File;
@@ -1359,70 +1505,8 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# ############################################################################
-# Get configuration information.
-# ############################################################################
-
-my $dp = new DSNParser();
-my $vp = new VersionParser();
-
-my @opt_spec   = OptionParser::pod_to_spec();
-my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{prompt} = '<options>';
-$opt_parser->{descr}  = 'watches the load on a MySQL server and takes action '
-                      . 'if it is too high.';
-my %opts = $opt_parser->parse();
-$dp->prop('setvars', $opts{'set-vars'});
-
-$opt_parser->usage_or_errors(%opts);
-
-# ############################################################################
-# First things first: if --stop was given, create the sentinel file.
-# ############################################################################
-if ( $opts{stop} ) {
-   MKDEBUG && _d("Creating sentinel file", $opts{sentinel});
-   my $file = IO::File->new($opts{sentinel}, ">>")
-      or die "Cannot open $opts{sentinel}: $OS_ERROR\n";
-   print $file "Remove this file to permit mk-loadavg to run\n"
-      or die "Cannot write to $opts{sentinel}: $OS_ERROR\n";
-   close $file
-      or die "Cannot close $opts{sentinel}: $OS_ERROR\n";
-   print STDOUT "Successfully created file $opts{sentinel}\n"
-      unless $opts{q};
-   if ( !$opts{monitor} ) {
-      MKDEBUG && _d("Nothing more to do, quitting");
-      exit(0);
-   }
-   else {
-      # Wait for all other running instances to quit, assuming they have the
-      # same --interval as this invocation.  Then remove the file and
-      # continue.
-      MKDEBUG && _d("Waiting for other instances to quit");
-      sleep($opts{M});
-      MKDEBUG && _d("Unlinking", $opts{sentinel});
-      unlink $opts{sentinel}
-         or die "Cannot unlink $opts{sentinel}: $OS_ERROR";
-   }
-}
-
-# ############################################################################
-# Connect and go to work.
-# ############################################################################
-if ( $opts{askpass} && !defined $opts{p} ) {
-   $opts{p} = OptionParser::prompt_noecho("Enter password for $opts{h}: ");
-}
-my $dsn = $dp->get_cxn_params(\%opts);
-my $dbh = $dp->get_dbh($dsn, { AutoCommit => 1 } );
-
-watch_server($dsn, $dbh);
-
-$dp->disconnect($dbh);
-exit(0);
-
-# ############################################################################
 # Types of info that can be gathered.
 # TODO: netstat, top, cat /proc/slabinfo, ifconfig
-# ############################################################################
 my %info_subroutines = (
    status => sub {
       my ( $dbh ) = @_;
@@ -1454,36 +1538,110 @@ my %info_subroutines = (
    },
 );
 
+sub main {
+   @ARGV = @_;  # set global ARGV for this package
+
+   # ########################################################################
+   # Get configuration information.
+   # ########################################################################
+   my $dp = new DSNParser();
+   my $vp = new VersionParser();
+   my $o  = new OptionParser(
+      description => 'watches the load on a MySQL server and takes action '
+                   . 'if it is too high.',
+   );
+   $o->get_specs();
+   $o->get_opts();
+
+   $dp->prop('setvars', $o->get('set-vars'));
+
+   $o->usage_or_errors();
+
+   # ########################################################################
+   # First things first: if --stop was given, create the sentinel file.
+   # ########################################################################
+   if ( $o->get('stop') ) {
+      my $sentinel = $o->get('sentinel');
+      MKDEBUG && _d('Creating sentinel file', $sentinel);
+      my $file = IO::File->new($sentinel, ">>")
+         or die "Cannot open $sentinel: $OS_ERROR\n";
+      print $file "Remove this file to permit mk-loadavg to run\n"
+         or die "Cannot write to $sentinel: $OS_ERROR\n";
+      close $file
+         or die "Cannot close $sentinel: $OS_ERROR\n";
+      print "Successfully created file $sentinel\n";
+      return 0;
+   }
+
+   # ########################################################################
+   # Connect and go to work.
+   # ########################################################################
+   if ( $o->get('ask-pass') ) {
+      $o->set('passowrd', OptionParser::prompt_noecho("Enter password: "));
+   }
+   my $dsn = $dp->parse_options($o);
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1, });
+
+   # Daemonize only after connecting and doing --ask-pass.
+   my $daemon;
+   if ( $o->get('daemonize') ) {
+      $daemon = new Daemon(o=>$o);
+      $daemon->daemonize();
+      MKDEBUG && _d('I am a daemon now');
+   }
+
+   watch_server(
+      dsn => $dsn,
+      dbh => $dbh,
+      o   => $o,
+      dp  => $dp,
+      vp  => $vp,
+   );
+
+   $dp->disconnect($dbh);
+   return 0;
+}
+
 # ############################################################################
 # Subroutines.
 # ############################################################################
 
 sub watch_server {
-   my ( $dsn, $dbh ) = @_;
+   my ( %args ) = @_;
+   foreach my $arg ( qw(dsn dbh o dp vp) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dsn = $args{dsn};
+   my $dbh = $args{dbh};
+   my $o   = $args{o};
+   my $dp  = $args{dp};
+   my $vp  = $args{vp};
+
    MKDEBUG && _d('Watching server', $dp->as_string($dsn));
 
    my $la = new Loadavg();
    my %metrics;
-   foreach my $item ( @{$opts{metrics}} ) {
+   foreach my $item ( @{$o->get('metrics')} ) {
       my ($key, $val) = split(/:/, $item);
       $metrics{$key} = $val; # $val can be undef.
    }
-   my %args = (
-      samples   => $opts{samples},
-      metric    => $opts{status}, # Can be undef
-      incstatus => $opts{incstatus}, # Can be undef
+   my %la_args = (
+      samples   => $o->get('samples'),
+      metric    => $o->get('status'),     # Can be undef
+      incstatus => $o->get('interval'),   # Can be undef
    );
 
-   my $exit_time = time() + ($opts{t} || 0);
-   while (!$opts{t} || time() < $exit_time) {
+   my $exit_time = time() + ($o->get('run-time') || 0);
+   while ( (!$o->get('run-time') || time() < $exit_time)
+           && !-f $o->get('sentinel') ) {
       METRIC:
       foreach my $metric ( keys %metrics ) {
-         my $val = $la->$metric($dbh, %args);
-         if ( $opts{'print'} ) {
+         my $val = $la->$metric($dbh, %la_args);
+         if ( $o->get('print-load-avg') ) {
             printf("%15s %.5f\n", $metric, $val);
          }
          if ( defined $metrics{$metric} && $val >= $metrics{$metric} ) {
-            foreach my $info ( @{$opts{info}} ) {
+            foreach my $info ( @{$o->get('info')} ) {
                if ( $info_subroutines{$info} ) {
                   $info_subroutines{$info}->($dbh);
                }
@@ -1491,10 +1649,12 @@ sub watch_server {
             last METRIC;
          }
       }
-      sleep($opts{s});
+      sleep($o->get('sleep'));
    }
 
    MKDEBUG && _d('All done with server', $dp->as_string($dsn));
+
+   return;
 }
 
 sub pretty_print {
@@ -1514,7 +1674,7 @@ sub pretty_print {
 sub finish {
    my ($signal) = @_;
    print STDERR "Exiting on SIG$signal.\n";
-   exit(1);
+   return 1;
 }
 
 sub _d {
@@ -1524,6 +1684,13 @@ sub _d {
         @_;
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
+
+# ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
 
 # ############################################################################
 # Documentation.
@@ -1563,7 +1730,7 @@ second gets the latest trunk code from Subversion.
 
 =over
 
-=item --askpass
+=item --ask-pass
 
 Prompt for a password when connecting to MySQL.
 
@@ -1575,6 +1742,18 @@ Default character set.  If the value is utf8, sets Perl's binmode on
 STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET
 NAMES UTF8 after connecting to MySQL.  Any other value sets binmode on STDOUT
 without the utf8 layer, and runs SET NAMES after connecting to MySQL.
+
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
+
+=item --daemonize
+
+Fork to the background and detach from the shell.  POSIX
+operating systems only.
 
 =item --database
 
@@ -1599,9 +1778,11 @@ short form: -h; type: string
 
 Connect to host.
 
-=item --incstatus
+=item --interval
 
-Calculate the L<"--status"> metric over a 1-second interval.
+type: time; default: 1s
+
+Time interval over which to calculate the L<"--status"> metric.
 
 =item --info
 
@@ -1611,6 +1792,12 @@ A list of info to print when L<"--metrics"> are exceeded.
 
 This comma-separated list can include status, processlist, innodbstatus, uptime.
 
+=item --log
+
+type: string
+
+Print all output to this file when daemonized.
+
 =item --metrics
 
 type: Array
@@ -1619,19 +1806,20 @@ A comma-separated list of metric:val pairs to calculate.
 
 The list is of the form metric:value.  The value is optional; if given, it
 specifies an upper limit of acceptable values for the metric.  If it isn't
-given, then the value will be calculated and printed (if L<"--print"> is given)
-but it won't be checked to see if it's too high.
+given, then the value will be calculated and printed (if L<"--print-load-avg">
+is given) but it won't be checked to see if it's too high.
 
 The possible metrics are trevorprice, num_locked, loadavg, slavelag, and status.
 For example you can say
 
-  --metric trevorprice:1,num_locked:5
+  --metrics trevorprice:1,num_locked:5
 
 In this example, if either trevorprice exceeds 1 or num_locked exceeds 5, the
 L<"--info"> information will be printed out.  The possible metrics mean the
 following:
 
   METRIC       MEANING
+  ===========  =================================================
   trevorprice  A calculation of average query response time
   num_locked   Number of locked processes in PROCESSLIST
   loadavg      The server's load average as reported by 'uptime'
@@ -1648,21 +1836,46 @@ short form: -p; type: string
 
 Password to use when connecting.
 
+=item --pid
+
+type: string
+
+Create the given PID file when daemonized.  The file contains the process
+ID of the daemonized instance.  The PID file is removed when the
+daemonized instance exits.  The program checks for the existence of the
+PID file when starting; if it exists and the process with the matching PID
+exists, the program exits.
+
 =item --port
 
 short form: -P; type: int
 
 Port number to use for connection.
 
-=item --print
+=item --print-load-avg
 
-Print metrics even if they don't exceed limits.
+Print metrics' load average even if they don't exceed limits.
+
+=item --run-time
+
+type: time
+
+Time to run before exiting.
+
+Causes C<mk-loadavg> to stop after the specified time has elapsed.
+Optional suffix: s=seconds, m=minutes, h=hours, d=days; if no suffix, s is used.
 
 =item --samples
 
 type: int
 
 How many samples to use for calculating the trevorprice L<"--metrics">.
+
+=item --sentinel
+
+type: string; default: /tmp/mk-loadavg-sentinel
+
+Exit if this file exists.
 
 =item --set-vars
 
@@ -1673,7 +1886,7 @@ will be appended to SET and executed.
 
 =item --sleep
 
-short form: -s; type: time; default: 60s
+type: time; default: 60s
 
 How long to sleep between each check.
 
@@ -1691,16 +1904,11 @@ Value from SHOW GLOBAL STATUS to measure.
 
 This affects the 'status' value for L<"--metrics">.
 
-See also L<"--incstatus">.
+See also L<"--interval">.
 
-=item --time
+=item --stop
 
-short form: -t; type: time
-
-Time to run before exiting.
-
-Causes C<mk-loadavg> to stop after the specified time has elapsed.
-Optional suffix: s=seconds, m=minutes, h=hours, d=days; if no suffix, s is used.
+Stop running instances by creating the L<"--sentinel"> file.
 
 =item --user
 
@@ -1721,7 +1929,8 @@ installed in any reasonably new version of Perl.
 
 =head1 OUTPUT
 
-If you specify --print, mk-loadavg prints the load average it calculates.
+If you specify L<"--print-load-avg">, mk-loadavg prints the load average it
+calculates for each metric even if the metric does not exceed its limit.
 
 =head1 EXIT STATUS
 
