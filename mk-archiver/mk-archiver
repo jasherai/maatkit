@@ -2138,7 +2138,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 3647
+# Daemon package 3694
 # ###########################################################################
 
 package Daemon;
@@ -2189,14 +2189,18 @@ sub daemonize {
    $self->_make_PID_file();
 
    if ( -t STDIN ) {
-      open STDIN, '/dev/null'
+      close STDIN;
+      open  STDIN, '/dev/null'
          or die "Cannot reopen STDIN to /dev/null";
    }
 
    if ( $self->{log_file} ) {
-      open STDOUT, '>>', $self->{log_file}
+      close STDOUT;
+      open  STDOUT, '>>', $self->{log_file}
          or die "Cannot open log file $self->{log_file}: $OS_ERROR";
-      open STDERR, ">&STDOUT"
+
+      close STDERR;
+      open  STDERR, ">&STDOUT"
          or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
    }
 
