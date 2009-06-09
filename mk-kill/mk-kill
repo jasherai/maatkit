@@ -1815,7 +1815,6 @@ sub main {
    # Get configuration information.
    # ########################################################################
    $o = new OptionParser(
-      strict      => 0,
       description => q{kills queries in MySQL},
       prompt      => '[OPTION]...',
    );
