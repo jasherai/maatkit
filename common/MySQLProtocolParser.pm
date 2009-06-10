@@ -39,12 +39,10 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-# Check if IO:Uncompress::AnyInflate module is available.
-eval { require IO::Uncompress::AnyInflate; };
-my $can_uncompress = ($EVAL_ERROR ? 0 : 1);
-if ( $can_uncompress ) {
-   use IO::Uncompress::AnyInflate qw(anyinflate $AnyInflateError);
-}
+eval {
+   require IO::Uncompress::Inflate;
+   IO::Uncompress::Inflate->import('inflate');
+};
 
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
@@ -781,9 +779,9 @@ sub uncompress_data {
 
    # Uncompress the compressed binary data.
    my $uncomp_bin_data = '';
-   my $status          = anyinflate(
+   my $status          = inflate(
       \$comp_bin_data => \$uncomp_bin_data,
-   ) or die "anyinflate failed: $AnyInflateError";
+   ) or die "inflate failed";
 
    # Unpack the uncompressed binary data back into a hex string.
    # This is the original MySQL packet(s).
@@ -851,15 +849,13 @@ sub uncompress_packet {
       'uncompressed data len (bytes)', $uncomp_data_len);
 
    if ( $uncomp_data_len ) {
-      if ( $can_uncompress ) {
+      eval {
          $data = uncompress_data($data);
          $packet->{data} = $$data;
-      }
-      else {
-         # TODO: handle this.  Not being able to peek inside the packets
-         # makes it very difficult to keep the session state correct.
-         MKDEBUG && _d('Skipping packet because we cannot uncompress');
-         return 0;
+      };
+      if ( $EVAL_ERROR ) {
+         die "Cannot uncompress packet.  Check that IO::Uncompress::Inflate "
+            . "is installed.\n\nError: $EVAL_ERROR";
       }
    }
    else {
