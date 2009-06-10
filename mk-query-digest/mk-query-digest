@@ -2009,7 +2009,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 3858
+# MySQLProtocolParser package 3885
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2018,11 +2018,10 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-eval { require IO::Uncompress::AnyInflate; };
-my $can_uncompress = ($EVAL_ERROR ? 0 : 1);
-if ( $can_uncompress ) {
-   use IO::Uncompress::AnyInflate qw(anyinflate $AnyInflateError);
-}
+eval {
+   require IO::Uncompress::Inflate;
+   IO::Uncompress::Inflate->import('inflate');
+};
 
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
@@ -2630,9 +2629,9 @@ sub uncompress_data {
    my $comp_bin_data = pack('H*', $$data);
 
    my $uncomp_bin_data = '';
-   my $status          = anyinflate(
+   my $status          = inflate(
       \$comp_bin_data => \$uncomp_bin_data,
-   ) or die "anyinflate failed: $AnyInflateError";
+   ) or die "inflate failed";
 
    my $uncomp_data = unpack('H*', $uncomp_bin_data);
 
@@ -2674,13 +2673,13 @@ sub uncompress_packet {
       'uncompressed data len (bytes)', $uncomp_data_len);
 
    if ( $uncomp_data_len ) {
-      if ( $can_uncompress ) {
+      eval {
          $data = uncompress_data($data);
          $packet->{data} = $$data;
-      }
-      else {
-         MKDEBUG && _d('Skipping packet because we cannot uncompress');
-         return 0;
+      };
+      if ( $EVAL_ERROR ) {
+         die "Cannot uncompress packet.  Check that IO::Uncompress::Inflate "
+            . "is installed.\n\nError: $EVAL_ERROR";
       }
    }
    else {
