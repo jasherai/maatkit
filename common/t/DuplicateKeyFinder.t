@@ -96,19 +96,19 @@ is_deeply(
    $dupes,
    [
       {
-         'key'          => 'a',
-         'cols'         => '`a`',
-         'duplicate_of' => 'a_3',
-         'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'a is a left-prefix of a_3',
-      },
-      {
          'key'          => 'a_3',
          'cols'         => '`a`,`b`',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'a_3 is a duplicate of a_2',
-      }
+      },
+      {
+         'key'          => 'a',
+         'cols'         => '`a`',
+         'duplicate_of' => 'a_2',
+         'duplicate_of_cols' => '`a`,`b`',
+         'reason'       => 'a is a left-prefix of a_2',
+      },
    ],
    'Dupe keys only output once (may fail due to different sort order)'
 );
@@ -125,7 +125,7 @@ is_deeply(
 );
 $dupes = [];
 $dk->get_duplicate_keys(
-   ignore_type => 1,
+   ignore_structure => 1,
    keys        => $tp->get_keys($ddl, $opt),
    callback    => $callback);
 is_deeply(
@@ -139,7 +139,7 @@ is_deeply(
          'reason'       => 'a is a left-prefix of a_2',
       },
    ],
-   'Dupe keys when ignoring type'
+   'Dupe keys when ignoring structure'
 );
 
 $ddl   = load_file('samples/nondupe_fulltext_not_exact.sql');
@@ -237,7 +237,7 @@ is_deeply(
 $dupes = [];
 $dk->get_duplicate_keys(
    clustered => 1,
-   tbl_info  => { engine    => 'InnoDB', ddl => $ddl },
+   tbl_info  => { engine => 'InnoDB', ddl => $ddl },
    keys      => $tp->get_keys($ddl, $opt),
    callback  => $callback);
 is_deeply(
@@ -516,4 +516,7 @@ is_deeply(
    'fk col not in referencing table (issue 331)'
 );
 
+# #############################################################################
+# Done.
+# #############################################################################
 exit;

@@ -28,26 +28,20 @@ use List::Util qw(min);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   my ( $class ) = @_;
-   my $self = {
-      # These are used in case you want to look back and see more
-      # details about what happened inside get_duplicate_keys().
-      keys        => undef,  # copy of last keys that we worked on
-      unique_cols => undef,  # unique cols for those last keys (hashref)
-      unique_sets => undef,  # unique sets for those last keys (arrayref) 
-   };
+   my ( $class, %args ) = @_;
+   my $self = {};
    return bless $self, $class;
 }
 
 # %args should contain:
 #
-#  *  keys           (req) A hashref from TableParser::get_keys().
-#  *  tbl_info       (req) { db, tbl, engine, ddl } hashref.
-#  *  callback       (req) An anonymous subroutine, called for each dupe found.
-#  *  ignore_order   Order never matters for any type of index (generally order
-#                    matters except for FULLTEXT).
-#  *  ignore_type    Compare indexes of different types as if they're the same.
-#  *  clustered      Perform duplication checks against the clustered  key.
+#  *  keys             (req) A hashref from TableParser::get_keys().
+#  *  tbl_info         { db, tbl, engine, ddl } hashref.
+#  *  callback         An anonymous subroutine, called for each dupe found.
+#  *  ignore_order     Order never matters for any type of index (generally
+#                      order matters except for FULLTEXT).
+#  *  ignore_structure Compare indexes of different types as if they're the same.
+#  *  clustered        Perform duplication checks against the clustered  key.
 #
 # Returns an arrayref of duplicate key hashrefs.  Each contains
 #
@@ -58,34 +52,34 @@ sub new {
 #  *  reason            A human-readable description of why this is a duplicate.
 sub get_duplicate_keys {
    my ( $self, %args ) = @_;
-   die "I need a keys argument" unless $args{keys};
-   my %all_keys  = %{$args{keys}}; # copy keys because we change stuff
-   $self->{keys} = \%all_keys;
+   my %keys = %{$args{keys}};  # Copy keys because we remove non-duplicates.
    my $primary_key;
    my @unique_keys;
    my @normal_keys;
    my @fulltext_keys;
-   my %pass_args = %args;
-   delete $pass_args{keys};
+   my @dupes;
 
-   ALL_KEYS:
-   foreach my $key ( values %all_keys ) {
+   KEY:
+   foreach my $key ( values %keys ) {
+      # Save real columns before we potentially re-order them.  These are
+      # columns we want to print if the key is a duplicate.
       $key->{real_cols} = $key->{colnames}; 
+
+      # We use column lengths to compare keys.
       $key->{len_cols}  = length $key->{colnames};
 
-      # The PRIMARY KEY is treated specially. It is effectively never a
-      # duplicate, so it is never removed. It is compared to all other
+      # The PRIMARY KEY is treated specially.  It is effectively never a
+      # duplicate, so it is never removed.  It is compared to all other
       # keys, and in any case of duplication, the PRIMARY is always kept
       # and the other key removed.
       if ( $key->{name} eq 'PRIMARY' ) {
          $primary_key = $key;
-         next ALL_KEYS;
+         next KEY;
       }
 
+      # Key column order matters for all keys except FULLTEXT, so unless
+      # ignore_order is specified we only sort FULLTEXT keys.
       my $is_fulltext = $key->{type} eq 'FULLTEXT' ? 1 : 0;
-
-      # Key column order matters for all keys except FULLTEXT, so we only
-      # sort if --ignoreorder or FULLTEXT. 
       if ( $args{ignore_order} || $is_fulltext  ) {
          my $ordered_cols = join(',', sort(split(/,/, $key->{colnames})));
          MKDEBUG && _d('Reordered', $key->{name}, 'cols from',
@@ -93,11 +87,11 @@ sub get_duplicate_keys {
          $key->{colnames} = $ordered_cols;
       }
 
-      # By default --allstruct is false, so keys of different structs
-      # (BTREE, HASH, FULLTEXT, SPATIAL) are kept and compared separately.
-      # UNIQUE keys are also separated just to make comparisons easier.
+      # Unless ignore_structure is specified, only keys of the same
+      # structure (btree, fulltext, etc.) are compared to one another.
+      # UNIQUE keys are kept separate to make comparisons easier.
       my $push_to = $key->{is_unique} ? \@unique_keys : \@normal_keys;
-      if ( !$args{ignore_type} ) {
+      if ( !$args{ignore_structure} ) {
          $push_to = \@fulltext_keys if $is_fulltext;
          # TODO:
          # $push_to = \@hash_keys     if $is_hash;
@@ -106,78 +100,8 @@ sub get_duplicate_keys {
       push @$push_to, $key; 
    }
 
-   my @dupes;
-
-   MKDEBUG && _d('Start unconstraining redundantly unique keys');
-   # See http://code.google.com/p/maatkit/wiki/DeterminingDuplicateKeys
-   # First, determine which unique keys define unique columns and which
-   # define unique sets.
-   my %unique_cols;
-   my @unique_sets;
-   my %unconstrain;   # unique keys to unconstrain
-   UNIQUE_KEY:
-   foreach my $unique_key ( $primary_key, @unique_keys ) {
-      next unless $unique_key; # primary key may be undefined
-      my $cols = $unique_key->{cols};
-      if ( @$cols == 1 ) {
-         MKDEBUG && _d($unique_key->{name},'defines unique column:',$cols->[0]);
-         # Save only the first unique key for the unique col. If there
-         # are others, then they are exact duplicates and will be removed
-         # later when unique keys are compared to unique keys.
-         if ( !exists $unique_cols{$cols->[0]} ) {
-            $unique_cols{$cols->[0]}  = $unique_key;
-            $unique_key->{unique_col} = 1;
-         }
-      }
-      else {
-         local $LIST_SEPARATOR = '-';
-         MKDEBUG && _d($unique_key->{name}, 'defines unique set:', @$cols);
-         push @unique_sets, { cols => $cols, key => $unique_key };
-      }
-   }
-
-   # Second, find which unique sets can be unconstraind (i.e. those
-   # which have which have at least one unique column).
-   UNIQUE_SET:
-   foreach my $unique_set ( @unique_sets ) {
-      my $n_unique_cols = 0;
-      COL:
-      foreach my $col ( @{$unique_set->{cols}} ) {
-         if ( exists $unique_cols{$col} ) {
-            MKDEBUG && _d('Unique set', $unique_set->{key}->{name},
-               'has unique col', $col);
-            last COL if ++$n_unique_cols > 1;
-            $unique_set->{constraining_key} = $unique_cols{$col};
-         }
-      }
-      if ( $n_unique_cols && $unique_set->{key}->{name} ne 'PRIMARY' ) {
-         # Unique set is redundantly constrained.
-         MKDEBUG && _d('Will unconstrain unique set',
-            $unique_set->{key}->{name},
-            'because it is redundantly constrained by key',
-            $unique_set->{constraining_key}->{name},
-            '(',$unique_set->{constraining_key}->{colnames},')');
-         $unconstrain{$unique_set->{key}->{name}}
-            = $unique_set->{constraining_key};
-      }
-   }
-
-   # And finally, unconstrain the redudantly unique sets found above by
-   # removing them from the list of unique keys and adding them to the
-   # list of normal keys.
-   for my $i ( 0..$#unique_keys ) {
-      if ( exists $unconstrain{$unique_keys[$i]->{name}} ) {
-         MKDEBUG && _d('Normalizing', $unique_keys[$i]->{name});
-         $unique_keys[$i]->{unconstrained} = 1;
-         $unique_keys[$i]->{constraining_key}
-            = $unconstrain{$unique_keys[$i]->{name}};
-         push @normal_keys, $unique_keys[$i];
-         delete $unique_keys[$i];
-      }
-   }
-   $self->{unique_cols} = \%unique_cols;
-   $self->{unique_sets} = \@unique_sets;
-   MKDEBUG && _d('No more keys');
+   # Redundantly constrained unique keys are treated as normal keys.
+   push @normal_keys, $self->unconstrain_keys($primary_key, \@unique_keys);
 
    # If you're tempted to check the primary key against uniques before
    # unconstraining redundantly unique keys: don't. In cases like
@@ -188,41 +112,28 @@ sub get_duplicate_keys {
    # keys marks single column unique keys so that they are never removed
    # (the mark is adding unique_col=>1 to the unique key's hash).
    if ( $primary_key ) {
-      MKDEBUG && _d('Start comparing PRIMARY KEY to UNIQUE keys');
-      $self->remove_prefix_duplicates(
-            keys           => [$primary_key],
-            remove_keys    => \@unique_keys,
-            duplicate_keys => \@dupes,
-            %pass_args);
+      MKDEBUG && _d('Comparing PRIMARY KEY to UNIQUE keys');
+      push @dupes,
+         $self->remove_prefix_duplicates([$primary_key], \@unique_keys, %args);
 
-      MKDEBUG && _d('Start comparing PRIMARY KEY to normal keys');
-      $self->remove_prefix_duplicates(
-            keys           => [$primary_key],
-            remove_keys    => \@normal_keys,
-            duplicate_keys => \@dupes,
-            %pass_args);
+      MKDEBUG && _d('Comparing PRIMARY KEY to normal keys');
+      push @dupes,
+         $self->remove_prefix_duplicates([$primary_key], \@normal_keys, %args);
    }
 
-   MKDEBUG && _d('Start comparing UNIQUE keys to normal keys');
-   $self->remove_prefix_duplicates(
-         keys           => \@unique_keys,
-         remove_keys    => \@normal_keys,
-         duplicate_keys => \@dupes,
-         %pass_args);
+   MKDEBUG && _d('Comparing UNIQUE keys to normal keys');
+   push @dupes,
+      $self->remove_prefix_duplicates(\@unique_keys, \@normal_keys, %args);
 
-   MKDEBUG && _d('Start comparing normal keys');
-   $self->remove_prefix_duplicates(
-         keys           => \@normal_keys,
-         duplicate_keys => \@dupes,
-         %pass_args);
+   MKDEBUG && _d('Comparing normal keys');
+   push @dupes,
+      $self->remove_prefix_duplicates(\@normal_keys, \@normal_keys, %args);
 
    # If --allstruct, then these special struct keys (FULLTEXT, HASH, etc.)
    # will have already been put in and handled by @normal_keys.
-   MKDEBUG && _d('Start comparing FULLTEXT keys');
-   $self->remove_prefix_duplicates(
-         keys             => \@fulltext_keys,
-         exact_duplicates => 1,
-         %pass_args);
+   MKDEBUG && _d('Comparing FULLTEXT keys');
+   push @dupes,
+      $self->remove_prefix_duplicates(\@fulltext_keys, \@fulltext_keys, %args, exact_duplicates => 1);
 
    # TODO: other structs
 
@@ -235,17 +146,17 @@ sub get_duplicate_keys {
         && $args{clustered}
         && $args{tbl_info}->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
 
-      MKDEBUG && _d('Start removing UNIQUE dupes of clustered key');
+      MKDEBUG && _d('Removing UNIQUE dupes of clustered key');
       $self->remove_clustered_duplicates(
             primary_key => $primary_key,
-            keys        => \@unique_keys,
-            %pass_args);
+            these_keys        => \@unique_keys,
+            %args);
 
-      MKDEBUG && _d('Start removing ordinary dupes of clustered key');
+      MKDEBUG && _d('Removing ordinary dupes of clustered key');
       $self->remove_clustered_duplicates(
             primary_key => $primary_key,
-            keys        => \@normal_keys,
-            %pass_args);
+            these_keys        => \@normal_keys,
+            %args);
    }
 
    return \@dupes;
@@ -295,129 +206,156 @@ sub get_duplicate_fks {
    return \@dupes;
 }
 
-# TODO: Document this subroutine.
-# %args should contain the same things passed to get_duplicate_keys(), plus:
-#  *  remove_keys       ????
-#  *  duplicate_keys    ????
-#  *  exact_duplicates  ????
+# Removes and returns prefix duplicate keys from right_keys.
+# Both left_keys and right_keys are arrayrefs.
+#
+# Prefix duplicates are the typical type of duplicate like:
+#    KEY x (a)
+#    KEY y (a, b)
+# Key x is a prefix duplicate of key y.  This also covers exact
+# duplicates like:
+#    KEY y (a, b)
+#    KEY z (a, b)
+# Key y and z are exact duplicates.
+#
+# Usually two separate lists of keys are compared: the left and right
+# keys.  When a duplicate is found, the Left key is Left alone and the
+# Right key is Removed. This is done because some keys are more important
+# than others.  For example, the PRIMARY KEY is always a left key because
+# it is never removed.  When comparing UNIQUE keys to normal (non-unique)
+# keys, the UNIQUE keys are Left (alone) and any duplicating normal
+# keys are Removed.
+#
+# A list of keys can be compared to itself in which case left and right
+# keys reference the same list but this sub doesn't know that so it just
+# removes dupes from the left as usual.
+#
+# Optional args are:
+#    * exact_duplicates  Keys are dupes only if they're exact duplicates
+#    * callback          Sub called for each dupe found
+# 
 sub remove_prefix_duplicates {
-   my ( $self, %args ) = @_;
-   my $keys;
-   my $remove_keys;
+   my ( $self, $left_keys, $right_keys, %args ) = @_;
    my @dupes;
-   my $keep_index;
-   my $remove_index;
-   my $last_key;
-   my $remove_key_offset;
+   my $right_offset;
+   my $last_left_key;
+   my $last_right_key = scalar(@$right_keys) - 1;
 
-   $keys  = $args{keys};
-   @$keys = sort { $a->{colnames} cmp $b->{colnames} }
-            grep { defined $_; }
-            @$keys;
+   # We use "scalar(@$arrayref) - 1" because the $# syntax is not
+   # reliable with arrayrefs across Perl versions.  And we use index
+   # into the arrays because we delete elements.
 
-   if ( $args{remove_keys} ) {
-      $remove_keys  = $args{remove_keys};
-      @$remove_keys = sort { $a->{colnames} cmp $b->{colnames} }
-                      grep { defined $_; }
-                      @$remove_keys;
+   # TODO: explain why we reverse sort if lists are the same
 
-      $remove_index      = 1;
-      $keep_index        = 0;
-      $last_key          = scalar(@$keys) - 1;
-      $remove_key_offset = 0;
+   if ( $right_keys != $left_keys ) {
+      # Right and left keys are different lists.
+
+      @$left_keys = sort { $a->{colnames} cmp $b->{colnames} }
+                    grep { defined $_; }
+                    @$left_keys;
+      @$right_keys = sort { $a->{colnames} cmp $b->{colnames} }
+                     grep { defined $_; }
+                    @$right_keys;
+
+      # Last left key is its very last key.
+      $last_left_key = scalar(@$left_keys) - 1;
+
+      # No need to offset where we begin looping through the right keys.
+      $right_offset = 0;
    }
    else {
-      $remove_keys       = $keys;
-      $remove_index      = 0;
-      $keep_index        = 1;
-      $last_key          = scalar(@$keys) - 2;
-      $remove_key_offset = 1;
+      # Right and left keys are the same list.
+
+      @$left_keys = reverse sort { $a->{colnames} cmp $b->{colnames} }
+                    grep { defined $_; }
+                    @$left_keys;
+      
+      # Last left key is its second-to-last key.
+      # The very last left key will be used as a right key.
+      $last_left_key = scalar(@$left_keys) - 2;
+
+      # Since we're looping through the same list in two different
+      # positions, we must offset where we begin in the right keys
+      # so that we stay ahead of where we are in the left keys.
+      $right_offset = 1;
    }
-   my $last_remove_key = scalar(@$remove_keys) - 1;
 
-   I_KEY:
-   foreach my $i ( 0..$last_key ) {
-      next I_KEY unless defined $keys->[$i];
+   LEFT_KEY:
+   foreach my $left_index ( 0..$last_left_key ) {
+      next LEFT_KEY unless defined $left_keys->[$left_index];
 
-      J_KEY:
-      foreach my $j ( $i+$remove_key_offset..$last_remove_key ) {
-         next J_KEY unless defined $remove_keys->[$j];
+      RIGHT_KEY:
+      foreach my $right_index ( $left_index+$right_offset..$last_right_key ) {
+         next RIGHT_KEY unless defined $right_keys->[$right_index];
 
-         my $keep = ($i, $j)[$keep_index];
-         my $rm   = ($i, $j)[$remove_index];
+         my $left_name      = $left_keys->[$left_index]->{name};
+         my $left_cols      = $left_keys->[$left_index]->{colnames};
+         my $left_len_cols  = $left_keys->[$left_index]->{len_cols};
+         my $right_name     = $right_keys->[$right_index]->{name};
+         my $right_cols     = $right_keys->[$right_index]->{colnames};
+         my $right_len_cols = $right_keys->[$right_index]->{len_cols};
 
-         my $keep_name     = $keys->[$keep]->{name};
-         my $keep_cols     = $keys->[$keep]->{colnames};
-         my $keep_len_cols = $keys->[$keep]->{len_cols};
-         my $rm_name       = $remove_keys->[$rm]->{name};
-         my $rm_cols       = $remove_keys->[$rm]->{colnames};
-         my $rm_len_cols   = $remove_keys->[$rm]->{len_cols};
+         MKDEBUG && _d('Comparing left', $left_name, '(',$left_cols,')',
+            'to right', $right_name, '(',$right_cols,')');
 
-         MKDEBUG && _d('Comparing [keep]', $keep_name, '(',$keep_cols,')',
-            'to [remove if dupe]', $rm_name, '(',$rm_cols,')');
-
-         # Compare the whole remove key to the keep key, not just
+         # Compare the whole right key to the left key, not just
          # the their common minimum length prefix. This is correct
          # because it enables magick that I should document. :-)
-         if (    substr($rm_cols, 0, $rm_len_cols)
-              eq substr($keep_cols, 0, $rm_len_cols) ) {
+         if (    substr($right_cols, 0, $right_len_cols)
+              eq substr($left_cols,  0, $right_len_cols) ) {
 
             # FULLTEXT keys, for example, are only duplicates if they
             # are exact duplicates.
-            if ( $args{exact_duplicates} && ($rm_len_cols < $keep_len_cols) ) {
-               MKDEBUG && _d($rm_name, 'not exact duplicate of', $keep_name);
-               next J_KEY;
+            if ( $args{exact_duplicates} && ($right_len_cols<$left_len_cols) ) {
+               MKDEBUG && _d($right_name, 'not exact duplicate of', $left_name);
+               next RIGHT_KEY;
             }
 
             # Do not remove the unique key that is constraining a single
             # column to uniqueness. This prevents UNIQUE KEY (a) from being
             # removed by PRIMARY KEY (a, b).
-            if ( exists $remove_keys->[$rm]->{unique_col} ) {
-               MKDEBUG && _d('Cannot remove', $rm_name,
+            if ( exists $right_keys->[$right_index]->{unique_col} ) {
+               MKDEBUG && _d('Cannot remove', $right_name,
                   'because is constrains col',
-                  $remove_keys->[$rm]->{cols}->[0]);
-               next J_KEY;
+                  $right_keys->[$right_index]->{cols}->[0]);
+               next RIGHT_KEY;
             }
 
-            MKDEBUG && _d('Remove', $remove_keys->[$rm]->{name});
+            MKDEBUG && _d('Remove', $right_name);
             my $reason;
-            if ( $remove_keys->[$rm]->{unconstrained} ) {
-               $reason .= "Uniqueness of $rm_name ignored because "
-                        . $remove_keys->[$rm]->{constraining_key}->{name}
+            if ( $right_keys->[$right_index]->{unconstrained} ) {
+               $reason .= "Uniqueness of $right_name ignored because "
+                        . $right_keys->[$right_index]->{constraining_key}->{name}
                         . " is a stronger constraint\n"; 
             }
-            $reason .= $rm_name
-                     . ($rm_len_cols < $keep_len_cols ? ' is a left-prefix of '
-                                                      : ' is a duplicate of ')
-                     . $keep_name;
+            $reason .= $right_name
+                   . ($right_len_cols < $left_len_cols ? ' is a left-prefix of '
+                                                        : ' is a duplicate of ')
+                   . $left_name;
             my $dupe = {
-               key               => $rm_name,
-               cols              => $remove_keys->[$rm]->{real_cols},
-               duplicate_of      => $keep_name,
-               duplicate_of_cols => $keys->[$keep]->{real_cols},
+               key               => $right_name,
+               cols              => $right_keys->[$right_index]->{real_cols},
+               duplicate_of      => $left_name,
+               duplicate_of_cols => $left_keys->[$left_index]->{real_cols},
                reason            => $reason,
             };
             push @dupes, $dupe;
-            delete $remove_keys->[$rm];
+            delete $right_keys->[$right_index];
 
             $args{callback}->($dupe, %args) if $args{callback};
-
-            next I_KEY if $remove_index == 0;
-            next J_KEY if $remove_index == 1;
          }
          else {
-            MKDEBUG && _d($rm_name, 'not left-prefix of', $keep_name);
-            next I_KEY;
+            MKDEBUG && _d($right_name, 'not left-prefix of', $left_name);
+            next LEFT_KEY;
          }
-      }
-   }
+      } # RIGHT_KEY
+   } # LEFT_KEY
    MKDEBUG && _d('No more keys');
 
-   @$keys        = grep { defined $_; } @$keys;
-   @$remove_keys = grep { defined $_; } @$remove_keys if $args{remove_keys};
-   push @{$args{duplicate_keys}}, @dupes if $args{duplice_keys};
+   @$left_keys  = grep { defined $_; } @$left_keys;
+   @$right_keys = grep { defined $_; } @$right_keys;
 
-   return;
+   return @dupes;
 }
 
 sub remove_clustered_duplicates {
@@ -425,7 +363,7 @@ sub remove_clustered_duplicates {
    die "I need a primary_key argument" unless $args{primary_key};
    die "I need a keys argument"        unless $args{keys};
    my $pkcols = $args{primary_key}->{colnames};
-   my $keys   = $args{keys};
+   my $keys   = $args{these_keys};
    my @dupes;
    # TODO: this can be done more easily now that each key has
    # its cols in an array, so we just have to look at cols[-1].
@@ -455,9 +393,88 @@ sub remove_clustered_duplicates {
    MKDEBUG && _d('No more keys');
 
    @$keys = grep { defined $_; } @$keys;
-   push @{$args{duplicate_keys}}, @dupes if $args{duplice_keys};
 
    return;
+}
+
+# Given a primary key (can be undef) and an arrayref of unique keys,
+# removes and returns redundantly contrained unique keys from the
+# given arrayref.
+sub unconstrain_keys {
+   my ( $self, $primary_key, $unique_keys ) = @_;
+   die "I need a unique_keys argument" unless $unique_keys;
+   my %unique_cols;
+   my @unique_sets;
+   my %unconstrain;
+   my @unconstrained_keys;
+
+   MKDEBUG && _d('Unconstraining redundantly unique keys');
+
+   # First determine which unique keys define unique columns
+   # and which define unique sets.
+   UNIQUE_KEY:
+   foreach my $unique_key ( $primary_key, @$unique_keys ) {
+      next unless $unique_key; # primary key may be undefined
+      my $cols = $unique_key->{cols};
+      if ( @$cols == 1 ) {
+         MKDEBUG && _d($unique_key->{name},'defines unique column:',$cols->[0]);
+         # Save only the first unique key for the unique col. If there
+         # are others, then they are exact duplicates and will be removed
+         # later when unique keys are compared to unique keys.
+         if ( !exists $unique_cols{$cols->[0]} ) {
+            $unique_cols{$cols->[0]}  = $unique_key;
+            $unique_key->{unique_col} = 1;
+         }
+      }
+      else {
+         local $LIST_SEPARATOR = '-';
+         MKDEBUG && _d($unique_key->{name}, 'defines unique set:', @$cols);
+         push @unique_sets, { cols => $cols, key => $unique_key };
+      }
+   }
+
+   # Second, find which unique sets can be unconstraind (i.e. those
+   # which have which have at least one unique column).
+   UNIQUE_SET:
+   foreach my $unique_set ( @unique_sets ) {
+      my $n_unique_cols = 0;
+      COL:
+      foreach my $col ( @{$unique_set->{cols}} ) {
+         if ( exists $unique_cols{$col} ) {
+            MKDEBUG && _d('Unique set', $unique_set->{key}->{name},
+               'has unique col', $col);
+            last COL if ++$n_unique_cols > 1;
+            $unique_set->{constraining_key} = $unique_cols{$col};
+         }
+      }
+      if ( $n_unique_cols && $unique_set->{key}->{name} ne 'PRIMARY' ) {
+         # Unique set is redundantly constrained.
+         MKDEBUG && _d('Will unconstrain unique set',
+            $unique_set->{key}->{name},
+            'because it is redundantly constrained by key',
+            $unique_set->{constraining_key}->{name},
+            '(',$unique_set->{constraining_key}->{colnames},')');
+         $unconstrain{$unique_set->{key}->{name}}
+            = $unique_set->{constraining_key};
+      }
+   }
+
+   # And finally, unconstrain the redudantly unique sets found above by
+   # removing them from the list of unique keys and adding them to the
+   # list of normal keys.
+   for my $i ( 0..(scalar @$unique_keys-1) ) {
+      if ( exists $unconstrain{$unique_keys->[$i]->{name}} ) {
+         MKDEBUG && _d('Unconstraining', $unique_keys->[$i]->{name});
+         $unique_keys->[$i]->{unconstrained} = 1;
+         $unique_keys->[$i]->{constraining_key}
+            = $unconstrain{$unique_keys->[$i]->{name}};
+         push @unconstrained_keys, $unique_keys->[$i];
+         delete $unique_keys->[$i];
+      }
+   }
+
+   MKDEBUG && _d('No more keys');
+   return @unconstrained_keys;
 }
 
 sub _d {
