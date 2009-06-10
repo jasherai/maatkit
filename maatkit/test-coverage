@@ -1,0 +1,74 @@
+#!/bin/sh
+
+CWD=`pwd`
+
+test_coverage () {
+   SCRIPT=`echo $1 | sed 's/\.t//'`
+   TEST_SCRIPT="$SCRIPT.t"
+   if [ -f ../$SCRIPT.pm ]; then
+      BASE_SCRIPT="../$SCRIPT.pm"
+      EXTENSION='.pm'
+   elif [ -f ../$SCRIPT ]; then
+      BASE_SCRIPT="../$SCRIPT"
+      EXTENSION=''
+   else
+      echo "Cannot find base script for $1; tried ../$SCRIPT.pm and ../$SCRIPT"
+      echo "Skipping $1"
+      return 1
+   fi
+
+   echo "Script: $SCRIPT"
+   echo "Test script: $TEST_SCRIPT"
+   echo "Base script: $BASE_SCRIPT"
+
+   if [ -d $CWD/cover_db ]; then
+      rm -rf $CWD/cover_db/*
+      echo "Cleared $CWD/cover_db/"
+   fi
+
+   perl -MDevel::Cover=-ignore,'.+',-select,"$BASE_SCRIPT" $TEST_SCRIPT
+   cover -report text -silent > coverage/$SCRIPT$EXTENSION
+   
+   return 0
+}
+
+write_summary () {
+   SUMMARY_FILE=$CWD/coverage/summary
+   rm -f $SUMMARY_FILE
+   echo "File                           stmt   bran   cond    sub    pod   time  total" >> $SUMMARY_FILE
+   head -q -n 4 $CWD/coverage/* | grep -v File | grep -v '-'  >> $SUMMARY_FILE
+   echo "Wrote summary to $SUMMARY_FILE"
+   return
+}
+
+if [ -z "$1" ]; then
+   echo
+   echo "Usage: $0 SCRIPT|summary"
+   echo
+   echo "SCRIPT is a .t script with a corresponding ../SCRIPT[.pm]."
+   echo "Coverage results are written to $CWD/coverage/SCRIPT[.pm]."
+   echo
+   echo "Instead of SCRIPT, 'summary' causes the coverage/summary file to be updated."
+   echo
+   exit 1
+fi
+
+if [ ! -d $CWD/coverage ]; then
+   echo
+   echo "The current directory ($CWD) does not have a coverage/ directory"
+   echo "Create coverage/ and svn add coverage"
+   echo
+   exit 1
+fi
+
+if [ $1 != "summary" ]; then
+   for script in $@; do
+      if [ -f $script ]; then
+         test_coverage $script
+      fi
+   done
+fi
+
+write_summary
+
+exit
