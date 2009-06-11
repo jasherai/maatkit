@@ -189,10 +189,10 @@ sub parse_packet {
          state    => undef,
          compress => undef,
          packets  => [],  # Packets and states before event.
-         states   => [],  # Cleared after ech successful event.
       };
    };
    my $session = $self->{sessions}->{$client};
+   $packet->{session_state} = $session->{state};
 
    # Return early if there's TCP/MySQL data.  These are usually ACK
    # packets, but they could also be FINs in which case, we should close
@@ -250,7 +250,6 @@ sub _packet_from_server {
 
    MKDEBUG && _d('Packet is from server; client state:', $session->{state});
    push @{$session->{packets}}, $packet;
-   push @{$session->{states}},  $session->{state},
 
    my $data = $packet->{data};
 
@@ -458,7 +457,6 @@ sub _packet_from_client {
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
    push @{$session->{packets}}, $packet;
-   push @{$session->{states}},  $session->{state},
 
    my $data  = $packet->{data};
    my $ts    = $packet->{ts};
@@ -547,7 +545,6 @@ sub _make_event {
 
    # Clear packets that preceded this event.
    $session->{packets} = [];
-   $session->{states}  = [];
 
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
    return $event = {
@@ -952,7 +949,7 @@ sub fail_session {
    my ( $self, $session, $reason ) = @_;
    my $errors_fh = $self->_get_errors_fh();
    my $msg = "Deleting session $session->{client} because $reason.\n"
-           . "Session dump: "
+           . "Packets dump: "
            . Dumper($session);
    print $errors_fh $msg if $errors_fh;
    MKDEBUG && _d($msg);
