@@ -45,7 +45,8 @@ eval {
 };
 
 use Data::Dumper;
-$Data::Dumper::Indent = 1;
+$Data::Dumper::Indent   = 1;
+$Data::Dumper::Sortkeys = 1;
 
 require Exporter;
 our @ISA         = qw(Exporter);
@@ -157,6 +158,7 @@ sub new {
       server    => $args{server},
       version   => '41',
       sessions  => {},
+      o         => $args{o},
    };
    return bless $self, $class;
 }
@@ -186,6 +188,8 @@ sub parse_packet {
          ts       => $packet->{ts},
          state    => undef,
          compress => undef,
+         packets  => [],  # Packets and states before event.
+         states   => [],  # Cleared after ech successful event.
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -219,10 +223,10 @@ sub parse_packet {
    # The returned event may be empty if no event was ready to be created.
    my $event;
    if ( $from eq $self->{server} ) {
-      $event = _packet_from_server($packet, $session, $misc);
+      $event = $self->_packet_from_server($packet, $session, $misc);
    }
    elsif ( $from eq $client ) {
-      $event = _packet_from_client($packet, $session, $misc);
+      $event = $self->_packet_from_client($packet, $session, $misc);
    }
    else {
       MKDEBUG && _d('Packet origin unknown');
@@ -240,11 +244,13 @@ sub parse_packet {
 # Anything else is ignored.  Returns an event if one was ready to be
 # created, otherwise returns nothing.
 sub _packet_from_server {
-   my ( $packet, $session, $misc ) = @_;
+   my ( $self, $packet, $session, $misc ) = @_;
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
    MKDEBUG && _d('Packet is from server; client state:', $session->{state});
+   push @{$session->{packets}}, $packet;
+   push @{$session->{states}},  $session->{state},
 
    my $data = $packet->{data};
 
@@ -279,6 +285,10 @@ sub _packet_from_server {
          # This OK should be ack'ing a query or something sent earlier
          # by the client.
          my $ok  = parse_ok_packet($data);
+         if ( !$ok ) {
+            $self->fail_session($session, 'failed to parse OK packet');
+            return;
+         }
          my $com = $session->{cmd}->{cmd};
          my $arg;
 
@@ -308,7 +318,7 @@ sub _packet_from_server {
    elsif ( $first_byte eq 'ff' ) {
       my $error = parse_error_packet($data);
       if ( !$error ) {
-         MKDEBUG && _d('Not an error packet');
+         $self->fail_session($session, 'failed to parse error packet');
          return;
       }
       my $event;
@@ -379,6 +389,10 @@ sub _packet_from_server {
       # may start with 0a, but none that can would be >= 33.  The 13-byte
       # 00 scramble buffer is another indicator.
       my $handshake = parse_server_handshake_packet($data);
+      if ( !$handshake ) {
+         $self->fail_session($session, 'failed to parse server handshake');
+         return;
+      }
       $session->{state}     = 'server_handshake';
       $session->{thread_id} = $handshake->{thread_id};
    }
@@ -438,11 +452,13 @@ sub _packet_from_server {
 # Anything else is ignored.  Returns an event if one was ready to be
 # created, otherwise returns nothing.
 sub _packet_from_client {
-   my ( $packet, $session, $misc ) = @_;
+   my ( $self, $packet, $session, $misc ) = @_;
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
+   push @{$session->{packets}}, $packet;
+   push @{$session->{states}},  $session->{state},
 
    my $data  = $packet->{data};
    my $ts    = $packet->{ts};
@@ -457,6 +473,10 @@ sub _packet_from_client {
       # A connection is logged even if the client fails to
       # login (bad password, etc.).
       my $handshake = parse_client_handshake_packet($data);
+      if ( !$handshake ) {
+         $self->fail_session($session, 'failed to parse client handshake');
+         return;
+      }
       $session->{state}         = 'client_auth';
       $session->{pos_in_log}    = $packet->{pos_in_log};
       $session->{user}          = $handshake->{user};
@@ -487,11 +507,15 @@ sub _packet_from_client {
       # not defined.  This means we didn't see the client handshake.
       # If we had seen it, $session->{compress} would be defined as 0 or 1.
       if ( !defined $session->{compress} ) {
-         return unless detect_compression($packet, $session);
+         return unless $self->detect_compression($packet, $session);
          $data = $packet->{data};
       }
 
       my $com = parse_com_packet($data, $packet->{mysql_data_len});
+      if ( !$com ) {
+         $self->fail_session($session, 'failed to parse COM packet');
+         return;
+      }
       $session->{state}      = 'awaiting_reply';
       $session->{pos_in_log} = $packet->{pos_in_log};
       $session->{ts}         = $ts;
@@ -520,6 +544,11 @@ sub _packet_from_client {
 sub _make_event {
    my ( $event, $packet, $session ) = @_;
    MKDEBUG && _d('Making event');
+
+   # Clear packets that preceded this event.
+   $session->{packets} = [];
+   $session->{states}  = [];
+
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
    return $event = {
       cmd        => $event->{cmd},
@@ -620,7 +649,10 @@ sub parse_error_packet {
    my ( $data ) = @_;
    die "I need data" unless $data;
    MKDEBUG && _d('ERROR data:', $data);
-   die "Error packet is too short: $data" if length $data < 16;
+   if ( length $data < 16 ) {
+      MKDEBUG && _d('Error packet is too short:', $data);
+      return;
+   }
    my $errno    = to_num(substr($data, 0, 4));
    my $marker   = to_string(substr($data, 4, 2));
    return unless $marker eq '#';
@@ -649,7 +681,10 @@ sub parse_ok_packet {
    my ( $data ) = @_;
    die "I need data" unless $data;
    MKDEBUG && _d('OK data:', $data);
-   die "OK packet is too short: $data" if length $data < 12;
+   if ( length $data < 12 ) {
+      MKDEBUG && _d('OK packet is too short:', $data);
+      return;
+   }
    my $affected_rows = get_lcb(\$data);
    my $insert_id     = get_lcb(\$data);
    my $status        = to_num(substr($data, 0, 4, ''));
@@ -713,7 +748,10 @@ sub parse_client_handshake_packet {
    # This packet is easy to detect because it's the only case where
    # the server sends the client a packet first (its handshake) and
    # then the client only and ever sends back its handshake.
-   die "Did not match client handshake packet" unless $buff_len;
+   if ( !$buff_len ) {
+      MKDEBUG && _d('Did not match client handshake packet');
+      return;
+   }
 
    # This length-coded binary doesn't seem to be a normal one, it
    # seems more like a length-coded string actually.
@@ -741,7 +779,10 @@ sub parse_com_packet {
    MKDEBUG && _d('COM data:', $data, 'len:', $len);
    my $code = substr($data, 0, 2);
    my $com  = $com_for{$code};
-   die "Did not match COM packet" unless $com;
+   if ( !$com ) {
+      MKDEBUG && _d('Did not match COM packet');
+      return;
+   }
    $data    = to_string(substr($data, 2, ($len - 1) * 2));
    my $pkt = {
       code => $code,
@@ -794,7 +835,7 @@ sub uncompress_data {
 # detecting compression but not being able to uncompress
 # (uncompress_packet() returns 0).
 sub detect_compression {
-   my ( $packet, $session ) = @_;
+   my ( $self, $packet, $session ) = @_;
    MKDEBUG && _d('Checking for client compression');
    # This is a necessary hack for detecting compression in-stream without
    # having seen the client handshake and CLIENT_COMPRESS flag.  If the
@@ -886,6 +927,36 @@ sub remove_mysql_header {
    $packet->{mysql_data_len} = $mysql_data_len;
    $packet->{number}         = $pkt_num;
 
+   return;
+}
+
+sub _get_errors_fh {
+   my ( $self ) = @_;
+   my $errors_fh = $self->{errors_fh};
+   return $errors_fh if $errors_fh;
+
+   # Errors file isn't open yet; try to open it.
+   my $o = $self->{o};
+   if ( $o && $o->has('tcpdump-errors') && $o->got('tcpdump-errors') ) {
+      my $errors_file = $o->get('tcpdump-errors');
+      MKDEBUG && _d('tcpdump-errors file:', $errors_file);
+      open $errors_fh, '>>', $errors_file
+         or die "Cannot open tcpdump-errors file $errors_file: $OS_ERROR";
+   }
+
+   $self->{errors_fh} = $errors_fh;
+   return $errors_fh;
+}
+
+sub fail_session {
+   my ( $self, $session, $reason ) = @_;
+   my $errors_fh = $self->_get_errors_fh();
+   my $msg = "Deleting session $session->{client} because $reason.\n"
+           . "Session dump: "
+           . Dumper($session);
+   print $errors_fh $msg if $errors_fh;
+   MKDEBUG && _d($msg);
+   delete $self->{sessions}->{$session->{client}};
    return;
 }
 
