@@ -1911,7 +1911,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 3744
+# TcpdumpParser package 3910
 # ###########################################################################
 package TcpdumpParser;
 
@@ -1946,6 +1946,7 @@ sub parse_event {
       MKDEBUG && _d('packet:', ++$num_packets, 'pos:', $pos_in_log);
       my $packet = $self->_parse_packet($raw_packet);
       $packet->{pos_in_log} = $pos_in_log;
+      $packet->{raw_packet} = $raw_packet;
 
       foreach my $callback ( @callbacks ) {
          last unless $packet = $callback->($packet);
@@ -2009,7 +2010,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 3885
+# MySQLProtocolParser package 3910
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2024,7 +2025,9 @@ eval {
 };
 
 use Data::Dumper;
-$Data::Dumper::Indent = 1;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 require Exporter;
 our @ISA         = qw(Exporter);
@@ -2133,6 +2136,7 @@ sub new {
       server    => $args{server},
       version   => '41',
       sessions  => {},
+      o         => $args{o},
    };
    return bless $self, $class;
 }
@@ -2151,13 +2155,15 @@ sub parse_packet {
    if ( !exists $self->{sessions}->{$client} ) {
       MKDEBUG && _d('New session');
       $self->{sessions}->{$client} = {
-         client   => $client,
-         ts       => $packet->{ts},
-         state    => undef,
-         compress => undef,
+         client      => $client,
+         ts          => $packet->{ts},
+         state       => undef,
+         compress    => undef,
+         raw_packets => [],  # Raw tcpdump packets before event.
       };
    };
    my $session = $self->{sessions}->{$client};
+   $packet->{session_state} = $session->{state};
 
    if ( $packet->{data_len} == 0 ) {
       MKDEBUG && _d('No TCP/MySQL data');
@@ -2176,10 +2182,10 @@ sub parse_packet {
 
    my $event;
    if ( $from eq $self->{server} ) {
-      $event = _packet_from_server($packet, $session, $misc);
+      $event = $self->_packet_from_server($packet, $session, $misc);
    }
    elsif ( $from eq $client ) {
-      $event = _packet_from_client($packet, $session, $misc);
+      $event = $self->_packet_from_client($packet, $session, $misc);
    }
    else {
       MKDEBUG && _d('Packet origin unknown');
@@ -2190,11 +2196,12 @@ sub parse_packet {
 }
 
 sub _packet_from_server {
-   my ( $packet, $session, $misc ) = @_;
+   my ( $self, $packet, $session, $misc ) = @_;
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
    MKDEBUG && _d('Packet is from server; client state:', $session->{state});
+   push @{$session->{raw_packets}}, $packet->{raw_packet};
 
    my $data = $packet->{data};
 
@@ -2221,6 +2228,10 @@ sub _packet_from_server {
       }
       elsif ( $session->{cmd} ) {
          my $ok  = parse_ok_packet($data);
+         if ( !$ok ) {
+            $self->fail_session($session, 'failed to parse OK packet');
+            return;
+         }
          my $com = $session->{cmd}->{cmd};
          my $arg;
 
@@ -2250,7 +2261,7 @@ sub _packet_from_server {
    elsif ( $first_byte eq 'ff' ) {
       my $error = parse_error_packet($data);
       if ( !$error ) {
-         MKDEBUG && _d('Not an error packet');
+         $self->fail_session($session, 'failed to parse error packet');
          return;
       }
       my $event;
@@ -2309,6 +2320,10 @@ sub _packet_from_server {
            && $data =~ m/00{13}/ )
    {
       my $handshake = parse_server_handshake_packet($data);
+      if ( !$handshake ) {
+         $self->fail_session($session, 'failed to parse server handshake');
+         return;
+      }
       $session->{state}     = 'server_handshake';
       $session->{thread_id} = $handshake->{thread_id};
    }
@@ -2353,11 +2368,12 @@ sub _packet_from_server {
 }
 
 sub _packet_from_client {
-   my ( $packet, $session, $misc ) = @_;
+   my ( $self, $packet, $session, $misc ) = @_;
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
+   push @{$session->{raw_packets}}, $packet->{raw_packet};
 
    my $data  = $packet->{data};
    my $ts    = $packet->{ts};
@@ -2365,6 +2381,10 @@ sub _packet_from_client {
    if ( ($session->{state} || '') eq 'server_handshake' ) {
       MKDEBUG && _d('Expecting client authentication packet');
       my $handshake = parse_client_handshake_packet($data);
+      if ( !$handshake ) {
+         $self->fail_session($session, 'failed to parse client handshake');
+         return;
+      }
       $session->{state}         = 'client_auth';
       $session->{pos_in_log}    = $packet->{pos_in_log};
       $session->{user}          = $handshake->{user};
@@ -2385,11 +2405,15 @@ sub _packet_from_client {
    else {
 
       if ( !defined $session->{compress} ) {
-         return unless detect_compression($packet, $session);
+         return unless $self->detect_compression($packet, $session);
          $data = $packet->{data};
       }
 
       my $com = parse_com_packet($data, $packet->{mysql_data_len});
+      if ( !$com ) {
+         $self->fail_session($session, 'failed to parse COM packet');
+         return;
+      }
       $session->{state}      = 'awaiting_reply';
       $session->{pos_in_log} = $packet->{pos_in_log};
       $session->{ts}         = $ts;
@@ -2417,6 +2441,9 @@ sub _packet_from_client {
 sub _make_event {
    my ( $event, $packet, $session ) = @_;
    MKDEBUG && _d('Making event');
+
+   $session->{raw_packets} = [];
+
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
    return $event = {
       cmd        => $event->{cmd},
@@ -2498,7 +2525,10 @@ sub parse_error_packet {
    my ( $data ) = @_;
    die "I need data" unless $data;
    MKDEBUG && _d('ERROR data:', $data);
-   die "Error packet is too short: $data" if length $data < 16;
+   if ( length $data < 16 ) {
+      MKDEBUG && _d('Error packet is too short:', $data);
+      return;
+   }
    my $errno    = to_num(substr($data, 0, 4));
    my $marker   = to_string(substr($data, 4, 2));
    return unless $marker eq '#';
@@ -2517,7 +2547,10 @@ sub parse_ok_packet {
    my ( $data ) = @_;
    die "I need data" unless $data;
    MKDEBUG && _d('OK data:', $data);
-   die "OK packet is too short: $data" if length $data < 12;
+   if ( length $data < 12 ) {
+      MKDEBUG && _d('OK packet is too short:', $data);
+      return;
+   }
    my $affected_rows = get_lcb(\$data);
    my $insert_id     = get_lcb(\$data);
    my $status        = to_num(substr($data, 0, 4, ''));
@@ -2572,7 +2605,10 @@ sub parse_client_handshake_packet {
       (..)           # Length-coding byte for scramble buff
    }x;
 
-   die "Did not match client handshake packet" unless $buff_len;
+   if ( !$buff_len ) {
+      MKDEBUG && _d('Did not match client handshake packet');
+      return;
+   }
 
    my $code_len = hex($buff_len);
    my ( $db ) = $data =~ m!
@@ -2596,7 +2632,10 @@ sub parse_com_packet {
    MKDEBUG && _d('COM data:', $data, 'len:', $len);
    my $code = substr($data, 0, 2);
    my $com  = $com_for{$code};
-   die "Did not match COM packet" unless $com;
+   if ( !$com ) {
+      MKDEBUG && _d('Did not match COM packet');
+      return;
+   }
    $data    = to_string(substr($data, 2, ($len - 1) * 2));
    my $pkt = {
       code => $code,
@@ -2639,7 +2678,7 @@ sub uncompress_data {
 }
 
 sub detect_compression {
-   my ( $packet, $session ) = @_;
+   my ( $self, $packet, $session ) = @_;
    MKDEBUG && _d('Checking for client compression');
    my $com = parse_com_packet($packet->{data}, $packet->{data_len});
    if ( $com->{code} eq COM_SLEEP ) {
@@ -2704,6 +2743,35 @@ sub remove_mysql_header {
    $packet->{mysql_data_len} = $mysql_data_len;
    $packet->{number}         = $pkt_num;
 
+   return;
+}
+
+sub _get_errors_fh {
+   my ( $self ) = @_;
+   my $errors_fh = $self->{errors_fh};
+   return $errors_fh if $errors_fh;
+
+   my $o = $self->{o};
+   if ( $o && $o->has('tcpdump-errors') && $o->got('tcpdump-errors') ) {
+      my $errors_file = $o->get('tcpdump-errors');
+      MKDEBUG && _d('tcpdump-errors file:', $errors_file);
+      open $errors_fh, '>>', $errors_file
+         or die "Cannot open tcpdump-errors file $errors_file: $OS_ERROR";
+   }
+
+   $self->{errors_fh} = $errors_fh;
+   return $errors_fh;
+}
+
+sub fail_session {
+   my ( $self, $session, $reason ) = @_;
+   my $errors_fh = $self->_get_errors_fh();
+   my $msg = "Deleting session $session->{client} because $reason.\n"
+           . "Packets dump: "
+           . Dumper($session);
+   print $errors_fh $msg if $errors_fh;
+   MKDEBUG && _d($msg);
+   delete $self->{sessions}->{$session->{client}};
    return;
 }
 
@@ -5092,6 +5160,7 @@ sub main {
       # must be first because it creates the events for subsequent callbacks.
       $mysql_proto = new MySQLProtocolParser(
          server => $o->get('watch-server'),
+         o      => $o,
       );
       push @callbacks, sub {
          # Returns an event only when one is ready (it takes a few
@@ -6552,6 +6621,16 @@ such list in the statement will be shortened.
 
 If it shortens something beyond recognition, you can find the original statement
 in the log, at the offset shown in the report header (see L<"OUTPUT">).
+
+=item --tcpdump-errors
+
+type: string
+
+Write the tcpdump data to this file on error.  If mk-query-digest doesn't
+parse the stream correctly for some reason, the session's packets since the
+last query event will be written out to create a usable test case.  If this
+happens, mk-query-digest will not raise an error; it will just discard the
+session's saved state and permit the tool to continue working.
 
 =item --timeline
 
