@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Added --tcpdump-errors option.
+
 2009-06-02: version 0.9.6
 
    * Script did not die if --pid file already existed (issue 383).
