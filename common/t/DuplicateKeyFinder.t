@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 30;
+use Test::More tests => 29;
 
 require "../DuplicateKeyFinder.pm";
 require "../Quoter.pm";
@@ -37,7 +37,7 @@ isa_ok($dk, 'DuplicateKeyFinder');
 $ddl   = load_file('samples/one_key.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -49,7 +49,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_key.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -68,7 +68,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_key_reversed.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -90,7 +90,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_keys_thrice.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -116,7 +116,7 @@ is_deeply(
 $ddl   = load_file('samples/nondupe_fulltext.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -125,9 +125,9 @@ is_deeply(
 );
 $dupes = [];
 $dk->get_duplicate_keys(
+   $tp->get_keys($ddl, $opt),
    ignore_structure => 1,
-   keys        => $tp->get_keys($ddl, $opt),
-   callback    => $callback);
+   callback         => $callback);
 is_deeply(
    $dupes,
    [
@@ -145,7 +145,7 @@ is_deeply(
 $ddl   = load_file('samples/nondupe_fulltext_not_exact.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -156,7 +156,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_fulltext_exact.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -175,7 +175,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_fulltext_reverse_order.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -194,7 +194,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_key_unordered.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -203,8 +203,8 @@ is_deeply(
 );
 $dupes = [];
 $dk->get_duplicate_keys(
+   $tp->get_keys($ddl, $opt),
    ignore_order => 1,
-   keys         => $tp->get_keys($ddl, $opt),
    callback     => $callback);
 is_deeply(
    $dupes,
@@ -226,7 +226,7 @@ is_deeply(
 $ddl   = load_file('samples/innodb_dupe.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 
 is_deeply(
@@ -236,9 +236,9 @@ is_deeply(
 );
 $dupes = [];
 $dk->get_duplicate_keys(
+   $tp->get_keys($ddl, $opt),
    clustered => 1,
    tbl_info  => { engine => 'InnoDB', ddl => $ddl },
-   keys      => $tp->get_keys($ddl, $opt),
    callback  => $callback);
 is_deeply(
    $dupes,
@@ -251,15 +251,15 @@ is_deeply(
          'reason'       => 'Key b ends with a prefix of the clustered index',
       }
    ],
-   'Duplicate keys with cluster options'
+   'Duplicate keys with cluster option'
 );
 
 $ddl = load_file('samples/dupe_if_it_were_innodb.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
+   $tp->get_keys($ddl, $opt),
    clustered => 1,
    tbl_info  => {engine    => 'MyISAM', ddl => $ddl},
-   keys      => $tp->get_keys($ddl, $opt),
    callback  => $callback);
 is_deeply(
    $dupes,
@@ -272,9 +272,9 @@ is_deeply(
 $ddl = load_file('samples/mysql_db.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
+   $tp->get_keys($ddl, $opt),
    clustered => 1,
    tbl_info  => { engine    => 'InnoDB', ddl => $ddl },
-   keys      => $tp->get_keys($ddl, $opt),
    callback  => $callback);
 is_deeply(
    $dupes,
@@ -288,7 +288,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_fk_one.sql');
 $dupes = [];
 $dk->get_duplicate_fks(
-   keys     => $tp->get_fks($ddl, {database => 'test'}),
+   $tp->get_fks($ddl, {database => 'test'}),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -307,7 +307,7 @@ is_deeply(
 $ddl   = load_file('samples/sakila_film.sql');
 $dupes = [];
 $dk->get_duplicate_fks(
-   keys     => $tp->get_fks($ddl, {database => 'sakila'}),
+   $tp->get_fks($ddl, {database => 'sakila'}),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -322,7 +322,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-1.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -333,7 +333,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-2.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -344,7 +344,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-3.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -363,7 +363,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-4.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -382,7 +382,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-5.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -390,16 +390,10 @@ is_deeply(
    'Two unique keys with common prefix are not dupes'
 );
 
-is_deeply(
-   $dk->{keys}->{i}->{constraining_key}->{cols},
-   [qw(a)],
-   'Found redundantly unique key',
-);
-
 $ddl   = load_file('samples/uppercase_names.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -418,7 +412,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-7.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -437,7 +431,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-6.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -480,18 +474,13 @@ is_deeply(
 $ddl   = load_file('samples/issue_269-1.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $tp->get_keys($ddl, $opt),
+   $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
    [
    ],
    'Keep stronger unique constraint that is prefix'
-);
-is(
-   $dk->{keys}->{id_name}->{unconstrained},
-   '1',
-   'Unconstrained weaker unique set to normal key'
 );
 
 # #############################################################################
@@ -500,7 +489,7 @@ is(
 $ddl   = load_file('samples/issue_331.sql');
 $dupes = [];
 $dk->get_duplicate_fks(
-   keys     => $tp->get_fks($ddl, {database => 'test'}),
+   $tp->get_fks($ddl, {database => 'test'}),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -519,4 +508,15 @@ is_deeply(
 # #############################################################################
 # Done.
 # #############################################################################
+my $output = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $dk->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 exit;

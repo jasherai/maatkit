@@ -51,8 +51,9 @@ sub new {
 #  *  duplicate_of_cols The columns of the index it duplicates.
 #  *  reason            A human-readable description of why this is a duplicate.
 sub get_duplicate_keys {
-   my ( $self, %args ) = @_;
-   my %keys = %{$args{keys}};  # Copy keys because we remove non-duplicates.
+   my ( $self, $keys,  %args ) = @_;
+   die "I need a keys argument" unless $keys;
+   my %keys = %$keys;  # Copy keys because we remove non-duplicates.
    my $primary_key;
    my @unique_keys;
    my @normal_keys;
@@ -103,12 +104,12 @@ sub get_duplicate_keys {
    # Redundantly constrained unique keys are treated as normal keys.
    push @normal_keys, $self->unconstrain_keys($primary_key, \@unique_keys);
 
-   # If you're tempted to check the primary key against uniques before
-   # unconstraining redundantly unique keys: don't. In cases like
+   # Do not check the primary key against uniques before unconstraining
+   # redundantly unique keys.  In cases like
    #    PRIMARY KEY (a, b)
    #    UNIQUE KEY  (a)
-   # the unique key will be wrongly removed. It is needed to keep
-   # column a unique. The process of unconstraining redundantly unique
+   # the unique key will be wrongly removed.  It is needed to keep
+   # column a unique.  The process of unconstraining redundantly unique
    # keys marks single column unique keys so that they are never removed
    # (the mark is adding unique_col=>1 to the unique key's hash).
    if ( $primary_key ) {
@@ -137,36 +138,30 @@ sub get_duplicate_keys {
 
    # TODO: other structs
 
-   # For engines with a clustered index, if a key ends with a prefix
-   # of the primary key, it's a duplicate. Example:
-   #    PRIMARY KEY (a)
-   #    KEY foo (b, a)
-   # Key foo is redundant to PRIMARY.
+   # Remove clustered duplicates.
    if ( $primary_key
         && $args{clustered}
-        && $args{tbl_info}->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
-
+        && $args{tbl_info}->{engine}
+        && $args{tbl_info}->{engine} =~ m/^(?:InnoDB|solidDB)$/ )
+   {
       MKDEBUG && _d('Removing UNIQUE dupes of clustered key');
-      $self->remove_clustered_duplicates(
-            primary_key => $primary_key,
-            these_keys        => \@unique_keys,
-            %args);
+      push @dupes,
+         $self->remove_clustered_duplicates($primary_key, \@unique_keys, %args);
 
       MKDEBUG && _d('Removing ordinary dupes of clustered key');
-      $self->remove_clustered_duplicates(
-            primary_key => $primary_key,
-            these_keys        => \@normal_keys,
-            %args);
+      push @dupes,
+         $self->remove_clustered_duplicates($primary_key, \@normal_keys, %args);
    }
 
    return \@dupes;
 }
 
 sub get_duplicate_fks {
-   my ( $self, %args ) = @_;
-   die "I need a keys argument" unless $args{keys};
-   my @fks = values %{$args{keys}};
+   my ( $self, $fks, %args ) = @_;
+   die "I need a fks argument" unless $fks;
+   my @fks = values %$fks;
    my @dupes;
+
    foreach my $i ( 0..$#fks - 1 ) {
       next unless $fks[$i];
       foreach my $j ( $i+1..$#fks ) {
@@ -234,6 +229,8 @@ sub get_duplicate_fks {
 #    * exact_duplicates  Keys are dupes only if they're exact duplicates
 #    * callback          Sub called for each dupe found
 # 
+# For a full technical explanation of how/why this sub works, read:
+# http://code.google.com/p/maatkit/wiki/DeterminingDuplicateKeys
 sub remove_prefix_duplicates {
    my ( $self, $left_keys, $right_keys, %args ) = @_;
    my @dupes;
@@ -244,8 +241,6 @@ sub remove_prefix_duplicates {
    # We use "scalar(@$arrayref) - 1" because the $# syntax is not
    # reliable with arrayrefs across Perl versions.  And we use index
    # into the arrays because we delete elements.
-
-   # TODO: explain why we reverse sort if lists are the same
 
    if ( $right_keys != $left_keys ) {
       # Right and left keys are different lists.
@@ -299,10 +294,10 @@ sub remove_prefix_duplicates {
             'to right', $right_name, '(',$right_cols,')');
 
          # Compare the whole right key to the left key, not just
-         # the their common minimum length prefix. This is correct
-         # because it enables magick that I should document. :-)
-         if (    substr($right_cols, 0, $right_len_cols)
-              eq substr($left_cols,  0, $right_len_cols) ) {
+         # the their common minimum length prefix. This is correct.
+         # Read http://code.google.com/p/maatkit/wiki/DeterminingDuplicateKeys.
+         if (    substr($left_cols,  0, $right_len_cols)
+              eq substr($right_cols, 0, $right_len_cols) ) {
 
             # FULLTEXT keys, for example, are only duplicates if they
             # are exact duplicates.
@@ -325,13 +320,13 @@ sub remove_prefix_duplicates {
             my $reason;
             if ( $right_keys->[$right_index]->{unconstrained} ) {
                $reason .= "Uniqueness of $right_name ignored because "
-                        . $right_keys->[$right_index]->{constraining_key}->{name}
-                        . " is a stronger constraint\n"; 
+                  . $right_keys->[$right_index]->{constraining_key}->{name}
+                  . " is a stronger constraint\n"; 
             }
             $reason .= $right_name
-                   . ($right_len_cols < $left_len_cols ? ' is a left-prefix of '
-                                                        : ' is a duplicate of ')
-                   . $left_name;
+                     . ($right_len_cols<$left_len_cols ? ' is a left-prefix of '
+                                                       : ' is a duplicate of ')
+                     . $left_name;
             my $dupe = {
                key               => $right_name,
                cols              => $right_keys->[$right_index]->{real_cols},
@@ -352,21 +347,32 @@ sub remove_prefix_duplicates {
    } # LEFT_KEY
    MKDEBUG && _d('No more keys');
 
+   # Cleanup the lists: remove removed keys.
    @$left_keys  = grep { defined $_; } @$left_keys;
    @$right_keys = grep { defined $_; } @$right_keys;
 
    return @dupes;
 }
 
+# Removes and returns clustered duplicate keys from keys.
+# primary is hashref and keys is an arrayref.
+#
+# For engines with a clustered index, if a key ends with a prefix
+# of the primary key, it's a duplicate. Example:
+#    PRIMARY KEY (a)
+#    KEY foo (b, a)
+# Key foo is redundant to PRIMARY.
+#
+# Optional args are:
+#    * callback          Sub called for each dupe found
+#
 sub remove_clustered_duplicates {
-   my ( $self, %args ) = @_;
-   die "I need a primary_key argument" unless $args{primary_key};
-   die "I need a keys argument"        unless $args{keys};
-   my $pkcols = $args{primary_key}->{colnames};
-   my $keys   = $args{these_keys};
+   my ( $self, $primary_key, $keys, %args ) = @_;
+   die "I need a primary_key argument" unless $primary_key;
+   die "I need a keys argument"        unless $keys;
+   my $pkcols = $primary_key->{colnames};
    my @dupes;
-   # TODO: this can be done more easily now that each key has
-   # its cols in an array, so we just have to look at cols[-1].
+
    KEY:
    for my $i ( 0 .. @$keys - 1 ) {
       my $suffix = $keys->[$i]->{colnames};
@@ -377,11 +383,10 @@ sub remove_clustered_duplicates {
             my $dupe = {
                key               => $keys->[$i]->{name},
                cols              => $keys->[$i]->{real_cols},
-               duplicate_of      => $args{primary_key}->{name},
-               duplicate_of_cols => $args{primary_key}->{real_cols},
-               reason            => "Key $keys->[$i]->{name} "
-                                    . "ends with a prefix of the clustered "
-                                    . "index",
+               duplicate_of      => $primary_key->{name},
+               duplicate_of_cols => $primary_key->{real_cols},
+               reason            => "Key $keys->[$i]->{name} ends with a "
+                                  . "prefix of the clustered index",
             };
             push @dupes, $dupe;
             delete $keys->[$i];
@@ -392,14 +397,14 @@ sub remove_clustered_duplicates {
    }
    MKDEBUG && _d('No more keys');
 
+   # Cleanup the lists: remove removed keys.
    @$keys = grep { defined $_; } @$keys;
 
-   return;
+   return @dupes;
 }
 
 # Given a primary key (can be undef) and an arrayref of unique keys,
-# removes and returns redundantly contrained unique keys from the
-# given arrayref.
+# removes and returns redundantly contrained unique keys from uniquie_keys.
 sub unconstrain_keys {
    my ( $self, $primary_key, $unique_keys ) = @_;
    die "I need a unique_keys argument" unless $unique_keys;
