@@ -45,8 +45,9 @@ eval {
 };
 
 use Data::Dumper;
-$Data::Dumper::Indent   = 1;
-$Data::Dumper::Sortkeys = 1;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 require Exporter;
 our @ISA         = qw(Exporter);
@@ -184,11 +185,11 @@ sub parse_packet {
    if ( !exists $self->{sessions}->{$client} ) {
       MKDEBUG && _d('New session');
       $self->{sessions}->{$client} = {
-         client   => $client,
-         ts       => $packet->{ts},
-         state    => undef,
-         compress => undef,
-         packets  => [],  # Packets and states before event.
+         client      => $client,
+         ts          => $packet->{ts},
+         state       => undef,
+         compress    => undef,
+         raw_packets => [],  # Raw tcpdump packets before event.
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -249,7 +250,7 @@ sub _packet_from_server {
    die "I need a session" unless $session;
 
    MKDEBUG && _d('Packet is from server; client state:', $session->{state});
-   push @{$session->{packets}}, $packet;
+   push @{$session->{raw_packets}}, $packet->{raw_packet};
 
    my $data = $packet->{data};
 
@@ -456,7 +457,7 @@ sub _packet_from_client {
    die "I need a session" unless $session;
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
-   push @{$session->{packets}}, $packet;
+   push @{$session->{raw_packets}}, $packet->{raw_packet};
 
    my $data  = $packet->{data};
    my $ts    = $packet->{ts};
@@ -544,7 +545,7 @@ sub _make_event {
    MKDEBUG && _d('Making event');
 
    # Clear packets that preceded this event.
-   $session->{packets} = [];
+   $session->{raw_packets} = [];
 
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
    return $event = {

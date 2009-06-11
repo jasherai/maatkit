@@ -80,6 +80,7 @@ sub parse_event {
       MKDEBUG && _d('packet:', ++$num_packets, 'pos:', $pos_in_log);
       my $packet = $self->_parse_packet($raw_packet);
       $packet->{pos_in_log} = $pos_in_log;
+      $packet->{raw_packet} = $raw_packet;
 
       foreach my $callback ( @callbacks ) {
          last unless $packet = $callback->($packet);
