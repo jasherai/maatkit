@@ -28,9 +28,6 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(q) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
    my $self = { %args };
    return bless $self, $class;
 }
@@ -55,7 +52,7 @@ sub get_key_size {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $name = $args{name};
-   my @cols = map { $self->{q}->quote($_); } @{$args{cols}};
+   my @cols = @{$args{cols}};
 
    $self->{explain} = '';
    $self->{query}   = '';

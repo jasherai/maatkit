@@ -157,7 +157,7 @@ type: index",
 );
 is(
    $ks->query(),
-   'EXPLAIN SELECT `BASE_KID_ID`, `ID` FROM `test`.`issue_364` FORCE INDEX (`BASE_KID_ID`) WHERE `BASE_KID_ID`=1 OR `ID`=1',
+   'EXPLAIN SELECT BASE_KID_ID, ID FROM `test`.`issue_364` FORCE INDEX (`BASE_KID_ID`) WHERE BASE_KID_ID=1 OR ID=1',
    'Query (issue 364)'
 );
 
@@ -183,7 +183,7 @@ is(
 );
 is(
    $ks->query(),
-   'EXPLAIN SELECT `BASE_KID_ID`, `ID` FROM `test`.`issue_364` WHERE `BASE_KID_ID`=1 OR `ID`=1',
+   'EXPLAIN SELECT BASE_KID_ID, ID FROM `test`.`issue_364` WHERE BASE_KID_ID=1 OR ID=1',
    'Query without FORCE INDEX (issue 364)'
 );
 
