@@ -22,12 +22,16 @@ package KeySize;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use DBI;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   my $self = {};
+   foreach my $arg ( qw(q) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = { %args };
    return bless $self, $class;
 }
 
@@ -40,25 +44,31 @@ sub new {
 #    tbl_struct => hashref returned by TableParser::parse for tbl
 #    dbh        => dbh
 # If the key exists in the tbl (it should), then we can FORCE INDEX.
-# This is what we want to do because it's more reliable. But, if the
+# This is what we want to do because it's more reliable.  But, if the
 # key does not exist in the tbl (which happens with foreign keys),
-# then we let MySQL choose the index.
+# then we let MySQL choose the index.  If there's an error, nothing
+# is returned and you can get the last error, query and EXPLAIN with
+# error(), query() and explain().
 sub get_key_size {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(name cols tbl_name tbl_struct dbh) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-
    my $name = $args{name};
-   my @cols = @{$args{cols}};
+   my @cols = map { $self->{q}->quote($_); } @{$args{cols}};
+
+   $self->{explain} = '';
+   $self->{query}   = '';
+   $self->{error}   = '';
 
    if ( @cols == 0 ) {
-      warn "No columns for key $name";
-      return 0;
+      $self->{error} = "No columns for key $name";
+      return;
    }
-  
-   my $key_exists = exists $args{tbl_struct}->{keys}->{ $name } ? 1 : 0;
-   MKDEBUG && _d('Key', $name, 'exists in', $args{tbl_name}, ':', $key_exists);
+
+   my $key_exists = $self->_key_exists(%args);
+   MKDEBUG && _d('Key', $name, 'exists in', $args{tbl_name}, ':',
+      $key_exists ? 'yes': 'no');
 
    # Construct a SQL statement with WHERE conditions on all key
    # cols that will get EXPLAIN to tell us 1) the full length of
@@ -85,32 +95,68 @@ sub get_key_size {
       push @where_cols, "$cols[0]<>1";
    }
    $sql .= join(' OR ', @where_cols);
+   $self->{query} = $sql;
    MKDEBUG && _d('sql:', $sql);
 
    my $explain;
    eval { $explain = $args{dbh}->selectall_hashref($sql, 'id'); };
    if ( $args{dbh}->err ) {
-      warn "Cannot get size of $name key: $DBI::errstr";
-      return 0;
+      $self->{error} = "Cannot get size of $name key: $DBI::errstr";
+      return;
    }
-   my $key_len = $explain->{1}->{key_len};
-   my $rows    = $explain->{1}->{rows};
-   my $key     = $explain->{1}->{key};
-
-   MKDEBUG && _d('MySQL chose key:', $key, 'len:', $key_len, 'rows:', $rows);
+   $self->{explain} = $explain;
+   my $key_len      = $explain->{1}->{key_len};
+   my $rows         = $explain->{1}->{rows};
+   my $chosen_key   = $explain->{1}->{key};  # May differ from $name
+   MKDEBUG && _d('MySQL chose key:', $chosen_key, 'len:', $key_len,
+      'rows:', $rows);
 
    my $key_size = 0;
-   if ( defined $key_len && defined $rows ) {
+   if ( $key_len && $rows ) {
+      if ( $chosen_key =~ m/,/ && $key_len =~ m/,/ ) {
+         $self->{error} = "MySQL chose multiple keys: $chosen_key";
+         return;
+      }
       $key_size = $key_len * $rows;
    }
    else {
-      MKDEBUG && _d("key_len or rows NULL in EXPLAIN:\n",
-         join("\n",
-            map { "$_: ".($explain->{1}->{$_} ? $explain->{1}->{$_} : 'NULL') }
-            keys %{$explain->{1}}));
+      $self->{error} = "key_len or rows NULL in EXPLAIN:\n"
+                     . _explain_to_text($explain);
+      return;
    }
 
-   return wantarray ? ($key_size, $key) : $key_size;
+   return wantarray ? ($key_size, $chosen_key) : $key_size;
+}
+
+# Returns the last explained query.
+sub query {
+   my ( $self ) = @_;
+   return $self->{query};
+}
+
+# Returns the last explain plan.
+sub explain {
+   my ( $self ) = @_;
+   return _explain_to_text($self->{explain});
+}
+
+# Returns the last error.
+sub error {
+   my ( $self ) = @_;
+   return $self->{error};
+}
+
+sub _key_exists {
+   my ( $self, %args ) = @_;
+   return exists $args{tbl_struct}->{keys}->{ lc $args{name} } ? 1 : 0;
+}
+
+sub _explain_to_text {
+   my ( $explain ) = @_;
+   return join("\n",
+      map { "$_: ".($explain->{1}->{$_} ? $explain->{1}->{$_} : 'NULL') }
+      sort keys %{$explain->{1}}
+   );
 }
 
 sub _d {
