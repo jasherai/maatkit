@@ -156,10 +156,11 @@ my %flag_for = (
 sub new {
    my ( $class, %args ) = @_;
    my $self = {
-      server    => $args{server},
-      version   => '41',
-      sessions  => {},
-      o         => $args{o},
+      server      => $args{server},
+      version     => '41',
+      sessions    => {},
+      o           => $args{o},
+      raw_packets => [],  # Raw tcpdump packets before event.
    };
    return bless $self, $class;
 }
@@ -189,7 +190,6 @@ sub parse_packet {
          ts          => $packet->{ts},
          state       => undef,
          compress    => undef,
-         raw_packets => [],  # Raw tcpdump packets before event.
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -250,7 +250,7 @@ sub _packet_from_server {
    die "I need a session" unless $session;
 
    MKDEBUG && _d('Packet is from server; client state:', $session->{state});
-   push @{$session->{raw_packets}}, $packet->{raw_packet};
+   push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    my $data = $packet->{data};
 
@@ -273,7 +273,7 @@ sub _packet_from_server {
          MKDEBUG && $session->{compress} && _d('Packets will be compressed');
 
          MKDEBUG && _d('Admin command: Connect');
-         return _make_event(
+         return $self->_make_event(
             {  cmd => 'Admin',
                arg => 'administrator command: Connect',
                ts  => $packet->{ts}, # Events are timestamped when they end
@@ -303,7 +303,7 @@ sub _packet_from_server {
          }
 
          $session->{state} = 'ready';
-         return _make_event(
+         return $self->_make_event(
             {  cmd           => $com,
                arg           => $arg,
                ts            => $packet->{ts},
@@ -357,7 +357,7 @@ sub _packet_from_server {
          $session->{state} = 'ready';
       }
 
-      return _make_event($event, $packet, $session);
+      return $self->_make_event($event, $packet, $session);
    }
    elsif ( $first_byte eq 'fe' && $packet->{mysql_data_len} < 9 ) {
       if ( $packet->{mysql_data_len} == 1
@@ -434,7 +434,7 @@ sub _packet_from_server {
          }
 
          $session->{state} = 'ready';
-         return _make_event($event, $packet, $session);
+         return $self->_make_event($event, $packet, $session);
       }
       else {
          MKDEBUG && _d('Unknown in-stream server response');
@@ -457,7 +457,7 @@ sub _packet_from_client {
    die "I need a session" unless $session;
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
-   push @{$session->{raw_packets}}, $packet->{raw_packet};
+   push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    my $data  = $packet->{data};
    my $ts    = $packet->{ts};
@@ -526,7 +526,7 @@ sub _packet_from_client {
       if ( $com->{code} eq COM_QUIT ) { # Fire right away; will cleanup later.
          MKDEBUG && _d('Got a COM_QUIT');
          $session->{state} = 'closing';
-         return _make_event(
+         return $self->_make_event(
             {  cmd       => 'Admin',
                arg       => 'administrator command: Quit',
                ts        => $ts,
@@ -541,11 +541,11 @@ sub _packet_from_client {
 
 # Make and return an event from the given packet and session.
 sub _make_event {
-   my ( $event, $packet, $session ) = @_;
+   my ( $self, $event, $packet, $session ) = @_;
    MKDEBUG && _d('Making event');
 
    # Clear packets that preceded this event.
-   $session->{raw_packets} = [];
+   $self->{raw_packets} = [];
 
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
    return $event = {
@@ -949,11 +949,14 @@ sub _get_errors_fh {
 sub fail_session {
    my ( $self, $session, $reason ) = @_;
    my $errors_fh = $self->_get_errors_fh();
-   my $msg = "Deleting session $session->{client} because $reason.\n"
-           . "Packets dump: "
-           . Dumper($session);
-   print $errors_fh $msg if $errors_fh;
-   MKDEBUG && _d($msg);
+   my $session_dump = '# ' . Dumper($session);
+   $session_dump =~ s/\n/\n# /g;
+   print $errors_fh $session_dump;
+   {
+      local $LIST_SEPARATOR = "\n";
+      print $errors_fh "@{$self->{raw_packets}}";
+   }
+   MKDEBUG && _d('Failed session', $session->{client}, 'because', $reason);
    delete $self->{sessions}->{$session->{client}};
    return;
 }
