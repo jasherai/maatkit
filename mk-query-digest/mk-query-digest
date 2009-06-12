@@ -2010,7 +2010,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 3917
+# MySQLProtocolParser package 3928
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2021,7 +2021,7 @@ use English qw(-no_match_vars);
 
 eval {
    require IO::Uncompress::Inflate;
-   IO::Uncompress::Inflate->import('inflate');
+   IO::Uncompress::Inflate->import(qw(inflate $InflateError));
 };
 
 use Data::Dumper;
@@ -2664,13 +2664,14 @@ sub uncompress_data {
    die "I need data" unless $data;
    die "I need a scalar reference" unless ref $data eq 'SCALAR';
    MKDEBUG && _d('Uncompressing packet');
+   our $InflateError;
 
    my $comp_bin_data = pack('H*', $$data);
 
    my $uncomp_bin_data = '';
    my $status          = inflate(
       \$comp_bin_data => \$uncomp_bin_data,
-   ) or die "inflate failed";
+   ) or die "IO::Uncompress::Inflate failed: $InflateError";
 
    my $uncomp_data = unpack('H*', $uncomp_bin_data);
 
@@ -2718,7 +2719,7 @@ sub uncompress_packet {
       };
       if ( $EVAL_ERROR ) {
          die "Cannot uncompress packet.  Check that IO::Uncompress::Inflate "
-            . "is installed.\n\nError: $EVAL_ERROR";
+            . "is installed.\nnError: $EVAL_ERROR";
       }
    }
    else {
