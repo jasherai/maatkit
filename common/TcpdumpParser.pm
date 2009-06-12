@@ -66,7 +66,8 @@ sub new {
 # modular parser objects.
 sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun = $misc->{oktorun} || 1;
+   my $oktorun_here = 1;
+   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
    my $num_packets = 0;
 
    # We read a packet at a time.  Assuming that all packets begin with a

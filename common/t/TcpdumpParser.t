@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -157,6 +157,15 @@ run_test(
    'oktorun',
    [
    ],
+);
+
+@packets = ();
+open my $fh, '<', 'samples/tcpdump001.txt'
+   or BAIL_OUT("Cannot open samples/tcpdump001.txt: $OS_ERROR");
+$p->parse_event($fh, undef, \&save_packet);
+ok(
+   @packets,
+   'Runs without oktorun arg'
 );
 
 # #############################################################################
