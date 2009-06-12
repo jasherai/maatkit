@@ -2010,7 +2010,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 3933
+# MySQLProtocolParser package 3935
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2767,14 +2767,16 @@ sub _get_errors_fh {
 sub fail_session {
    my ( $self, $session, $reason ) = @_;
    my $errors_fh = $self->_get_errors_fh();
-   my $session_dump = '# ' . Dumper($session);
-   chomp $session_dump;
-   $session_dump =~ s/\n/\n# /g;
-   print $errors_fh "$session_dump\n";
-   {
-      local $LIST_SEPARATOR = "\n";
-      print $errors_fh "@{$self->{raw_packets}}";
-      print $errors_fh "\n";
+   if ( $errors_fh ) {
+      my $session_dump = '# ' . Dumper($session);
+      chomp $session_dump;
+      $session_dump =~ s/\n/\n# /g;
+      print $errors_fh "$session_dump\n";
+      {
+         local $LIST_SEPARATOR = "\n";
+         print $errors_fh "@{$self->{raw_packets}}";
+         print $errors_fh "\n";
+      }
    }
    MKDEBUG && _d('Failed session', $session->{client}, 'because', $reason);
    delete $self->{sessions}->{$session->{client}};
@@ -6598,7 +6600,7 @@ redundant to store this for other attributes.
 type: time
 
 How long to run before exiting.  The default is to run forever (you can
-interrupt with CTRL-C).  See also L<--iterations>.
+interrupt with CTRL-C).  See also L<"--iterations">.
 
 =item --select
 
