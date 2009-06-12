@@ -53,6 +53,7 @@ sub get_key_size {
    }
    my $name = $args{name};
    my @cols = @{$args{cols}};
+   my $dbh  = $args{dbh};
 
    $self->{explain} = '';
    $self->{query}   = '';
@@ -96,15 +97,18 @@ sub get_key_size {
    MKDEBUG && _d('sql:', $sql);
 
    my $explain;
-   eval { $explain = $args{dbh}->selectall_hashref($sql, 'id'); };
-   if ( $args{dbh}->err ) {
+   my $sth = $dbh->prepare($sql);
+   eval { $sth->execute(); };
+   if ( $EVAL_ERROR ) {
       $self->{error} = "Cannot get size of $name key: $DBI::errstr";
       return;
    }
+   $explain = $sth->fetchrow_hashref();
+
    $self->{explain} = $explain;
-   my $key_len      = $explain->{1}->{key_len};
-   my $rows         = $explain->{1}->{rows};
-   my $chosen_key   = $explain->{1}->{key};  # May differ from $name
+   my $key_len      = $explain->{key_len};
+   my $rows         = $explain->{rows};
+   my $chosen_key   = $explain->{key};  # May differ from $name
    MKDEBUG && _d('MySQL chose key:', $chosen_key, 'len:', $key_len,
       'rows:', $rows);
 
@@ -151,8 +155,8 @@ sub _key_exists {
 sub _explain_to_text {
    my ( $explain ) = @_;
    return join("\n",
-      map { "$_: ".($explain->{1}->{$_} ? $explain->{1}->{$_} : 'NULL') }
-      sort keys %{$explain->{1}}
+      map { "$_: ".($explain->{$_} ? $explain->{$_} : 'NULL') }
+      sort keys %$explain
    );
 }
 
