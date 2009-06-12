@@ -4983,8 +4983,7 @@ Transformers->import(qw(shorten micro_t percentage_of ts make_checksum));
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-# TODO: use sigtrap
-$SIG{INT} = \&sig_int;
+use sigtrap 'handler', \&sig_int, 'normal-signals';
 
 # Global variables.  Only really essential variables should be here.
 my $oktorun = 1;
