@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 57;
+use Test::More tests => 58;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -237,14 +237,12 @@ my $dbh1 = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave1');
 my $cmd;
 SKIP: {
-   skip 'Cannot connect to sandbox master', 21 if !$dbh1;
+   skip 'Cannot connect to sandbox master', 22 if !$dbh1;
 
    # #########################################################################
    # Daemonizing and pid creation
    # #########################################################################
-
-   # TODO: why does this require system?
-   system('../mk-query-digest --daemonize --pid /tmp/mk-query-digest.pid --processlist h=127.1,P=12345');
+   `../mk-query-digest --daemonize --pid /tmp/mk-query-digest.pid --processlist h=127.1,P=12345 --log /dev/null`;
    $output = `ps -eaf | grep mk-query-digest | grep daemonize`;
    like($output, qr/perl ...mk-query-digest/, 'It is running');
    ok(-f '/tmp/mk-query-digest.pid', 'PID file created');
@@ -257,8 +255,10 @@ SKIP: {
    sleep 1;
    $output = `ps -eaf | grep mk-query-digest | grep daemonize`;
    unlike($output, qr/perl ...mk-query-digest/, 'It is not running');
-
-   unlink '/tmp/mk-query-digest.pid' or die $OS_ERROR;
+   ok(
+      !-f '/tmp/mk-query-digest.pid',
+      'Removes its PID file'
+   );
 
    $sb->create_dbs($dbh1, ['test']);
    $sb->load_file('master', 'samples/query_review.sql');
@@ -484,10 +484,9 @@ SKIP: {
    # Verify that it's dead...
    $output = `ps -eaf | grep mk-query-diges[t] | grep foobar`;
    if ( $output =~ m/digest/ ) {
-      sleep 1;
-      $output = `ps -eaf | grep mk-query-diges[t]`;
+      $output = `ps -eaf | grep mk-query-diges[t] | grep foobar`;
    }
-   unlike($output, qr/mk-query-digest/, 'It is stopped now');
+   unlike($output, qr/mk-query-digest/, 'It is stopped now'); 
 
    $dbh1->do('set global read_only=0');
    $dbh2->do('set global read_only=1');
@@ -511,6 +510,7 @@ SKIP: {
    like($output, qr/wrong for --processlist getting a dbh from execute/,
        'switching --execute works');
 
+   diag(`rm -rf /tmp/read_only.txt`);
    $sb->wipe_clean($dbh1);
 };
 

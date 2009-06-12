@@ -1911,7 +1911,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 3910
+# TcpdumpParser package 3939
 # ###########################################################################
 package TcpdumpParser;
 
@@ -1933,13 +1933,14 @@ sub new {
 
 sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
-
+   my $oktorun_here = 1;
+   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
    my $num_packets = 0;
 
    local $INPUT_RECORD_SEPARATOR = "\n20";
 
    my $pos_in_log = tell($fh);
-   while ( defined(my $raw_packet = <$fh>) ) {
+   while ( $$oktorun && defined(my $raw_packet = <$fh>) ) {
       $raw_packet =~ s/\n20\Z//;
       $raw_packet = "20$raw_packet" unless $raw_packet =~ m/\A20/;
 
@@ -2798,7 +2799,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 3192
+# SlowLogParser package 3940
 # ###########################################################################
 package SlowLogParser;
 
@@ -2828,7 +2829,9 @@ my $slow_log_hd_line = qr{
 
 sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $num_events = 0;
+   my $oktorun_here = 1;
+   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
+   my $num_events   = 0;
 
    my @pending;
    local $INPUT_RECORD_SEPARATOR = ";\n#";
@@ -2837,7 +2840,8 @@ sub parse_event {
    my $stmt;
 
    EVENT:
-   while ( defined($stmt = shift @pending) or defined($stmt = <$fh>) ) {
+   while ( $$oktorun
+           && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 
@@ -5343,7 +5347,12 @@ sub main {
       my ( $sth, $cxn );
       my $cur_server = 'processlist';
       my $cur_time   = 0;
-      my $misc       = { prev => [], time => 0, etime => 0 };
+      my $misc       = {
+            oktorun  => \$oktorun,
+            prev     => [],
+            time     => 0,
+            etime    => 0
+      };
       my $get_processlist_sub = sub {
          my $time = $misc->{time} = Time::HiRes::time();
          my $err;
@@ -5396,7 +5405,7 @@ sub main {
       }
 
       # Set up the parser and miscellaneous options to it.
-      my $misc   = {};
+      my $misc   = { oktorun => \$oktorun };
       my $parser = $o->get('type') eq 'slowlog' ? new SlowLogParser()
                  : $o->get('type') eq 'tcpdump' ? new TcpdumpParser()
                  : die("Unknown type " . $o->get('type'));
