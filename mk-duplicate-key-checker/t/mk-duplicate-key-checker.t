@@ -3,9 +3,9 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 10;
+use Test::More tests => 11;
 
-require '../../common/DSNParser.pm';
+require '../mk-duplicate-key-checker';
 require '../../common/Sandbox.pm';
 
 my $dp = new DSNParser();
@@ -63,5 +63,19 @@ $sb->load_file('master', 'samples/issue_331.sql', 'test');
 $output = `$cmd -d issue_331 | diff samples/issue_331.txt -`;
 is($output, '', 'Issue 331 crash on fks');
 
+# #############################################################################
+# Done.
+# #############################################################################
+$output = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   mk_duplicate_key_checker::_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 $sb->wipe_clean($dbh);
 exit;

@@ -1,7 +1,6 @@
 File                           stmt   bran   cond    sub    pod   time  total
 ...n/AggregateProcesslist.pm   85.0   81.2   80.0   85.7    n/a  100.0   83.8
 ...t/common/ChangeHandler.pm   70.1   53.1   55.6   83.3    n/a  100.0   67.7
-...atkit/common/DSNParser.pm   82.5   63.9   54.3   85.0    n/a  100.0   74.3
 .../maatkit/common/Daemon.pm   59.7   37.0   66.7   83.3    n/a  100.0   54.9
 ...mon/DuplicateKeyFinder.pm  100.0   79.2   87.5  100.0    n/a  100.0   94.1
 ...common/EventAggregator.pm   96.5   77.3   79.2   95.7    n/a  100.0   88.7

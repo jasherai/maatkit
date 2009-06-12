@@ -1,6 +1,18 @@
 #!/bin/sh
 
-CWD=`pwd`
+if [ -z $MAATKIT_BASEDIR ]; then
+   echo "The MAATKIT_BASEDIR environment variables is not set."
+   exit 1;
+fi;
+
+COVERAGE_DIR=$MAATKIT_BASEDIR/coverage
+COVER_DB=$COVERAGE_DIR/cover_db
+
+reset_cover_db () {
+   if [ -d $COVER_DB ]; then
+      rm -rf $COVER_DB/*
+   fi
+}
 
 test_coverage () {
    SCRIPT=`echo $1 | sed 's/\.t//'`
@@ -8,37 +20,60 @@ test_coverage () {
    if [ -f ../$SCRIPT.pm ]; then
       BASE_SCRIPT="../$SCRIPT.pm"
       EXTENSION='.pm'
+      SCRIPT_TYPE='Module'
+      SUMMARY_DIR=$COVERAGE_DIR/common
+      COVERAGE_FILE=$SUMMARY_DIR/$SCRIPT$EXTENSION
    elif [ -f ../$SCRIPT ]; then
       BASE_SCRIPT="../$SCRIPT"
       EXTENSION=''
+      SCRIPT_TYPE='Script'
+      SUMMARY_DIR=$COVERAGE_DIR
+      COVERAGE_FILE=$SUMMARY_DIR/$SCRIPT$EXTENSION
    else
       echo "Cannot find base script for $1; tried ../$SCRIPT.pm and ../$SCRIPT"
       echo "Skipping $1"
       return 1
    fi
 
-   echo "Script: $SCRIPT"
+   echo "$SCRIPT_TYPE: $BASE_SCRIPT"
    echo "Test script: $TEST_SCRIPT"
-   echo "Base script: $BASE_SCRIPT"
 
-   if [ -d $CWD/cover_db ]; then
-      rm -rf $CWD/cover_db/*
-      echo "Cleared $CWD/cover_db/"
+   reset_cover_db
+
+   perl -MDevel::Cover=-db,$COVER_DB,-ignore,'.+',-select,"$BASE_SCRIPT" $TEST_SCRIPT
+   cover -report text -silent $COVER_DB > $COVERAGE_FILE
+   echo "Wrote $SCRIPT$EXTENSION coverage to $COVERAGE_FILE"
+
+   return
+}
+
+_write_summary () {
+   if [ $SCRIPT_TYPE = "Script" ]; then
+      FILES='mk*'
+   else
+      FILES='*'
    fi
-
-   perl -MDevel::Cover=-ignore,'.+',-select,"$BASE_SCRIPT" $TEST_SCRIPT
-   cover -report text -silent > coverage/$SCRIPT$EXTENSION
-   
-   return 0
+   SUMMARY_FILE=$SUMMARY_DIR/summary
+   rm -f $SUMMARY_FILE
+   echo "File                           stmt   bran   cond    sub    pod   time  total" >> $SUMMARY_FILE
+   head -q -n 4 $SUMMARY_DIR/$FILES | grep -v File | grep -v '\-\-'  >> $SUMMARY_FILE
+   echo "Wrote coverage summary to $SUMMARY_FILE"
 }
 
 write_summary () {
-   SUMMARY_FILE=$CWD/coverage/summary
-   rm -f $SUMMARY_FILE
-   echo "File                           stmt   bran   cond    sub    pod   time  total" >> $SUMMARY_FILE
-   head -q -n 4 $CWD/coverage/* | grep -v File | grep -v '-'  >> $SUMMARY_FILE
-   echo "Wrote summary to $SUMMARY_FILE"
-   return
+   if [ $SCRIPT_TYPE = "Module" ]; then
+      _write_summary $COVERAGE_DIR/common $COVERAGE_DIR/common/summary
+   elif [ $SCRIPT_TYPE = "Script" ]; then
+      _write_summary $COVERAGE_DIR $COVERAGE_DIR/summary
+   elif [ $SCRIPT_TYPE = "All" ]; then
+      SCRIPT_TYPE="Module"
+      _write_summary $COVERAGE_DIR/common $COVERAGE_DIR/common/summary
+      SCRIPT_TYPE="Script"
+      _write_summary 'Script' $COVERAGE_DIR $COVERAGE_DIR/summary
+   else
+      echo "I don't know how to write a $SCRIPT_TYPE summary."
+      exit
+   fi
 }
 
 if [ -z "$1" ]; then
@@ -46,17 +81,17 @@ if [ -z "$1" ]; then
    echo "Usage: $0 SCRIPT|summary"
    echo
    echo "SCRIPT is a .t script with a corresponding ../SCRIPT[.pm]."
-   echo "Coverage results are written to $CWD/coverage/SCRIPT[.pm]."
+   echo "Coverage results are written to $COVERAGE_DIR."
    echo
    echo "Instead of SCRIPT, 'summary' causes the coverage/summary file to be updated."
    echo
    exit 1
 fi
 
-if [ ! -d $CWD/coverage ]; then
+if [ ! -d $COVERAGE_DIR ]; then
    echo
-   echo "The current directory ($CWD) does not have a coverage/ directory"
-   echo "Create coverage/ and svn add coverage"
+   echo "The coverage directory $COVERAGE_DIR does not exist."
+   echo "Create and svn add $COVERAGE_DIR."
    echo
    exit 1
 fi
@@ -67,6 +102,8 @@ if [ $1 != "summary" ]; then
          test_coverage $script
       fi
    done
+else
+   SCRIPT_TYPE="All"
 fi
 
 write_summary
