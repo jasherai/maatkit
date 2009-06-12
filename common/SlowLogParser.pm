@@ -69,7 +69,9 @@ my $slow_log_hd_line = qr{
 # form for performance reasons -- sometimes as much as 20x better performance.
 sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $num_events = 0;
+   my $oktorun_here = 1;
+   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
+   my $num_events   = 0;
 
    # Read a whole stmt at a time.  But, to make things even more fun, sometimes
    # part of the log entry might continue past the separator.  In these cases we
@@ -85,7 +87,8 @@ sub parse_event {
    my $stmt;
 
    EVENT:
-   while ( defined($stmt = shift @pending) or defined($stmt = <$fh>) ) {
+   while ( $$oktorun
+           && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 

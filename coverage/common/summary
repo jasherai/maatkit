@@ -29,7 +29,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 .../common/SchemaDiscover.pm   91.4   41.7  100.0   87.5    n/a  100.0   86.0
 .../common/SchemaFindText.pm   86.4   80.0    n/a   88.9    n/a  100.0   85.7
 ...kit/common/ServerSpecs.pm   80.4   51.8   62.5   94.1    n/a  100.0   71.1
-...t/common/SlowLogParser.pm   93.9   94.1   83.3   87.5    n/a  100.0   91.8
+...t/common/SlowLogParser.pm  100.0   97.2   84.8  100.0    n/a  100.0   96.6
 ...t/common/SlowLogWriter.pm   78.8   50.0    n/a   85.7    n/a  100.0   73.1
 ...t/common/TableChecksum.pm   89.7   86.4   83.7   83.3    n/a  100.0   87.8
 ...it/common/TableChunker.pm   90.4   77.4   77.8   86.4    n/a  100.0   86.2

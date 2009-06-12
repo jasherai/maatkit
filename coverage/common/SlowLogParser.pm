@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...t/common/SlowLogParser.pm   93.9   94.1   83.3   87.5    n/a  100.0   91.8
-Total                          93.9   94.1   83.3   87.5    n/a  100.0   91.8
+...t/common/SlowLogParser.pm  100.0   97.2   84.8  100.0    n/a  100.0   96.6
+Total                         100.0   97.2   84.8  100.0    n/a  100.0   96.6
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          SlowLogParser.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:21:04 2009
-Finish:       Wed Jun 10 17:21:04 2009
+Start:        Fri Jun 12 21:25:09 2009
+Finish:       Fri Jun 12 21:25:09 2009
 
 /home/daniel/dev/maatkit/common/SlowLogParser.pm
 
@@ -38,24 +38,24 @@ line  err   stmt   bran   cond    sub    pod   time   code
 21                                                    
 22             1                    1             8   use strict;
                1                                  2   
-               1                                  7   
+               1                                  6   
 23             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
-               1                                  7   
-24             1                    1             6   use English qw(-no_match_vars);
-               1                                  2   
                1                                  6   
-25             1                    1             6   use Data::Dumper;
-               1                                  3   
-               1                                 13   
-26                                                    
-27             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
+24             1                    1             5   use English qw(-no_match_vars);
                1                                  2   
-               1                                 11   
+               1                                 10   
+25             1                    1             6   use Data::Dumper;
+               1                                  2   
+               1                                  8   
+26                                                    
+27             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  2   
+               1                                 14   
 28                                                    
 29                                                    sub new {
-30             2                    2            58      my ( $class ) = @_;
-31             2                                 19      bless {}, $class;
+30             2                    2            62      my ( $class ) = @_;
+31             2                                 17      bless {}, $class;
 32                                                    }
 33                                                    
 34                                                    my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
@@ -95,221 +95,225 @@ line  err   stmt   bran   cond    sub    pod   time   code
 68                                                    # the result.  Sometimes a line of code has been changed from an alternate
 69                                                    # form for performance reasons -- sometimes as much as 20x better performance.
 70                                                    sub parse_event {
-71            87                   87          4300      my ( $self, $fh, $misc, @callbacks ) = @_;
-72            87                                270      my $num_events = 0;
-73                                                    
-74                                                       # Read a whole stmt at a time.  But, to make things even more fun, sometimes
-75                                                       # part of the log entry might continue past the separator.  In these cases we
-76                                                       # peek ahead (see code below.)  We do it this way because in the general
-77                                                       # case, reading line-by-line is too slow, and the special-case code is
-78                                                       # acceptable.  And additionally, the line terminator doesn't work for all
-79                                                       # cases; the header lines might follow a statement, causing the paragraph
-80                                                       # slurp to grab more than one statement at a time.
-81            87                                199      my @pending;
-82            87                                392      local $INPUT_RECORD_SEPARATOR = ";\n#";
-83            87                                281      my $trimlen    = length($INPUT_RECORD_SEPARATOR);
-84            87                                323      my $pos_in_log = tell($fh);
-85            87                                198      my $stmt;
-86                                                    
-87                                                       EVENT:
-88            87           100                 2082      while ( defined($stmt = shift @pending) or defined($stmt = <$fh>) ) {
-89            66                                302         my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
-90            66                                206         $pos_in_log = tell($fh);
-91                                                    
-92                                                          # If there were such lines in the file, we may have slurped > 1 event.
-93                                                          # Delete the lines and re-split if there were deletes.  This causes the
-94                                                          # pos_in_log to be inaccurate, but that's really okay.
-95            66    100                         826         if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
-96             4                                 38            my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
-97             4    100                          24            if ( @chunks > 1 ) {
-98             1                                  3               MKDEBUG && _d("Found multiple chunks");
-99             1                                  3               $stmt = shift @chunks;
-100            1                                  5               unshift @pending, @chunks;
-101                                                            }
-102                                                         }
-103                                                   
-104                                                         # There might not be a leading '#' because $INPUT_RECORD_SEPARATOR will
-105                                                         # have gobbled that up.  And the end may have all/part of the separator.
-106           66    100                         350         $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
-107           66                                383         $stmt =~ s/;\n#?\Z//;
-108                                                   
-109                                                         # The beginning of a slow-query-log event should be something like
-110                                                         # # Time: 071015 21:43:52
-111                                                         # Or, it might look like this, sometimes at the end of the Time: line:
-112                                                         # # User@Host: root[root] @ localhost []
-113                                                   
-114                                                         # The following line contains variables intended to be sure we do
-115                                                         # particular things once and only once, for those regexes that will
-116                                                         # match only one line per event, so we don't keep trying to re-match
-117                                                         # regexes.
-118           66                                228         my ($got_ts, $got_uh, $got_ac, $got_db, $got_set, $got_embed);
-119           66                                171         my $pos = 0;
-120           66                                194         my $len = length($stmt);
-121           66                                164         my $found_arg = 0;
-122                                                         LINE:
-123           66                                362         while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
-124          425                               1208            $pos     = pos($stmt);  # Be careful not to mess this up!
-125          425                               1455            my $line = $1;          # Necessary for /g and pos() to work.
-126          425                                916            MKDEBUG && _d($line);
-127                                                   
-128                                                            # Handle meta-data lines.  These are case-sensitive.  If they appear in
-129                                                            # the log with a different case, they are from a user query, not from
-130                                                            # something printed out by sql/log.cc.
-131          425    100                        1839            if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
-132                                                   
-133                                                               # Maybe it's the beginning of the slow query log event.  XXX
-134                                                               # something to know: Perl profiling reports this line as the hot
-135                                                               # spot for any of the conditions in the whole if/elsif/elsif
-136                                                               # construct.  So if this line looks "hot" then profile each
-137                                                               # condition separately.
-138          366    100    100                 6655               if ( !$got_ts && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)) {
+71            91                   91          4345      my ( $self, $fh, $misc, @callbacks ) = @_;
+72            91                                263      my $oktorun_here = 1;
+73            91    100                         418      my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
+74            91                                245      my $num_events   = 0;
+75                                                    
+76                                                       # Read a whole stmt at a time.  But, to make things even more fun, sometimes
+77                                                       # part of the log entry might continue past the separator.  In these cases we
+78                                                       # peek ahead (see code below.)  We do it this way because in the general
+79                                                       # case, reading line-by-line is too slow, and the special-case code is
+80                                                       # acceptable.  And additionally, the line terminator doesn't work for all
+81                                                       # cases; the header lines might follow a statement, causing the paragraph
+82                                                       # slurp to grab more than one statement at a time.
+83            91                                207      my @pending;
+84            91                                410      local $INPUT_RECORD_SEPARATOR = ";\n#";
+85            91                                291      my $trimlen    = length($INPUT_RECORD_SEPARATOR);
+86            91                                287      my $pos_in_log = tell($fh);
+87            91                                204      my $stmt;
+88                                                    
+89                                                       EVENT:
+90            91           100                 1661      while ( $$oktorun
+                           100                        
+91                                                               && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
+92            68                                286         my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
+93            68                                202         $pos_in_log = tell($fh);
+94                                                    
+95                                                          # If there were such lines in the file, we may have slurped > 1 event.
+96                                                          # Delete the lines and re-split if there were deletes.  This causes the
+97                                                          # pos_in_log to be inaccurate, but that's really okay.
+98            68    100                         829         if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
+99             5                                 46            my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
+100            5    100                          35            if ( @chunks > 1 ) {
+101            1                                  3               MKDEBUG && _d("Found multiple chunks");
+102            1                                  3               $stmt = shift @chunks;
+103            1                                  5               unshift @pending, @chunks;
+104                                                            }
+105                                                         }
+106                                                   
+107                                                         # There might not be a leading '#' because $INPUT_RECORD_SEPARATOR will
+108                                                         # have gobbled that up.  And the end may have all/part of the separator.
+109           68    100                         349         $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+110           68                                344         $stmt =~ s/;\n#?\Z//;
+111                                                   
+112                                                         # The beginning of a slow-query-log event should be something like
+113                                                         # # Time: 071015 21:43:52
+114                                                         # Or, it might look like this, sometimes at the end of the Time: line:
+115                                                         # # User@Host: root[root] @ localhost []
+116                                                   
+117                                                         # The following line contains variables intended to be sure we do
+118                                                         # particular things once and only once, for those regexes that will
+119                                                         # match only one line per event, so we don't keep trying to re-match
+120                                                         # regexes.
+121           68                                243         my ($got_ts, $got_uh, $got_ac, $got_db, $got_set, $got_embed);
+122           68                                172         my $pos = 0;
+123           68                                195         my $len = length($stmt);
+124           68                                179         my $found_arg = 0;
+125                                                         LINE:
+126           68                                373         while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
+127          435                               1184            $pos     = pos($stmt);  # Be careful not to mess this up!
+128          435                               1454            my $line = $1;          # Necessary for /g and pos() to work.
+129          435                                956            MKDEBUG && _d($line);
+130                                                   
+131                                                            # Handle meta-data lines.  These are case-sensitive.  If they appear in
+132                                                            # the log with a different case, they are from a user query, not from
+133                                                            # something printed out by sql/log.cc.
+134          435    100                        1855            if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+135                                                   
+136                                                               # Maybe it's the beginning of the slow query log event.  XXX
+137                                                               # something to know: Perl profiling reports this line as the hot
+138                                                               # spot for any of the conditions in the whole if/elsif/elsif
+139                                                               # construct.  So if this line looks "hot" then profile each
+140                                                               # condition separately.
+141          374    100    100                 6612               if ( !$got_ts && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)) {
                     100    100                        
       ***           100     66                        
                     100    100                        
       ***           100     66                        
                     100                               
-139           26                                 57                  MKDEBUG && _d("Got ts", $time);
-140           26                                 94                  push @properties, 'ts', $time;
-141           26                                 75                  ++$got_ts;
-142                                                                  # The User@Host might be concatenated onto the end of the Time.
-143   ***     26    100     66                  327                  if ( !$got_uh
-144                                                                     && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
-145                                                                  ) {
-146           12                                 27                     MKDEBUG && _d("Got user, host, ip", $user, $host, $ip);
-147           12                                 52                     push @properties, 'user', $user, 'host', $host, 'ip', $ip;
-148           12                                 37                     ++$got_uh;
-149                                                                  }
-150                                                               }
-151                                                   
-152                                                               # Maybe it's the user/host line of a slow query log
-153                                                               # # User@Host: root[root] @ localhost []
-154                                                               elsif ( !$got_uh
-155                                                                     && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
-156                                                               ) {
-157           53                                121                  MKDEBUG && _d("Got user, host, ip", $user, $host, $ip);
-158           53                                256                  push @properties, 'user', $user, 'host', $host, 'ip', $ip;
-159           53                                160                  ++$got_uh;
-160                                                               }
-161                                                   
-162                                                               # A line that looks like meta-data but is not:
-163                                                               # # administrator command: Quit;
-164                                                               elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
-165            4                                 12                  MKDEBUG && _d("Got admin command");
-166            4                                 17                  push @properties, 'cmd', 'Admin', 'arg', $line;
-167            4                                 16                  push @properties, 'bytes', length($properties[-1]);
-168            4                                 10                  ++$found_arg;
-169            4                                 11                  ++$got_ac;
-170                                                               }
-171                                                   
-172                                                               # Maybe it's the timing line of a slow query log, or another line
-173                                                               # such as that... they typically look like this:
-174                                                               # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
-175                                                               # If issue 234 bites us, we may see something like
-176                                                               # Query_time: 18446744073708.796870.000036 so we trim after the
-177                                                               # second decimal place for numbers.
-178                                                               elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
-179          217                                469                  MKDEBUG && _d("Got some line with properties");
-180                                                                  # I tried using split, but coping with the above bug makes it
-181                                                                  # slower than a complex regex match.
-182          217                               2385                  my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
-183          217                               1177                  push @properties, @temp;
-184                                                               }
-185                                                   
-186                                                               # Include the current default database given by 'use <db>;'  Again
-187                                                               # as per the code in sql/log.cc this is case-sensitive.
-188                                                               elsif ( !$got_db && (my ( $db ) = $line =~ m/^use ([^;]+)/ ) ) {
-189           24                                 53                  MKDEBUG && _d("Got a default database:", $db);
-190           24                                 84                  push @properties, 'db', $db;
-191           24                                 61                  ++$got_db;
-192                                                               }
-193                                                   
-194                                                               # Some things you might see in the log output, as printed by
-195                                                               # sql/log.cc (this time the SET is uppercaes, and again it is
-196                                                               # case-sensitive).
-197                                                               # SET timestamp=foo;
-198                                                               # SET timestamp=foo,insert_id=123;
-199                                                               # SET insert_id=123;
-200                                                               elsif (!$got_set && (my ($setting) = $line =~ m/^SET\s+([^;]*)/)) {
-201                                                                  # Note: this assumes settings won't be complex things like
-202                                                                  # SQL_MODE, which as of 5.0.51 appears to be true (see sql/log.cc,
-203                                                                  # function MYSQL_LOG::write(THD, char*, uint, time_t)).
-204            8                                 18                  MKDEBUG && _d("Got some setting:", $setting);
-205            8                                 88                  push @properties, split(/,|\s*=\s*/, $setting);
-206            8                                 24                  ++$got_set;
-207                                                               }
-208                                                   
-209                                                               # Handle pathological special cases. The "# administrator command"
-210                                                               # is one example: it can come AFTER lines that are not commented,
-211                                                               # so it looks like it belongs to the next event, and it won't be
-212                                                               # in $stmt. Profiling shows this is an expensive if() so we do
-213                                                               # this only if we've seen the user/host line.
-214          366    100    100                 3997               if ( !$found_arg && $pos == $len ) {
-215            3                                  7                  MKDEBUG && _d("Did not find arg, looking for special cases");
-216            3                                 17                  local $INPUT_RECORD_SEPARATOR = ";\n";
-217            3    100                          17                  if ( defined(my $l = <$fh>) ) {
-218            2                                  7                     chomp $l;
-219            2                                  5                     MKDEBUG && _d("Found admin statement", $l);
-220            2                                  9                     push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
-221            2                                  7                     push @properties, 'bytes', length($properties[-1]);
-222            2                                 14                     $found_arg++;
-223                                                                  }
-224                                                                  else {
-225                                                                     # Unrecoverable -- who knows what happened.  This is possible,
-226                                                                     # for example, if someone does something like "head -c 10000
-227                                                                     # /path/to/slow.log | mk-log-parser".  Or if there was a
-228                                                                     # server crash and the file has no newline.
-229            1                                  3                     MKDEBUG && _d("I can't figure out what to do with this line");
-230            1                                 14                     next EVENT;
-231                                                                  }
-232                                                               }
-233                                                            }
-234                                                            else {
-235                                                               # This isn't a meta-data line.  It's the first line of the
-236                                                               # whole query. Grab from here to the end of the string and
-237                                                               # put that into the 'arg' for the event.  Then we are done.
-238                                                               # Note that if this line really IS the query but we skip in
-239                                                               # the 'if' above because it looks like meta-data, later
-240                                                               # we'll remedy that.
-241           59                                129               MKDEBUG && _d("Got the query/arg line");
-242           59                                251               my $arg = substr($stmt, $pos - length($line));
-243           59                                245               push @properties, 'arg', $arg, 'bytes', length($arg);
-244                                                               # Handle embedded attributes.
-245   ***     59    100     66                  387               if ( $misc && $misc->{embed}
+142           28                                 60                  MKDEBUG && _d("Got ts", $time);
+143           28                                 95                  push @properties, 'ts', $time;
+144           28                                 74                  ++$got_ts;
+145                                                                  # The User@Host might be concatenated onto the end of the Time.
+146   ***     28    100     66                  366                  if ( !$got_uh
+147                                                                     && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
+148                                                                  ) {
+149           12                                 29                     MKDEBUG && _d("Got user, host, ip", $user, $host, $ip);
+150           12                                 53                     push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+151           12                                 40                     ++$got_uh;
+152                                                                  }
+153                                                               }
+154                                                   
+155                                                               # Maybe it's the user/host line of a slow query log
+156                                                               # # User@Host: root[root] @ localhost []
+157                                                               elsif ( !$got_uh
+158                                                                     && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
+159                                                               ) {
+160           55                                122                  MKDEBUG && _d("Got user, host, ip", $user, $host, $ip);
+161           55                                248                  push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+162           55                                157                  ++$got_uh;
+163                                                               }
+164                                                   
+165                                                               # A line that looks like meta-data but is not:
+166                                                               # # administrator command: Quit;
+167                                                               elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
+168            4                                 10                  MKDEBUG && _d("Got admin command");
+169            4                                 19                  push @properties, 'cmd', 'Admin', 'arg', $line;
+170            4                                 17                  push @properties, 'bytes', length($properties[-1]);
+171            4                                 22                  ++$found_arg;
+172            4                                 11                  ++$got_ac;
+173                                                               }
+174                                                   
+175                                                               # Maybe it's the timing line of a slow query log, or another line
+176                                                               # such as that... they typically look like this:
+177                                                               # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
+178                                                               # If issue 234 bites us, we may see something like
+179                                                               # Query_time: 18446744073708.796870.000036 so we trim after the
+180                                                               # second decimal place for numbers.
+181                                                               elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
+182          219                                452                  MKDEBUG && _d("Got some line with properties");
+183                                                                  # I tried using split, but coping with the above bug makes it
+184                                                                  # slower than a complex regex match.
+185          219                               2414                  my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
+186          219                               1157                  push @properties, @temp;
+187                                                               }
+188                                                   
+189                                                               # Include the current default database given by 'use <db>;'  Again
+190                                                               # as per the code in sql/log.cc this is case-sensitive.
+191                                                               elsif ( !$got_db && (my ( $db ) = $line =~ m/^use ([^;]+)/ ) ) {
+192           26                                 55                  MKDEBUG && _d("Got a default database:", $db);
+193           26                                 84                  push @properties, 'db', $db;
+194           26                                 68                  ++$got_db;
+195                                                               }
+196                                                   
+197                                                               # Some things you might see in the log output, as printed by
+198                                                               # sql/log.cc (this time the SET is uppercaes, and again it is
+199                                                               # case-sensitive).
+200                                                               # SET timestamp=foo;
+201                                                               # SET timestamp=foo,insert_id=123;
+202                                                               # SET insert_id=123;
+203                                                               elsif (!$got_set && (my ($setting) = $line =~ m/^SET\s+([^;]*)/)) {
+204                                                                  # Note: this assumes settings won't be complex things like
+205                                                                  # SQL_MODE, which as of 5.0.51 appears to be true (see sql/log.cc,
+206                                                                  # function MYSQL_LOG::write(THD, char*, uint, time_t)).
+207            8                                 17                  MKDEBUG && _d("Got some setting:", $setting);
+208            8                                 97                  push @properties, split(/,|\s*=\s*/, $setting);
+209            8                                 23                  ++$got_set;
+210                                                               }
+211                                                   
+212                                                               # Handle pathological special cases. The "# administrator command"
+213                                                               # is one example: it can come AFTER lines that are not commented,
+214                                                               # so it looks like it belongs to the next event, and it won't be
+215                                                               # in $stmt. Profiling shows this is an expensive if() so we do
+216                                                               # this only if we've seen the user/host line.
+217          374    100    100                 4034               if ( !$found_arg && $pos == $len ) {
+218            3                                  6                  MKDEBUG && _d("Did not find arg, looking for special cases");
+219            3                                 15                  local $INPUT_RECORD_SEPARATOR = ";\n";
+220            3    100                          16                  if ( defined(my $l = <$fh>) ) {
+221            2                                  8                     chomp $l;
+222            2                                  7                     MKDEBUG && _d("Found admin statement", $l);
+223            2                                 11                     push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+224            2                                  8                     push @properties, 'bytes', length($properties[-1]);
+225            2                                 15                     $found_arg++;
+226                                                                  }
+227                                                                  else {
+228                                                                     # Unrecoverable -- who knows what happened.  This is possible,
+229                                                                     # for example, if someone does something like "head -c 10000
+230                                                                     # /path/to/slow.log | mk-log-parser".  Or if there was a
+231                                                                     # server crash and the file has no newline.
+232            1                                  3                     MKDEBUG && _d("I can't figure out what to do with this line");
+233            1                                 17                     next EVENT;
+234                                                                  }
+235                                                               }
+236                                                            }
+237                                                            else {
+238                                                               # This isn't a meta-data line.  It's the first line of the
+239                                                               # whole query. Grab from here to the end of the string and
+240                                                               # put that into the 'arg' for the event.  Then we are done.
+241                                                               # Note that if this line really IS the query but we skip in
+242                                                               # the 'if' above because it looks like meta-data, later
+243                                                               # we'll remedy that.
+244           61                                152               MKDEBUG && _d("Got the query/arg line");
+245           61                                257               my $arg = substr($stmt, $pos - length($line));
+246           61                                257               push @properties, 'arg', $arg, 'bytes', length($arg);
+247                                                               # Handle embedded attributes.
+248   ***     61    100     66                  595               if ( $misc && $misc->{embed}
       ***                   66                        
-246                                                                  && ( my ($e) = $arg =~ m/($misc->{embed})/)
-247                                                               ) {
-248            1                                 13                  push @properties, $e =~ m/$misc->{capture}/g;
-249                                                               }
-250           59                                174               last LINE;
-251                                                            }
-252                                                         }
-253                                                   
-254           65                                143         MKDEBUG && _d('Properties of event:', Dumper(\@properties));
-255           65                                758         my $event = { @properties };
-256           65                                233         foreach my $callback ( @callbacks ) {
-257           72    100                         393            last unless $event = $callback->($event);
-258                                                         }
-259           65                                727         ++$num_events;
-260           65    100                         442         last EVENT unless @pending;
-261                                                      }
-262           87                               1016      return $num_events;
-263                                                   }
-264                                                   
-265                                                   sub _d {
-266   ***      0                    0                    my ($package, undef, $line) = caller 0;
-267   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-      ***      0                                      
-      ***      0                                      
-268   ***      0                                              map { defined $_ ? $_ : 'undef' }
-269                                                           @_;
-270   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-271                                                   }
-272                                                   
-273                                                   1;
-274                                                   
-275                                                   # ###########################################################################
-276                                                   # End SlowLogParser package
-277                                                   # ###########################################################################
+249                                                                  && ( my ($e) = $arg =~ m/($misc->{embed})/)
+250                                                               ) {
+251            1                                 13                  push @properties, $e =~ m/$misc->{capture}/g;
+252                                                               }
+253           61                                190               last LINE;
+254                                                            }
+255                                                         }
+256                                                   
+257           67                                146         MKDEBUG && _d('Properties of event:', Dumper(\@properties));
+258           67                                782         my $event = { @properties };
+259           67                                246         foreach my $callback ( @callbacks ) {
+260           74    100                         390            last unless $event = $callback->($event);
+261                                                         }
+262           67                                744         ++$num_events;
+263           67    100                         414         last EVENT unless @pending;
+264                                                      }
+265           91                               1067      return $num_events;
+266                                                   }
+267                                                   
+268                                                   sub _d {
+269            1                    1            22      my ($package, undef, $line) = caller 0;
+270   ***      2     50                           8      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+               2                                  8   
+               2                                 10   
+271            1                                  5           map { defined $_ ? $_ : 'undef' }
+272                                                           @_;
+273            1                                  3      print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+274                                                   }
+275                                                   
+276                                                   1;
+277                                                   
+278                                                   # ###########################################################################
+279                                                   # End SlowLogParser package
+280                                                   # ###########################################################################
 
 
 Branches
@@ -317,23 +321,24 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-95           100      4     62   if ($stmt =~ s/$slow_log_hd_line//go)
-97           100      1      3   if (@chunks > 1)
-106          100     43     23   unless $stmt =~ /\A#/
-131          100    366     59   if ($line =~ /^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) { }
-138          100     26    340   if (not $got_ts and my($time) = $line =~ /$slow_log_ts_line/o) { }
-             100     53    287   elsif (not $got_uh and my($user, $host, $ip) = $line =~ /$slow_log_uh_line/o) { }
-             100      4    283   elsif (not $got_ac and $line =~ /^# (?:administrator command:.*)$/) { }
-             100    217     66   elsif ($line =~ /^# +[A-Z][A-Za-z_]+: \S+/) { }
-             100     24     42   elsif (not $got_db and my($db) = $line =~ /^use ([^;]+)/) { }
+73           100      1     90   $$misc{'oktorun'} ? :
+98           100      5     63   if ($stmt =~ s/$slow_log_hd_line//go)
+100          100      1      4   if (@chunks > 1)
+109          100     44     24   unless $stmt =~ /\A#/
+134          100    374     61   if ($line =~ /^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) { }
+141          100     28    346   if (not $got_ts and my($time) = $line =~ /$slow_log_ts_line/o) { }
+             100     55    291   elsif (not $got_uh and my($user, $host, $ip) = $line =~ /$slow_log_uh_line/o) { }
+             100      4    287   elsif (not $got_ac and $line =~ /^# (?:administrator command:.*)$/) { }
+             100    219     68   elsif ($line =~ /^# +[A-Z][A-Za-z_]+: \S+/) { }
+             100     26     42   elsif (not $got_db and my($db) = $line =~ /^use ([^;]+)/) { }
              100      8     34   elsif (not $got_set and my($setting) = $line =~ /^SET\s+([^;]*)/) { }
-143          100     12     14   if (not $got_uh and my($user, $host, $ip) = $line =~ /$slow_log_uh_line/o)
-214          100      3    363   if (not $found_arg and $pos == $len)
-217          100      2      1   if (defined(my $l = <$fh>)) { }
-245          100      1     58   if ($misc and $$misc{'embed'} and my($e) = $arg =~ /($$misc{'embed'})/)
-257          100      3     69   unless $event = &$callback($event)
-260          100     64      1   unless @pending
-267   ***      0      0      0   defined $_ ? :
+146          100     12     16   if (not $got_uh and my($user, $host, $ip) = $line =~ /$slow_log_uh_line/o)
+217          100      3    371   if (not $found_arg and $pos == $len)
+220          100      2      1   if (defined(my $l = <$fh>)) { }
+248          100      1     60   if ($misc and $$misc{'embed'} and my($e) = $arg =~ /($$misc{'embed'})/)
+260          100      3     71   unless $event = &$callback($event)
+263          100     66      1   unless @pending
+270   ***     50      2      0   defined $_ ? :
 
 
 Conditions
@@ -343,21 +348,22 @@ and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-138          100     97    243     26   not $got_ts and my($time) = $line =~ /$slow_log_ts_line/o
-             100    285      2     53   not $got_uh and my($user, $host, $ip) = $line =~ /$slow_log_uh_line/o
-      ***     66      0    283      4   not $got_ac and $line =~ /^# (?:administrator command:.*)$/
-             100      2     40     24   not $got_db and my($db) = $line =~ /^use ([^;]+)/
+90           100      1     24     68   $$oktorun and defined($stmt = shift @pending) || defined($stmt = <$fh>)
+141          100    103    243     28   not $got_ts and my($time) = $line =~ /$slow_log_ts_line/o
+             100    289      2     55   not $got_uh and my($user, $host, $ip) = $line =~ /$slow_log_uh_line/o
+      ***     66      0    287      4   not $got_ac and $line =~ /^# (?:administrator command:.*)$/
+             100      2     40     26   not $got_db and my($db) = $line =~ /^use ([^;]+)/
       ***     66      0     34      8   not $got_set and my($setting) = $line =~ /^SET\s+([^;]*)/
-143   ***     66      0     14     12   not $got_uh and my($user, $host, $ip) = $line =~ /$slow_log_uh_line/o
-214          100      4    359      3   not $found_arg and $pos == $len
-245   ***     66     58      0      1   $misc and $$misc{'embed'}
-      ***     66     58      0      1   $misc and $$misc{'embed'} and my($e) = $arg =~ /($$misc{'embed'})/
+146   ***     66      0     16     12   not $got_uh and my($user, $host, $ip) = $line =~ /$slow_log_uh_line/o
+217          100      4    367      3   not $found_arg and $pos == $len
+248   ***     66      0     60      1   $misc and $$misc{'embed'}
+      ***     66     60      0      1   $misc and $$misc{'embed'} and my($e) = $arg =~ /($$misc{'embed'})/
 
 or 3 conditions
 
 line  err      %      l  !l&&r !l&&!r   expr
 ----- --- ------ ------ ------ ------   ----
-88           100      1     65     23   defined($stmt = shift @pending) or defined($stmt = <$fh>)
+90           100      1     67     24   defined($stmt = shift @pending) || defined($stmt = <$fh>)
 
 
 Covered Subroutines
@@ -370,14 +376,8 @@ BEGIN           1 /home/daniel/dev/maatkit/common/SlowLogParser.pm:23
 BEGIN           1 /home/daniel/dev/maatkit/common/SlowLogParser.pm:24 
 BEGIN           1 /home/daniel/dev/maatkit/common/SlowLogParser.pm:25 
 BEGIN           1 /home/daniel/dev/maatkit/common/SlowLogParser.pm:27 
+_d              1 /home/daniel/dev/maatkit/common/SlowLogParser.pm:269
 new             2 /home/daniel/dev/maatkit/common/SlowLogParser.pm:30 
-parse_event    87 /home/daniel/dev/maatkit/common/SlowLogParser.pm:71 
-
-Uncovered Subroutines
----------------------
-
-Subroutine  Count Location                                            
------------ ----- ----------------------------------------------------
-_d              0 /home/daniel/dev/maatkit/common/SlowLogParser.pm:266
+parse_event    91 /home/daniel/dev/maatkit/common/SlowLogParser.pm:71 
 
 

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 44;
+use Test::More tests => 47;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -1218,3 +1218,40 @@ $i = 0;
 1 while ( $p->parse_event( $file, undef, $callback1, $callback2 ) );
 close $file;
 is(scalar @e, '5', "Callback chain early termination works", );
+
+# Test that we can early-abort when not oktorun.
+@e = ();
+my $num_events = 0;
+my $oktorun = 0;
+open my $fh, "<", 'samples/slow001.txt' or die $OS_ERROR;
+$num_events++ while $p->parse_event($fh, {oktorun=>\$oktorun}, sub { push @e, @_ });
+close $fh;
+is_deeply(
+   \@e,
+   [],
+   'oktorun'
+);
+
+open $fh, "<", 'samples/slow001.txt' or die $OS_ERROR;
+$num_events++ while $p->parse_event($fh, undef, sub { push @e, @_ });
+close $fh;
+ok(
+   @e,
+   'Runs without oktorun arg'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
+my $output = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $p->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
+exit;
