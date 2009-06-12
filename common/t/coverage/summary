@@ -17,7 +17,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...atkit/common/MySQLFind.pm   95.2   81.8   88.1   94.4    n/a  100.0   91.1
 ...t/common/MySQLInstance.pm   91.7   77.8   65.3   96.3    n/a  100.0   84.4
 .../MySQLInstanceReporter.pm    9.7    0.0    0.0   46.2    n/a  100.0   10.5
-...on/MySQLProtocolParser.pm   87.0   59.3   75.0   92.6    n/a  100.0   78.8
+...on/MySQLProtocolParser.pm   81.2   59.7   64.3   89.7    n/a  100.0   74.7
 ...it/common/OptionParser.pm   92.3   82.6   91.4   92.1    n/a  100.0   89.3
 ...kit/common/Processlist.pm   88.3   87.5   53.8   82.4    n/a  100.0   75.3
 ...kit/common/QueryParser.pm   90.0   58.3   50.0   88.9    n/a  100.0   82.8

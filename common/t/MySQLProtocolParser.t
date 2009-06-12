@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 25;
+use Test::More tests => 27;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -512,6 +512,73 @@ run_test({
    ],
 });
 
+# Check data decompression.
+$protocol = new MySQLProtocolParser(
+   server => '127.0.0.1:12345',
+);
+run_test({
+   file   => 'samples/tcpdump015.txt',
+   desc   => 'compressed data',
+   result => [
+      {
+         Error_no => 0,
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.006415',
+         Rows_affected => 0,
+         Thread_id => 20,
+         Warning_count => 0,
+         arg => 'administrator command: Connect',
+         bytes => 30,
+         cmd => 'Admin',
+         db => 'mysql',
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '44489',
+         pos_in_log => 664,
+         ts => '090612 08:39:05.316805',
+         user => 'msandbox'
+      },
+      {
+         Error_no => 0,
+         No_good_index_used => 'No',
+         No_index_used => 'Yes',
+         Query_time => '0.002884',
+         Rows_affected => 0,
+         Thread_id => 20,
+         Warning_count => 0,
+         arg => 'select * from help_relation',
+         bytes => 27,
+         cmd => 'Query',
+         db => 'mysql',
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '44489',
+         pos_in_log => 1637,
+         ts => '090612 08:39:08.428913',
+         user => 'msandbox'
+      },
+      {
+         Error_no => 0,
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000000',
+         Rows_affected => 0,
+         Thread_id => 20,
+         Warning_count => 0,
+         arg => 'administrator command: Quit',
+         bytes => 27,
+         cmd => 'Admin',
+         db => 'mysql',
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '44489',
+         pos_in_log => 15782,
+         ts => '090612 08:39:09.145334',
+         user => 'msandbox'
+      },
+   ],
+});
 # #############################################################################
 # Done.
 # #############################################################################
