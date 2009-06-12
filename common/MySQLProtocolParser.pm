@@ -845,7 +845,7 @@ sub detect_compression {
    # command that the client can send, then chances are the client is using
    # compression.
    my $com = parse_com_packet($packet->{data}, $packet->{data_len});
-   if ( $com->{code} eq COM_SLEEP ) {
+   if ( $com && $com->{code} eq COM_SLEEP ) {
       MKDEBUG && _d('Client is using compression');
       $session->{compress} = 1;
 
