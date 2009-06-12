@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 2;
+use Test::More tests => 4;
 
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -79,6 +79,7 @@ is_deeply(
    'Parsed packet OK');
 
 my @packets;
+my $oktorun = 1;
 
 sub save_packet {
    push @packets, @_;
@@ -86,21 +87,31 @@ sub save_packet {
 }
 
 sub run_test {
-   my ( $file, $result ) = @_;
+   my ( $file, $desc, $result ) = @_;
    @packets = ();
    open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
-   $p->parse_event($fh, undef, \&save_packet);
+   $p->parse_event($fh, { oktorun => \$oktorun }, \&save_packet);
+
+   # raw_packet is the actual dump text from the file.  It's used
+   # in MySQLProtocolParser but I don't think we need to double-check
+   # it here.  It will make the results very long.
+   foreach my $packet ( @packets ) {
+      delete $packet->{raw_packet};
+   }
+
    is_deeply(
       \@packets,
       $result,
-      "Results for $file"
+      "$file: $desc"
    );
+   $oktorun = 1; # Reset this here so we don't forget for the next test.
    return;
 }
 
 # Check that parsing multiple packets and callback works.
 run_test(
    'samples/tcpdump001.txt',
+   'basic packets',
    [
       {  ts          => '2009-04-12 09:50:16.804849',
          src_host    => '127.0.0.1',
@@ -139,7 +150,27 @@ run_test(
    ],
 );
 
+# Test that we can early-abort when not oktorun.
+$oktorun = 0;
+run_test(
+   'samples/tcpdump001.txt',
+   'oktorun',
+   [
+   ],
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
+my $output = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $p->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 exit;

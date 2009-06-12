@@ -45,6 +45,7 @@ sub new {
 # query sources.
 #
 # Each packet is a hashref of attribute => value pairs like:
+#
 #  my $packet = {
 #     ts          => '2009-04-12 21:18:40.638244',
 #     src_host    => '192.168.1.5',
@@ -52,17 +53,20 @@ sub new {
 #     dst_host    => '192.168.1.1',
 #     dst_port    => '3306',
 #     complete    => 1|0,    # If this packet is a fragment or not
-#     ip_hlen     => 5,      # Length of IP header in bytes (so * 8 for size)
-#     tcp_hlen    => 8,      # Length of TCP header in bytes
+#     ip_hlen     => 5,      # Number of 32-bit words in IP header
+#     tcp_hlen    => 8,      # Number of 32-bit words in TCP header
+#     dgram_len   => 140,    # Length of entire datagram, IP+TCP+data, in bytes
+#     data_len    => 30      # Length of data in bytes
 #     data        => '...',  # TCP data
 #     pos_in_log  => 10,     # Position of this packet in the log
 #  };
+#
 # Returns the number of packets parsed.  The sub is called parse_event
 # instead of parse_packet because mk-query-digest expects this for its
 # modular parser objects.
 sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
-
+   my $oktorun = $misc->{oktorun} || 1;
    my $num_packets = 0;
 
    # We read a packet at a time.  Assuming that all packets begin with a
@@ -71,7 +75,7 @@ sub parse_event {
    local $INPUT_RECORD_SEPARATOR = "\n20";
 
    my $pos_in_log = tell($fh);
-   while ( defined(my $raw_packet = <$fh>) ) {
+   while ( $$oktorun && defined(my $raw_packet = <$fh>) ) {
       # Remove the separator from the packet, and restore it to the front if
       # necessary.
       $raw_packet =~ s/\n20\Z//;
