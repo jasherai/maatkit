@@ -2010,7 +2010,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 3928
+# MySQLProtocolParser package 3933
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2682,7 +2682,7 @@ sub detect_compression {
    my ( $self, $packet, $session ) = @_;
    MKDEBUG && _d('Checking for client compression');
    my $com = parse_com_packet($packet->{data}, $packet->{data_len});
-   if ( $com->{code} eq COM_SLEEP ) {
+   if ( $com && $com->{code} eq COM_SLEEP ) {
       MKDEBUG && _d('Client is using compression');
       $session->{compress} = 1;
 
