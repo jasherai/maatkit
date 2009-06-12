@@ -41,7 +41,7 @@ use English qw(-no_match_vars);
 
 eval {
    require IO::Uncompress::Inflate;
-   IO::Uncompress::Inflate->import('inflate');
+   IO::Uncompress::Inflate->import(qw(inflate $InflateError));
 };
 
 use Data::Dumper;
@@ -812,6 +812,7 @@ sub uncompress_data {
    die "I need data" unless $data;
    die "I need a scalar reference" unless ref $data eq 'SCALAR';
    MKDEBUG && _d('Uncompressing packet');
+   our $InflateError;
 
    # Pack hex string into compressed binary data.
    my $comp_bin_data = pack('H*', $$data);
@@ -820,7 +821,7 @@ sub uncompress_data {
    my $uncomp_bin_data = '';
    my $status          = inflate(
       \$comp_bin_data => \$uncomp_bin_data,
-   ) or die "inflate failed";
+   ) or die "IO::Uncompress::Inflate failed: $InflateError";
 
    # Unpack the uncompressed binary data back into a hex string.
    # This is the original MySQL packet(s).
@@ -894,7 +895,7 @@ sub uncompress_packet {
       };
       if ( $EVAL_ERROR ) {
          die "Cannot uncompress packet.  Check that IO::Uncompress::Inflate "
-            . "is installed.\n\nError: $EVAL_ERROR";
+            . "is installed.\nnError: $EVAL_ERROR";
       }
    }
    else {
