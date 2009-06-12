@@ -950,14 +950,16 @@ sub _get_errors_fh {
 sub fail_session {
    my ( $self, $session, $reason ) = @_;
    my $errors_fh = $self->_get_errors_fh();
-   my $session_dump = '# ' . Dumper($session);
-   chomp $session_dump;
-   $session_dump =~ s/\n/\n# /g;
-   print $errors_fh "$session_dump\n";
-   {
-      local $LIST_SEPARATOR = "\n";
-      print $errors_fh "@{$self->{raw_packets}}";
-      print $errors_fh "\n";
+   if ( $errors_fh ) {
+      my $session_dump = '# ' . Dumper($session);
+      chomp $session_dump;
+      $session_dump =~ s/\n/\n# /g;
+      print $errors_fh "$session_dump\n";
+      {
+         local $LIST_SEPARATOR = "\n";
+         print $errors_fh "@{$self->{raw_packets}}";
+         print $errors_fh "\n";
+      }
    }
    MKDEBUG && _d('Failed session', $session->{client}, 'because', $reason);
    delete $self->{sessions}->{$session->{client}};
