@@ -824,9 +824,10 @@ sub parse_flags {
 # Returns a scalarref to a hex string of the uncompressed data.
 # The given hex string of compressed data is not modified.
 sub uncompress_data {
-   my ( $data ) = @_;
+   my ( $data, $len ) = @_;
    die "I need data" unless $data;
-   die "I need a scalar reference" unless ref $data eq 'SCALAR';
+   die "I need a len argument" unless $len;
+   die "I need a scalar reference to data" unless ref $data eq 'SCALAR';
    MKDEBUG && _d('Uncompressing packet');
    our $InflateError;
 
@@ -835,9 +836,11 @@ sub uncompress_data {
 
    # Uncompress the compressed binary data.
    my $uncomp_bin_data = '';
-   my $status          = inflate(
-      \$comp_bin_data => \$uncomp_bin_data,
+   my $z = new IO::Uncompress::Inflate(
+      \$comp_bin_data
    ) or die "IO::Uncompress::Inflate failed: $InflateError";
+   my $status = $z->read(\$uncomp_bin_data, $len)
+      or die "IO::Uncompress::Inflate failed: $InflateError";
 
    # Unpack the uncompressed binary data back into a hex string.
    # This is the original MySQL packet(s).
@@ -906,12 +909,12 @@ sub uncompress_packet {
 
    if ( $uncomp_data_len ) {
       eval {
-         $data = uncompress_data($data);
+         $data = uncompress_data($data, $uncomp_data_len);
          $packet->{data} = $$data;
       };
       if ( $EVAL_ERROR ) {
          die "Cannot uncompress packet.  Check that IO::Uncompress::Inflate "
-            . "is installed.\nnError: $EVAL_ERROR";
+            . "is installed.\nError: $EVAL_ERROR";
       }
    }
    else {
