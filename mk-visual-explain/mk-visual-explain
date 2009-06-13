@@ -1928,7 +1928,7 @@ sub main {
    my $et   = ExplainTree->new();
    my $tree = $et->process($rows, { clustered => $o->get('clustered-pk') });
    if ( $tree ) {
-      print $o->got('format') eq 'dump' ? Dumper($tree)
+      print $o->get('format') eq 'dump' ? Dumper($tree)
          : $et->pretty_print($tree);
    }
 
