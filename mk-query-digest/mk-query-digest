@@ -425,7 +425,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3695
+# OptionParser package 3945
 # ###########################################################################
 package OptionParser;
 
@@ -439,6 +439,15 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+my %attributes = (
+   'type'       => 1,
+   'short form' => 1,
+   'group'      => 1,
+   'default'    => 1,
+   'cumulative' => 1,
+   'negatable'  => 1,
+);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -536,7 +545,12 @@ sub _pod_to_specs {
 
          if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            %attribs = map {
+                  my ( $attrib, $val) = split(/: /, $_);
+                  die "Unrecognized attribute for --$option: $attrib"
+                     unless $attributes{$attrib};
+                  ($attrib, $val);
+               } split(/; /, $para);
             if ( $attribs{'short form'} ) {
                $attribs{'short form'} =~ s/-//;
             }
@@ -2017,7 +2031,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 3943
+# MySQLProtocolParser package 3948
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2683,18 +2697,21 @@ sub parse_flags {
 }
 
 sub uncompress_data {
-   my ( $data ) = @_;
+   my ( $data, $len ) = @_;
    die "I need data" unless $data;
-   die "I need a scalar reference" unless ref $data eq 'SCALAR';
+   die "I need a len argument" unless $len;
+   die "I need a scalar reference to data" unless ref $data eq 'SCALAR';
    MKDEBUG && _d('Uncompressing packet');
    our $InflateError;
 
    my $comp_bin_data = pack('H*', $$data);
 
    my $uncomp_bin_data = '';
-   my $status          = inflate(
-      \$comp_bin_data => \$uncomp_bin_data,
+   my $z = new IO::Uncompress::Inflate(
+      \$comp_bin_data
    ) or die "IO::Uncompress::Inflate failed: $InflateError";
+   my $status = $z->read(\$uncomp_bin_data, $len)
+      or die "IO::Uncompress::Inflate failed: $InflateError";
 
    my $uncomp_data = unpack('H*', $uncomp_bin_data);
 
@@ -2737,12 +2754,12 @@ sub uncompress_packet {
 
    if ( $uncomp_data_len ) {
       eval {
-         $data = uncompress_data($data);
+         $data = uncompress_data($data, $uncomp_data_len);
          $packet->{data} = $$data;
       };
       if ( $EVAL_ERROR ) {
          die "Cannot uncompress packet.  Check that IO::Uncompress::Inflate "
-            . "is installed.\nnError: $EVAL_ERROR";
+            . "is installed.\nError: $EVAL_ERROR";
       }
    }
    else {
