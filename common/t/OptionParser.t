@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 137;
+use Test::More tests => 139;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1818,4 +1818,31 @@ is_deeply(
    'Array of vals with internal commas (issue 409)'
 );
 
+# #############################################################################
+# Issue 349: Make OptionParser die on unrecognized attributes
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+);
+eval { $o->get_specs('samples/pod_sample_06.txt'); };
+like(
+   $EVAL_ERROR,
+   qr/Unrecognized attribute for --verbose: culumative/,
+   'Die on unrecognized attribute'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
+my $output = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $o->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 exit;

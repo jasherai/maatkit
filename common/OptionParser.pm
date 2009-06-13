@@ -30,6 +30,15 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
+my %attributes = (
+   'type'       => 1,
+   'short form' => 1,
+   'group'      => 1,
+   'default'    => 1,
+   'cumulative' => 1,
+   'negatable'  => 1,
+);
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(description) ) {
@@ -144,7 +153,12 @@ sub _pod_to_specs {
 
          if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            %attribs = map {
+                  my ( $attrib, $val) = split(/: /, $_);
+                  die "Unrecognized attribute for --$option: $attrib"
+                     unless $attributes{$attrib};
+                  ($attrib, $val);
+               } split(/; /, $para);
             if ( $attribs{'short form'} ) {
                $attribs{'short form'} =~ s/-//;
             }
