@@ -252,6 +252,12 @@ sub _packet_from_server {
    MKDEBUG && _d('Packet is from server; client state:', $session->{state});
    push @{$self->{raw_packets}}, $packet->{raw_packet};
 
+   if ( ($session->{server_seq} || '') eq $packet->{seq} ) {
+      MKDEBUG && _d('TCP retransmission');
+      return;
+   }
+   $session->{server_seq} = $packet->{seq};
+   
    my $data = $packet->{data};
 
    # The first byte in the packet indicates whether it's an OK,
@@ -261,8 +267,12 @@ sub _packet_from_server {
    # be a result set header, field, row data, etc.
 
    my ( $first_byte ) = substr($data, 0, 2, '');
-   MKDEBUG && _d("First byte of packet:", $first_byte);
-
+   MKDEBUG && _d('First byte of packet:', $first_byte);
+   if ( !$first_byte ) {
+      $self->fail_session($session, 'no first byte');
+      return;
+   }
+ 
    if ( $first_byte eq '00' ) { 
       if ( ($session->{state} || '') eq 'client_auth' ) {
          # We logged in OK!  Trigger an admin Connect command.
@@ -458,6 +468,12 @@ sub _packet_from_client {
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
    push @{$self->{raw_packets}}, $packet->{raw_packet};
+
+   if ( ($session->{client_seq} || '') eq $packet->{seq} ) {
+      MKDEBUG && _d('TCP retransmission');
+      return;
+   }
+   $session->{client_seq} = $packet->{seq};
 
    my $data  = $packet->{data};
    my $ts    = $packet->{ts};

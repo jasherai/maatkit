@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 27;
+use Test::More tests => 29;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -579,6 +579,38 @@ run_test({
       },
    ],
 });
+
+# TCP retransmission.
+# Check data decompression.
+$protocol = new MySQLProtocolParser(
+   server => '10.55.200.15:3306',
+);
+run_test({
+   file   => 'samples/tcpdump016.txt',
+   desc   => 'TCP retransmission',
+   result => [
+      {
+         Error_no => 0,
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.001000',
+         Rows_affected => 0,
+         Thread_id => 38559282,
+         Warning_count => 0,
+         arg => 'administrator command: Connect',
+         bytes => 30,
+         cmd => 'Admin',
+         db => '',
+         host => '10.55.200.31',
+         ip => '10.55.200.31',
+         port => '64987',
+         pos_in_log => 468,
+         ts => '090609 16:53:17.112346',
+         user => 'ppppadri'
+      },
+   ],
+});
+
 # #############################################################################
 # Done.
 # #############################################################################
