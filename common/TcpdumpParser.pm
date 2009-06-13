@@ -120,11 +120,18 @@ sub _parse_packet {
    # Same thing in a different position, with the TCP header.  See
    # http://en.wikipedia.org/wiki/Transmission_Control_Protocol.
    my $tcp_hlen = hex(substr($data, ($ip_hlen + 3) * 8, 1));
+
+   # Get sequence and ack numbers.
+   my $seq = hex(substr($data, ($ip_hlen + 1) * 8, 8));
+   my $ack = hex(substr($data, ($ip_hlen + 2) * 8, 8));
+
    # Throw away the IP and TCP headers.
    $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
 
    my $pkt = {
       ts        => $ts,
+      seq       => $seq,
+      ack       => $ack,
       src_host  => $src_host,
       src_port  => $src_port,
       dst_host  => $dst_host,
