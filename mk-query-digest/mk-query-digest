@@ -1911,7 +1911,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 3939
+# TcpdumpParser package 3942
 # ###########################################################################
 package TcpdumpParser;
 
@@ -1975,10 +1975,16 @@ sub _parse_packet {
    my $complete = length($data) == 2 * $ip_plen ? 1 : 0;
 
    my $tcp_hlen = hex(substr($data, ($ip_hlen + 3) * 8, 1));
+
+   my $seq = hex(substr($data, ($ip_hlen + 1) * 8, 8));
+   my $ack = hex(substr($data, ($ip_hlen + 2) * 8, 8));
+
    $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
 
    my $pkt = {
       ts        => $ts,
+      seq       => $seq,
+      ack       => $ack,
       src_host  => $src_host,
       src_port  => $src_port,
       dst_host  => $dst_host,
@@ -2011,7 +2017,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 3935
+# MySQLProtocolParser package 3943
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2204,12 +2210,22 @@ sub _packet_from_server {
    MKDEBUG && _d('Packet is from server; client state:', $session->{state});
    push @{$self->{raw_packets}}, $packet->{raw_packet};
 
+   if ( ($session->{server_seq} || '') eq $packet->{seq} ) {
+      MKDEBUG && _d('TCP retransmission');
+      return;
+   }
+   $session->{server_seq} = $packet->{seq};
+   
    my $data = $packet->{data};
 
 
    my ( $first_byte ) = substr($data, 0, 2, '');
-   MKDEBUG && _d("First byte of packet:", $first_byte);
-
+   MKDEBUG && _d('First byte of packet:', $first_byte);
+   if ( !$first_byte ) {
+      $self->fail_session($session, 'no first byte');
+      return;
+   }
+ 
    if ( $first_byte eq '00' ) { 
       if ( ($session->{state} || '') eq 'client_auth' ) {
          $session->{state} = 'ready';
@@ -2375,6 +2391,12 @@ sub _packet_from_client {
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
    push @{$self->{raw_packets}}, $packet->{raw_packet};
+
+   if ( ($session->{client_seq} || '') eq $packet->{seq} ) {
+      MKDEBUG && _d('TCP retransmission');
+      return;
+   }
+   $session->{client_seq} = $packet->{seq};
 
    my $data  = $packet->{data};
    my $ts    = $packet->{ts};
