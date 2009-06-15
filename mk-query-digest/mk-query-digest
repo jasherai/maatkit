@@ -3068,7 +3068,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3543
+# EventAggregator package 3956
 # ###########################################################################
 package EventAggregator;
 
@@ -3089,16 +3089,18 @@ my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(groupby worst attributes) ) {
+   foreach my $arg ( qw(groupby worst) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-
+   my $attributes = $args{attributes} || {};
    return bless {
-      groupby      => $args{groupby},
-      attributes   => {
+      groupby        => $args{groupby},
+      detect_attribs => scalar keys %$attributes == 0 ? 1 : 0,
+      all_attribs    => [ keys %$attributes ],
+      attributes     => {
          map  { $_ => $args{attributes}->{$_} }
          grep { $_ ne $args{groupby} }
-         keys %{$args{attributes}}
+         keys %$attributes
       },
       worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
@@ -3106,6 +3108,7 @@ sub new {
       result_classes => {},
       result_globals => {},
       result_samples => {},
+      n_events       => 0,
    }, $class;
 }
 
@@ -3120,6 +3123,7 @@ sub reset_aggregated_data {
       delete @{$class}{keys %$class};
    }
    delete @{$self->{result_samples}}{keys %{$self->{result_samples}}};
+   $self->{n_events} = 0;
 }
 
 sub aggregate {
@@ -3127,6 +3131,10 @@ sub aggregate {
 
    my $group_by = $event->{$self->{groupby}};
    return unless defined $group_by;
+
+   $self->add_new_attributes($event) if $self->{detect_attribs};
+
+   $self->{n_events}++;
 
    if ( exists $self->{unrolled_loops} ) {
       return $self->{unrolled_loops}->($self, $event, $group_by);
@@ -3156,11 +3164,14 @@ sub aggregate {
       }
    }
 
-   if ( $self->{n_queries}++ > 50 # Give up waiting after 50 events.
-      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs
-   ) {
-      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
-      my $globs = $self->{result_globals}; # Global stats for each
+   if ( $self->{n_queries}++ > 50  # ...after 50 events, or
+        || ( # all attribs have handlers and
+             !grep { ref $self->{handlers}->{$_} ne 'CODE' } @attrs
+             && !$self->{detect_attribs}
+           ) )
+   {
+      my @attrs   = grep { $self->{handlers}->{$_} } @attrs;
+      my $globs   = $self->{result_globals}; # Global stats for each
       my $samples = $self->{result_samples};
 
       my @lines = (
@@ -3191,6 +3202,8 @@ sub aggregate {
       die if $EVAL_ERROR;
       $self->{unrolled_loops} = $sub;
    }
+
+   return;
 }
 
 sub results {
@@ -3528,6 +3541,31 @@ sub top_events {
    return @chosen;
 }
 
+sub add_new_attributes {
+   my ( $self, $event ) = @_;
+   return unless $event;
+   map {
+      $self->{attributes}->{$_} = [$_];
+      push @{$self->{all_attribs}}, $_;
+      MKDEBUG && _d('Added new attribute:', $_);
+   }
+   grep {
+      $_ ne $self->{groupby} && !exists $self->{attributes}->{$_};
+   }
+   keys %$event;
+   return;
+}
+
+sub get_attributes {
+   my ( $self ) = @_;
+   return @{$self->{all_attribs}};
+}
+
+sub events_processed {
+   my ( $self ) = @_;
+   return $self->{n_events};
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -3543,7 +3581,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 3408
+# QueryReportFormatter package 3955
 # ###########################################################################
 
 
@@ -3667,6 +3705,7 @@ sub global_report {
 
    foreach my $attrib ( @{$opts{select}} ) {
       next unless $ea->type_for($attrib);
+      next unless exists $stats->{globals}->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
             $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
@@ -3747,6 +3786,7 @@ sub event_report {
 
    foreach my $attrib ( @{$opts{select}} ) {
       next unless $ea->type_for($attrib);
+      next unless exists $store->{$attrib};
       my $vals = $store->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
@@ -5169,24 +5209,37 @@ sub main {
                . "does not exist or you do not have INSERT privileges";
          }
 
-         # Inspect for MAGIC_history_cols.  Add them to the --select list.
+         # Inspect for MAGIC_history_cols.  Add them to the --select list
+         # only if an explicit --select list was given.  Otherwise, leave
+         # --select undef which will cause EventAggregator to aggregate every
+         # attribute available which will include the history columns.
+         # If no --select list was given and we make one by adding the history
+         # columsn to it, then EventAggregator will only aggregate the
+         # history columns and nothing else--we don't want this.
          my $tbl = $tp->parse($du->get_create_table($qv_dbh2, $q, @hdb_tbl));
          my $pat = $o->read_para_after(__FILE__, qr/MAGIC_history_cols/);
          $pat    =~ s/\s+//g;
          $pat    = qr/^(.*?)_($pat)$/;
+         # Get original --select values.
          my %select = map { $_ => 1 } @{$o->get('select')};
          foreach my $col ( @{$tbl->{cols}} ) {
             my ( $attr, $metric ) = $col =~ m/$pat/;
             next unless $attr && $metric;
-            # TODO: should we add info to TableParser to retrieve the original
-            # lettercase of column names when it matters?  If so, fix
+            # TODO: should we add info to TableParser to retrieve the
+            # original lettercase of column names when it matters? If so, fix
             # QueryReview also.
             $attr = ucfirst $attr if $attr =~ m/_/; # TableParser lowercases
+            # Add history table values to original select values.
             $select{$attr}++;
          }
-         $o->set('select', [keys %select]);
-         MKDEBUG && _d("--select value after parsing --review-history table:", 
-            @{$o->get('select')});
+
+         if ( $o->got('select') ) {
+            # Re-set --select with its original values plus the history
+            # table values.
+            $o->set('select', [keys %select]);
+            MKDEBUG && _d("--select after parsing --review-history table:", 
+               @{$o->get('select')});
+         }
 
          # And tell the QueryReview that it has more work to do.
          $qv->set_history_options(
@@ -5525,12 +5578,22 @@ sub main {
       my $query_report = $o->get('report-format')->{query_report};
       if ( @$report ) {
          # Pick the first one and run the global report.
-         my @select = map {my ($name) = split(/:/,$_); $name} @{$o->get('select')};
+         my @select;
+         if ( $o->got('select') ) {
+            @select = map {
+               my ($name) = split(/:/,$_);
+               $name
+            } @{$o->get('select')};
+         }
+         else {
+            # Which ea is this?
+            @select = ( $ea->get_attributes() );
+         }
          my $qrf = new QueryReportFormatter();
          if ( $o->get('report-format')->{header} ) {
             my $ea = $ea{$report->[0]};
             print $qrf->header() if $o->get('report-format')->{rusage};
-            if ( !$ea->results->{globals}->{$select[0]}->{cnt} ) {
+            if ( !$ea->events_processed() ) {
                print "# No events processed.\n";
             }
             else {
@@ -5558,7 +5621,7 @@ sub main {
                print '# ', ( '#' x 72 ), "\n";
             }
 
-            my $ea      = $ea{$groupby};
+            my $ea = $ea{$groupby};
 
             # $attrib is the attribute by which the report is ordered.
             my ( $attrib, $orderby ) = split(/:/, $orderby->[$i]);
@@ -5619,7 +5682,7 @@ sub main {
 
                my %history; # Prepare for saving review history
                if ( $o->get('review-history') ) {
-                  foreach my $attrib(@select) {
+                  foreach my $attrib ( @select ) {
                      $history{$attrib} = $ea->metrics(
                         attrib => $attrib,
                         where  => $item,
@@ -5781,7 +5844,7 @@ sub main {
       ($qv_dbh, $qv_dbh2, $ex_dbh, $ps_dbh, $ep_dbh);
 
    exit;
-} # End global scope.
+} # End main().
 
 # ############################################################################
 # Subroutines.
@@ -6664,7 +6727,7 @@ interrupt with CTRL-C).  See also L<"--iterations">.
 
 =item --select
 
-type: Array; default: Query_time,Lock_time,Rows_sent,Rows_examined,user,db:Schema,ts
+type: Array
 
 Compute aggregate statistics for these attributes.
 
@@ -6672,6 +6735,8 @@ The value is a comma-separated list of items you can see in the slow query log,
 or otherwise know are attributes in the query events.  You can specify an
 alternative attribute with a colon.  For example, C<db:Schema> uses db if it's
 available, and Schema if it's not.
+
+The old list was: Query_time,Lock_time,Rows_sent,Rows_examined,user,db:Schema,ts
 
 =item --shorten
 
