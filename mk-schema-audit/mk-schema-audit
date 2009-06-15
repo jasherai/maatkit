@@ -925,7 +925,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3140
+# DSNParser package 3963
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -987,7 +987,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
-      MKDEBUG && _d('Adding extra property ' . $opt->{key});
+      MKDEBUG && _d('Adding extra property', $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -996,7 +996,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
-      MKDEBUG && _d("Setting $prop property");
+      MKDEBUG && _d('Setting', $prop, 'property');
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -1008,39 +1008,35 @@ sub parse {
       MKDEBUG && _d('No DSN to parse');
       return;
    }
-   MKDEBUG && _d("Parsing $dsn");
+   MKDEBUG && _d('Parsing', $dsn);
    $prev     ||= {};
    $defaults ||= {};
    my %given_props;
    my %final_props;
    my %opts = %{$self->{opts}};
-   my $prop_autokey = $self->prop('autokey');
 
    foreach my $dsn_part ( split(/,/, $dsn) ) {
       if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
          $given_props{$prop_key} = $prop_val;
       }
-      elsif ( $prop_autokey ) {
-         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
-         $given_props{$prop_autokey} = $dsn_part;
-      }
       else {
-         MKDEBUG && _d("Bad DSN part: $dsn_part");
+         MKDEBUG && _d('Interpreting', $dsn_part, 'as h=', $dsn_part);
+         $given_props{h} = $dsn_part;
       }
    }
 
    foreach my $key ( keys %opts ) {
-      MKDEBUG && _d("Finding value for $key");
+      MKDEBUG && _d('Finding value for', $key);
       $final_props{$key} = $given_props{$key};
       if (   !defined $final_props{$key}
            && defined $prev->{$key} && $opts{$key}->{copy} )
       {
          $final_props{$key} = $prev->{$key};
-         MKDEBUG && _d("Copying value for $key from previous DSN");
+         MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
       }
       if ( !defined $final_props{$key} ) {
          $final_props{$key} = $defaults->{$key};
-         MKDEBUG && _d("Copying value for $key from defaults");
+         MKDEBUG && _d('Copying value for', $key, 'from defaults');
       }
    }
 
@@ -1057,6 +1053,19 @@ sub parse {
    return \%final_props;
 }
 
+sub parse_options {
+   my ( $self, $o ) = @_;
+   die 'I need an OptionParser object' unless ref $o eq 'OptionParser';
+   my $dsn_string
+      = join(',',
+          map  { "$_=".$o->get($_); }
+          grep { $o->has($_) && $o->get($_) }
+          keys %{$self->{opts}}
+        );
+   MKDEBUG && _d('DSN string made from options:', $dsn_string);
+   return $self->parse($dsn_string);
+}
+
 sub as_string {
    my ( $self, $dsn ) = @_;
    return $dsn unless ref $dsn;
@@ -1069,7 +1078,7 @@ sub as_string {
 sub usage {
    my ( $self ) = @_;
    my $usage
-      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
    my %opts = %{$self->{opts}};
@@ -1079,9 +1088,7 @@ sub usage {
              .  ($opts{$key}->{desc} || '[No description]')
              . "\n";
    }
-   if ( (my $key = $self->prop('autokey')) ) {
-      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
-   }
+   $usage .= "\n  If the DSN is a bareword, the word is treated as the 'h' key.\n";
    return $usage;
 }
 
@@ -1144,12 +1151,12 @@ sub get_dbh {
 
             $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
                  . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
-            MKDEBUG && _d("$dbh: $sql");
+            MKDEBUG && _d($dbh, ':', $sql);
             $dbh->do($sql);
 
             if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
                $sql = "/*!40101 SET NAMES $charset*/";
-               MKDEBUG && _d("$dbh: $sql");
+               MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
                MKDEBUG && _d('Enabling charset for STDOUT');
                if ( $charset eq 'utf8' ) {
@@ -1163,7 +1170,7 @@ sub get_dbh {
 
             if ( $self->prop('setvars') ) {
                $sql = "SET " . $self->prop('setvars');
-               MKDEBUG && _d("$dbh: $sql");
+               MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
          }
@@ -1171,7 +1178,7 @@ sub get_dbh {
       if ( !$dbh && $EVAL_ERROR ) {
          MKDEBUG && _d($EVAL_ERROR);
          if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
-            MKDEBUG && _d("Going to try again without utf8 support");
+            MKDEBUG && _d('Going to try again without utf8 support');
             delete $defaults->{mysql_enable_utf8};
          }
          if ( !$tries ) {
@@ -1184,12 +1191,11 @@ sub get_dbh {
       $dbh,
       Dumper($dbh->selectrow_hashref(
          'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
-      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
-      ' Character set info: ',
-      Dumper($dbh->selectall_arrayref(
-         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
-      ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
-      ' $DBI::VERSION: ', $DBI::VERSION,
+      'Connection info:',      $dbh->{mysql_hostinfo},
+      'Character set info:',   Dumper($dbh->selectall_arrayref(
+                     'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
+      '$DBD::mysql::VERSION:', $DBD::mysql::VERSION,
+      '$DBI::VERSION:',        $DBI::VERSION,
    );
 
    return $dbh;
@@ -1222,12 +1228,30 @@ sub print_active_handles {
    }
 }
 
+sub copy {
+   my ( $self, $dsn_1, $dsn_2, %args ) = @_;
+   die 'I need a dsn_1 argument' unless $dsn_1;
+   die 'I need a dsn_2 argument' unless $dsn_2;
+   my %new_dsn = map {
+      my $key = $_;
+      my $val;
+      if ( $args{overwrite} ) {
+         $val = defined $dsn_1->{$key} ? $dsn_1->{$key} : $dsn_2->{$key};
+      }
+      else {
+         $val = defined $dsn_2->{$key} ? $dsn_2->{$key} : $dsn_1->{$key};
+      }
+      $key => $val;
+   } keys %{$self->{opts}};
+   return \%new_dsn;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

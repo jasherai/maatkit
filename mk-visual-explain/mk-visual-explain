@@ -1536,7 +1536,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3421
+# DSNParser package 3963
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1625,19 +1625,14 @@ sub parse {
    my %given_props;
    my %final_props;
    my %opts = %{$self->{opts}};
-   my $prop_autokey = $self->prop('autokey');
 
    foreach my $dsn_part ( split(/,/, $dsn) ) {
       if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
          $given_props{$prop_key} = $prop_val;
       }
-      elsif ( $prop_autokey ) {
-         MKDEBUG && _d('Interpreting', $dsn_part, 'as',
-            $prop_autokey, '=', $dsn_part);
-         $given_props{$prop_autokey} = $dsn_part;
-      }
       else {
-         MKDEBUG && _d('Bad DSN part:', $dsn_part);
+         MKDEBUG && _d('Interpreting', $dsn_part, 'as h=', $dsn_part);
+         $given_props{h} = $dsn_part;
       }
    }
 
@@ -1694,7 +1689,7 @@ sub as_string {
 sub usage {
    my ( $self ) = @_;
    my $usage
-      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
    my %opts = %{$self->{opts}};
@@ -1704,9 +1699,7 @@ sub usage {
              .  ($opts{$key}->{desc} || '[No description]')
              . "\n";
    }
-   if ( (my $key = $self->prop('autokey')) ) {
-      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
-   }
+   $usage .= "\n  If the DSN is a bareword, the word is treated as the 'h' key.\n";
    return $usage;
 }
 
@@ -1844,6 +1837,24 @@ sub print_active_handles {
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles( $handle, $level + 1 );
    }
+}
+
+sub copy {
+   my ( $self, $dsn_1, $dsn_2, %args ) = @_;
+   die 'I need a dsn_1 argument' unless $dsn_1;
+   die 'I need a dsn_2 argument' unless $dsn_2;
+   my %new_dsn = map {
+      my $key = $_;
+      my $val;
+      if ( $args{overwrite} ) {
+         $val = defined $dsn_1->{$key} ? $dsn_1->{$key} : $dsn_2->{$key};
+      }
+      else {
+         $val = defined $dsn_2->{$key} ? $dsn_2->{$key} : $dsn_1->{$key};
+      }
+      $key => $val;
+   } keys %{$self->{opts}};
+   return \%new_dsn;
 }
 
 sub _d {

@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 3577
+# DSNParser package 3963
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -117,19 +117,14 @@ sub parse {
    my %given_props;
    my %final_props;
    my %opts = %{$self->{opts}};
-   my $prop_autokey = $self->prop('autokey');
 
    foreach my $dsn_part ( split(/,/, $dsn) ) {
       if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
          $given_props{$prop_key} = $prop_val;
       }
-      elsif ( $prop_autokey ) {
-         MKDEBUG && _d('Interpreting', $dsn_part, 'as',
-            $prop_autokey, '=', $dsn_part);
-         $given_props{$prop_autokey} = $dsn_part;
-      }
       else {
-         MKDEBUG && _d('Bad DSN part:', $dsn_part);
+         MKDEBUG && _d('Interpreting', $dsn_part, 'as h=', $dsn_part);
+         $given_props{h} = $dsn_part;
       }
    }
 
@@ -196,9 +191,7 @@ sub usage {
              .  ($opts{$key}->{desc} || '[No description]')
              . "\n";
    }
-   if ( (my $key = $self->prop('autokey')) ) {
-      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
-   }
+   $usage .= "\n  If the DSN is a bareword, the word is treated as the 'h' key.\n";
    return $usage;
 }
 
