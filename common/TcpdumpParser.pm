@@ -70,6 +70,12 @@ sub parse_event {
    my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
    my $num_packets = 0;
 
+   # In case we get a closed fh, trying tell() on it will cause an error.
+   if ( !$fh ) {
+      MKDEBUG && _d('No filehandle');
+      return 0;
+   }
+
    # We read a packet at a time.  Assuming that all packets begin with a
    # timestamp "20.....", we just use that as the separator, and restore it.
    # This will be good until the year 2100.
