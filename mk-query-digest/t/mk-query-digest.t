@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 58;
+use Test::More tests => 60;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -513,6 +513,20 @@ SKIP: {
    diag(`rm -rf /tmp/read_only.txt`);
    $sb->wipe_clean($dbh1);
 };
+
+# Test --continue-on-error.
+$output = `../mk-query-digest --type tcpdump samples/bad_tcpdump.txt 2>&1`;
+like(
+   $output,
+   qr/substr outside of string/,
+   'Does not continue on error without --continue-on-error'
+);
+$output = `../mk-query-digest --continue-on-error --type tcpdump samples/bad_tcpdump.txt 2>&1`;
+like(
+   $output,
+   qr/paris in the the spring/,
+   'Continues on error with --continue-on-error'
+);
 
 # #############################################################################
 # Issue 232: mk-query-digest does not properly handle logs with an empty Schema:

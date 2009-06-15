@@ -1925,7 +1925,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 3942
+# TcpdumpParser package 3951
 # ###########################################################################
 package TcpdumpParser;
 
@@ -1950,6 +1950,11 @@ sub parse_event {
    my $oktorun_here = 1;
    my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
    my $num_packets = 0;
+
+   if ( !$fh ) {
+      MKDEBUG && _d('No filehandle');
+      return 0;
+   }
 
    local $INPUT_RECORD_SEPARATOR = "\n20";
 
@@ -5474,15 +5479,10 @@ sub main {
          # Or look at the Perl Cookbook, ch07.
 
          my $events;
-         eval {
-            $events = $parser->parse_event($fh, $misc, @callbacks);
-            if ( !$events ) {
-               close $fh;
-               $fh = undef;
-            }
-         };
-         if ( $EVAL_ERROR ) {
-            _d($EVAL_ERROR);
+         $events = $parser->parse_event($fh, $misc, @callbacks);
+         if ( !$events ) {
+            close $fh;
+            $fh = undef;
          }
          return $events;
       };
@@ -5504,10 +5504,19 @@ sub main {
          $oktorun                             # instructed to quit
          && ($start == $end || $now < $end) ) # or time is exceeded
       {
-         my $result = $run_func->();
-         $now = time();
-         last EVENT unless defined $result;
-         # TODO: progress report (issue 169)
+         my $result;
+         eval {
+            $result = $run_func->();
+         };
+         if ( $EVAL_ERROR ) {
+            _d($EVAL_ERROR);
+            last EVENT unless $o->get('continue-on-error');
+         }
+         else {
+            $now = time();
+            # TODO: progress report (issue 169)
+            last EVENT unless defined $result;
+         }
       }
 
       # ######################################################################
@@ -6203,6 +6212,10 @@ type: Array
 
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
+
+=item --continue-on-error
+
+Continue parsing even if there is an error.
 
 =item --create-review-history-table
 
