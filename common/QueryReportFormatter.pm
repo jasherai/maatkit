@@ -149,6 +149,7 @@ sub global_report {
    # Each additional line
    foreach my $attrib ( @{$opts{select}} ) {
       next unless $ea->type_for($attrib);
+      next unless exists $stats->{globals}->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
             $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
@@ -245,6 +246,7 @@ sub event_report {
    # Each additional line
    foreach my $attrib ( @{$opts{select}} ) {
       next unless $ea->type_for($attrib);
+      next unless exists $store->{$attrib};
       my $vals = $store->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
