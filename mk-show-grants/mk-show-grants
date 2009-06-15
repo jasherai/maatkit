@@ -1328,12 +1328,16 @@ sub main {
       # Print REVOKE statements.
       if ( $o->get('revoke') ) {
          my @revoke = map {
-            my @result;
-            my ( $grants, $on_what, $user ) = $_
+            my $grant = $_;
+            MKDEBUG && _d($grant);
+            my ( $grants, $on_what, $user ) = $grant
                =~ m/GRANT (.*?) ON ((?:`|\*).*?) TO ('[^']*'\@'[^']+')/;
+            MKDEBUG && _d('grants:', $grants, 'on_what:', $on_what,
+               'user:', $user);
 
+            my @result;
             if ( $o->get('separate') ) {
-               @result = map { "REVOKE $_ ON $on_what FROM $user" }
+               @result = map { "REVOKE $grant ON $on_what FROM $user" }
                   split(', ', $grants);
             }
             else {
@@ -1341,7 +1345,7 @@ sub main {
             }
 
             # The WITH GRANT OPTION must be revoked separately.
-            if ( $_ =~ m/WITH GRANT OPTION/ ) { 
+            if ( $grant =~ m/WITH GRANT OPTION/ ) { 
                push @result, "REVOKE GRANT OPTION ON *.* FROM $user" if $user;
             }
 
