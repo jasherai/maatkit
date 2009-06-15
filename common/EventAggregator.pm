@@ -81,6 +81,7 @@ sub new {
       result_classes => {},
       result_globals => {},
       result_samples => {},
+      n_events       => 0,
    }, $class;
 }
 
@@ -101,6 +102,7 @@ sub reset_aggregated_data {
       delete @{$class}{keys %$class};
    }
    delete @{$self->{result_samples}}{keys %{$self->{result_samples}}};
+   $self->{n_events} = 0;
 }
 
 # Aggregate an event hashref's properties.  Code is built on the fly to do this,
@@ -116,6 +118,8 @@ sub aggregate {
 
    # Auto-detect all attributes.
    $self->add_new_attributes($event) if $self->{detect_attribs};
+
+   $self->{n_events}++;
 
    # There might be a specially built sub that handles the work.
    if ( exists $self->{unrolled_loops} ) {
@@ -672,6 +676,11 @@ sub add_new_attributes {
 sub get_attributes {
    my ( $self ) = @_;
    return @{$self->{all_attribs}};
+}
+
+sub events_processed {
+   my ( $self ) = @_;
+   return $self->{n_events};
 }
 
 sub _d {
