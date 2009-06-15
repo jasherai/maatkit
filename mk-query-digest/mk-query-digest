@@ -3068,7 +3068,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3956
+# EventAggregator package 3958
 # ###########################################################################
 package EventAggregator;
 
@@ -3097,6 +3097,11 @@ sub new {
       groupby        => $args{groupby},
       detect_attribs => scalar keys %$attributes == 0 ? 1 : 0,
       all_attribs    => [ keys %$attributes ],
+      ignore_attribs => {
+         map  { $_ => $args{attributes}->{$_} }
+         grep { $_ ne $args{groupby} }
+         @{$args{ignore_attributes}}
+      },
       attributes     => {
          map  { $_ => $args{attributes}->{$_} }
          grep { $_ ne $args{groupby} }
@@ -3550,7 +3555,9 @@ sub add_new_attributes {
       MKDEBUG && _d('Added new attribute:', $_);
    }
    grep {
-      $_ ne $self->{groupby} && !exists $self->{attributes}->{$_};
+      $_ ne $self->{groupby}
+      && !exists $self->{attributes}->{$_}
+      && !exists $self->{ignore_attribs}->{$_}
    }
    keys %$event;
    return;
@@ -5391,23 +5398,27 @@ sub main {
       };
    }
 
-   my $i = 0;
    foreach my $i ( 0 .. @$groupby - 1 ) {
       my $groupby = $groupby->[$i];
       die "You need to specify an --order-by for each --group-by"
          unless $orderby->[$i];
       my ( $attrib, $orderby ) = split(/:/, $orderby->[$i]);
+
       my %attributes = map {
          my ($name, @alt) = split(/:/, $_);
          $name => [$name, @alt];
-      } grep { $_ !~ m/^$groupby\b/ } @{$o->get('select')};
+      }
+      grep { $_ !~ m/^$groupby\b/ }
+      @{$o->get('select')};
+
       my $e;
       if ( @$report ) {
          $e = new EventAggregator(
-            groupby      => $groupby,
-            attributes   => { %attributes },
-            worst        => $attrib,
-            attrib_limit => $o->get('attribute-limit'),
+            groupby           => $groupby,
+            attributes        => { %attributes },
+            worst             => $attrib,
+            attrib_limit      => $o->get('attribute-limit'),
+            ignore_attributes => $o->get('ignore-attributes'),
          );
       }
       elsif ( @{$timeline} ) {
@@ -5577,18 +5588,11 @@ sub main {
       # ######################################################################
       my $query_report = $o->get('report-format')->{query_report};
       if ( @$report ) {
-         # Pick the first one and run the global report.
-         my @select;
-         if ( $o->got('select') ) {
-            @select = map {
-               my ($name) = split(/:/,$_);
-               $name
-            } @{$o->get('select')};
-         }
-         else {
-            # Which ea is this?
-            @select = ( $ea->get_attributes() );
-         }
+         # Pick the first report and run the global report.  It doesn't matter
+         # which report's ea we use here because the reports will have the
+         # same attributes; they only differ in how they grouped queries.
+         my @select = ( $ea{$report->[0]}->get_attributes() );
+
          my $qrf = new QueryReportFormatter();
          if ( $o->get('report-format')->{header} ) {
             my $ea = $ea{$report->[0]};
@@ -5608,14 +5612,14 @@ sub main {
          foreach my $i ( 0 .. @$report - 1 ) {
             my $groupby = $report->[$i];
 
-            # Prepare to do query review for the items, if needed. TODO: this is
-            # ugly, we can still access the global $qv.
+            # Prepare to do query review for the items, if needed.
+            # TODO: this is ugly, we can still access the global $qv.
             my $local_qv;
             if ( $groupby eq 'fingerprint' && $review_dsn ) {
                $local_qv = $qv;
             }
 
-            if ( $query_report && (@$report > 1 || $groupby ne 'fingerprint') ) {
+            if ($query_report && (@$report > 1 || $groupby ne 'fingerprint')) {
                print "\n# ", ( '#' x 72 ), "\n";
                print "# Report grouped by $groupby\n";
                print '# ', ( '#' x 72 ), "\n";
@@ -6455,6 +6459,18 @@ into a suggestion of what they do, such as C<INSERT SELECT table1 table2>.
 
 Show help and exit.
 
+=item --ignore-attributes
+
+type: array; default: cmd,arg,ip
+
+Do not aggregate these attributes when auto-detecting L<"--select">.
+
+If you do not specify L<"--select"> then mk-query-digest auto-detects and
+aggregates every attribute that it finds in the slow log.  Some attributes,
+however, should not be aggregated.  This option allows you to specify a list
+of attributes to ignore.  This only works when no explicit L<"--select"> is
+given.
+
 =item --interval
 
 type: float; default: .1
@@ -6731,12 +6747,20 @@ type: Array
 
 Compute aggregate statistics for these attributes.
 
-The value is a comma-separated list of items you can see in the slow query log,
-or otherwise know are attributes in the query events.  You can specify an
+By default mk-query-digest auto-detects, aggregates and prints metrics for
+every query attribute that it finds in the slow query log.  This option
+specifies a list of only the attributes that you want.  You can specify an
 alternative attribute with a colon.  For example, C<db:Schema> uses db if it's
 available, and Schema if it's not.
 
-The old list was: Query_time,Lock_time,Rows_sent,Rows_examined,user,db:Schema,ts
+Previously, mk-query-digest only aggregated these attributes:
+
+  Query_time,Lock_time,Rows_sent,Rows_examined,user,db:Schema,ts
+
+Attributes specified in the L<"--review-history"> table will always be selected 
+even if you do not specify L<"--select">.
+
+See also L<"--ignore-attributes"> and L<"ATTRIBUTES">.
 
 =item --shorten
 
