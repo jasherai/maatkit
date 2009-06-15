@@ -87,7 +87,6 @@ sub new {
 }
 
 # Recognized properties:
-# * autokey:   which key to treat a bareword as (typically h=host).
 # * dbidriver: which DBI driver to use; assumes mysql, supports Pg.
 # * required:  which parts are required (hashref).
 # * setvars:   a list of variables to set after connecting
@@ -125,7 +124,6 @@ sub parse {
    my %given_props;
    my %final_props;
    my %opts = %{$self->{opts}};
-   my $prop_autokey = $self->prop('autokey');
 
    # Parse given props
    foreach my $dsn_part ( split(/,/, $dsn) ) {
@@ -133,14 +131,10 @@ sub parse {
          # Handle the typical DSN parts like h=host, P=3306, etc.
          $given_props{$prop_key} = $prop_val;
       }
-      elsif ( $prop_autokey ) {
-         # Handle barewords
-         MKDEBUG && _d('Interpreting', $dsn_part, 'as',
-            $prop_autokey, '=', $dsn_part);
-         $given_props{$prop_autokey} = $dsn_part;
-      }
       else {
-         MKDEBUG && _d('Bad DSN part:', $dsn_part);
+         # Handle barewords
+         MKDEBUG && _d('Interpreting', $dsn_part, 'as h=', $dsn_part);
+         $given_props{h} = $dsn_part;
       }
    }
 
@@ -211,9 +205,7 @@ sub usage {
              .  ($opts{$key}->{desc} || '[No description]')
              . "\n";
    }
-   if ( (my $key = $self->prop('autokey')) ) {
-      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
-   }
+   $usage .= "\n  If the DSN is a bareword, the word is treated as the 'h' key.\n";
    return $usage;
 }
 

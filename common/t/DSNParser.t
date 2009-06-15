@@ -115,6 +115,8 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   p    yes   Password to use when connecting
   t    no    [No description]
   u    yes   User for login if not current user
+
+  If the DSN is a bareword, the word is treated as the 'h' key.
 EOF
 , 'Usage');
 
@@ -182,6 +184,7 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   p    yes   Password to use when connecting
   t    no    [No description]
   u    yes   User for login if not current user
+
   If the DSN is a bareword, the word is treated as the 'h' key.
 EOF
 , 'Usage');

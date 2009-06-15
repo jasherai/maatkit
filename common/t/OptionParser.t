@@ -1248,6 +1248,8 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   p    yes   Password to use when connecting
   u    yes   User for login if not current user
 
+  If the DSN is a bareword, the word is treated as the 'h' key.
+
 Options and values after processing arguments:
 
   --bar  (No value)
@@ -1317,6 +1319,8 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   h    yes   Connect to host
   p    yes   Password to use when connecting
   u    yes   User for login if not current user
+
+  If the DSN is a bareword, the word is treated as the 'h' key.
 
 Options and values after processing arguments:
 
