@@ -46,10 +46,12 @@ my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 #
 # %args is a hash containing:
 # groupby      The name of the property to group/aggregate by.
-# attributes   A hashref.  Each key is the name of an element to aggregate.
-#              And the values of those elements are arrayrefs of the
+# attributes   An optional hashref.  Each key is the name of an element to
+#              aggregate.  And the values of those elements are arrayrefs of the
 #              values to pull from the hashref, with any second or subsequent
 #              values being fallbacks for the first in case it's not defined.
+#              If no attributes are given, then all attributes in events will
+#              be aggregated.
 # worst        The name of an element which defines the "worst" hashref in its
 #              class.  If this is Query_time, then each class will contain
 #              a sample that holds the event with the largest Query_time.
@@ -60,12 +62,13 @@ my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 #              limit, use the last-seen for this class; if none, then 0.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(groupby worst attributes) ) {
+   foreach my $arg ( qw(groupby worst) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-
+   my $attributes = $args{attributes} || {};
    return bless {
       groupby      => $args{groupby},
+      all_attribs  => scalar keys %$attributes == 0 ? 1 : 0,
       attributes   => {
          map  { $_ => $args{attributes}->{$_} }
          grep { $_ ne $args{groupby} }
@@ -110,6 +113,9 @@ sub aggregate {
    my $group_by = $event->{$self->{groupby}};
    return unless defined $group_by;
 
+   # Auto-detect all attributes.
+   $self->add_new_attributes($event) if $self->{all_attribs};
+
    # There might be a specially built sub that handles the work.
    if ( exists $self->{unrolled_loops} ) {
       return $self->{unrolled_loops}->($self, $event, $group_by);
@@ -140,15 +146,20 @@ sub aggregate {
       }
    }
 
-   # Figure out whether we are ready to generate a faster version.
-   if ( $self->{n_queries}++ > 50 # Give up waiting after 50 events.
-      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs
-   ) {
+   # Figure out whether we are ready to generate a faster, unrolled handler.
+   # This happens either...
+   if ( $self->{n_queries}++ > 50  # ...after 50 events, or
+        || ( # all attribs have handlers and
+             !grep { ref $self->{handlers}->{$_} ne 'CODE' } @attrs
+             # we're not auto-detecting attribs.
+             && !$self->{all_attribs}
+           ) )
+   {
       # All attributes have handlers, so let's combine them into one faster sub.
       # Start by getting direct handles to the location of each data store and
       # thing that would otherwise be looked up via hash keys.
-      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
-      my $globs = $self->{result_globals}; # Global stats for each
+      my @attrs   = grep { $self->{handlers}->{$_} } @attrs;
+      my $globs   = $self->{result_globals}; # Global stats for each
       my $samples = $self->{result_samples};
 
       # Now the tricky part -- must make sure only the desired variables from
@@ -185,6 +196,8 @@ sub aggregate {
       die if $EVAL_ERROR;
       $self->{unrolled_loops} = $sub;
    }
+
+   return;
 }
 
 # Return the aggregated results.
@@ -635,6 +648,21 @@ sub top_events {
       $count++;
    }
    return @chosen;
+}
+
+# Adds all new attributes in $event to $self->{attributes}.
+sub add_new_attributes {
+   my ( $self, $event ) = @_;
+   return unless $event;
+   map {
+      $self->{attributes}->{$_} = [$_];
+      MKDEBUG && _d('Added new attribute:', $_);
+   }
+   grep {
+      $_ ne $self->{groupby} && !exists $self->{attributes}->{$_};
+   }
+   keys %$event;
+   return;
 }
 
 sub _d {

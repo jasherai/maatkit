@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 59;
+use Test::More tests => 61;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -1180,4 +1180,164 @@ is_deeply(
    },
    'Reset works');
 
+# #############################################################################
+# Issue 396: Make mk-query-digest detect properties of events to output
+# #############################################################################
+$ea = new EventAggregator(
+   groupby       => 'arg',
+   worst         => 'Query_time',
+);
+$events = [
+   {  arg        => "foo",
+      Schema     => 'db1',
+      Query_time => '1.000000',
+      other_prop => 'trees',
+   },
+   {  arg        => "foo",
+      Schema     => 'db1',
+      Query_time => '2.000000',
+      new_prop   => 'The quick brown fox jumps over the lazy dog',
+   },
+];
+foreach my $event ( @$events ) {
+   $ea->aggregate($event);
+}
+is_deeply(
+   $ea->results(),
+   {
+      samples => {
+       foo => {
+         Schema => 'db1',
+         new_prop => 'The quick brown fox jumps over the lazy dog',
+         arg => 'foo',
+         Query_time => '2.000000'
+       }
+      },
+      classes => {
+       foo => {
+         Schema => {
+           min => 'db1',
+           max => 'db1',
+           unq => {
+             db1 => 2
+           },
+           cnt => 2
+         },
+         other_prop => {
+           min => 'trees',
+           max => 'trees',
+           unq => {
+             trees => 1
+           },
+           cnt => 1
+         },
+         new_prop => {
+           min => 'The quick brown fox jumps over the lazy dog',
+           max => 'The quick brown fox jumps over the lazy dog',
+           unq => {
+            'The quick brown fox jumps over the lazy dog' => 1,
+           },
+           cnt => 1,
+         },
+         Query_time => {
+           min => '1.000000',
+           max => '2.000000',
+           all => [
+             ( map {0} ( 0..283 ) ), 1,
+             ( map {0} ( 285..297) ), 1,
+             ( map {0} ( 299..999) ),
+           ],
+           sum => 3,
+           cnt => 2
+         }
+       }
+      },
+      globals => {
+       Schema => {
+         min => 'db1',
+         max => 'db1',
+         cnt => 2
+       },
+       other_prop => {
+         min => 'trees',
+         max => 'trees',
+         cnt => 1
+       },
+       new_prop => {
+         min => 'The quick brown fox jumps over the lazy dog',
+         max => 'The quick brown fox jumps over the lazy dog',
+         cnt => 1,
+       },
+       Query_time => {
+         min => '1.000000',
+         max => '2.000000',
+         all => [
+             ( map {0} ( 0..283 ) ), 1,
+             ( map {0} ( 285..297) ), 1,
+             ( map {0} ( 299..999) ),
+         ],
+         sum => 3,
+         cnt => 2
+       }
+      }
+   },
+   'Auto-detect attributes if none given',
+);
+
+$ea = new EventAggregator(
+   groupby    => 'arg',
+   worst      => 'Query_time',
+   attributes => {
+      Query_time => [qw(Query_time)],
+   },
+);
+foreach my $event ( @$events ) {
+   $ea->aggregate($event);
+}
+is_deeply(
+   $ea->results(),
+   {
+      samples => {
+       foo => {
+         Schema => 'db1',
+         new_prop => 'The quick brown fox jumps over the lazy dog',
+         arg => 'foo',
+         Query_time => '2.000000'
+       }
+      },
+      classes => {
+       foo => {
+         Query_time => {
+           min => '1.000000',
+           max => '2.000000',
+           all => [
+             ( map {0} ( 0..283 ) ), 1,
+             ( map {0} ( 285..297) ), 1,
+             ( map {0} ( 299..999) ),
+           ],
+           sum => 3,
+           cnt => 2
+         }
+       }
+      },
+      globals => {
+       Query_time => {
+         min => '1.000000',
+         max => '2.000000',
+         all => [
+             ( map {0} ( 0..283 ) ), 1,
+             ( map {0} ( 285..297) ), 1,
+             ( map {0} ( 299..999) ),
+         ],
+         sum => 3,
+         cnt => 2
+       }
+      }
+   },
+   'Do not auto-detect attributes if given explicit attributes',
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 exit;
