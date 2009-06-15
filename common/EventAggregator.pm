@@ -52,6 +52,9 @@ my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 #              values being fallbacks for the first in case it's not defined.
 #              If no attributes are given, then all attributes in events will
 #              be aggregated.
+# ignore_attributes  An option arrayref.  These attributes are ignored only if
+#                    they are auto-detected.  This list does not apply to
+#                    explicitly given attributes.
 # worst        The name of an element which defines the "worst" hashref in its
 #              class.  If this is Query_time, then each class will contain
 #              a sample that holds the event with the largest Query_time.
@@ -70,6 +73,11 @@ sub new {
       groupby        => $args{groupby},
       detect_attribs => scalar keys %$attributes == 0 ? 1 : 0,
       all_attribs    => [ keys %$attributes ],
+      ignore_attribs => {
+         map  { $_ => $args{attributes}->{$_} }
+         grep { $_ ne $args{groupby} }
+         @{$args{ignore_attributes}}
+      },
       attributes     => {
          map  { $_ => $args{attributes}->{$_} }
          grep { $_ ne $args{groupby} }
@@ -665,7 +673,9 @@ sub add_new_attributes {
       MKDEBUG && _d('Added new attribute:', $_);
    }
    grep {
-      $_ ne $self->{groupby} && !exists $self->{attributes}->{$_};
+      $_ ne $self->{groupby}
+      && !exists $self->{attributes}->{$_}
+      && !exists $self->{ignore_attribs}->{$_}
    }
    keys %$event;
    return;

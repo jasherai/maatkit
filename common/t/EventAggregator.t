@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 63;
+use Test::More tests => 64;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -1296,19 +1296,7 @@ is(
    'events_processed()'
 );
 
-$ea = new EventAggregator(
-   groupby    => 'arg',
-   worst      => 'Query_time',
-   attributes => {
-      Query_time => [qw(Query_time)],
-   },
-);
-foreach my $event ( @$events ) {
-   $ea->aggregate($event);
-}
-is_deeply(
-   $ea->results(),
-   {
+my $only_query_time_results =  {
       samples => {
        foo => {
          Schema => 'db1',
@@ -1345,8 +1333,36 @@ is_deeply(
          cnt => 2
        }
       }
+};
+
+$ea = new EventAggregator(
+   groupby    => 'arg',
+   worst      => 'Query_time',
+   attributes => {
+      Query_time => [qw(Query_time)],
    },
+);
+foreach my $event ( @$events ) {
+   $ea->aggregate($event);
+}
+is_deeply(
+   $ea->results(),
+   $only_query_time_results,
    'Do not auto-detect attributes if given explicit attributes',
+);
+
+$ea = new EventAggregator(
+   groupby           => 'arg',
+   worst             => 'Query_time',
+   ignore_attributes => [ qw(new_prop other_prop Schema) ],
+);
+foreach my $event ( @$events ) {
+   $ea->aggregate($event);
+}
+is_deeply(
+   $ea->results(),
+   $only_query_time_results,
+   'Ignore some auto-detected attributes',
 );
 
 # #############################################################################
