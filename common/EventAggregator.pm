@@ -67,12 +67,13 @@ sub new {
    }
    my $attributes = $args{attributes} || {};
    return bless {
-      groupby      => $args{groupby},
-      all_attribs  => scalar keys %$attributes == 0 ? 1 : 0,
-      attributes   => {
+      groupby        => $args{groupby},
+      detect_attribs => scalar keys %$attributes == 0 ? 1 : 0,
+      all_attribs    => [ keys %$attributes ],
+      attributes     => {
          map  { $_ => $args{attributes}->{$_} }
          grep { $_ ne $args{groupby} }
-         keys %{$args{attributes}}
+         keys %$attributes
       },
       worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
@@ -114,7 +115,7 @@ sub aggregate {
    return unless defined $group_by;
 
    # Auto-detect all attributes.
-   $self->add_new_attributes($event) if $self->{all_attribs};
+   $self->add_new_attributes($event) if $self->{detect_attribs};
 
    # There might be a specially built sub that handles the work.
    if ( exists $self->{unrolled_loops} ) {
@@ -152,7 +153,7 @@ sub aggregate {
         || ( # all attribs have handlers and
              !grep { ref $self->{handlers}->{$_} ne 'CODE' } @attrs
              # we're not auto-detecting attribs.
-             && !$self->{all_attribs}
+             && !$self->{detect_attribs}
            ) )
    {
       # All attributes have handlers, so let's combine them into one faster sub.
@@ -656,6 +657,7 @@ sub add_new_attributes {
    return unless $event;
    map {
       $self->{attributes}->{$_} = [$_];
+      push @{$self->{all_attribs}}, $_;
       MKDEBUG && _d('Added new attribute:', $_);
    }
    grep {
@@ -663,6 +665,13 @@ sub add_new_attributes {
    }
    keys %$event;
    return;
+}
+
+# Returns a list of all the attributes that were either given
+# explicitly to new() or that were auto-detected.
+sub get_attributes {
+   my ( $self ) = @_;
+   return @{$self->{all_attribs}};
 }
 
 sub _d {

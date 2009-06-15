@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 61;
+use Test::More tests => 62;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -1282,6 +1282,12 @@ is_deeply(
       }
    },
    'Auto-detect attributes if none given',
+);
+
+is_deeply(
+   [ sort $ea->get_attributes() ],
+   [qw(Query_time Schema new_prop other_prop)],
+   'get_attributes()',
 );
 
 $ea = new EventAggregator(
