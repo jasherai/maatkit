@@ -156,11 +156,11 @@ sub parse_timestamp {
 }
 
 # Turns a properly formatted timestamp like 2007-10-15 01:43:52
-# into an int (seconds since epoch)
+# into an int (seconds since epoch).  Optional microseconds are ignored.
 sub unix_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
+     = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?$/ )
    {
       return timelocal($s, $i, $h, $d, $m - 1, $y);
    }
