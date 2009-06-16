@@ -1268,7 +1268,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 3407
+# Transformers package 3972
 # ###########################################################################
 
 package Transformers;
@@ -1402,7 +1402,7 @@ sub parse_timestamp {
 sub unix_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
+     = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?$/ )
    {
       return timelocal($s, $i, $h, $d, $m - 1, $y);
    }
@@ -5586,8 +5586,7 @@ sub main {
          # which report's ea we use here because the reports will have the
          # same attributes; they only differ in how they grouped queries.
          my @select = ( $ea{$report->[0]}->get_attributes() );
-
-         my $qrf = new QueryReportFormatter();
+         my $qrf    = new QueryReportFormatter();
          if ( $o->get('report-format')->{header} ) {
             my $ea = $ea{$report->[0]};
             print $qrf->header() if $o->get('report-format')->{rusage};
@@ -5595,10 +5594,17 @@ sub main {
                print "# No events processed.\n";
             }
             else {
+               my ( $attrib, $orderby ) = split(/:/, $orderby->[0]);
+               if ( !$ea->type_for($attrib) && $attrib ne 'Query_time' ) {
+                  # TODO: get the default from the $o, here and in the "if"
+                  print "--order-by attribute $attrib doesn't exist, "
+                     . "using Query_time\n" if $query_report;
+                  $attrib = 'Query_time'; # Fall back to the default.
+               }
                print $qrf->global_report(
                   $ea,
                   select => [ grep { $_ !~ m/^(?:user|db)$/ } @select ],
-                  worst  => $select[0],
+                  worst  => $attrib,
                );
             }
          }
@@ -6455,7 +6461,7 @@ Show help and exit.
 
 =item --ignore-attributes
 
-type: array; default: cmd,arg,ip
+type: array; default: cmd,arg,ip,port,pos_in_log
 
 Do not aggregate these attributes when auto-detecting L<"--select">.
 

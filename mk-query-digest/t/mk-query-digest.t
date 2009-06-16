@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 60;
+use Test::More tests => 61;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -545,4 +545,16 @@ unlike(
    'No error message in debug output for empty Schema: (issue 232)'
 );
 
+# #############################################################################
+# Issue 398: Fix mk-query-digest to handle timestamps that have microseconds
+# #############################################################################
+ok(
+   no_diff('../mk-query-digest ../../common/t/samples/tcpdump017.txt --type tcpdump --report-format header,query_report,profile',
+      'samples/tcpdump017_report.txt'),
+   'Analysis for tcpdump017 with microsecond timestamps (issue 398)'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 exit;
