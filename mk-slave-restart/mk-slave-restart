@@ -85,7 +85,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3695
+# OptionParser package 3945
 # ###########################################################################
 package OptionParser;
 
@@ -99,6 +99,15 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+my %attributes = (
+   'type'       => 1,
+   'short form' => 1,
+   'group'      => 1,
+   'default'    => 1,
+   'cumulative' => 1,
+   'negatable'  => 1,
+);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -196,7 +205,12 @@ sub _pod_to_specs {
 
          if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            %attribs = map {
+                  my ( $attrib, $val) = split(/: /, $_);
+                  die "Unrecognized attribute for --$option: $attrib"
+                     unless $attributes{$attrib};
+                  ($attrib, $val);
+               } split(/; /, $para);
             if ( $attribs{'short form'} ) {
                $attribs{'short form'} =~ s/-//;
             }
@@ -1881,7 +1895,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 3647
+# Daemon package 3976
 # ###########################################################################
 
 package Daemon;
@@ -1906,9 +1920,7 @@ sub new {
       PID_file => $o->has('pid') ? $o->get('pid') : undef,
    };
 
-   if ( $self->{PID_file} && -f $self->{PID_file} ) {
-      die "The PID file $self->{PID_file} already exists"
-   }
+   check_PID_file(undef, $self->{PID_file});
 
    MKDEBUG && _d('Daemonized child will log to', $self->{log_file});
    return bless $self, $class;
@@ -1932,18 +1944,53 @@ sub daemonize {
    $self->_make_PID_file();
 
    if ( -t STDIN ) {
-      open STDIN, '/dev/null'
+      close STDIN;
+      open  STDIN, '/dev/null'
          or die "Cannot reopen STDIN to /dev/null";
    }
 
    if ( $self->{log_file} ) {
-      open STDOUT, '>>', $self->{log_file}
+      close STDOUT;
+      open  STDOUT, '>>', $self->{log_file}
          or die "Cannot open log file $self->{log_file}: $OS_ERROR";
-      open STDERR, ">&STDOUT"
+
+      close STDERR;
+      open  STDERR, ">&STDOUT"
          or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
    }
 
    MKDEBUG && _d('I am the child and now I live daemonized');
+   return;
+}
+
+sub check_PID_file {
+   my ( $self, $file ) = @_;
+   my $PID_file = $self ? $self->{PID_file} : $file;
+   MKDEBUG && _d('Checking PID file', $PID_file);
+   if ( $PID_file && -f $PID_file ) {
+      my $pid;
+      eval { chomp($pid = `cat $PID_file`); };
+      die "Cannot cat $PID_file: $OS_ERROR" if $EVAL_ERROR;
+      MKDEBUG && _d('PID file exists; it contains PID', $pid);
+      if ( $pid ) {
+         my $pid_is_alive = kill 0, $pid;
+         if ( $pid_is_alive ) {
+            die "The PID file $PID_file already exists "
+               . " and the PID that it contains, $pid, is running";
+         }
+         else {
+            warn "Overwriting PID file $PID_file because the PID that it "
+               . "contains, $pid, is not running";
+         }
+      }
+      else {
+         die "The PID file $PID_file already exists but it does not "
+            . "contain a PID";
+      }
+   }
+   else {
+      MKDEBUG && _d('No PID file');
+   }
    return;
 }
 
@@ -1966,9 +2013,7 @@ sub _make_PID_file {
       return;
    }
 
-   if ( -f $self->{PID_file} ) {
-      die "The PID file $self->{PID_file} already exists"
-   }
+   $self->check_PID_file();
 
    open my $PID_FH, '>', $PID_file
       or die "Cannot open PID file $PID_file: $OS_ERROR";
