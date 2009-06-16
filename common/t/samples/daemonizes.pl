@@ -22,7 +22,7 @@ $o->get_specs('samples/daemonizes.pl');
 $o->get_opts();
 
 if ( scalar @ARGV < 1 ) {
-   $o->_save_error('No SLEEP_TIME specified');
+   $o->save_error('No SLEEP_TIME specified');
 }
 
 $o->usage_or_errors();

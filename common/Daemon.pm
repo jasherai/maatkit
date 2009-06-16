@@ -42,9 +42,8 @@ sub new {
       PID_file => $o->has('pid') ? $o->get('pid') : undef,
    };
 
-   if ( $self->{PID_file} && -f $self->{PID_file} ) {
-      die "The PID file $self->{PID_file} already exists"
-   }
+   # undef because we can't call like $self->check_PID_file() yet.
+   check_PID_file(undef, $self->{PID_file});
 
    MKDEBUG && _d('Daemonized child will log to', $self->{log_file});
    return bless $self, $class;
@@ -94,6 +93,41 @@ sub daemonize {
    return;
 }
 
+# The file arg is optional.  It's used when new() calls this sub
+# because $self hasn't been created yet.
+sub check_PID_file {
+   my ( $self, $file ) = @_;
+   my $PID_file = $self ? $self->{PID_file} : $file;
+   MKDEBUG && _d('Checking PID file', $PID_file);
+   if ( $PID_file && -f $PID_file ) {
+      my $pid;
+      eval { chomp($pid = `cat $PID_file`); };
+      die "Cannot cat $PID_file: $OS_ERROR" if $EVAL_ERROR;
+      MKDEBUG && _d('PID file exists; it contains PID', $pid);
+      if ( $pid ) {
+         my $pid_is_alive = kill 0, $pid;
+         if ( $pid_is_alive ) {
+            die "The PID file $PID_file already exists "
+               . " and the PID that it contains, $pid, is running";
+         }
+         else {
+            warn "Overwriting PID file $PID_file because the PID that it "
+               . "contains, $pid, is not running";
+         }
+      }
+      else {
+         # Be safe and die if we can't check that a process is
+         # or is not already running.
+         die "The PID file $PID_file already exists but it does not "
+            . "contain a PID";
+      }
+   }
+   else {
+      MKDEBUG && _d('No PID file');
+   }
+   return;
+}
+
 # Call this for non-daemonized scripts to make a PID file.
 sub make_PID_file {
    my ( $self ) = @_;
@@ -119,9 +153,7 @@ sub _make_PID_file {
    }
 
    # We checked this in new() but we'll double check here.
-   if ( -f $self->{PID_file} ) {
-      die "The PID file $self->{PID_file} already exists"
-   }
+   $self->check_PID_file();
 
    open my $PID_FH, '>', $PID_file
       or die "Cannot open PID file $PID_file: $OS_ERROR";
