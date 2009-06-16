@@ -2533,7 +2533,7 @@ sub too_far_ahead {
 # Whether we are too close to where the I/O thread is writing.
 sub too_close_to_io {
    my ( $pos ) = @_;
-   return $slave{lag} && $pos >= $slave{pos} + $slave{lag} - $o->get('io-log');
+   return $slave{lag} && $pos >= $slave{pos} + $slave{lag} - $o->get('io-lag');
 }
 
 sub wait_for_master {
