@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 64;
+use Test::More tests => 66;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -1363,6 +1363,96 @@ is_deeply(
    $ea->results(),
    $only_query_time_results,
    'Ignore some auto-detected attributes',
+);
+
+# #############################################################################
+# Issue 458: mk-query-digest Use of uninitialized value in division (/) at
+# line 3805.
+# #############################################################################
+require '../SlowLogParser.pm';
+my $p = new SlowLogParser();
+
+$ea = new EventAggregator(
+   groupby           => 'arg',
+   worst             => 'Query_time',
+);
+
+sub parse_file {
+   my ( $file ) = @_;
+   my @e;
+   eval {
+      open my $fh, "<", $file or BAIL_OUT($OS_ERROR);
+      1 while $p->parse_event($fh, undef, sub { push @e, @_; $ea->aggregate(@_);  });
+      close $fh;
+   };
+   return \@e;
+}
+
+# The real bug is in QueryReportFormatter, and there's nothing particularly
+# interesting about this sample, but we just want to make sure that the
+# timestamp prop shows up only in the one event.  The bug is that it appears
+# to be in all events by the time we get to QueryReportFormatter.
+is_deeply(
+   parse_file('samples/slow029.txt'),
+   [
+      {
+       Schema => 'mysql',
+       bytes => 11,
+       db => 'mysql',
+       cmd => 'Query',
+       arg => 'show status',
+       ip => '',
+       Thread_id => '1530316',
+       host => 'localhost',
+       pos_in_log => 0,
+       timestamp => '1241453102',
+       Rows_examined => '249',
+       user => 'root',
+       Query_time => '4.352063',
+       Rows_sent => '249',
+       Lock_time => '0.000000'
+      },
+      {
+       Schema => 'pro',
+       bytes => 179,
+       db => 'pro',
+       cmd => 'Query',
+       arg => 'SELECT * FROM `events`     WHERE (`events`.`id` IN (51118,51129,50893,50567,50817,50834,50608,50815,51023,50903,50820,50003,50890,50673,50596,50553,50618,51103,50578,50732,51021))',
+       ip => '1.2.3.87',
+       ts => '090504  9:07:24',
+       Thread_id => '1695747',
+       host => 'x03-s00342.x03.domain.com',
+       pos_in_log => 206,
+       Rows_examined => '26876',
+       Query_time => '2.156031',
+       user => 'dbuser',
+       Rows_sent => '21',
+       Lock_time => '0.000000'
+      },
+      {
+       Schema => 'pro',
+       bytes => 66,
+       cmd => 'Query',
+       arg => 'SELECT * FROM `users`     WHERE (email = NULL or new_email = NULL)',
+       ip => '1.2.3.84',
+       Thread_id => '1695268',
+       host => 'x03-s00339.x03.domain.com',
+       pos_in_log => 602,
+       Rows_examined => '106242',
+       user => 'dbuser',
+       Query_time => '2.060030',
+       Rows_sent => '0',
+       Lock_time => '0.000000'
+      },
+   ],
+   'slow029.txt events (issue 458)'
+);
+
+ok(
+   !exists $ea->results->{samples}->{'SELECT * FROM `users`     WHERE (email = NULL or new_email = NULL)'}->{timestamp}
+   && !exists $ea->results->{samples}->{'SELECT * FROM `events`     WHERE (`events`.`id` IN (51118,51129,50893,50567,50817,50834,50608,50815,51023,50903,50820,50003,50890,50673,50596,50553,50618,51103,50578,50732,51021))'}->{timestamp}
+   && exists $ea->results->{samples}->{'show status'}->{timestamp},
+   'props not auto-vivified (issue 458)',
 );
 
 # #############################################################################

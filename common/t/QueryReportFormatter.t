@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 9;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -281,3 +281,71 @@ $result = $qrf->chart_distro(
 );
 
 is($result, $expected, 'Chart distro with all zeroes');
+
+# #############################################################################
+# Issue 458: mk-query-digest Use of uninitialized value in division (/) at
+# line 3805
+# #############################################################################
+require '../SlowLogParser.pm';
+my $p = new SlowLogParser();
+
+sub report_from_file {
+   my $ea2 = new EventAggregator(
+      groupby => 'fingerprint',
+      worst   => 'Query_time',
+   );
+   my ( $file ) = @_;
+   my @e;
+   my @callbacks;
+   push @callbacks, sub {
+      my ( $event ) = @_;
+      my $group_by_val = $event->{arg};
+      return 0 unless defined $group_by_val;
+      $event->{fingerprint} = $qr->fingerprint($group_by_val);
+      return $event;
+   };
+   push @callbacks, sub {
+      $ea2->aggregate(@_);
+   };
+   eval {
+      open my $fh, "<", $file or BAIL_OUT($OS_ERROR);
+      1 while $p->parse_event($fh, undef, @callbacks);
+      close $fh;
+   };
+   my %top_spec = (
+      attrib  => 'Query_time',
+      orderby => 'sum',
+      total   => 100,
+      count   => 100,
+   );
+   my @worst  = $ea2->top_events(%top_spec);
+   my $report = '';
+   foreach my $rank ( 1 .. @worst ) {
+      $report .= $qrf->event_report(
+         $ea2,
+         select => [ $ea2->get_attributes() ],
+         where  => $worst[$rank - 1]->[0],
+         rank   => $rank,
+         worst  => 'Query_time',
+         reason => '',
+      );
+   }
+   return $report;
+}
+
+# The real bug is in QueryReportFormatter, and there's nothing particularly
+# interesting about this sample, but we just want to make sure that the
+# timestamp prop shows up only in the one event.  The bug is that it appears
+eval {
+   report_from_file('samples/slow029.txt');
+};
+is(
+   $EVAL_ERROR,
+   '',
+   'event_report() does not die on empty attributes (issue 458)'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
+exit;

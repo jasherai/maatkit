@@ -137,6 +137,7 @@ sub aggregate {
    my @attrs = sort keys %{$self->{attributes}};
    ATTRIB:
    foreach my $attrib ( @attrs ) {
+      next ATTRIB unless exists $event->{$attrib};
       # The value of the attribute ( $group_by ) may be an arrayref.
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
