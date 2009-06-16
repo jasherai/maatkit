@@ -3061,7 +3061,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3958
+# EventAggregator package 3966
 # ###########################################################################
 package EventAggregator;
 
@@ -3141,6 +3141,7 @@ sub aggregate {
    my @attrs = sort keys %{$self->{attributes}};
    ATTRIB:
    foreach my $attrib ( @attrs ) {
+      next ATTRIB unless exists $event->{$attrib};
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
          my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
@@ -3581,7 +3582,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 3955
+# QueryReportFormatter package 3967
 # ###########################################################################
 
 
@@ -3788,6 +3789,7 @@ sub event_report {
       next unless $ea->type_for($attrib);
       next unless exists $store->{$attrib};
       my $vals = $store->{$attrib};
+      next unless scalar %$vals;
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
             $formatting_function{$attrib}->($vals),
