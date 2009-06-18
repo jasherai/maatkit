@@ -254,6 +254,8 @@ sub parse_event {
          }
       }
 
+      # Don't dump $event; want to see full dump of all properties, and after
+      # it's been cast into a hash, duplicated keys will be gone.
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
       foreach my $callback ( @callbacks ) {
