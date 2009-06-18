@@ -5316,15 +5316,6 @@ sub main {
       };
    }
 
-   if ( $o->get('print') ) {
-      my $w = new SlowLogWriter();
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         $w->write(*STDOUT, $event);
-         return $event;
-      };
-   }
-
    if ( grep { $_ eq 'tables' } @$groupby ) {
       push @callbacks, sub {
          my ( $event ) = @_;
@@ -5362,6 +5353,45 @@ sub main {
       MKDEBUG && _d('--filter code:', $code);
       my $sub = eval $code or die;
       push @callbacks, $sub;
+   }
+
+   if ( $o->get('zero-admin') ) {
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         if ( $event->{arg} && $event->{arg} =~ m/^# administrator/ ) {
+            $event->{Rows_sent}     = 0;
+            $event->{Rows_read}     = 0;
+            $event->{Rows_examined} = 0;
+         }
+         return $event;
+      };
+   }
+
+   if ( $o->got('sample') ) {
+      my $group_by_val = $groupby->[0];
+      my $num_samples  = $o->get('sample');
+      if ( $group_by_val ) {
+         my %seen;
+         push @callbacks, sub {
+            my ($event) = @_;
+            if ( ++$seen{$event->{$group_by_val}} <= $num_samples ) {
+               MKDEBUG && _d("--sample permits event",
+                  $event->{$group_by_val});
+               return $event;
+            }
+            MKDEBUG && _d("--sample rejects event", $event->{$group_by_val});
+            return undef;
+         };
+      }
+   }
+
+   if ( $o->get('print') ) {
+      my $w = new SlowLogWriter();
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         $w->write(*STDOUT, $event);
+         return $event;
+      };
    }
 
    if ( $o->get('execute') ) {
@@ -5407,18 +5437,6 @@ sub main {
       };
    }
 
-   if ( $o->get('zero-admin') ) {
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         if ( $event->{arg} && $event->{arg} =~ m/^# administrator/ ) {
-            $event->{Rows_sent}     = 0;
-            $event->{Rows_read}     = 0;
-            $event->{Rows_examined} = 0;
-         }
-         return $event;
-      };
-   }
-
    foreach my $i ( 0 .. @$groupby - 1 ) {
       my $groupby = $groupby->[$i];
       die "You need to specify an --order-by for each --group-by"
@@ -5448,12 +5466,14 @@ sub main {
             attributes => [ keys %attributes ],
          );
       }
-      $ea{$groupby} = $e;
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         $e->aggregate($event);
-         return $event;
-      };
+      if ( $e ) {
+         $ea{$groupby} = $e;
+         push @callbacks, sub {
+            my ( $event ) = @_;
+            $e->aggregate($event);
+            return $event;
+         };
+      }
    }
 
    # ########################################################################
@@ -6767,6 +6787,20 @@ type: time
 
 How long to run before exiting.  The default is to run forever (you can
 interrupt with CTRL-C).  See also L<"--iterations">.
+
+=item --sample
+
+type: int
+
+Filter out all but the first N occurrences of each query.  The queries are
+filtered on the first value in L<"--group-by">, so by default, this will filter
+by query fingerprint.  For example, C<--sample 2> will permit two sample queries
+for each fingerprint.  Useful in conjunction with L<"--print"> to print out the
+queries.  You probably want to set L<"--report"> to the empty string to avoid
+the overhead of aggregating and reporting, if you're just using this to print
+out samples of queries.  A complete example:
+
+  mk-query-digest --sample 2 --report '' --group-by fingerprint --print slow.log
 
 =item --select
 

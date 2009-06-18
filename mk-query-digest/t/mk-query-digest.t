@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 61;
+use Test::More tests => 62;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -552,6 +552,16 @@ ok(
    no_diff('../mk-query-digest ../../common/t/samples/tcpdump017.txt --type tcpdump --report-format header,query_report,profile',
       'samples/tcpdump017_report.txt'),
    'Analysis for tcpdump017 with microsecond timestamps (issue 398)'
+);
+
+# #############################################################################
+# Issue 462: Filter out all but first N of each
+# #############################################################################
+ok(
+   no_diff('../mk-query-digest ../../common/t/samples/slow006.txt '
+      . '--report "" --group-by fingerprint --print --sample 2',
+      'samples/slow006-first2.txt'),
+   'Print only first N unique occurrences',
 );
 
 # #############################################################################
