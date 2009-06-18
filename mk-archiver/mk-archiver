@@ -3274,12 +3274,11 @@ mk-archiver - Archive rows from a MySQL table into another table or a file.
 =head1 DESCRIPTION
 
 mk-archiver is the tool I use to archive tables as described in
-L<http://www.xaprb.com/blog/2006/05/02/how-to-write-efficient-archiving-and-purging-jobs-in-sql/>.
-The goal is a low-impact, forward-only job to nibble old data out of the table
-without impacting OLTP queries much.  You can insert the data into another
-table, which need not be on the same server.  You can also write it to a file
-in a format suitable for LOAD DATA INFILE.  Or you can do neither, in which
-case it's just an incremental DELETE.
+L<http://tinyurl.com/mysql-archiving>.  The goal is a low-impact, forward-only
+job to nibble old data out of the table without impacting OLTP queries much.
+You can insert the data into another table, which need not be on the same
+server.  You can also write it to a file in a format suitable for LOAD DATA
+INFILE.  Or you can do neither, in which case it's just an incremental DELETE.
 
 mk-archiver is extensible via a plugin mechanism.  You can inject your own
 code to add advanced archiving logic that could be useful for archiving
