@@ -678,3 +678,37 @@ Revision 3968
     28	../mk-query-digest:2874 0.31739 93720: local $INPUT_RECORD_SEPARATOR = ";\n#";
     29	../mk-query-digest:1533 0.31091 46726: $query =~ s/$olc_re//go;
     30	../mk-query-digest:3448 0.28618 221000: next BUCKET unless $val; 
+
+Revision 3977
+49.53user 95.68system 2:26.08elapsed 99%CPU (0avgtext+0avgdata 0maxresident)k
+197720inputs+164696outputs (7major+22734minor)pagefaults 0swaps
+     1	../mk-query-digest:1541 3.76135 46726: $query =~ s/[0-9+-][0-9a-f.xb+-]*/?/g;# Anything vaguely resembling numbers
+     2	../mk-query-digest:3353 2.91481 1125549: my ( $val ) = @_;
+     3	../mk-query-digest:3354 2.46198 1125549: return 0 if $val < MIN_BUCK;
+     4	../mk-query-digest:2941 2.31301 187482: my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
+     5	../mk-query-digest:3356 2.10652 742855: return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
+     6	../mk-query-digest:3355 2.06059 742855: my $idx = int(BASE_OFFSET + log($val)/BASE_LOG);
+     7	../mk-query-digest:3552 1.92780 93741: $_ ne $self->{groupby}
+     8	../mk-query-digest:2910 1.77815 330270: if ( !$got_ts && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)) {
+     9	../mk-query-digest:2885 1.39370 93741: if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
+    10	../mk-query-digest:2957 1.23800 330270: if ( !$found_arg && $pos == $len ) {
+    11	../mk-query-digest:1542 1.12864 46726: $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+    12	../mk-query-digest:2905 1.11266 377133: my $line = $1;          # Necessary for /g and pos() to work.
+    13	../mk-query-digest:2880 1.10897 93720: while ( $$oktorun
+    14	../mk-query-digest:2908 1.09185 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+    15	../mk-query-digest:1533 0.88742 46726: $query =~ s/$olc_re//go;
+    16	../mk-query-digest:2987 0.88547 93741: my $event = { @properties };
+    17	../mk-query-digest:2992 0.86569 93741: last EVENT unless @pending;
+    18	../mk-query-digest:2942 0.79679 187482: push @properties, @temp;
+    19	../mk-query-digest:2904 0.77595 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
+    20	../mk-query-digest:2906 0.70145 377133: MKDEBUG && _d($line);
+    21	../mk-query-digest:3200 0.67988 93689: [at line 5 inside eval] ||= { map { $_ => { } } @attrs };
+    22	../mk-query-digest:2989 0.62496 281223: last unless $event = $callback->($event);
+    23	../mk-query-digest:3200 0.61908 93689: [at line 6 inside eval] $samples->{$group_by} ||= $event;
+    24	../mk-query-digest:1545 0.60987 46726: $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+    25	../mk-query-digest:1548 0.52842 46726: $query =~ s{                          # Collapse IN and VALUES lists
+    26	../mk-query-digest:2894 0.48541 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+    27	../mk-query-digest:2895 0.45104 93741: $stmt =~ s/;\n#?\Z//;
+    28	../mk-query-digest:2994 0.43831 93720: return $num_events;
+    29	../mk-query-digest:3447 0.42721 202000: my $val = $vals->[$bucket];
+    30	../mk-query-digest:3448 0.42448 202000: next BUCKET unless $val; 
