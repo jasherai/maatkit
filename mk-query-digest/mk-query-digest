@@ -2029,7 +2029,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 3948
+# MySQLProtocolParser package 3986
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2237,159 +2237,166 @@ sub _packet_from_server {
       $self->fail_session($session, 'no first byte');
       return;
    }
- 
-   if ( $first_byte eq '00' ) { 
-      if ( ($session->{state} || '') eq 'client_auth' ) {
-         $session->{state} = 'ready';
 
-         $session->{compress} = $session->{will_compress};
-         delete $session->{will_compress};
-         MKDEBUG && $session->{compress} && _d('Packets will be compressed');
-
-         MKDEBUG && _d('Admin command: Connect');
-         return $self->_make_event(
-            {  cmd => 'Admin',
-               arg => 'administrator command: Connect',
-               ts  => $packet->{ts}, # Events are timestamped when they end
-            },
-            $packet, $session
-         );
-      }
-      elsif ( $session->{cmd} ) {
-         my $ok  = parse_ok_packet($data);
-         if ( !$ok ) {
-            $self->fail_session($session, 'failed to parse OK packet');
-            return;
-         }
-         my $com = $session->{cmd}->{cmd};
-         my $arg;
-
-         if ( $com eq COM_QUERY ) {
-            $com = 'Query';
-            $arg = $session->{cmd}->{arg};
-         }
-         else {
-            $arg = 'administrator command: '
-                 . ucfirst(lc(substr($com_for{$com}, 4)));
-            $com = 'Admin';
-         }
-
-         $session->{state} = 'ready';
-         return $self->_make_event(
-            {  cmd           => $com,
-               arg           => $arg,
-               ts            => $packet->{ts},
-               Insert_id     => $ok->{insert_id},
-               Warning_count => $ok->{warnings},
-               Rows_affected => $ok->{affected_rows},
-            },
-            $packet, $session
-         );
-      } 
-   }
-   elsif ( $first_byte eq 'ff' ) {
-      my $error = parse_error_packet($data);
-      if ( !$error ) {
-         $self->fail_session($session, 'failed to parse error packet');
-         return;
-      }
-      my $event;
-
-      if ( $session->{state} eq 'client_auth' ) {
-         MKDEBUG && _d('Connection failed');
-         $event = {
-            cmd       => 'Admin',
-            arg       => 'administrator command: Connect',
-            ts        => $packet->{ts},
-            Error_no  => $error->{errno},
-         };
-         $session->{state} = 'closing';
-      }
-      elsif ( $session->{cmd} ) {
-         my $com = $session->{cmd}->{cmd};
-         my $arg;
-
-         if ( $com eq COM_QUERY ) {
-            $com = 'Query';
-            $arg = $session->{cmd}->{arg};
-         }
-         else {
-            $arg = 'administrator command: '
-                 . ucfirst(lc(substr($com_for{$com}, 4)));
-            $com = 'Admin';
-         }
-         $event = {
-            cmd       => $com,
-            arg       => $arg,
-            ts        => $packet->{ts},
-            Error_no  => $error->{errno},
-         };
-         $session->{state} = 'ready';
-      }
-
-      return $self->_make_event($event, $packet, $session);
-   }
-   elsif ( $first_byte eq 'fe' && $packet->{mysql_data_len} < 9 ) {
-      if ( $packet->{mysql_data_len} == 1
-           && $session->{state} eq 'client_auth'
-           && $packet->{number} == 2 )
-      {
-         MKDEBUG && _d('Server has old password table;',
-            'client will resend password using old algorithm');
-         $session->{state} = 'client_auth_resend';
-      }
-      else {
-         MKDEBUG && _d('Got an EOF packet');
-         die "You should not have gotten here";
-      }
-   }
-   elsif ( !$session->{state}
-           && $first_byte eq '0a'
+   if ( !$session->{state} ) {
+      if ( $first_byte eq '0a'
            && length $data >= 33
            && $data =~ m/00{13}/ )
-   {
-      my $handshake = parse_server_handshake_packet($data);
-      if ( !$handshake ) {
-         $self->fail_session($session, 'failed to parse server handshake');
-         return;
-      }
-      $session->{state}     = 'server_handshake';
-      $session->{thread_id} = $handshake->{thread_id};
-   }
-   else {
-      if ( $session->{cmd} ) {
-         MKDEBUG && _d('Got a row/field/result packet');
-         my $com = $session->{cmd}->{cmd};
-         MKDEBUG && _d('Responding to client', $com_for{$com});
-         my $event = { ts  => $packet->{ts} };
-         if ( $com eq COM_QUERY ) {
-            $event->{cmd} = 'Query';
-            $event->{arg} = $session->{cmd}->{arg};
+      {
+         my $handshake = parse_server_handshake_packet($data);
+         if ( !$handshake ) {
+            $self->fail_session($session, 'failed to parse server handshake');
+            return;
          }
-         else {
-            $event->{arg} = 'administrator command: '
-                 . ucfirst(lc(substr($com_for{$com}, 4)));
-            $event->{cmd} = 'Admin';
-         }
-
-         if ( $packet->{complete} ) {
-            my ( $warning_count, $status_flags )
-               = $data =~ m/fe(.{4})(.{4})\Z/;
-            if ( $warning_count ) { 
-               $event->{Warnings} = to_num($warning_count);
-               my $flags = to_num($status_flags); # TODO set all flags?
-               $event->{No_good_index_used}
-                  = $flags & SERVER_QUERY_NO_GOOD_INDEX_USED ? 1 : 0;
-               $event->{No_index_used}
-                  = $flags & SERVER_QUERY_NO_INDEX_USED ? 1 : 0;
-            }
-         }
-
-         $session->{state} = 'ready';
-         return $self->_make_event($event, $packet, $session);
+         $session->{state}     = 'server_handshake';
+         $session->{thread_id} = $handshake->{thread_id};
       }
       else {
-         MKDEBUG && _d('Unknown in-stream server response');
+         MKDEBUG && _d('Ignoring mid-stream server response');
+         return;
+      }
+   }
+   else {
+      if ( $first_byte eq '00' ) { 
+         if ( ($session->{state} || '') eq 'client_auth' ) {
+            $session->{state} = 'ready';
+
+            $session->{compress} = $session->{will_compress};
+            delete $session->{will_compress};
+            MKDEBUG && $session->{compress} && _d('Packets will be compressed');
+
+            MKDEBUG && _d('Admin command: Connect');
+            return $self->_make_event(
+               {  cmd => 'Admin',
+                  arg => 'administrator command: Connect',
+                  ts  => $packet->{ts}, # Events are timestamped when they end
+               },
+               $packet, $session
+            );
+         }
+         elsif ( $session->{cmd} ) {
+            my $ok  = parse_ok_packet($data);
+            if ( !$ok ) {
+               $self->fail_session($session, 'failed to parse OK packet');
+               return;
+            }
+            my $com = $session->{cmd}->{cmd};
+            my $arg;
+
+            if ( $com eq COM_QUERY ) {
+               $com = 'Query';
+               $arg = $session->{cmd}->{arg};
+            }
+            else {
+               $arg = 'administrator command: '
+                    . ucfirst(lc(substr($com_for{$com}, 4)));
+               $com = 'Admin';
+            }
+
+            $session->{state} = 'ready';
+            return $self->_make_event(
+               {  cmd           => $com,
+                  arg           => $arg,
+                  ts            => $packet->{ts},
+                  Insert_id     => $ok->{insert_id},
+                  Warning_count => $ok->{warnings},
+                  Rows_affected => $ok->{affected_rows},
+               },
+               $packet, $session
+            );
+         } 
+      }
+      elsif ( $first_byte eq 'ff' ) {
+         my $error = parse_error_packet($data);
+         if ( !$error ) {
+            $self->fail_session($session, 'failed to parse error packet');
+            return;
+         }
+         my $event;
+
+         if ( $session->{state} eq 'client_auth' ) {
+            MKDEBUG && _d('Connection failed');
+            $event = {
+               cmd       => 'Admin',
+               arg       => 'administrator command: Connect',
+               ts        => $packet->{ts},
+               Error_no  => $error->{errno},
+            };
+            $session->{state} = 'closing';
+         }
+         elsif ( $session->{cmd} ) {
+            my $com = $session->{cmd}->{cmd};
+            my $arg;
+
+            if ( $com eq COM_QUERY ) {
+               $com = 'Query';
+               $arg = $session->{cmd}->{arg};
+            }
+            else {
+               $arg = 'administrator command: '
+                    . ucfirst(lc(substr($com_for{$com}, 4)));
+               $com = 'Admin';
+            }
+            $event = {
+               cmd       => $com,
+               arg       => $arg,
+               ts        => $packet->{ts},
+               Error_no  => $error->{errno},
+            };
+            $session->{state} = 'ready';
+         }
+
+         return $self->_make_event($event, $packet, $session);
+      }
+      elsif ( $first_byte eq 'fe' && $packet->{mysql_data_len} < 9 ) {
+         if ( $packet->{mysql_data_len} == 1
+              && $session->{state} eq 'client_auth'
+              && $packet->{number} == 2 )
+         {
+            MKDEBUG && _d('Server has old password table;',
+               'client will resend password using old algorithm');
+            $session->{state} = 'client_auth_resend';
+         }
+         else {
+            MKDEBUG && _d('Got an EOF packet');
+            die "You should not have gotten here";
+         }
+      }
+      else {
+         if ( $session->{cmd} ) {
+            MKDEBUG && _d('Got a row/field/result packet');
+            my $com = $session->{cmd}->{cmd};
+            MKDEBUG && _d('Responding to client', $com_for{$com});
+            my $event = { ts  => $packet->{ts} };
+            if ( $com eq COM_QUERY ) {
+               $event->{cmd} = 'Query';
+               $event->{arg} = $session->{cmd}->{arg};
+            }
+            else {
+               $event->{arg} = 'administrator command: '
+                    . ucfirst(lc(substr($com_for{$com}, 4)));
+               $event->{cmd} = 'Admin';
+            }
+
+            if ( $packet->{complete} ) {
+               my ( $warning_count, $status_flags )
+                  = $data =~ m/fe(.{4})(.{4})\Z/;
+               if ( $warning_count ) { 
+                  $event->{Warnings} = to_num($warning_count);
+                  my $flags = to_num($status_flags); # TODO set all flags?
+                  $event->{No_good_index_used}
+                     = $flags & SERVER_QUERY_NO_GOOD_INDEX_USED ? 1 : 0;
+                  $event->{No_index_used}
+                     = $flags & SERVER_QUERY_NO_INDEX_USED ? 1 : 0;
+               }
+            }
+
+            $session->{state} = 'ready';
+            return $self->_make_event($event, $packet, $session);
+         }
+         else {
+            MKDEBUG && _d('Unknown in-stream server response');
+         }
       }
    }
 
