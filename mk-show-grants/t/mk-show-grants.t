@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 9;
+use Test::More tests => 14;
 
 require '../mk-show-grants';
 require '../../common/Sandbox.pm';
@@ -83,4 +83,54 @@ like(
    'No output when all users skipped'
 );
 
+# #############################################################################
+# Issue 445: mk-show-grants --revoke crashes 
+# #############################################################################
+diag(`/tmp/12345/use -u root -e "GRANT USAGE ON *.* TO ''\@''"`);
+my $res = `/tmp/12345/use -e "SELECT user FROM mysql.user WHERE user = ''"`;
+like(
+   $res,
+   qr/user/,
+   'Added anonymous user (issue 445)'
+);
+
+clear_output();
+eval {
+   mk_show_grants::main('-F', $cnf, '--revoke');
+};
+is(
+   $EVAL_ERROR,
+   '',
+   'Does not die on anonymous user (issue 445)',
+);
+like(
+   $output,
+   qr/REVOKE USAGE ON \*\.\* FROM ''\@'';/,
+   'Prints revoke for anonymous user (issue 445)'
+);
+
+diag(`/tmp/12345/use -u root -e "DROP USER ''\@''"`);
+$res = `/tmp/12345/use -e "SELECT user FROM mysql.user WHERE user = ''"`;
+is(
+   $res,
+   '',
+   'Removed anonymous user (issue 445)'
+);
+
+
+# #############################################################################
+# Done.
+# #############################################################################
+$res = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$res;
+   mk_show_grants::_d('Complete test coverage');
+}
+like(
+   $res,
+   qr/Complete test coverage/,
+   '_d() works'
+);
+$sb->wipe_clean($dbh);
 exit;

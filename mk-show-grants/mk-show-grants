@@ -1342,9 +1342,15 @@ sub main {
             my $grant = $_;
             MKDEBUG && _d($grant);
             my ( $grants, $on_what, $user ) = $grant
-               =~ m/GRANT (.*?) ON ((?:`|\*).*?) TO ('[^']*'\@'[^']+')/;
+               =~ m/GRANT (.*?) ON ((?:`|\*).*?) TO ('[^']*'\@'[^']+')?/;
             MKDEBUG && _d('grants:', $grants, 'on_what:', $on_what,
                'user:', $user);
+
+            if ( !$user ) {
+               # Anonymous user: ''@'' (issue 445).
+               MKDEBUG && _d('Anonymous user');
+               $user = "''\@''";
+            }
 
             my @result;
             if ( $o->get('separate') ) {

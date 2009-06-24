@@ -1,5 +1,7 @@
 Changelog for mk-show-grants:
 
+   * The tool crashed on anonymous user ''@'' (issue 445).
+
 2009-06-02: version 1.0.16
 
    * Removed the --askpass long option.  Use --ask-pass instead.
