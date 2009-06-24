@@ -272,182 +272,192 @@ sub _packet_from_server {
       $self->fail_session($session, 'no first byte');
       return;
    }
- 
-   if ( $first_byte eq '00' ) { 
-      if ( ($session->{state} || '') eq 'client_auth' ) {
-         # We logged in OK!  Trigger an admin Connect command.
-         $session->{state} = 'ready';
 
-         $session->{compress} = $session->{will_compress};
-         delete $session->{will_compress};
-         MKDEBUG && $session->{compress} && _d('Packets will be compressed');
-
-         MKDEBUG && _d('Admin command: Connect');
-         return $self->_make_event(
-            {  cmd => 'Admin',
-               arg => 'administrator command: Connect',
-               ts  => $packet->{ts}, # Events are timestamped when they end
-            },
-            $packet, $session
-         );
-      }
-      elsif ( $session->{cmd} ) {
-         # This OK should be ack'ing a query or something sent earlier
-         # by the client.
-         my $ok  = parse_ok_packet($data);
-         if ( !$ok ) {
-            $self->fail_session($session, 'failed to parse OK packet');
-            return;
-         }
-         my $com = $session->{cmd}->{cmd};
-         my $arg;
-
-         if ( $com eq COM_QUERY ) {
-            $com = 'Query';
-            $arg = $session->{cmd}->{arg};
-         }
-         else {
-            $arg = 'administrator command: '
-                 . ucfirst(lc(substr($com_for{$com}, 4)));
-            $com = 'Admin';
-         }
-
-         $session->{state} = 'ready';
-         return $self->_make_event(
-            {  cmd           => $com,
-               arg           => $arg,
-               ts            => $packet->{ts},
-               Insert_id     => $ok->{insert_id},
-               Warning_count => $ok->{warnings},
-               Rows_affected => $ok->{affected_rows},
-            },
-            $packet, $session
-         );
-      } 
-   }
-   elsif ( $first_byte eq 'ff' ) {
-      my $error = parse_error_packet($data);
-      if ( !$error ) {
-         $self->fail_session($session, 'failed to parse error packet');
-         return;
-      }
-      my $event;
-
-      if ( $session->{state} eq 'client_auth' ) {
-         MKDEBUG && _d('Connection failed');
-         $event = {
-            cmd       => 'Admin',
-            arg       => 'administrator command: Connect',
-            ts        => $packet->{ts},
-            Error_no  => $error->{errno},
-         };
-         $session->{state} = 'closing';
-      }
-      elsif ( $session->{cmd} ) {
-         # This error should be in response to a query or something
-         # sent earlier by the client.
-         my $com = $session->{cmd}->{cmd};
-         my $arg;
-
-         if ( $com eq COM_QUERY ) {
-            $com = 'Query';
-            $arg = $session->{cmd}->{arg};
-         }
-         else {
-            $arg = 'administrator command: '
-                 . ucfirst(lc(substr($com_for{$com}, 4)));
-            $com = 'Admin';
-         }
-         $event = {
-            cmd       => $com,
-            arg       => $arg,
-            ts        => $packet->{ts},
-            Error_no  => $error->{errno},
-         };
-         $session->{state} = 'ready';
-      }
-
-      return $self->_make_event($event, $packet, $session);
-   }
-   elsif ( $first_byte eq 'fe' && $packet->{mysql_data_len} < 9 ) {
-      if ( $packet->{mysql_data_len} == 1
-           && $session->{state} eq 'client_auth'
-           && $packet->{number} == 2 )
-      {
-         MKDEBUG && _d('Server has old password table;',
-            'client will resend password using old algorithm');
-         $session->{state} = 'client_auth_resend';
-      }
-      else {
-         MKDEBUG && _d('Got an EOF packet');
-         die "You should not have gotten here";
-         # ^^^ We shouldn't reach this because EOF should come after a
-         # header, field, or row data packet; and we should be firing the
-         # event and returning when we see that.  See SVN history for some
-         # good stuff we could do if we wanted to handle EOF packets.
-      }
-   }
-   elsif ( !$session->{state}
-           && $first_byte eq '0a'
+   # If there's no session state, then we're catching a server response
+   # mid-stream.  It's only safe to wait until the client sends a command
+   # or to look for the server handshake.
+   if ( !$session->{state} ) {
+      if ( $first_byte eq '0a'
            && length $data >= 33
            && $data =~ m/00{13}/ )
-   {
-      # It's the handshake packet from the server to the client.
-      # 0a is protocol v10 which is essentially the only version used
-      # today.  33 is the minimum possible length for a valid server
-      # handshake packet.  It's probably a lot longer.  Other packets
-      # may start with 0a, but none that can would be >= 33.  The 13-byte
-      # 00 scramble buffer is another indicator.
-      my $handshake = parse_server_handshake_packet($data);
-      if ( !$handshake ) {
-         $self->fail_session($session, 'failed to parse server handshake');
-         return;
-      }
-      $session->{state}     = 'server_handshake';
-      $session->{thread_id} = $handshake->{thread_id};
-   }
-   else {
-      # Since we do NOT always have all the data the server sent to the
-      # client, we can't always do any processing of results.  So when
-      # we get one of these, we just fire the event even if the query
-      # is not done.  This means we will NOT process EOF packets
-      # themselves (see above).
-      if ( $session->{cmd} ) {
-         MKDEBUG && _d('Got a row/field/result packet');
-         my $com = $session->{cmd}->{cmd};
-         MKDEBUG && _d('Responding to client', $com_for{$com});
-         my $event = { ts  => $packet->{ts} };
-         if ( $com eq COM_QUERY ) {
-            $event->{cmd} = 'Query';
-            $event->{arg} = $session->{cmd}->{arg};
+      {
+         # It's the handshake packet from the server to the client.
+         # 0a is protocol v10 which is essentially the only version used
+         # today.  33 is the minimum possible length for a valid server
+         # handshake packet.  It's probably a lot longer.  Other packets
+         # may start with 0a, but none that can would be >= 33.  The 13-byte
+         # 00 scramble buffer is another indicator.
+         my $handshake = parse_server_handshake_packet($data);
+         if ( !$handshake ) {
+            $self->fail_session($session, 'failed to parse server handshake');
+            return;
          }
-         else {
-            $event->{arg} = 'administrator command: '
-                 . ucfirst(lc(substr($com_for{$com}, 4)));
-            $event->{cmd} = 'Admin';
-         }
-
-         # We DID get all the data in the packet.
-         if ( $packet->{complete} ) {
-            # Look to see if the end of the data appears to be an EOF
-            # packet.
-            my ( $warning_count, $status_flags )
-               = $data =~ m/fe(.{4})(.{4})\Z/;
-            if ( $warning_count ) { 
-               $event->{Warnings} = to_num($warning_count);
-               my $flags = to_num($status_flags); # TODO set all flags?
-               $event->{No_good_index_used}
-                  = $flags & SERVER_QUERY_NO_GOOD_INDEX_USED ? 1 : 0;
-               $event->{No_index_used}
-                  = $flags & SERVER_QUERY_NO_INDEX_USED ? 1 : 0;
-            }
-         }
-
-         $session->{state} = 'ready';
-         return $self->_make_event($event, $packet, $session);
+         $session->{state}     = 'server_handshake';
+         $session->{thread_id} = $handshake->{thread_id};
       }
       else {
-         MKDEBUG && _d('Unknown in-stream server response');
+         MKDEBUG && _d('Ignoring mid-stream server response');
+         return;
+      }
+   }
+   else {
+      if ( $first_byte eq '00' ) { 
+         if ( ($session->{state} || '') eq 'client_auth' ) {
+            # We logged in OK!  Trigger an admin Connect command.
+            $session->{state} = 'ready';
+
+            $session->{compress} = $session->{will_compress};
+            delete $session->{will_compress};
+            MKDEBUG && $session->{compress} && _d('Packets will be compressed');
+
+            MKDEBUG && _d('Admin command: Connect');
+            return $self->_make_event(
+               {  cmd => 'Admin',
+                  arg => 'administrator command: Connect',
+                  ts  => $packet->{ts}, # Events are timestamped when they end
+               },
+               $packet, $session
+            );
+         }
+         elsif ( $session->{cmd} ) {
+            # This OK should be ack'ing a query or something sent earlier
+            # by the client.
+            my $ok  = parse_ok_packet($data);
+            if ( !$ok ) {
+               $self->fail_session($session, 'failed to parse OK packet');
+               return;
+            }
+            my $com = $session->{cmd}->{cmd};
+            my $arg;
+
+            if ( $com eq COM_QUERY ) {
+               $com = 'Query';
+               $arg = $session->{cmd}->{arg};
+            }
+            else {
+               $arg = 'administrator command: '
+                    . ucfirst(lc(substr($com_for{$com}, 4)));
+               $com = 'Admin';
+            }
+
+            $session->{state} = 'ready';
+            return $self->_make_event(
+               {  cmd           => $com,
+                  arg           => $arg,
+                  ts            => $packet->{ts},
+                  Insert_id     => $ok->{insert_id},
+                  Warning_count => $ok->{warnings},
+                  Rows_affected => $ok->{affected_rows},
+               },
+               $packet, $session
+            );
+         } 
+      }
+      elsif ( $first_byte eq 'ff' ) {
+         my $error = parse_error_packet($data);
+         if ( !$error ) {
+            $self->fail_session($session, 'failed to parse error packet');
+            return;
+         }
+         my $event;
+
+         if ( $session->{state} eq 'client_auth' ) {
+            MKDEBUG && _d('Connection failed');
+            $event = {
+               cmd       => 'Admin',
+               arg       => 'administrator command: Connect',
+               ts        => $packet->{ts},
+               Error_no  => $error->{errno},
+            };
+            $session->{state} = 'closing';
+         }
+         elsif ( $session->{cmd} ) {
+            # This error should be in response to a query or something
+            # sent earlier by the client.
+            my $com = $session->{cmd}->{cmd};
+            my $arg;
+
+            if ( $com eq COM_QUERY ) {
+               $com = 'Query';
+               $arg = $session->{cmd}->{arg};
+            }
+            else {
+               $arg = 'administrator command: '
+                    . ucfirst(lc(substr($com_for{$com}, 4)));
+               $com = 'Admin';
+            }
+            $event = {
+               cmd       => $com,
+               arg       => $arg,
+               ts        => $packet->{ts},
+               Error_no  => $error->{errno},
+            };
+            $session->{state} = 'ready';
+         }
+
+         return $self->_make_event($event, $packet, $session);
+      }
+      elsif ( $first_byte eq 'fe' && $packet->{mysql_data_len} < 9 ) {
+         if ( $packet->{mysql_data_len} == 1
+              && $session->{state} eq 'client_auth'
+              && $packet->{number} == 2 )
+         {
+            MKDEBUG && _d('Server has old password table;',
+               'client will resend password using old algorithm');
+            $session->{state} = 'client_auth_resend';
+         }
+         else {
+            MKDEBUG && _d('Got an EOF packet');
+            die "You should not have gotten here";
+            # ^^^ We shouldn't reach this because EOF should come after a
+            # header, field, or row data packet; and we should be firing the
+            # event and returning when we see that.  See SVN history for some
+            # good stuff we could do if we wanted to handle EOF packets.
+         }
+      }
+      else {
+         # Since we do NOT always have all the data the server sent to the
+         # client, we can't always do any processing of results.  So when
+         # we get one of these, we just fire the event even if the query
+         # is not done.  This means we will NOT process EOF packets
+         # themselves (see above).
+         if ( $session->{cmd} ) {
+            MKDEBUG && _d('Got a row/field/result packet');
+            my $com = $session->{cmd}->{cmd};
+            MKDEBUG && _d('Responding to client', $com_for{$com});
+            my $event = { ts  => $packet->{ts} };
+            if ( $com eq COM_QUERY ) {
+               $event->{cmd} = 'Query';
+               $event->{arg} = $session->{cmd}->{arg};
+            }
+            else {
+               $event->{arg} = 'administrator command: '
+                    . ucfirst(lc(substr($com_for{$com}, 4)));
+               $event->{cmd} = 'Admin';
+            }
+
+            # We DID get all the data in the packet.
+            if ( $packet->{complete} ) {
+               # Look to see if the end of the data appears to be an EOF
+               # packet.
+               my ( $warning_count, $status_flags )
+                  = $data =~ m/fe(.{4})(.{4})\Z/;
+               if ( $warning_count ) { 
+                  $event->{Warnings} = to_num($warning_count);
+                  my $flags = to_num($status_flags); # TODO set all flags?
+                  $event->{No_good_index_used}
+                     = $flags & SERVER_QUERY_NO_GOOD_INDEX_USED ? 1 : 0;
+                  $event->{No_index_used}
+                     = $flags & SERVER_QUERY_NO_INDEX_USED ? 1 : 0;
+               }
+            }
+
+            $session->{state} = 'ready';
+            return $self->_make_event($event, $packet, $session);
+         }
+         else {
+            MKDEBUG && _d('Unknown in-stream server response');
+         }
       }
    }
 
