@@ -2309,8 +2309,9 @@ sub watch_server {
       },
    );
 
+   my $err_text  = $o->get('error-text');
    my $exit_time = time() + ($o->get('run-time') || 0);
-   my $sleep = $o->get('sleep');
+   my $sleep     = $o->get('sleep');
    my ($last_log, $last_pos);
 
    my $stat = {}; # Will hold SHOW SLAVE STATUS
@@ -2364,13 +2365,12 @@ sub watch_server {
             }
 
             if ( $o->got('error-numbers') 
-               && !exists($o->get('error-numbers')->{$stat->{last_errno}})
-            ) {
+                 && !exists($o->get('error-numbers')->{$stat->{last_errno}}) ) {
                die "Error $stat->{last_errno} is not in --error-numbers.\n";
             }
-            elsif ( $o->get('error-text') && $stat->{last_error}
-                  && $stat->{last_error} !~ m/$o->get('error-text')/ )
-            {
+            elsif ( $err_text
+                    && $stat->{last_error}
+                    && $stat->{last_error} !~ m/$err_text/ ) {
                die "Error does not match --error-text.\n";
             }
             elsif ( $stat->{last_error} || $o->get('always') ) {

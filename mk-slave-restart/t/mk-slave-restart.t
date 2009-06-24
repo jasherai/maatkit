@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 9;
+use Test::More tests => 11;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -54,6 +54,36 @@ ok(! -f '/tmp/mk-slave-restart.pid', 'PID file removed');
 $output = `../mk-slave-restart --stop --sentinel /tmp/mk-slave-restartup --error-numbers=1205,1317`;
 like($output, qr{Successfully created file /tmp/mk-slave-restartup}, '--error-numbers works (issue 118)');
 
+diag(`rm -f /tmp/mk-slave-re*`);
+
+# #############################################################################
+# Issue 459: mk-slave-restart --error-text is broken
+# #############################################################################
+# Bust replication again.  At this point, the master has test.t but
+# the slave does not.
+$master_dbh->do('DROP TABLE IF EXISTS test.t');
+$master_dbh->do('CREATE TABLE test.t (a INT)');
+sleep 1;
+$slave_dbh->do('DROP TABLE test.t');
+$master_dbh->do('INSERT INTO test.t SELECT 1');
+$output = `/tmp/12346/use -e 'show slave status'`;
+like(
+   $output,
+   qr/Table 'test.t' doesn't exist'/,
+   'It is busted again'
+);
+
+# Start an instance
+$output = `perl ../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 --error-text "doesn't exist" --run-time 1s 2>&1`;
+unlike(
+   $output,
+   qr/Error does not match/,
+   '--error-text works (issue 459)'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 diag(`rm -f /tmp/mk-slave-re*`);
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);

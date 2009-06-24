@@ -1,5 +1,7 @@
 Changelog for mk-slave-restart:
 
+   * --error-text did not work (issue 459).
+
 2009-06-02: version 1.0.14
 
    * Standardized options.
