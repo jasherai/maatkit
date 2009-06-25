@@ -4455,6 +4455,7 @@ sub main {
    # ########################################################################
    # Parse the host DSNs and make sure that we can connect to each.
    # ########################################################################
+   # XXX best to make sure dsn2 inherits from dsn1 here, for convenience
    my $host1_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV));
    my $host2_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV));
    my $ps_dbh;
@@ -4485,6 +4486,8 @@ sub main {
       # must be first because it creates the events for subsequent callbacks.
       $mysql_proto = new MySQLProtocolParser(
          server => $o->get('watch-server'),
+         # XXX Hm, why not named OptionParser to be consistent with the
+         # QueryRewriter->new call above?
          o      => $o,
       );
       push @callbacks, sub {
@@ -4524,6 +4527,15 @@ sub main {
             $current_db = $db;
          }
          
+         # XXX Here I think we want to substitute this with something like
+         # my $qe = new QueryExecutor(%some_options);
+         # my $info1 = $qe->exec($dbh1, $query);
+         # my $info2 = $qe->exec($dbh2, $query);
+         # The result should be something like
+         # { time => .1234, error => "...", warnings => [], eval_error => "...", .... }
+         # Then all we have to do is write code that can "diff" these data
+         # structures
+
          # Execute, time and get errors and warnings on host1...
          my $start = time();
          $host1_dbh->do($event->{arg}); # TODO: only if it's a cmd=Query event
