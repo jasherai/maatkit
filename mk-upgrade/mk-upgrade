@@ -3660,586 +3660,6 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 3312
-# ###########################################################################
-package MySQLDump;
-
-use strict;
-use warnings FATAL => 'all';
-
-use English qw(-no_match_vars);
-
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-( our $before = <<'EOF') =~ s/^   //gm;
-   /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-   /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
-   /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-   /*!40101 SET NAMES utf8 */;
-   /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
-   /*!40103 SET TIME_ZONE='+00:00' */;
-   /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
-   /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
-   /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
-   /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
-EOF
-
-( our $after = <<'EOF') =~ s/^   //gm;
-   /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
-   /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
-   /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
-   /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
-   /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-   /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-   /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
-   /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
-EOF
-
-sub new {
-   my ( $class, %args ) = @_;
-   $args{cache} = 1 unless defined $args{cache};
-   my $self = bless \%args, $class;
-   return $self;
-}
-
-sub dump {
-   my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
-
-   if ( $what eq 'table' ) {
-      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
-      if ( $ddl->[0] eq 'table' ) {
-         return $before
-            . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
-            . $ddl->[1] . ";\n";
-      }
-      else {
-         return 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
-            . '/*!50001 DROP VIEW IF EXISTS '
-            . $quoter->quote($tbl) . "*/;\n/*!50001 "
-            . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
-      }
-   }
-   elsif ( $what eq 'triggers' ) {
-      my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
-      if ( $trgs && @$trgs ) {
-         my $result = $before . "\nDELIMITER ;;\n";
-         foreach my $trg ( @$trgs ) {
-            if ( $trg->{sql_mode} ) {
-               $result .= qq{/*!50003 SET SESSION SQL_MODE='$trg->{sql_mode}' */;;\n};
-            }
-            $result .= "/*!50003 CREATE */ ";
-            if ( $trg->{definer} ) {
-               my ( $user, $host )
-                  = map { s/'/''/g; "'$_'"; }
-                    split('@', $trg->{definer}, 2);
-               $result .= "/*!50017 DEFINER=$user\@$host */ ";
-            }
-            $result .= sprintf("/*!50003 TRIGGER %s %s %s ON %s\nFOR EACH ROW %s */;;\n\n",
-               $quoter->quote($trg->{trigger}),
-               @{$trg}{qw(timing event)},
-               $quoter->quote($trg->{table}),
-               $trg->{statement});
-         }
-         $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
-         return $result;
-      }
-      else {
-         return undef;
-      }
-   }
-   elsif ( $what eq 'view' ) {
-      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
-      return '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
-         . '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
-         . '/*!50001 ' . $ddl->[1] . "*/;\n";
-   }
-   else {
-      die "You didn't say what to dump.";
-   }
-}
-
-sub _use_db {
-   my ( $self, $dbh, $quoter, $new ) = @_;
-   if ( !$new ) {
-      MKDEBUG && _d('No new DB to use');
-      return;
-   }
-   my $sql = 'SELECT DATABASE()';
-   MKDEBUG && _d($sql);
-   my $curr = $dbh->selectrow_array($sql);
-   if ( $curr && $new && $curr eq $new ) {
-      MKDEBUG && _d('Current and new DB are the same');
-      return $curr;
-   }
-   $sql = 'USE ' . $quoter->quote($new);
-   MKDEBUG && _d($sql);
-   $dbh->do($sql);
-   return $curr;
-}
-
-sub get_create_table {
-   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   if ( !$self->{cache} || !$self->{tables}->{$db}->{$tbl} ) {
-      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
-         . q{@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, 'ANSI_QUOTES', ''), ',,', ','), }
-         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
-      MKDEBUG && _d($sql);
-      eval { $dbh->do($sql); };
-      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
-      $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
-      MKDEBUG && _d($sql);
-      my $href = $dbh->selectrow_hashref($sql);
-      $self->_use_db($dbh, $quoter, $curr_db);
-      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
-      MKDEBUG && _d($sql);
-      $dbh->do($sql);
-      my ($key) = grep { m/create table/i } keys %$href;
-      if ( $key ) {
-         MKDEBUG && _d('This table is a base table');
-         $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
-      }
-      else {
-         MKDEBUG && _d('This table is a view');
-         ($key) = grep { m/create view/i } keys %$href;
-         $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
-      }
-   }
-   return $self->{tables}->{$db}->{$tbl};
-}
-
-sub get_columns {
-   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   MKDEBUG && _d('Get columns for', $db, $tbl);
-   if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
-      my $curr_db = $self->_use_db($dbh, $quoter, $db);
-      my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
-      MKDEBUG && _d($sql);
-      my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
-      $self->_use_db($dbh, $quoter, $curr_db);
-      $self->{columns}->{$db}->{$tbl} = [
-         map {
-            my %row;
-            @row{ map { lc $_ } keys %$_ } = values %$_;
-            \%row;
-         } @$cols
-      ];
-   }
-   return $self->{columns}->{$db}->{$tbl};
-}
-
-sub get_tmp_table {
-   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   my $result = 'CREATE TABLE ' . $quoter->quote($tbl) . " (\n";
-   $result .= join(",\n",
-      map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
-      @{$self->get_columns($dbh, $quoter, $db, $tbl)});
-   $result .= "\n)";
-   MKDEBUG && _d($result);
-   return $result;
-}
-
-sub get_triggers {
-   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
-      $self->{triggers}->{$db} = {};
-      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
-         . q{@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, 'ANSI_QUOTES', ''), ',,', ','), }
-         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
-      MKDEBUG && _d($sql);
-      eval { $dbh->do($sql); };
-      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-      $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
-      MKDEBUG && _d($sql);
-      my $sth = $dbh->prepare($sql);
-      $sth->execute();
-      if ( $sth->rows ) {
-         my $trgs = $sth->fetchall_arrayref({});
-         foreach my $trg (@$trgs) {
-            my %trg;
-            @trg{ map { lc $_ } keys %$trg } = values %$trg;
-            push @{ $self->{triggers}->{$db}->{ $trg{table} } }, \%trg;
-         }
-      }
-      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
-      MKDEBUG && _d($sql);
-      $dbh->do($sql);
-   }
-   if ( $tbl ) {
-      return $self->{triggers}->{$db}->{$tbl};
-   }
-   return values %{$self->{triggers}->{$db}};
-}
-
-sub get_databases {
-   my ( $self, $dbh, $quoter, $like ) = @_;
-   if ( !$self->{cache} || !$self->{databases} || $like ) {
-      my $sql = 'SHOW DATABASES';
-      my @params;
-      if ( $like ) {
-         $sql .= ' LIKE ?';
-         push @params, $like;
-      }
-      my $sth = $dbh->prepare($sql);
-      MKDEBUG && _d($sql, @params);
-      $sth->execute( @params );
-      my @dbs = map { $_->[0] } @{$sth->fetchall_arrayref()};
-      $self->{databases} = \@dbs unless $like;
-      return @dbs;
-   }
-   return @{$self->{databases}};
-}
-
-sub get_table_status {
-   my ( $self, $dbh, $quoter, $db, $like ) = @_;
-   if ( !$self->{cache} || !$self->{table_status}->{$db} || $like ) {
-      my $sql = "SHOW TABLE STATUS FROM " . $quoter->quote($db);
-      my @params;
-      if ( $like ) {
-         $sql .= ' LIKE ?';
-         push @params, $like;
-      }
-      MKDEBUG && _d($sql, @params);
-      my $sth = $dbh->prepare($sql);
-      $sth->execute(@params);
-      my @tables = @{$sth->fetchall_arrayref({})};
-      @tables = map {
-         my %tbl; # Make a copy with lowercased keys
-         @tbl{ map { lc $_ } keys %$_ } = values %$_;
-         $tbl{engine} ||= $tbl{type} || $tbl{comment};
-         delete $tbl{type};
-         \%tbl;
-      } @tables;
-      $self->{table_status}->{$db} = \@tables unless $like;
-      return @tables;
-   }
-   return @{$self->{table_status}->{$db}};
-}
-
-sub get_table_list {
-   my ( $self, $dbh, $quoter, $db, $like ) = @_;
-   if ( !$self->{cache} || !$self->{table_list}->{$db} || $like ) {
-      my $sql = "SHOW /*!50002 FULL*/ TABLES FROM " . $quoter->quote($db);
-      my @params;
-      if ( $like ) {
-         $sql .= ' LIKE ?';
-         push @params, $like;
-      }
-      MKDEBUG && _d($sql, @params);
-      my $sth = $dbh->prepare($sql);
-      $sth->execute(@params);
-      my @tables = @{$sth->fetchall_arrayref()};
-      @tables = map {
-         my %tbl = (
-            name   => $_->[0],
-            engine => ($_->[1] || '') eq 'VIEW' ? 'VIEW' : '',
-         );
-         \%tbl;
-      } @tables;
-      $self->{table_list}->{$db} = \@tables unless $like;
-      return @tables;
-   }
-   return @{$self->{table_list}->{$db}};
-}
-
-sub _d {
-   my ($package, undef, $line) = caller 0;
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-        map { defined $_ ? $_ : 'undef' }
-        @_;
-   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-}
-
-1;
-
-# ###########################################################################
-# End MySQLDump package
-# ###########################################################################
-
-# ###########################################################################
-# TableParser package 3475
-# ###########################################################################
-package TableParser;
-
-use strict;
-use warnings FATAL => 'all';
-use English qw(-no_match_vars);
-
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-sub new {
-   my ( $class ) = @_;
-   return bless {}, $class;
-}
-
-
-sub parse {
-   my ( $self, $ddl, $opts ) = @_;
-
-   if ( ref $ddl eq 'ARRAY' ) {
-      if ( lc $ddl->[0] eq 'table' ) {
-         $ddl = $ddl->[1];
-      }
-      else {
-         return {
-            engine => 'VIEW',
-         };
-      }
-   }
-
-   if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
-      die "Cannot parse table definition; is ANSI quoting "
-         . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
-   }
-
-   $ddl =~ s/(`[^`]+`)/\L$1/g;
-
-   my $engine = $self->get_engine($ddl);
-
-   my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
-   my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
-   MKDEBUG && _d('Columns:', join(', ', @cols));
-
-   my %def_for;
-   @def_for{@cols} = @defs;
-
-   my (@nums, @null);
-   my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
-   foreach my $col ( @cols ) {
-      my $def = $def_for{$col};
-      my ( $type ) = $def =~ m/`[^`]+`\s([a-z]+)/;
-      die "Can't determine column type for $def" unless $type;
-      $type_for{$col} = $type;
-      if ( $type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ) {
-         push @nums, $col;
-         $is_numeric{$col} = 1;
-      }
-      if ( $def !~ m/NOT NULL/ ) {
-         push @null, $col;
-         $is_nullable{$col} = 1;
-      }
-      $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
-   }
-
-   my $keys = $self->get_keys($ddl, $opts, \%is_nullable);
-
-   return {
-      cols           => \@cols,
-      col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
-      is_col         => { map { $_ => 1 } @cols },
-      null_cols      => \@null,
-      is_nullable    => \%is_nullable,
-      is_autoinc     => \%is_autoinc,
-      keys           => $keys,
-      defs           => \%def_for,
-      numeric_cols   => \@nums,
-      is_numeric     => \%is_numeric,
-      engine         => $engine,
-      type_for       => \%type_for,
-   };
-}
-
-sub sort_indexes {
-   my ( $self, $tbl ) = @_;
-
-   my @indexes
-      = sort {
-         (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
-         || ( !$tbl->{keys}->{$a}->{is_unique} <=> !$tbl->{keys}->{$b}->{is_unique} )
-         || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
-         || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
-      }
-      grep {
-         $tbl->{keys}->{$_}->{type} eq 'BTREE'
-      }
-      sort keys %{$tbl->{keys}};
-
-   MKDEBUG && _d('Indexes sorted best-first:', join(', ', @indexes));
-   return @indexes;
-}
-
-sub find_best_index {
-   my ( $self, $tbl, $index ) = @_;
-   my $best;
-   if ( $index ) {
-      ($best) = grep { uc $_ eq uc $index } keys %{$tbl->{keys}};
-   }
-   if ( !$best ) {
-      if ( $index ) {
-         die "Index '$index' does not exist in table";
-      }
-      else {
-         ($best) = $self->sort_indexes($tbl);
-      }
-   }
-   MKDEBUG && _d('Best index found is', $best);
-   return $best;
-}
-
-sub find_possible_keys {
-   my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
-   return () unless $where;
-   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($database, $table)
-      . ' WHERE ' . $where;
-   MKDEBUG && _d($sql);
-   my $expl = $dbh->selectrow_hashref($sql);
-   $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
-   if ( $expl->{possible_keys} ) {
-      MKDEBUG && _d('possible_keys =', $expl->{possible_keys});
-      my @candidates = split(',', $expl->{possible_keys});
-      my %possible   = map { $_ => 1 } @candidates;
-      if ( $expl->{key} ) {
-         MKDEBUG && _d('MySQL chose', $expl->{key});
-         unshift @candidates, grep { $possible{$_} } split(',', $expl->{key});
-         MKDEBUG && _d('Before deduping:', join(', ', @candidates));
-         my %seen;
-         @candidates = grep { !$seen{$_}++ } @candidates;
-      }
-      MKDEBUG && _d('Final list:', join(', ', @candidates));
-      return @candidates;
-   }
-   else {
-      MKDEBUG && _d('No keys in possible_keys');
-      return ();
-   }
-}
-
-sub table_exists {
-   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
-   my $result = 0;
-   my $db_tbl = $q->quote($db, $tbl);
-   my $sql    = "SHOW FULL COLUMNS FROM $db_tbl";
-   MKDEBUG && _d($sql);
-   eval {
-      my $sth = $dbh->prepare($sql);
-      $sth->execute();
-      my @columns = @{$sth->fetchall_arrayref({})};
-      if ( $can_insert ) {
-         $result = grep { ($_->{Privileges} || '') =~ m/insert/ } @columns;
-      }
-      else {
-         $result = 1;
-      }
-   };
-   if ( MKDEBUG && $EVAL_ERROR ) {
-      _d($EVAL_ERROR);
-   }
-   return $result;
-}
-
-sub get_engine {
-   my ( $self, $ddl, $opts ) = @_;
-   my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
-   MKDEBUG && _d('Storage engine:', $engine);
-   return $engine || undef;
-}
-
-sub get_keys {
-   my ( $self, $ddl, $opts, $is_nullable ) = @_;
-   my $engine = $self->get_engine($ddl);
-   my $keys   = {};
-
-   KEY:
-   foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
-
-      next KEY if $key =~ m/FOREIGN/;
-
-      MKDEBUG && _d('Parsed key:', $key);
-
-      if ( $engine !~ m/MEMORY|HEAP/ ) {
-         $key =~ s/USING HASH/USING BTREE/;
-      }
-
-      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
-      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
-      $type = $type || $special || 'BTREE';
-      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
-         && $engine =~ m/HEAP|MEMORY/i )
-      {
-         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
-      }
-
-      my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
-      my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
-      my @cols;
-      my @col_prefixes;
-      foreach my $col_def ( split(',', $cols) ) {
-         my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
-         push @cols, $name;
-         push @col_prefixes, $prefix;
-      }
-      $name =~ s/`//g;
-
-      MKDEBUG && _d('Key', $name, 'cols:', join(', ', @cols));
-
-      $keys->{$name} = {
-         name         => $name,
-         type         => $type,
-         colnames     => $cols,
-         cols         => \@cols,
-         col_prefixes => \@col_prefixes,
-         is_unique    => $unique,
-         is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
-         is_col       => { map { $_ => 1 } @cols },
-      };
-   }
-
-   return $keys;
-}
-
-sub get_fks {
-   my ( $self, $ddl, $opts ) = @_;
-   my $fks = {};
-
-   foreach my $fk (
-      $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg )
-   {
-      my ( $name ) = $fk =~ m/CONSTRAINT `(.*?)`/;
-      my ( $cols ) = $fk =~ m/FOREIGN KEY \(([^\)]+)\)/;
-      my ( $parent, $parent_cols ) = $fk =~ m/REFERENCES (\S+) \(([^\)]+)\)/;
-
-      if ( $parent !~ m/\./ && $opts->{database} ) {
-         $parent = "`$opts->{database}`.$parent";
-      }
-
-      $fks->{$name} = {
-         name           => $name,
-         colnames       => $cols,
-         cols           => [ map { s/[ `]+//g; $_; } split(',', $cols) ],
-         parent_tbl     => $parent,
-         parent_colnames=> $parent_cols,
-         parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
-      };
-   }
-
-   return $fks;
-}
-
-sub remove_auto_increment {
-   my ( $self, $ddl ) = @_;
-   $ddl =~ s/(^\).*?) AUTO_INCREMENT=\d+\b/$1/m;
-   return $ddl;
-}
-
-sub _d {
-   my ($package, undef, $line) = caller 0;
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-        map { defined $_ ? $_ : 'undef' }
-        @_;
-   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-}
-
-1;
-
-# ###########################################################################
-# End TableParser package
-# ###########################################################################
-
-# ###########################################################################
 # Daemon package 3976
 # ###########################################################################
 
@@ -4416,6 +3836,10 @@ package mk_upgrade;
 
 use English qw(-no_match_vars);
 use Time::HiRes qw(time);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 Transformers->import(qw());
 
@@ -4455,7 +3879,6 @@ sub main {
    # ########################################################################
    # Parse the host DSNs and make sure that we can connect to each.
    # ########################################################################
-   # XXX best to make sure dsn2 inherits from dsn1 here, for convenience
    my $host1_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV));
    my $host2_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV));
    my $ps_dbh;
@@ -4464,19 +3887,18 @@ sub main {
    } 
 
    # ########################################################################
-   # Make some common modules used in various places.
+   # Make some common modules.
    # ########################################################################
-   my $qp = new QueryParser();
-   my $qr = new QueryRewriter(QueryParser=>$qp);
+   #my $qp = new QueryParser();
+   #my $qr = new QueryRewriter(QueryParser=>$qp);
 
    # ########################################################################
-   # Set up an array of callbacks to filter and transform events.  The first
-   # one should add the fingerprint to the event (except if we're parsing
-   # tcpdump output; see below).  After that, callbacks can do anything, as
-   # long as they return the event (failing to return the event terminates
-   # the chain).
+   # Set up an array of callbacks to transform, filter and process events.
+   # Results are saved in %results and compared and reported after all
+   # events have been processed.
    # ########################################################################
    my @callbacks;
+   my %results;
 
    my $mysql_proto;
    if ( $o->get('type') eq 'tcpdump' ) {
@@ -4486,8 +3908,6 @@ sub main {
       # must be first because it creates the events for subsequent callbacks.
       $mysql_proto = new MySQLProtocolParser(
          server => $o->get('watch-server'),
-         # XXX Hm, why not named OptionParser to be consistent with the
-         # QueryRewriter->new call above?
          o      => $o,
       );
       push @callbacks, sub {
@@ -4497,62 +3917,58 @@ sub main {
       };
    }
 
-   # Fingerprint each event so we can aggregate stats.
+   # For the moment we only support deterministic SELECT queries.
+   # There's no filter/transformation for non-deterministic functions yet,
+   # just a simple filter to remove non-SELECTs.
    push @callbacks, sub {
       my ( $event ) = @_;
-      # Skip events which do not have the group_by attribute.
-      my $group_by_val = $event->{arg};
-      return 0 unless defined $group_by_val;
-      $event->{fingerprint} = $qr->fingerprint($group_by_val);
-      return $event;
+      return unless $event->{cmd} eq 'Query';
+      return unless $event->{arg};
+      return $event if $event->{arg} =~ m/^SELECT/i;  # Query passes.
+      return;  # Non-SELECT; query fails.
    };
 
+   # User-defined filter.
    if ( $o->get('filter') ) {
       my $filter = $o->get('filter');
-      my $code   = "sub{ my(\$event) = shift; $filter && return \$event; };";
+      my $code   = "sub { my (\$event) = shift; $filter && return \$event; };";
       MKDEBUG && _d('--filter code:', $code);
       my $sub = eval $code or die;
       push @callbacks, $sub;
    }
 
-   # This callback does the main work: it executes the event on each host. 
+   # ########################################################################
+   # Now we should have only the queries that we want, and they should
+   # have all appropriate transformations.  The real work begins here.
+   # ########################################################################
+
+   # Execute and time the query on each host.
    my $current_db;
    push @callbacks, sub {
       my ( $event ) = @_;
-      my $db = $event->{db};
+      my $db    = $event->{db}; 
+      my $query = $event->{arg};
       eval {
          if ( $db && (!$current_db || $db ne $current_db) ) {
             $host1_dbh->do("USE $db");
             $host2_dbh->do("USE $db");  
             $current_db = $db;
          }
-         
-         # XXX Here I think we want to substitute this with something like
-         # my $qe = new QueryExecutor(%some_options);
-         # my $info1 = $qe->exec($dbh1, $query);
-         # my $info2 = $qe->exec($dbh2, $query);
-         # The result should be something like
-         # { time => .1234, error => "...", warnings => [], eval_error => "...", .... }
-         # Then all we have to do is write code that can "diff" these data
-         # structures
 
-         # Execute, time and get errors and warnings on host1...
-         my $start = time();
-         $host1_dbh->do($event->{arg}); # TODO: only if it's a cmd=Query event
-         my $end   = time();
-         $event->{Query_time_host1} = $end - $start;
-
-         # ...and again on host2.
-         $start = time();
-         $host2_dbh->do($event->{arg});
-         $end   = time();
-         $event->{Query_time_host2} = $end - $start;
+         my $results = execute_query(
+            query => $query,
+            dbh1  => $host1_dbh,
+            dbh2  => $host2_dbh,
+         );
+         # Results are compared and reported later.
+         $results{ $query }->{execution} = $results;
       };
       if ( $EVAL_ERROR ) {
-         print STDERR $EVAL_ERROR;
-         return;
+         MKDEBUG && _d($EVAL_ERROR);
+         # Normally results are hashrefs, but strings signal no results
+         # due to the error given in the string.
+         $results{ $query }->{execution} = $EVAL_ERROR;
       }
-
       return $event;
    };
 
@@ -4663,36 +4079,35 @@ sub main {
    my $end   = $start + ($o->get('run-time') || 0); # When we should exit
    my $now   = $start;
 
-   my $iters = 0;
-   ITERATION:
-   while (  # Quit if instructed to, or if iterations are exceeded.
-      $oktorun
-      && (!$o->get('iterations') || $iters++ < $o->get('iterations') ) )
+   EVENT:
+   while (                                 # Quit if:
+      $oktorun                             # instructed to quit
+      && ($start == $end || $now < $end) ) # or time is exceeded
    {
-      EVENT:
-      while (                                 # Quit if:
-         $oktorun                             # instructed to quit
-         && ($start == $end || $now < $end) ) # or time is exceeded
-      {
-         my $result;
-         eval {
-            $result = $run_func->();
-         };
-         if ( $EVAL_ERROR ) {
-            _d($EVAL_ERROR);
-            last EVENT unless $o->get('continue-on-error');
-         }
-         else {
-            $now = time();
-            last EVENT unless defined $result;
-         }
+      my $result;
+      eval {
+         $result = $run_func->();
+      };
+      if ( $EVAL_ERROR ) {
+         _d($EVAL_ERROR);
+         last EVENT unless $o->get('continue-on-error');
       }
+      else {
+         $now = time();
+         last EVENT unless defined $result;
+      }
+   }
 
-      # ######################################################################
-      # Finish up.
-      # ######################################################################
-
-   } # ITERATION
+   # ######################################################################
+   # Compare and report results.
+   # ######################################################################
+   QUERY:
+   foreach my $query ( keys %results ) {
+      if ( $o->get('dump-results') ) {
+         print "Results for $query:\n", Dumper($results{$query});
+         next QUERY;
+      }
+   }
 
    $host1_dbh->disconnect();
    $host2_dbh->disconnect();
@@ -4702,6 +4117,66 @@ sub main {
 # ############################################################################
 # Subroutines.
 # ############################################################################
+
+# Executes the given query on the two given host dbhs.
+# Returns a hashref with query execution time and number of errors
+# and warnings produced on each host:
+#    {
+#       host1 => {
+#          Query_time    => 1.123456,  # Query execution time
+#          warning_count => 3,         # @@warning_count,
+#          warnings      => [          # SHOW WARNINGS
+#             [ "Error", "1062", "Duplicate entry '1' for key 1" ],
+#          ],
+#       },
+#       host2 => {
+#          etc.
+#       }
+#    }
+# If the query cannot be executed on a host, an error string is returned
+# for that host instead of the hashref of results.
+sub execute_query {
+   my ( %args ) = @_;
+   foreach my $arg ( qw(query host1_dbh host2_dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   return {
+      host1 => _execute_query($args{query}, $args{host1_dbh}),
+      host2 => _execute_query($args{query}, $args{host2_dbh}),
+   };
+}
+
+# This sub is called by execute_query() to do its common work:
+# execute, time and get warnings for a query on a given host.
+sub _execute_query {
+   my ( $query, $dbh ) = @_;
+   die "I need a query" unless $query;
+   die "I need a dbh"   unless $dbh;
+
+   my ( $start, $end, $query_time );
+   eval {
+      $start = time();
+      $dbh->do($query);
+      $end   = time();
+      $query_time = $end - $start;
+   };
+   if ( $EVAL_ERROR ) {
+      return $EVAL_ERROR;
+   }
+
+   my $warnings = $dbh->selectall_arrayref('SHOW WARNINGS', { Slice => {} });
+   my $warning_count = @{$dbh->selectall_arrayref('SELECT @@warning_count',
+      { Slice => {} }) }[0];
+
+   my $results = {
+      Query_time    => $query_time,
+      warnings      => $warnings,
+      warning_count => $warning_count,
+   };
+
+   return $results;
+}   
+
 sub get_cxn {
    my ( $dp, $o, $dsn ) = @_;
    if ( $o->get('ask-pass') ) {
@@ -4809,6 +4284,10 @@ Continue parsing even if there is an error.
 
 Fork to the background and detach from the shell.  POSIX
 operating systems only.
+
+=item --dump-results
+
+Don't compare the results, just dump them.
 
 =item --filter
 
