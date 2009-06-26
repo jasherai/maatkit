@@ -611,6 +611,21 @@ run_test({
    ],
 });
 
+# TODO: this is not easy to test.
+# Check that we don't die on false-positive FF error packets.
+# This can happen often if we catch a big server response mid-stream.
+# We need to ignore everything and just wait until the client
+# sends a command.
+# $protocol = new MySQLProtocolParser(
+#   server => '10.55.200.15:3306',
+#);
+#run_test({
+#   file   => 'samples/tcpdump018.txt',
+#   desc   => 'False-positive FF error packet',
+#   result => [
+#   ],
+#});
+
 # #############################################################################
 # Done.
 # #############################################################################
