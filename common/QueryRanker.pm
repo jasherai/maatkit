@@ -19,42 +19,8 @@
 # ###########################################################################
 package QueryRanker;
 
-# This module ranks query execution results from QueryExecutor.
-# (See comments on QueryExecutor::exec() for what an execution result looks
-# like.)  We want to know which queries have the greatest difference in
-# execution time, warnings, etc. when executed on different hosts.  The
-# greater a query's differences, the greater its rank.
-#
-# The order of hosts does not matter.  We speak of host1 and host2, but
-# neither is considered the benchmark.  We are agnostic about the hosts;
-# it could be an upgrade scenario where host2 is a newer version of host1,
-# or a downgrade scenario where host2 is older than host1, or a comparison
-# of the same version on different hardware or something.  So remember:
-# we're only interested in "absolute" differences and no host has preference.
-# 
-# A query's rank (or score) is a simple integer.  Every query starts with
-# a zero rank.  Then its rank is increased when a difference is found.  How
-# much it increases depends on the difference.  This is discussed next; it's
-# different for each comparison.
-#
-# There are several metrics by which we compare and rank differences.  The
-# most basic is time and warnings.  A query's rank increases proportionately
-# to the absolute difference in its warning counts.  So if a query produces
-# a warning on host1 but not on host2, or vice-versa, its rank increases
-# by 1.  Its rank is also increased by 1 for every warning that differs in
-# its severity; e.g. if it's an error on host1 but a warning on host2, this
-# may seem like a good thing (the error goes away) but it's not because it's
-# suspicious and suspicious leads to surprises and we don't like surprises.
-# Finally, a query's rank is increased by 1 for significant differences in
-# its execution times.  If its times are in the same bucket but differ by
-# a factor that is significant for that bucket, then its rank is only
-# increased by 1.  But if its time are in different buckets, then its rank
-# is increased by 2 times the difference of buckets; e.g. if one time is
-# 0.001 and the other time is 0.01, that's 1 bucket different so its rank
-# is increased by 2.
-#
-# Other rank metrics are planned: difference in result checksum, in EXPLAIN
-# plan, etc.
+# Read http://code.google.com/p/maatkit/wiki/QueryRankerInternals for
+# details about this module.
 
 use strict;
 use warnings FATAL => 'all';
@@ -69,6 +35,8 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # But a 500% increase to 6us may be significant.  In the 1s+ range (last
 # bucket), since the time is already so bad, even a 20% increase (e.g. 1s
 # to 1.2s) is significant.
+# If you change these values, you'll need to update the threshold tests
+# in QueryRanker.t.
 my @bucket_threshold = qw(500 100 100 500 50 50 20 1);
 
 sub new {
@@ -92,10 +60,20 @@ sub rank {
    $rank += $self->compare_query_times(
       $host1->{Query_time}, $host2->{Query_time});
 
+   # Always rank queries with warnings above queries without warnings
+   # or queries with identical warnings and no significant time difference.
+   # So any query with a warning will have a minimum rank of 1.
+   if ( $host1->{warning_count} > 0 || $host2->{warning_count} > 0 ) {
+      $rank += 1;
+   }
+
+   $rank += abs($host1->{warning_count} - $host2->{warning_count});
+   $rank += $self->compare_warnings($host1->{warnings}, $host2->{warnings});
+
    return $rank;
 }
 
-# Compares two query times and returns a rank increase value if the
+# Compares query times and returns a rank increase value if the
 # times differ significantly or 0 if they don't.
 sub compare_query_times {
    my ( $self, $t1, $t2 ) = @_;
@@ -115,6 +93,43 @@ sub compare_query_times {
    return 1 if $inc >= $bucket_threshold[$t1_bucket];
 
    return 0;  # No significant difference.
+}
+
+# Compares warnings and returns a rank increase value for two times the
+# number of warnings with the same code but different level and 3 times
+# the number of new warnings.
+sub compare_warnings {
+   my ( $self, $warnings1, $warnings2 ) = @_;
+   die "I need a warnings1 argument" unless defined $warnings1;
+   die "I need a warnings2 argument" unless defined $warnings2;
+
+   my %new_warnings;
+   my $rank_inc = 0;
+
+   foreach my $code ( keys %$warnings1 ) {
+      if ( exists $warnings2->{$code} ) {
+         $rank_inc += 2
+            if $warnings2->{$code}->{Level} ne $warnings1->{$code}->{Level};
+      }
+      else {
+         MKDEBUG && _d('New warning in warnings1:', $code);
+         %{ $new_warnings{$code} } = %{ $warnings1->{$code} };
+      }
+   }
+
+   foreach my $code ( keys %$warnings2 ) {
+      if ( !exists $warnings1->{$code} && !exists $new_warnings{$code} ) {
+         MKDEBUG && _d('New warning in warnings2:', $code);
+         %{ $new_warnings{$code} } = %{ $warnings2->{$code} };
+      }
+   }
+
+   $rank_inc += 3 * scalar keys %new_warnings;
+
+   # TODO: if we ever want to see the new warnings, we'll just have to
+   #       modify this sub a litte.  %new_warnings is a placeholder for now.
+
+   return $rank_inc;
 }
 
 sub bucket_for {

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 19;
+use Test::More tests => 25;
 
 require '../QueryRanker.pm';
 
@@ -47,36 +47,209 @@ my $results = {
    host1 => {
       Query_time    => 0.001020,
       warning_count => 0,
-      warnings      => [],
+      warnings      => {},
    },
    host2 => {
       Query_time    => 0.001100,
       warning_count => 0,
-      warnings      => [],
+      warnings      => {},
    },
 };
 is(
    $qr->rank($results),
    0,
-   'Basic rank: no significant time diff, no warnings'
+   'No warnings, no time diff (0)'
+);
+
+$results = {
+   host1 => {
+      Query_time    => 0.1,
+      warning_count => 1,
+      warnings      => {
+         1264 => {
+            Level   => 'Warning',
+            Code    => '1264',
+            Message => "Out of range value adjusted for column 'userid' at row 1",
+         }
+      },
+   },
+   host2 => {
+      Query_time    => 0.1,
+      warning_count => 1,
+      warnings      => {
+         1264 => { 
+            Level   => 'Warning',
+            Code    => '1264',
+            Message => "Out of range value adjusted for column 'userid' at row 1",
+         }
+      },
+   },
+};
+is(
+   $qr->rank($results),
+   1,
+   'Same warning, no time diff (1)'
 );
 
 $results = {
    host1 => {
       Query_time    => 0.003020,
       warning_count => 0,
-      warnings      => [],
+      warnings      => {},
    },
    host2 => {
       Query_time    => 0.000100,
       warning_count => 0,
-      warnings      => [],
+      warnings      => {},
    },
 };
 is(
    $qr->rank($results),
    2,
-   'Basic rank: significant time diff, no warnings'
+   'No warnings, time diff (2)'
+);
+
+$results = {
+   host1 => {
+      Query_time    => 0.1,
+      warning_count => 1,
+      warnings      => {
+         1264 => {
+            Level   => 'Error',
+            Code    => '1264',
+            Message => "Out of range value adjusted for column 'userid' at row 1",
+         }
+      },
+   },
+   host2 => {
+      Query_time    => 0.1,
+      warning_count => 1,
+      warnings      => {
+         1264 => {
+            Level   => 'Warning',
+            Code    => '1264',
+            Message => "Out of range value adjusted for column 'userid' at row 1",
+         }
+      },
+   },
+};
+is(
+   $qr->rank($results),
+   3,
+   'Same warning, different level (3)'
+);
+
+$results = {
+   host1 => {
+      Query_time    => 0.1,
+      warning_count => 1,
+      warnings      => {
+         1264 => {
+            Level   => 'Warning',
+            Code    => '1264',
+            Message => "Out of range value adjusted for column 'userid' at row 1",
+         }
+      },
+   },
+   host2 => {
+      Query_time    => 0.1,
+      warning_count => 0,
+      warnings      => {},
+   },
+};
+is(
+   $qr->rank($results),
+   5,
+   'Warning on host1 but not host2 (5)'
+);
+
+$results = {
+   host1 => {
+      Query_time    => 0.1,
+      warning_count => 0,
+      warnings      => {},
+   },
+   host2 => {
+      Query_time    => 0.1,
+      warning_count => 1,
+      warnings      => {
+         1264 => {
+            Level   => 'Warning',
+            Code    => '1264',
+            Message => "Out of range value adjusted for column 'userid' at row 1",
+         }
+      },
+   },
+};
+is(
+   $qr->rank($results),
+   5,
+   'Warning on host2 but not host1 (5)'
+);
+
+$results = {
+   host1 => {
+      Query_time    => 0.1,
+      warning_count => 2,
+      warnings      => {
+         1264 => {
+            Level   => 'Warning',
+            Code    => '1264',
+            Message => "Out of range value adjusted for column 'userid' at row 1",
+         },
+         1062 => {
+            Level   => 'Error',
+            Code    => '1062',
+            Message => "Duplicate entry '1' for key 1",
+         },
+      },
+   },
+   host2 => {
+      Query_time    => 0.1,
+      warning_count => 1,
+      warnings      => {
+         1264 => {
+            Level   => 'Warning',
+            Code    => '1264',
+            Message => "Out of range value adjusted for column 'userid' at row 1",
+         },
+      },
+   },
+};
+is(
+   $qr->rank($results),
+   5,
+   'One new warning, one old warning (5)'
+);
+
+$results = {
+   host1 => {
+      Query_time    => 0.1,
+      warning_count => 1,
+      warnings      => {
+         1062 => {
+            Level   => 'Error',
+            Code    => '1062',
+            Message => "Duplicate entry '1' for key 1",
+         }
+      },
+   },
+   host2 => {
+      Query_time    => 0.1,
+      warning_count => 1,
+      warnings      => {
+         1264 => {
+            Level   => 'Warning',
+            Code    => '1264',
+            Message => "Out of range value adjusted for column 'userid' at row 1",
+         }
+      },
+   },
+};
+is(
+   $qr->rank($results),
+   7,
+   'Same number of differents warnings (7)'
 );
 
 # #############################################################################
