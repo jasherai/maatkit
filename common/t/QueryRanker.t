@@ -3,21 +3,86 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 2;
+use Test::More tests => 19;
 
 require '../QueryRanker.pm';
 
 my $qr = new QueryRanker();
 isa_ok($qr, 'QueryRanker');
 
-my $results;
-my $output;
+# #############################################################################
+# Test query time comparison.
+# #############################################################################
+sub test_compare_query_times {
+   my ( $t1, $t2, $rank, $comment ) = @_;
+   is(
+      $qr->compare_query_times($t1, $t2),
+      $rank,
+      "compare_query_times($t1, $t2)" . ($comment ? ": $comment" : '')
+   );
+}
 
+test_compare_query_times(0, 0, 0);
+test_compare_query_times(0, 0.000001, 1, 'increase from zero');
+test_compare_query_times(0.000001, 0.000005, 0);
+test_compare_query_times(0.000001, 0.000010, 2, '1 bucket diff on edge');
+test_compare_query_times(0.000008, 0.000018, 2, '1 bucket diff');
+test_compare_query_times(0.000001, 10, 14, 'full bucket range diff on edges');
+test_compare_query_times(0.000008, 1000000, 14, 'huge diff');
+
+# Thresholds
+test_compare_query_times(0.000001, 0.000006, 1, '1us threshold');
+test_compare_query_times(0.000010, 0.000020, 1, '10us threshold');
+test_compare_query_times(0.000100, 0.000200, 1, '100us threshold');
+test_compare_query_times(0.001000, 0.006000, 1, '1ms threshold');
+test_compare_query_times(0.010000, 0.015000, 1, '10ms threshold');
+test_compare_query_times(0.100000, 0.150000, 1, '100ms threshold');
+test_compare_query_times(1.000000, 1.200000, 1, '1s threshold');
+test_compare_query_times(10.0,     10.1,     1, '10s threshold');
+
+# #############################################################################
+# Test ranking.
+# #############################################################################
+my $results = {
+   host1 => {
+      Query_time    => 0.001020,
+      warning_count => 0,
+      warnings      => [],
+   },
+   host2 => {
+      Query_time    => 0.001100,
+      warning_count => 0,
+      warnings      => [],
+   },
+};
+is(
+   $qr->rank($results),
+   0,
+   'Basic rank: no significant time diff, no warnings'
+);
+
+$results = {
+   host1 => {
+      Query_time    => 0.003020,
+      warning_count => 0,
+      warnings      => [],
+   },
+   host2 => {
+      Query_time    => 0.000100,
+      warning_count => 0,
+      warnings      => [],
+   },
+};
+is(
+   $qr->rank($results),
+   2,
+   'Basic rank: significant time diff, no warnings'
+);
 
 # #############################################################################
 # Done.
 # #############################################################################
-$output = '';
+my $output;
 {
    local *STDERR;
    open STDERR, '>', \$output;

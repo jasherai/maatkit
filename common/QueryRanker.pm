@@ -19,11 +19,11 @@
 # ###########################################################################
 package QueryRanker;
 
-# This module ranks query execution results from QueryExecutor in descending
-# order of difference.  (See comments on QueryExecutor::exec() for what an
-# execution result looks like.)  We want to know which queries have the
-# greatest difference in execution time, warnings, etc. when executed on
-# different hosts.  The greater a query's differences, the greater its rank.
+# This module ranks query execution results from QueryExecutor.
+# (See comments on QueryExecutor::exec() for what an execution result looks
+# like.)  We want to know which queries have the greatest difference in
+# execution time, warnings, etc. when executed on different hosts.  The
+# greater a query's differences, the greater its rank.
 #
 # The order of hosts does not matter.  We speak of host1 and host2, but
 # neither is considered the benchmark.  We are agnostic about the hosts;
@@ -59,10 +59,17 @@ package QueryRanker;
 use strict;
 use warnings FATAL => 'all';
 
-use Getopt::Long;
 use English qw(-no_match_vars);
+use POSIX qw(floor);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
+
+# Significant percentage increase for each bucket.  For example,
+# 1us to 4us is a 300% increase, but in reality that is not significant.
+# But a 500% increase to 6us may be significant.  In the 1s+ range (last
+# bucket), since the time is already so bad, even a 20% increase (e.g. 1s
+# to 1.2s) is significant.
+my @bucket_threshold = qw(500 100 100 500 50 50 20 1);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -72,6 +79,75 @@ sub new {
    my $self = {
    };
    return bless $self, $class;
+}
+
+sub rank {
+   my ( $self, $results ) = @_;
+   die "I need a results argument" unless $results;
+   
+   my $rank  = 0;
+   my $host1 = $results->{host1};
+   my $host2 = $results->{host2};
+
+   $rank += $self->compare_query_times(
+      $host1->{Query_time}, $host2->{Query_time});
+
+   return $rank;
+}
+
+# Compares two query times and returns a rank increase value if the
+# times differ significantly or 0 if they don't.
+sub compare_query_times {
+   my ( $self, $t1, $t2 ) = @_;
+   die "I need a t1 argument" unless defined $t1;
+   die "I need a t2 argument" unless defined $t2;
+
+   my $t1_bucket = bucket_for($t1);
+   my $t2_bucket = bucket_for($t2);
+
+   # Times are in different buckets so they differ significantly.
+   if ( $t1_bucket != $t2_bucket ) {
+      return 2 * abs($t1_bucket - $t2_bucket);
+   }
+
+   # Times are in same bucket; check if they differ by that bucket's threshold.
+   my $inc = percentage_increase($t1, $t2);
+   return 1 if $inc >= $bucket_threshold[$t1_bucket];
+
+   return 0;  # No significant difference.
+}
+
+sub bucket_for {
+   my ( $val ) = @_;
+   die "I need a val" unless defined $val;
+   return 0 if $val == 0;
+   # The buckets are powers of ten.  Bucket 0 represents (0 <= val < 10us) 
+   # and 7 represents 10s and greater.  The powers are thus constrained to
+   # between -6 and 1.  Because these are used as array indexes, we shift
+   # up so it's non-negative, to get 0 - 7.
+   my $bucket = floor(log($val) / log(10)) + 6;
+   $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+   return $bucket;
+}
+
+# Returns the percentage increase between two values.
+sub percentage_increase {
+   my ( $x, $y ) = @_;
+   return 0 if $x == $y;
+
+   # Swap values if x > y to keep things simple.
+   if ( $x > $y ) {
+      my $z = $y;
+         $y = $x;
+         $x = $z;
+   }
+
+   if ( $x == 0 ) {
+      # TODO: increase from 0 to some value.  Is this defined mathematically?
+      return 1000;  # This should trigger all buckets' thresholds.
+   }
+
+   return sprintf '%.2f', (($y - $x) / $x) * 100;
 }
 
 sub _d {
