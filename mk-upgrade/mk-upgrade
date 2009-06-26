@@ -2843,7 +2843,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 3940
+# SlowLogParser package 3980
 # ###########################################################################
 package SlowLogParser;
 
@@ -3825,6 +3825,220 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# QueryExecutor package 3996
+# ###########################################################################
+package QueryExecutor;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Time::HiRes qw(time);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw() ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+   };
+   return bless $self, $class;
+}
+
+sub exec {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(query host1_dbh host2_dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   return {
+      host1 => $self->_exec_query($args{query}, $args{host1_dbh}),
+      host2 => $self->_exec_query($args{query}, $args{host2_dbh}),
+   };
+}
+
+sub _exec_query {
+   my ( $self, $query, $dbh ) = @_;
+   die "I need a query" unless $query;
+   die "I need a dbh"   unless $dbh;
+
+   my ( $start, $end, $query_time );
+   eval {
+      $start = time();
+      $dbh->do($query);
+      $end   = time();
+      $query_time = sprintf '%.6f', $end - $start;
+   };
+   if ( $EVAL_ERROR ) {
+      return $EVAL_ERROR;
+   }
+
+   my $warnings = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
+   my $warning_count = @{$dbh->selectall_arrayref('SELECT @@warning_count',
+      { Slice => {} })}[0]->{'@@warning_count'};
+
+   my $results = {
+      Query_time    => $query_time,
+      warnings      => $warnings,
+      warning_count => $warning_count,
+   };
+
+   return $results;
+}   
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End QueryExecutor package
+# ###########################################################################
+
+# ###########################################################################
+# QueryRanker package 3999
+# ###########################################################################
+package QueryRanker;
+
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use POSIX qw(floor);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+my @bucket_threshold = qw(500 100 100 500 50 50 20 1);
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw() ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+   };
+   return bless $self, $class;
+}
+
+sub rank {
+   my ( $self, $results ) = @_;
+   die "I need a results argument" unless $results;
+   
+   my $rank  = 0;
+   my $host1 = $results->{host1};
+   my $host2 = $results->{host2};
+
+   $rank += $self->compare_query_times(
+      $host1->{Query_time}, $host2->{Query_time});
+
+   if ( $host1->{warning_count} > 0 || $host2->{warning_count} > 0 ) {
+      $rank += 1;
+   }
+
+   $rank += abs($host1->{warning_count} - $host2->{warning_count});
+   $rank += $self->compare_warnings($host1->{warnings}, $host2->{warnings});
+
+   return $rank;
+}
+
+sub compare_query_times {
+   my ( $self, $t1, $t2 ) = @_;
+   die "I need a t1 argument" unless defined $t1;
+   die "I need a t2 argument" unless defined $t2;
+
+   my $t1_bucket = bucket_for($t1);
+   my $t2_bucket = bucket_for($t2);
+
+   if ( $t1_bucket != $t2_bucket ) {
+      return 2 * abs($t1_bucket - $t2_bucket);
+   }
+
+   my $inc = percentage_increase($t1, $t2);
+   return 1 if $inc >= $bucket_threshold[$t1_bucket];
+
+   return 0;  # No significant difference.
+}
+
+sub compare_warnings {
+   my ( $self, $warnings1, $warnings2 ) = @_;
+   die "I need a warnings1 argument" unless defined $warnings1;
+   die "I need a warnings2 argument" unless defined $warnings2;
+
+   my %new_warnings;
+   my $rank_inc = 0;
+
+   foreach my $code ( keys %$warnings1 ) {
+      if ( exists $warnings2->{$code} ) {
+         $rank_inc += 2
+            if $warnings2->{$code}->{Level} ne $warnings1->{$code}->{Level};
+      }
+      else {
+         MKDEBUG && _d('New warning in warnings1:', $code);
+         %{ $new_warnings{$code} } = %{ $warnings1->{$code} };
+      }
+   }
+
+   foreach my $code ( keys %$warnings2 ) {
+      if ( !exists $warnings1->{$code} && !exists $new_warnings{$code} ) {
+         MKDEBUG && _d('New warning in warnings2:', $code);
+         %{ $new_warnings{$code} } = %{ $warnings2->{$code} };
+      }
+   }
+
+   $rank_inc += 3 * scalar keys %new_warnings;
+
+
+   return $rank_inc;
+}
+
+sub bucket_for {
+   my ( $val ) = @_;
+   die "I need a val" unless defined $val;
+   return 0 if $val == 0;
+   my $bucket = floor(log($val) / log(10)) + 6;
+   $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+   return $bucket;
+}
+
+sub percentage_increase {
+   my ( $x, $y ) = @_;
+   return 0 if $x == $y;
+
+   if ( $x > $y ) {
+      my $z = $y;
+         $y = $x;
+         $x = $z;
+   }
+
+   if ( $x == 0 ) {
+      return 1000;  # This should trigger all buckets' thresholds.
+   }
+
+   return sprintf '%.2f', (($y - $x) / $x) * 100;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End QueryRanker package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -3879,18 +4093,18 @@ sub main {
    # ########################################################################
    # Parse the host DSNs and make sure that we can connect to each.
    # ########################################################################
+   # TODO: make sure host2 dsn inherits from host1 dsn.
    my $host1_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV));
    my $host2_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV));
-   my $ps_dbh;
-   if ( my $ps_dsn = $o->get('processlist') ) {
-      $ps_dbh = get_cxn($dp, $o, $dp->parse($ps_dsn));
-   } 
+
 
    # ########################################################################
    # Make some common modules.
    # ########################################################################
-   #my $qp = new QueryParser();
-   #my $qr = new QueryRewriter(QueryParser=>$qp);
+   my $parser  = new SlowLogParser();
+   my $qexec   = new QueryExecutor();
+   my $qranker = new QueryRanker();
+
 
    # ########################################################################
    # Set up an array of callbacks to transform, filter and process events.
@@ -3900,26 +4114,10 @@ sub main {
    my @callbacks;
    my %results;
 
-   my $mysql_proto;
-   if ( $o->get('type') eq 'tcpdump' ) {
-      # If we're parsing tcpdump output, we'll create a TcpdumpParser
-      # obj later, but first we need a callback for MySQLProtocolParser
-      # which will make events out of the tcpdump data.  This callback
-      # must be first because it creates the events for subsequent callbacks.
-      $mysql_proto = new MySQLProtocolParser(
-         server => $o->get('watch-server'),
-         o      => $o,
-      );
-      push @callbacks, sub {
-         # Returns an event only when one is ready (it takes a few
-         # packets to make an event).
-         return $mysql_proto->parse_packet(@_);
-      };
-   }
-
    # For the moment we only support deterministic SELECT queries.
    # There's no filter/transformation for non-deterministic functions yet,
    # just a simple filter to remove non-SELECTs.
+   # TODO: this will become QueryFilter.
    push @callbacks, sub {
       my ( $event ) = @_;
       return unless $event->{cmd} eq 'Query';
@@ -3937,10 +4135,8 @@ sub main {
       push @callbacks, $sub;
    }
 
-   # ########################################################################
    # Now we should have only the queries that we want, and they should
    # have all appropriate transformations.  The real work begins here.
-   # ########################################################################
 
    # Execute and time the query on each host.
    my $current_db;
@@ -3950,15 +4146,16 @@ sub main {
       my $query = $event->{arg};
       eval {
          if ( $db && (!$current_db || $db ne $current_db) ) {
+            MKDEBUG && _d('USE', $db);
             $host1_dbh->do("USE $db");
             $host2_dbh->do("USE $db");  
             $current_db = $db;
          }
 
-         my $results = execute_query(
-            query => $query,
-            dbh1  => $host1_dbh,
-            dbh2  => $host2_dbh,
+         my $results = $qexec->exec(
+            query     => $query,
+            host1_dbh => $host1_dbh,
+            host2_dbh => $host2_dbh,
          );
          # Results are compared and reported later.
          $results{ $query }->{execution} = $results;
@@ -3972,6 +4169,22 @@ sub main {
       return $event;
    };
 
+   # Rank the query's execution and warnings.
+   push @callbacks, sub {
+      my ( $event ) = @_;
+      my $query = $event->{arg};
+      if ( ref $results{ $query }->{execution}->{host1}
+           && ref $results{ $query }->{execution}->{host2}) {
+         $results{ $query }->{execution}->{rank} = 
+            $qranker->rank( $results{ $query }->{execution} );
+      }
+      else {
+         MKDEBUG && _d('No results for event');
+      }
+      return $event;
+   };
+
+
    # ########################################################################
    # Daemonize now that everything is setup and ready to work.
    # ########################################################################
@@ -3982,124 +4195,60 @@ sub main {
       MKDEBUG && _d('I am a daemon now');
    }
 
+
    # ##########################################################################
-   # Parse the input.
+   # Parse input and process events.
    # ##########################################################################
-   my $run_func;
-   if ( $o->get('processlist') ) {    # Sniff SHOW FULL PROCESSLIST
-      my $pl = new Processlist();
-      my ( $sth, $cxn );
-      my $cur_server = 'processlist';
-      my $cur_time   = 0;
-      my $misc       = {
-            oktorun  => \$oktorun,
-            prev     => [],
-            time     => 0,
-            etime    => 0
-      };
-      my $get_processlist_sub = sub {
-         my $time = $misc->{time} = time();
-         my $err;
-         do {
-            eval { $sth->execute; };
-            $err = $EVAL_ERROR;
-            if ( $err ) { # Try to reconnect when there's an error.
-               $misc = { prev => [], time => 0, etime => 0 };
-               eval {
-                  $cur_time = time();
-                  $sth      = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
-                  $cxn      = $ps_dbh->{mysql_thread_id};
-                  $sth->execute();
-               };
-               $err = $EVAL_ERROR;
-               if ( $err ) {
-                  print STDERR $err;
-                  sleep 1;
-               }
-            }
-         } until ( $sth && !$err );
-         $misc->{etime} = time() - $time;
-         [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
-      };
-      $run_func = sub {
-         my $events;
-         eval {
-            $events = $pl->parse_event(
-               $get_processlist_sub,
-               $misc,
-               @callbacks,
-            );
-            usleep($o->get('interval') * 1_000_000);
-         };
-         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-         return $events;
-      };
-   }
-   else { # Parse log files
-      if ( @ARGV < 3 ) {
-         MKDEBUG && _d('Reading STDIN');
-         push @ARGV, '-'; # Magical STDIN filename.
-      }
-
-      # Set up the parser and miscellaneous options to it.
-      my $misc   = { oktorun => \$oktorun };
-      my $parser = $o->get('type') eq 'slowlog' ? new SlowLogParser()
-                 : $o->get('type') eq 'tcpdump' ? new TcpdumpParser()
-                 : die("Unknown type " . $o->get('type'));
-
-      # TODO: carry the last db and ts values forward if they're undefined
-      # now.  Do that by unshifting a new callback onto the front of @callbacks.
-      my ($fh);
-      $run_func = sub {
-         if ( !$fh ) {
-            my $file = shift @ARGV or return;
-            if ( $file eq '-' ) {
-               $fh = *STDIN;
-            }
-            else {
-               open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
-            }
-         }
-         # TODO: non-blocking I/O so we can respond to CTRL-C.  See
-         # http://www.perlmonks.org/?node_id=55241
-         # http://tinyurl.com/c6lqzz
-         # Or look at the Perl Cookbook, ch07.
-
-         my $events;
-         $events = $parser->parse_event($fh, $misc, @callbacks);
-         if ( !$events ) {
-            close $fh;
-            $fh = undef;
-         }
-         return $events;
-      };
+   if ( @ARGV == 0 ) {
+      MKDEBUG && _d('Reading STDIN');
+      push @ARGV, '-'; # Magical STDIN filename.
    }
 
    my $start = time();
    my $end   = $start + ($o->get('run-time') || 0); # When we should exit
    my $now   = $start;
 
-   EVENT:
+   FILE:
    while (                                 # Quit if:
       $oktorun                             # instructed to quit
-      && ($start == $end || $now < $end) ) # or time is exceeded
+      && ($start == $end || $now < $end)   # or time is exceeded
+      && @ARGV )                           # or there's no more files
    {
-      my $result;
-      eval {
-         $result = $run_func->();
-      };
-      if ( $EVAL_ERROR ) {
-         _d($EVAL_ERROR);
-         last EVENT unless $o->get('continue-on-error');
+      my $file = shift @ARGV;
+      MKDEBUG && _d('Parsing', $file);
+      my $fh;
+      if ( $file eq '-' ) {
+         $fh = *STDIN;
       }
       else {
-         $now = time();
-         last EVENT unless defined $result;
+         if ( !open $fh, "<", $file ) {
+            warn "Cannot open $file: $OS_ERROR";
+            next FILE;
+         }
       }
+
+      my $events;
+      EVENT:
+      while ( $oktorun
+              && ($start == $end || $now < $end) ) {
+         eval {
+            $events = $parser->parse_event($fh, undef, @callbacks);
+         };
+         if ( $EVAL_ERROR ) {
+            _d($EVAL_ERROR);
+            last EVENT unless $o->get('continue-on-error');
+         }
+         last EVENT unless $events;
+         $now = time();
+      }
+
+      close $fh;
+      $now = time();
    }
 
+
    # ######################################################################
-   # Compare and report results.
+   # Report results.
    # ######################################################################
    QUERY:
    foreach my $query ( keys %results ) {
@@ -4111,72 +4260,13 @@ sub main {
 
    $host1_dbh->disconnect();
    $host2_dbh->disconnect();
-   return;   
+   return 0;
+
 } # End main().
 
 # ############################################################################
 # Subroutines.
 # ############################################################################
-
-# Executes the given query on the two given host dbhs.
-# Returns a hashref with query execution time and number of errors
-# and warnings produced on each host:
-#    {
-#       host1 => {
-#          Query_time    => 1.123456,  # Query execution time
-#          warning_count => 3,         # @@warning_count,
-#          warnings      => [          # SHOW WARNINGS
-#             [ "Error", "1062", "Duplicate entry '1' for key 1" ],
-#          ],
-#       },
-#       host2 => {
-#          etc.
-#       }
-#    }
-# If the query cannot be executed on a host, an error string is returned
-# for that host instead of the hashref of results.
-sub execute_query {
-   my ( %args ) = @_;
-   foreach my $arg ( qw(query host1_dbh host2_dbh) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   return {
-      host1 => _execute_query($args{query}, $args{host1_dbh}),
-      host2 => _execute_query($args{query}, $args{host2_dbh}),
-   };
-}
-
-# This sub is called by execute_query() to do its common work:
-# execute, time and get warnings for a query on a given host.
-sub _execute_query {
-   my ( $query, $dbh ) = @_;
-   die "I need a query" unless $query;
-   die "I need a dbh"   unless $dbh;
-
-   my ( $start, $end, $query_time );
-   eval {
-      $start = time();
-      $dbh->do($query);
-      $end   = time();
-      $query_time = $end - $start;
-   };
-   if ( $EVAL_ERROR ) {
-      return $EVAL_ERROR;
-   }
-
-   my $warnings = $dbh->selectall_arrayref('SHOW WARNINGS', { Slice => {} });
-   my $warning_count = @{$dbh->selectall_arrayref('SELECT @@warning_count',
-      { Slice => {} }) }[0];
-
-   my $results = {
-      Query_time    => $query_time,
-      warnings      => $warnings,
-      warning_count => $warning_count,
-   };
-
-   return $results;
-}   
-
 sub get_cxn {
    my ( $dp, $o, $dsn ) = @_;
    if ( $o->get('ask-pass') ) {
@@ -4232,14 +4322,9 @@ Compare host1 to host2 using queries in slow.log:
 
    mk-upgrade host1 host2 slow.log
 
-Compare host1 to hos2 using queries from tcpdump.txt:
-
-   cat tcpdump.txt | mk-upgrade host1 host2
-
 =head1 DESCRIPTION
 
-
-=head1 OUTPUT
+mk-upgrade compares results of SQL statements ran on different MySQL servers.
 
 =head1 OPTIONS
 
@@ -4248,16 +4333,6 @@ Compare host1 to hos2 using queries from tcpdump.txt:
 =item --ask-pass
 
 Prompt for a password when connecting to MySQL.
-
-=item --attribute-limit
-
-type: int; default: 4294967296
-
-A sanity limit for attribute values.
-
-This option deals with bugs in slow-logging functionality that causes large
-values for attributes.  If the attribute's value is bigger than this, the
-last-seen value for that class of query is used instead.
 
 =item --charset
 
@@ -4287,7 +4362,7 @@ operating systems only.
 
 =item --dump-results
 
-Don't compare the results, just dump them.
+Dump results.
 
 =item --filter
 
@@ -4320,18 +4395,12 @@ short form: -h; type: string
 
 Connect to host.
 
-=item --interval
-
-type: float; default: .1
-
-How frequently to poll the processlist, in seconds.
-
 =item --iterations
 
 type: int; default: 1
 
-How many times to iterate through the collect-and-report cycle.  If 0, iterate
-to infinity.  See also L<--run-time>.
+How many times to iterate through the log files. If 0, iterate to infinity.
+See also L<--run-time>.
 
 =item --log
 
@@ -4361,34 +4430,12 @@ short form: -P; type: int
 
 Port number to use for connection.
 
-=item --processlist
-
-type: DSN
-
-Poll this DSN's processlist for queries, with L<"--interval"> sleep between.
-
-If the connection fails, mk-upgrade tries to reopen it once per second.
-
 =item --run-time
 
 type: time
 
 How long to run before exiting.  The default is to run forever (you can
 interrupt with CTRL-C).  See also L<"--iterations">.
-
-=item --sample
-
-type: int
-
-Filter out all but the first N occurrences of each query.  The queries are
-filtered on the first value in L<"--group-by">, so by default, this will filter
-by query fingerprint.  For example, C<--sample 2> will permit two sample queries
-for each fingerprint.  Useful in conjunction with L<"--print"> to print out the
-queries.  You probably want to set L<"--report"> to the empty string to avoid
-the overhead of aggregating and reporting, if you're just using this to print
-out samples of queries.  A complete example:
-
-  mk-upgrade --sample 2 --report '' --group-by fingerprint --print slow.log
 
 =item --shorten
 
@@ -4397,12 +4444,11 @@ type: int; default: 1024
 Shorten long statements in reports.
 
 Shortens long statements, replacing the omitted portion with a C</*... omitted
-...*/> comment.  This applies only to the output in reports, not to information
-stored for L<"--review"> or other places.  It prevents a large statement from
-causing difficulty in a report.  The argument is the preferred length of the
-shortened statement.  Not all statements can be shortened, but very large INSERT
-and similar statements often can; and so can IN() lists, although only the first
-such list in the statement will be shortened.
+...*/> comment.  It prevents a large statement from causing difficulty in a
+report.  The argument is the preferred length of the shortened statement.  Not
+all statements can be shortened, but very large INSERT and similar statements
+often can; and so can IN() lists, although only the first such list in the
+statement will be shortened.
 
 If it shortens something beyond recognition, you can find the original statement
 in the log, at the offset shown in the report header (see L<"OUTPUT">).
@@ -4413,57 +4459,6 @@ short form: -S; type: string
 
 Socket file to use for connection.
 
-=item --tcpdump-errors
-
-type: string
-
-Write the tcpdump data to this file on error.  If mk-upgrade doesn't
-parse the stream correctly for some reason, the session's packets since the
-last query event will be written out to create a usable test case.  If this
-happens, mk-upgrade will not raise an error; it will just discard the
-session's saved state and permit the tool to continue working.
-
-=item --type
-
-type: string
-
-The type of input to parse (default slowlog).  The permitted types are
-
-=over
-
-=item slowlog
-
-Parse a log file in any varation of MySQL slow-log format.
-
-=item tcpdump
-
-mk-upgrade does not actually watch the network (i.e. it does NOT "sniff
-packets").  Instead, it's just parsing the output of tcpdump.  You are
-responsible for generating this output; mk-upgrade does not do it for you.
-Then you send this to mk-upgrade as you would any log file: as files on the
-command line or to STDIN.
-
-The parser expects the input to be formatted with the following options: C<-x -n
--q -tttt>.  For example, if you want to capture output from your local machine,
-you can do something like
-
-  tcpdump -i eth0 port 3306 -s 65535 -c 1000 -x -n -q -tttt \
-    | mk-upgrade --type tcpdump
-
-The other tcpdump parameters, such as -s, -c, and -i, are up to you.  Just make
-sure the output looks like this:
-
-  2009-04-12 09:50:16.804849 IP 127.0.0.1.42167 > 127.0.0.1.3306: tcp 37
-      0x0000:  4508 0059 6eb2 4000 4006 cde2 7f00 0001
-      0x0010:  ....
-
-Remember tcpdump has a handy -c option to stop after it captures some number of
-packets!  That's very useful for testing your tcpdump command.
-
-If you're analyzing traffic to a non-standard port, see L<"--watch-server">.
-
-=back
-
 =item --user
 
 short form: -u; type: string
@@ -4473,18 +4468,6 @@ User for login if not current user.
 =item --version
 
 Show version and exit.
-
-=item --watch-server
-
-type: string
-
-Which IP address and port is the server when parsing tcpdump output. This option
-tells mk-upgrade whether a given TCP packet is from client to server, or
-server to client.  If you don't specify it, mk-upgrade tries to guess the
-host and port of the server by looking for port 3306 or port "mysql".  If you're
-watching a server with a non-standard port, this won't work, and you'll need to
-specify the IP address and port to watch.  If mk-upgrade doesn't know what
-to watch, nothing works right.
 
 =back
 
