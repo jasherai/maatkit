@@ -83,7 +83,7 @@ sub _exec_query {
       return $EVAL_ERROR;
    }
 
-   my $warnings = $dbh->selectall_arrayref('SHOW WARNINGS', { Slice => {} });
+   my $warnings = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
    my $warning_count = @{$dbh->selectall_arrayref('SELECT @@warning_count',
       { Slice => {} })}[0]->{'@@warning_count'};
 

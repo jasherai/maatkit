@@ -47,12 +47,12 @@ like(
 );
 is_deeply(
    $results->{host1}->{warnings},
-   [],
+   {},
    'No warnings on host1'
 );
 is_deeply(
    $results->{host2}->{warnings},
-   [],
+   {},
    'No warnings on host2'
 );
 is(
@@ -76,13 +76,13 @@ $results = $qe->exec(
 );
 is_deeply(
    $results->{host1}->{warnings},
-   [
-      {
+   {
+      1264 => {
          Level   => 'Warning',
          Code    => '1264',
          Message => "Out of range value adjusted for column 'userid' at row 1",
       },
-   ],
+   },
    'Warning text from SHOW WARNINGS'
 );
 is(
