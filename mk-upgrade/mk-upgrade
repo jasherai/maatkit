@@ -3825,7 +3825,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryExecutor package 3996
+# QueryExecutor package 4003
 # ###########################################################################
 package QueryExecutor;
 
@@ -3902,7 +3902,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRanker package 3999
+# QueryRanker package 4002
 # ###########################################################################
 package QueryRanker;
 
@@ -3915,7 +3915,8 @@ use POSIX qw(floor);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-my @bucket_threshold = qw(500 100 100 500 50 50 20 1);
+my @bucket_threshold = qw(500 100  100   500 50   50    20 1   );
+my @bucket_labels    = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -3931,21 +3932,31 @@ sub rank {
    my ( $self, $results ) = @_;
    die "I need a results argument" unless $results;
    
-   my $rank  = 0;
-   my $host1 = $results->{host1};
-   my $host2 = $results->{host2};
+   my $rank    = 0;   # total rank
+   my @reasons = ();  # all reasons
+   my @res     = ();  # ($rank, @reasons) for each comparison
+   my $host1   = $results->{host1};
+   my $host2   = $results->{host2};
 
-   $rank += $self->compare_query_times(
-      $host1->{Query_time}, $host2->{Query_time});
+   @res = $self->compare_query_times($host1->{Query_time},$host2->{Query_time});
+   $rank += shift @res;
+   push @reasons, @res;
 
    if ( $host1->{warning_count} > 0 || $host2->{warning_count} > 0 ) {
       $rank += 1;
+      push @reasons, "Query has warnings (rank+1)";
    }
 
-   $rank += abs($host1->{warning_count} - $host2->{warning_count});
-   $rank += $self->compare_warnings($host1->{warnings}, $host2->{warnings});
+   if ( my $diff = abs($host1->{warning_count} - $host2->{warning_count}) ) {
+      $rank += $diff;
+      push @reasons, "Warning counts differ by $diff (rank+$diff)";
+   }
 
-   return $rank;
+   @res = $self->compare_warnings($host1->{warnings}, $host2->{warnings});
+   $rank += shift @res;
+   push @reasons, @res;
+
+   return $rank, @reasons;
 }
 
 sub compare_query_times {
@@ -3957,13 +3968,20 @@ sub compare_query_times {
    my $t2_bucket = bucket_for($t2);
 
    if ( $t1_bucket != $t2_bucket ) {
-      return 2 * abs($t1_bucket - $t2_bucket);
+      my $rank_inc = 2 * abs($t1_bucket - $t2_bucket);
+      return $rank_inc, "Query times differ significantly: "
+         . "host1 in ".$bucket_labels[$t1_bucket]." range, "
+         . "host2 in ".$bucket_labels[$t2_bucket]." range (rank+2)";
    }
 
    my $inc = percentage_increase($t1, $t2);
-   return 1 if $inc >= $bucket_threshold[$t1_bucket];
+   if ( $inc >= $bucket_threshold[$t1_bucket] ) {
+      return 1, "Query time increase $inc\% exceeds "
+         . $bucket_threshold[$t1_bucket] . "\% increase threshold for "
+         . $bucket_labels[$t1_bucket] . " range (rank+1)";
+   }
 
-   return 0;  # No significant difference.
+   return (0);  # No significant difference.
 }
 
 sub compare_warnings {
@@ -3973,14 +3991,20 @@ sub compare_warnings {
 
    my %new_warnings;
    my $rank_inc = 0;
+   my @reasons;
 
    foreach my $code ( keys %$warnings1 ) {
       if ( exists $warnings2->{$code} ) {
-         $rank_inc += 2
-            if $warnings2->{$code}->{Level} ne $warnings1->{$code}->{Level};
+         if ( $warnings2->{$code}->{Level} ne $warnings1->{$code}->{Level} ) {
+            $rank_inc += 2;
+            push @reasons, "Error $code changes level: "
+               . $warnings1->{$code}->{Level} . " on host1, "
+               . $warnings2->{$code}->{Level} . " on host2 (rank+2)";
+         }
       }
       else {
          MKDEBUG && _d('New warning in warnings1:', $code);
+         push @reasons, "Error $code on host1 is new (rank+3)";
          %{ $new_warnings{$code} } = %{ $warnings1->{$code} };
       }
    }
@@ -3988,6 +4012,7 @@ sub compare_warnings {
    foreach my $code ( keys %$warnings2 ) {
       if ( !exists $warnings1->{$code} && !exists $new_warnings{$code} ) {
          MKDEBUG && _d('New warning in warnings2:', $code);
+         push @reasons, "Error $code on host2 is new (rank+3)";
          %{ $new_warnings{$code} } = %{ $warnings2->{$code} };
       }
    }
@@ -3995,7 +4020,7 @@ sub compare_warnings {
    $rank_inc += 3 * scalar keys %new_warnings;
 
 
-   return $rank_inc;
+   return $rank_inc, @reasons;
 }
 
 sub bucket_for {
@@ -4144,6 +4169,12 @@ sub main {
       my ( $event ) = @_;
       my $db    = $event->{db}; 
       my $query = $event->{arg};
+
+      # Set rank=0 so that any potential rank+=N ops won't die because
+      # rank is undef.
+      $results{ $query }->{rank}    ||= 0;
+      $results{ $query }->{reasons} ||= ();
+
       eval {
          if ( $db && (!$current_db || $db ne $current_db) ) {
             MKDEBUG && _d('USE', $db);
@@ -4174,12 +4205,16 @@ sub main {
       my ( $event ) = @_;
       my $query = $event->{arg};
       if ( ref $results{ $query }->{execution}->{host1}
-           && ref $results{ $query }->{execution}->{host2}) {
-         $results{ $query }->{execution}->{rank} = 
-            $qranker->rank( $results{ $query }->{execution} );
+           && ref $results{ $query }->{execution}->{host2} ) {
+         my @results = $qranker->rank( $results{ $query }->{execution} ); 
+         $results{ $query }->{rank} += shift @results;
+         push @{$results{ $query }->{reasons}}, @results;
       }
       else {
          MKDEBUG && _d('No results for event');
+         $results{ $query }->{rank} += 100;
+         push @{$results{ $query }->{reasons}},
+            "Query cannot be executed (rank+100)";
       }
       return $event;
    };
@@ -4251,11 +4286,27 @@ sub main {
    # Report results.
    # ######################################################################
    QUERY:
-   foreach my $query ( keys %results ) {
+   foreach my $query (
+      sort { $results{$b}->{rank} <=> $results{$a}->{rank} } keys %results )
+   {
       if ( $o->get('dump-results') ) {
-         print "Results for $query:\n", Dumper($results{$query});
+         print Dumper($results{$query});
          next QUERY;
       }
+
+      print "# Rank: $results{$query}->{rank}\n";
+
+      my $reasons = $results{$query}->{reasons};
+      print "# Reasons: " . (@$reasons == 0 ? "none\n" : "\n");
+      for my $i ( 0..(scalar @$reasons - 1) ) {
+         print '#   ',$i+1,". $reasons->[$i]\n";
+      }
+
+      print "# Execution Results:\n";
+      print_execution_results('host1', $results{$query}->{execution}->{host1});
+      print_execution_results('host2', $results{$query}->{execution}->{host2});
+
+      print "$query\n\n";
    }
 
    $host1_dbh->disconnect();
@@ -4267,6 +4318,32 @@ sub main {
 # ############################################################################
 # Subroutines.
 # ############################################################################
+sub print_execution_results {
+   my ( $host, $res ) = @_;
+
+   print "#   $host\n"
+       . "#   " . ('=' x length $host) . "\n";
+   if ( ref $res ) {
+      my $warnings = $res->{warnings};
+
+      print '#   Query time: ', $res->{Query_time}, "\n";
+      print '#   Warning count: ', $res->{warning_count}, "\n";
+      print '#   Warnings: ' . (scalar keys %$warnings == 0 ? "none\n" : "\n");
+
+      foreach my $code ( sort { $b <=> $a } keys %$warnings ) {
+         print "#     $code $warnings->{$code}->{Level} "
+            . "$warnings->{$code}->{Message}\n";
+      }
+   }
+   else { 
+      print "#   Error executing query on $host: $res";
+   }
+
+   print "#\n";  # Spacing between hosts.
+
+   return;
+}
+
 sub get_cxn {
    my ( $dp, $o, $dsn ) = @_;
    if ( $o->get('ask-pass') ) {
