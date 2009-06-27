@@ -37,7 +37,8 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # to 1.2s) is significant.
 # If you change these values, you'll need to update the threshold tests
 # in QueryRanker.t.
-my @bucket_threshold = qw(500 100 100 500 50 50 20 1);
+my @bucket_threshold = qw(500 100  100   500 50   50    20 1   );
+my @bucket_labels    = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -49,28 +50,43 @@ sub new {
    return bless $self, $class;
 }
 
+# Ranks execution results from QueryExecutor.  Returns an array:
+#   (
+#      rank,         # Integer rank value
+#      ( reasons ),  # List of reasons for each rank increase
+#   )
 sub rank {
    my ( $self, $results ) = @_;
    die "I need a results argument" unless $results;
    
-   my $rank  = 0;
-   my $host1 = $results->{host1};
-   my $host2 = $results->{host2};
+   my $rank    = 0;   # total rank
+   my @reasons = ();  # all reasons
+   my @res     = ();  # ($rank, @reasons) for each comparison
+   my $host1   = $results->{host1};
+   my $host2   = $results->{host2};
 
-   $rank += $self->compare_query_times(
-      $host1->{Query_time}, $host2->{Query_time});
+   @res = $self->compare_query_times($host1->{Query_time},$host2->{Query_time});
+   $rank += shift @res;
+   push @reasons, @res;
 
    # Always rank queries with warnings above queries without warnings
    # or queries with identical warnings and no significant time difference.
    # So any query with a warning will have a minimum rank of 1.
    if ( $host1->{warning_count} > 0 || $host2->{warning_count} > 0 ) {
       $rank += 1;
+      push @reasons, "Query has warnings (rank+1)";
    }
 
-   $rank += abs($host1->{warning_count} - $host2->{warning_count});
-   $rank += $self->compare_warnings($host1->{warnings}, $host2->{warnings});
+   if ( my $diff = abs($host1->{warning_count} - $host2->{warning_count}) ) {
+      $rank += $diff;
+      push @reasons, "Warning counts differ by $diff (rank+$diff)";
+   }
 
-   return $rank;
+   @res = $self->compare_warnings($host1->{warnings}, $host2->{warnings});
+   $rank += shift @res;
+   push @reasons, @res;
+
+   return $rank, @reasons;
 }
 
 # Compares query times and returns a rank increase value if the
@@ -85,14 +101,21 @@ sub compare_query_times {
 
    # Times are in different buckets so they differ significantly.
    if ( $t1_bucket != $t2_bucket ) {
-      return 2 * abs($t1_bucket - $t2_bucket);
+      my $rank_inc = 2 * abs($t1_bucket - $t2_bucket);
+      return $rank_inc, "Query times differ significantly: "
+         . "host1 in ".$bucket_labels[$t1_bucket]." range, "
+         . "host2 in ".$bucket_labels[$t2_bucket]." range (rank+2)";
    }
 
    # Times are in same bucket; check if they differ by that bucket's threshold.
    my $inc = percentage_increase($t1, $t2);
-   return 1 if $inc >= $bucket_threshold[$t1_bucket];
+   if ( $inc >= $bucket_threshold[$t1_bucket] ) {
+      return 1, "Query time increase $inc\% exceeds "
+         . $bucket_threshold[$t1_bucket] . "\% increase threshold for "
+         . $bucket_labels[$t1_bucket] . " range (rank+1)";
+   }
 
-   return 0;  # No significant difference.
+   return (0);  # No significant difference.
 }
 
 # Compares warnings and returns a rank increase value for two times the
@@ -105,14 +128,20 @@ sub compare_warnings {
 
    my %new_warnings;
    my $rank_inc = 0;
+   my @reasons;
 
    foreach my $code ( keys %$warnings1 ) {
       if ( exists $warnings2->{$code} ) {
-         $rank_inc += 2
-            if $warnings2->{$code}->{Level} ne $warnings1->{$code}->{Level};
+         if ( $warnings2->{$code}->{Level} ne $warnings1->{$code}->{Level} ) {
+            $rank_inc += 2;
+            push @reasons, "Error $code changes level: "
+               . $warnings1->{$code}->{Level} . " on host1, "
+               . $warnings2->{$code}->{Level} . " on host2 (rank+2)";
+         }
       }
       else {
          MKDEBUG && _d('New warning in warnings1:', $code);
+         push @reasons, "Error $code on host1 is new (rank+3)";
          %{ $new_warnings{$code} } = %{ $warnings1->{$code} };
       }
    }
@@ -120,6 +149,7 @@ sub compare_warnings {
    foreach my $code ( keys %$warnings2 ) {
       if ( !exists $warnings1->{$code} && !exists $new_warnings{$code} ) {
          MKDEBUG && _d('New warning in warnings2:', $code);
+         push @reasons, "Error $code on host2 is new (rank+3)";
          %{ $new_warnings{$code} } = %{ $warnings2->{$code} };
       }
    }
@@ -129,7 +159,7 @@ sub compare_warnings {
    # TODO: if we ever want to see the new warnings, we'll just have to
    #       modify this sub a litte.  %new_warnings is a placeholder for now.
 
-   return $rank_inc;
+   return $rank_inc, @reasons;
 }
 
 sub bucket_for {

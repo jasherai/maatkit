@@ -14,10 +14,13 @@ isa_ok($qr, 'QueryRanker');
 # Test query time comparison.
 # #############################################################################
 sub test_compare_query_times {
-   my ( $t1, $t2, $rank, $comment ) = @_;
+   my ( $t1, $t2, $expected_rank, $comment ) = @_;
+   # We don't look at the reason here, just the rank.
+   my @res = $qr->compare_query_times($t1, $t2);
+   my $got_rank = shift @res;
    is(
-      $qr->compare_query_times($t1, $t2),
-      $rank,
+      $got_rank,
+      $expected_rank,
       "compare_query_times($t1, $t2)" . ($comment ? ": $comment" : '')
    );
 }
@@ -55,9 +58,9 @@ my $results = {
       warnings      => {},
    },
 };
-is(
-   $qr->rank($results),
-   0,
+is_deeply(
+   [ $qr->rank($results) ],
+   [ 0 ],
    'No warnings, no time diff (0)'
 );
 
@@ -85,9 +88,11 @@ $results = {
       },
    },
 };
-is(
-   $qr->rank($results),
-   1,
+is_deeply(
+   [ $qr->rank($results) ],
+   [ 1,
+     'Query has warnings (rank+1)'
+   ],
    'Same warning, no time diff (1)'
 );
 
@@ -103,9 +108,11 @@ $results = {
       warnings      => {},
    },
 };
-is(
-   $qr->rank($results),
-   2,
+is_deeply(
+   [ $qr->rank($results) ],
+   [ 2,
+     'Query times differ significantly: host1 in 1ms range, host2 in 100us range (rank+2)',
+   ],
    'No warnings, time diff (2)'
 );
 
@@ -133,9 +140,12 @@ $results = {
       },
    },
 };
-is(
-   $qr->rank($results),
-   3,
+is_deeply(
+   [ $qr->rank($results) ],
+   [ 3,
+     'Query has warnings (rank+1)',
+     'Error 1264 changes level: Error on host1, Warning on host2 (rank+2)',
+   ],
    'Same warning, different level (3)'
 );
 
@@ -157,9 +167,13 @@ $results = {
       warnings      => {},
    },
 };
-is(
-   $qr->rank($results),
-   5,
+is_deeply(
+   [ $qr->rank($results) ],
+   [ 5,
+     'Query has warnings (rank+1)',
+     'Warning counts differ by 1 (rank+1)',
+     'Error 1264 on host1 is new (rank+3)',
+   ],
    'Warning on host1 but not host2 (5)'
 );
 
@@ -181,9 +195,13 @@ $results = {
       },
    },
 };
-is(
-   $qr->rank($results),
-   5,
+is_deeply(
+   [ $qr->rank($results) ],
+   [ 5,
+     'Query has warnings (rank+1)',
+     'Warning counts differ by 1 (rank+1)',
+     'Error 1264 on host2 is new (rank+3)',
+   ],
    'Warning on host2 but not host1 (5)'
 );
 
@@ -216,9 +234,13 @@ $results = {
       },
    },
 };
-is(
-   $qr->rank($results),
-   5,
+is_deeply(
+   [ $qr->rank($results) ],
+   [ 5,
+     'Query has warnings (rank+1)',
+     'Warning counts differ by 1 (rank+1)',
+     'Error 1062 on host1 is new (rank+3)',
+   ],
    'One new warning, one old warning (5)'
 );
 
@@ -246,9 +268,13 @@ $results = {
       },
    },
 };
-is(
-   $qr->rank($results),
-   7,
+is_deeply(
+   [ $qr->rank($results) ],
+   [ 7,
+     'Query has warnings (rank+1)',
+     'Error 1062 on host1 is new (rank+3)',
+     'Error 1264 on host2 is new (rank+3)',
+   ],
    'Same number of differents warnings (7)'
 );
 
