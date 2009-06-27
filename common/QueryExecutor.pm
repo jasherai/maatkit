@@ -44,9 +44,13 @@ sub new {
 #       host1 => {
 #          Query_time    => 1.123456,  # Query execution time
 #          warning_count => 3,         # @@warning_count,
-#          warnings      => [          # SHOW WARNINGS
-#             [ "Error", "1062", "Duplicate entry '1' for key 1" ],
-#          ],
+#          warnings      => {          # SHOW WARNINGS
+#             1062 => {
+#                Level   => "Error",
+#                Code    => "1062",
+#                Message => "Duplicate entry '1' for key 1",
+#             }
+#          },
 #       },
 #       host2 => {
 #          etc.
