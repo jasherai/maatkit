@@ -72,6 +72,8 @@ sub rank {
    # Always rank queries with warnings above queries without warnings
    # or queries with identical warnings and no significant time difference.
    # So any query with a warning will have a minimum rank of 1.
+   MKDEBUG && _d('host1 warning count:', $host1->{warning_count},
+      'host2 warning count:', $host2->{warning_count});
    if ( $host1->{warning_count} > 0 || $host2->{warning_count} > 0 ) {
       $rank += 1;
       push @reasons, "Query has warnings (rank+1)";
@@ -95,6 +97,8 @@ sub compare_query_times {
    my ( $self, $t1, $t2 ) = @_;
    die "I need a t1 argument" unless defined $t1;
    die "I need a t2 argument" unless defined $t2;
+
+   MKDEBUG && _d('host1 query time:', $t1, 'host2 query time:', $t2);
 
    my $t1_bucket = bucket_for($t1);
    my $t2_bucket = bucket_for($t2);

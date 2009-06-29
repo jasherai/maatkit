@@ -24,6 +24,10 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 use Time::HiRes qw(time);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -63,9 +67,16 @@ sub exec {
    foreach my $arg ( qw(query host1_dbh host2_dbh) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+
+   MKDEBUG && _d('Executing', $args{query}, 'on host1');
+   my $host1_results = $self->_exec_query($args{query}, $args{host1_dbh});
+
+   MKDEBUG && _d('Executing query again on host2');
+   my $host2_results = $self->_exec_query($args{query}, $args{host2_dbh});
+
    return {
-      host1 => $self->_exec_query($args{query}, $args{host1_dbh}),
-      host2 => $self->_exec_query($args{query}, $args{host2_dbh}),
+      host1 => $host1_results,
+      host2 => $host2_results,
    };
 }
 
@@ -84,17 +95,21 @@ sub _exec_query {
       $query_time = sprintf '%.6f', $end - $start;
    };
    if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
       return $EVAL_ERROR;
    }
 
    my $warnings = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
-   my $warning_count = @{$dbh->selectall_arrayref('SELECT @@warning_count',
-      { Slice => {} })}[0]->{'@@warning_count'};
+   MKDEBUG && _d('Warnings:', Dumper($warnings));
+
+   my $warning_count = $dbh->selectall_arrayref('SELECT @@warning_count',
+      { Slice => {} });
+   MKDEBUG && _d('Warning count:', Dumper($warning_count));
 
    my $results = {
       Query_time    => $query_time,
       warnings      => $warnings,
-      warning_count => $warning_count,
+      warning_count => $warning_count->[0]->{'@@warning_count'},
    };
 
    return $results;
