@@ -2671,7 +2671,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryExecutor package 4017
+# QueryExecutor package 4020
 # ###########################################################################
 package QueryExecutor;
 
@@ -2703,10 +2703,8 @@ sub exec {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   MKDEBUG && _d('Executing', $args{query}, 'on host1');
+   MKDEBUG && _d('Executing sql:', $args{query});
    my $host1_results = $self->_exec_query($args{query}, $args{host1_dbh});
-
-   MKDEBUG && _d('Executing query again on host2');
    my $host2_results = $self->_exec_query($args{query}, $args{host2_dbh});
 
    return {
@@ -2733,11 +2731,11 @@ sub _exec_query {
    }
 
    my $warnings = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
-   MKDEBUG && _d('Warnings:', Dumper($warnings));
+   MKDEBUG && _d('warnings:', Dumper($warnings));
 
    my $warning_count = $dbh->selectall_arrayref('SELECT @@warning_count',
       { Slice => {} });
-   MKDEBUG && _d('Warning count:', Dumper($warning_count));
+   MKDEBUG && _d('warning count:', Dumper($warning_count));
 
    my $results = {
       Query_time    => $query_time,
@@ -2763,7 +2761,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRanker package 4017
+# QueryRanker package 4020
 # ###########################################################################
 package QueryRanker;
 
@@ -2803,8 +2801,6 @@ sub rank {
    $rank += shift @res;
    push @reasons, @res;
 
-   MKDEBUG && _d('host1 warning count:', $host1->{warning_count},
-      'host2 warning count:', $host2->{warning_count});
    if ( $host1->{warning_count} > 0 || $host2->{warning_count} > 0 ) {
       $rank += 1;
       push @reasons, "Query has warnings (rank+1)";
@@ -2868,7 +2864,7 @@ sub compare_warnings {
          }
       }
       else {
-         MKDEBUG && _d('New warning in warnings1:', $code);
+         MKDEBUG && _d('New warning on host1:', $code);
          push @reasons, "Error $code on host1 is new (rank+3)";
          %{ $new_warnings{$code} } = %{ $warnings1->{$code} };
       }
@@ -2876,7 +2872,7 @@ sub compare_warnings {
 
    foreach my $code ( keys %$warnings2 ) {
       if ( !exists $warnings1->{$code} && !exists $new_warnings{$code} ) {
-         MKDEBUG && _d('New warning in warnings2:', $code);
+         MKDEBUG && _d('New warning on host2:', $code);
          push @reasons, "Error $code on host2 is new (rank+3)";
          %{ $new_warnings{$code} } = %{ $warnings2->{$code} };
       }
