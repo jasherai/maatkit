@@ -6079,8 +6079,8 @@ Query_time, Lock_time, and so on.  You can just look at a slow log and see them.
 However, there are some that don't exist in the slow log, and slow logs
 may actually include different kinds of attributes (for example, you may have a
 server with the Percona patches).  A full list is at
-L<http://code.google.com/p/maatkit/wiki/QueryEvents>.  These attributes show up
-in lots of different places.
+L<http://code.google.com/p/maatkit/wiki/EventAttributes>.  These attributes
+show up in lots of different places.
 
 =head1 OUTPUT
 
@@ -6515,7 +6515,7 @@ Show help and exit.
 
 =item --ignore-attributes
 
-type: array; default: cmd,arg,ip,port,pos_in_log
+type: array; default: arg,cmd,insert_id,ip,port,pos_in_log,Thread_id,timestamp
 
 Do not aggregate these attributes when auto-detecting L<"--select">.
 
