@@ -2964,7 +2964,6 @@ sub main {
    # ########################################################################
    # Parse the host DSNs and make sure that we can connect to each.
    # ########################################################################
-   # TODO: make sure host2 dsn inherits from host1 dsn.
    my $host1_dsn = $dp->parse(shift @ARGV);
    my $host1_dbh = get_cxn($dp, $o, $host1_dsn);
    my $host2_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV, $host1_dsn));
