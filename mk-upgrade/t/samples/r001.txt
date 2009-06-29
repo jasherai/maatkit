@@ -1,0 +1,31 @@
+# Rank: 100
+# Reasons: 
+#   1. Query cannot be executed (rank+100)
+# Execution Results:
+#   host1
+#   =====
+#   Error executing query on host1: DBD::mysql::db do failed: Unknown column 'bad_col' in 'where clause' at ../mk-upgrade line 3869, <$fh> chunk 2.
+#
+#   host2
+#   =====
+#   Error executing query on host2: DBD::mysql::db do failed: Unknown column 'bad_col' in 'where clause' at ../mk-upgrade line 3869, <$fh> chunk 2.
+#
+select * from test.issue_11 where bad_col=1
+
+# Rank: 0
+# Reasons: none
+# Execution Results:
+#   host1
+#   =====
+#   Query time: 0
+#   Warning count: 0
+#   Warnings: none
+#
+#   host2
+#   =====
+#   Query time: 0
+#   Warning count: 0
+#   Warnings: none
+#
+select * from test.issue_11
+

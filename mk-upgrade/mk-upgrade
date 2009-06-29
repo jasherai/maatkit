@@ -4109,7 +4109,7 @@ sub main {
 
    if ( !$o->get('help') ) {
       if ( @ARGV < 2 ) {
-         $o->save_error('Specify at least two hosts');
+         $o->save_error('Specify at least two host DSNs');
       }
    }
 
@@ -4119,8 +4119,9 @@ sub main {
    # Parse the host DSNs and make sure that we can connect to each.
    # ########################################################################
    # TODO: make sure host2 dsn inherits from host1 dsn.
-   my $host1_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV));
-   my $host2_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV));
+   my $host1_dsn = $dp->parse(shift @ARGV);
+   my $host1_dbh = get_cxn($dp, $o, $host1_dsn);
+   my $host2_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV, $host1_dsn));
 
 
    # ########################################################################
@@ -4391,17 +4392,31 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-upgrade - Compare results of SQL statements ran on different MySQL servers.
+mk-upgrade - Compare SQL statements on different MySQL servers.
 
 =head1 SYNOPSIS
 
-Compare host1 to host2 using queries in slow.log:
+Compare queries in slow.log on host1 to host2:
 
-   mk-upgrade host1 host2 slow.log
+   mk-upgrade h=host1 h=host2 slow.log
+
+Use mk-query-digest to parse tcpdump and compare queries:
+
+  mk-query-digest --type tcpdump --report '' --print tcpdump.txt | mk-upgrade h=host1 h=host2
 
 =head1 DESCRIPTION
 
-mk-upgrade compares results of SQL statements ran on different MySQL servers.
+mk-upgrade compares and ranks how the results of SQL statements differ when
+executed on different MySQL servers.  These ranked differences help to test
+upgrade (or downgrade) compatibility.  The higher a query ranks, the greater
+its results differ.
+
+mk-upgrade reads only slow logs.  mk-query-digest can be used to parse and
+transform other input sources into a slow log using its C<--print --report ''>
+options.
+
+At present, queries are not fingerprinted or aggregated.  Every query is
+executed, compared and ranked individually.  This will change later.
 
 =head1 OPTIONS
 
@@ -4439,7 +4454,7 @@ operating systems only.
 
 =item --dump-results
 
-Dump results.
+Don't print a human-readable report, just dump the raw results.
 
 =item --filter
 
@@ -4471,13 +4486,6 @@ Show help and exit.
 short form: -h; type: string
 
 Connect to host.
-
-=item --iterations
-
-type: int; default: 1
-
-How many times to iterate through the log files. If 0, iterate to infinity.
-See also L<--run-time>.
 
 =item --log
 
@@ -4512,23 +4520,7 @@ Port number to use for connection.
 type: time
 
 How long to run before exiting.  The default is to run forever (you can
-interrupt with CTRL-C).  See also L<"--iterations">.
-
-=item --shorten
-
-type: int; default: 1024
-
-Shorten long statements in reports.
-
-Shortens long statements, replacing the omitted portion with a C</*... omitted
-...*/> comment.  It prevents a large statement from causing difficulty in a
-report.  The argument is the preferred length of the shortened statement.  Not
-all statements can be shortened, but very large INSERT and similar statements
-often can; and so can IN() lists, although only the first such list in the
-statement will be shortened.
-
-If it shortens something beyond recognition, you can find the original statement
-in the log, at the offset shown in the report header (see L<"OUTPUT">).
+interrupt with CTRL-C).
 
 =item --socket
 

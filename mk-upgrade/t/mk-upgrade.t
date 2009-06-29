@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 2;
+use Test::More tests => 4;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -21,32 +21,30 @@ $sb->create_dbs($dbh1, [qw(test)]);
 $sb->load_file('master', '../../common/t/samples/issue_11.sql');
 $dbh1->do('INSERT INTO test.issue_11 VALUES (1,2,3),(2,2,3),(3,1,1),(4,5,0)');
 
+my @hosts = ('h=127.1,P=12345', 'h=127.1,P=12346');
+
 sub output {
    my $output = '';
    open my $output_fh, '>', \$output
       or BAIL_OUT("Cannot capture output to variable: $OS_ERROR");
    select $output_fh;
-   mk_upgrade::main(@_);
+   eval { mk_upgrade::main(@_); };
    close $output_fh;
    select STDOUT;
-   return $output;
+   return $EVAL_ERROR ? $EVAL_ERROR : $output;
 }
 
-# Returns true (1) if there's no difference between the
-# cmd's output and the expected output.
-sub no_diff {
-   my ( $cmd, $expected_output ) = @_;
-   MKDEBUG && diag($cmd);
-   `$cmd > /tmp/mk-upgrade_test`;
-   # Uncomment this line to update the $expected_output files when there is a
-   # fix.
-   # `cat /tmp/mk-upgrade_test > $expected_output`;
-   my $retval = system("diff /tmp/mk-upgrade_test $expected_output");
-   `rm -rf /tmp/mk-upgrade_test`;
-   $retval = $retval >> 8;
-   return !$retval;
+sub load_file {
+   my ($file) = @_;
+   open my $fh, "<", $file or die $!;
+   my $contents = do { local $/ = undef; <$fh> };
+   close $fh;
+   return $contents;
 }
 
+# #############################################################################
+# Test that it runs.
+# #############################################################################
 my $output = `../mk-upgrade --help`;
 like(
    $output,
@@ -54,9 +52,25 @@ like(
    'It runs'
 );
 
-my @hosts = ('h=127.1,P=12345', 'h=127.1,P=12346');
+# #############################################################################
+# Test that host2 inherits from hos1.
+# #############################################################################
+like(
+   output('h=127.1,P=12345', 'h=127.1', 'samples/q001.txt'),
+   qr/Execution Results/,
+   'host2 inherits from host1'
+);
 
-print output(@hosts, 'samples/q001.txt');
+# #############################################################################
+# Test some output.
+# #############################################################################
+$output = output(@hosts, 'samples/q001.txt');
+$output =~ s/Query time: (\S+)/Query time: 0/g;
+is(
+   $output,
+   load_file('samples/r001.txt'),
+   'Basic output'
+);
 
 # TODO: DSNParser clobbers SQL_MODE so we can't set ONLY_FULL_GROUP_BY.
 # print output(@hosts, qw(samples/q002.txt --dump-results));
