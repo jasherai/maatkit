@@ -72,8 +72,6 @@ sub rank {
    # Always rank queries with warnings above queries without warnings
    # or queries with identical warnings and no significant time difference.
    # So any query with a warning will have a minimum rank of 1.
-   MKDEBUG && _d('host1 warning count:', $host1->{warning_count},
-      'host2 warning count:', $host2->{warning_count});
    if ( $host1->{warning_count} > 0 || $host2->{warning_count} > 0 ) {
       $rank += 1;
       push @reasons, "Query has warnings (rank+1)";
@@ -144,7 +142,7 @@ sub compare_warnings {
          }
       }
       else {
-         MKDEBUG && _d('New warning in warnings1:', $code);
+         MKDEBUG && _d('New warning on host1:', $code);
          push @reasons, "Error $code on host1 is new (rank+3)";
          %{ $new_warnings{$code} } = %{ $warnings1->{$code} };
       }
@@ -152,7 +150,7 @@ sub compare_warnings {
 
    foreach my $code ( keys %$warnings2 ) {
       if ( !exists $warnings1->{$code} && !exists $new_warnings{$code} ) {
-         MKDEBUG && _d('New warning in warnings2:', $code);
+         MKDEBUG && _d('New warning on host2:', $code);
          push @reasons, "Error $code on host2 is new (rank+3)";
          %{ $new_warnings{$code} } = %{ $warnings2->{$code} };
       }

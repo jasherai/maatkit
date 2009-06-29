@@ -74,15 +74,9 @@ $results = $qe->exec(
    host1_dbh => $dbh1,
    host2_dbh => $dbh2,
 );
-is_deeply(
-   $results->{host1}->{warnings},
-   {
-      1264 => {
-         Level   => 'Warning',
-         Code    => '1264',
-         Message => "Out of range value adjusted for column 'userid' at row 1",
-      },
-   },
+like(
+   $results->{host1}->{warnings}->{1264}->{Message},
+   qr/Out of range value/,
    'Warning text from SHOW WARNINGS'
 );
 is(

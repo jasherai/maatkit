@@ -68,10 +68,8 @@ sub exec {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   MKDEBUG && _d('Executing', $args{query}, 'on host1');
+   MKDEBUG && _d('Executing sql:', $args{query});
    my $host1_results = $self->_exec_query($args{query}, $args{host1_dbh});
-
-   MKDEBUG && _d('Executing query again on host2');
    my $host2_results = $self->_exec_query($args{query}, $args{host2_dbh});
 
    return {
@@ -100,11 +98,11 @@ sub _exec_query {
    }
 
    my $warnings = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
-   MKDEBUG && _d('Warnings:', Dumper($warnings));
+   MKDEBUG && _d('warnings:', Dumper($warnings));
 
    my $warning_count = $dbh->selectall_arrayref('SELECT @@warning_count',
       { Slice => {} });
-   MKDEBUG && _d('Warning count:', Dumper($warning_count));
+   MKDEBUG && _d('warning count:', Dumper($warning_count));
 
    my $results = {
       Query_time    => $query_time,
