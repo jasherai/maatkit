@@ -2671,7 +2671,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryExecutor package 4003
+# QueryExecutor package 4017
 # ###########################################################################
 package QueryExecutor;
 
@@ -2680,6 +2680,10 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 use Time::HiRes qw(time);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -2698,9 +2702,16 @@ sub exec {
    foreach my $arg ( qw(query host1_dbh host2_dbh) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+
+   MKDEBUG && _d('Executing', $args{query}, 'on host1');
+   my $host1_results = $self->_exec_query($args{query}, $args{host1_dbh});
+
+   MKDEBUG && _d('Executing query again on host2');
+   my $host2_results = $self->_exec_query($args{query}, $args{host2_dbh});
+
    return {
-      host1 => $self->_exec_query($args{query}, $args{host1_dbh}),
-      host2 => $self->_exec_query($args{query}, $args{host2_dbh}),
+      host1 => $host1_results,
+      host2 => $host2_results,
    };
 }
 
@@ -2717,17 +2728,21 @@ sub _exec_query {
       $query_time = sprintf '%.6f', $end - $start;
    };
    if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
       return $EVAL_ERROR;
    }
 
    my $warnings = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
-   my $warning_count = @{$dbh->selectall_arrayref('SELECT @@warning_count',
-      { Slice => {} })}[0]->{'@@warning_count'};
+   MKDEBUG && _d('Warnings:', Dumper($warnings));
+
+   my $warning_count = $dbh->selectall_arrayref('SELECT @@warning_count',
+      { Slice => {} });
+   MKDEBUG && _d('Warning count:', Dumper($warning_count));
 
    my $results = {
       Query_time    => $query_time,
       warnings      => $warnings,
-      warning_count => $warning_count,
+      warning_count => $warning_count->[0]->{'@@warning_count'},
    };
 
    return $results;
@@ -2748,7 +2763,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRanker package 4002
+# QueryRanker package 4017
 # ###########################################################################
 package QueryRanker;
 
@@ -2788,6 +2803,8 @@ sub rank {
    $rank += shift @res;
    push @reasons, @res;
 
+   MKDEBUG && _d('host1 warning count:', $host1->{warning_count},
+      'host2 warning count:', $host2->{warning_count});
    if ( $host1->{warning_count} > 0 || $host2->{warning_count} > 0 ) {
       $rank += 1;
       push @reasons, "Query has warnings (rank+1)";
@@ -2809,6 +2826,8 @@ sub compare_query_times {
    my ( $self, $t1, $t2 ) = @_;
    die "I need a t1 argument" unless defined $t1;
    die "I need a t2 argument" unless defined $t2;
+
+   MKDEBUG && _d('host1 query time:', $t1, 'host2 query time:', $t2);
 
    my $t1_bucket = bucket_for($t1);
    my $t2_bucket = bucket_for($t2);
@@ -3034,6 +3053,7 @@ sub main {
             host1_dbh => $host1_dbh,
             host2_dbh => $host2_dbh,
          );
+         MKDEBUG && _d('Execution results:', $results);
          # Results are compared and reported later.
          $results{ $query }->{execution} = $results;
       };
@@ -3053,6 +3073,7 @@ sub main {
       if ( ref $results{ $query }->{execution}->{host1}
            && ref $results{ $query }->{execution}->{host2} ) {
          my @results = $qranker->rank( $results{ $query }->{execution} ); 
+         MKDEBUG && _d('Rank results:', @results);
          $results{ $query }->{rank} += shift @results;
          push @{$results{ $query }->{reasons}}, @results;
       }
