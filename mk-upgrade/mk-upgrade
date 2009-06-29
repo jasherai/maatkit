@@ -3053,7 +3053,6 @@ sub main {
             host1_dbh => $host1_dbh,
             host2_dbh => $host2_dbh,
          );
-         MKDEBUG && _d('Execution results:', $results);
          # Results are compared and reported later.
          $results{ $query }->{execution} = $results;
       };
