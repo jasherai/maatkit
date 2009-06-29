@@ -5171,6 +5171,16 @@ sub main {
          push @$groupby, $r;
       }
    }
+
+   # If --report '', we'll need to set --group-by otherwise it will
+   # cause problems (issue 470).
+   if ( @$report == 0 ) {
+      # TODO: this won't work if --report's default is more than one value.
+      my $report_default = $o->get_defaults()->{report};
+      $o->set('group-by', [ $report_default ]);
+      push @$groupby, $report_default;
+   }
+
    foreach my $i ( 1 .. @$groupby - 1 ) {
       $orderby->[$i] ||= $orderby->[0];
    }

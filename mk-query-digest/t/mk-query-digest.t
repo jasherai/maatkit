@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 62;
+use Test::More tests => 64;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -536,7 +536,7 @@ $cmd = "${run_with}slow026.txt";
 $output = `MKDEBUG=1 $cmd 2>&1`;
 like(
    $output,
-   qr/Type for db is string /,
+   qr/Type for Schema is string /,
    'Type for empty Schema: is string (issue 232)',
 );
 unlike(
@@ -561,7 +561,24 @@ ok(
    no_diff('../mk-query-digest ../../common/t/samples/slow006.txt '
       . '--report "" --group-by fingerprint --print --sample 2',
       'samples/slow006-first2.txt'),
-   'Print only first N unique occurrences',
+   'Print only first N unique occurrences with explicit --group-by',
+);
+
+# #############################################################################
+# Issue 470: mk-query-digest --sample does not work with --report ''
+# #############################################################################
+ok(
+   no_diff('../mk-query-digest ../../common/t/samples/slow006.txt '
+      . '--report "" --print --sample 2',
+      'samples/slow006-first2.txt'),
+   'Print only first N unique occurrences without --group-by',
+);
+
+$output = `../mk-query-digest --report '' --help 2>&1`;
+like(
+   $output,
+   qr/--group-by\s+fingerprint/,
+   "--group-by default still fingerprint with --report ''"
 );
 
 # #############################################################################

@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * --report '' --print --sample 1 didn't work (issue 470).
    * Added --sample option (issue 462).
    * Added --tcpdump-errors option.
    * Added --continue-on-error option.
