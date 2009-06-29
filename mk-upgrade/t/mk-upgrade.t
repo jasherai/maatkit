@@ -65,7 +65,11 @@ like(
 # Test some output.
 # #############################################################################
 $output = output(@hosts, 'samples/q001.txt');
+
+# Zero out vals that change.
 $output =~ s/Query time: (\S+)/Query time: 0/g;
+$output =~ s/line (\d+)/line 0/g;
+
 is(
    $output,
    load_file('samples/r001.txt'),

@@ -4,11 +4,11 @@
 # Execution Results:
 #   host1
 #   =====
-#   Error executing query on host1: DBD::mysql::db do failed: Unknown column 'bad_col' in 'where clause' at ../mk-upgrade line 3869, <$fh> chunk 2.
+#   Error executing query on host1: DBD::mysql::db do failed: Unknown column 'bad_col' in 'where clause' at ../mk-upgrade line 0, <$fh> chunk 2.
 #
 #   host2
 #   =====
-#   Error executing query on host2: DBD::mysql::db do failed: Unknown column 'bad_col' in 'where clause' at ../mk-upgrade line 3869, <$fh> chunk 2.
+#   Error executing query on host2: DBD::mysql::db do failed: Unknown column 'bad_col' in 'where clause' at ../mk-upgrade line 0, <$fh> chunk 2.
 #
 select * from test.issue_11 where bad_col=1
 
