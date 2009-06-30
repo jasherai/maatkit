@@ -50,6 +50,8 @@ my %formatting_function = (
    Disk_tmp_table => \&format_bool_attrib,
    Filesort       => \&format_bool_attrib,
    Disk_filesort  => \&format_bool_attrib,
+   No_good_index_used => \&format_bool_attrib,
+   No_index_used      => \&format_bool_attrib,
 );
 
 my $bool_format = '# %3s%% %s';
