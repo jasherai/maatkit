@@ -22,8 +22,15 @@ sub no_diff {
    # fix.
    # `cat /tmp/mk-query-digest_test > $expected_output`;
    my $retval = system("diff /tmp/mk-query-digest_test $expected_output");
+   $retval = $retval >> 8; 
+
+   if ( $retval ) {
+      print "New output for $expected_output:\n";
+      print `cat /tmp/mk-query-digest_test`;
+      BAIL_OUT();
+   }
+
    `rm -rf /tmp/mk-query-digest_test`;
-   $retval = $retval >> 8;
    return !$retval;
 }
 
@@ -534,6 +541,7 @@ like(
 $output = 'foo'; # clear previous test results
 $cmd = "${run_with}slow026.txt";
 $output = `MKDEBUG=1 $cmd 2>&1`;
+# Changed qr// from matching db to Schema because attribs are auto-detected.
 like(
    $output,
    qr/Type for Schema is string /,
