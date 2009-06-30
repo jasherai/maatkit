@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 9;
+use Test::More tests => 10;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -281,6 +281,54 @@ $result = $qrf->chart_distro(
 );
 
 is($result, $expected, 'Chart distro with all zeroes');
+
+# #############################################################################
+# Test bool (Yes/No) pretty printing.
+# #############################################################################
+
+$events = [
+   {  ts            => '071015 21:43:52',
+      cmd           => 'Query',
+      arg           => "SELECT id FROM users WHERE name='foo'",
+      Query_time    => '8.000652',
+      QC_Hit        => 'No',
+   },
+   {  ts            => '071015 21:43:52',
+      cmd           => 'Query',
+      arg           => "SELECT id FROM users WHERE name='foo'",
+      Query_time    => '1.001943',
+      QC_Hit        => 'Yes',
+   },
+   {  ts            => '071015 21:43:53',
+      cmd           => 'Query',
+      arg           => "SELECT id FROM users WHERE name='bar'",
+      Query_time    => '1.000682',
+      QC_Hit        => 'Yes',
+   }
+];
+$expected = <<EOF;
+# Overall: 3 total, 1 unique, 3 QPS, 10.00x concurrency __________________
+#                    total     min     max     avg     95%  stddev  median
+# Exec time            10s      1s      8s      3s      8s      3s   992ms
+# QC Hit           66% Yes, 33% No
+EOF
+
+$ea  = new EventAggregator(
+   groupby => 'fingerprint',
+   worst   => 'Query_time',
+);
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea->aggregate($event);
+}
+
+$result = $qrf->global_report(
+   $ea,
+   select  => [ qw(Query_time QC_Hit) ],
+   worst   => 'Query_time',
+);
+
+is($result, $expected, 'Bool (Yes/No) pretty printer');
 
 # #############################################################################
 # Issue 458: mk-query-digest Use of uninitialized value in division (/) at

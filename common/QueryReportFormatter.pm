@@ -81,6 +81,13 @@ my %formatting_function = (
       }
       return (scalar keys %$cnt_for, $line);
    },
+   QC_Hit         => \&format_bool_attrib,
+   Full_scan      => \&format_bool_attrib,
+   Full_join      => \&format_bool_attrib,
+   Tmp_table      => \&format_bool_attrib,
+   Disk_tmp_table => \&format_bool_attrib,
+   Filesort       => \&format_bool_attrib,
+   Disk_filesort  => \&format_bool_attrib,
 );
 
 sub new {
@@ -339,11 +346,22 @@ sub make_header {
 # Convert attribute names into labels
 sub make_label {
    my ( $val ) = @_;
-   return $val eq 'ts'          ? 'Time range'
+   return  $val eq 'ts'         ? 'Time range'
          : $val eq 'user'       ? 'Users'
          : $val eq 'db'         ? 'Databases'
          : $val eq 'Query_time' ? 'Exec time'
          : do { $val =~ s/_/ /g; $val = substr($val, 0, 9); $val };
+}
+
+# Does pretty-printing for bool (Yes/No) attributes like QC_Hit.
+sub format_bool_attrib {
+   my ( $stats ) = @_;
+   # Since the value is either 1 or 0, the sum is the number of
+   # all true events and the number of false events is the total
+   # number of events minus those that were true.
+   my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
+   my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
+   return "$p_true\% Yes, $p_false\% No"; 
 }
 
 sub _d {
