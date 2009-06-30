@@ -378,10 +378,10 @@ sub sort_attribs {
       Lock_time     => 1,
       Rows_sent     => 2,
       Rows_examined => 3,
-      ts            => 4,
-      db            => 5,
-      user          => 6,
-      host          => 7,
+      user          => 4,
+      host          => 5,
+      db            => 6,
+      ts            => 7,
    );
    my @basic_attribs;
    my @non_bool_attribs;
