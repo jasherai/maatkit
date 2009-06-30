@@ -40,6 +40,7 @@ my %formatting_function = (
       return $min && $max ? "$min to $max" : '';
    },
    db             => \&format_string_list,
+   Schema         => \&format_string_list,
    user           => \&format_string_list,
    host           => \&format_string_list,
    QC_Hit         => \&format_bool_attrib,
