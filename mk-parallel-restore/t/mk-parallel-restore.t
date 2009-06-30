@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 29;
+use Test::More tests => 31;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -264,6 +264,26 @@ SKIP: {
    is($master_pos, $res->[0]->[1], 'Bin log pos unchanged');
 };
 
+# #############################################################################
+# Issue 406: Use of uninitialized value in concatenation (.) or string at
+# ./mk-parallel-restore line 1808
+# #############################################################################
+$sb->load_file('master', 'samples/issue_30.sql');
+$output = `MKDEBUG=1 $cmd -D test /tmp/default/ 2>&1`;
+unlike(
+   $output,
+   qr/uninitialized value/,
+   'No error restoring table that already exists (issue 406)'
+);
+like(
+   $output,
+   qr/1 tables,\s+3 files,\s+1 successes,\s+0 failures/,
+   'Restoring table that already exists (issue 406)'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 `rm -rf /tmp/default/`;
 $sb->wipe_clean($dbh);
 exit;

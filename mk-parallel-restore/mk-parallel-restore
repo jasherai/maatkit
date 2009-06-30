@@ -2166,6 +2166,7 @@ sub skip_finished_chunks {
    # If not, then we resume from chunk 0 which will contain
    # the create table def.
    eval {
+      # TODO: I think this can cause a slave error if the table is missing.
       $dbh->do("REPLACE INTO $db_tbl SELECT * FROM $db_tbl LIMIT 0");
    };
    if ( !$EVAL_ERROR ) {
@@ -2185,10 +2186,21 @@ sub skip_finished_chunks {
    if ( $first_missing_chunk ) {
       $first_missing_chunk -= 1 unless $o->get('atomic-resume');
 
-      # We need to DELETE the first missing chunk otherwise we may try to
-      # INSERT dupliate values.
-      # TODO: issue 406.
-      $dbh->do("DELETE FROM $db_tbl WHERE " . $chunks->[$first_missing_chunk]);
+      if ( defined $chunks->[$first_missing_chunk] ) {
+         # We need to DELETE the first missing chunk otherwise we may try to
+         # INSERT dupliate values.
+         my $sql = "DELETE FROM $db_tbl WHERE "
+                 . $chunks->[$first_missing_chunk];
+         MKDEBUG && _d($sql);
+         eval {
+            $dbh->do($sql);
+         };
+         if ( $EVAL_ERROR ) {
+            warn "Failed to delete first missing chunk.\n"
+               . "SQL: $sql\n"
+               . "Error: $EVAL_ERROR";
+         }
+      }
 
       foreach my $file ( @$files[0..($first_missing_chunk-1)] ) {
          $bytes_done += $file_size->{$file};
@@ -2196,8 +2208,10 @@ sub skip_finished_chunks {
       }
    }
 
-   MKDEBUG && _d("Resuming restore of", $db_tbl, "from chunk",
-              $first_missing_chunk, "with", $bytes_done, "bytes already done");
+   MKDEBUG && _d('Resuming restore of', $db_tbl, 'from chunk',
+      $first_missing_chunk, 'with', $bytes_done, 'bytes already done;',
+      scalar @$chunks, 'chunks; first missing chunk:',
+      $chunks->[$first_missing_chunk]);
 
    return $bytes_done;
 }

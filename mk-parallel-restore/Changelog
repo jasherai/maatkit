@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * Tool died trying to restore already fully restored tables (issue 406).
+
 2009-06-02: version 1.0.14
 
    * Removed the --test long option.  Use --dry-run instead.
