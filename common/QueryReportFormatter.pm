@@ -331,6 +331,7 @@ sub make_label {
          : $val eq 'user'       ? 'Users'
          : $val eq 'db'         ? 'Databases'
          : $val eq 'Query_time' ? 'Exec time'
+         : $val eq 'host'       ? 'Hosts'
          : do { $val =~ s/_/ /g; $val = substr($val, 0, 9); $val };
 }
 
