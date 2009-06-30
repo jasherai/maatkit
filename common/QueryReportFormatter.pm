@@ -327,6 +327,14 @@ sub make_header {
 # Convert attribute names into labels
 sub make_label {
    my ( $val ) = @_;
+
+   if ( $val =~ m/^InnoDB/ ) {
+      # Shorten InnoDB attributes otherwise their short labels
+      # are indistinguishable.
+      $val =~ s/^InnoDB_(\w+)/IDB_$1/;
+      $val =~ s/r_(\w+)/r$1/;
+   }
+
    return  $val eq 'ts'         ? 'Time range'
          : $val eq 'user'       ? 'Users'
          : $val eq 'db'         ? 'Databases'
