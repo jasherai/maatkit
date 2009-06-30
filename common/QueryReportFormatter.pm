@@ -395,7 +395,9 @@ sub sort_attribs {
    my @non_bool_attribs;
    my @bool_attribs;
 
+   ATTRIB:
    foreach my $attrib ( @attribs ) {
+      next ATTRIB if $attrib eq 'pos_in_log';  # See issue 471. 
       if ( exists $basic_attrib{$attrib} ) {
          push @basic_attribs, $attrib;
       }
