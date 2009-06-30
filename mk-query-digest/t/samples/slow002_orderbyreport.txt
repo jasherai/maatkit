@@ -8,8 +8,22 @@
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1 [SQL_SLAVE]
-# Databases      0
-# Time range
+# Hosts          1
+# bytes         16      82      41      41      41      41       0      41
+# IDB IO rb      0       0       0       0       0       0       0       0
+# IDB IO ro      0       0       0       0       0       0       0       0
+# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB pages     33      36      18      18      18      18       0      18
+# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# Merge pas      0       0       0       0       0       0       0       0
+#   0% Disk_filesort
+#   0% Disk_tmp_table
+#   0% Filesort
+#   0% Full_join
+#   0% Full_scan
+#   0% QC_Hit
+#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us
@@ -37,8 +51,17 @@ select     biz = '91848182522' from foo.bar \G
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam    100  61.48k  61.48k  61.48k  61.48k  61.48k       0  61.48k
 # Users          1 [SQL_SLAVE]
+# Hosts          1
 # Databases      1     db1
-# Time range
+# bytes         25     129     129     129     129     129       0     129
+# Merge pas      0       0       0       0       0       0       0       0
+#   0% Disk_filesort
+#   0% Disk_tmp_table
+#   0% Filesort
+#   0% Full_join
+# 100% Full_scan
+#   0% QC_Hit
+#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us

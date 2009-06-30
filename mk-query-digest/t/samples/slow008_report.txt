@@ -8,7 +8,9 @@
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1    meow
+# Hosts          1
 # Databases      1     db2
+# bytes         41      31      31      31      31      31       0      31
 # Query_time distribution
 #   1us
 #  10us
@@ -33,7 +35,9 @@ SELECT MIN(id),MAX(id) FROM tbl\G
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1    meow
+# Hosts          1
 # Databases      1      db
+# bytes         18      14      14      14      14      14       0      14
 # Query_time distribution
 #   1us
 #  10us
@@ -54,7 +58,10 @@ SET NAMES utf8\G
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1    meow
+# Hosts          1
 # Databases      1     db1
+# bytes         39      29      29      29      29      29       0      29
+# Rows read      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us  ################################################################
 #  10us

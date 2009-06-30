@@ -12,7 +12,11 @@
 # Rows sent    100       1       1       1       1       1       0       1
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1    root
+# Hosts          1 localhost
 # Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:52
+# bytes        100      91      91      91      91      91       0      91
+# line         100     417     417     417     417     417       0     417
+# url            0         d217d035a34ac9e693b41d4c2&limit=500&offset=0 d217d035a34ac9e693b41d4c2&limit=500&offset=0
 # Query_time distribution
 #   1us
 #  10us

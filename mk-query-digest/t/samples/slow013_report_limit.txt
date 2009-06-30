@@ -8,8 +8,10 @@
 # Rows sent    100     226     226     226     226     226       0     226
 # Rows exam    100     226     226     226     226     226       0     226
 # Users          1 mytopuser
+# Hosts          1
 # Databases      1    test
 # Time range 2008-11-27 08:51:20 to 2008-11-27 08:51:20
+# bytes         14      11      11      11      11      11       0      11
 # Query_time distribution
 #   1us
 #  10us

@@ -3068,7 +3068,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 4023
+# EventAggregator package 4036
 # ###########################################################################
 package EventAggregator;
 
@@ -3393,7 +3393,7 @@ sub bucket_value {
 
       for my $base10_bucket ( 0..($#base10_starts-1) ) {
          my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
-         MKDEBUG && _d('Base 10 bucket $base10_bucket maps to',
+         MKDEBUG && _d('Base 10 bucket', $base10_bucket, 'maps to',
             'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
          for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
             $buck_tens[$base1_05_bucket] = $base10_bucket;
@@ -3621,7 +3621,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 4029
+# QueryReportFormatter package 4037
 # ###########################################################################
 
 
@@ -3645,7 +3645,9 @@ my %formatting_function = (
       return $min && $max ? "$min to $max" : '';
    },
    db             => \&format_string_list,
+   Schema         => \&format_string_list,
    user           => \&format_string_list,
+   host           => \&format_string_list,
    QC_Hit         => \&format_bool_attrib,
    Full_scan      => \&format_bool_attrib,
    Full_join      => \&format_bool_attrib,
@@ -3891,10 +3893,17 @@ sub make_header {
 
 sub make_label {
    my ( $val ) = @_;
+
+   if ( $val =~ m/^InnoDB/ ) {
+      $val =~ s/^InnoDB_(\w+)/IDB_$1/;
+      $val =~ s/r_(\w+)/r$1/;
+   }
+
    return  $val eq 'ts'         ? 'Time range'
          : $val eq 'user'       ? 'Users'
          : $val eq 'db'         ? 'Databases'
          : $val eq 'Query_time' ? 'Exec time'
+         : $val eq 'host'       ? 'Hosts'
          : do { $val =~ s/_/ /g; $val = substr($val, 0, 9); $val };
 }
 
@@ -3934,16 +3943,18 @@ sub sort_attribs {
       Lock_time     => 1,
       Rows_sent     => 2,
       Rows_examined => 3,
-      ts            => 4,
-      db            => 5,
-      user          => 6,
-      host          => 7,
+      user          => 4,
+      host          => 5,
+      db            => 6,
+      ts            => 7,
    );
    my @basic_attribs;
    my @non_bool_attribs;
    my @bool_attribs;
 
+   ATTRIB:
    foreach my $attrib ( @attribs ) {
+      next ATTRIB if $attrib eq 'pos_in_log';  # See issue 471. 
       if ( exists $basic_attrib{$attrib} ) {
          push @basic_attribs, $attrib;
       }
@@ -5417,6 +5428,11 @@ sub main {
       };
    }
 
+   # Make subs which map attrib aliases to their primary attrib.
+   foreach my $alt_attrib ( @{$o->get('attribute-aliases')} ) {
+      push @callbacks, make_alt_attrib($alt_attrib);
+   }
+
    if ( grep { $_ eq 'tables' } @$groupby ) {
       push @callbacks, sub {
          my ( $event ) = @_;
@@ -5564,7 +5580,7 @@ sub main {
       elsif ( @{$timeline} ) {
          $e = new EventTimeline(
             groupby    => [$groupby],
-            attributes => [ keys %attributes ],
+            attributes => [qw(Query_time ts)],
          );
       }
       if ( $e ) {
@@ -6098,6 +6114,31 @@ sub sig_int {
    }
 }
 
+sub make_alt_attrib {
+   my ( $alt_attrib ) = @_;
+   my @alts   = split('\|', $alt_attrib);
+   my $attrib = shift @alts;
+   MKDEBUG && _d('Primary attrib:', $attrib, 'aliases:', @alts);
+   my @lines;
+   push @lines,
+      'sub { my ( $event ) = @_; ',
+      "if ( exists \$event->{'$attrib'} ) { ",
+      (map { "delete \$event->{'$_'}; "; } @alts),
+      'return $event; }',     
+      # Primary attrib doesn't exist; look for alts
+      (map {
+         "if ( exists \$event->{'$_'} ) { "
+         . "\$event->{'$attrib'} = \$event->{'$_'}; "
+         . "delete \$event->{'$_'}; "
+         . 'return $event; }';
+      } @alts),
+      'return $event; }';
+   MKDEBUG && _d('attrib alias sub for', $attrib, ':', @lines);
+   my $sub = eval join("\n", @lines);
+   die if $EVAL_ERROR;
+   return $sub;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -6411,6 +6452,22 @@ is yes.
 
 =over
 
+=item --attribute-aliases
+
+type: array; default: db|Schema
+
+List of attribute|alias,etc.
+
+Certain attributes have multiple names, like db and Schema.  If an event does
+not have the priamry attribute, mk-query-digest looks for an alias attribute.
+If it finds an alias, it creates the primary attribute with the alias
+attribute's value and removes the alias attribute.
+
+If the event has the primary attribute, all alias attributes are deleted.
+
+This helps to simplify event attributes so that, for example, there will not
+be report lines for both db and Schema.
+
 =item --attribute-limit
 
 type: int; default: 4294967296
@@ -6609,7 +6666,7 @@ Show help and exit.
 
 =item --ignore-attributes
 
-type: array; default: arg,cmd,insert_id,ip,port,pos_in_log,Thread_id,timestamp
+type: array; default: arg,cmd,insert_id,ip,port,Thread_id,timestamp
 
 Do not aggregate these attributes when auto-detecting L<"--select">.
 

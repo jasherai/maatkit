@@ -5,8 +5,15 @@
 # Count         25       1
 # Exec time     96    11ms    11ms    11ms    11ms    11ms       0    11ms
 # Users          1 msandbox
+# Hosts          1 127.0.0.1
 # Databases      1   mysql
 # Time range 2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
+# bytes         23      30      30      30      30      30       0      30
+# Error no       0       0       0       0       0       0       0       0
+# Rows affe      0       0       0       0       0       0       0       0
+# Warning c      0       0       0       0       0       0       0       0
+# No good i      0               0       0
+# No index       0               0       0
 # Query_time distribution
 #   1us
 #  10us
@@ -24,8 +31,15 @@ administrator command: Connect\G
 # Count         25       1
 # Exec time      2   265us   265us   265us   265us   265us       0   265us
 # Users          1 msandbox
+# Hosts          1 127.0.0.1
 # Databases      1   mysql
 # Time range 2009-04-12 11:00:13.118643 to 2009-04-12 11:00:13.118643
+# bytes         24      32      32      32      32      32       0      32
+# Error no       0       0       0       0       0       0       0       0
+# Rows affe      0       0       0       0       0       0       0       0
+# Warning c      0       0       0       0       0       0       0       0
+# No good i      0               0       0
+# No index       0               0       0
 # Query_time distribution
 #   1us
 #  10us
@@ -44,8 +58,15 @@ select @@version_comment limit 1\G
 # Count         25       1
 # Exec time      1   167us   167us   167us   167us   167us       0   167us
 # Users          1 msandbox
+# Hosts          1 127.0.0.1
 # Databases      1   mysql
 # Time range 2009-04-12 11:00:13.119079 to 2009-04-12 11:00:13.119079
+# bytes         31      41      41      41      41      41       0      41
+# Error no       0       0       0       0       0       0       0       0
+# Rows affe      0       0       0       0       0       0       0       0
+# Warning c      0       0       0       0       0       0       0       0
+# No good i      0               0       0
+# No index       0               0       0
 # Query_time distribution
 #   1us
 #  10us
@@ -64,8 +85,15 @@ select "paris in the the spring" as trick\G
 # Count         25       1
 # Exec time      0       0       0       0       0       0       0       0
 # Users          1 msandbox
+# Hosts          1 127.0.0.1
 # Databases      1   mysql
 # Time range 2009-04-12 11:00:13.119487 to 2009-04-12 11:00:13.119487
+# bytes         20      27      27      27      27      27       0      27
+# Error no       0       0       0       0       0       0       0       0
+# Rows affe      0       0       0       0       0       0       0       0
+# Warning c      0       0       0       0       0       0       0       0
+# No good i      0               0       0
+# No index       0               0       0
 # Query_time distribution
 #   1us
 #  10us

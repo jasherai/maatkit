@@ -8,7 +8,9 @@
 # Rows sent    100      14       5       9       7       9    2.83       7
 # Rows exam     62       5       2       3    2.50       3    0.71    2.50
 # Users          1    meow
+# Hosts          1
 # Databases      2 db1 (1), db2 (1)
+# bytes         80      58      29      29      29      29       0      29
 # Query_time distribution
 #   1us  ################################################################
 #  10us
@@ -29,7 +31,9 @@
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam     37       3       3       3       3       3       0       3
 # Users          1    meow
+# Hosts          1
 # Databases      1      db
+# bytes         19      14      14      14      14      14       0      14
 # Query_time distribution
 #   1us
 #  10us

@@ -7,8 +7,17 @@
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam    100  61.48k  61.48k  61.48k  61.48k  61.48k       0  61.48k
 # Users          1 [SQL_SLAVE]
+# Hosts          1
 # Databases      1     db1
-# Time range
+# bytes         25     129     129     129     129     129       0     129
+# Merge pas      0       0       0       0       0       0       0       0
+#   0% Disk_filesort
+#   0% Disk_tmp_table
+#   0% Filesort
+#   0% Full_join
+# 100% Full_scan
+#   0% QC_Hit
+#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us
@@ -39,8 +48,22 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1 [SQL_SLAVE]
-# Databases      0
-# Time range
+# Hosts          1
+# bytes         20     103     103     103     103     103       0     103
+# IDB IO rb      0       0       0       0       0       0       0       0
+# IDB IO ro      0       0       0       0       0       0       0       0
+# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB pages     10      11      11      11      11      11       0      11
+# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# Merge pas      0       0       0       0       0       0       0       0
+#   0% Disk_filesort
+#   0% Disk_tmp_table
+#   0% Filesort
+#   0% Full_join
+#   0% Full_scan
+#   0% QC_Hit
+#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us
@@ -68,8 +91,22 @@ select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   va
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1 [SQL_SLAVE]
-# Databases      0
-# Time range
+# Hosts          1
+# bytes         16      82      41      41      41      41       0      41
+# IDB IO rb      0       0       0       0       0       0       0       0
+# IDB IO ro      0       0       0       0       0       0       0       0
+# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB pages     33      36      18      18      18      18       0      18
+# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# Merge pas      0       0       0       0       0       0       0       0
+#   0% Disk_filesort
+#   0% Disk_tmp_table
+#   0% Filesort
+#   0% Full_join
+#   0% Full_scan
+#   0% QC_Hit
+#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us
@@ -96,8 +133,22 @@ select     biz = '91848182522' from foo.bar \G
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1 [SQL_SLAVE]
-# Databases      0
-# Time range
+# Hosts          1
+# bytes         11      60      60      60      60      60       0      60
+# IDB IO rb      0       0       0       0       0       0       0       0
+# IDB IO ro      0       0       0       0       0       0       0       0
+# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB pages     16      18      18      18      18      18       0      18
+# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# Merge pas      0       0       0       0       0       0       0       0
+#   0% Disk_filesort
+#   0% Disk_tmp_table
+#   0% Filesort
+#   0% Full_join
+#   0% Full_scan
+#   0% QC_Hit
+#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us
@@ -125,8 +176,22 @@ select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1 [SQL_SLAVE]
-# Databases      0
-# Time range
+# Hosts          1
+# bytes         11      57      57      57      57      57       0      57
+# IDB IO rb      0       0       0       0       0       0       0       0
+# IDB IO ro      0       0       0       0       0       0       0       0
+# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB pages     16      18      18      18      18      18       0      18
+# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# Merge pas      0       0       0       0       0       0       0       0
+#   0% Disk_filesort
+#   0% Disk_tmp_table
+#   0% Filesort
+#   0% Full_join
+#   0% Full_scan
+#   0% QC_Hit
+#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us
@@ -150,8 +215,22 @@ VALUES ('211', '18')\G
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1 [SQL_SLAVE]
-# Databases      0
-# Time range
+# Hosts          1
+# bytes         13      66      66      66      66      66       0      66
+# IDB IO rb      0       0       0       0       0       0       0       0
+# IDB IO ro      0       0       0       0       0       0       0       0
+# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB pages     22      24      24      24      24      24       0      24
+# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# Merge pas      0       0       0       0       0       0       0       0
+#   0% Disk_filesort
+#   0% Disk_tmp_table
+#   0% Filesort
+#   0% Full_join
+#   0% Full_scan
+#   0% QC_Hit
+#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us
@@ -175,8 +254,17 @@ VALUES ('', 'Exact')\G
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1 [SQL_SLAVE]
-# Databases      0
+# Hosts          1
 # Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
+# bytes          0       5       5       5       5       5       0       5
+# Merge pas      0       0       0       0       0       0       0       0
+#   0% Disk_filesort
+#   0% Disk_tmp_table
+#   0% Filesort
+#   0% Full_join
+#   0% Full_scan
+#   0% QC_Hit
+#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us  ################################################################

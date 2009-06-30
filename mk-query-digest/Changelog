@@ -5,6 +5,7 @@ Changelog for mk-query-digest:
    * Added --sample option (issue 462).
    * Added --tcpdump-errors option.
    * Added --continue-on-error option.
+   * Added --attribute-aliases option.
    * Added --ignore-attributes option.
    * QPS and concurrency were wrong with microsecond timestamps (issue 398).
 

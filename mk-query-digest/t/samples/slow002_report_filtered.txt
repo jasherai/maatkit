@@ -8,6 +8,22 @@
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
 # Users          1 [SQL_SLAVE]
+# Hosts          1
+# bytes        100      60      60      60      60      60       0      60
+# IDB IO rb      0       0       0       0       0       0       0       0
+# IDB IO ro      0       0       0       0       0       0       0       0
+# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB pages    100      18      18      18      18      18       0      18
+# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# Merge pas      0       0       0       0       0       0       0       0
+#   0% Disk_filesort
+#   0% Disk_tmp_table
+#   0% Filesort
+#   0% Full_join
+#   0% Full_scan
+#   0% QC_Hit
+#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us
