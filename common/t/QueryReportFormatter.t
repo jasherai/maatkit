@@ -325,8 +325,8 @@ $expected = <<EOF;
 # Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
 # InnoDB IO              7       2       3    2.33    2.90    0.44    1.96
 # InnoDB pa             49      11      20   16.33   19.46    3.71   17.65
-#  100%  Filesort
-#   66%  QC_Hit
+# 100% Filesort
+#  66% QC_Hit
 EOF
 
 $ea  = new EventAggregator(

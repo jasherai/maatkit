@@ -90,7 +90,7 @@ my %formatting_function = (
    Disk_filesort  => \&format_bool_attrib,
 );
 
-my $bool_format = '#  %3s%%  %s';
+my $bool_format = '# %3s%% %s';
 
 sub new {
    my ( $class, %args ) = @_;
@@ -413,8 +413,8 @@ sub sort_attribs {
       }
    }
 
-   @non_bool_attribs = sort @non_bool_attribs;
-   @bool_attribs     = sort @bool_attribs;
+   @non_bool_attribs = sort { uc $a cmp uc $b } @non_bool_attribs;
+   @bool_attribs     = sort { uc $a cmp uc $b } @bool_attribs;
    @basic_attribs    = sort {
          $basic_attrib{$a} <=> $basic_attrib{$b} } @basic_attribs;
 
