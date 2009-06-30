@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 11;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -285,37 +285,54 @@ is($result, $expected, 'Chart distro with all zeroes');
 # #############################################################################
 # Test bool (Yes/No) pretty printing.
 # #############################################################################
-
 $events = [
    {  ts            => '071015 21:43:52',
       cmd           => 'Query',
       arg           => "SELECT id FROM users WHERE name='foo'",
       Query_time    => '8.000652',
+      Lock_time     => '0.002300',
       QC_Hit        => 'No',
+      Filesort      => 'Yes',
+      InnoDB_IO_r_bytes     => 2,
+      InnoDB_pages_distinct => 20,
    },
    {  ts            => '071015 21:43:52',
       cmd           => 'Query',
       arg           => "SELECT id FROM users WHERE name='foo'",
       Query_time    => '1.001943',
+      Lock_time     => '0.002320',
       QC_Hit        => 'Yes',
+      Filesort      => 'Yes',
+      InnoDB_IO_r_bytes     => 2,
+      InnoDB_pages_distinct => 18,
    },
    {  ts            => '071015 21:43:53',
       cmd           => 'Query',
       arg           => "SELECT id FROM users WHERE name='bar'",
       Query_time    => '1.000682',
+      Lock_time     => '0.003301',
       QC_Hit        => 'Yes',
+      Filesort      => 'Yes',
+      InnoDB_IO_r_bytes     => 3,
+      InnoDB_pages_distinct => 11,
    }
 ];
 $expected = <<EOF;
 # Overall: 3 total, 1 unique, 3 QPS, 10.00x concurrency __________________
 #                    total     min     max     avg     95%  stddev  median
 # Exec time            10s      1s      8s      3s      8s      3s   992ms
-# QC Hit           66% Yes, 33% No
+# Lock time            8ms     2ms     3ms     3ms     3ms   500us     2ms
+# Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
+# InnoDB IO              7       2       3    2.33    2.90    0.44    1.96
+# InnoDB pa             49      11      20   16.33   19.46    3.71   17.65
+#  100%  Filesort
+#   66%  QC_Hit
 EOF
 
 $ea  = new EventAggregator(
    groupby => 'fingerprint',
    worst   => 'Query_time',
+   ignore_attributes => [qw(arg cmd)],
 );
 foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
@@ -324,11 +341,31 @@ foreach my $event (@$events) {
 
 $result = $qrf->global_report(
    $ea,
-   select  => [ qw(Query_time QC_Hit) ],
+   select  => [ $ea->get_attributes() ],
    worst   => 'Query_time',
 );
 
 is($result, $expected, 'Bool (Yes/No) pretty printer');
+
+# #############################################################################
+# Test attrib sorting.
+# #############################################################################
+
+# This test uses the $ea from the Bool pretty printer test above.
+is_deeply(
+   [ QueryReportFormatter::sort_attribs($ea, $ea->get_attributes()) ],
+   [qw(
+      Query_time
+      Lock_time
+      ts
+      InnoDB_IO_r_bytes
+      InnoDB_pages_distinct
+      Filesort
+      QC_Hit
+      )
+   ],
+   'sort_attribs()'
+);
 
 # #############################################################################
 # Issue 458: mk-query-digest Use of uninitialized value in division (/) at

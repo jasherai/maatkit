@@ -90,6 +90,8 @@ my %formatting_function = (
    Disk_filesort  => \&format_bool_attrib,
 );
 
+my $bool_format = '#  %3s%%  %s';
+
 sub new {
    my ( $class, %args ) = @_;
    return bless { }, $class;
@@ -154,18 +156,27 @@ sub global_report {
    push @result, sprintf($format, '', @headers);
 
    # Each additional line
-   foreach my $attrib ( @{$opts{select}} ) {
-      next unless $ea->type_for($attrib);
+   foreach my $attrib ( sort_attribs($ea, @{$opts{select}}) ) {
+      my $attrib_type = $ea->type_for($attrib);
+      next unless $attrib_type; 
       next unless exists $stats->{globals}->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
-         push @result, sprintf $format, make_label($attrib),
-            $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
-            (map { '' } 0..9);# just for good measure
+         if ( $attrib_type ne 'bool') {
+            push @result, sprintf $format, make_label($attrib),
+                  $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
+                  (map { '' } 0..9); # just for good measure
+         }
+         else {
+            # Bools have their own special line format.
+            push @result, sprintf $bool_format,
+                  $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
+                  $attrib;
+         }
       }
       else {
          my $store = $stats->{globals}->{$attrib};
          my @values;
-         if ( $ea->type_for($attrib) eq 'num' ) {
+         if ( $attrib_type eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
             MKDEBUG && _d('Calculating global statistical_metrics for', $attrib);
             my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
@@ -251,20 +262,29 @@ sub event_report {
          map { '' } (1 ..9);
 
    # Each additional line
-   foreach my $attrib ( @{$opts{select}} ) {
-      next unless $ea->type_for($attrib);
+   foreach my $attrib ( sort_attribs($ea, @{$opts{select}}) ) {
+      my $attrib_type = $ea->type_for($attrib);
+      next unless $attrib_type; 
       next unless exists $store->{$attrib};
       my $vals = $store->{$attrib};
       next unless scalar %$vals;
       if ( $formatting_function{$attrib} ) { # Handle special cases
-         push @result, sprintf $format, make_label($attrib),
-            $formatting_function{$attrib}->($vals),
-            (map { '' } 0..9);# just for good measure
+         if ( $attrib_type ne 'bool' ) {
+            push @result, sprintf $format, make_label($attrib),
+                  $formatting_function{$attrib}->($vals),
+                  (map { '' } 0..9); # just for good measure
+         }
+         else {
+            # Bools have their own special line format.
+            push @result, sprintf $bool_format, 
+                  $formatting_function{$attrib}->($vals),
+                  $attrib;
+         }
       }
       else {
          my @values;
          my $pct;
-         if ( $ea->type_for($attrib) eq 'num' ) {
+         if ( $attrib_type eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
             my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
             @values = (
@@ -361,7 +381,44 @@ sub format_bool_attrib {
    # number of events minus those that were true.
    my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
    my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
-   return "$p_true\% Yes, $p_false\% No"; 
+   return $p_true;
+}
+
+# Attribs are sorted into three groups: basic attributes (Query_time, etc.),
+# other non-bool attributes sorted by name, and bool attributes sorted by name.
+sub sort_attribs {
+   my ( $ea, @attribs ) = @_;
+   my %basic_attrib = (
+      Query_time    => 0,
+      Lock_time     => 1,
+      Rows_sent     => 2,
+      Rows_examined => 3,
+      ts            => 4,
+   );
+   my @basic_attribs;
+   my @non_bool_attribs;
+   my @bool_attribs;
+
+   foreach my $attrib ( @attribs ) {
+      if ( exists $basic_attrib{$attrib} ) {
+         push @basic_attribs, $attrib;
+      }
+      else {
+         if ( ($ea->type_for($attrib) || '') ne 'bool' ) {
+            push @non_bool_attribs, $attrib;
+         }
+         else {
+            push @bool_attribs, $attrib;
+         }
+      }
+   }
+
+   @non_bool_attribs = sort @non_bool_attribs;
+   @bool_attribs     = sort @bool_attribs;
+   @basic_attribs    = sort {
+         $basic_attrib{$a} <=> $basic_attrib{$b} } @basic_attribs;
+
+   return @basic_attribs, @non_bool_attribs, @bool_attribs;
 }
 
 sub _d {
