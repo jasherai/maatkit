@@ -7,9 +7,9 @@
 # Lock time    100    70us    70us    70us    70us    70us       0    70us
 # Rows sent    100     226     226     226     226     226       0     226
 # Rows exam    100     226     226     226     226     226       0     226
-# Users          1 mytopuser
-# Hosts          1
-# Databases      1    test
+# Users                  1 mytopuser
+# Hosts                  1
+# Databases              1    test
 # Time range 2008-11-27 08:51:20 to 2008-11-27 08:51:20
 # bytes         14      11      11      11      11      11       0      11
 # Query_time distribution
@@ -31,9 +31,9 @@ SHOW STATUS\G
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
-# Users          1 foo_app
-# Hosts          1
-# Databases      1     abc
+# Users                  1 foo_app
+# Hosts                  1
+# Databases              1     abc
 # bytes         41      32      16      16      16      16       0      16
 # Query_time distribution
 #   1us
@@ -54,9 +54,9 @@ SET autocommit=0\G
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
-# Users          1 foo_app
-# Hosts          1
-# Databases      1     abc
+# Users                  1 foo_app
+# Hosts                  1
+# Databases              1     abc
 # bytes          7       6       6       6       6       6       0       6
 # Query_time distribution
 #   1us
@@ -77,9 +77,9 @@ commit\G
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
-# Users          1 mytopuser
-# Hosts          1
-# Databases      1    test
+# Users                  1 mytopuser
+# Hosts                  1
+# Databases              1    test
 # Time range 2008-11-27 08:51:21 to 2008-11-27 08:51:21
 # bytes         37      29      29      29      29      29       0      29
 # Rows read      0       0       0       0       0       0       0       0

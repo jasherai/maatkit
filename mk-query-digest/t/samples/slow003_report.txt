@@ -7,8 +7,8 @@
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
-# Users          1 [SQL_SLAVE]
-# Hosts          1
+# Users                  1 [SQL_SLAVE]
+# Hosts                  1
 # Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
 # bytes        100       5       5       5       5       5       0       5
 # Merge pas      0       0       0       0       0       0       0       0

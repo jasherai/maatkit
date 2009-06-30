@@ -7,9 +7,9 @@
 # Lock time    100     9ms       0     9ms     5ms     9ms     7ms     5ms
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
-# Users          1    meow
-# Hosts          1
-# Databases      2 db1 (1), db2 (1)
+# Users                  1    meow
+# Hosts                  1
+# Databases              2 db1 (1), db2 (1)
 # bytes         67      58      29      29      29      29       0      29
 # Rows read      0       0       0       0       0       0       0       0
 # Query_time distribution
@@ -31,9 +31,9 @@
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
-# Users          1    meow
-# Hosts          1
-# Databases      1      db
+# Users                  1    meow
+# Hosts                  1
+# Databases              1      db
 # bytes         32      28      14      14      14      14       0      14
 # Query_time distribution
 #   1us

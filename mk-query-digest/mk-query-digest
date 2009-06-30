@@ -2029,7 +2029,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 3986
+# MySQLProtocolParser package 4040
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2487,7 +2487,7 @@ sub _make_event {
    $self->{raw_packets} = [];
 
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
-   return $event = {
+   my $new_event = {
       cmd        => $event->{cmd},
       arg        => $event->{arg},
       bytes      => length( $event->{arg} ),
@@ -2506,6 +2506,8 @@ sub _make_event {
       No_good_index_used => ($event->{No_good_index_used} ? 'Yes' : 'No'),
       No_index_used      => ($event->{No_index_used}      ? 'Yes' : 'No'),
    };
+   MKDEBUG && _d('Properties of event:', Dumper($new_event));
+   return $new_event;
 }
 
 sub tcp_timestamp {
@@ -3621,7 +3623,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 4037
+# QueryReportFormatter package 4042
 # ###########################################################################
 
 
@@ -3655,6 +3657,8 @@ my %formatting_function = (
    Disk_tmp_table => \&format_bool_attrib,
    Filesort       => \&format_bool_attrib,
    Disk_filesort  => \&format_bool_attrib,
+   No_good_index_used => \&format_bool_attrib,
+   No_index_used      => \&format_bool_attrib,
 );
 
 my $bool_format = '# %3s%% %s';
@@ -3916,24 +3920,29 @@ sub format_bool_attrib {
 
 sub format_string_list {
    my ( $stats ) = @_;
-   my $cnt_for = $stats->{unq};
-   if ( 1 == keys %$cnt_for ) {
-      return 1, keys %$cnt_for;
+   if ( exists $stats->{unq} ) {
+      my $cnt_for = $stats->{unq};
+      if ( 1 == keys %$cnt_for ) {
+         return ('', 1, keys %$cnt_for);
+      }
+      my $line = '';
+      my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
+                     keys %$cnt_for;
+      my $i = 0;
+      foreach my $str ( @top ) {
+         last if length($line) > LINE_LENGTH - 27;
+         $line .= "$str ($cnt_for->{$str}), ";
+         $i++;
+      }
+      $line =~ s/, $//;
+      if ( $i < $#top ) {
+         $line .= "... " . ($#top - $i) . " more";
+      }
+      return ('', scalar keys %$cnt_for, $line);
    }
-   my $line = '';
-   my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
-                  keys %$cnt_for;
-   my $i = 0;
-   foreach my $str ( @top ) {
-      last if length($line) > LINE_LENGTH - 27;
-      $line .= "$str ($cnt_for->{$str}), ";
-      $i++;
+   else {
+      return ($stats->{cnt});
    }
-   $line =~ s/, $//;
-   if ( $i < $#top ) {
-      $line .= "... " . ($#top - $i) . " more";
-   }
-   return (scalar keys %$cnt_for, $line);
 }
 
 sub sort_attribs {

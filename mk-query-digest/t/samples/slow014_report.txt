@@ -7,9 +7,9 @@
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent    100       2       1       1       1       1       0       1
 # Rows exam      0       0       0       0       0       0       0       0
-# Users          1    root
-# Hosts          1 localhost
-# Databases      1    test
+# Users                  1    root
+# Hosts                  1 localhost
+# Databases              1    test
 # Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:52
 # bytes        100      44      22      22      22      22       0      22
 # Query_time distribution

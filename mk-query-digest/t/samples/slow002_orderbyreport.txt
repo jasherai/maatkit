@@ -7,8 +7,8 @@
 # Lock time     17    54us    27us    27us    27us    27us       0    27us
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
-# Users          1 [SQL_SLAVE]
-# Hosts          1
+# Users                  1 [SQL_SLAVE]
+# Hosts                  1
 # bytes         16      82      41      41      41      41       0      41
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
@@ -50,9 +50,9 @@ select     biz = '91848182522' from foo.bar \G
 # Lock time     29    91us    91us    91us    91us    91us       0    91us
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam    100  61.48k  61.48k  61.48k  61.48k  61.48k       0  61.48k
-# Users          1 [SQL_SLAVE]
-# Hosts          1
-# Databases      1     db1
+# Users                  1 [SQL_SLAVE]
+# Hosts                  1
+# Databases              1     db1
 # bytes         25     129     129     129     129     129       0     129
 # Merge pas      0       0       0       0       0       0       0       0
 #   0% Disk_filesort

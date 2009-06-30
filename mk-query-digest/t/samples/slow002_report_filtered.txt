@@ -7,8 +7,8 @@
 # Lock time    100    27us    27us    27us    27us    27us       0    27us
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
-# Users          1 [SQL_SLAVE]
-# Hosts          1
+# Users                  1 [SQL_SLAVE]
+# Hosts                  1
 # bytes        100      60      60      60      60      60       0      60
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0

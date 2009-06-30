@@ -11,8 +11,8 @@
 # Lock time    100    70us       0    70us    35us    70us    49us    35us
 # Rows sent    100     226       0     226     113     226  159.81     113
 # Rows exam    100     226       0     226     113     226  159.81     113
-# Hosts          1
-# Databases      1    test
+# Hosts                  1
+# Databases              1    test
 # Time range 2008-11-27 08:51:20 to 2008-11-27 08:51:21
 # bytes         51      40      11      29      20      29   12.73      20
 # Rows read      0       0       0       0       0       0       0       0
@@ -35,8 +35,8 @@ mytopuser
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0
-# Hosts          1
-# Databases      1     abc
+# Hosts                  1
+# Databases              1     abc
 # bytes         48      38       6      16   12.67   15.25    4.48   15.25
 # Query_time distribution
 #   1us
