@@ -574,7 +574,7 @@ sub _make_event {
    $self->{raw_packets} = [];
 
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
-   return $event = {
+   my $new_event = {
       cmd        => $event->{cmd},
       arg        => $event->{arg},
       bytes      => length( $event->{arg} ),
@@ -593,6 +593,8 @@ sub _make_event {
       No_good_index_used => ($event->{No_good_index_used} ? 'Yes' : 'No'),
       No_index_used      => ($event->{No_index_used}      ? 'Yes' : 'No'),
    };
+   MKDEBUG && _d('Properties of event:', Dumper($new_event));
+   return $new_event;
 }
 
 # Extracts a slow-log-formatted timestamp from the tcpdump timestamp format.
