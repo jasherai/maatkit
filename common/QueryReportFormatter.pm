@@ -360,24 +360,31 @@ sub format_bool_attrib {
 # Does pretty-printing for lists of strings like users, hosts, db.
 sub format_string_list {
    my ( $stats ) = @_;
-   my $cnt_for = $stats->{unq};
-   if ( 1 == keys %$cnt_for ) {
-      return 1, keys %$cnt_for;
+   if ( exists $stats->{unq} ) {
+      # Only class stats have unq.
+      my $cnt_for = $stats->{unq};
+      if ( 1 == keys %$cnt_for ) {
+         return 1, keys %$cnt_for;
+      }
+      my $line = '';
+      my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
+                     keys %$cnt_for;
+      my $i = 0;
+      foreach my $str ( @top ) {
+         last if length($line) > LINE_LENGTH - 27;
+         $line .= "$str ($cnt_for->{$str}), ";
+         $i++;
+      }
+      $line =~ s/, $//;
+      if ( $i < $#top ) {
+         $line .= "... " . ($#top - $i) . " more";
+      }
+      return (scalar keys %$cnt_for, $line);
    }
-   my $line = '';
-   my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
-                  keys %$cnt_for;
-   my $i = 0;
-   foreach my $str ( @top ) {
-      last if length($line) > LINE_LENGTH - 27;
-      $line .= "$str ($cnt_for->{$str}), ";
-      $i++;
+   else {
+      # Global stats don't have unq.
+      return ($stats->{cnt});
    }
-   $line =~ s/, $//;
-   if ( $i < $#top ) {
-      $line .= "... " . ($#top - $i) . " more";
-   }
-   return (scalar keys %$cnt_for, $line);
 }
 
 # Attribs are sorted into three groups: basic attributes (Query_time, etc.),
