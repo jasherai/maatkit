@@ -83,6 +83,11 @@ sub new {
          grep { $_ ne $args{groupby} }
          keys %$attributes
       },
+      alt_attribs    => {
+         map  { $_ => make_alt_attrib(@{$args{attributes}->{$_}}) }
+         grep { $_ ne $args{groupby} }
+         keys %$attributes
+      },
       worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
       attrib_limit => $args{attrib_limit},
@@ -134,10 +139,22 @@ sub aggregate {
       return $self->{unrolled_loops}->($self, $event, $group_by);
    }
 
-   my @attrs = sort keys %{$self->{attributes}};
+   my @attrs = keys %{$self->{attributes}};
    ATTRIB:
    foreach my $attrib ( @attrs ) {
-      next ATTRIB unless exists $event->{$attrib};
+
+      # Attrib auto-detection can add a lot of attributes which some events
+      # may or may not have.  Aggregating a nonexistent attrib is wasteful,
+      # so we check that the attrib or one of its alternates exists.  If
+      # one does, then we leave attrib alone because the handler sub will
+      # also check alternates.
+      if ( !exists $event->{$attrib} ) {
+         MKDEBUG && _d("attrib doesn't exist in event:", $attrib);
+         my $alt_attrib = $self->{alt_attribs}->{$attrib}->($event);
+         MKDEBUG && _d('alt attrib:', $alt_attrib);
+         next ATTRIB unless $alt_attrib;
+      }
+
       # The value of the attribute ( $group_by ) may be an arrayref.
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
@@ -302,7 +319,7 @@ sub make_handler {
       unq => $type =~ m/bool|string/ ? 1 : 0,
       all => $type eq 'num'          ? 1 : 0,
       glo => 1,
-      trf => ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0} : undef,
+      trf => ($type eq 'bool') ? q{(($val || '') eq 'Yes') ? 1 : 0} : undef,
       wor => 0,
       alt => [],
       %args,
@@ -669,7 +686,8 @@ sub add_new_attributes {
    my ( $self, $event ) = @_;
    return unless $event;
    map {
-      $self->{attributes}->{$_} = [$_];
+      $self->{attributes}->{$_}  = [$_];
+      $self->{alt_attribs}->{$_} = make_alt_attrib($_);
       push @{$self->{all_attribs}}, $_;
       MKDEBUG && _d('Added new attribute:', $_);
    }
@@ -692,6 +710,25 @@ sub get_attributes {
 sub events_processed {
    my ( $self ) = @_;
    return $self->{n_events};
+}
+
+sub make_alt_attrib {
+   my ( @attribs ) = @_;
+
+   my $attrib = shift @attribs;  # Primary attribute.
+   return sub {} unless @attribs;  # No alternates.
+
+   my @lines;
+   push @lines, 'sub { my ( $event ) = @_; my $alt_attrib;';
+   push @lines, map  {
+         "\$alt_attrib = '$_' if !defined \$alt_attrib "
+         . "&& exists \$event->{'$_'};"
+      } @attribs;
+   push @lines, 'return $alt_attrib; }';
+   MKDEBUG && _d('alt attrib sub for', $attrib, ':', @lines);
+   my $sub = eval join("\n", @lines);
+   die if $EVAL_ERROR;
+   return $sub;
 }
 
 sub _d {
