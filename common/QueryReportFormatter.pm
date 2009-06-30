@@ -41,6 +41,7 @@ my %formatting_function = (
    },
    db             => \&format_string_list,
    user           => \&format_string_list,
+   host           => \&format_string_list,
    QC_Hit         => \&format_bool_attrib,
    Full_scan      => \&format_bool_attrib,
    Full_join      => \&format_bool_attrib,
