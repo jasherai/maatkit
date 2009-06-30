@@ -2843,7 +2843,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 3940
+# SlowLogParser package 3980
 # ###########################################################################
 package SlowLogParser;
 
@@ -3068,7 +3068,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3966
+# EventAggregator package 4023
 # ###########################################################################
 package EventAggregator;
 
@@ -3104,6 +3104,11 @@ sub new {
       },
       attributes     => {
          map  { $_ => $args{attributes}->{$_} }
+         grep { $_ ne $args{groupby} }
+         keys %$attributes
+      },
+      alt_attribs    => {
+         map  { $_ => make_alt_attrib(@{$args{attributes}->{$_}}) }
          grep { $_ ne $args{groupby} }
          keys %$attributes
       },
@@ -3145,10 +3150,17 @@ sub aggregate {
       return $self->{unrolled_loops}->($self, $event, $group_by);
    }
 
-   my @attrs = sort keys %{$self->{attributes}};
+   my @attrs = keys %{$self->{attributes}};
    ATTRIB:
    foreach my $attrib ( @attrs ) {
-      next ATTRIB unless exists $event->{$attrib};
+
+      if ( !exists $event->{$attrib} ) {
+         MKDEBUG && _d("attrib doesn't exist in event:", $attrib);
+         my $alt_attrib = $self->{alt_attribs}->{$attrib}->($event);
+         MKDEBUG && _d('alt attrib:', $alt_attrib);
+         next ATTRIB unless $alt_attrib;
+      }
+
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
          my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
@@ -3258,7 +3270,7 @@ sub make_handler {
       unq => $type =~ m/bool|string/ ? 1 : 0,
       all => $type eq 'num'          ? 1 : 0,
       glo => 1,
-      trf => ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0} : undef,
+      trf => ($type eq 'bool') ? q{(($val || '') eq 'Yes') ? 1 : 0} : undef,
       wor => 0,
       alt => [],
       %args,
@@ -3551,7 +3563,8 @@ sub add_new_attributes {
    my ( $self, $event ) = @_;
    return unless $event;
    map {
-      $self->{attributes}->{$_} = [$_];
+      $self->{attributes}->{$_}  = [$_];
+      $self->{alt_attribs}->{$_} = make_alt_attrib($_);
       push @{$self->{all_attribs}}, $_;
       MKDEBUG && _d('Added new attribute:', $_);
    }
@@ -3574,6 +3587,25 @@ sub events_processed {
    return $self->{n_events};
 }
 
+sub make_alt_attrib {
+   my ( @attribs ) = @_;
+
+   my $attrib = shift @attribs;  # Primary attribute.
+   return sub {} unless @attribs;  # No alternates.
+
+   my @lines;
+   push @lines, 'sub { my ( $event ) = @_; my $alt_attrib;';
+   push @lines, map  {
+         "\$alt_attrib = '$_' if !defined \$alt_attrib "
+         . "&& exists \$event->{'$_'};"
+      } @attribs;
+   push @lines, 'return $alt_attrib; }';
+   MKDEBUG && _d('alt attrib sub for', $attrib, ':', @lines);
+   my $sub = eval join("\n", @lines);
+   die if $EVAL_ERROR;
+   return $sub;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -3589,7 +3621,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 3967
+# QueryReportFormatter package 4027
 # ###########################################################################
 
 
@@ -3654,7 +3686,16 @@ my %formatting_function = (
       }
       return (scalar keys %$cnt_for, $line);
    },
+   QC_Hit         => \&format_bool_attrib,
+   Full_scan      => \&format_bool_attrib,
+   Full_join      => \&format_bool_attrib,
+   Tmp_table      => \&format_bool_attrib,
+   Disk_tmp_table => \&format_bool_attrib,
+   Filesort       => \&format_bool_attrib,
+   Disk_filesort  => \&format_bool_attrib,
 );
+
+my $bool_format = '# %3s%% %s';
 
 sub new {
    my ( $class, %args ) = @_;
@@ -3711,18 +3752,26 @@ sub global_report {
    my ($format, @headers) = make_header('global');
    push @result, sprintf($format, '', @headers);
 
-   foreach my $attrib ( @{$opts{select}} ) {
-      next unless $ea->type_for($attrib);
+   foreach my $attrib ( sort_attribs($ea, @{$opts{select}}) ) {
+      my $attrib_type = $ea->type_for($attrib);
+      next unless $attrib_type; 
       next unless exists $stats->{globals}->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
-         push @result, sprintf $format, make_label($attrib),
-            $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
-            (map { '' } 0..9);# just for good measure
+         if ( $attrib_type ne 'bool') {
+            push @result, sprintf $format, make_label($attrib),
+                  $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
+                  (map { '' } 0..9); # just for good measure
+         }
+         else {
+            push @result, sprintf $bool_format,
+                  $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
+                  $attrib;
+         }
       }
       else {
          my $store = $stats->{globals}->{$attrib};
          my @values;
-         if ( $ea->type_for($attrib) eq 'num' ) {
+         if ( $attrib_type eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
             MKDEBUG && _d('Calculating global statistical_metrics for', $attrib);
             my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
@@ -3792,20 +3841,28 @@ sub event_report {
       $format, 'Count', percentage_of($class_cnt, $global_cnt), $class_cnt,
          map { '' } (1 ..9);
 
-   foreach my $attrib ( @{$opts{select}} ) {
-      next unless $ea->type_for($attrib);
+   foreach my $attrib ( sort_attribs($ea, @{$opts{select}}) ) {
+      my $attrib_type = $ea->type_for($attrib);
+      next unless $attrib_type; 
       next unless exists $store->{$attrib};
       my $vals = $store->{$attrib};
       next unless scalar %$vals;
       if ( $formatting_function{$attrib} ) { # Handle special cases
-         push @result, sprintf $format, make_label($attrib),
-            $formatting_function{$attrib}->($vals),
-            (map { '' } 0..9);# just for good measure
+         if ( $attrib_type ne 'bool' ) {
+            push @result, sprintf $format, make_label($attrib),
+                  $formatting_function{$attrib}->($vals),
+                  (map { '' } 0..9); # just for good measure
+         }
+         else {
+            push @result, sprintf $bool_format, 
+                  $formatting_function{$attrib}->($vals),
+                  $attrib;
+         }
       }
       else {
          my @values;
          my $pct;
-         if ( $ea->type_for($attrib) eq 'num' ) {
+         if ( $attrib_type eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
             my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
             @values = (
@@ -3874,11 +3931,53 @@ sub make_header {
 
 sub make_label {
    my ( $val ) = @_;
-   return $val eq 'ts'          ? 'Time range'
+   return  $val eq 'ts'         ? 'Time range'
          : $val eq 'user'       ? 'Users'
          : $val eq 'db'         ? 'Databases'
          : $val eq 'Query_time' ? 'Exec time'
          : do { $val =~ s/_/ /g; $val = substr($val, 0, 9); $val };
+}
+
+sub format_bool_attrib {
+   my ( $stats ) = @_;
+   my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
+   my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
+   return $p_true;
+}
+
+sub sort_attribs {
+   my ( $ea, @attribs ) = @_;
+   my %basic_attrib = (
+      Query_time    => 0,
+      Lock_time     => 1,
+      Rows_sent     => 2,
+      Rows_examined => 3,
+      ts            => 4,
+   );
+   my @basic_attribs;
+   my @non_bool_attribs;
+   my @bool_attribs;
+
+   foreach my $attrib ( @attribs ) {
+      if ( exists $basic_attrib{$attrib} ) {
+         push @basic_attribs, $attrib;
+      }
+      else {
+         if ( ($ea->type_for($attrib) || '') ne 'bool' ) {
+            push @non_bool_attribs, $attrib;
+         }
+         else {
+            push @bool_attribs, $attrib;
+         }
+      }
+   }
+
+   @non_bool_attribs = sort { uc $a cmp uc $b } @non_bool_attribs;
+   @bool_attribs     = sort { uc $a cmp uc $b } @bool_attribs;
+   @basic_attribs    = sort {
+         $basic_attrib{$a} <=> $basic_attrib{$b} } @basic_attribs;
+
+   return @basic_attribs, @non_bool_attribs, @bool_attribs;
 }
 
 sub _d {
