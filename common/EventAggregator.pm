@@ -474,7 +474,7 @@ sub bucket_value {
       # base 1.05 bucket in which the base 10 bucket's range falls.
       for my $base10_bucket ( 0..($#base10_starts-1) ) {
          my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
-         MKDEBUG && _d('Base 10 bucket $base10_bucket maps to',
+         MKDEBUG && _d('Base 10 bucket', $base10_bucket, 'maps to',
             'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
          for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
             $buck_tens[$base1_05_bucket] = $base10_bucket;
