@@ -33,54 +33,14 @@ use constant LINE_LENGTH => 74;
 
 # Special formatting functions
 my %formatting_function = (
-   db => sub {
-      my ( $stats ) = @_;
-      my $cnt_for = $stats->{unq};
-      if ( 1 == keys %$cnt_for ) {
-         return 1, keys %$cnt_for;
-      }
-      my $line = '';
-      my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
-                     keys %$cnt_for;
-      my $i = 0;
-      foreach my $db ( @top ) {
-         last if length($line) > LINE_LENGTH - 27;
-         $line .= "$db ($cnt_for->{$db}), ";
-         $i++;
-      }
-      $line =~ s/, $//;
-      if ( $i < $#top ) {
-         $line .= "... " . ($#top - $i) . " more";
-      }
-      return (scalar keys %$cnt_for, $line);
-   },
    ts => sub {
       my ( $stats ) = @_;
       my $min = parse_timestamp($stats->{min} || '');
       my $max = parse_timestamp($stats->{max} || '');
       return $min && $max ? "$min to $max" : '';
    },
-   user => sub {
-      my ( $stats ) = @_;
-      my $cnt_for = $stats->{unq};
-      if ( 1 == keys %$cnt_for ) {
-         return 1, keys %$cnt_for;
-      }
-      my $line = '';
-      my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
-                     keys %$cnt_for;
-      my $i = 0;
-      foreach my $user ( @top ) {
-         last if length($line) > LINE_LENGTH - 27;
-         $line .= "$user ($cnt_for->{$user}), ";
-         $i++;
-      }
-      $line =~ s/, $//;
-      if ( $i < $#top ) {
-         $line .= "... " . ($#top - $i) . " more";
-      }
-      return (scalar keys %$cnt_for, $line);
-   },
+   db             => \&format_string_list,
+   user           => \&format_string_list,
    QC_Hit         => \&format_bool_attrib,
    Full_scan      => \&format_bool_attrib,
    Full_join      => \&format_bool_attrib,
@@ -384,6 +344,29 @@ sub format_bool_attrib {
    return $p_true;
 }
 
+# Does pretty-printing for lists of strings like users, hosts, db.
+sub format_string_list {
+   my ( $stats ) = @_;
+   my $cnt_for = $stats->{unq};
+   if ( 1 == keys %$cnt_for ) {
+      return 1, keys %$cnt_for;
+   }
+   my $line = '';
+   my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
+                  keys %$cnt_for;
+   my $i = 0;
+   foreach my $str ( @top ) {
+      last if length($line) > LINE_LENGTH - 27;
+      $line .= "$str ($cnt_for->{$str}), ";
+      $i++;
+   }
+   $line =~ s/, $//;
+   if ( $i < $#top ) {
+      $line .= "... " . ($#top - $i) . " more";
+   }
+   return (scalar keys %$cnt_for, $line);
+}
+
 # Attribs are sorted into three groups: basic attributes (Query_time, etc.),
 # other non-bool attributes sorted by name, and bool attributes sorted by name.
 sub sort_attribs {
@@ -394,6 +377,9 @@ sub sort_attribs {
       Rows_sent     => 2,
       Rows_examined => 3,
       ts            => 4,
+      db            => 5,
+      user          => 6,
+      host          => 7,
    );
    my @basic_attribs;
    my @non_bool_attribs;
