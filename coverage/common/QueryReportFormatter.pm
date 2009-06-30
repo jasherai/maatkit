@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...n/QueryReportFormatter.pm   94.3   76.9   58.1   92.3    n/a  100.0   86.2
-Total                          94.3   76.9   58.1   92.3    n/a  100.0   86.2
+...n/QueryReportFormatter.pm   95.7   80.3   66.7   93.3    n/a  100.0   89.0
+Total                          95.7   80.3   66.7   93.3    n/a  100.0   89.0
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          QueryReportFormatter.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:20:47 2009
-Finish:       Wed Jun 10 17:20:47 2009
+Start:        Tue Jun 30 16:30:09 2009
+Finish:       Tue Jun 30 16:30:09 2009
 
 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm
 
@@ -33,29 +33,29 @@ line  err   stmt   bran   cond    sub    pod   time   code
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    
 18                                                    # ###########################################################################
-19                                                    # QueryReportFormatter package $Revision: 3408 $
+19                                                    # QueryReportFormatter package $Revision: 4025 $
 20                                                    # ###########################################################################
 21                                                    
 22                                                    package QueryReportFormatter;
 23                                                    
-24             1                    1             5   use strict;
+24             1                    1             6   use strict;
                1                                  2   
                1                                  6   
-25             1                    1             6   use warnings FATAL => 'all';
+25             1                    1             7   use warnings FATAL => 'all';
                1                                  2   
-               1                                  6   
-26             1                    1             5   use English qw(-no_match_vars);
+               1                                 10   
+26             1                    1             6   use English qw(-no_match_vars);
                1                                  3   
                1                                  5   
 27                                                    Transformers->import(
 28                                                       qw(shorten micro_t parse_timestamp unix_timestamp
 29                                                          make_checksum percentage_of));
 30                                                    
-31             1                    1             6   use constant MKDEBUG     => $ENV{MKDEBUG};
+31             1                    1             7   use constant MKDEBUG     => $ENV{MKDEBUG};
                1                                  2   
                1                                  7   
 32             1                    1             6   use constant LINE_LENGTH => 74;
-               1                                  2   
+               1                                  3   
                1                                  4   
 33                                                    
 34                                                    # Special formatting functions
@@ -108,304 +108,382 @@ line  err   stmt   bran   cond    sub    pod   time   code
 81                                                          }
 82                                                          return (scalar keys %$cnt_for, $line);
 83                                                       },
-84                                                    );
-85                                                    
-86                                                    sub new {
-87             1                    1             5      my ( $class, %args ) = @_;
-88             1                                 12      return bless { }, $class;
-89                                                    }
-90                                                    
-91                                                    sub header {
-92             1                    1             4      my ($self) = @_;
-93                                                    
-94             1                                  6      my ( $rss, $vsz, $user, $system ) = ( 0, 0, 0, 0 );
-95             1                                  3      eval {
-96             1                              12644         my $mem = `ps -o rss,vsz $PID`;
-97             1                                 44         ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
-98                                                       };
-99             1                                 17      ( $user, $system ) = times();
-100                                                   
-101            1                                 26      sprintf "# %s user time, %s system time, %s rss, %s vsz\n",
-102                                                         micro_t( $user,   p_s => 1, p_ms => 1 ),
-103                                                         micro_t( $system, p_s => 1, p_ms => 1 ),
-104                                                         shorten( $rss * 1_024 ),
-105                                                         shorten( $vsz * 1_024 );
-106                                                   }
-107                                                   
-108                                                   # Print a report about the global statistics in the EventAggregator.  %opts is a
-109                                                   # hash that has the following keys:
-110                                                   #  * select       An arrayref of attributes to print statistics lines for.
-111                                                   #  * worst        The --orderby attribute.
-112                                                   sub global_report {
-113            2                    2            18      my ( $self, $ea, %opts ) = @_;
-114            2                                 12      my $stats = $ea->results;
-115            2                                  8      my @result;
+84                                                       QC_Hit         => \&format_bool_attrib,
+85                                                       Full_scan      => \&format_bool_attrib,
+86                                                       Full_join      => \&format_bool_attrib,
+87                                                       Tmp_table      => \&format_bool_attrib,
+88                                                       Disk_tmp_table => \&format_bool_attrib,
+89                                                       Filesort       => \&format_bool_attrib,
+90                                                       Disk_filesort  => \&format_bool_attrib,
+91                                                    );
+92                                                    
+93                                                    my $bool_format = '#  %3s%%  %s';
+94                                                    
+95                                                    sub new {
+96             1                    1            12      my ( $class, %args ) = @_;
+97             1                                 11      return bless { }, $class;
+98                                                    }
+99                                                    
+100                                                   sub header {
+101            1                    1            12      my ($self) = @_;
+102                                                   
+103            1                                  6      my ( $rss, $vsz, $user, $system ) = ( 0, 0, 0, 0 );
+104            1                                  3      eval {
+105            1                               9568         my $mem = `ps -o rss,vsz $PID`;
+106            1                                 48         ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
+107                                                      };
+108            1                                 16      ( $user, $system ) = times();
+109                                                   
+110            1                                 31      sprintf "# %s user time, %s system time, %s rss, %s vsz\n",
+111                                                         micro_t( $user,   p_s => 1, p_ms => 1 ),
+112                                                         micro_t( $system, p_s => 1, p_ms => 1 ),
+113                                                         shorten( $rss * 1_024 ),
+114                                                         shorten( $vsz * 1_024 );
+115                                                   }
 116                                                   
-117                                                      # Get global count
-118            2                                 10      my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
-119                                                   
-120                                                      # Calculate QPS (queries per second) by looking at the min/max timestamp.
-121            2                                  8      my ($qps, $conc) = (0, 0);
-122   ***      2    100     33                   51      if ( $global_cnt && $stats->{globals}->{ts}
+117                                                   # Print a report about the global statistics in the EventAggregator.  %opts is a
+118                                                   # hash that has the following keys:
+119                                                   #  * select       An arrayref of attributes to print statistics lines for.
+120                                                   #  * worst        The --orderby attribute.
+121                                                   sub global_report {
+122            3                    3            68      my ( $self, $ea, %opts ) = @_;
+123            3                                 20      my $stats = $ea->results;
+124            3                                  9      my @result;
+125                                                   
+126                                                      # Get global count
+127            3                                 17      my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
+128                                                   
+129                                                      # Calculate QPS (queries per second) by looking at the min/max timestamp.
+130            3                                 11      my ($qps, $conc) = (0, 0);
+131   ***      3    100     33                   82      if ( $global_cnt && $stats->{globals}->{ts}
       ***                   50                        
       ***                   50                        
       ***                   66                        
-123                                                         && ($stats->{globals}->{ts}->{max} || '')
-124                                                            gt ($stats->{globals}->{ts}->{min} || '')
-125                                                      ) {
-126            1                                  4         eval {
-127            1                                  9            my $min  = parse_timestamp($stats->{globals}->{ts}->{min});
-128            1                                 10            my $max  = parse_timestamp($stats->{globals}->{ts}->{max});
-129            1                                  8            my $diff = unix_timestamp($max) - unix_timestamp($min);
-130            1                                  5            $qps     = $global_cnt / $diff;
-131            1                                  6            $conc    = $stats->{globals}->{$opts{worst}}->{sum} / $diff;
-132                                                         };
-133                                                      }
-134                                                   
-135                                                      # First line
-136            2                                 13      my $line = sprintf(
-137                                                         '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
-138                                                         shorten($global_cnt),
-139            2                                 12         shorten(scalar keys %{$stats->{classes}}),
-140                                                         shorten($qps),
-141                                                         shorten($conc));
-142            2                                 13      $line .= ('_' x (LINE_LENGTH - length($line)));
-143            2                                  8      push @result, $line;
-144                                                   
-145                                                      # Column header line
-146            2                                 14      my ($format, @headers) = make_header('global');
-147            2                                 16      push @result, sprintf($format, '', @headers);
-148                                                   
-149                                                      # Each additional line
-150            2                                  6      foreach my $attrib ( @{$opts{select}} ) {
-               2                                 11   
-151           10    100                          52         next unless $ea->type_for($attrib);
-152            7    100                          37         if ( $formatting_function{$attrib} ) { # Handle special cases
-153           20                                 73            push @result, sprintf $format, make_label($attrib),
-154                                                               $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
-155            2                                 11               (map { '' } 0..9);# just for good measure
-156                                                         }
-157                                                         else {
-158            5                                 24            my $store = $stats->{globals}->{$attrib};
-159            5                                 12            my @values;
-160   ***      5     50                          20            if ( $ea->type_for($attrib) eq 'num' ) {
-161            5    100                          37               my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
-162            5                                 13               MKDEBUG && _d('Calculating global statistical_metrics for', $attrib);
-163            5                                 32               my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
-164            5                                 38               @values = (
-165            5                                 36                  @{$store}{qw(sum min max)},
-166                                                                  $store->{sum} / $store->{cnt},
-167            5                                 21                  @{$metrics}{qw(pct_95 stddev median)},
-168                                                               );
-169   ***      5     50                          20               @values = map { defined $_ ? $func->($_) : '' } @values;
-              35                                172   
-170                                                            }
-171                                                            else {
-172   ***      0                                  0               @values = ('', $store->{min}, $store->{max}, '', '', '', '');
-173                                                            }
-174            5                                 34            push @result, sprintf $format, make_label($attrib), @values;
+132                                                         && ($stats->{globals}->{ts}->{max} || '')
+133                                                            gt ($stats->{globals}->{ts}->{min} || '')
+134                                                      ) {
+135            2                                  7         eval {
+136            2                                 19            my $min  = parse_timestamp($stats->{globals}->{ts}->{min});
+137            2                                 14            my $max  = parse_timestamp($stats->{globals}->{ts}->{max});
+138            2                                 14            my $diff = unix_timestamp($max) - unix_timestamp($min);
+139            2                                 10            $qps     = $global_cnt / $diff;
+140            2                                 13            $conc    = $stats->{globals}->{$opts{worst}}->{sum} / $diff;
+141                                                         };
+142                                                      }
+143                                                   
+144                                                      # First line
+145            3                                 18      my $line = sprintf(
+146                                                         '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
+147                                                         shorten($global_cnt),
+148            3                                 19         shorten(scalar keys %{$stats->{classes}}),
+149                                                         shorten($qps),
+150                                                         shorten($conc));
+151            3                                 18      $line .= ('_' x (LINE_LENGTH - length($line)));
+152            3                                 13      push @result, $line;
+153                                                   
+154                                                      # Column header line
+155            3                                 35      my ($format, @headers) = make_header('global');
+156            3                                 22      push @result, sprintf($format, '', @headers);
+157                                                   
+158                                                      # Each additional line
+159            3                                  9      foreach my $attrib ( sort_attribs($ea, @{$opts{select}}) ) {
+               3                                 22   
+160           17                                 86         my $attrib_type = $ea->type_for($attrib);
+161           17    100                          69         next unless $attrib_type; 
+162   ***     14     50                          67         next unless exists $stats->{globals}->{$attrib};
+163           14    100                          59         if ( $formatting_function{$attrib} ) { # Handle special cases
+164            5    100                          23            if ( $attrib_type ne 'bool') {
+165           30                                112               push @result, sprintf $format, make_label($attrib),
+166                                                                     $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
+167            3                                 14                     (map { '' } 0..9); # just for good measure
+168                                                            }
+169                                                            else {
+170                                                               # Bools have their own special line format.
+171            2                                 12               push @result, sprintf $bool_format,
+172                                                                     $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
+173                                                                     $attrib;
+174                                                            }
 175                                                         }
-176                                                      }
-177                                                   
-178            2                                  8      return join("\n", map { s/\s+$//; $_ } @result) . "\n";
-              11                                 61   
-              11                                 52   
-179                                                   }
-180                                                   
-181                                                   # Print a report about the statistics in the EventAggregator.  %opts is a
-182                                                   # hash that has the following keys:
-183                                                   #  * select       An arrayref of attributes to print statistics lines for.
-184                                                   #  * where        The value of the group-by attribute, such as the fingerprint.
-185                                                   #  * rank         The (optional) rank of the query, for the header
-186                                                   #  * worst        The --orderby attribute
-187                                                   #  * reason       Why this one is being reported on: top|outlier
-188                                                   # TODO: it would be good to start using $ea->metrics() here for simplicity and
-189                                                   # uniform code.
-190                                                   sub event_report {
-191            2                    2            24      my ( $self, $ea, %opts ) = @_;
-192            2                                 14      my $stats = $ea->results;
-193            2                                  6      my @result;
-194                                                   
-195                                                      # Does the data exist?  Is there a sample event?
-196            2                                 10      my $store = $stats->{classes}->{$opts{where}};
-197   ***      2     50                          11      return "# No such event $opts{where}\n" unless $store;
-198            2                                 11      my $sample = $stats->{samples}->{$opts{where}};
+176                                                         else {
+177            9                                 35            my $store = $stats->{globals}->{$attrib};
+178            9                                 21            my @values;
+179   ***      9     50                          34            if ( $attrib_type eq 'num' ) {
+180            9    100                          60               my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
+181            9                                 21               MKDEBUG && _d('Calculating global statistical_metrics for', $attrib);
+182            9                                 53               my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
+183            9                                 64               @values = (
+184            9                                 55                  @{$store}{qw(sum min max)},
+185                                                                  $store->{sum} / $store->{cnt},
+186            9                                 33                  @{$metrics}{qw(pct_95 stddev median)},
+187                                                               );
+188   ***      9     50                          37               @values = map { defined $_ ? $func->($_) : '' } @values;
+              63                                286   
+189                                                            }
+190                                                            else {
+191   ***      0                                  0               @values = ('', $store->{min}, $store->{max}, '', '', '', '');
+192                                                            }
+193            9                                 54            push @result, sprintf $format, make_label($attrib), @values;
+194                                                         }
+195                                                      }
+196                                                   
+197            3                                 14      return join("\n", map { s/\s+$//; $_ } @result) . "\n";
+              20                                105   
+              20                                103   
+198                                                   }
 199                                                   
-200                                                      # Pick the first attribute to get counts
-201            2                                 12      my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
-202            2                                 11      my $class_cnt  = $store->{$opts{worst}}->{cnt};
-203                                                   
-204                                                      # Calculate QPS (queries per second) by looking at the min/max timestamp.
-205            2                                 10      my ($qps, $conc) = (0, 0);
-206   ***      2    100     33                   49      if ( $global_cnt && $store->{ts}
-      ***                   50                        
-      ***                   50                        
-      ***                   66                        
-207                                                         && ($store->{ts}->{max} || '')
-208                                                            gt ($store->{ts}->{min} || '')
-209                                                      ) {
-210            1                                  3         eval {
-211            1                                  6            my $min  = parse_timestamp($store->{ts}->{min});
-212            1                                  6            my $max  = parse_timestamp($store->{ts}->{max});
-213            1                                  6            my $diff = unix_timestamp($max) - unix_timestamp($min);
-214            1                                  6            $qps     = $class_cnt / $diff;
-215            1                                  6            $conc    = $store->{$opts{worst}}->{sum} / $diff;
-216                                                         };
-217                                                      }
+200                                                   # Print a report about the statistics in the EventAggregator.  %opts is a
+201                                                   # hash that has the following keys:
+202                                                   #  * select       An arrayref of attributes to print statistics lines for.
+203                                                   #  * where        The value of the group-by attribute, such as the fingerprint.
+204                                                   #  * rank         The (optional) rank of the query, for the header
+205                                                   #  * worst        The --orderby attribute
+206                                                   #  * reason       Why this one is being reported on: top|outlier
+207                                                   # TODO: it would be good to start using $ea->metrics() here for simplicity and
+208                                                   # uniform code.
+209                                                   sub event_report {
+210            5                    5            92      my ( $self, $ea, %opts ) = @_;
+211            5                                 29      my $stats = $ea->results;
+212            5                                 15      my @result;
+213                                                   
+214                                                      # Does the data exist?  Is there a sample event?
+215            5                                 23      my $store = $stats->{classes}->{$opts{where}};
+216   ***      5     50                          20      return "# No such event $opts{where}\n" unless $store;
+217            5                                 22      my $sample = $stats->{samples}->{$opts{where}};
 218                                                   
-219                                                      # First line
-220   ***      2     50     50                   26      my $line = sprintf(
+219                                                      # Pick the first attribute to get counts
+220            5                                 27      my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
+221            5                                 22      my $class_cnt  = $store->{$opts{worst}}->{cnt};
+222                                                   
+223                                                      # Calculate QPS (queries per second) by looking at the min/max timestamp.
+224            5                                 19      my ($qps, $conc) = (0, 0);
+225   ***      5    100     66                   85      if ( $global_cnt && $store->{ts}
+      ***                   50                        
+      ***                   50                        
                            100                        
-221                                                         '# %s %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
-222                                                         ($ea->{groupby} eq 'fingerprint' ? 'Query' : 'Item'),
-223                                                         $opts{rank} || 0,
-224                                                         shorten($qps),
-225                                                         shorten($conc),
-226                                                         make_checksum($opts{where}),
-227                                                         $sample->{pos_in_log} || 0);
-228            2                                 11      $line .= ('_' x (LINE_LENGTH - length($line)));
-229            2                                  6      push @result, $line;
-230                                                   
-231   ***      2     50                          10      if ( $opts{reason} ) {
-232   ***      2     50                          11         push @result, "# This item is included in the report because it matches "
-233                                                            . ($opts{reason} eq 'top' ? '--limit.' : '--outliers.');
-234                                                      }
-235                                                   
-236                                                      # Column header line
-237            2                                 10      my ($format, @headers) = make_header();
-238            2                                 15      push @result, sprintf($format, '', @headers);
-239                                                   
-240                                                      # Count line
-241           18                                 56      push @result, sprintf
-242                                                         $format, 'Count', percentage_of($class_cnt, $global_cnt), $class_cnt,
-243            2                                 10            map { '' } (1 ..9);
-244                                                   
-245                                                      # Each additional line
-246            2                                  7      foreach my $attrib ( @{$opts{select}} ) {
-               2                                 12   
-247           16    100                          67         next unless $ea->type_for($attrib);
-248           11                                 40         my $vals = $store->{$attrib};
-249           11    100                          41         if ( $formatting_function{$attrib} ) { # Handle special cases
-250           60                                194            push @result, sprintf $format, make_label($attrib),
-251                                                               $formatting_function{$attrib}->($vals),
-252            6                                 25               (map { '' } 0..9);# just for good measure
-253                                                         }
-254                                                         else {
-255            5                                 11            my @values;
-256            5                                 11            my $pct;
-257   ***      5     50                          21            if ( $ea->type_for($attrib) eq 'num' ) {
-258            5    100                          29               my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
-259            5                                 27               my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
-260            5                                 30               @values = (
-261            5                                 28                  @{$vals}{qw(sum min max)},
-262                                                                  $vals->{sum} / $vals->{cnt},
-263            5                                 20                  @{$metrics}{qw(pct_95 stddev median)},
-264                                                               );
-265   ***      5     50                          18               @values = map { defined $_ ? $func->($_) : '' } @values;
-              35                                154   
-266            5                                 39               $pct = percentage_of($vals->{sum},
-267                                                                  $stats->{globals}->{$attrib}->{sum});
-268                                                            }
-269                                                            else {
-270   ***      0                                  0               @values = ('', $vals->{min}, $vals->{max}, '', '', '', '');
-271   ***      0                                  0               $pct = 0;
-272                                                            }
-273            5                                 22            push @result, sprintf $format, make_label($attrib), $pct, @values;
-274                                                         }
-275                                                      }
-276                                                   
-277            2                                 12      return join("\n", map { s/\s+$//; $_ } @result) . "\n";
-              19                                 93   
-              19                                 74   
-278                                                   }
-279                                                   
-280                                                   # Creates a chart of value distributions in buckets.  Right now it bucketizes
-281                                                   # into 8 buckets, powers of ten starting with .000001. %opts has:
-282                                                   #  * where        The value of the group-by attribute, such as the fingerprint.
-283                                                   #  * attribute    An attribute to chart.
-284                                                   sub chart_distro {
-285            2                    2            15      my ( $self, $ea, %opts ) = @_;
-286            2                                 12      my $stats = $ea->results;
-287            2                                 15      my $store = $stats->{classes}->{$opts{where}}->{$opts{attribute}};
-288            2                                  8      my $vals  = $store->{all};
-289   ***      2     50     50                   25      return "" unless defined $vals && scalar @$vals;
-290                                                      # TODO: this is broken.
-291            2                                 12      my @buck_tens = $ea->buckets_of(10);
-292            2                                 95      my @distro = map { 0 } (0 .. 7);
-              16                                 48   
-293            2                                 88      map { $distro[$buck_tens[$_]] += $vals->[$_] } (1 .. @$vals - 1);
-            1998                               7432   
-294                                                   
-295            2                                 90      my $max_val = 0;
-296            2                                  5      my $vals_per_mark; # number of vals represented by 1 #-mark
-297            2                                  7      my $max_disp_width = 64;
-298            2                                  7      my $bar_fmt = "# %5s%s";
-299            2                                 14      my @distro_labels = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
-300            2                                 14      my @results = "# $opts{attribute} distribution";
-301                                                   
-302                                                      # Find the distro with the most values. This will set
-303                                                      # vals_per_mark and become the bar at max_disp_width.
-304            2                                 13      foreach my $n_vals ( @distro ) {
-305           16    100                          67         $max_val = $n_vals if $n_vals > $max_val;
-306                                                      }
-307            2                                  9      $vals_per_mark = $max_val / $max_disp_width;
-308                                                   
-309            2                                 17      foreach my $i ( 0 .. $#distro ) {
-310           16                                 44         my $n_vals = $distro[$i];
-311           16           100                   98         my $n_marks = $n_vals / ($vals_per_mark || 1);
-312                                                         # Always print at least 1 mark for any bucket that has at least
-313                                                         # 1 value. This skews the graph a tiny bit, but it allows us to
-314                                                         # see all buckets that have values.
-315   ***     16     50     66                  118         $n_marks = 1 if $n_marks < 1 && $n_vals > 0;
-316           16    100                          69         my $bar = ($n_marks ? '  ' : '') . '#' x $n_marks;
-317           16                                 81         push @results, sprintf $bar_fmt, $distro_labels[$i], $bar;
-318                                                      }
-319                                                   
-320            2                                 61      return join("\n", @results) . "\n";
-321                                                   }
-322                                                   
-323                                                   # Makes a header format and returns the format and the column header names.  The
-324                                                   # argument is either 'global' or anything else.
-325                                                   sub make_header {
-326            4                    4            23      my ( $global ) = @_;
-327            4                                 13      my $format = "# %-9s %6s %7s %7s %7s %7s %7s %7s %7s";
-328            4                                 23      my @headers = qw(pct total min max avg 95% stddev median);
-329            4    100                          16      if ( $global ) {
-330            2                                 22         $format =~ s/%(\d+)s/' ' x $1/e;
-               2                                 20   
-331            2                                  7         shift @headers;
-332                                                      }
-333            4                                 36      return $format, @headers;
-334                                                   }
-335                                                   
-336                                                   # Convert attribute names into labels
-337                                                   sub make_label {
-338           18                   18            62      my ( $val ) = @_;
-339                                                      return $val eq 'ts'          ? 'Time range'
-340                                                            : $val eq 'user'       ? 'Users'
-341                                                            : $val eq 'db'         ? 'Databases'
-342                                                            : $val eq 'Query_time' ? 'Exec time'
-343           18    100                         156            : do { $val =~ s/_/ /g; $val = substr($val, 0, 9); $val };
-               6    100                          36   
-               6    100                          31   
-               6    100                          50   
-344                                                   }
-345                                                   
-346                                                   sub _d {
-347   ***      0                    0                    my ($package, undef, $line) = caller 0;
-348   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+226                                                         && ($store->{ts}->{max} || '')
+227                                                            gt ($store->{ts}->{min} || '')
+228                                                      ) {
+229            1                                  4         eval {
+230            1                                  6            my $min  = parse_timestamp($store->{ts}->{min});
+231            1                                  7            my $max  = parse_timestamp($store->{ts}->{max});
+232            1                                  5            my $diff = unix_timestamp($max) - unix_timestamp($min);
+233            1                                  6            $qps     = $class_cnt / $diff;
+234            1                                  8            $conc    = $store->{$opts{worst}}->{sum} / $diff;
+235                                                         };
+236                                                      }
+237                                                   
+238                                                      # First line
+239   ***      5     50     50                   44      my $line = sprintf(
+                           100                        
+240                                                         '# %s %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
+241                                                         ($ea->{groupby} eq 'fingerprint' ? 'Query' : 'Item'),
+242                                                         $opts{rank} || 0,
+243                                                         shorten($qps),
+244                                                         shorten($conc),
+245                                                         make_checksum($opts{where}),
+246                                                         $sample->{pos_in_log} || 0);
+247            5                                 27      $line .= ('_' x (LINE_LENGTH - length($line)));
+248            5                                 16      push @result, $line;
+249                                                   
+250            5    100                          24      if ( $opts{reason} ) {
+251   ***      2     50                          13         push @result, "# This item is included in the report because it matches "
+252                                                            . ($opts{reason} eq 'top' ? '--limit.' : '--outliers.');
+253                                                      }
+254                                                   
+255                                                      # Column header line
+256            5                                 20      my ($format, @headers) = make_header();
+257            5                                 34      push @result, sprintf($format, '', @headers);
+258                                                   
+259                                                      # Count line
+260           45                                137      push @result, sprintf
+261                                                         $format, 'Count', percentage_of($class_cnt, $global_cnt), $class_cnt,
+262            5                                 27            map { '' } (1 ..9);
+263                                                   
+264                                                      # Each additional line
+265            5                                 18      foreach my $attrib ( sort_attribs($ea, @{$opts{select}}) ) {
+               5                                 26   
+266           64                                290         my $attrib_type = $ea->type_for($attrib);
+267           64    100                         248         next unless $attrib_type; 
+268           59    100                         248         next unless exists $store->{$attrib};
+269           54                                172         my $vals = $store->{$attrib};
+270   ***     54     50                         247         next unless scalar %$vals;
+271           54    100                         199         if ( $formatting_function{$attrib} ) { # Handle special cases
+272   ***     12     50                          41            if ( $attrib_type ne 'bool' ) {
+273          120                                387               push @result, sprintf $format, make_label($attrib),
+274                                                                     $formatting_function{$attrib}->($vals),
+275           12                                 49                     (map { '' } 0..9); # just for good measure
+276                                                            }
+277                                                            else {
+278                                                               # Bools have their own special line format.
+279   ***      0                                  0               push @result, sprintf $bool_format, 
+280                                                                     $formatting_function{$attrib}->($vals),
+281                                                                     $attrib;
+282                                                            }
+283                                                         }
+284                                                         else {
+285           42                                 99            my @values;
+286           42                                 93            my $pct;
+287           42    100                         148            if ( $attrib_type eq 'num' ) {
+288           27    100                         128               my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
+289           27                                135               my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
+290           27                                159               @values = (
+291           27                                146                  @{$vals}{qw(sum min max)},
+292                                                                  $vals->{sum} / $vals->{cnt},
+293           27                                 91                  @{$metrics}{qw(pct_95 stddev median)},
+294                                                               );
+295   ***     27     50                          93               @values = map { defined $_ ? $func->($_) : '' } @values;
+             189                                861   
+296           27                                189               $pct = percentage_of($vals->{sum},
+297                                                                  $stats->{globals}->{$attrib}->{sum});
+298                                                            }
+299                                                            else {
+300           15                                100               @values = ('', $vals->{min}, $vals->{max}, '', '', '', '');
+301           15                                 49               $pct = 0;
+302                                                            }
+303           42                                163            push @result, sprintf $format, make_label($attrib), $pct, @values;
+304                                                         }
+305                                                      }
+306                                                   
+307            5                                 25      return join("\n", map { s/\s+$//; $_ } @result) . "\n";
+              71                                331   
+              71                                298   
+308                                                   }
+309                                                   
+310                                                   # Creates a chart of value distributions in buckets.  Right now it bucketizes
+311                                                   # into 8 buckets, powers of ten starting with .000001. %opts has:
+312                                                   #  * where        The value of the group-by attribute, such as the fingerprint.
+313                                                   #  * attribute    An attribute to chart.
+314                                                   sub chart_distro {
+315            2                    2            50      my ( $self, $ea, %opts ) = @_;
+316            2                                 12      my $stats = $ea->results;
+317            2                                 15      my $store = $stats->{classes}->{$opts{where}}->{$opts{attribute}};
+318            2                                  8      my $vals  = $store->{all};
+319   ***      2     50     50                   23      return "" unless defined $vals && scalar @$vals;
+320                                                      # TODO: this is broken.
+321            2                                 14      my @buck_tens = $ea->buckets_of(10);
+322            2                                 91      my @distro = map { 0 } (0 .. 7);
+              16                                 46   
+323            2                                 90      map { $distro[$buck_tens[$_]] += $vals->[$_] } (1 .. @$vals - 1);
+            1998                               7353   
+324                                                   
+325            2                                 87      my $max_val = 0;
+326            2                                  6      my $vals_per_mark; # number of vals represented by 1 #-mark
+327            2                                  6      my $max_disp_width = 64;
+328            2                                  5      my $bar_fmt = "# %5s%s";
+329            2                                 12      my @distro_labels = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
+330            2                                 11      my @results = "# $opts{attribute} distribution";
+331                                                   
+332                                                      # Find the distro with the most values. This will set
+333                                                      # vals_per_mark and become the bar at max_disp_width.
+334            2                                  8      foreach my $n_vals ( @distro ) {
+335           16    100                          63         $max_val = $n_vals if $n_vals > $max_val;
+336                                                      }
+337            2                                  8      $vals_per_mark = $max_val / $max_disp_width;
+338                                                   
+339            2                                 12      foreach my $i ( 0 .. $#distro ) {
+340           16                                 48         my $n_vals = $distro[$i];
+341           16           100                   86         my $n_marks = $n_vals / ($vals_per_mark || 1);
+342                                                         # Always print at least 1 mark for any bucket that has at least
+343                                                         # 1 value. This skews the graph a tiny bit, but it allows us to
+344                                                         # see all buckets that have values.
+345   ***     16     50     66                  125         $n_marks = 1 if $n_marks < 1 && $n_vals > 0;
+346           16    100                          68         my $bar = ($n_marks ? '  ' : '') . '#' x $n_marks;
+347           16                                 78         push @results, sprintf $bar_fmt, $distro_labels[$i], $bar;
+348                                                      }
+349                                                   
+350            2                                 60      return join("\n", @results) . "\n";
+351                                                   }
+352                                                   
+353                                                   # Makes a header format and returns the format and the column header names.  The
+354                                                   # argument is either 'global' or anything else.
+355                                                   sub make_header {
+356            8                    8            34      my ( $global ) = @_;
+357            8                                 29      my $format = "# %-9s %6s %7s %7s %7s %7s %7s %7s %7s";
+358            8                                 43      my @headers = qw(pct total min max avg 95% stddev median);
+359            8    100                          33      if ( $global ) {
+360            3                                 34         $format =~ s/%(\d+)s/' ' x $1/e;
+               3                                 29   
+361            3                                 10         shift @headers;
+362                                                      }
+363            8                                 82      return $format, @headers;
+364                                                   }
+365                                                   
+366                                                   # Convert attribute names into labels
+367                                                   sub make_label {
+368           66                   66           228      my ( $val ) = @_;
+369                                                      return  $val eq 'ts'         ? 'Time range'
+370                                                            : $val eq 'user'       ? 'Users'
+371                                                            : $val eq 'db'         ? 'Databases'
+372                                                            : $val eq 'Query_time' ? 'Exec time'
+373           66    100                         506            : do { $val =~ s/_/ /g; $val = substr($val, 0, 9); $val };
+              43    100                         175   
+              43    100                         140   
+              43    100                         321   
+374                                                   }
+375                                                   
+376                                                   # Does pretty-printing for bool (Yes/No) attributes like QC_Hit.
+377                                                   sub format_bool_attrib {
+378            2                    2             7      my ( $stats ) = @_;
+379                                                      # Since the value is either 1 or 0, the sum is the number of
+380                                                      # all true events and the number of false events is the total
+381                                                      # number of events minus those that were true.
+382            2                                 13      my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
+383            2                                 10      my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
+384            2                                 14      return $p_true;
+385                                                   }
+386                                                   
+387                                                   # Attribs are sorted into three groups: basic attributes (Query_time, etc.),
+388                                                   # other non-bool attributes sorted by name, and bool attributes sorted by name.
+389                                                   sub sort_attribs {
+390            9                    9            71      my ( $ea, @attribs ) = @_;
+391            9                                 65      my %basic_attrib = (
+392                                                         Query_time    => 0,
+393                                                         Lock_time     => 1,
+394                                                         Rows_sent     => 2,
+395                                                         Rows_examined => 3,
+396                                                         ts            => 4,
+397                                                      );
+398            9                                 24      my @basic_attribs;
+399            9                                 19      my @non_bool_attribs;
+400            9                                 21      my @bool_attribs;
+401                                                   
+402            9                                 34      foreach my $attrib ( @attribs ) {
+403           88    100                         298         if ( exists $basic_attrib{$attrib} ) {
+404           41                                176            push @basic_attribs, $attrib;
+405                                                         }
+406                                                         else {
+407           47    100    100                  182            if ( ($ea->type_for($attrib) || '') ne 'bool' ) {
+408           43                                168               push @non_bool_attribs, $attrib;
+409                                                            }
+410                                                            else {
+411            4                                 15               push @bool_attribs, $attrib;
+412                                                            }
+413                                                         }
+414                                                      }
+415                                                   
+416            9                                 70      @non_bool_attribs = sort @non_bool_attribs;
+417            9                                 32      @bool_attribs     = sort @bool_attribs;
+418           65                                209      @basic_attribs    = sort {
+419            9                                 17            $basic_attrib{$a} <=> $basic_attrib{$b} } @basic_attribs;
+420                                                   
+421            9                                106      return @basic_attribs, @non_bool_attribs, @bool_attribs;
+422                                                   }
+423                                                   
+424                                                   sub _d {
+425   ***      0                    0                    my ($package, undef, $line) = caller 0;
+426   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
       ***      0                                      
       ***      0                                      
-349   ***      0                                              map { defined $_ ? $_ : 'undef' }
-350                                                           @_;
-351   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-352                                                   }
-353                                                   
-354                                                   1;
-355                                                   
-356                                                   # ###########################################################################
-357                                                   # End QueryReportFormatter package
-358                                                   # ###########################################################################
+427   ***      0                                              map { defined $_ ? $_ : 'undef' }
+428                                                           @_;
+429   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+430                                                   }
+431                                                   
+432                                                   1;
+433                                                   
+434                                                   # ###########################################################################
+435                                                   # End QueryReportFormatter package
+436                                                   # ###########################################################################
 
 
 Branches
@@ -413,32 +491,39 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-122          100      1      1   if ($global_cnt and $$stats{'globals'}{'ts'} and ($$stats{'globals'}{'ts'}{'max'} || '') gt ($$stats{'globals'}{'ts'}{'min'} || ''))
-151          100      3      7   unless $ea->type_for($attrib)
-152          100      2      5   if ($formatting_function{$attrib}) { }
-160   ***     50      5      0   if ($ea->type_for($attrib) eq 'num') { }
-161          100      3      2   $attrib =~ /time$/ ? :
-169   ***     50     35      0   defined $_ ? :
-197   ***     50      0      2   unless $store
-206          100      1      1   if ($global_cnt and $$store{'ts'} and ($$store{'ts'}{'max'} || '') gt ($$store{'ts'}{'min'} || ''))
-220   ***     50      2      0   $$ea{'groupby'} eq 'fingerprint' ? :
-231   ***     50      2      0   if ($opts{'reason'})
-232   ***     50      2      0   $opts{'reason'} eq 'top' ? :
-247          100      5     11   unless $ea->type_for($attrib)
-249          100      6      5   if ($formatting_function{$attrib}) { }
-257   ***     50      5      0   if ($ea->type_for($attrib) eq 'num') { }
-258          100      3      2   $attrib =~ /time$/ ? :
-265   ***     50     35      0   defined $_ ? :
-289   ***     50      0      2   unless defined $vals and scalar @$vals
-305          100      1     15   if $n_vals > $max_val
-315   ***     50      0     16   if $n_marks < 1 and $n_vals > 0
-316          100      1     15   $n_marks ? :
-329          100      2      2   if ($global)
-343          100      4      6   $val eq 'Query_time' ? :
-             100      2     10   $val eq 'db' ? :
-             100      2     12   $val eq 'user' ? :
-             100      4     14   $val eq 'ts' ? :
-348   ***      0      0      0   defined $_ ? :
+131          100      2      1   if ($global_cnt and $$stats{'globals'}{'ts'} and ($$stats{'globals'}{'ts'}{'max'} || '') gt ($$stats{'globals'}{'ts'}{'min'} || ''))
+161          100      3     14   unless $attrib_type
+162   ***     50      0     14   unless exists $$stats{'globals'}{$attrib}
+163          100      5      9   if ($formatting_function{$attrib}) { }
+164          100      3      2   if ($attrib_type ne 'bool') { }
+179   ***     50      9      0   if ($attrib_type eq 'num') { }
+180          100      5      4   $attrib =~ /time$/ ? :
+188   ***     50     63      0   defined $_ ? :
+216   ***     50      0      5   unless $store
+225          100      1      4   if ($global_cnt and $$store{'ts'} and ($$store{'ts'}{'max'} || '') gt ($$store{'ts'}{'min'} || ''))
+239   ***     50      5      0   $$ea{'groupby'} eq 'fingerprint' ? :
+250          100      2      3   if ($opts{'reason'})
+251   ***     50      2      0   $opts{'reason'} eq 'top' ? :
+267          100      5     59   unless $attrib_type
+268          100      5     54   unless exists $$store{$attrib}
+270   ***     50      0     54   unless scalar %$vals
+271          100     12     42   if ($formatting_function{$attrib}) { }
+272   ***     50     12      0   if ($attrib_type ne 'bool') { }
+287          100     27     15   if ($attrib_type eq 'num') { }
+288          100      9     18   $attrib =~ /time$/ ? :
+295   ***     50    189      0   defined $_ ? :
+319   ***     50      0      2   unless defined $vals and scalar @$vals
+335          100      1     15   if $n_vals > $max_val
+345   ***     50      0     16   if $n_marks < 1 and $n_vals > 0
+346          100      1     15   $n_marks ? :
+359          100      3      5   if ($global)
+373          100      8     43   $val eq 'Query_time' ? :
+             100      4     51   $val eq 'db' ? :
+             100      5     55   $val eq 'user' ? :
+             100      6     60   $val eq 'ts' ? :
+403          100     41     47   if (exists $basic_attrib{$attrib}) { }
+407          100     43      4   if (($ea->type_for($attrib) || '') ne 'bool') { }
+426   ***      0      0      0   defined $_ ? :
 
 
 Conditions
@@ -448,54 +533,57 @@ and 2 conditions
 
 line  err      %      l     !l   expr
 ----- --- ------ ------ ------   ----
-289   ***     50      0      2   defined $vals and scalar @$vals
+319   ***     50      0      2   defined $vals and scalar @$vals
 
 and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-122   ***     33      0      0      2   $global_cnt and $$stats{'globals'}{'ts'}
-      ***     66      0      1      1   $global_cnt and $$stats{'globals'}{'ts'} and ($$stats{'globals'}{'ts'}{'max'} || '') gt ($$stats{'globals'}{'ts'}{'min'} || '')
-206   ***     33      0      0      2   $global_cnt and $$store{'ts'}
-      ***     66      0      1      1   $global_cnt and $$store{'ts'} and ($$store{'ts'}{'max'} || '') gt ($$store{'ts'}{'min'} || '')
-315   ***     66      1     15      0   $n_marks < 1 and $n_vals > 0
+131   ***     33      0      0      3   $global_cnt and $$stats{'globals'}{'ts'}
+      ***     66      0      1      2   $global_cnt and $$stats{'globals'}{'ts'} and ($$stats{'globals'}{'ts'}{'max'} || '') gt ($$stats{'globals'}{'ts'}{'min'} || '')
+225   ***     66      0      2      3   $global_cnt and $$store{'ts'}
+             100      2      2      1   $global_cnt and $$store{'ts'} and ($$store{'ts'}{'max'} || '') gt ($$store{'ts'}{'min'} || '')
+345   ***     66      1     15      0   $n_marks < 1 and $n_vals > 0
 
 or 2 conditions
 
 line  err      %      l     !l   expr
 ----- --- ------ ------ ------   ----
-122   ***     50      2      0   $$stats{'globals'}{'ts'}{'max'} || ''
-      ***     50      2      0   $$stats{'globals'}{'ts'}{'min'} || ''
-206   ***     50      2      0   $$store{'ts'}{'max'} || ''
-      ***     50      2      0   $$store{'ts'}{'min'} || ''
-220   ***     50      2      0   $opts{'rank'} || 0
-             100      1      1   $$sample{'pos_in_log'} || 0
-311          100      8      8   $vals_per_mark || 1
+131   ***     50      3      0   $$stats{'globals'}{'ts'}{'max'} || ''
+      ***     50      3      0   $$stats{'globals'}{'ts'}{'min'} || ''
+225   ***     50      3      0   $$store{'ts'}{'max'} || ''
+      ***     50      3      0   $$store{'ts'}{'min'} || ''
+239   ***     50      5      0   $opts{'rank'} || 0
+             100      3      2   $$sample{'pos_in_log'} || 0
+341          100      8      8   $vals_per_mark || 1
+407          100     45      2   $ea->type_for($attrib) || ''
 
 
 Covered Subroutines
 -------------------
 
-Subroutine    Count Location                                                   
-------------- ----- -----------------------------------------------------------
-BEGIN             1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:24 
-BEGIN             1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:25 
-BEGIN             1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:26 
-BEGIN             1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:31 
-BEGIN             1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:32 
-chart_distro      2 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:285
-event_report      2 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:191
-global_report     2 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:113
-header            1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:92 
-make_header       4 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:326
-make_label       18 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:338
-new               1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:87 
+Subroutine         Count Location                                                   
+------------------ ----- -----------------------------------------------------------
+BEGIN                  1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:24 
+BEGIN                  1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:25 
+BEGIN                  1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:26 
+BEGIN                  1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:31 
+BEGIN                  1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:32 
+chart_distro           2 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:315
+event_report           5 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:210
+format_bool_attrib     2 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:378
+global_report          3 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:122
+header                 1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:101
+make_header            8 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:356
+make_label            66 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:368
+new                    1 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:96 
+sort_attribs           9 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:390
 
 Uncovered Subroutines
 ---------------------
 
-Subroutine    Count Location                                                   
-------------- ----- -----------------------------------------------------------
-_d                0 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:347
+Subroutine         Count Location                                                   
+------------------ ----- -----------------------------------------------------------
+_d                     0 /home/daniel/dev/maatkit/common/QueryReportFormatter.pm:425
 
 
