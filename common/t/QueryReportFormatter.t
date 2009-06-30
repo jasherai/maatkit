@@ -143,8 +143,8 @@ $expected = <<EOF;
 # Lock time     68   310us   109us   201us   155us   201us    65us   155us
 # Rows sent    100       2       1       1       1       1       0       1
 # Rows exam    100       3       1       2    1.50       2    0.71    1.50
-# Users          2 bob (1), root (1)
-# Databases      2 test1 (1), test3 (1)
+# Users                  2 bob (1), root (1)
+# Databases              2 test1 (1), test3 (1)
 # Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:53
 EOF
 
@@ -245,8 +245,8 @@ $expected = <<EOF;
 #              pct   total     min     max     avg     95%  stddev  median
 # Count        100       1
 # Exec time      0       0       0       0       0       0       0       0
-# Users          1 msandbox
-# Databases      1   mysql
+# Users                  1 msandbox
+# Databases              1   mysql
 # Time range 2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
 EOF
 

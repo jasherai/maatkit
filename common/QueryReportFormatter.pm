@@ -364,7 +364,7 @@ sub format_string_list {
       # Only class stats have unq.
       my $cnt_for = $stats->{unq};
       if ( 1 == keys %$cnt_for ) {
-         return 1, keys %$cnt_for;
+         return ('', 1, keys %$cnt_for);
       }
       my $line = '';
       my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
@@ -379,7 +379,7 @@ sub format_string_list {
       if ( $i < $#top ) {
          $line .= "... " . ($#top - $i) . " more";
       }
-      return (scalar keys %$cnt_for, $line);
+      return ('', scalar keys %$cnt_for, $line);
    }
    else {
       # Global stats don't have unq.
