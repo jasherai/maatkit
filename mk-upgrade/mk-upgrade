@@ -2703,7 +2703,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryExecutor package 4020
+# QueryExecutor package 4058
 # ###########################################################################
 package QueryExecutor;
 
@@ -2735,9 +2735,21 @@ sub exec {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   MKDEBUG && _d('Executing sql:', $args{query});
+   if ( $args{pre_exec_query} ) {
+      MKDEBUG && _d('pre-exec query:', $args{pre_exec_query});
+      $self->_exec_query($args{pre_exec_query}, $args{host1_dbh});
+      $self->_exec_query($args{pre_exec_query}, $args{host2_dbh});
+   }
+
+   MKDEBUG && _d('query:', $args{query});
    my $host1_results = $self->_exec_query($args{query}, $args{host1_dbh});
    my $host2_results = $self->_exec_query($args{query}, $args{host2_dbh});
+
+   if ( $args{post_exec_query} ) {
+      MKDEBUG && _d('post-exec query:', $args{post_exec_query});
+      $self->_exec_query($args{post_exec_query}, $args{host1_dbh});
+      $self->_exec_query($args{post_exec_query}, $args{host2_dbh});
+   }
 
    return {
       host1 => $host1_results,
@@ -3020,6 +3032,7 @@ sub main {
    # Make some common modules.
    # ########################################################################
    my $parser  = new SlowLogParser();
+   my $qparser = new QueryParser();
    my $qexec   = new QueryExecutor();
    my $qranker = new QueryRanker();
 
@@ -3076,8 +3089,24 @@ sub main {
             $current_db = $db;
          }
 
+         # On some systems, MySQL doesn't always clear the warnings list
+         # after a good query.  This causes good queries to show warnings
+         # from previous bad queries.  A work-around/hack is to
+         # SELECT * FROM table LIMIT 0 which seems to always clear warnings.
+         my $post_exec_query;
+         my @tables = $qparser->get_tables($query);
+         if ( @tables ) {
+            MKDEBUG && _d('tables:', @tables);
+            $post_exec_query = "SELECT * FROM $tables[0] LIMIT 0";
+            MKDEBUG && _d('post-exec query:', $post_exec_query);
+         }
+         else {
+            MKDEBUG && _d('Cannot get tables so no post-exec query');
+         }
+
          my $results = $qexec->exec(
-            query     => $query,
+            query           => $query,
+            post_exec_query => $post_exec_query,
             host1_dbh => $host1_dbh,
             host2_dbh => $host2_dbh,
          );
