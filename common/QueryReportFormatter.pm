@@ -39,10 +39,6 @@ my %formatting_function = (
       my $max = parse_timestamp($stats->{max} || '');
       return $min && $max ? "$min to $max" : '';
    },
-   db             => \&format_string_list,
-   Schema         => \&format_string_list,
-   user           => \&format_string_list,
-   host           => \&format_string_list,
    QC_Hit         => \&format_bool_attrib,
    Full_scan      => \&format_bool_attrib,
    Full_join      => \&format_bool_attrib,
@@ -150,6 +146,11 @@ sub global_report {
                @{$metrics}{qw(pct_95 stddev median)},
             );
             @values = map { defined $_ ? $func->($_) : '' } @values;
+         }
+         elsif ( $attrib_type eq 'string' ) {
+            push @values,
+               format_string_list($store),
+               (map { '' } 0..9); # just for good measure
          }
          else {
             @values = ('', $store->{min}, $store->{max}, '', '', '', '');
@@ -260,6 +261,12 @@ sub event_report {
             $pct = percentage_of($vals->{sum},
                $stats->{globals}->{$attrib}->{sum});
          }
+         elsif ( $attrib_type eq 'string' ) {
+            push @values,
+               format_string_list($vals),
+               (map { '' } 0..9); # just for good measure
+            $pct = '';
+         }
          else {
             @values = ('', $vals->{min}, $vals->{max}, '', '', '', '');
             $pct = 0;
@@ -343,6 +350,7 @@ sub make_label {
          : $val eq 'db'         ? 'Databases'
          : $val eq 'Query_time' ? 'Exec time'
          : $val eq 'host'       ? 'Hosts'
+         : $val eq 'Error_no'   ? 'Errors'
          : do { $val =~ s/_/ /g; $val = substr($val, 0, 9); $val };
 }
 
@@ -364,7 +372,7 @@ sub format_string_list {
       # Only class stats have unq.
       my $cnt_for = $stats->{unq};
       if ( 1 == keys %$cnt_for ) {
-         return ('', 1, keys %$cnt_for);
+         return (1, keys %$cnt_for);
       }
       my $line = '';
       my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
@@ -379,7 +387,7 @@ sub format_string_list {
       if ( $i < $#top ) {
          $line .= "... " . ($#top - $i) . " more";
       }
-      return ('', scalar keys %$cnt_for, $line);
+      return (scalar keys %$cnt_for, $line);
    }
    else {
       # Global stats don't have unq.
