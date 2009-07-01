@@ -6608,6 +6608,9 @@ This is compiled into a subroutine like the following:
 
 It is permissible for the code to have side effects (to alter $event).
 
+You can find an explanation of the structure of $event at
+L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
+
 =item --fingerprints
 
 Add query fingerprints to the L<"--report">.  This is mostly useful
