@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 48;
+use Test::More tests => 50;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -199,7 +199,7 @@ $output = 'foo'; # To make explicitly sure that the following command
 $output = `/tmp/12345/use -D test2 -e 'SELECT * FROM messages'`;
 ok(!$output, 'test2.messages is empty before sync (issue 22)');
 
-$output = `../mk-table-sync --no-slave-check --execute u=msandbox,p=msandbox,P=12345,h=127.1,D=test,t=messages u=msandbox,p=msandbox,P=12345,h=127.1,D=test2,t=messages`;
+$output = `../mk-table-sync --no-slave-check --execute u=msandbox,p=msandbox,P=12345,h=127.1,D=test,t=messages u=msandbox,p=msandbox,P=12345,h=127.1,D=test2,t=messages 2>&1`;
 ok(!$output, 'Synced test.messages to test2.messages on same host (issue 22)');
 
 $output     = `/tmp/12345/use -D test  -e 'SELECT * FROM messages'`;
@@ -353,10 +353,6 @@ SKIP: {
       qr/Database test does not exist on.+P=12347.+/,
       'Warn about --databases missing on dest host'
    );
-
-   $dbh2->disconnect();
-   diag(`/tmp/12347/stop`);
-   diag(`rm -rf /tmp/12347/`);
 };
 
 # #############################################################################
@@ -373,8 +369,43 @@ like(
 `rm -rf /tmp/mk-table-sync.pid`;
 
 # #############################################################################
+# Issue 40: mk-table-sync feature: sync to different db
+# #############################################################################
+
+# It's not really slave2, we just use slave2's port.
+SKIP: {
+   skip 'Cannot connect to second sandbox server', 1
+      unless $dbh2;
+
+   # master (12345) should have test.test1 from an earlier test.
+   $dbh2->do('DROP DATABASE IF EXISTS d2');
+   $dbh2->do('CREATE DATABASE d2');
+   $dbh2->do('CREATE TABLE d2.test2 (a INT NOT NULL, b char(2) NOT NULL, PRIMARY KEY  (`a`,`b`) )');
+
+   $output = `../mk-table-sync --no-slave-check --execute h=127.1,P=12345,D=test,t=test1  h=127.1,P=12347,D=d2,t=test2 2>&1`;
+   is(
+      $output,
+      '',
+      'Sync to different db.tbl (issue 40)'
+   );
+
+   $output     = `/tmp/12345/use -e 'SELECT * FROM test.test1'`;
+   my $output2 = `/tmp/12347/use -e 'SELECT * FROM d2.test2'`;
+   is(
+      $output,
+      $output2,
+      'Original db.tbl matches different db.tbl (issue 40)'
+   );
+};
+
+# #############################################################################
 # Done
 # #############################################################################
+if ( $dbh2 ) {
+   $dbh2->disconnect();
+   diag(`/tmp/12347/stop`);
+   diag(`rm -rf /tmp/12347/`);
+}
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
 exit;

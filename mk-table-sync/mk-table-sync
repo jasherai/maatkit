@@ -5472,8 +5472,8 @@ sub main {
       if ( $dsns[0]->{t} ne $dsns[1]->{t}
            && -t STDIN
            && -t STDOUT
-           && ( (($dsns[0]->{h} || '') ne ($dsns[1]->{h} || ''))
-                || (($dsns[0]->{P} || '') ne ($dsns[1]->{P} || '')) ))
+           && (    (($dsns[0]->{h} || '') ne ($dsns[1]->{h} || ''))
+                || (($dsns[0]->{P} || '') ne ($dsns[1]->{P} || '')) ) )
       {
          print "Continue syncing tables with different names?  y/n: ";
          my $answer = <STDIN>;
@@ -5485,7 +5485,7 @@ sub main {
       if ( !$o->get('with-triggers') ) {
          check_tables_for_triggers(
             [ @dsns[1 .. $#dsns] ],
-            [ { db => $dsns[0]->{D}, tbl => $dsns[0]->{t} } ],
+            undef,  # Each DSN specifies its own db and tbl.
             %common_modules,
          );
       }
@@ -5963,6 +5963,7 @@ sub get_cxn {
 # defined on it.
 # $dsns is an array ref to a list of DSNs.
 # $dbs_tbls is an array ref to a list of hashes containing a db and tbl key.
+# If no $dbs_tbls list is given, then each DSN specifies its own db.tbl.
 sub check_tables_for_triggers {
    my ( $dsns, $dbs_tbls, %args ) = @_;
    foreach my $arg ( qw(o dp q du) ) {
@@ -5974,6 +5975,9 @@ sub check_tables_for_triggers {
    foreach my $dsn ( @$dsns ) {
       my %missing_db;
       my $dbh = get_cxn($dsn, %args);
+
+      # Each DSN specifies its own db and tbl.
+      $dbs_tbls->[0] = { db => $dsn->{D}, tbl => $dsn->{t} } unless $dbs_tbls;
 
       DB_TBL:
       foreach my $db_tbl ( @$dbs_tbls ) {
