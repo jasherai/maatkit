@@ -1,0 +1,106 @@
+#!/usr/bin/env perl
+
+# This script checks that the POD headers are in standard order.
+# Only major, required headers are checked.  For example, there
+# maybe be other headers between DESCRIPTION and OPTIONS, but these
+# are ignored.
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Test::More qw(no_plan);
+
+my @progs = @ARGV;
+if ( !@progs ) {
+   @progs = <../mk-*/mk-*>;
+}
+
+my @standard_order = (
+   'NAME',
+   'SYNOPSIS',
+   'DESCRIPTION',
+   'OPTIONS',
+   'DOWNLOADING',
+   'ENVIRONMENT',
+   'SYSTEM REQUIREMENTS',
+   'BUGS',
+   'COPYRIGHT, LICENSE AND WARRANTY',
+   'AUTHOR',
+   'VERSION',
+);
+my %standard_hdr = (
+   NAME                  => 1,
+   SYNOPSIS              => 1,
+   DESCRIPTION           => 1,
+   OPTIONS               => 1,
+   DOWNLOADING           => 1,
+   ENVIRONMENT           => 1,
+   'SYSTEM REQUIREMENTS' => 1,
+   BUGS                  => 1, 
+   AUTHOR                => 1,
+   VERSION               => 1,
+   'COPYRIGHT, LICENSE AND WARRANTY'  => { optional => 0, }
+);
+
+# TODO: somehow check that optional headers are near where they should be.
+my @optional_order = (
+   'OUTPUT',
+   'SEE ALSO',
+);
+my %optional_hdr = (
+   'OUTPUT'   => 1,
+   'SEE ALSO' => 1, 
+);
+
+chomp(my $podchecker = `which podchecker`);
+
+foreach my $prog ( @progs ) {
+   my $headers = `egrep '^=head' $prog`;
+   my @headers = grep { exists $standard_hdr{$_} }
+                 map  { $_ =~ m/=head1 (.+)/ }
+                 grep { m/^=head1/ }
+                 split(/\n/, $headers);
+
+   my ($program) = $prog =~ m{/([a-z-]+)$};
+   next unless $program;
+
+   if ( $podchecker ) {
+      my $output = `$podchecker $prog 2>&1`;
+      is(
+         $output,
+         "$prog pod syntax OK.\n",
+         "$program: podchecker",
+      );
+   }
+
+   if (!is_deeply(\@headers, \@standard_order, "$program: headings") ) {
+      compare_to_standard($program, @headers);
+   }
+}
+
+exit;
+
+sub compare_to_standard {
+   my ( $program, @headers ) = @_;
+
+   my $fmt = "%-2s  %-32s  %-32s\n";
+
+   printf $fmt, '', $program,                 'STANDARD';
+   printf $fmt, '', ('=' x length($program)), '========',
+
+   my $i = 0;
+   for (@standard_order[0..$#standard_order]) {
+      printf $fmt, $i, ($headers[$i] ? $headers[$i] : ''), $standard_order[$i];
+      $i++;
+   }
+
+   if ( $#headers > $i ) {
+      for (@headers[$i..$#standard_order]) {
+         printf $fmt, $i, $headers[$i], '';
+         $i++;
+      }
+   }
+
+   return;
+}
