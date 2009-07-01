@@ -2508,20 +2508,54 @@ when I have an error I know I just need to skip past.
 Indiscriminate use of this tool can easily screw up a server you might have
 had a chance to truly fix.  You have been warned.
 
-=head1 DOWNLOADING
+=head1 OUTPUT
 
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
+If you specify L<"--verbose">, mk-slave-restart prints a line every time it sees
+the slave has an error.  See L<"--verbose"> for details.
 
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
+=head1 SLEEP
 
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
+mk-slave-restart sleeps intelligently between polling the slave.  The current
+sleep time varies.
+
+=over
+
+=item *
+
+The initial sleep time is given by L<"--sleep">.
+
+=item *
+
+If it checks and finds an error, it halves the previous sleep time.
+
+=item *
+
+If it finds no error, it doubles the previous sleep time.
+
+=item *
+
+The sleep time is bounded below by L<"--min-sleep"> and above by
+L<"--max-sleep">.
+
+=item *
+
+Immediately after finding an error, mk-slave-restart assumes another error is
+very likely to happen next, so it sleeps the current sleep time or the initial
+sleep time, whichever is less.
+
+=back
+
+=head1 EXIT STATUS
+
+Successful exit status is 0.  Any other value represents the exit status of
+the Perl process itself, or of the last forked process that exited if there
+were multiple servers to monitor.
+
+=head1 COMPATIBILITY
+
+mk-slave-restart should work on many versions of MySQL.  Lettercase of many
+output columns from SHOW SLAVE STATUS has changed over time, so it treats them
+all as lowercase.
 
 =head1 OPTIONS
 
@@ -2795,59 +2829,20 @@ Show version and exit.
 
 =back
 
-=head1 SYSTEM REQUIREMENTS
+=head1 DOWNLOADING
 
-You need Perl, DBI, DBD::mysql, and some core packages that ought to be
-installed in any reasonably new version of Perl.
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
 
-=head1 OUTPUT
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
 
-If you specify --verbose, mk-slave-restart prints a line every time it sees
-the slave has an error.  See L<"--verbose"> for details.
-
-=head1 SLEEP
-
-mk-slave-restart sleeps intelligently between polling the slave.  The current
-sleep time varies.
-
-=over
-
-=item *
-
-The initial sleep time is given by L<"--sleep">.
-
-=item *
-
-If it checks and finds an error, it halves the previous sleep time.
-
-=item *
-
-If it finds no error, it doubles the previous sleep time.
-
-=item *
-
-The sleep time is bounded below by L<"--min-sleep"> and above by
-L<"--max-sleep">.
-
-=item *
-
-Immediately after finding an error, mk-slave-restart assumes another error is
-very likely to happen next, so it sleeps the current sleep time or the initial
-sleep time, whichever is less.
-
-=back
-
-=head1 EXIT STATUS
-
-Successful exit status is 0.  Any other value represents the exit status of
-the Perl process itself, or of the last forked process that exited if there
-were multiple servers to monitor.
-
-=head1 COMPATIBILITY
-
-mk-slave-restart should work on many versions of MySQL.  Lettercase of many
-output columns from SHOW SLAVE STATUS has changed over time, so it treats them
-all as lowercase.
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 ENVIRONMENT
 
@@ -2859,6 +2854,11 @@ the Maatkit tools:
 When L<"--daemonize"> is given and this variable is set, output is directed to a
 debug file in C</tmp>.
 
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
 =head1 BUGS
 
 Please use Google Code Issues and Groups to report bugs or request support:
@@ -2869,10 +2869,6 @@ Please include the complete command-line used to reproduce the problem you are
 seeing, the version of all MySQL servers involved, the complete output of the
 tool when run with L<"--version">, and if possible, debugging output produced by
 running with the C<MKDEBUG=1> environment variable.
-
-=head1 SEE ALSO
-
-See also L<mk-table-checksum>, L<mk-table-sync>, L<mk-slave-delay>.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
@@ -2892,6 +2888,10 @@ licenses.
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 SEE ALSO
+
+See also L<mk-table-checksum>, L<mk-table-sync>, L<mk-slave-delay>.
 
 =head1 AUTHOR
 

@@ -1004,6 +1004,23 @@ mk-merge-sessions - Merge single-session files into a multiple-session file.
 
 =head1 DESCRIPTION
 
+mk-merge-session merges man single-session files into a one big mult-session
+file.
+
+=head1 OPTIONS
+
+=over
+
+=item --help
+
+Show help and exit.
+
+=item --version
+
+Show version and exit.
+
+=back
+
 =head1 DOWNLOADING
 
 You can download Maatkit from Google Code at
@@ -1019,27 +1036,17 @@ of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
 needed.  The first URL gets the latest released version of the tool, and the
 second gets the latest trunk code from Subversion.
 
-=head1 OPTIONS
-
-=over
-
-=item --help
-
-Show help and exit.
-
-=back
-
-=head1 SYSTEM REQUIREMENTS
-
-You need Perl and some core packages that ought to be
-installed in any reasonably new version of Perl.
-
 =head1 ENVIRONMENT
 
 The environment variable C<MKDEBUG> enables verbose debugging output in all of
 the Maatkit tools:
 
    MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl and some core packages that ought to be
+installed in any reasonably new version of Perl.
 
 =head1 BUGS
 

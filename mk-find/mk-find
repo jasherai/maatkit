@@ -1718,6 +1718,40 @@ sub _d {
 
 mk-find - Find MySQL tables and execute actions, like GNU find.
 
+=head1 SYNOPSIS
+
+Find all tables created more than a day ago, which use the MyISAM engine, and
+print their names:
+
+  mk-find --ctime +1 --engine MyISAM
+
+Find InnoDB tables that haven't been updated in a month, and convert them to
+MyISAM storage engine (data warehousing, anyone?):
+
+  mk-find --mtime +30 --engine InnoDB --exec "ALTER TABLE %D.%N ENGINE=MyISAM"
+
+Find tables created by a process that no longer exists, following the
+name_sid_pid naming convention, and remove them.
+
+  mk-find --connection-id '\D_\d+_(\d+)$' --server-id '\D_(\d+)_\d+$' --exec-plus "DROP TABLE %s"
+
+Find empty tables in the test and junk databases, and delete them:
+
+  mk-find --empty junk test --exec-plus "DROP TABLE %s"
+
+Find tables more than five gigabytes in total size:
+
+  mk-find --tablesize +5G
+
+Find all tables and print their total data and index size, and sort largest
+tables first (sort is a different program, by the way).
+
+  mk-find --printf "%T\t%D.%N\n" | sort -rn
+
+As above, but this time, insert the data back into the database for posterity:
+
+  mk-find --noquote --exec "INSERT INTO sysdata.tblsize(db, tbl, size) VALUES('%D', '%N', %T)"
+
 =head1 DESCRIPTION
 
 mk-find looks for MySQL tables that pass the tests you specify, and executes
@@ -1732,21 +1766,6 @@ other things, like triggers or columns, file a bug report and I'll add the
 features.
 
 mk-find uses SHOW TABLES when possible, and SHOW TABLE STATUS when needed.
-
-=head1 DOWNLOADING
-
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
-
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
-
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
 
 =head1 OPTION TYPES
 
@@ -2186,39 +2205,20 @@ the following list is discarded (but the other character is printed).
 
 =back
 
-=head1 EXAMPLES
+=head1 DOWNLOADING
 
-Find all tables created more than a day ago, which use the MyISAM engine, and
-print their names:
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
 
-  mk-find --ctime +1 --engine MyISAM
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
 
-Find InnoDB tables that haven't been updated in a month, and convert them to
-MyISAM storage engine (data warehousing, anyone?):
-
-  mk-find --mtime +30 --engine InnoDB --exec "ALTER TABLE %D.%N ENGINE=MyISAM"
-
-Find tables created by a process that no longer exists, following the
-name_sid_pid naming convention, and remove them.
-
-  mk-find --connection-id '\D_\d+_(\d+)$' --server-id '\D_(\d+)_\d+$' --exec-plus "DROP TABLE %s"
-
-Find empty tables in the test and junk databases, and delete them:
-
-  mk-find --empty junk test --exec-plus "DROP TABLE %s"
-
-Find tables more than five gigabytes in total size:
-
-  mk-find --tablesize +5G
-
-Find all tables and print their total data and index size, and sort largest
-tables first (sort is a different program, by the way).
-
-  mk-find --printf "%T\t%D.%N\n" | sort -rn
-
-As above, but this time, insert the data back into the database for posterity:
-
-  mk-find --noquote --exec "INSERT INTO sysdata.tblsize(db, tbl, size) VALUES('%D', '%N', %T)"
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 ENVIRONMENT
 
@@ -2226,6 +2226,10 @@ The environment variable C<MKDEBUG> enables verbose debugging output in all of
 the Maatkit tools:
 
    MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need the following Perl modules: DBI and DBD::mysql.
 
 =head1 BUGS
 
@@ -2238,11 +2242,7 @@ seeing, the version of all MySQL servers involved, the complete output of the
 tool when run with L<"--version">, and if possible, debugging output produced by
 running with the C<MKDEBUG=1> environment variable.
 
-=head1 SYSTEM REQUIREMENTS
-
-You need the following Perl modules: DBI and DBD::mysql.
-
-=head1 LICENSE
+=head1 COPYRIGHT, LICENSE AND WARRANTY
 
 This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 Feedback and improvements are welcome (see L<"BUGS">).

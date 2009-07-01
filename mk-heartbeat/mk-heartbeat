@@ -2414,21 +2414,6 @@ not retry if it can't get a connection when it first starts.
 The L<"--dbi-driver"> option lets you use mk-heartbeat to monitor PostgreSQL
 as well.  It is reported to work well with Slony-1 replication.
 
-=head1 DOWNLOADING
-
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
-
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
-
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
-
 =head1 OPTIONS
 
 Specify at least one of --stop, --update, --monitor, or --check.
@@ -2703,6 +2688,21 @@ Show version and exit.
 
 =back
 
+=head1 DOWNLOADING
+
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
+
 =head1 ENVIRONMENT
 
 The environment variable C<MKDEBUG> enables verbose debugging output in all of the
@@ -2714,10 +2714,6 @@ Maatkit tools:
 
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
-
-=head1 SEE ALSO
-
-See also L<mk-slave-delay> and L<mk-slave-restart>.
 
 =head1 BUGS
 
@@ -2749,6 +2745,10 @@ licenses.
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 SEE ALSO
+
+See also L<mk-slave-delay> and L<mk-slave-restart>.
 
 =head1 AUTHOR
 

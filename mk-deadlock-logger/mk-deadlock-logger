@@ -1967,20 +1967,103 @@ values from the source host, so you don't need to specify them in both places.
 C<mk-deadlock-logger> reads all normal MySQL option files, such as ~/.my.cnf, so
 you may not need to specify username, password and other common options at all.
 
-=head1 DOWNLOADING
+=head1 OUTPUT
 
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
+You can choose which columns are output and/or saved to L<"--dest"> with the
+L<"--columns"> argument.  The default columns are as follows:
 
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
+=over
 
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
+=item server
+
+The (source) server on which the deadlock occurred.  This might be useful if
+you're tracking deadlocks on many servers.
+
+=item ts
+
+The date and time of the last detected deadlock.
+
+=item thread
+
+The MySQL thread number, which is the same as the connection ID in SHOW FULL
+PROCESSLIST.
+
+=item txn_id
+
+The InnoDB transaction ID, which InnoDB expresses as two unsigned integers.  I
+have multiplied them out to be one number.
+
+=item txn_time
+
+How long the transaction was active when the deadlock happened.
+
+=item user
+
+The connection's database username.
+
+=item hostname
+
+The connection's host.
+
+=item ip
+
+The connection's IP address.  If you specify L<"--numeric-ip">, this is
+converted to an unsigned integer.
+
+=item db
+
+The database in which the deadlock occurred.
+
+=item tbl
+
+The table on which the deadlock occurred.
+
+=item idx
+
+The index on which the deadlock occurred.
+
+=item lock_type
+
+The lock type the transaction held on the lock that caused the deadlock.
+
+=item lock_mode
+
+The lock mode of the lock that caused the deadlock.
+
+=item wait_hold
+
+Whether the transaction was waiting for the lock or holding the lock.  Usually
+you will see the two waited-for locks.
+
+=item victim
+
+Whether the transaction was selected as the deadlock victim and rolled back.
+
+=item query
+
+The query that caused the deadlock.
+
+=back
+
+=head1 INNODB CAVEATS AND DETAILS
+
+InnoDB's output is hard to parse and sometimes there's no way to do it right.
+
+Sometimes not all information (for example, username or IP address) is included
+in the deadlock information.  In this case there's nothing for the script to put
+in those columns.  It may also be the case that the deadlock output is so long
+(because there were a lot of locks) that the whole thing is truncated.
+
+Though there are usually two transactions involved in a deadlock, there are more
+locks than that; at a minimum, one more lock than transactions is necessary to
+create a cycle in the waits-for graph.  mk-deadlock-logger prints the
+transactions (always two in the InnoDB output, even when there are more
+transactions in the waits-for graph than that) and fills in locks.  It prefers
+waited-for over held when choosing lock information to output, but you can
+figure out the rest with a moment's thought.  If you see one wait-for and one
+held lock, you're looking at the same lock, so of course you'd prefer to see
+both wait-for locks and get more information.  If the two waited-for locks are
+not on the same table, more than two transactions were involved in the deadlock.
 
 =head1 OPTIONS
 
@@ -2171,103 +2254,20 @@ Show version and exit.
 
 =back
 
-=head1 INNODB CAVEATS AND DETAILS
+=head1 DOWNLOADING
 
-InnoDB's output is hard to parse and sometimes there's no way to do it right.
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
 
-Sometimes not all information (for example, username or IP address) is included
-in the deadlock information.  In this case there's nothing for the script to put
-in those columns.  It may also be the case that the deadlock output is so long
-(because there were a lot of locks) that the whole thing is truncated.
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
 
-Though there are usually two transactions involved in a deadlock, there are more
-locks than that; at a minimum, one more lock than transactions is necessary to
-create a cycle in the waits-for graph.  mk-deadlock-logger prints the
-transactions (always two in the InnoDB output, even when there are more
-transactions in the waits-for graph than that) and fills in locks.  It prefers
-waited-for over held when choosing lock information to output, but you can
-figure out the rest with a moment's thought.  If you see one wait-for and one
-held lock, you're looking at the same lock, so of course you'd prefer to see
-both wait-for locks and get more information.  If the two waited-for locks are
-not on the same table, more than two transactions were involved in the deadlock.
-
-=head1 OUTPUT
-
-You can choose which columns are output and/or saved to L<"--dest"> with the
-L<"--columns"> argument.  The default columns are as follows:
-
-=over
-
-=item server
-
-The (source) server on which the deadlock occurred.  This might be useful if
-you're tracking deadlocks on many servers.
-
-=item ts
-
-The date and time of the last detected deadlock.
-
-=item thread
-
-The MySQL thread number, which is the same as the connection ID in SHOW FULL
-PROCESSLIST.
-
-=item txn_id
-
-The InnoDB transaction ID, which InnoDB expresses as two unsigned integers.  I
-have multiplied them out to be one number.
-
-=item txn_time
-
-How long the transaction was active when the deadlock happened.
-
-=item user
-
-The connection's database username.
-
-=item hostname
-
-The connection's host.
-
-=item ip
-
-The connection's IP address.  If you specify L<"--numeric-ip">, this is
-converted to an unsigned integer.
-
-=item db
-
-The database in which the deadlock occurred.
-
-=item tbl
-
-The table on which the deadlock occurred.
-
-=item idx
-
-The index on which the deadlock occurred.
-
-=item lock_type
-
-The lock type the transaction held on the lock that caused the deadlock.
-
-=item lock_mode
-
-The lock mode of the lock that caused the deadlock.
-
-=item wait_hold
-
-Whether the transaction was waiting for the lock or holding the lock.  Usually
-you will see the two waited-for locks.
-
-=item victim
-
-Whether the transaction was selected as the deadlock victim and rolled back.
-
-=item query
-
-The query that caused the deadlock.
-
-=back
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 ENVIRONMENT
 

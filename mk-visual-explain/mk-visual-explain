@@ -2054,133 +2054,6 @@ Optimizer Internals and What's New in the MySQL 5.2 Optimizer," from Timour
 Katchaounov, one of the MySQL developers:
 L<http://conferences.oreillynet.com/presentations/mysql07/katchaounov_timour.pdf>.
 
-=head1 DOWNLOADING
-
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
-
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
-
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
-
-=head1 OPTIONS
-
-=over
-
-=item --ask-pass
-
-Prompt for a password when connecting to MySQL.
-
-=item --charset
-
-short form: -A; type: string
-
-Default character set.  If the value is utf8, sets Perl's binmode on
-STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
-runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
-binmode on STDOUT without the utf8 layer, and runs SET NAMES after
-connecting to MySQL.
-
-=item --clustered-pk
-
-Assume that PRIMARY KEY index accesses don't need to do a bookmark lookup to
-retrieve rows.  This is the case for InnoDB.
-
-=item --config
-
-type: Array
-
-Read this comma-separated list of config files; if specified, this must be the
-first option on the command line.
-
-=item --connect
-
-Treat input as a query, and obtain EXPLAIN output by connecting to a MySQL
-instance and running EXPLAIN on the query.  When this option is given,
-mk-visual-explain uses the other connection-specific options such as
-L<"--user"> to connect to the MySQL instance.  If you have a .my.cnf file,
-it will read it, so you may not need to specify any connection-specific
-options.
-
-=item --database
-
-short form: -D; type: string
-
-Connect to this database.
-
-=item --defaults-file
-
-short form: -F; type: string
-
-Only read mysql options from the given file.  You must give an absolute
-pathname.
-
-=item --format
-
-type: string; default: tree
-
-Set output format.
-
-The default is a terse pretty-printed tree. The valid values are:
-
- value  meaning
- =====  =======
- tree   Pretty-printed terse tree.
- dump   Data::Dumper output (see L<Data::Dumper> for more).
-
-=item --help
-
-Show help and exit.
-
-=item --host
-
-short form: -h; type: string
-
-Connect to host.
-
-=item --password
-
-short form: -p; type: string
-
-Password to use when connecting.
-
-=item --port
-
-short form: -P; type: int
-
-Port number to use for connection.
-
-=item --set-vars
-
-type: string; default: wait_timeout=10000
-
-Set these MySQL variables.  Immediately after connecting to MySQL, this
-string will be appended to SET and executed.
-
-=item --socket
-
-short form: -S; type: string
-
-Socket file to use for connection.
-
-=item --user
-
-short form: -u; type: string
-
-User for login if not current user.
-
-=item --version
-
-Show version and exit.
-
-=back
-
 =head1 MODULES
 
 This program is actually a runnable module, not just an ordinary Perl script.
@@ -2542,9 +2415,132 @@ with 'Using index' must do a bookmark lookup into the table rows; that is a
 three-node subtree.  However, after the above node-ordering and scoping stuff,
 the rest of the process is pretty simple.
 
-=head1 SEE ALSO
+=head1 OPTIONS
 
-See also L<mk-query-profiler>.
+=over
+
+=item --ask-pass
+
+Prompt for a password when connecting to MySQL.
+
+=item --charset
+
+short form: -A; type: string
+
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
+runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
+binmode on STDOUT without the utf8 layer, and runs SET NAMES after
+connecting to MySQL.
+
+=item --clustered-pk
+
+Assume that PRIMARY KEY index accesses don't need to do a bookmark lookup to
+retrieve rows.  This is the case for InnoDB.
+
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
+
+=item --connect
+
+Treat input as a query, and obtain EXPLAIN output by connecting to a MySQL
+instance and running EXPLAIN on the query.  When this option is given,
+mk-visual-explain uses the other connection-specific options such as
+L<"--user"> to connect to the MySQL instance.  If you have a .my.cnf file,
+it will read it, so you may not need to specify any connection-specific
+options.
+
+=item --database
+
+short form: -D; type: string
+
+Connect to this database.
+
+=item --defaults-file
+
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute
+pathname.
+
+=item --format
+
+type: string; default: tree
+
+Set output format.
+
+The default is a terse pretty-printed tree. The valid values are:
+
+ value  meaning
+ =====  =======
+ tree   Pretty-printed terse tree.
+ dump   Data::Dumper output (see L<Data::Dumper> for more).
+
+=item --help
+
+Show help and exit.
+
+=item --host
+
+short form: -h; type: string
+
+Connect to host.
+
+=item --password
+
+short form: -p; type: string
+
+Password to use when connecting.
+
+=item --port
+
+short form: -P; type: int
+
+Port number to use for connection.
+
+=item --set-vars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.  Immediately after connecting to MySQL, this
+string will be appended to SET and executed.
+
+=item --socket
+
+short form: -S; type: string
+
+Socket file to use for connection.
+
+=item --user
+
+short form: -u; type: string
+
+User for login if not current user.
+
+=item --version
+
+Show version and exit.
+
+=back
+
+=head1 DOWNLOADING
+
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 ENVIRONMENT
 
@@ -2552,6 +2548,11 @@ The environment variable C<MKDEBUG> enables verbose debugging output in all of
 the Maatkit tools:
 
    MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
 
 =head1 BUGS
 
@@ -2563,15 +2564,6 @@ Please include the complete command-line used to reproduce the problem you are
 seeing, the version of all MySQL servers involved, the complete output of the
 tool when run with L<"--version">, and if possible, debugging output produced by
 running with the C<MKDEBUG=1> environment variable.
-
-=head1 SYSTEM REQUIREMENTS
-
-You need Perl, DBI, DBD::mysql, and some core packages that ought to be
-installed in any reasonably new version of Perl.
-
-=head1 AUTHOR
-
-Baron "Xaprb" Schwartz.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
@@ -2591,6 +2583,14 @@ licenses.
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 SEE ALSO
+
+See also L<mk-query-profiler>.
+
+=head1 AUTHOR
+
+Baron "Xaprb" Schwartz.
 
 =head1 VERSION
 

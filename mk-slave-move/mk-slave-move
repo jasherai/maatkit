@@ -2071,20 +2071,10 @@ defaults from the slave host, so you don't need to specify them in both places.
 C<mk-slave-move> reads all normal MySQL option files, such as ~/.my.cnf, so
 you may not need to specify username, password and other common options at all.
 
-=head1 DOWNLOADING
+=head1 EXIT STATUS
 
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
-
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
-
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
+Successful exit status is 0.  Any other value represents the exit status of
+the Perl process itself.
 
 =head1 OPTIONS
 
@@ -2243,15 +2233,20 @@ TODO: detect read-only setting and change it after moving servers.
 
 =back
 
-=head1 SYSTEM REQUIREMENTS
+=head1 DOWNLOADING
 
-You need Perl, DBI, DBD::mysql, and some core packages that ought to be
-installed in any reasonably new version of Perl.
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
 
-=head1 EXIT STATUS
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
 
-Successful exit status is 0.  Any other value represents the exit status of
-the Perl process itself.
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 ENVIRONMENT
 
@@ -2259,6 +2254,11 @@ The environment variable C<MKDEBUG> enables verbose debugging output in all of
 the Maatkit tools:
 
    MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
 
 =head1 BUGS
 
@@ -2270,10 +2270,6 @@ Please include the complete command-line used to reproduce the problem you are
 seeing, the version of all MySQL servers involved, the complete output of the
 tool when run with L<"--version">, and if possible, debugging output produced by
 running with the C<MKDEBUG=1> environment variable.
-
-=head1 SEE ALSO
-
-See also L<mk-table-checksum>, L<mk-table-sync>, L<mk-slave-delay>.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
@@ -2293,6 +2289,10 @@ licenses.
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 SEE ALSO
+
+See also L<mk-table-checksum>, L<mk-table-sync>, L<mk-slave-delay>.
 
 =head1 AUTHOR
 

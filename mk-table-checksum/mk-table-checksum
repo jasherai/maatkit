@@ -5134,20 +5134,178 @@ C<CRC32> is the default checksum function to use, and should be enough for most
 cases.  If you need stronger guarantees that your data is identical, you should
 use one of the other functions.
 
-=head1 DOWNLOADING
+=head1 CONSISTENT CHECKSUMS
 
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
+If you are using this tool to verify your slaves still have the same data as the
+master, which is why I wrote it, you should read this section.
 
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
+The best way to do this with replication is to use the L<"--replicate"> option.
+When the queries are finished running on the master and its slaves, you can go
+to the slaves and issue SQL queries to see if any tables are different from the
+master.  Try the following:
 
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
+  SELECT db, tbl, chunk, this_cnt-master_cnt AS cnt_diff,
+     this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc)
+        AS crc_diff
+  FROM checksum
+  WHERE master_cnt <> this_cnt OR master_crc <> this_crc
+     OR ISNULL(master_crc) <> ISNULL(this_crc);
+
+The L<"--replicate-check"> option can do this query for you.  If you can't use
+this method, try the following:
+
+=over
+
+=item *
+
+If your servers are not being written to, you can just run the tool with no
+further ado:
+
+  mk-table-checksum server1 server2 ... serverN
+
+=item *
+
+If the servers are being written to, you need some way to make sure they are
+consistent at the moment you run the checksums.  For situations other than
+master-slave replication, you will have to figure this out yourself.  You may be
+able to use the L<"--where"> option with a date or time column to only checksum
+data that's not recent.
+
+=item *
+
+If you are checksumming a master and slaves, you can do a fast parallel
+checksum and assume the slaves are caught up to the master.  In practice, this
+tends to work well except for tables which are constantly updated.  You can
+use the L<"--slave-lag"> option to see how far behind each slave was when it
+checksummed a given table.  This can help you decide whether to investigate
+further.
+
+=item *
+
+The next most disruptive technique is to lock the table on the master, then take
+checksums.  This should prevent changes from propagating to the slaves.  You can
+just lock on the master (with L<"--lock">), or you can both lock on the master
+and wait on the slaves till they reach that point in the master's binlog
+(L<"--wait">).  Which is better depends on your workload; only you know that.
+
+=item *
+
+If you decide to make the checksums on the slaves wait until they're guaranteed
+to be caught up to the master, the algorithm looks like this:
+
+ For each table,
+   Master: lock table
+   Master: get pos
+   In parallel,
+     Master: checksum
+     Slave(s): wait for pos, then checksum
+   End
+   Master: unlock table
+ End
+
+=back
+
+What I typically do when I'm not using the L<"--replicate"> option is simply run
+the tool on all servers with no further options.  This runs fast, parallel,
+non-blocking checksums simultaneously.  If there are tables that look different,
+I re-run with L<"--wait">=600 on the tables in question.  This makes the tool
+lock on the master as explained above.
+
+=head1 OUTPUT
+
+Output is to STDOUT, one line per server and table, with header lines for each
+database.  I tried to make the output easy to process with awk.  For this reason
+columns are always present.  If there's no value, mk-table-checksum prints
+'NULL'.
+
+The default is column-aligned output for human readability, but you can change
+it to tab-separated if you want.  Use the L<"--tab"> option for this.
+
+Output is unsorted, though all lines for one table should be output together.
+For speed, all checksums are done in parallel (as much as possible) and may
+complete out of the order in which they were started.  You might want to run
+them through another script or command-line utility to make sure they are in the
+order you want.  If you pipe the output through L<mk-checksum-filter>, you
+can sort the output and/or avoid seeing output about tables that have no
+differences.
+
+The columns in the output are as follows.  The database, table, and chunk come
+first so you can sort by them easily (they are the "primary key").
+
+Output from L<"--replicate-check"> and L<"--checksum"> are different.
+
+=over
+
+=item DATABASE
+
+The database the table is in.
+
+=item TABLE
+
+The table name.
+
+=item CHUNK
+
+The chunk (see L<"--chunk-size">).  Zero if you are not doing chunked checksums.
+
+=item HOST
+
+The server's hostname.
+
+=item ENGINE
+
+The table's storage engine.
+
+=item COUNT
+
+The table's row count, unless you specified to skip it.
+
+=item CHECKSUM
+
+The table's checksum, unless you specifed to skip it or the table has no rows.
+some types of checksums will be 0 if there are no rows; others will print NULL.
+
+=item TIME
+
+The time the actual checksum and/or counting took.
+
+=item WAIT
+
+How long the checksum blocked before beginning.
+
+=item STAT
+
+The return value of MASTER_POS_WAIT().
+
+=item LAG
+
+How far the slave lags the master, as reported by SHOW SLAVE STATUS.
+
+=back
+
+=head1 EXIT STATUS
+
+A successful exit status is 0.  If there is an error checksumming any table,
+the exit status is 1.
+
+When running L<"--replicate-check">, if any slave has chunks that differ from
+the master, the exit status is 1.
+
+=head1 QUERIES
+
+If you are using innotop (see L<http://code.google.com/p/innotop>),
+mytop, or another tool to watch currently running MySQL queries, you may see
+the checksum queries.  They look similar to this:
+
+  REPLACE /*test.test_tbl:'2'/'5'*/ INTO test.checksum(db, ...
+
+Since mk-table-checksum's queries run for a long time and tend to be
+textually very long, and thus won't fit on one screen of these monitoring
+tools, I've been careful to place a comment at the beginning of the query so
+you can see what it is and what it's doing.  The comment contains the name of
+the table that's being checksummed, the chunk it is currently checksumming,
+and how many chunks will be checksummed.  In the case above, it is
+checksumming chunk 2 of 5 in table test.test_tbl.
 
 =head1 OPTIONS
 
@@ -5941,182 +6099,20 @@ keyword.  You may need to quote the value.  Here is an example:
 
 =back
 
-=head1 CONSISTENT CHECKSUMS
+=head1 DOWNLOADING
 
-If you are using this tool to verify your slaves still have the same data as the
-master, which is why I wrote it, you should read this section.
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
 
-The best way to do this with replication is to use the L<"--replicate"> option.
-When the queries are finished running on the master and its slaves, you can go
-to the slaves and issue SQL queries to see if any tables are different from the
-master.  Try the following:
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
 
-  SELECT db, tbl, chunk, this_cnt-master_cnt AS cnt_diff,
-     this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc)
-        AS crc_diff
-  FROM checksum
-  WHERE master_cnt <> this_cnt OR master_crc <> this_crc
-     OR ISNULL(master_crc) <> ISNULL(this_crc);
-
-The L<"--replicate-check"> option can do this query for you.  If you can't use
-this method, try the following:
-
-=over
-
-=item *
-
-If your servers are not being written to, you can just run the tool with no
-further ado:
-
-  mk-table-checksum server1 server2 ... serverN
-
-=item *
-
-If the servers are being written to, you need some way to make sure they are
-consistent at the moment you run the checksums.  For situations other than
-master-slave replication, you will have to figure this out yourself.  You may be
-able to use the L<"--where"> option with a date or time column to only checksum
-data that's not recent.
-
-=item *
-
-If you are checksumming a master and slaves, you can do a fast parallel
-checksum and assume the slaves are caught up to the master.  In practice, this
-tends to work well except for tables which are constantly updated.  You can
-use the L<"--slave-lag"> option to see how far behind each slave was when it
-checksummed a given table.  This can help you decide whether to investigate
-further.
-
-=item *
-
-The next most disruptive technique is to lock the table on the master, then take
-checksums.  This should prevent changes from propagating to the slaves.  You can
-just lock on the master (with L<"--lock">), or you can both lock on the master
-and wait on the slaves till they reach that point in the master's binlog
-(L<"--wait">).  Which is better depends on your workload; only you know that.
-
-=item *
-
-If you decide to make the checksums on the slaves wait until they're guaranteed
-to be caught up to the master, the algorithm looks like this:
-
- For each table,
-   Master: lock table
-   Master: get pos
-   In parallel,
-     Master: checksum
-     Slave(s): wait for pos, then checksum
-   End
-   Master: unlock table
- End
-
-=back
-
-What I typically do when I'm not using the L<"--replicate"> option is simply run
-the tool on all servers with no further options.  This runs fast, parallel,
-non-blocking checksums simultaneously.  If there are tables that look different,
-I re-run with L<"--wait">=600 on the tables in question.  This makes the tool
-lock on the master as explained above.
-
-=head1 OUTPUT
-
-Output is to STDOUT, one line per server and table, with header lines for each
-database.  I tried to make the output easy to process with awk.  For this reason
-columns are always present.  If there's no value, mk-table-checksum prints
-'NULL'.
-
-The default is column-aligned output for human readability, but you can change
-it to tab-separated if you want.  Use the L<"--tab"> option for this.
-
-Output is unsorted, though all lines for one table should be output together.
-For speed, all checksums are done in parallel (as much as possible) and may
-complete out of the order in which they were started.  You might want to run
-them through another script or command-line utility to make sure they are in the
-order you want.  If you pipe the output through L<mk-checksum-filter>, you
-can sort the output and/or avoid seeing output about tables that have no
-differences.
-
-The columns in the output are as follows.  The database, table, and chunk come
-first so you can sort by them easily (they are the "primary key").
-
-Output from L<"--replicate-check"> and L<"--checksum"> are different.
-
-=over
-
-=item DATABASE
-
-The database the table is in.
-
-=item TABLE
-
-The table name.
-
-=item CHUNK
-
-The chunk (see L<"--chunk-size">).  Zero if you are not doing chunked checksums.
-
-=item HOST
-
-The server's hostname.
-
-=item ENGINE
-
-The table's storage engine.
-
-=item COUNT
-
-The table's row count, unless you specified to skip it.
-
-=item CHECKSUM
-
-The table's checksum, unless you specifed to skip it or the table has no rows.
-some types of checksums will be 0 if there are no rows; others will print NULL.
-
-=item TIME
-
-The time the actual checksum and/or counting took.
-
-=item WAIT
-
-How long the checksum blocked before beginning.
-
-=item STAT
-
-The return value of MASTER_POS_WAIT().
-
-=item LAG
-
-How far the slave lags the master, as reported by SHOW SLAVE STATUS.
-
-=back
-
-=head1 EXIT STATUS
-
-A successful exit status is 0.  If there is an error checksumming any table,
-the exit status is 1.
-
-When running L<"--replicate-check">, if any slave has chunks that differ from
-the master, the exit status is 1.
-
-=head1 QUERIES
-
-If you are using innotop (see L<http://code.google.com/p/innotop>),
-mytop, or another tool to watch currently running MySQL queries, you may see
-the checksum queries.  They look similar to this:
-
-  REPLACE /*test.test_tbl:'2'/'5'*/ INTO test.checksum(db, ...
-
-Since mk-table-checksum's queries run for a long time and tend to be
-textually very long, and thus won't fit on one screen of these monitoring
-tools, I've been careful to place a comment at the beginning of the query so
-you can see what it is and what it's doing.  The comment contains the name of
-the table that's being checksummed, the chunk it is currently checksumming,
-and how many chunks will be checksummed.  In the case above, it is
-checksumming chunk 2 of 5 in table test.test_tbl.
-
-=head1 SEE ALSO
-
-See also L<mk-checksum-filter> and L<mk-table-sync>.
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 ENVIRONMENT
 
@@ -6124,6 +6120,11 @@ The environment variable C<MKDEBUG> enables verbose debugging output in all of
 the Maatkit tools:
 
    MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
 
 =head1 BUGS
 
@@ -6135,27 +6136,6 @@ Please include the complete command-line used to reproduce the problem you are
 seeing, the version of all MySQL servers involved, the complete output of the
 tool when run with L<"--version">, and if possible, debugging output produced by
 running with the C<MKDEBUG=1> environment variable.
-
-=head1 SYSTEM REQUIREMENTS
-
-You need Perl, DBI, DBD::mysql, and some core packages that ought to be
-installed in any reasonably new version of Perl.
-
-=head1 AUTHOR
-
-Baron "Xaprb" Schwartz.
-
-=head1 ACKNOWLEDGEMENTS
-
-This is an incomplete list.  My apologies for omissions or misspellings.
-
-Claus Jeppesen,
-Francois Saint-Jacques,
-Giuseppe Maxia,
-Heikki Tuuri,
-James Briggs,
-Martin Friebe,
-Sergey Zhuravlev,
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
@@ -6175,6 +6155,26 @@ licenses.
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 SEE ALSO
+
+See also L<mk-checksum-filter> and L<mk-table-sync>.
+
+=head1 AUTHOR
+
+Baron "Xaprb" Schwartz.
+
+=head1 ACKNOWLEDGEMENTS
+
+This is an incomplete list.  My apologies for omissions or misspellings.
+
+Claus Jeppesen,
+Francois Saint-Jacques,
+Giuseppe Maxia,
+Heikki Tuuri,
+James Briggs,
+Martin Friebe,
+Sergey Zhuravlev,
 
 =head1 VERSION
 

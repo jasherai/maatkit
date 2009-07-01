@@ -3316,6 +3316,17 @@ You can disable the seek-then-scan optimizations partially or wholly with
 L<"--no-ascend"> and L<"--ascend-first">.  Sometimes this may be more efficient
 for multi-column keys.
 
+=head1 OUTPUT
+
+If you specify L<"--progress">, the output is a header row, plus status output
+at intervals.  Each row in the status output lists the current date and time,
+how many seconds mk-archiver has been running, and how many rows it has
+archived.
+
+If you specify L<"--statistics">, C<mk-archiver> outputs timing and other
+information to help you identify which part of your archiving process takes the
+most time.
+
 =head1 ERROR-HANDLING
 
 mk-archiver tries to catch signals and exit gracefully; for example, if you
@@ -3327,21 +3338,6 @@ plugins (see L<"EXTENDING">).
 
 In other words, a signal, if caught, will break out of the main archiving
 loop and skip optimize/analyze.
-
-=head1 DOWNLOADING
-
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
-
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
-
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
@@ -4200,6 +4196,21 @@ A sample module might look like this:
 
    1;
 
+=head1 DOWNLOADING
+
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
+
 =head1 ENVIRONMENT
 
 The environment variable C<MKDEBUG> enables verbose debugging output in all of
@@ -4211,17 +4222,6 @@ the Maatkit tools:
 
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
-
-=head1 OUTPUT
-
-If you specify L<"--progress">, the output is a header row, plus status output
-at intervals.  Each row in the status output lists the current date and time,
-how many seconds mk-archiver has been running, and how many rows it has
-archived.
-
-If you specify L<"--statistics">, C<mk-archiver> outputs timing and other
-information to help you identify which part of your archiving process takes the
-most time.
 
 =head1 BUGS
 

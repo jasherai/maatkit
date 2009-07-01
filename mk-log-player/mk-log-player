@@ -3115,21 +3115,6 @@ mk-log-player - Split and play MySQL slow logs.
 
 mk-log-player splits and plays MySQL slow logs.
 
-=head1 DOWNLOADING
-
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
-
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
-
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
-
 =head1 OPTIONS
 
 Specify at least one of --play or --split.
@@ -3363,10 +3348,20 @@ Warn about SQL errors such as invalid queries.
 
 =back
 
-=head1 SYSTEM REQUIREMENTS
+=head1 DOWNLOADING
 
-You need Perl and some core packages that ought to be
-installed in any reasonably new version of Perl.
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 ENVIRONMENT
 
@@ -3374,6 +3369,11 @@ The environment variable C<MKDEBUG> enables verbose debugging output in all of
 the Maatkit tools:
 
    MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl and some core packages that ought to be
+installed in any reasonably new version of Perl.
 
 =head1 BUGS
 

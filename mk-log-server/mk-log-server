@@ -711,7 +711,21 @@ mk-log-server - Serve MySQL binary logs.
 
 =head1 DESCRIPTION
 
-mk-log-server
+mk-log-server serves binary logs.
+
+=head1 OPTIONS
+
+=over
+
+=item --help
+
+Show help and exit.
+
+=item --version
+
+Show version and exit.
+
+=back
 
 =head1 DOWNLOADING
 
@@ -727,12 +741,6 @@ Where C<toolname> can be replaced with the name (or fragment of a name) of any
 of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
 needed.  The first URL gets the latest released version of the tool, and the
 second gets the latest trunk code from Subversion.
-
-=head1 OPTIONS
-
-=over
-
-=back
 
 =head1 ENVIRONMENT
 

@@ -2756,20 +2756,7 @@ mk-schema-audit - Analyze schema and find inefficiencies.
 
 =head1 DESCRIPTION
 
-=head1 DOWNLOADING
-
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
-
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
-
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
+mk-schema audit audits schemas.
 
 =head1 OPTIONS
 
@@ -2937,7 +2924,26 @@ short form: -v
 
 Output all keys and/or foreign keys found, not just redundant ones.
 
+=item --version
+
+Show version and exit.
+
 =back
+
+=head1 DOWNLOADING
+
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 ENVIRONMENT
 
@@ -2961,9 +2967,9 @@ seeing, the version of all MySQL servers involved, the complete output of the
 tool when run with L<"--version">, and if possible, debugging output produced by
 running with the C<MKDEBUG=1> environment variable.
 
-=head1 LICENSE
+=head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+This program is copyright 2009-@CURRENTYEAR@ Percona Inc.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED

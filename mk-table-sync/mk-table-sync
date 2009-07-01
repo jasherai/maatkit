@@ -6165,6 +6165,35 @@ There are many ways to invoke it.  The following is the abbreviated logic:
 If you're confused about how it the DSNs are interpreted, use the
 L<"--explain-hosts"> option and it will tell you.
 
+=head1 OUTPUT
+
+If you specify the L<"--verbose"> option, you'll see information about the 
+differences between the tables.  There is one row per table.  Each server is
+printed separately.  For example,
+
+   # Syncing D=test,t=test2
+   # DELETE REPLACE INSERT UPDATE ALGORITHM DATABASE.TABLE
+   #      0       0      2      0 Chunk     test.test1
+
+This table required 2 C<UPDATE> statements to synchronize.
+
+There are cases where no combination of C<INSERT>, C<UPDATE> or C<DELETE>
+statements can resolve differences without violating some unique key.  For
+example, suppose there's a primary key on column a and a unique key on column b.
+Then there is no way to sync these two tables with straightforward UPDATE
+statements:
+
+ +---+---+  +---+---+
+ | a | b |  | a | b |
+ +---+---+  +---+---+
+ | 1 | 2 |  | 1 | 1 |
+ | 2 | 1 |  | 2 | 2 |
+ +---+---+  +---+---+
+
+The tool rewrites queries to C<DELETE> and C<REPLACE> in this case.  This is
+automatically handled after the first index violation, so you don't have to
+worry about it.
+
 =head1 REPLICATION SAFETY
 
 Synchronizing a replication master and slave safely is a non-trivial problem, in
@@ -6261,20 +6290,16 @@ simple interface that makes it pretty easy to write your own.
 
 =back
 
-=head1 DOWNLOADING
+=head1 EXIT STATUS
 
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
+Exit status is as follows:
 
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
-
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
+   STATUS  MEANING
+   ======  =======================================================
+   0       Success.
+   1       Internal error.
+   2       At least one table differed on the destination.
+   3       Combination of 1 and 2.
 
 =head1 OPTIONS
 
@@ -6724,45 +6749,20 @@ C<mk-table-sync> will die unless L<"--with-triggers"> is specified.
 
 =back
 
-=head1 EXIT STATUS
+=head1 DOWNLOADING
 
-Exit status is as follows:
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
 
-   STATUS  MEANING
-   ======  =======================================================
-   0       Success.
-   1       Internal error.
-   2       At least one table differed on the destination.
-   3       Combination of 1 and 2.
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
 
-=head1 OUTPUT
-
-If you specify the L<"--verbose"> option, you'll see information about the 
-differences between the tables.  There is one row per table.  Each server is
-printed separately.  For example,
-
-   # Syncing D=test,t=test2
-   # DELETE REPLACE INSERT UPDATE ALGORITHM DATABASE.TABLE
-   #      0       0      2      0 Chunk     test.test1
-
-This table required 2 C<UPDATE> statements to synchronize.
-
-There are cases where no combination of C<INSERT>, C<UPDATE> or C<DELETE>
-statements can resolve differences without violating some unique key.  For
-example, suppose there's a primary key on column a and a unique key on column b.
-Then there is no way to sync these two tables with straightforward UPDATE
-statements:
-
- +---+---+  +---+---+
- | a | b |  | a | b |
- +---+---+  +---+---+
- | 1 | 2 |  | 1 | 1 |
- | 2 | 1 |  | 2 | 2 |
- +---+---+  +---+---+
-
-The tool rewrites queries to C<DELETE> and C<REPLACE> in this case.  This is
-automatically handled after the first index violation, so you don't have to
-worry about it.
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 ENVIRONMENT
 
@@ -6770,6 +6770,45 @@ The environment variable MKDEBUG enables verbose debugging output in all of the
 Maatkit tools:
 
    MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 BUGS
+
+Please use Google Code Issues and Groups to report bugs or request support:
+L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
+discuss Maatkit.
+
+Please include the complete command-line used to reproduce the problem you are
+seeing, the version of all MySQL servers involved, the complete output of the
+tool when run with L<"--version">, and if possible, debugging output produced by
+running with the C<MKDEBUG=1> environment variable.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz.
 
 =head1 HISTORY AND ACKNOWLEDGEMENTS
 
@@ -6822,45 +6861,6 @@ Kristian Koehntopp (MySQL AB),
 Rohit Nadhani (WebYog),
 The helpful monks at Perlmonks,
 And others too numerous to mention.
-
-=head1 SYSTEM REQUIREMENTS
-
-You need Perl, DBI, DBD::mysql, and some core packages that ought to be
-installed in any reasonably new version of Perl.
-
-=head1 BUGS
-
-Please use Google Code Issues and Groups to report bugs or request support:
-L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
-discuss Maatkit.
-
-Please include the complete command-line used to reproduce the problem you are
-seeing, the version of all MySQL servers involved, the complete output of the
-tool when run with L<"--version">, and if possible, debugging output produced by
-running with the C<MKDEBUG=1> environment variable.
-
-=head1 COPYRIGHT, LICENSE AND WARRANTY
-
-This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
-Feedback and improvements are welcome.
-
-THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-systems, you can issue `man perlgpl' or `man perlartistic' to read these
-licenses.
-
-You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-Place, Suite 330, Boston, MA  02111-1307  USA.
-
-=head1 AUTHOR
-
-Baron Schwartz.
 
 =head1 VERSION
 

@@ -1054,21 +1054,6 @@ there are different numbers of lines in QUERY and SUMMARY profiles.  You can
 specify which kind of profile result you want to process.  See
 L<mk-query-profiler> for the full list of types.
 
-=head1 DOWNLOADING
-
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
-
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
-
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
-
 =head1 OPTIONS
 
 =over
@@ -1108,12 +1093,32 @@ Show version and exit.
 
 =back
 
+=head1 DOWNLOADING
+
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
+
 =head1 ENVIRONMENT
 
 The environment variable C<MKDEBUG> enables verbose debugging output in all of
 the Maatkit tools:
 
    MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl and some core packages that ought to be installed in any
+reasonably new version of Perl.
 
 =head1 BUGS
 
@@ -1126,11 +1131,7 @@ seeing, the version of all MySQL servers involved, the complete output of the
 tool when run with L<"--version">, and if possible, debugging output produced by
 running with the C<MKDEBUG=1> environment variable.
 
-=head1 SEE ALSO
-
-See also L<mk-query-profiler>.
-
-=head1 LICENSE
+=head1 COPYRIGHT, LICENSE AND WARRANTY
 
 This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 Feedback and improvements are welcome.
@@ -1148,6 +1149,10 @@ licenses.
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 SEE ALSO
+
+See also L<mk-query-profiler>.
 
 =head1 AUTHOR
 
