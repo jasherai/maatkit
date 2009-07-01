@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 10;
+use Test::More tests => 13;
 
 require '../QueryExecutor.pm';
 require '../DSNParser.pm';
@@ -83,6 +83,52 @@ is(
    $results->{host1}->{warning_count},
    1,
    'Warning count'
+);
+
+# #############################################################################
+# Test pre and post-exec queries.
+# #############################################################################
+$dbh1->do('SET @a = "foo"');
+$results = $qe->exec(
+   pre_exec_query  => 'SET @a = "before"',
+   query           => 'SELECT * FROM test.issue_47',
+   host1_dbh => $dbh1,
+   host2_dbh => $dbh2,
+);
+my $var = $dbh1->selectall_arrayref('SELECT @a');
+is_deeply(
+   $var,
+   [['before']],
+   'pre-exec query'
+);
+
+$dbh1->do('SET @a = "foo"');
+$results = $qe->exec(
+   query           => 'SELECT * FROM test.issue_47',
+   post_exec_query => 'SET @a = "after"',
+   host1_dbh => $dbh1,
+   host2_dbh => $dbh2,
+);
+$var = $dbh1->selectall_arrayref('SELECT @a');
+is_deeply(
+   $var,
+   [['after']],
+   'pre-exec query'
+);
+
+$dbh1->do('SET @a = 0');
+$results = $qe->exec(
+   pre_exec_query  => 'SET @a = 1',
+   query           => 'SELECT * FROM test.issue_47',
+   post_exec_query => 'SET @a = @a + 1',
+   host1_dbh => $dbh1,
+   host2_dbh => $dbh2,
+);
+$var = $dbh1->selectall_arrayref('SELECT @a');
+is_deeply(
+   $var,
+   [['2']],
+   'pre and post-exec query'
 );
 
 # #############################################################################

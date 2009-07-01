@@ -62,15 +62,32 @@ sub new {
 #    }
 # If the query cannot be executed on a host, an error string is returned
 # for that host instead of the hashref of results.
+#
+# Optional arguments are:
+#   * pre_exec_query     Execute this query before executing main query
+#   * post_exec_query    Execute this query after executing main query
+#
 sub exec {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(query host1_dbh host2_dbh) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   MKDEBUG && _d('Executing sql:', $args{query});
+   if ( $args{pre_exec_query} ) {
+      MKDEBUG && _d('pre-exec query:', $args{pre_exec_query});
+      $self->_exec_query($args{pre_exec_query}, $args{host1_dbh});
+      $self->_exec_query($args{pre_exec_query}, $args{host2_dbh});
+   }
+
+   MKDEBUG && _d('query:', $args{query});
    my $host1_results = $self->_exec_query($args{query}, $args{host1_dbh});
    my $host2_results = $self->_exec_query($args{query}, $args{host2_dbh});
+
+   if ( $args{post_exec_query} ) {
+      MKDEBUG && _d('post-exec query:', $args{post_exec_query});
+      $self->_exec_query($args{post_exec_query}, $args{host1_dbh});
+      $self->_exec_query($args{post_exec_query}, $args{host2_dbh});
+   }
 
    return {
       host1 => $host1_results,
