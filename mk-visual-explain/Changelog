@@ -2,6 +2,7 @@ Changelog for mk-visual-explain:
 
    * --ask-pass did not work (issue 453).
    * --format dump did not work (issue 393).
+   * Updates to shared code.
 
 2009-06-02: version 1.0.15
 

@@ -1,5 +1,7 @@
 Changelog for mk-find:
 
+   * Updates to shared code.
+
 2009-06-02: version 0.9.16
 
    * Removed the --askpass long option.  Use --ask-pass instead.

@@ -575,7 +575,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3695
+# OptionParser package 3945
 # ###########################################################################
 package OptionParser;
 
@@ -589,6 +589,15 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+my %attributes = (
+   'type'       => 1,
+   'short form' => 1,
+   'group'      => 1,
+   'default'    => 1,
+   'cumulative' => 1,
+   'negatable'  => 1,
+);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -686,7 +695,12 @@ sub _pod_to_specs {
 
          if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            %attribs = map {
+                  my ( $attrib, $val) = split(/: /, $_);
+                  die "Unrecognized attribute for --$option: $attrib"
+                     unless $attributes{$attrib};
+                  ($attrib, $val);
+               } split(/; /, $para);
             if ( $attribs{'short form'} ) {
                $attribs{'short form'} =~ s/-//;
             }
@@ -2481,7 +2495,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 3407
+# Transformers package 3972
 # ###########################################################################
 
 package Transformers;
@@ -2615,7 +2629,7 @@ sub parse_timestamp {
 sub unix_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
+     = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?$/ )
    {
       return timelocal($s, $i, $h, $d, $m - 1, $y);
    }

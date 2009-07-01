@@ -47,6 +47,7 @@ Changelog for mk-archiver:
    * Removed the -W short option.  Use --where instead.
    * Removed the -q short option.  Use --why-quit instead.
    * Converted script to runnable module (issue 315).
+   * Updates to shared code.
 
 2009-06-02: version 1.0.16
 

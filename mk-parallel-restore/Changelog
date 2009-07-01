@@ -1,6 +1,7 @@
 Changelog for mk-parallel-restore:
 
    * Tool died trying to restore already fully restored tables (issue 406).
+   * Updates to shared code.
 
 2009-06-02: version 1.0.14
 

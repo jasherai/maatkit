@@ -1,5 +1,7 @@
 Changelog for mk-heartbeat:
 
+   * Updates to shared code.
+
 2009-06-02: version 1.0.14
 
    * Script did not die if --pid file already existed (issue 383).

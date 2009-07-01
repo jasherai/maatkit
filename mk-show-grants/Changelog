@@ -1,6 +1,7 @@
 Changelog for mk-show-grants:
 
    * The tool crashed on anonymous user ''@'' (issue 445).
+   * Updates to shared code.
 
 2009-06-02: version 1.0.16
 

@@ -1,5 +1,7 @@
 Changelog for mk-slave-find:
 
+   * Updates to shared code.
+
 2009-05-03: version 1.0.6
 
    * Removed the --print long option; replication hierarchy tree always printed.
