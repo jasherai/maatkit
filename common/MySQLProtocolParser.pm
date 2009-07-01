@@ -367,7 +367,7 @@ sub _packet_from_server {
                cmd       => 'Admin',
                arg       => 'administrator command: Connect',
                ts        => $packet->{ts},
-               Error_no  => $error->{errno},
+               Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
             };
             $session->{state} = 'closing';
          }
@@ -390,7 +390,7 @@ sub _packet_from_server {
                cmd       => $com,
                arg       => $arg,
                ts        => $packet->{ts},
-               Error_no  => $error->{errno},
+               Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
             };
             $session->{state} = 'ready';
          }
@@ -587,7 +587,7 @@ sub _make_event {
       Thread_id  => $session->{thread_id},
       pos_in_log => $session->{pos_in_log},
       Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
-      Error_no   => ($event->{Error_no} || 0),
+      Error_no   => $event->{Error_no} || 'none',
       Rows_affected      => ($event->{Rows_affected} || 0),
       Warning_count      => ($event->{Warning_count} || 0),
       No_good_index_used => ($event->{No_good_index_used} ? 'Yes' : 'No'),
