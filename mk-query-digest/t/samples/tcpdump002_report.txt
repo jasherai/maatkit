@@ -9,7 +9,7 @@
 # Databases              1   mysql
 # Time range 2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
 # bytes         23      30      30      30      30      30       0      30
-# Error no       0       0       0       0       0       0       0       0
+# Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0
 #   0% No_good_index_used
@@ -35,7 +35,7 @@ administrator command: Connect\G
 # Databases              1   mysql
 # Time range 2009-04-12 11:00:13.118643 to 2009-04-12 11:00:13.118643
 # bytes         24      32      32      32      32      32       0      32
-# Error no       0       0       0       0       0       0       0       0
+# Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0
 #   0% No_good_index_used
@@ -62,7 +62,7 @@ select @@version_comment limit 1\G
 # Databases              1   mysql
 # Time range 2009-04-12 11:00:13.119079 to 2009-04-12 11:00:13.119079
 # bytes         31      41      41      41      41      41       0      41
-# Error no       0       0       0       0       0       0       0       0
+# Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0
 #   0% No_good_index_used
@@ -89,7 +89,7 @@ select "paris in the the spring" as trick\G
 # Databases              1   mysql
 # Time range 2009-04-12 11:00:13.119487 to 2009-04-12 11:00:13.119487
 # bytes         20      27      27      27      27      27       0      27
-# Error no       0       0       0       0       0       0       0       0
+# Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0
 #   0% No_good_index_used

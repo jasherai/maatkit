@@ -4,7 +4,7 @@
 # Hosts                  4
 # Time range        2009-04-12 11:00:13.118643 to 2009-04-12 11:00:14.999999
 # bytes                128      32      32      32      32       0      32
-# Error no               0       0       0       0       0       0       0
+# Errors                 4
 # Rows affe              0       0       0       0       0       0       0
 # Warning c              0       0       0       0       0       0       0
 #   0% No_good_index_used
@@ -18,7 +18,7 @@
 # Hosts                  1 127.0.0.1
 # Time range 2009-04-12 11:00:13.118643 to 2009-04-12 11:00:14.999999
 # bytes        100     128      32      32      32      32       0      32
-# Error no       0       0       0       0       0       0       0       0
+# Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0
 #   0% No_good_index_used
