@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+2009-06-30: version 1.0.17
+
    * Removed the --test long option.  Use --dry-run instead.
    * Removed the --time long option.  Use --run-time instead.
    * Removed the --ascendfirst long option.  Use --ascend-first instead.

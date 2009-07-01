@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2009-06-30: version 0.9.7
+
    * Added all auto-detected event attributes to report.
    * --report '' --print --sample 1 didn't work (issue 470).
    * Added --sample option (issue 462).
