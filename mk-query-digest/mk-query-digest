@@ -5485,7 +5485,8 @@ sub main {
       my $filter = $o->get('filter');
       my $code   = "sub{ my(\$event) = shift; $filter && return \$event; };";
       MKDEBUG && _d('--filter code:', $code);
-      my $sub = eval $code or die;
+      my $sub = eval $code
+         or die "Error compiling --filter code: $code\n$EVAL_ERROR";
       push @callbacks, $sub;
    }
 
@@ -6604,7 +6605,24 @@ Discard events for which this Perl code doesn't return true.
 This option is a string of Perl code that gets compiled into a subroutine with
 one argument: $event.  This is a hashref.  If the code returns true, the chain
 of callbacks continues; otherwise it ends.  The code is the last statement in
-the subroutine other than C<return $event>.
+the subroutine other than C<return $event>.  The subroutine template is:
+
+  sub { $event = shift; filter && return $event; }
+
+Therefore, filter must produce syntactically valid code given that template.
+For example, an if-else branch would not be valid:
+
+  --filter 'if () { } else { }'  # WRONG
+
+To accomplish something more complex like this would require a more complex
+filter:
+
+  --filter 'my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0 } $event_ok'  # OK
+
+If the filter code won't compile, mk-query-digest will die with an error.
+If the filter code does compile, an error may still occur at runtime if the
+code tries to do something wrong (like pattern match an undefined value).
+mk-query-digest does not provide any safeguards so code carefully!
 
 An example filter that discards everything but SELECT statements:
 
@@ -6618,6 +6636,39 @@ It is permissible for the code to have side effects (to alter $event).
 
 You can find an explanation of the structure of $event at
 L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
+
+Here are more examples of filter code:
+
+=over
+
+=item Host/IP matches domain.com
+
+--filter '($event->{host} || $event->{ip} || "") =~ m/domain.com/'
+
+Sometimes MySQL logs the host where the IP is expected.  Therefore, we
+check both.
+
+=item User matches john
+
+--filter '($event->{user} || "") =~ m/john/'
+
+=item More than 1 warning
+
+--filter '$event->{Warning_count} && $event->{Warning_count} > 1'
+
+=item Query does full table scan or full join
+
+--filter '($event->{Full_scan} && $event->{Full_scan} eq "Yes") || ($event->{Full_join} && $event->{Full_join} eq "Yes")'
+
+=item Query was not served from query cache
+
+--filter '$event->{QC_Hit} && $event->{QC_Hit} eq "No"'
+
+=item Query is 1 MB or larger
+
+--filter '$event->{bytes} >= 1_048_576'
+
+=back
 
 =item --fingerprints
 
