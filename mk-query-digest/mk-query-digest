@@ -6654,15 +6654,15 @@ check both.
 
 =item More than 1 warning
 
---filter '$event->{Warning_count} && $event->{Warning_count} > 1'
+--filter '($event->{Warning_count} || 0) > 1'
 
 =item Query does full table scan or full join
 
---filter '($event->{Full_scan} && $event->{Full_scan} eq "Yes") || ($event->{Full_join} && $event->{Full_join} eq "Yes")'
+--filter '(($event->{Full_scan} || "") eq "Yes") || (($event->{Full_join} || "") eq "Yes")'
 
 =item Query was not served from query cache
 
---filter '$event->{QC_Hit} && $event->{QC_Hit} eq "No"'
+--filter '($event->{QC_Hit} || "") eq "No"'
 
 =item Query is 1 MB or larger
 
