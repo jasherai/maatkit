@@ -3007,7 +3007,6 @@ sub print_duplicate_key {
    return;
 }
 
-# TODO: would be nice to shorten/format some of these values.
 sub print_key_summary {
    my ( %summary ) = @_;
    printf $hdr_fmt, ('#' x $hdr_width);
