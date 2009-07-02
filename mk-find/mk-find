@@ -1278,12 +1278,6 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# TODO: implement processes too; then it can be a stale query sniper.
-# TODO: add --haskey(col), add --hascol
-# TODO: add --keepgoing (in case of an error on --exec)
-# TODO: make a way to get a list of DSNs out of a database table, and iterate
-# over them.
-
 # ############################################################################
 # Get configuration information.
 # ############################################################################
