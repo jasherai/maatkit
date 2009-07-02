@@ -2667,9 +2667,6 @@ sub _d {
 # ###########################################################################
 package mk_parallel_dump;
 
-# TODO: permit to disable resuming behavior.
-# TODO: permit dumping a single table in many threads.
-
 use English qw(-no_match_vars);
 use File::Basename qw(dirname);
 use File::Spec;
@@ -2730,7 +2727,6 @@ sub main {
 
    $o->set('gzip', 0) if $OSNAME eq 'MSWin32';
 
-   # TODO: modularize these.
    if ( !$o->get('help') ) {
       if ( $o->get('default-set') && !$o->get('sets') ) {
          $o->save_error("--default-set has no effect without --sets");
@@ -2753,11 +2749,11 @@ sub main {
       }
    }
 
-   if ( $o->get('csv') ) { # TODO: --csv implies --tab
+   if ( $o->get('csv') ) {
       $o->set('tab', 1);
    }
 
-   if ( $o->get('tab') ) { # TODO: --tab implies --umask 0
+   if ( $o->get('tab') ) {
       $o->set('umask', 0) unless $o->got('umask');
    }
 
@@ -3158,7 +3154,7 @@ sub main {
       }
 
       # #####################################################################
-      # Design the format for printing out. TODO: modularize.
+      # Design the format for printing out.
       # #####################################################################
       my ( $maxdb, $maxtbl, $maxset );
       $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
@@ -3174,15 +3170,11 @@ sub main {
       my $done  = 0;  # Also for progress measurements
       if ( ($o->get('biggest-first') && !$o->get('set-table'))
            || $o->get('progress') ) {
-         TODO:
          foreach my $todo ( @work_to_do ) {
-            # TODO: inefficient, nested loops, ugly.  Fix by fixing MySQLDump
-            # and MySQLFind, which are not encapsulated right.
             foreach my $stat ( $du->get_table_status($dbh, $q, $todo->{D}) ) {
                if ( $stat->{name} eq $todo->{N} ) {
                   $todo->{Z}  = $stat->{data_length};
                   $bytes     += $stat->{data_length};
-                  next TODO;
                }
             }
          }
@@ -3374,7 +3366,6 @@ sub main {
 # Subroutines
 # ############################################################################
 
-# TODO: modularize.
 sub mysql_error_msg {
    my ( $text ) = @_;
    $text =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
@@ -3503,7 +3494,6 @@ sub info {
    }
 }
 
-# TODO: modularize
 sub unique {
    my %seen;
    grep { !$seen{$_}++ } @_;
@@ -3664,9 +3654,7 @@ sub filename {
 }
 
 # This tries to be a 99% solution by quoting Windows arguments with double
-# quotes, and everything else with single quotes. TODO: this does not handle
-# embedded single quotes on Unix or double quotes on Windows.
-# Unix: hell'o is 'hell'\''o'
+# quotes, and everything else with single quotes. 
 sub make_shell_command {
    my @cmd = @_;
    my $char = $OSNAME =~ m/MSWin/ ? q{"} : q{'};
