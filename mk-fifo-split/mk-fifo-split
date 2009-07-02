@@ -888,15 +888,6 @@ sub main {
    }
    $o->usage_or_errors();
 
-   # TODO: binmode
-   # TODO: add limit arguments so you can read a splice out of the middle.
-   # TODO: print out $. on exit (including exit by CTRL-C).
-   # TODO make progress messages the default
-   # TODO: use tell to figure out percentage, and print %complete and ETA.  See
-   # http://www.perlmonks.org/?node_id=698607 for inspiration.  This would probably
-   # only work when a single file is named in @ARGV (would not work when <> is
-   # reading STDIN, for example).
-
    my $file = $o->get('fifo');
 
    if ( $o->get('force') && -e $file ) {
