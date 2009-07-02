@@ -1442,9 +1442,6 @@ sub _d {
 # ###########################################################################
 package mk_parallel_restore;
 
-# TODO: wrap float columns in CONVERT so they'll restore correctly.
-# TODO: wrap character columns in CONVERT so can specify a charset explicitly.
-
 use English qw(-no_match_vars);
 use File::Basename qw(dirname);
 use File::Find;
@@ -1557,7 +1554,7 @@ sub main {
       $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
 
-   # TODO: remove this again when issue with loading .trg is fixed
+   # TODO: issue 504
    my @conn_params;
    @conn_params = (
       [qw(--defaults-file F)],
@@ -1704,7 +1701,6 @@ sub main {
    };
 
    # Save the table sizes to make testing more reliable.
-   # TODO: why does this make *testing* more reliable?
    foreach my $tbl ( @tables_to_do ) {
       $tbl->{Z} = $size_for_table{ $tbl->{D} }->{ $tbl->{N} };
    }
@@ -1885,7 +1881,7 @@ sub do_table {
    my $file_size  = $args{file_size};
 
    my $exit_status  = 0;
-   my $trigger_file = undef; # TODO: rm this hack
+   my $trigger_file = undef; # TODO: issue 504
 
    # Sort files.  If it's a --tab, this will result in the following load
    # order:
@@ -1897,7 +1893,7 @@ sub do_table {
    @files = sort {
       my $a_type = filetype($a);
       my $b_type = filetype($b);
-      # TODO: rm this hack
+      # TODO: issue 504
       if ( $a_type eq 'trg' || $b_type eq 'trg' ) {
          $trigger_file = $a_type eq 'trg' ? $a : $b;
       }
@@ -1918,7 +1914,7 @@ sub do_table {
       );
    }
 
-   # TODO: rm this hack 
+   # TODO: issue 504
    my $set_bin_log_fh;
    my $set_bin_log_file;
    if ( $trigger_file ) {
@@ -1952,7 +1948,7 @@ sub do_table {
       }
       elsif ( filetype($file) eq 'trg' ) {
          my $decompress = $o->get('decompress');
-         # TODO: rm this hack
+         # TODO: issue 504
          my @args = (
             ($file =~ m/\.gz/ ? "$decompress" : 'cat'),
             qq{'$set_bin_log_file'},
@@ -2180,7 +2176,6 @@ sub skip_finished_chunks {
    # If not, then we resume from chunk 0 which will contain
    # the create table def.
    eval {
-      # TODO: I think this can cause a slave error if the table is missing.
       $dbh->do("REPLACE INTO $db_tbl SELECT * FROM $db_tbl LIMIT 0");
    };
    if ( !$EVAL_ERROR ) {
@@ -2299,13 +2294,10 @@ sub get_cxn {
    # DSNParser will interpret D has the default database for the connection,
    # but in this script D means the database into which all files are loaded.
    # Therefore, we must get the opt values and manually remove D.
-   # TODO: must we?  If all tables are to be restored to foo, and foo is
-   # the default db for the connection, isn't the result the same?
    my %params = $o->opt_values();
    delete $params{D};
 
    my $dbh = $dp->get_dbh($dp->get_cxn_params(\%params));
-   # TODO: isn't this handled automatically by DSNParser?
    if ( my $charset = $o->get('charset') ) {
       $dbh->do("/*!40101 SET character_set_database=$charset */");
    }
