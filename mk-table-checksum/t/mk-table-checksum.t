@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 99;
+use Test::More tests => 100;
 use List::Util qw(sum);
 
 require '../../common/DSNParser.pm';
@@ -521,6 +521,30 @@ $slave_dbh->do('DELETE FROM test.issue_94 WHERE a > 5');
 $res = $master_dbh->selectall_arrayref("SELECT * FROM test.checksum");
 is($res->[0]->[1], 'issue_94', '--wait does not prevent update to --replicate tbl (issue 51)');
 
+# #############################################################################
+# Issue 467: overridable arguments with --arg-table
+# #############################################################################
+
+# test.argtable should still exist from a previous test.  We'll re-use it.
+$master_dbh->do('ALTER TABLE test.argtable ADD COLUMN (modulo INT, offset INT, `chunk-size` INT)');
+$master_dbh->do("TRUNCATE TABLE test.argtable");
+$master_dbh->do("INSERT INTO test.argtable (db, tbl, since, modulo, offset, `chunk-size`) VALUES ('test', 'issue_122', NULL, 2, 1, 2)");
+
+$master_dbh->do("INSERT INTO test.issue_122 VALUES (3,'c'),(4,'d'),(5,'e'),(6,'f'),(7,'g'),(8,'h'),(9,'i'),(10,'j')");
+
+`perl ../mk-table-checksum h=127.1,P=12345 -d test -t issue_122 --arg-table test.argtable > /tmp/mk-table-sync-issue-467-output.txt`;
+$output = `diff samples/issue_467.txt /tmp/mk-table-sync-issue-467-output.txt`;
+is(
+   $output,
+   '',
+   'chunk-size, modulo and offset in argtable (issue 467)'
+);
+
+diag(`rm -rf /tmp/mk-table-sync-issue-467-output.txt`);
+
+# #############################################################################
+# Done.
+# #############################################################################
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
 exit;

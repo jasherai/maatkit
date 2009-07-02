@@ -4094,12 +4094,12 @@ sub checksum_chunks {
            && $final_o->get('modulo')
            && ($chunk_num % $final_o->get('modulo') != $final_o->get('offset')))
       {
-         MKDEBUG && _d('Skipping chunk because of --modulo');
+         MKDEBUG && _d('Skipping chunk', $chunk_num, 'because of --modulo');
          next CHUNK;
       }
 
       my $chunk_start_time = gettimeofday();
-      MKDEBUG && _d('Starting chunk at', $chunk_start_time);
+      MKDEBUG && _d('Starting chunk', $chunk_num, 'at', $chunk_start_time);
 
       if ( $final_o->get('replicate') ) {
          # We're in --replicate mode.
@@ -5375,13 +5375,15 @@ following columns:
 In addition to the columns shown, it may contain any of the other columns listed
 here (Note: this list is used by the code, MAGIC_overridable_args):
 
-  algorithm chunk-size columns count crc function lock no-use-index
-  optimize-xor probability separator save-since single-chunk since
+  algorithm chunk-size columns count crc function lock modulo no-use-index
+  offset optimize-xor probability separator save-since single-chunk since
   since-column sleep sleep-coef trim wait where
 
 Each of these columns corresponds to the long form of a command-line option.
-Each column should be NULL-able.  The data type does not matter, but it's
-suggested you use a sensible data type to prevent garbage data.
+Each column should be NULL-able.  Column names with hyphens should be enclosed
+in backticks (e.g. `chunk-size`) when the table is created.  The data type does
+not matter, but it's suggested you use a sensible data type to prevent garbage
+data.
 
 When C<mk-table-checksum> checksums a table, it will look for a matching entry
 in this table.  Any column that has a defined value will override the

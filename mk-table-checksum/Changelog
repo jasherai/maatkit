@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added modulo and offset to list of overridable arguments (issue 467).
+
 2009-06-02: version 1.2.6
 
    * Options not allowed with --schema are no longer silently ignored.
