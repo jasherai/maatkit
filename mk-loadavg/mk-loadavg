@@ -1526,7 +1526,6 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 $OUTPUT_AUTOFLUSH = 1;
 
 # Types of info that can be gathered.
-# TODO: netstat, top, cat /proc/slabinfo, ifconfig
 my %info_subroutines = (
    status => sub {
       my ( $dbh ) = @_;
