@@ -1882,27 +1882,14 @@ sub main {
    my %find_spec = (
       only_oldest  => $o->get('only-oldest'),
       busy_time    => $o->get('busy-time'),
-      # TODO idle_time    => $o->get('idle-time'),
-      # =item --idle-time
-      # type: time
-      # Kill connections that have been idle for longer than this time.  The
-      # connections must be in Command=Sleep status.  This is not yet
-      # implemented.
       ignore => {
          Id       => $o->get('ignore-self') ? $dbh->{mysql_thread_id} : undef,
          User     => $o->get('ignore-user'),
-         # TODO Host     => $o->get('ignore-hosts'),
-         # TODO db       => $o->get('ignore-databases'),
          Command  => $o->get('ignore-command'),
          State    => $o->get('ignore-state'),
-         # TODO Info     => $o->get('ignore-text'),
       },
       match => {
-         # TODO User     => $o->get('match-users'),
-         # TODO Host     => $o->get('match-hosts'),
-         # TODO db       => $o->get('match-databases'),
          Command  => $o->get('match-command'),
-         # TODO State    => $o->get('match-states'),
          Info     => $o->get('match-info'),
       },
    );
