@@ -7077,7 +7077,8 @@ Write the tcpdump data to this file on error.  If mk-query-digest doesn't
 parse the stream correctly for some reason, the session's packets since the
 last query event will be written out to create a usable test case.  If this
 happens, mk-query-digest will not raise an error; it will just discard the
-session's saved state and permit the tool to continue working.
+session's saved state and permit the tool to continue working.  See L<"tcpdump">
+for more information about parsing tcpdump output.
 
 =item --timeline
 
@@ -7135,7 +7136,9 @@ sure the output looks like this:
       0x0010:  ....
 
 Remember tcpdump has a handy -c option to stop after it captures some number of
-packets!  That's very useful for testing your tcpdump command.
+packets!  That's very useful for testing your tcpdump command.  Note that
+tcpdump can't capture traffic on a Unix socket.  Read
+L<http://bugs.mysql.com/bug.php?id=31577> if you're confused about this.
 
 If you're analyzing traffic to a non-standard port, see L<"--watch-server">.
 
