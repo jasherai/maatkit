@@ -68,7 +68,6 @@ sub parse_packet {
       };
    };
    my $session = $self->{sessions}->{$client};
-   $packet->{session_state} = $session->{state};
 
    # Return early if there's no TCP data.  These are usually ACK packets, but
    # they could also be FINs in which case, we should close and delete the
@@ -111,12 +110,6 @@ sub _packet_from_server {
    MKDEBUG && _d('Packet is from server; client state:', $session->{state});
    push @{$self->{raw_packets}}, $packet->{raw_packet};
 
-   if ( ($session->{server_seq} || '') eq $packet->{seq} ) {
-      MKDEBUG && _d('TCP retransmission');
-      return;
-   }
-   $session->{server_seq} = $packet->{seq};
-   
    my $data = $packet->{data};
 
    # If there's no session state, then we're catching a server response
@@ -157,12 +150,6 @@ sub _packet_from_client {
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
    push @{$self->{raw_packets}}, $packet->{raw_packet};
-
-   if ( ($session->{client_seq} || '') eq $packet->{seq} ) {
-      MKDEBUG && _d('TCP retransmission');
-      return;
-   }
-   $session->{client_seq} = $packet->{seq};
 
    # TODO: handle <cas unique> and [noreply]
    my ($arg, $flags, $exptime, $bytes)
