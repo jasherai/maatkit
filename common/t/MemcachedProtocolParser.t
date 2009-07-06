@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 6;
 use English qw(-no_match_vars);
 
 require "../MemcachedProtocolParser.pm";
@@ -103,6 +103,38 @@ run_test({
          pos_in_log => '0',
          res        => 'VALUE',
          ts         => '2009-07-04 22:12:06.174390'
+      },
+   ],
+});
+
+# A session with a simple incr() and decr().
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump003.txt',
+   result => [
+      {  Query_time => '0.000073',
+         cmd        => 'incr',
+         key        => 'key',
+         val        => '8',
+         bytes      => undef,
+         exptime    => undef,
+         flags      => undef,
+         host       => '127.0.0.1',
+         pos_in_log => '0',
+         res        => '',
+         ts         => '2009-07-04 22:12:06.175734',
+      },
+      {  Query_time => '0.000515',
+         cmd        => 'decr',
+         bytes      => undef,
+         exptime    => undef,
+         flags      => undef,
+         host       => '127.0.0.1',
+         key        => 'key',
+         pos_in_log => 522,
+         res        => '',
+         ts         => '2009-07-04 22:12:06.175734',
+         val => '7',
       },
    ],
 });

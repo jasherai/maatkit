@@ -127,14 +127,17 @@ sub _packet_from_server {
       my ($res, $key, $flags, $bytes, $val);
       my @vals = $line1 =~ m/(\S+)/g;
       $res = shift @vals;
-      if ( $res eq 'VALUE' ) {
-         ($key, $flags, $bytes) = @vals;
+      if ( $session->{cmd} eq 'incr' || $session->{cmd} eq 'decr' ) {
+         $val = $res;
+         $res = '';
       }
-
-      # Get the value from the $val.  TODO: there might be multiple responses,
-      # and we might not get the whole thing in one packet.
-      if ( $rest && $bytes && length($rest) > $bytes ) {
-         $val = substr($rest, 0, $bytes);
+      elsif ( $res eq 'VALUE' ) {
+         ($key, $flags, $bytes) = @vals;
+         # Get the value from the $rest.  TODO: there might be multiple responses,
+         # and we might not get the whole thing in one packet.
+         if ( $rest && $bytes && length($rest) > $bytes ) {
+            $val = substr($rest, 0, $bytes);
+         }
       }
 
       $session->{state} = 'awaiting command';
@@ -176,6 +179,9 @@ sub _packet_from_client {
       ($key, $flags, $exptime, $bytes) = @vals;
    }
    elsif ( $cmd eq 'get' ) {
+      ($key) = @vals;
+   }
+   elsif ( $cmd eq 'incr' || $cmd eq 'decr' ) {
       ($key) = @vals;
    }
 
