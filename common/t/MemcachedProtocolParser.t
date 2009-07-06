@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 6;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 
 require "../MemcachedProtocolParser.pm";
@@ -135,6 +135,39 @@ run_test({
          res        => '',
          ts         => '2009-07-04 22:12:06.175734',
          val => '7',
+      },
+   ],
+});
+
+# A session with a simple incr() and decr(), but the value doesn't exist.
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump004.txt',
+   result => [
+      {  Query_time => '0.001321',
+         bytes      => undef,
+         cmd        => 'incr',
+         exptime    => undef,
+         flags      => undef,
+         host       => '127.0.0.1',
+         key        => 'key',
+         pos_in_log => 764,
+         res        => 'NOT_FOUND',
+         ts         => '2009-07-06 10:37:21.667279',
+         val        => undef,
+      },
+      {
+         Query_time => '0.001627',
+         bytes      => undef,
+         cmd        => 'decr',
+         exptime    => undef,
+         flags      => undef,
+         host       => '127.0.0.1',
+         key        => 'key',
+         pos_in_log => 1788,
+         res        => 'NOT_FOUND',
+         ts         => '2009-07-06 10:37:21.667279',
+         val        => undef,
       },
    ],
 });

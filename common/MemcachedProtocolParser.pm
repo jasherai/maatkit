@@ -128,8 +128,10 @@ sub _packet_from_server {
       my @vals = $line1 =~ m/(\S+)/g;
       $res = shift @vals;
       if ( $session->{cmd} eq 'incr' || $session->{cmd} eq 'decr' ) {
-         $val = $res;
-         $res = '';
+         if ( $res !~ m/\D/ ) { # It's an integer, not an error
+            $val = $res;
+            $res = '';
+         }
       }
       elsif ( $res eq 'VALUE' ) {
          ($key, $flags, $bytes) = @vals;
