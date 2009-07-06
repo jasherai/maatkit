@@ -3,11 +3,12 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 66;
+use Test::More tests => 68;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
+$Data::Dumper::Sortkeys  = 1;
 
 require '../QueryRewriter.pm';
 require '../EventAggregator.pm';
@@ -1456,6 +1457,32 @@ ok(
 );
 
 # #############################################################################
+# Issue 514: mk-query-digest does not create handler sub for new auto-detected
+# attributes
+# #############################################################################
+$p  = new SlowLogParser();
+$ea = new EventAggregator(
+   groupby => 'arg',
+   worst   => 'Query_time',
+);
+parse_file('samples/slow030.txt');
+ok(
+   exists $ea->{unrolled_for}->{InnoDB_rec_lock_wait},
+   'Handler sub created for new attrib after 50 events'
+);
+
+# #############################################################################
 # Done.
 # #############################################################################
+my $output = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $p->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 exit;

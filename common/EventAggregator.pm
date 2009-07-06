@@ -186,47 +186,57 @@ sub aggregate {
              && !$self->{detect_attribs}
            ) )
    {
-      # All attributes have handlers, so let's combine them into one faster sub.
-      # Start by getting direct handles to the location of each data store and
-      # thing that would otherwise be looked up via hash keys.
-      my @attrs   = grep { $self->{handlers}->{$_} } @attrs;
-      my $globs   = $self->{result_globals}; # Global stats for each
-      my $samples = $self->{result_samples};
-
-      # Now the tricky part -- must make sure only the desired variables from
-      # the outer scope are re-used, and any variables that should have their
-      # own scope are declared within the subroutine.
-      my @lines = (
-         'my ( $self, $event, $group_by ) = @_;',
-         'my ($val, $class, $global, $idx);',
-         (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
-         # Create and get each attribute's storage
-         'my $temp = $self->{result_classes}->{ $group_by }
-            ||= { map { $_ => { } } @attrs };',
-         '$samples->{$group_by} ||= $event;', # Always start with the first.
-      );
-      foreach my $i ( 0 .. $#attrs ) {
-         # Access through array indexes, it's faster than hash lookups
-         push @lines, (
-            '$class  = $temp->{"'  . $attrs[$i] . '"};',
-            '$global = $globs->{"' . $attrs[$i] . '"};',
-            $self->{unrolled_for}->{$attrs[$i]},
-         );
-      }
-      if ( ref $group_by ) {
-         push @lines, '}'; # Close the loop opened above
-      }
-      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
-      unshift @lines, 'sub {';
-      push @lines, '}';
-
-      # Make the subroutine
-      my $code = join("\n", @lines);
-      MKDEBUG && _d('Unrolled subroutine:', @lines);
-      my $sub = eval $code;
-      die if $EVAL_ERROR;
-      $self->{unrolled_loops} = $sub;
+      $self->_make_unrolled_loops($event);
    }
+
+   return;
+}
+
+sub _make_unrolled_loops {
+   my ( $self, $event ) = @_;
+
+   my $group_by = $event->{$self->{groupby}};
+
+   # All attributes have handlers, so let's combine them into one faster sub.
+   # Start by getting direct handles to the location of each data store and
+   # thing that would otherwise be looked up via hash keys.
+   my @attrs   = grep { $self->{handlers}->{$_} } keys %{$self->{attributes}};
+   my $globs   = $self->{result_globals}; # Global stats for each
+   my $samples = $self->{result_samples};
+
+   # Now the tricky part -- must make sure only the desired variables from
+   # the outer scope are re-used, and any variables that should have their
+   # own scope are declared within the subroutine.
+   my @lines = (
+      'my ( $self, $event, $group_by ) = @_;',
+      'my ($val, $class, $global, $idx);',
+      (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
+      # Create and get each attribute's storage
+      'my $temp = $self->{result_classes}->{ $group_by }
+         ||= { map { $_ => { } } @attrs };',
+      '$samples->{$group_by} ||= $event;', # Always start with the first.
+   );
+   foreach my $i ( 0 .. $#attrs ) {
+      # Access through array indexes, it's faster than hash lookups
+      push @lines, (
+         '$class  = $temp->{"'  . $attrs[$i] . '"};',
+         '$global = $globs->{"' . $attrs[$i] . '"};',
+         $self->{unrolled_for}->{$attrs[$i]},
+      );
+   }
+   if ( ref $group_by ) {
+      push @lines, '}'; # Close the loop opened above
+   }
+   @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+   unshift @lines, 'sub {';
+   push @lines, '}';
+
+   # Make the subroutine.
+   my $code = join("\n", @lines);
+   MKDEBUG && _d('Unrolled subroutine:', @lines);
+   my $sub = eval $code;
+   die if $EVAL_ERROR;
+   $self->{unrolled_loops} = $sub;
 
    return;
 }
@@ -686,9 +696,26 @@ sub add_new_attributes {
    my ( $self, $event ) = @_;
    return unless $event;
    map {
-      $self->{attributes}->{$_}  = [$_];
-      $self->{alt_attribs}->{$_} = make_alt_attrib($_);
-      push @{$self->{all_attribs}}, $_;
+      my $attrib = $_;
+      $self->{attributes}->{$attrib}  = [$attrib];
+      $self->{alt_attribs}->{$attrib} = make_alt_attrib($attrib);
+      push @{$self->{all_attribs}}, $attrib;
+
+      # If we're past 50 events, unrolled_loops has already been created
+      # without these new attribs.  We must create handlers and re-unroll
+      # unrolled_loops with these new attributes (issue 514).
+      if ( exists $self->{unrolled_loops} ) {
+         my $handler = $self->make_handler(
+               $attrib,
+               $event,
+               wor => $self->{worst} eq $attrib,
+               alt => $self->{attributes}->{$attrib},
+         );
+         $self->{handlers}->{$attrib} = $handler;
+
+         $self->_make_unrolled_loops($event)
+      }
+
       MKDEBUG && _d('Added new attribute:', $_);
    }
    grep {
