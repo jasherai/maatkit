@@ -1,7 +1,3 @@
 Changelog for mk-table-scan:
 
-   * Standardized options.
-   * Columns with backticks in comments caused a crash (issue 330).
-   * Removed string interpolation from debugging calls (issue 308).
-   * Connection options were not read from the [client] section (issue 249).
    * Initial release.
