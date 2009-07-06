@@ -121,15 +121,31 @@ sub _packet_from_server {
    else {
       # Assume that the server is returning only one value.  TODO: make it
       # handle multi-gets.
-      my ($res) = $data =~ m/^([A-Z_]+)/;
+      my $s = "[ \t]";
+      my ($res, $flags, $bytes)
+         = $data =~ m{
+            \A
+            (
+               VALUE\s\w+           # Either a "VALUE my_key", or a 
+               |[A-Z_]+             # STORED, or something like that
+            )
+            (?:$s+(\d+)$s+(\d+))?   # An optional flags and bytes
+            $s*\r\n
+         }xo;
       if ( $res ) {
+         # Was it a response to a get()?  If so, parse out the key.  TODO: for
+         # multi-gets, we have to correlate the key to the requested values.
+         my ($val, $key) = $res =~ m/^(VALUE) (.*)$/;
+         if ( $val ) {
+            $res = $val;
+         }
          $session->{state} = 'awaiting command';
          return {
             ts         => $session->{ts},
             host       => $session->{host},
-            flags      => $session->{flags},
+            flags      => defined $session->{flags} ? $session->{flags} : $flags,
             exptime    => $session->{exptime},
-            bytes      => $session->{bytes},
+            bytes      => defined $session->{bytes} ? $session->{bytes} : $bytes,
             arg        => $session->{arg},
             res        => $res,
             Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
@@ -152,8 +168,9 @@ sub _packet_from_client {
    push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    # TODO: handle <cas unique> and [noreply]
+   my $s = "[ \t]";
    my ($arg, $flags, $exptime, $bytes)
-      = $packet->{data} =~ m/^(\w+\s+\w+)\s+(\d+)\s+(\d+)\s+(\d+)\r\n/;
+      = $packet->{data} =~ m/^(\w+$s+\w+)(?:$s+(\d+)$s+(\d+)$s+(\d+))?$s*\r\n/o;
    @{$session}{qw(arg flags exptime bytes)}
       = ($arg, $flags, $exptime, $bytes);
 

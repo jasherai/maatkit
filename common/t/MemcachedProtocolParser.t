@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 29;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 
 require "../MemcachedProtocolParser.pm";
@@ -67,7 +67,7 @@ sub run_test {
    return;
 }
 
-# Check that I can parse a really simple session.
+# A session with a simple set().
 $protocol = new MemcachedProtocolParser();
 run_test({
    file   => 'samples/memc_tcpdump001.txt',
@@ -81,6 +81,24 @@ run_test({
          res           => 'STORED',
          Query_time    => sprintf('%.6f', .229299 - .229179),
          pos_in_log    => 0,
+      },
+   ],
+});
+
+# A session with a simple get().
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump002.txt',
+   result => [
+      {  Query_time => '0.000067',
+         arg        => 'get my_key',
+         bytes      => 10,
+         exptime    => undef,
+         flags      => 0,
+         host       => '127.0.0.1',
+         pos_in_log => '0',
+         res        => 'VALUE',
+         ts         => '2009-07-04 22:12:06.174390'
       },
    ],
 });
