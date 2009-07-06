@@ -74,7 +74,9 @@ run_test({
    result => [
       {  ts            => '2009-07-04 21:33:39.229179',
          host          => '127.0.0.1',
-         arg           => 'set my_key',
+         cmd           => 'set',
+         key           => 'my_key',
+         val           => 'Some value',
          flags         => '0',
          exptime       => '0',
          bytes         => '10',
@@ -91,7 +93,9 @@ run_test({
    file   => 'samples/memc_tcpdump002.txt',
    result => [
       {  Query_time => '0.000067',
-         arg        => 'get my_key',
+         cmd        => 'get',
+         key        => 'my_key',
+         val        => 'Some value',
          bytes      => 10,
          exptime    => undef,
          flags      => 0,

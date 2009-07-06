@@ -121,44 +121,43 @@ sub _packet_from_server {
    else {
       # Assume that the server is returning only one value.  TODO: make it
       # handle multi-gets.
-      my $s = "[ \t]";
-      my ($res, $flags, $bytes)
-         = $data =~ m{
-            \A
-            (
-               VALUE\s\w+           # Either a "VALUE my_key", or a 
-               |[A-Z_]+             # STORED, or something like that
-            )
-            (?:$s+(\d+)$s+(\d+))?   # An optional flags and bytes
-            $s*\r\n
-         }xo;
-      if ( $res ) {
-         # Was it a response to a get()?  If so, parse out the key.  TODO: for
-         # multi-gets, we have to correlate the key to the requested values.
-         my ($val, $key) = $res =~ m/^(VALUE) (.*)$/;
-         if ( $val ) {
-            $res = $val;
-         }
-         $session->{state} = 'awaiting command';
-         return {
-            ts         => $session->{ts},
-            host       => $session->{host},
-            flags      => defined $session->{flags} ? $session->{flags} : $flags,
-            exptime    => $session->{exptime},
-            bytes      => defined $session->{bytes} ? $session->{bytes} : $bytes,
-            arg        => $session->{arg},
-            res        => $res,
-            Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
-            pos_in_log => $session->{pos_in_log},
-         };
+      my ($line1, $rest) = $packet->{data} =~ m/\A(.*?)\r\n(.*)?/s;
+
+      # Split up the first line into its parts.
+      my ($res, $key, $flags, $bytes, $val);
+      my @vals = $line1 =~ m/(\S+)/g;
+      $res = shift @vals;
+      if ( $res eq 'VALUE' ) {
+         ($key, $flags, $bytes) = @vals;
       }
+
+      # Get the value from the $val.  TODO: there might be multiple responses,
+      # and we might not get the whole thing in one packet.
+      if ( $rest && $bytes && length($rest) > $bytes ) {
+         $val = substr($rest, 0, $bytes);
+      }
+
+      $session->{state} = 'awaiting command';
+      return {
+         ts         => $session->{ts},
+         host       => $session->{host},
+         flags      => defined $session->{flags} ? $session->{flags} : $flags,
+         exptime    => $session->{exptime},
+         bytes      => defined $session->{bytes} ? $session->{bytes} : $bytes,
+         cmd        => $session->{cmd},
+         key        => $session->{key},
+         val        => defined $session->{val} ? $session->{val} : $val,
+         res        => $res,
+         Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
+         pos_in_log => $session->{pos_in_log},
+      };
    }
 
    return;
 }
 
 # Handles a packet from the client given the state of the session.  Doesn't
-# create events.
+# return events, but creates the event that'll be returned later.
 sub _packet_from_client {
    my ( $self, $packet, $session, $misc ) = @_;
    die "I need a packet"  unless $packet;
@@ -166,16 +165,30 @@ sub _packet_from_client {
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
    push @{$self->{raw_packets}}, $packet->{raw_packet};
+   my ($line1, $val) = $packet->{data} =~ m/\A(.*?)\r\n(.+)?/s;
 
+   # Split up the first line into its parts.
    # TODO: handle <cas unique> and [noreply]
-   my $s = "[ \t]";
-   my ($arg, $flags, $exptime, $bytes)
-      = $packet->{data} =~ m/^(\w+$s+\w+)(?:$s+(\d+)$s+(\d+)$s+(\d+))?$s*\r\n/o;
-   @{$session}{qw(arg flags exptime bytes)}
-      = ($arg, $flags, $exptime, $bytes);
+   my ($cmd, $key, $flags, $exptime, $bytes);
+   my @vals = $line1 =~ m/(\S+)/g;
+   $cmd = lc shift @vals;
+   if ( $cmd eq 'set' ) {
+      ($key, $flags, $exptime, $bytes) = @vals;
+   }
+   elsif ( $cmd eq 'get' ) {
+      ($key) = @vals;
+   }
 
+   # Handle the rest of the packet.  It might not be the whole packet.  We need
+   # to look at the number of bytes in a SET and see if we got it all.  TODO
+   if ( $val ) {
+      $val =~ s/\r\n\Z//;
+   }
+
+   @{$session}{qw(cmd key flags exptime bytes val)}
+      = ($cmd, $key, $flags, $exptime, $bytes, $val);
    $session->{host}  = $packet->{src_host};
-   $session->{state} = 'awaiting reply';
+   $session->{state} = 'awaiting reply'; # TODO: might not be done
    $session->{pos_in_log} = $packet->{pos_in_log};
 
    return;
