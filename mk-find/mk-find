@@ -1270,7 +1270,15 @@ sub split_unquote {
 # End Quoter package
 # ###########################################################################
 
-package main;
+# ###########################################################################
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
+# ###########################################################################
+package mk_find;
 
 use English qw(-no_match_vars);
 
@@ -1279,77 +1287,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 $OUTPUT_AUTOFLUSH = 1;
 
 # ############################################################################
-# Get configuration information.
-# ############################################################################
-my $q  = new Quoter();
-my $dp = new DSNParser();
-my $o  = new OptionParser(
-   strict      => 0,
-   prompt      => '[option]... [database...]',
-   description => 'searches for MySQL tables and executes actions, like '
-                . 'GNU find.  The default action is to print the database '
-                . 'and table name.',
-);
-$o->get_specs();
-$o->get_opts();
-
-# Make sure OptionParser understands that these options are used.
-# cmin ctime empty kmin ktime mmin mtime exec printf 
-
-if ( $o->get('connection-id') && $o->get('connection-id') !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
-   $o->save_error("--connection-id regex doesn't capture digits with (\\d+)");
-}
-
-if ( $o->get('server-id') && $o->get('server-id') !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
-   $o->save_error("--server-id regex doesn't capture digits with (\\d+)");
-}
-
-$o->usage_or_errors();
-
-my %arg_for = (
-   a => 'Auto_increment',
-   A => 'Avg_row_length',
-   c => 'Checksum',
-   C => 'Create_time',
-   D => 'Database',
-   d => 'Data_length',
-   E => 'Engine',
-   F => 'Data_free',
-   f => 'Innodb_free',
-   I => 'Index_length',
-   K => 'Check_time',
-   L => 'Collation',
-   M => 'Max_data_length',
-   N => 'Name',
-   O => 'Comment',
-   P => 'Create_options',
-   R => 'Row_format',
-   S => 'Rows',
-   T => 'Table_length',
-   U => 'Update_time',
-   V => 'Version',
-);
-
-# Interpolate strings for printf and exec.  At the same time discover whether
-# I must use SHOW TABLE STATUS (slower than SHOW TABLES) to fetch data.
-my %fmt_for;  # Interpolated strings
-my $showstat
-   = grep { $o->get($_) } qw( 
-      autoinc avgrowlen checksum cmin collation comment createopts ctime
-      datasize datafree empty engine indexsize kmin ktime mmin mtime rows
-      rowformat tablesize tblversion);
-foreach my $thing (qw(exec printf)) {
-   next unless $o->get($thing);
-   my ($str, $arg_names) = interpolate($o->get($thing));
-   $fmt_for{$thing} = { str => $str, arg_names => $arg_names };
-   if ( grep { $_ !~ m/^(Database|Name)$/ } @$arg_names ) {
-      $showstat = 1;
-   }
-}
-
-# ############################################################################
 # Lookup tables and global variables
 # ############################################################################
+my $o;            # OptionParser obj
+my %fmt_for;      # Interpolated strings
 my %time_for;     # Holds time constants for mmin, mtime etc
 my %connections;  # Holds a list of thread IDs connected
 my $server_id;    # Holds the server's @@SERVER_ID
@@ -1488,135 +1429,215 @@ my %action_for = (
    },
 );
 
-# ############################################################################
-# Get ready to do the main work.
-# ############################################################################
+my %arg_for = (
+   a => 'Auto_increment',
+   A => 'Avg_row_length',
+   c => 'Checksum',
+   C => 'Create_time',
+   D => 'Database',
+   d => 'Data_length',
+   E => 'Engine',
+   F => 'Data_free',
+   f => 'Innodb_free',
+   I => 'Index_length',
+   K => 'Check_time',
+   L => 'Collation',
+   M => 'Max_data_length',
+   N => 'Name',
+   O => 'Comment',
+   P => 'Create_options',
+   R => 'Row_format',
+   S => 'Rows',
+   T => 'Table_length',
+   U => 'Update_time',
+   V => 'Version',
+);
 
-# Connect to the database
-if ( !$o->get('password') && $o->get('ask-pass') ) {
-   $o->set('password', OptionParser::prompt_noecho("Enter password: "));
-}
+sub main {
+   @ARGV = @_;  # set global ARGV for this package
 
-$dp->prop('setvars', $o->get('set-vars'));
-$dbh = $dp->get_dbh(
-   $dp->get_cxn_params($dp->parse_options($o)), { AutoCommit => 1 } );
-if ( $o->get('exec-dsn') ) {
-   $exec_dbh = $dp->get_dbh(
-      $dp->get_cxn_params($dp->parse($o->get('exec-dsn'), {$o->opt_values()})),
-      { AutoCommit => 1 },
+   # ########################################################################
+   # Get configuration information.
+   # ########################################################################
+   my $q  = new Quoter();
+   my $dp = new DSNParser();
+      $o  = new OptionParser(
+      strict      => 0,
+      prompt      => '[option]... [database...]',
+      description => 'searches for MySQL tables and executes actions, like '
+                   . 'GNU find.  The default action is to print the database '
+                   . 'and table name.',
    );
-}
-else {
-   $exec_dbh = $dbh;
-}
+   $o->get_specs();
+   $o->get_opts();
 
-# If no other action was given, the default action is to print.
-if ( !grep { $o->get($_) } qw( exec exec-plus print printf ) ) {
-   $o->set('print', 1);
-}
+   # Make sure OptionParser understands that these options are used.
+   # cmin ctime empty kmin ktime mmin mtime exec printf 
 
-# Figure out the time referred to by date/time options
-my $basetime;
-foreach my $option ( grep { defined $o->get($_) } qw(cmin ctime kmin ktime mmin mtime) ) {
-   # Initialize a consistent point in time
-   $basetime ||=
-      $dbh->selectcol_arrayref(
-         "SELECT ".($o->get('day-start') ? 'CURRENT_DATE' : 'CURRENT_TIMESTAMP')
-      )->[0];
-
-   my ($val) = $o->get($option) =~ m/(\d+)/;
-   my $inter = $option =~ m/min/ ? 'MINUTE' : 'DAY';
-   my $query = "SELECT DATE_SUB('$basetime', INTERVAL $val $inter)";
-   $time_for{$option} = $dbh->selectcol_arrayref($query)->[0];
-}
-
-# Fetch and save a list of processes currently running.
-if ( $o->get('connection-id') ) {
-   # Ensure I have the PROCESS privilege.
-   my $proc =
-      grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
-      @{$dbh->selectcol_arrayref('SHOW GRANTS')};
-   if ( !$proc ) {
-      die "--connection-id requires the PROCESS privilege for safety.\n";
+   # Ensure there is a capture group.
+   if ( $o->get('connection-id') && $o->get('connection-id') !~ m/\(\\d\+\)/ ) {
+      $o->save_error("--connection-id regex doesn't capture digits with (\\d+)");
    }
-}
 
-($server_id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
+   # Ensure there is a capture group.
+   if ( $o->get('server-id') && $o->get('server-id') !~ m/\(\\d\+\)/ ) {
+      $o->save_error("--server-id regex doesn't capture digits with (\\d+)");
+   }
 
-# ############################################################################
-# Go do it.
-# ############################################################################
-my @databases = @ARGV         ? @ARGV
-              : $o->get('dblike') ? @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE ?', {}, $o->get('dblike'))}
-              :                 @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+   $o->usage_or_errors();
 
-my @exec_plus;
-DATABASE:
-foreach my $database ( @databases ) {
-   next DATABASE if $database =~ m/^(?:information_schema|lost\+found)$/mi;
+   # Interpolate strings for printf and exec.  At the same time discover whether
+   # I must use SHOW TABLE STATUS (slower than SHOW TABLES) to fetch data.
+   my $showstat
+      = grep { $o->get($_) } qw( 
+         autoinc avgrowlen checksum cmin collation comment createopts ctime
+         datasize datafree empty engine indexsize kmin ktime mmin mtime rows
+         rowformat tablesize tblversion);
+   foreach my $thing (qw(exec printf)) {
+      next unless $o->get($thing);
+      my ($str, $arg_names) = interpolate($o->get($thing));
+      $fmt_for{$thing} = { str => $str, arg_names => $arg_names };
+      if ( grep { $_ !~ m/^(Database|Name)$/ } @$arg_names ) {
+         $showstat = 1;
+      }
+   }
 
-   my $sta = $showstat ? ' STATUS' : 'S';
-   my $sth = $o->get('tbllike')
-           ? $dbh->prepare("SHOW TABLE$sta FROM `$database` LIKE ?")
-           : $dbh->prepare("SHOW TABLE$sta FROM `$database`");
+   # ########################################################################
+   # Get ready to do the main work.
+   # ########################################################################
 
-   $sth->execute($o->get('tbllike') || ());
-   my @tables = @{$sth->fetchall_arrayref({})};
+   # Connect to the database.
+   if ( !$o->get('password') && $o->get('ask-pass') ) {
+      $o->set('password', OptionParser::prompt_noecho("Enter password: "));
+   }
 
-   # Must re-fetch every time; there are too many ways things can go wrong
-   # otherwise (for example, the counter wraps over the unsigned int boundary).
+   $dp->prop('setvars', $o->get('set-vars'));
+   $dbh = $dp->get_dbh(
+      $dp->get_cxn_params($dp->parse_options($o)), { AutoCommit => 1 } );
+   if ( $o->get('exec-dsn') ) {
+      $exec_dbh = $dp->get_dbh(
+         $dp->get_cxn_params($dp->parse($o->get('exec-dsn'), {$o->opt_values()})),
+         { AutoCommit => 1 },
+      );
+   }
+   else {
+      $exec_dbh = $dbh;
+   }
+
+   # If no other action was given, the default action is to print.
+   if ( !grep { $o->get($_) } qw( exec exec-plus print printf ) ) {
+      $o->set('print', 1);
+   }
+
+   # Figure out the time referred to by date/time options.
+   my $basetime;
+   foreach my $option (
+      grep { defined $o->get($_) } qw(cmin ctime kmin ktime mmin mtime) )
+   {
+      # Initialize a consistent point in time.
+      $basetime ||=
+         $dbh->selectcol_arrayref(
+            "SELECT " . ($o->get('day-start') ? 'CURRENT_DATE'
+                                               : 'CURRENT_TIMESTAMP')
+         )->[0];
+
+      my ($val) = $o->get($option) =~ m/(\d+)/;
+      my $inter = $option =~ m/min/ ? 'MINUTE' : 'DAY';
+      my $query = "SELECT DATE_SUB('$basetime', INTERVAL $val $inter)";
+      $time_for{$option} = $dbh->selectcol_arrayref($query)->[0];
+   }
+
+   # Fetch and save a list of processes currently running.
    if ( $o->get('connection-id') ) {
-      %connections = map { $_ => 1 }
-         @{$dbh->selectcol_arrayref('SHOW FULL PROCESSLIST')};
+      # Ensure I have the PROCESS privilege.
+      my $proc =
+         grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
+         @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+      if ( !$proc ) {
+         die "--connection-id requires the PROCESS privilege for safety.\n";
+      }
    }
 
-   # Make results uniform across MySQL versions, and generate additional
-   # properties.
-   foreach my $table ( @tables ) {
-      if ( $showstat ) {
-         my ($ib_free)            = $table->{Comment} && $table->{Comment} =~ m/InnoDB free: (\d+) kB/;
-         $table->{Engine}       ||= $table->{Type};
-         $table->{Table_length}   = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
-         $table->{Innodb_free}    = $ib_free ? 1_024 * $ib_free : undef;
-         delete $table->{Type};
-      }
-      else {
-         my ($name) = values %$table;
-         $table = { Name => $name };
-      }
-      $table->{Database} = $database;
-   }
+   ($server_id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
 
-   # Apply the tests to find the matching tables
-   @tables = grep {
-      my $table = $_;
-      my @tests = grep { $o->get($_) } keys %test_for;
-      !@tests || ($o->get('or') ? any($table, @tests) : all($table, @tests));
-   } @tables;
+   # ########################################################################
+   # Go do it.
+   # ########################################################################
+   my @databases = @ARGV             ? @ARGV
+                 : $o->get('dblike') ? @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE ?', {}, $o->get('dblike'))}
+                 :                     @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 
-   # Quote database and table names if desired
-   if ( $o->get('quote') ) {
+   my @exec_plus;
+   DATABASE:
+   foreach my $database ( @databases ) {
+      next DATABASE if $database =~ m/^(?:information_schema|lost\+found)$/mi;
+
+      my $sta = $showstat ? ' STATUS' : 'S';
+      my $sth = $o->get('tbllike')
+              ? $dbh->prepare("SHOW TABLE$sta FROM `$database` LIKE ?")
+              : $dbh->prepare("SHOW TABLE$sta FROM `$database`");
+
+      $sth->execute($o->get('tbllike') || ());
+      my @tables = @{$sth->fetchall_arrayref({})};
+
+      # Must re-fetch every time; there are too many ways things can go wrong
+      # otherwise (for example, the counter wraps over the unsigned int
+      # boundary).
+      if ( $o->get('connection-id') ) {
+         %connections = map { $_ => 1 }
+            @{$dbh->selectcol_arrayref('SHOW FULL PROCESSLIST')};
+      }
+
+      # Make results uniform across MySQL versions, and generate additional
+      # properties.
       foreach my $table ( @tables ) {
-         $table->{Database} = $q->quote($table->{Database});
-         $table->{Name}     = $q->quote($table->{Name});
+         if ( $showstat ) {
+            my ($ib_free)            = $table->{Comment} && $table->{Comment} =~ m/InnoDB free: (\d+) kB/;
+            $table->{Engine}       ||= $table->{Type};
+            $table->{Table_length}   = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
+            $table->{Innodb_free}    = $ib_free ? 1_024 * $ib_free : undef;
+            delete $table->{Type};
+         }
+         else {
+            my ($name) = values %$table;
+            $table = { Name => $name };
+         }
+         $table->{Database} = $database;
       }
+
+      # Apply the tests to find the matching tables.
+      @tables = grep {
+         my $table = $_;
+         my @tests = grep { $o->get($_) } keys %test_for;
+         !@tests || ($o->get('or') ? any($table, @tests) : all($table, @tests));
+      } @tables;
+
+      # Quote database and table names if desired.
+      if ( $o->get('quote') ) {
+         foreach my $table ( @tables ) {
+            $table->{Database} = $q->quote($table->{Database});
+            $table->{Name}     = $q->quote($table->{Name});
+         }
+      }
+
+      foreach my $table ( @tables ) {
+         my @actions = grep { $o->get($_) } keys %action_for;
+         foreach my $action ( @actions ) {
+            $action_for{$action}->($table);
+         }
+      }
+
+      push @exec_plus, @tables;
    }
 
-   foreach my $table ( @tables ) {
-      my @actions = grep { $o->get($_) } keys %action_for;
-      foreach my $action ( @actions ) {
-         $action_for{$action}->($table);
-      }
+   # Handle exec-plus.
+   if ( $o->get('exec-plus') ) {
+      my $table_list = join(', ',map {"$_->{Database}.$_->{Name}"} @exec_plus);
+      (my $sql = $o->get('exec-plus')) =~ s/%s/$table_list/g;
+      $exec_dbh->do($sql);
    }
 
-   push @exec_plus, @tables;
-}
-
-# Handle exec-plus
-if ( $o->get('exec-plus') ) {
-   my $table_list = join(', ', map { "$_->{Database}.$_->{Name}" } @exec_plus);
-   (my $sql = $o->get('exec-plus')) =~ s/%s/$table_list/g;
-   $exec_dbh->do($sql);
+   return 0;
 }
 
 # ############################################################################
@@ -1701,6 +1722,13 @@ sub _d {
         @_;
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
+
+# ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
 
 # ############################################################################
 # Documentation

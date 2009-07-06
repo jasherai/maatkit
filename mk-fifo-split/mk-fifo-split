@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 3695
+# OptionParser package 3945
 # ###########################################################################
 package OptionParser;
 
@@ -39,6 +39,15 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+my %attributes = (
+   'type'       => 1,
+   'short form' => 1,
+   'group'      => 1,
+   'default'    => 1,
+   'cumulative' => 1,
+   'negatable'  => 1,
+);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -136,7 +145,12 @@ sub _pod_to_specs {
 
          if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            %attribs = map {
+                  my ( $attrib, $val) = split(/: /, $_);
+                  die "Unrecognized attribute for --$option: $attrib"
+                     unless $attributes{$attrib};
+                  ($attrib, $val);
+               } split(/; /, $para);
             if ( $attribs{'short form'} ) {
                $attribs{'short form'} =~ s/-//;
             }
@@ -860,7 +874,15 @@ sub _d {
 # End OptionParser package
 # ###########################################################################
 
-package main;
+# ###########################################################################
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
+# ###########################################################################
+package mk_fifo_split;
 
 use English qw(-no_match_vars);
 use POSIX qw(mkfifo);
@@ -869,11 +891,11 @@ use IO::File;
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub main {
-      @ARGV = @_;  # set global ARGV for this package
+   @ARGV = @_;  # set global ARGV for this package
 
-   # ############################################################################
+   # ########################################################################
    # Get configuration information.
-   # ############################################################################
+   # ########################################################################
    my $o = new OptionParser(
       strict      => 0,
       prompt      => '[options] [FILE ...]',
@@ -939,12 +961,24 @@ sub main {
    close $fh or die "Can't close: $OS_ERROR";
 
    unlink($file) or die "Can't unlink $file: $OS_ERROR";
+
+   return 0;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 # ############################################################################
 # Run the program.
 # ############################################################################
 if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
 
 # ############################################################################
 # Documentation
