@@ -34,7 +34,7 @@ like(
 );
 
 like(
-   $la->innodb_status(
+   $la->innodb(
       dbh                => $dbh,
       InnoDBStatusParser => $is,
       section            => 'status',
@@ -45,7 +45,7 @@ like(
 );
 
 is(
-   $la->innodb_status(
+   $la->innodb(
       dbh                => $dbh,
       InnoDBStatusParser => $is,
       section            => 'this section does not exist',

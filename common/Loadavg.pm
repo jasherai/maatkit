@@ -108,7 +108,7 @@ sub status {
 
 # Returns the highest value for a given section and var, like transactions
 # and lock_wait_time.
-sub innodb_status {
+sub innodb {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(dbh InnoDBStatusParser section var) ) {
       die "I need a $arg argument" unless $args{$arg};
