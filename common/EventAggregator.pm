@@ -695,6 +695,9 @@ sub top_events {
 sub add_new_attributes {
    my ( $self, $event ) = @_;
    return unless $event;
+
+   my $unroll_subs;
+
    map {
       my $attrib = $_;
       $self->{attributes}->{$attrib}  = [$attrib];
@@ -712,11 +715,10 @@ sub add_new_attributes {
                alt => $self->{attributes}->{$attrib},
          );
          $self->{handlers}->{$attrib} = $handler;
-
-         $self->_make_unrolled_loops($event)
+         $unroll_subs = 1;
       }
 
-      MKDEBUG && _d('Added new attribute:', $_);
+      MKDEBUG && _d('Added new attribute:', $attrib);
    }
    grep {
       $_ ne $self->{groupby}
@@ -724,6 +726,9 @@ sub add_new_attributes {
       && !exists $self->{ignore_attribs}->{$_}
    }
    keys %$event;
+
+   $self->_make_unrolled_loops($event) if $unroll_subs;
+
    return;
 }
 

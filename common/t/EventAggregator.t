@@ -13,10 +13,23 @@ $Data::Dumper::Sortkeys  = 1;
 require '../QueryRewriter.pm';
 require '../EventAggregator.pm';
 require '../QueryParser.pm';
+require '../SlowLogParser.pm';
 
 my $qr = new QueryRewriter();
 my $qp = new QueryParser();
+my $p  = new SlowLogParser();
 my ( $result, $events, $ea, $expected );
+
+sub parse_file {
+   my ( $file ) = @_;
+   my @e;
+   eval {
+      open my $fh, "<", $file or BAIL_OUT($OS_ERROR);
+      1 while $p->parse_event($fh, undef, sub { push @e, @_; $ea->aggregate(@_);  });
+      close $fh;
+   };
+   return \@e;
+}
 
 $ea = new EventAggregator(
    groupby    => 'fingerprint',
@@ -1370,24 +1383,10 @@ is_deeply(
 # Issue 458: mk-query-digest Use of uninitialized value in division (/) at
 # line 3805.
 # #############################################################################
-require '../SlowLogParser.pm';
-my $p = new SlowLogParser();
-
 $ea = new EventAggregator(
    groupby           => 'arg',
    worst             => 'Query_time',
 );
-
-sub parse_file {
-   my ( $file ) = @_;
-   my @e;
-   eval {
-      open my $fh, "<", $file or BAIL_OUT($OS_ERROR);
-      1 while $p->parse_event($fh, undef, sub { push @e, @_; $ea->aggregate(@_);  });
-      close $fh;
-   };
-   return \@e;
-}
 
 # The real bug is in QueryReportFormatter, and there's nothing particularly
 # interesting about this sample, but we just want to make sure that the
@@ -1460,7 +1459,6 @@ ok(
 # Issue 514: mk-query-digest does not create handler sub for new auto-detected
 # attributes
 # #############################################################################
-$p  = new SlowLogParser();
 $ea = new EventAggregator(
    groupby => 'arg',
    worst   => 'Query_time',
