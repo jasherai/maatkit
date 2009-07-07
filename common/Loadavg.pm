@@ -25,16 +25,18 @@ use warnings FATAL => 'all';
 use List::Util qw(sum);
 use Time::HiRes qw(time);
 use English qw(-no_match_vars);
+
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   return bless {}, $class;
 }
 
 # Calculates average query time by the Trevor Price method.
 sub trevorprice {
-   my ( $dbh, %args ) = @_;
+   my ( $self, $dbh, %args ) = @_;
+   die "I need a dbh argument" unless $dbh;
    my $num_samples = $args{samples} || 100;
    my $num_running = 0;
    my $start = time();
@@ -56,7 +58,8 @@ sub trevorprice {
 
 # Calculates number of locked queries in the processlist.
 sub num_locked {
-   my ( $dbh ) = @_;
+   my ( $self, $dbh ) = @_;
+   die "I need a dbh argument" unless $dbh;
    my $pl = $dbh->selectall_arrayref('SHOW PROCESSLIST', { Slice => {} });
    my $locked = grep { ($_->{State} || '') eq 'Locked' } @$pl;
    return $locked || 0;
@@ -64,6 +67,7 @@ sub num_locked {
 
 # Calculates loadavg from the uptime command.
 sub loadavg {
+   my ( $self ) = @_;
    my $str = `uptime`;
    chomp $str;
    return 0 unless $str;
@@ -72,13 +76,14 @@ sub loadavg {
 }
 
 # Calculates slave lag.  If the slave is not running, returns 0.
-sub slavelag {
-   my ( $dbh ) = @_;
+sub slave_lag {
+   my ( $self, $dbh ) = @_;
+   die "I need a dbh argument" unless $dbh;
    my $sl = $dbh->selectall_arrayref('SHOW SLAVE STATUS', { Slice => {} });
    if ( $sl ) {
       $sl = $sl->[0];
-      my ($key) = grep { m/behind_master/ } keys %$sl;
-      return $sl->{$key} || 0;
+      my ( $key ) = grep { m/behind_master/i } keys %$sl;
+      return $key ? $sl->{$key} || 0 : 0;
    }
    return 0;
 }
@@ -86,13 +91,14 @@ sub slavelag {
 # Calculates any metric from SHOW STATUS, either absolute or over a 1-second
 # interval.
 sub status {
-   my ( $dbh, %args ) = @_;
+   my ( $self, $dbh, %args ) = @_;
+   die "I need a dbh argument" unless $dbh;
    my (undef, $status1)
-      = $dbh->selectrow_array('SHOW /*!50002 GLOBAL*/ STATUS LIKE "$args{metric}"');
+      = $dbh->selectrow_array("SHOW /*!50002 GLOBAL*/ STATUS LIKE '$args{metric}'");
    if ( $args{incstatus} ) {
       sleep(1);
       my (undef, $status2)
-         = $dbh->selectrow_array('SHOW /*!50002 GLOBAL*/ STATUS LIKE "$args{metric}"');
+         = $dbh->selectrow_array("SHOW /*!50002 GLOBAL*/ STATUS LIKE '$args{metric}'");
       return $status2 - $status1;
    }
    else {
