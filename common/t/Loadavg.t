@@ -3,12 +3,14 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 7;
 
 require "../Loadavg.pm";
 require "../DSNParser.pm";
 require "../Sandbox.pm";
+require "../InnoDBStatusParser.pm";
 
+my $is  = new InnoDBStatusParser();
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
@@ -29,6 +31,28 @@ like(
    $la->status($dbh, metric=>'Uptime'),
    qr/\d+/,
    'status Uptime'
+);
+
+like(
+   $la->innodb_status(
+      dbh                => $dbh,
+      InnoDBStatusParser => $is,
+      section            => 'status',
+      var                => 'Innodb_data_fsyncs',
+   ),
+   qr/\d+/,
+   'InnoDB stats'
+);
+
+is(
+   $la->innodb_status(
+      dbh                => $dbh,
+      InnoDBStatusParser => $is,
+      section            => 'this section does not exist',
+      var                => 'foo',
+   ),
+   0,
+   'InnoDB stats for nonexistent section'
 );
 
 SKIP: {

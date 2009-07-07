@@ -106,6 +106,43 @@ sub status {
    }
 }
 
+# Returns the highest value for a given section and var, like transactions
+# and lock_wait_time.
+sub innodb_status {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(dbh InnoDBStatusParser section var) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh     = $args{dbh};
+   my $is      = $args{InnoDBStatusParser};
+   my $section = $args{section};
+   my $var     = $args{var};
+
+   # Get and parse SHOW INNODB STATUS text.
+   my ($status_text, undef) = $dbh->selectrow_array("SHOW INNODB STATUS");
+   if ( !$status_text ) {
+      MKDEBUG && _d('SHOW INNODB STATUS failed');
+      return 0;
+   }
+   my $idb_stats = $is->parse($status_text);
+
+   if ( !exists $idb_stats->{$section} ) {
+      MKDEBUG && _d('idb status section', $section, 'does not exist');
+      return 0;
+   }
+
+   # Each section should be an arrayref.  Go through each set of vars
+   # and find the highest var that we're checking.
+   my $value = 0;
+   foreach my $vars ( @{$idb_stats->{$section}} ) {
+      MKDEBUG && _d($var, '=', $vars->{$var});
+      $value = $vars->{$var} && $vars->{$var} > $value ? $vars->{$var} : $value;
+   }
+
+   MKDEBUG && _d('Highest', $var, '=', $value);
+   return $value;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
