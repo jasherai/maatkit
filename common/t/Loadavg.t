@@ -35,7 +35,7 @@ like(
 
 like(
    $la->innodb(
-      dbh                => $dbh,
+      $dbh,
       InnoDBStatusParser => $is,
       section            => 'status',
       var                => 'Innodb_data_fsyncs',
@@ -46,7 +46,7 @@ like(
 
 is(
    $la->innodb(
-      dbh                => $dbh,
+      $dbh,
       InnoDBStatusParser => $is,
       section            => 'this section does not exist',
       var                => 'foo',
