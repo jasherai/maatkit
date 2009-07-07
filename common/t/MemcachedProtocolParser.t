@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 10;
 use English qw(-no_match_vars);
 
 require "../MemcachedProtocolParser.pm";
@@ -168,6 +168,40 @@ run_test({
          res        => 'NOT_FOUND',
          ts         => '2009-07-06 10:37:21.667279',
          val        => undef,
+      },
+   ],
+});
+
+# A session with a huge set() and get() that will not fit into a single TCP
+# packet.
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump005.txt',
+   result => [
+      {  Query_time => '0.012572',
+         bytes      => 17946,
+         cmd        => 'set',
+         exptime    => 0,
+         flags      => 0,
+         host       => '127.0.0.1',
+         key        => 'my_key',
+         pos_in_log => 0,
+         res        => 'STORED',
+         ts         => '2009-07-06 21:54:29.521352',
+         val        => ('lorem ipsum dolor sit amet' x 690) . ' fini!',
+      },
+      {
+         Query_time => '0.001627',
+         bytes      => 17946,
+         cmd        => 'get',
+         exptime    => undef,
+         flags      => 0,
+         host       => '127.0.0.1',
+         key        => 'my_key',
+         pos_in_log => 1788,
+         res        => 'VALUE',
+         ts         => '2009-07-06 21:54:29.534541',
+         val        => ('lorem ipsum dolor sit amet' x 690) . ' fini!',
       },
    ],
 });
