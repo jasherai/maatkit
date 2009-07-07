@@ -1,4 +1,5 @@
 File                           stmt   bran   cond    sub    pod   time  total
 .../mk-duplicate-key-checker   14.2    2.2    3.3   36.4    n/a  100.0   11.5
+...kit/mk-loadavg/mk-loadavg   44.0   27.5   31.7   58.1    n/a  100.0   39.3
 ...kit/mk-upgrade/mk-upgrade   38.2   20.9   22.9   54.0    n/a  100.0   33.1
 ...explain/mk-visual-explain   41.8   32.7   28.0   54.0    n/a  100.0   38.6

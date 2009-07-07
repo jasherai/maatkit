@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# Loadavg package 3186
+# Loadavg package 4088
 # ###########################################################################
 package Loadavg;
 
@@ -38,15 +38,17 @@ use warnings FATAL => 'all';
 use List::Util qw(sum);
 use Time::HiRes qw(time);
 use English qw(-no_match_vars);
+
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   return bless {}, $class;
 }
 
 sub trevorprice {
-   my ( $dbh, %args ) = @_;
+   my ( $self, $dbh, %args ) = @_;
+   die "I need a dbh argument" unless $dbh;
    my $num_samples = $args{samples} || 100;
    my $num_running = 0;
    my $start = time();
@@ -67,13 +69,15 @@ sub trevorprice {
 }
 
 sub num_locked {
-   my ( $dbh ) = @_;
+   my ( $self, $dbh ) = @_;
+   die "I need a dbh argument" unless $dbh;
    my $pl = $dbh->selectall_arrayref('SHOW PROCESSLIST', { Slice => {} });
    my $locked = grep { ($_->{State} || '') eq 'Locked' } @$pl;
    return $locked || 0;
 }
 
 sub loadavg {
+   my ( $self ) = @_;
    my $str = `uptime`;
    chomp $str;
    return 0 unless $str;
@@ -81,25 +85,27 @@ sub loadavg {
    return $one || 0;
 }
 
-sub slavelag {
-   my ( $dbh ) = @_;
+sub slave_lag {
+   my ( $self, $dbh ) = @_;
+   die "I need a dbh argument" unless $dbh;
    my $sl = $dbh->selectall_arrayref('SHOW SLAVE STATUS', { Slice => {} });
    if ( $sl ) {
       $sl = $sl->[0];
-      my ($key) = grep { m/behind_master/ } keys %$sl;
-      return $sl->{$key} || 0;
+      my ( $key ) = grep { m/behind_master/i } keys %$sl;
+      return $key ? $sl->{$key} || 0 : 0;
    }
    return 0;
 }
 
 sub status {
-   my ( $dbh, %args ) = @_;
+   my ( $self, $dbh, %args ) = @_;
+   die "I need a dbh argument" unless $dbh;
    my (undef, $status1)
-      = $dbh->selectrow_array('SHOW /*!50002 GLOBAL*/ STATUS LIKE "$args{metric}"');
+      = $dbh->selectrow_array("SHOW /*!50002 GLOBAL*/ STATUS LIKE '$args{metric}'");
    if ( $args{incstatus} ) {
       sleep(1);
       my (undef, $status2)
-         = $dbh->selectrow_array('SHOW /*!50002 GLOBAL*/ STATUS LIKE "$args{metric}"');
+         = $dbh->selectrow_array("SHOW /*!50002 GLOBAL*/ STATUS LIKE '$args{metric}'");
       return $status2 - $status1;
    }
    else {
@@ -122,7 +128,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3695
+# OptionParser package 3945
 # ###########################################################################
 package OptionParser;
 
@@ -136,6 +142,15 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+my %attributes = (
+   'type'       => 1,
+   'short form' => 1,
+   'group'      => 1,
+   'default'    => 1,
+   'cumulative' => 1,
+   'negatable'  => 1,
+);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -233,7 +248,12 @@ sub _pod_to_specs {
 
          if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            %attribs = map {
+                  my ( $attrib, $val) = split(/: /, $_);
+                  die "Unrecognized attribute for --$option: $attrib"
+                     unless $attributes{$attrib};
+                  ($attrib, $val);
+               } split(/; /, $para);
             if ( $attribs{'short form'} ) {
                $attribs{'short form'} =~ s/-//;
             }
@@ -1519,6 +1539,7 @@ package mk_loadavg;
 
 use English qw(-no_match_vars);
 use IO::File;
+use POSIX qw(setsid);
 use sigtrap qw(handler finish untrapped normal-signals);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -1600,6 +1621,7 @@ sub main {
    }
    my $dsn = $dp->parse_options($o);
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1, });
+   $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
 
    # Daemonize only after connecting and doing --ask-pass.
    my $daemon;
@@ -1642,6 +1664,7 @@ sub watch_server {
    my %metrics;
    foreach my $item ( @{$o->get('metrics')} ) {
       my ($key, $val) = split(/:/, $item);
+      MKDEBUG && _d('metric key:', $key, 'val:', $val);
       $metrics{$key} = $val; # $val can be undef.
    }
    my %la_args = (
@@ -1656,6 +1679,7 @@ sub watch_server {
       METRIC:
       foreach my $metric ( keys %metrics ) {
          my $val = $la->$metric($dbh, %la_args);
+         MKDEBUG && _d($metric, '=', $val);
          if ( $o->get('print-load-avg') ) {
             printf("%15s %.5f\n", $metric, $val);
          }
@@ -1665,6 +1689,7 @@ sub watch_server {
                   $info_subroutines{$info}->($dbh);
                }
             }
+            exec_cmd($o->get('execute-command')) if $o->get('execute-command');
             last METRIC;
          }
       }
@@ -1687,6 +1712,28 @@ sub pretty_print {
          print($row[$col], "\n");
       }
    }
+}
+
+# Forks and detaches from parent to execute the given command;
+# does not block parent.
+sub exec_cmd {
+   my ( $cmd ) = @_;
+   MKDEBUG && _d('exec cmd:', $cmd);
+   return unless $cmd;
+
+   my $pid = fork();
+   if ( $pid ) {
+      # parent
+      MKDEBUG && _d('child pid:', $pid);
+      return $pid;
+   }
+
+   # child
+   POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
+   my $retval = system($cmd);
+   $retval = $retval >> 8;
+   MKDEBUG && _d('child exit status:', $retval);
+   exit $retval;
 }
 
 # Catches signals for exiting gracefully.
@@ -1783,6 +1830,19 @@ short form: -F; type: string
 Only read mysql options from the given file.  You must give an absolute
 pathname.
 
+=item --execute-command
+
+type: string
+
+Execute this command when L<"--metrics"> are exceeded.
+
+In addition to L<"--info">, this command will be executed when L<"--metrics">
+are exceeded.  After the command is executed, mk-loadavg has no control over
+it, so the command is responsible for its own info gathering, logging,
+interval, etc.  The command is excuted each time the metrics are exceeded,
+so be careful that the command behaves well when multiple instances are ran.
+No information from mk-loadavg is passed to the command.
+
 =item --help
 
 Show help and exit.
@@ -1834,12 +1894,12 @@ L<"--info"> information will be printed out.  The possible metrics mean the
 following:
 
   METRIC       MEANING
-  ===========  =================================================
+  ===========  ================================================
   trevorprice  A calculation of average query response time
   num_locked   Number of locked processes in PROCESSLIST
   loadavg      The server's load average as reported by 'uptime'
   slavelag     The server's slave lag from Seconds_behind_master
-  status       Any value from SHOW GLOBAL STATUS
+  status       Any value from SHOW GLOBAL STATUS (see L<"--status">)
 
 The status metric is special.  You have to give L<"--status"> to say which value
 from SHOW GLOBAL STATUS you want to measure against.  The loadavg metric works

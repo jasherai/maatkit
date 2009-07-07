@@ -7,6 +7,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...t/common/EventTimeline.pm   90.9   67.9   50.0   92.9    n/a  100.0   85.0
 .../maatkit/common/Grants.pm   76.9   50.0    n/a   85.7    n/a  100.0   75.7
 ...maatkit/common/KeySize.pm   95.1   79.2   66.7  100.0    n/a  100.0   91.2
+...maatkit/common/Loadavg.pm   62.5   31.8   16.7   84.6    n/a  100.0   54.6
 ...atkit/common/LogParser.pm   92.6   86.8   78.6   88.9    n/a  100.0   88.2
 ...kit/common/LogSplitter.pm   92.2   67.5   70.2   93.8    n/a  100.0   83.7
 ...kit/common/MasterSlave.pm   85.9   56.2   48.9   93.8    n/a  100.0   73.6

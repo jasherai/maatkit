@@ -3,9 +3,9 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 1;
+use Test::More tests => 2;
 
-require '../../common/DSNParser.pm';
+require '../mk-loadavg';
 require '../../common/Sandbox.pm';
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -21,6 +21,21 @@ like(
    qr/loadavg\s+(?:[\d\.])+/,
    'It runs and prints a loadavg for the loadavg metric'
 );
+
+# #############################################################################
+# Issue 515: Add mk-loadavg --execute-command option
+# #############################################################################
+diag(`rm -rf /tmp/mk-loadavg-test`);
+mk_loadavg::main('-F', $cnf, qw(--metrics status:1 --status Uptime),
+   '--execute-command', 'echo hi > /tmp/mk-loadavg-test && sleep 2',
+   qw(--sleep 0 --run-time 1));
+sleep 1;
+ok(
+   -f '/tmp/mk-loadavg-test',
+   '--execute-command'
+);
+
+diag(`rm -rf /tmp/mk-loadavg-test`);
 
 # #############################################################################
 # Done.
