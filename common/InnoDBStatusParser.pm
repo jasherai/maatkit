@@ -990,8 +990,8 @@ sub apply_rules {
       or die "There are no parse rules for '$rulename'";
    foreach my $rule ( @{$rules->{rules}} ) {
       @{$hashref}{ @{$rule->[$COLS]} } = $text =~ m/$rule->[$PATTERN]/m;
-      MKDEBUG && _d(@{$rule->[$COLS]}, $rule->[$PATTERN]);
-      MKDEBUG && _d(@{$hashref}{ @{$rule->[$COLS]} });
+      # MKDEBUG && _d(@{$rule->[$COLS]}, $rule->[$PATTERN]);
+      # MKDEBUG && _d(@{$hashref}{ @{$rule->[$COLS]} });
    }
    # Apply section-specific rules
    $rules->{customcode}->($hashref, $text);
