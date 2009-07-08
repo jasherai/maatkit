@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 25;
 
 require "../DSNParser.pm";
 require '../OptionParser.pm';
@@ -235,8 +235,7 @@ SKIP: {
    is($d->{u}, 'msandbox', 'Filled in username');
    is($d->{S}, '/tmp/12345/mysql_sandbox12345.sock', 'Filled in socket');
    is($d->{h}, '127.0.0.1', 'Left hostname alone');
-   $dp->disconnect($dbh);
-}
+};
 
 $dp->prop('dbidriver', 'Pg');
 is_deeply (
@@ -362,4 +361,21 @@ is_deeply(
    'Copy DSN and overwrite destination'
 );
 
-exit
+# #############################################################################
+# Issue 93: DBI error messages can include full SQL
+# #############################################################################
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $dbh;
+   eval { $dbh->do('SELECT * FROM doesnt.exist WHERE foo = 1'); };
+   like(
+      $EVAL_ERROR,
+      qr/SELECT \* FROM doesnt.exist WHERE foo = 1/,
+      'Includes SQL in error message (issue 93)'
+   );
+};
+
+# #############################################################################
+# Done.
+# #############################################################################
+$dbh->disconnect() if $dbh;
+exit;

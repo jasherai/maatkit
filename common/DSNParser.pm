@@ -253,9 +253,10 @@ sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
    my $defaults = {
-      AutoCommit        => 0,
-      RaiseError        => 1,
-      PrintError        => 0,
+      AutoCommit         => 0,
+      RaiseError         => 1,
+      PrintError         => 0,
+      ShowErrorStatement => 1,
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
