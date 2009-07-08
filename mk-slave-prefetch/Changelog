@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+   * Updates to shared code.
+
 2009-06-30: version 1.0.9
 
    * Fixed "Option io-log does not exist" error (issue 414).
