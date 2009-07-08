@@ -2,14 +2,17 @@
 
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 30;
 use English qw(-no_match_vars);
+use Test::More tests => 30;
+
 use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
-require "../LogParser.pm";
+require "../BinaryLogParser.pm";
 
-my $p = new LogParser;
+my $p = new BinaryLogParser();
 my @e;
 my $i;
 my $events;
