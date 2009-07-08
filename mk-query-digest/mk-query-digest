@@ -3070,7 +3070,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 4036
+# EventAggregator package 4099
 # ###########################################################################
 package EventAggregator;
 
@@ -3115,12 +3115,13 @@ sub new {
          keys %$attributes
       },
       worst        => $args{worst},
-      unroll_limit => $args{unroll_limit} || 50,
+      unroll_limit => $args{unroll_limit} || 1000,
       attrib_limit => $args{attrib_limit},
       result_classes => {},
       result_globals => {},
       result_samples => {},
       n_events       => 0,
+      unrolled_loops => undef,
    }, $class;
 }
 
@@ -3144,84 +3145,91 @@ sub aggregate {
    my $group_by = $event->{$self->{groupby}};
    return unless defined $group_by;
 
-   $self->add_new_attributes($event) if $self->{detect_attribs};
-
    $self->{n_events}++;
+   MKDEBUG && _d('event', $self->{n_events});
 
-   if ( exists $self->{unrolled_loops} ) {
-      return $self->{unrolled_loops}->($self, $event, $group_by);
-   }
+   return $self->{unrolled_loops}->($self, $event, $group_by)
+      if $self->{unrolled_loops};
 
-   my @attrs = keys %{$self->{attributes}};
-   ATTRIB:
-   foreach my $attrib ( @attrs ) {
+   if ( $self->{n_events} <= $self->{unroll_limit} ) {
 
-      if ( !exists $event->{$attrib} ) {
-         MKDEBUG && _d("attrib doesn't exist in event:", $attrib);
-         my $alt_attrib = $self->{alt_attribs}->{$attrib}->($event);
-         MKDEBUG && _d('alt attrib:', $alt_attrib);
-         next ATTRIB unless $alt_attrib;
-      }
+      $self->add_new_attributes($event) if $self->{detect_attribs};
 
-      GROUPBY:
-      foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
-         my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
-         my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
-         my $samples       = $self->{result_samples};
-         my $handler = $self->{handlers}->{ $attrib };
-         if ( !$handler ) {
-            $handler = $self->make_handler(
-               $attrib,
-               $event,
-               wor => $self->{worst} eq $attrib,
-               alt => $self->{attributes}->{$attrib},
-            );
-            $self->{handlers}->{$attrib} = $handler;
+      ATTRIB:
+      foreach my $attrib ( keys %{$self->{attributes}} ) {
+
+         if ( !exists $event->{$attrib} ) {
+            MKDEBUG && _d("attrib doesn't exist in event:", $attrib);
+            my $alt_attrib = $self->{alt_attribs}->{$attrib}->($event);
+            MKDEBUG && _d('alt attrib:', $alt_attrib);
+            next ATTRIB unless $alt_attrib;
          }
-         next GROUPBY unless $handler;
-         $samples->{$val} ||= $event; # Initialize to the first event.
-         $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
+
+         GROUPBY:
+         foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
+            my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
+            my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+            my $samples       = $self->{result_samples};
+            my $handler = $self->{handlers}->{ $attrib };
+            if ( !$handler ) {
+               $handler = $self->make_handler(
+                  $attrib,
+                  $event,
+                  wor => $self->{worst} eq $attrib,
+                  alt => $self->{attributes}->{$attrib},
+               );
+               $self->{handlers}->{$attrib} = $handler;
+            }
+            next GROUPBY unless $handler;
+            $samples->{$val} ||= $event; # Initialize to the first event.
+            $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
+         }
       }
    }
+   else {
+      $self->_make_unrolled_loops($event);
+      $self->{unrolled_loops}->($self, $event, $group_by);
+   }
 
-   if ( $self->{n_queries}++ > 50  # ...after 50 events, or
-        || ( # all attribs have handlers and
-             !grep { ref $self->{handlers}->{$_} ne 'CODE' } @attrs
-             && !$self->{detect_attribs}
-           ) )
-   {
-      my @attrs   = grep { $self->{handlers}->{$_} } @attrs;
-      my $globs   = $self->{result_globals}; # Global stats for each
-      my $samples = $self->{result_samples};
+   return;
+}
 
-      my @lines = (
-         'my ( $self, $event, $group_by ) = @_;',
-         'my ($val, $class, $global, $idx);',
-         (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
-         'my $temp = $self->{result_classes}->{ $group_by }
-            ||= { map { $_ => { } } @attrs };',
-         '$samples->{$group_by} ||= $event;', # Always start with the first.
+sub _make_unrolled_loops {
+   my ( $self, $event ) = @_;
+
+   my $group_by = $event->{$self->{groupby}};
+
+   my @attrs   = grep { $self->{handlers}->{$_} } keys %{$self->{attributes}};
+   my $globs   = $self->{result_globals}; # Global stats for each
+   my $samples = $self->{result_samples};
+
+   my @lines = (
+      'my ( $self, $event, $group_by ) = @_;',
+      'my ($val, $class, $global, $idx);',
+      (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
+      'my $temp = $self->{result_classes}->{ $group_by }
+         ||= { map { $_ => { } } @attrs };',
+      '$samples->{$group_by} ||= $event;', # Always start with the first.
+   );
+   foreach my $i ( 0 .. $#attrs ) {
+      push @lines, (
+         '$class  = $temp->{"'  . $attrs[$i] . '"};',
+         '$global = $globs->{"' . $attrs[$i] . '"};',
+         $self->{unrolled_for}->{$attrs[$i]},
       );
-      foreach my $i ( 0 .. $#attrs ) {
-         push @lines, (
-            '$class  = $temp->{"'  . $attrs[$i] . '"};',
-            '$global = $globs->{"' . $attrs[$i] . '"};',
-            $self->{unrolled_for}->{$attrs[$i]},
-         );
-      }
-      if ( ref $group_by ) {
-         push @lines, '}'; # Close the loop opened above
-      }
-      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
-      unshift @lines, 'sub {';
-      push @lines, '}';
-
-      my $code = join("\n", @lines);
-      MKDEBUG && _d('Unrolled subroutine:', @lines);
-      my $sub = eval $code;
-      die if $EVAL_ERROR;
-      $self->{unrolled_loops} = $sub;
    }
+   if ( ref $group_by ) {
+      push @lines, '}'; # Close the loop opened above
+   }
+   @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+   unshift @lines, 'sub {';
+   push @lines, '}';
+
+   my $code = join("\n", @lines);
+   MKDEBUG && _d('Unrolled subroutine:', @lines);
+   my $sub = eval $code;
+   die $EVAL_ERROR if $EVAL_ERROR;
+   $self->{unrolled_loops} = $sub;
 
    return;
 }
@@ -3564,11 +3572,13 @@ sub top_events {
 sub add_new_attributes {
    my ( $self, $event ) = @_;
    return unless $event;
+
    map {
-      $self->{attributes}->{$_}  = [$_];
-      $self->{alt_attribs}->{$_} = make_alt_attrib($_);
-      push @{$self->{all_attribs}}, $_;
-      MKDEBUG && _d('Added new attribute:', $_);
+      my $attrib = $_;
+      $self->{attributes}->{$attrib}  = [$attrib];
+      $self->{alt_attribs}->{$attrib} = make_alt_attrib($attrib);
+      push @{$self->{all_attribs}}, $attrib;
+      MKDEBUG && _d('Added new attribute:', $attrib);
    }
    grep {
       $_ ne $self->{groupby}
@@ -3576,6 +3586,7 @@ sub add_new_attributes {
       && !exists $self->{ignore_attribs}->{$_}
    }
    keys %$event;
+
    return;
 }
 
@@ -5591,8 +5602,9 @@ sub main {
             groupby           => $groupby,
             attributes        => { %attributes },
             worst             => $attrib,
-            attrib_limit      => $o->get('attribute-limit'),
+            attrib_limit      => $o->get('attribute-value-limit'),
             ignore_attributes => $o->get('ignore-attributes'),
+            unroll_limit      => $o->get('check-attributes-limit'),
          );
       }
       elsif ( @{$timeline} ) {
@@ -6486,7 +6498,7 @@ If the event has the primary attribute, all alias attributes are deleted.
 This helps to simplify event attributes so that, for example, there will not
 be report lines for both db and Schema.
 
-=item --attribute-limit
+=item --attribute-value-limit
 
 type: int; default: 4294967296
 
@@ -6495,6 +6507,21 @@ A sanity limit for attribute values.
 This option deals with bugs in slow-logging functionality that causes large
 values for attributes.  If the attribute's value is bigger than this, the
 last-seen value for that class of query is used instead.
+
+=item --check-attributes-limit
+
+type: int; default: 1000
+
+Stop checking for new attributes after this many events.
+
+For better speed, mk-query-digest stops checking events for new attributes
+after a certain number of events.  Any new attributes after this number
+will be ignored and will not be reported.
+
+One special case is new attributes for pre-existing query classes
+(see L<"--group-by"> about query classes).  New attributes will not be added
+to pre-existing query classes even if the attributes are detected before the
+L<"--check-attributes-limit"> limit.
 
 =item --config
 

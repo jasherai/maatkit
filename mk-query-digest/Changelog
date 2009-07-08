@@ -1,5 +1,8 @@
 Changelog for mk-query-digest:
 
+   * Changed --attribute-limit to --attribute-value-limit.
+   * Added --check-attributes-limit (issue 514).
+
 2009-06-30: version 0.9.7
 
    * Added all auto-detected event attributes to report.

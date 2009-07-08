@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 64;
+use Test::More tests => 65;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -580,6 +580,20 @@ like(
    $output,
    qr/--group-by\s+fingerprint/,
    "--group-by default still fingerprint with --report ''"
+);
+
+
+# #############################################################################
+# Issue 514: mk-query-digest does not create handler sub for new auto-detected
+# attributes
+# #############################################################################
+# This issue actually introduced --check-attributes-limit.
+$cmd = "${run_with}slow030.txt";
+$output = `$cmd --check-attributes-limit 100 2>&1`;
+unlike(
+   $output,
+   qr/IDB IO rb/,
+   '--check-attributes-limit (issue 514)'
 );
 
 # #############################################################################
