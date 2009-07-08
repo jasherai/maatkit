@@ -4672,7 +4672,7 @@ sub do_tbl_replicate {
 
    my $end = time();
    $crc  ||= 'NULL';
-   if (!$final_o->get('quiet') && !$final_o->get('explain')) {
+   if ( !$final_o->get('quiet') && !$final_o->get('explain') ) {
       if ( $final_o->get('checksum') ) {
          printf($md5sum_fmt, $crc, $host->{h},
             @{$tbl}{qw(database table)}, $chunk_num)
@@ -5094,18 +5094,18 @@ C<CHECKSUM TABLE> on the table.  C<CHECKSUM TABLE> is just C<CRC32> under the
 hood, but it's implemented inside the storage engine layer instead of at the
 MySQL layer.
 
- ALGORITHM       HASH FUNCTION  EXTRA      TIME
- ==============  =============  ========  =====
- COUNT(col8)                                2.3
- CHECKSUM TABLE                             5.3
- BIT_XOR         FNV_64                    12.7
- ACCUM           FNV_64                    42.4
- BIT_XOR         MD5            --optxor   80.0
- ACCUM           MD5                       87.4
- BIT_XOR         SHA1           --optxor   90.1
- ACCUM           SHA1                     101.3
- BIT_XOR         MD5                      172.0
- BIT_XOR         SHA1                     197.3
+ ALGORITHM       HASH FUNCTION  EXTRA           TIME
+ ==============  =============  ==============  =====
+ COUNT(col8)                                    2.3
+ CHECKSUM TABLE                                 5.3
+ BIT_XOR         FNV_64                         12.7
+ ACCUM           FNV_64                         42.4
+ BIT_XOR         MD5            --optimize-xor  80.0
+ ACCUM           MD5                            87.4
+ BIT_XOR         SHA1           --optimize-xor  90.1
+ ACCUM           SHA1                           101.3
+ BIT_XOR         MD5                            172.0
+ BIT_XOR         SHA1                           197.3
 
 The tests are entirely CPU-bound.  The sample data is an InnoDB table with the
 following structure:
@@ -5765,7 +5765,7 @@ The argument to the option is the table (fully qualified: db.table) in which the
 checksums should be stored. The table must have at least these columns: db, tbl,
 chunk, boundaries, this_crc, master_crc, this_cnt, master_cnt.  The table may be
 named anything you wish.  Here is a suggested table structure, which is
-automatically use for L<"--create-replicate-table"> (MAGIC_create_replicate):
+automatically used for L<"--create-replicate-table"> (MAGIC_create_replicate):
 
   CREATE TABLE checksum (
      db         char(64)     NOT NULL,
@@ -5791,7 +5791,7 @@ replication, and you can read more about it in the MySQL manual.
 When the queries are finished replicating, you can run a simple query on each
 slave to see which tables have differences from the master.  See L<"CONSISTENT
 CHECKSUMS"> for details.  If you find tables that have differences, you can use
-the chunk boundaries in a WHERE clause to mk-table-sync to help repair
+the chunk boundaries in a WHERE clause with L<mk-table-sync> to help repair
 them more efficiently.  See L<mk-table-sync> for details.
 
 This option eliminates the need to do complicated locking and unlocking, waiting
