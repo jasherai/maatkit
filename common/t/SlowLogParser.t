@@ -2,9 +2,9 @@
 
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 47;
 use English qw(-no_match_vars);
+use Test::More tests => 47;
+
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Sortkeys  = 1;
