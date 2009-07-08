@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 12;
 use English qw(-no_match_vars);
 
 require "../MemcachedProtocolParser.pm";
@@ -124,7 +124,7 @@ run_test({
          res        => '',
          ts         => '2009-07-04 22:12:06.175734',
       },
-      {  Query_time => '0.000515',
+      {  Query_time => '0.000068',
          cmd        => 'decr',
          bytes      => undef,
          exptime    => undef,
@@ -133,7 +133,7 @@ run_test({
          key        => 'key',
          pos_in_log => 522,
          res        => '',
-         ts         => '2009-07-04 22:12:06.175734',
+         ts         => '2009-07-04 22:12:06.176181',
          val => '7',
       },
    ],
@@ -144,7 +144,7 @@ $protocol = new MemcachedProtocolParser();
 run_test({
    file   => 'samples/memc_tcpdump004.txt',
    result => [
-      {  Query_time => '0.001321',
+      {  Query_time => '0.000131',
          bytes      => undef,
          cmd        => 'incr',
          exptime    => undef,
@@ -153,11 +153,11 @@ run_test({
          key        => 'key',
          pos_in_log => 764,
          res        => 'NOT_FOUND',
-         ts         => '2009-07-06 10:37:21.667279',
+         ts         => '2009-07-06 10:37:21.668469',
          val        => undef,
       },
       {
-         Query_time => '0.001627',
+         Query_time => '0.000055',
          bytes      => undef,
          cmd        => 'decr',
          exptime    => undef,
@@ -166,41 +166,48 @@ run_test({
          key        => 'key',
          pos_in_log => 1788,
          res        => 'NOT_FOUND',
-         ts         => '2009-07-06 10:37:21.667279',
+         ts         => '2009-07-06 10:37:21.668851',
          val        => undef,
       },
    ],
 });
 
-# A session with a huge set() and get() that will not fit into a single TCP
-# packet.
+# A session with a huge set() that will not fit into a single TCP packet.
 $protocol = new MemcachedProtocolParser();
 run_test({
    file   => 'samples/memc_tcpdump005.txt',
    result => [
-      {  Query_time => '0.012572',
+      {  Query_time => '0.003928',
          bytes      => 17946,
          cmd        => 'set',
          exptime    => 0,
          flags      => 0,
          host       => '127.0.0.1',
          key        => 'my_key',
-         pos_in_log => 0,
+         pos_in_log => 764,
          res        => 'STORED',
-         ts         => '2009-07-06 21:54:29.521352',
+         ts         => '2009-07-06 22:07:14.406827',
          val        => ('lorem ipsum dolor sit amet' x 690) . ' fini!',
       },
+   ],
+});
+
+# A session with a huge get() that will not fit into a single TCP packet.
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump006.txt',
+   result => [
       {
-         Query_time => '0.001627',
+         Query_time => '0.000196',
          bytes      => 17946,
          cmd        => 'get',
          exptime    => undef,
          flags      => 0,
          host       => '127.0.0.1',
          key        => 'my_key',
-         pos_in_log => 1788,
+         pos_in_log => 0,
          res        => 'VALUE',
-         ts         => '2009-07-06 21:54:29.534541',
+         ts         => '2009-07-06 22:07:14.411331',
          val        => ('lorem ipsum dolor sit amet' x 690) . ' fini!',
       },
    ],

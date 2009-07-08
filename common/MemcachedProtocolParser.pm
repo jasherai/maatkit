@@ -63,8 +63,8 @@ sub parse_packet {
       MKDEBUG && _d('New session');
       $self->{sessions}->{$client} = {
          client      => $client,
-         ts          => $packet->{ts},
          state       => undef,
+         # ts -- wait for ts later.
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -118,51 +118,74 @@ sub _packet_from_server {
       MKDEBUG && _d('Ignoring mid-stream server response');
       return;
    }
-   else {
-      # Assume that the server is returning only one value.  TODO: make it
-      # handle multi-gets.
+
+   # Assume that the server is returning only one value.  TODO: make it
+   # handle multi-gets.
+   if ( $session->{state} eq 'awaiting reply' ) {
       my ($line1, $rest) = $packet->{data} =~ m/\A(.*?)\r\n(.*)?/s;
 
       # Split up the first line into its parts.
-      my ($res, $key, $flags, $bytes, $val);
       my @vals = $line1 =~ m/(\S+)/g;
-      $res = shift @vals;
+      $session->{res} = shift @vals;
       if ( $session->{cmd} eq 'incr' || $session->{cmd} eq 'decr' ) {
-         if ( $res !~ m/\D/ ) { # It's an integer, not an error
-            $val = $res;
-            $res = '';
+         if ( $session->{res} !~ m/\D/ ) { # It's an integer, not an error
+            $session->{val} = $session->{res};
+            $session->{res} = '';
          }
       }
-      elsif ( $res eq 'VALUE' ) {
-         ($key, $flags, $bytes) = @vals;
-         # Get the value from the $rest.  TODO: there might be multiple responses,
-         # and we might not get the whole thing in one packet.
-         if ( $rest && $bytes && length($rest) > $bytes ) {
-            $val = substr($rest, 0, $bytes);
+      elsif ( $session->{res} eq 'VALUE' ) {
+         my ($key, $flags, $bytes) = @vals;
+         defined $session->{flags} or $session->{flags} = $flags;
+         defined $session->{bytes} or $session->{bytes} = $bytes;
+         # Get the value from the $rest.  TODO: there might be multiple responses
+         if ( $rest && $bytes ) {
+            if ( length($rest) > $bytes ) {
+               $session->{val} = substr($rest, 0, $bytes); # Got the whole response.
+            }
+            else {
+               push @{$session->{partial}}, [ $packet->{seq}, $rest ];
+               $session->{gathered} += length($rest);
+               $session->{state} = 'partial recv';
+               return; # Prevent firing an event.
+            }
          }
       }
-
-      $session->{state} = 'awaiting command';
-      return {
-         ts         => $session->{ts},
-         host       => $session->{host},
-         flags      => defined $session->{flags} ? $session->{flags} : $flags,
-         exptime    => $session->{exptime},
-         bytes      => defined $session->{bytes} ? $session->{bytes} : $bytes,
-         cmd        => $session->{cmd},
-         key        => $session->{key},
-         val        => defined $session->{val} ? $session->{val} : $val,
-         res        => $res,
-         Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
-         pos_in_log => $session->{pos_in_log},
-      };
+   }
+   else { # Should be 'partial recv'
+      push @{$session->{partial}}, [ $packet->{seq}, $data ];
+      $session->{gathered} += length($data);
+      if ( $session->{gathered} >= $session->{bytes} + 2 ) { # Done.
+         my $val = join('',
+            map  { $_->[1] }
+            # Sort in proper sequence because TCP might reorder them.
+            sort { $a->[0] <=> $b->[0] }
+                 @{$session->{partial}});
+         $session->{val} = substr($val, 0, $session->{bytes});
+      }
+      else {
+         return; # Prevent firing event.
+      }
    }
 
-   return;
+   my $event = {
+      ts         => $session->{ts},
+      host       => $session->{host},
+      flags      => $session->{flags},
+      exptime    => $session->{exptime},
+      bytes      => $session->{bytes},
+      cmd        => $session->{cmd},
+      key        => $session->{key},
+      val        => $session->{val},
+      res        => $session->{res},
+      Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
+      pos_in_log => $session->{pos_in_log},
+   };
+   delete $self->{sessions}->{$session->{client}}; # memcached is stateless!
+   return $event;
 }
 
 # Handles a packet from the client given the state of the session.  Doesn't
-# return events, but creates the event that'll be returned later.
+# return events, but creates the session that'll be returned later as an event.
 sub _packet_from_client {
    my ( $self, $packet, $session, $misc ) = @_;
    die "I need a packet"  unless $packet;
@@ -170,34 +193,64 @@ sub _packet_from_client {
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
    push @{$self->{raw_packets}}, $packet->{raw_packet};
-   my ($line1, $val) = $packet->{data} =~ m/\A(.*?)\r\n(.+)?/s;
 
-   # Split up the first line into its parts.
-   # TODO: handle <cas unique> and [noreply]
+   my ($line1, $val);
    my ($cmd, $key, $flags, $exptime, $bytes);
-   my @vals = $line1 =~ m/(\S+)/g;
-   $cmd = lc shift @vals;
-   if ( $cmd eq 'set' ) {
-      ($key, $flags, $exptime, $bytes) = @vals;
+   
+   if ( !$session->{state} ) {
+      # Split up the first line into its parts.
+      ($line1, $val) = $packet->{data} =~ m/\A(.*?)\r\n(.+)?/s;
+      # TODO: handle <cas unique> and [noreply]
+      my @vals = $line1 =~ m/(\S+)/g;
+      $cmd = lc shift @vals;
+      if ( $cmd eq 'set' ) {
+         ($key, $flags, $exptime, $bytes) = @vals;
+         $session->{bytes} = $bytes;
+      }
+      elsif ( $cmd eq 'get' ) {
+         ($key) = @vals;
+      }
+      elsif ( $cmd eq 'incr' || $cmd eq 'decr' ) {
+         ($key) = @vals;
+      }
+      @{$session}{qw(cmd key flags exptime)}
+         = ($cmd, $key, $flags, $exptime);
+      $session->{host}       = $packet->{src_host};
+      $session->{pos_in_log} = $packet->{pos_in_log};
+      $session->{ts}         = $packet->{ts};
    }
-   elsif ( $cmd eq 'get' ) {
-      ($key) = @vals;
-   }
-   elsif ( $cmd eq 'incr' || $cmd eq 'decr' ) {
-      ($key) = @vals;
+   else {
+      $val = $packet->{data};
    }
 
-   # Handle the rest of the packet.  It might not be the whole packet.  We need
-   # to look at the number of bytes in a SET and see if we got it all.  TODO
+   # Handle the rest of the packet.  It might not be the whole value that was
+   # sent, for example for a big set().  We need to look at the number of bytes
+   # and see if we got it all.
+   $session->{state} = 'awaiting reply'; # Assume we got the whole packet
    if ( $val ) {
-      $val =~ s/\r\n\Z//;
+      if ( $session->{bytes} + 2 == length($val) ) { # +2 for the \r\n
+         $val =~ s/\r\n\Z//; # We got the whole thing.
+         $session->{val} = $val;
+      }
+      else { # We apparently did NOT get the whole thing.
+         push @{$session->{partial}},
+            [ $packet->{seq}, $val ];
+         $session->{gathered} += length($val);
+         if ( $session->{gathered} >= $session->{bytes} + 2 ) { # Done.
+            $val = join('',
+               map  { $_->[1] }
+               # Sort in proper sequence because TCP might reorder them.
+               sort { $a->[0] <=> $b->[0] }
+                    @{$session->{partial}});
+            $val =~ s/\r\n\Z//;
+            $session->{val} = $val;
+         }
+         else {
+            $val = '[INCOMPLETE]';
+            $session->{state} = 'partial send';
+         }
+      }
    }
-
-   @{$session}{qw(cmd key flags exptime bytes val)}
-      = ($cmd, $key, $flags, $exptime, $bytes, $val);
-   $session->{host}  = $packet->{src_host};
-   $session->{state} = 'awaiting reply'; # TODO: might not be done
-   $session->{pos_in_log} = $packet->{pos_in_log};
 
    return;
 }
