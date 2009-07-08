@@ -60,7 +60,7 @@ my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 #              a sample that holds the event with the largest Query_time.
 # unroll_limit If this many events have been processed and some handlers haven't
 #              been generated yet (due to lack of sample data) unroll the loop
-#              anyway.  Defaults to 50.
+#              anyway.  Defaults to 1000.
 # attrib_limit Sanity limit for attribute values.  If the value exceeds the
 #              limit, use the last-seen for this class; if none, then 0.
 sub new {
@@ -89,12 +89,13 @@ sub new {
          keys %$attributes
       },
       worst        => $args{worst},
-      unroll_limit => $args{unroll_limit} || 50,
+      unroll_limit => $args{unroll_limit} || 1000,
       attrib_limit => $args{attrib_limit},
       result_classes => {},
       result_globals => {},
       result_samples => {},
       n_events       => 0,
+      unrolled_loops => undef,
    }, $class;
 }
 
@@ -129,64 +130,62 @@ sub aggregate {
    my $group_by = $event->{$self->{groupby}};
    return unless defined $group_by;
 
-   # Auto-detect all attributes.
-   $self->add_new_attributes($event) if $self->{detect_attribs};
-
    $self->{n_events}++;
+   MKDEBUG && _d('event', $self->{n_events});
 
-   # There might be a specially built sub that handles the work.
-   if ( exists $self->{unrolled_loops} ) {
-      return $self->{unrolled_loops}->($self, $event, $group_by);
-   }
+   # Run only unrolled loops if available.
+   return $self->{unrolled_loops}->($self, $event, $group_by)
+      if $self->{unrolled_loops};
 
-   my @attrs = keys %{$self->{attributes}};
-   ATTRIB:
-   foreach my $attrib ( @attrs ) {
+   # For the first unroll_limit events, auto-detect new attribs and
+   # run attrib handlers.
+   if ( $self->{n_events} <= $self->{unroll_limit} ) {
 
-      # Attrib auto-detection can add a lot of attributes which some events
-      # may or may not have.  Aggregating a nonexistent attrib is wasteful,
-      # so we check that the attrib or one of its alternates exists.  If
-      # one does, then we leave attrib alone because the handler sub will
-      # also check alternates.
-      if ( !exists $event->{$attrib} ) {
-         MKDEBUG && _d("attrib doesn't exist in event:", $attrib);
-         my $alt_attrib = $self->{alt_attribs}->{$attrib}->($event);
-         MKDEBUG && _d('alt attrib:', $alt_attrib);
-         next ATTRIB unless $alt_attrib;
-      }
+      $self->add_new_attributes($event) if $self->{detect_attribs};
 
-      # The value of the attribute ( $group_by ) may be an arrayref.
-      GROUPBY:
-      foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
-         my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
-         my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
-         my $samples       = $self->{result_samples};
-         my $handler = $self->{handlers}->{ $attrib };
-         if ( !$handler ) {
-            $handler = $self->make_handler(
-               $attrib,
-               $event,
-               wor => $self->{worst} eq $attrib,
-               alt => $self->{attributes}->{$attrib},
-            );
-            $self->{handlers}->{$attrib} = $handler;
+      ATTRIB:
+      foreach my $attrib ( keys %{$self->{attributes}} ) {
+
+         # Attrib auto-detection can add a lot of attributes which some events
+         # may or may not have.  Aggregating a nonexistent attrib is wasteful,
+         # so we check that the attrib or one of its alternates exists.  If
+         # one does, then we leave attrib alone because the handler sub will
+         # also check alternates.
+         if ( !exists $event->{$attrib} ) {
+            MKDEBUG && _d("attrib doesn't exist in event:", $attrib);
+            my $alt_attrib = $self->{alt_attribs}->{$attrib}->($event);
+            MKDEBUG && _d('alt attrib:', $alt_attrib);
+            next ATTRIB unless $alt_attrib;
          }
-         next GROUPBY unless $handler;
-         $samples->{$val} ||= $event; # Initialize to the first event.
-         $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
+
+         # The value of the attribute ( $group_by ) may be an arrayref.
+         GROUPBY:
+         foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
+            my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
+            my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+            my $samples       = $self->{result_samples};
+            my $handler = $self->{handlers}->{ $attrib };
+            if ( !$handler ) {
+               $handler = $self->make_handler(
+                  $attrib,
+                  $event,
+                  wor => $self->{worst} eq $attrib,
+                  alt => $self->{attributes}->{$attrib},
+               );
+               $self->{handlers}->{$attrib} = $handler;
+            }
+            next GROUPBY unless $handler;
+            $samples->{$val} ||= $event; # Initialize to the first event.
+            $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
+         }
       }
    }
-
-   # Figure out whether we are ready to generate a faster, unrolled handler.
-   # This happens either...
-   if ( $self->{n_queries}++ > 50  # ...after 50 events, or
-        || ( # all attribs have handlers and
-             !grep { ref $self->{handlers}->{$_} ne 'CODE' } @attrs
-             # we're not auto-detecting attribs.
-             && !$self->{detect_attribs}
-           ) )
-   {
+   else {
+      # After unroll_limit events, unroll the loops.
       $self->_make_unrolled_loops($event);
+      # Run unrolled loops here once.  Next time, they'll be ran
+      # before this if-else.
+      $self->{unrolled_loops}->($self, $event, $group_by);
    }
 
    return;
@@ -235,7 +234,7 @@ sub _make_unrolled_loops {
    my $code = join("\n", @lines);
    MKDEBUG && _d('Unrolled subroutine:', @lines);
    my $sub = eval $code;
-   die if $EVAL_ERROR;
+   die $EVAL_ERROR if $EVAL_ERROR;
    $self->{unrolled_loops} = $sub;
 
    return;
@@ -696,28 +695,11 @@ sub add_new_attributes {
    my ( $self, $event ) = @_;
    return unless $event;
 
-   my $unroll_subs;
-
    map {
       my $attrib = $_;
       $self->{attributes}->{$attrib}  = [$attrib];
       $self->{alt_attribs}->{$attrib} = make_alt_attrib($attrib);
       push @{$self->{all_attribs}}, $attrib;
-
-      # If we're past 50 events, unrolled_loops has already been created
-      # without these new attribs.  We must create handlers and re-unroll
-      # unrolled_loops with these new attributes (issue 514).
-      if ( exists $self->{unrolled_loops} ) {
-         my $handler = $self->make_handler(
-               $attrib,
-               $event,
-               wor => $self->{worst} eq $attrib,
-               alt => $self->{attributes}->{$attrib},
-         );
-         $self->{handlers}->{$attrib} = $handler;
-         $unroll_subs = 1;
-      }
-
       MKDEBUG && _d('Added new attribute:', $attrib);
    }
    grep {
@@ -726,8 +708,6 @@ sub add_new_attributes {
       && !exists $self->{ignore_attribs}->{$_}
    }
    keys %$event;
-
-   $self->_make_unrolled_loops($event) if $unroll_subs;
 
    return;
 }

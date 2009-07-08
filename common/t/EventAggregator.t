@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 68;
+use Test::More tests => 71;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -1460,13 +1460,33 @@ ok(
 # attributes
 # #############################################################################
 $ea = new EventAggregator(
-   groupby => 'arg',
-   worst   => 'Query_time',
+   groupby      => 'arg',
+   worst        => 'Query_time',
 );
+# In slow030, event 180 is a new class with new attributes.
 parse_file('samples/slow030.txt');
 ok(
    exists $ea->{unrolled_for}->{InnoDB_rec_lock_wait},
-   'Handler sub created for new attrib after 50 events'
+   'Handler sub created for new attrib; default unroll_limit (issue 514)'
+);
+ok(
+   exists $ea->{result_classes}->{'SELECT * FROM bar'}->{InnoDB_IO_r_bytes},
+   'New event class has new attrib; default unroll_limit(issue 514)'
+);
+
+$ea = new EventAggregator(
+   groupby      => 'arg',
+   worst        => 'Query_time',
+   unroll_limit => 50,
+);
+parse_file('samples/slow030.txt');
+ok(
+   !exists $ea->{unrolled_for}->{InnoDB_rec_lock_wait},
+   'Handler sub not created for new attrib; unroll_limit=50 (issue 514)'
+);
+ok(
+   !exists $ea->{result_classes}->{'SELECT * FROM bar'}->{InnoDB_IO_r_bytes},
+   'New event class has new attrib; default unroll_limit=50 (issue 514)'
 );
 
 # #############################################################################
