@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 14;
+use Test::More tests => 16;
 use English qw(-no_match_vars);
 
 require "../MemcachedProtocolParser.pm";
@@ -230,6 +230,41 @@ run_test({
          res        => 'NOT_FOUND',
          ts         => '2009-06-11 21:54:49.059144',
          val        => undef,
+      },
+   ],
+});
+
+# A session with a huge get() that will not fit into a single TCP packet, but
+# the connection seems to be broken in the middle of the receive and then the
+# new client picks up and asks for something different.
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump008.txt',
+   result => [
+      {
+         Query_time => '0.000003',
+         bytes      => 17946,
+         cmd        => 'get',
+         exptime    => undef,
+         flags      => 0,
+         host       => '127.0.0.1',
+         key        => 'my_key',
+         pos_in_log => 0,
+         res        => 'INTERRUPTED',
+         ts         => '2009-07-06 22:07:14.411331',
+         val        => undef,
+      },
+      {  Query_time => '0.000001',
+         cmd        => 'get',
+         key        => 'my_key',
+         val        => 'Some value',
+         bytes      => 10,
+         exptime    => undef,
+         flags      => 0,
+         host       => '127.0.0.1',
+         pos_in_log => 5382,
+         res        => 'VALUE',
+         ts         => '2009-07-06 22:07:14.411334',
       },
    ],
 });

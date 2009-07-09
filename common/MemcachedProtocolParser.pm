@@ -74,12 +74,6 @@ sub parse_packet {
    # client's session.
    if ( $packet->{data_len} == 0 ) {
       MKDEBUG && _d('No TCP data');
-      # Is the session ready to close? TODO: the session is never set to this
-      # state is it?
-      if ( ($session->{state} || '') eq 'closing' ) {
-         delete $self->{sessions}->{$session->{client}};
-         MKDEBUG && _d('Session deleted'); 
-      }
       return;
    }
 
@@ -90,7 +84,7 @@ sub parse_packet {
       $event = $self->_packet_from_server($packet, $session, $misc);
    }
    elsif ( $from eq $client ) {
-      $self->_packet_from_client($packet, $session, $misc);
+      $event = $self->_packet_from_client($packet, $session, $misc);
    }
    else {
       MKDEBUG && _d('Packet origin unknown');
@@ -190,27 +184,14 @@ sub _packet_from_server {
       }
    }
 
-   my $event = {
-      ts         => $session->{ts},
-      host       => $session->{host},
-      flags      => $session->{flags},
-      exptime    => $session->{exptime},
-      bytes      => $session->{bytes},
-      cmd        => $session->{cmd},
-      key        => $session->{key},
-      val        => $session->{val},
-      res        => $session->{res},
-      Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
-      pos_in_log => $session->{pos_in_log},
-   };
-   MKDEBUG && _d('Firing event, deleting session');
+   my $event = make_event($session, $packet);
+   MKDEBUG && _d('Creating event, deleting session');
    delete $self->{sessions}->{$session->{client}}; # memcached is stateless!
    $self->{raw_packets} = []; # Avoid keeping forever
    return $event;
 }
 
-# Handles a packet from the client given the state of the session.  Doesn't
-# return events, but creates the session that'll be returned later as an event.
+# Handles a packet from the client given the state of the session.
 sub _packet_from_client {
    my ( $self, $packet, $session, $misc ) = @_;
    die "I need a packet"  unless $packet;
@@ -218,6 +199,18 @@ sub _packet_from_client {
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
    push @{$self->{raw_packets}}, $packet->{raw_packet};
+
+   my $event;
+   if ( ($session->{state} || '') =~m/awaiting reply|partial recv/ ) {
+      # Whoa, we expected something from the server, not the client.  Fire an
+      # INTERRUPTED with what we've got, and create a new session.
+      MKDEBUG && _d("Expected data from the client, looks like interrupted");
+      $session->{res} = 'INTERRUPTED';
+      $event = make_event($session, $packet);
+      my $client = $session->{client};
+      delete @{$session}{keys %$session};
+      $session->{client} = $client;
+   }
 
    my ($line1, $val);
    my ($cmd, $key, $flags, $exptime, $bytes);
@@ -286,7 +279,25 @@ sub _packet_from_client {
       }
    }
 
-   return;
+   return $event;
+}
+
+sub make_event {
+   my ( $session, $packet ) = @_;
+   my $event = {
+      ts         => $session->{ts},
+      host       => $session->{host},
+      flags      => $session->{flags},
+      exptime    => $session->{exptime},
+      bytes      => $session->{bytes},
+      cmd        => $session->{cmd},
+      key        => $session->{key},
+      val        => $session->{val},
+      res        => $session->{res},
+      Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
+      pos_in_log => $session->{pos_in_log},
+   };
+   return $event;
 }
 
 sub _get_errors_fh {
