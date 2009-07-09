@@ -192,6 +192,7 @@ sub _packet_from_server {
       pos_in_log => $session->{pos_in_log},
    };
    delete $self->{sessions}->{$session->{client}}; # memcached is stateless!
+   $self->{raw_packets} = []; # Avoid keeping forever
    return $event;
 }
 
