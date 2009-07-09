@@ -96,7 +96,7 @@ sub parse_packet {
       MKDEBUG && _d('Packet origin unknown');
    }
 
-   MKDEBUG && _d('Done parsing packet; client state:', $session->{state});
+   MKDEBUG && _d('Done with packet; event:', Dumper($event));
    return $event;
 }
 
@@ -157,11 +157,24 @@ sub _packet_from_server {
             }
          }
       }
+      elsif ( $session->{res} eq 'END' ) {
+         # Technically NOT_FOUND is an error, and this isn't an error it's just
+         # a NULL, but what it really means is the value isn't found.
+         MKDEBUG && _d('Got an END without any data, firing NOT_FOUND');
+         $session->{res} = 'NOT_FOUND';
+      }
+      elsif ( $session->{res} ne 'STORED' ) {
+         # Not really sure what else would get us here... want to make a note
+         # and not have an uncaught condition.
+         MKDEBUG && _d("Session result:", $session->{res});
+      }
    }
    else { # Should be 'partial recv'
       MKDEBUG && _d('Session state: ', $session->{state});
       push @{$session->{partial}}, [ $packet->{seq}, $data ];
       $session->{gathered} += length($data);
+      MKDEBUG && _d('Gathered', $session->{gathered}, 'bytes in',
+         scalar(@{$session->{partial}}), 'packets from server');
       if ( $session->{gathered} >= $session->{bytes} + 2 ) { # Done.
          MKDEBUG && _d('End of partial response, preparing event');
          my $val = join('',
@@ -177,7 +190,6 @@ sub _packet_from_server {
       }
    }
 
-   MKDEBUG && _d('Firing event, deleting session');
    my $event = {
       ts         => $session->{ts},
       host       => $session->{host},
@@ -191,6 +203,7 @@ sub _packet_from_server {
       Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
       pos_in_log => $session->{pos_in_log},
    };
+   MKDEBUG && _d('Firing event, deleting session');
    delete $self->{sessions}->{$session->{client}}; # memcached is stateless!
    $self->{raw_packets} = []; # Avoid keeping forever
    return $event;
@@ -249,12 +262,14 @@ sub _packet_from_client {
          $session->{val} = $val;
       }
       else { # We apparently did NOT get the whole thing.
-         MKDEBUG && _d('Partial response, saving for later');
+         MKDEBUG && _d('Partial send, saving for later');
          push @{$session->{partial}},
             [ $packet->{seq}, $val ];
          $session->{gathered} += length($val);
+         MKDEBUG && _d('Gathered', $session->{gathered}, 'bytes in',
+            scalar(@{$session->{partial}}), 'packets from client');
          if ( $session->{gathered} >= $session->{bytes} + 2 ) { # Done.
-            MKDEBUG && _d('Response looks complete now, saving value');
+            MKDEBUG && _d('Message looks complete now, saving value');
             $val = join('',
                map  { $_->[1] }
                # Sort in proper sequence because TCP might reorder them.
@@ -264,7 +279,7 @@ sub _packet_from_client {
             $session->{val} = $val;
          }
          else {
-            MKDEBUG && _d('Response not complete');
+            MKDEBUG && _d('Message not complete');
             $val = '[INCOMPLETE]';
             $session->{state} = 'partial send';
          }

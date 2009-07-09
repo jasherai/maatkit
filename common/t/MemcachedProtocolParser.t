@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 12;
+use Test::More tests => 14;
 use English qw(-no_match_vars);
 
 require "../MemcachedProtocolParser.pm";
@@ -209,6 +209,27 @@ run_test({
          res        => 'VALUE',
          ts         => '2009-07-06 22:07:14.411331',
          val        => ('lorem ipsum dolor sit amet' x 690) . ' fini!',
+      },
+   ],
+});
+
+# A session with a get() that doesn't exist.
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump007.txt',
+   result => [
+      {
+         Query_time => '0.000016',
+         bytes      => undef,
+         cmd        => 'get',
+         exptime    => undef,
+         flags      => undef,
+         host       => '127.0.0.1',
+         key        => 'comment_v3_482685',
+         pos_in_log => 0,
+         res        => 'NOT_FOUND',
+         ts         => '2009-06-11 21:54:49.059144',
+         val        => undef,
       },
    ],
 });
