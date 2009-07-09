@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Made --continue-on-error negatable and on by default.
    * Changed --attribute-limit to --attribute-value-limit.
    * Added --check-attributes-limit (issue 514).
 

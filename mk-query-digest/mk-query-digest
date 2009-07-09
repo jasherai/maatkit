@@ -6545,7 +6545,9 @@ type: Array
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
 
-=item --continue-on-error
+=item --[no]continue-on-error
+
+default: yes
 
 Continue parsing even if there is an error.
 
