@@ -2030,7 +2030,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4049
+# MySQLProtocolParser package 4119
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2224,6 +2224,7 @@ sub _packet_from_server {
    push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    if ( ($session->{server_seq} || '') eq $packet->{seq} ) {
+      push @{ $session->{server_retransmissions} }, $packet->{seq};
       MKDEBUG && _d('TCP retransmission');
       return;
    }
@@ -2413,6 +2414,7 @@ sub _packet_from_client {
    push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    if ( ($session->{client_seq} || '') eq $packet->{seq} ) {
+      push @{ $session->{client_retransmissions} }, $packet->{seq};
       MKDEBUG && _d('TCP retransmission');
       return;
    }
@@ -2816,6 +2818,7 @@ sub fail_session {
    my ( $self, $session, $reason ) = @_;
    my $errors_fh = $self->_get_errors_fh();
    if ( $errors_fh ) {
+      $session->{reason_for_failure} = $reason;
       my $session_dump = '# ' . Dumper($session);
       chomp $session_dump;
       $session_dump =~ s/\n/\n# /g;
