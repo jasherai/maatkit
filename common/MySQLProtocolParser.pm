@@ -253,6 +253,7 @@ sub _packet_from_server {
    push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    if ( ($session->{server_seq} || '') eq $packet->{seq} ) {
+      push @{ $session->{server_retransmissions} }, $packet->{seq};
       MKDEBUG && _d('TCP retransmission');
       return;
    }
@@ -480,6 +481,7 @@ sub _packet_from_client {
    push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    if ( ($session->{client_seq} || '') eq $packet->{seq} ) {
+      push @{ $session->{client_retransmissions} }, $packet->{seq};
       MKDEBUG && _d('TCP retransmission');
       return;
    }
