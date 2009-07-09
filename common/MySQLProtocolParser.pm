@@ -193,7 +193,6 @@ sub parse_packet {
       };
    };
    my $session = $self->{sessions}->{$client};
-   $packet->{session_state} = $session->{state};
 
    # Return early if there's TCP/MySQL data.  These are usually ACK
    # packets, but they could also be FINs in which case, we should close
@@ -207,6 +206,9 @@ sub parse_packet {
       }
       return;
    }
+
+   # Save raw packets to dump later in case something fails.
+   push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    # Return unless the compressed packet can be uncompressed.
    # If it cannot, then we're helpless and must return.
@@ -249,8 +251,7 @@ sub _packet_from_server {
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
-   MKDEBUG && _d('Packet is from server; client state:', $session->{state});
-   push @{$self->{raw_packets}}, $packet->{raw_packet};
+   MKDEBUG && _d('Packet is from server; client state:', $session->{state}); 
 
    if ( ($session->{server_seq} || '') eq $packet->{seq} ) {
       push @{ $session->{server_retransmissions} }, $packet->{seq};
@@ -258,7 +259,7 @@ sub _packet_from_server {
       return;
    }
    $session->{server_seq} = $packet->{seq};
-   
+
    my $data = $packet->{data};
 
    # The first byte in the packet indicates whether it's an OK,
@@ -477,8 +478,7 @@ sub _packet_from_client {
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
-   MKDEBUG && _d('Packet is from client; state:', $session->{state});
-   push @{$self->{raw_packets}}, $packet->{raw_packet};
+   MKDEBUG && _d('Packet is from client; state:', $session->{state}); 
 
    if ( ($session->{client_seq} || '') eq $packet->{seq} ) {
       push @{ $session->{client_retransmissions} }, $packet->{seq};
