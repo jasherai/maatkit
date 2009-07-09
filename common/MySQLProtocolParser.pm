@@ -667,7 +667,7 @@ sub get_lcb {
 #         00 00 00 01         MySQL proto header (already removed)
 #         ff                  Error  (already removed)
 # 0       00 00               Error number
-# 4       00                  SQL state marker, always '#'
+# 4       23                  SQL state marker, always '#'
 # 6       00 00 00 00 00      SQL state
 # 16      00 ...              Error message
 # The sqlstate marker and actual sqlstate are combined into one value. 
@@ -982,6 +982,7 @@ sub fail_session {
    my ( $self, $session, $reason ) = @_;
    my $errors_fh = $self->_get_errors_fh();
    if ( $errors_fh ) {
+      $session->{reason_for_failure} = $reason;
       my $session_dump = '# ' . Dumper($session);
       chomp $session_dump;
       $session_dump =~ s/\n/\n# /g;
