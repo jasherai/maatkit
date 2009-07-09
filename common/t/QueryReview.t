@@ -22,10 +22,10 @@ require '../QueryRewriter.pm';
 require '../MySQLDump.pm';
 require '../TableParser.pm';
 require '../Quoter.pm';
-require '../LogParser.pm';
+require '../SlowLogParser.pm';
 require '../OptionParser.pm';
 my $qr = new QueryRewriter();
-my $lp = new LogParser;
+my $lp = new SlowLogParser;
 my $q  = new Quoter();
 my $tp = new TableParser();
 my $du = new MySQLDump();
@@ -56,10 +56,10 @@ my $callback = sub {
 
 my $log;
 open $log, '<', 'samples/slow006.txt' or bail_out($OS_ERROR);
-1 while ( $lp->parse_event($log, $callback) );
+1 while ( $lp->parse_event($log, undef, $callback) );
 close $log;
 open $log, '<', 'samples/slow021.txt' or bail_out($OS_ERROR);
-1 while ( $lp->parse_event($log, $callback) );
+1 while ( $lp->parse_event($log, undef, $callback) );
 close $log;
 
 my $res = $dbh->selectall_arrayref(
