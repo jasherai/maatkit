@@ -122,27 +122,34 @@ sub _packet_from_server {
    # Assume that the server is returning only one value.  TODO: make it
    # handle multi-gets.
    if ( $session->{state} eq 'awaiting reply' ) {
+      MKDEBUG && _d('State is awaiting reply');
       my ($line1, $rest) = $packet->{data} =~ m/\A(.*?)\r\n(.*)?/s;
 
       # Split up the first line into its parts.
       my @vals = $line1 =~ m/(\S+)/g;
       $session->{res} = shift @vals;
       if ( $session->{cmd} eq 'incr' || $session->{cmd} eq 'decr' ) {
+         MKDEBUG && _d('It is an incr or decr');
          if ( $session->{res} !~ m/\D/ ) { # It's an integer, not an error
+            MKDEBUG && _d('Got a value for the incr/decr');
             $session->{val} = $session->{res};
             $session->{res} = '';
          }
       }
       elsif ( $session->{res} eq 'VALUE' ) {
+         MKDEBUG && _d('It is the result of a "get"');
          my ($key, $flags, $bytes) = @vals;
          defined $session->{flags} or $session->{flags} = $flags;
          defined $session->{bytes} or $session->{bytes} = $bytes;
          # Get the value from the $rest.  TODO: there might be multiple responses
          if ( $rest && $bytes ) {
+            MKDEBUG && _d('There is a value');
             if ( length($rest) > $bytes ) {
+               MKDEBUG && _d('Looks like we got the whole response');
                $session->{val} = substr($rest, 0, $bytes); # Got the whole response.
             }
             else {
+               MKDEBUG && _d('Got partial response, saving for later');
                push @{$session->{partial}}, [ $packet->{seq}, $rest ];
                $session->{gathered} += length($rest);
                $session->{state} = 'partial recv';
@@ -152,9 +159,11 @@ sub _packet_from_server {
       }
    }
    else { # Should be 'partial recv'
+      MKDEBUG && _d('Session state: ', $session->{state});
       push @{$session->{partial}}, [ $packet->{seq}, $data ];
       $session->{gathered} += length($data);
       if ( $session->{gathered} >= $session->{bytes} + 2 ) { # Done.
+         MKDEBUG && _d('End of partial response, preparing event');
          my $val = join('',
             map  { $_->[1] }
             # Sort in proper sequence because TCP might reorder them.
@@ -163,10 +172,12 @@ sub _packet_from_server {
          $session->{val} = substr($val, 0, $session->{bytes});
       }
       else {
+         MKDEBUG && _d('Partial response continues, no action');
          return; # Prevent firing event.
       }
    }
 
+   MKDEBUG && _d('Firing event, deleting session');
    my $event = {
       ts         => $session->{ts},
       host       => $session->{host},
@@ -198,11 +209,13 @@ sub _packet_from_client {
    my ($cmd, $key, $flags, $exptime, $bytes);
    
    if ( !$session->{state} ) {
+      MKDEBUG && _d('Session state: ', $session->{state});
       # Split up the first line into its parts.
       ($line1, $val) = $packet->{data} =~ m/\A(.*?)\r\n(.+)?/s;
       # TODO: handle <cas unique> and [noreply]
       my @vals = $line1 =~ m/(\S+)/g;
       $cmd = lc shift @vals;
+      MKDEBUG && _d('$cmd is a ', $cmd);
       if ( $cmd eq 'set' ) {
          ($key, $flags, $exptime, $bytes) = @vals;
          $session->{bytes} = $bytes;
@@ -220,6 +233,7 @@ sub _packet_from_client {
       $session->{ts}         = $packet->{ts};
    }
    else {
+      MKDEBUG && _d('Session state: ', $session->{state});
       $val = $packet->{data};
    }
 
@@ -229,14 +243,17 @@ sub _packet_from_client {
    $session->{state} = 'awaiting reply'; # Assume we got the whole packet
    if ( $val ) {
       if ( $session->{bytes} + 2 == length($val) ) { # +2 for the \r\n
+         MKDEBUG && _d('Got the whole thing');
          $val =~ s/\r\n\Z//; # We got the whole thing.
          $session->{val} = $val;
       }
       else { # We apparently did NOT get the whole thing.
+         MKDEBUG && _d('Partial response, saving for later');
          push @{$session->{partial}},
             [ $packet->{seq}, $val ];
          $session->{gathered} += length($val);
          if ( $session->{gathered} >= $session->{bytes} + 2 ) { # Done.
+            MKDEBUG && _d('Response looks complete now, saving value');
             $val = join('',
                map  { $_->[1] }
                # Sort in proper sequence because TCP might reorder them.
@@ -246,6 +263,7 @@ sub _packet_from_client {
             $session->{val} = $val;
          }
          else {
+            MKDEBUG && _d('Response not complete');
             $val = '[INCOMPLETE]';
             $session->{state} = 'partial send';
          }
