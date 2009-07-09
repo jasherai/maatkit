@@ -2030,7 +2030,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4119
+# MySQLProtocolParser package 4122
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2183,7 +2183,6 @@ sub parse_packet {
       };
    };
    my $session = $self->{sessions}->{$client};
-   $packet->{session_state} = $session->{state};
 
    if ( $packet->{data_len} == 0 ) {
       MKDEBUG && _d('No TCP/MySQL data');
@@ -2193,6 +2192,8 @@ sub parse_packet {
       }
       return;
    }
+
+   push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    if ( $session->{compress} ) {
       return unless uncompress_packet($packet);
@@ -2220,8 +2221,7 @@ sub _packet_from_server {
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
-   MKDEBUG && _d('Packet is from server; client state:', $session->{state});
-   push @{$self->{raw_packets}}, $packet->{raw_packet};
+   MKDEBUG && _d('Packet is from server; client state:', $session->{state}); 
 
    if ( ($session->{server_seq} || '') eq $packet->{seq} ) {
       push @{ $session->{server_retransmissions} }, $packet->{seq};
@@ -2229,7 +2229,7 @@ sub _packet_from_server {
       return;
    }
    $session->{server_seq} = $packet->{seq};
-   
+
    my $data = $packet->{data};
 
 
@@ -2410,8 +2410,7 @@ sub _packet_from_client {
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
-   MKDEBUG && _d('Packet is from client; state:', $session->{state});
-   push @{$self->{raw_packets}}, $packet->{raw_packet};
+   MKDEBUG && _d('Packet is from client; state:', $session->{state}); 
 
    if ( ($session->{client_seq} || '') eq $packet->{seq} ) {
       push @{ $session->{client_retransmissions} }, $packet->{seq};
