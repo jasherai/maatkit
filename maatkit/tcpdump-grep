@@ -1,0 +1,18 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+my $pat = shift or die "Usage: $PROGRAM_NAME <pattern> [FILE...]\n";
+
+local $INPUT_RECORD_SEPARATOR = "\n20";
+while ( my $p = <> ) {
+   # Remove the separator from the packet, and restore it to the front if
+   # necessary.
+   $p =~ s/\n20\Z//;
+   $p = "20$p" unless $p =~ m/\A20/;
+   if ( $p =~ m/$pat/ ) {
+      print $p, "\n";
+   }
+}
