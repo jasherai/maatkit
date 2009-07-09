@@ -1,0 +1,41 @@
+#!/usr/bin/env perl
+
+use strict;
+use English qw(-no_match_vars);
+
+if ( @ARGV < 2 ) {
+   print <<EOF;
+Usage: tcpdump-errors-split FILE SAVE-TO-BASE
+
+   FILE is a file from --tcpdump-errors.
+
+   SAVE-TO-BASE is filename prefix for the split sessions.  -N.txt is appended
+   to each SAVE-TO-BASE where N is the session number.
+
+   Example: tcpdump-errors-split tcpdump-errors.txt ./dir/badsess
+   This will save the bad sessions as ./dir/badsess-0001.txt, etc.
+EOF
+
+   exit;
+}
+
+my $file = $ARGV[0];
+open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+
+my $saveto = $ARGV[1];
+
+$INPUT_RECORD_SEPARATOR = "\n# \$VAR1 = {\n";
+my $i = 0;
+while ( my $session = <$fh> ) {
+   $i++;
+   chomp $session;
+   my $session_file = sprintf '%s-%04d.txt', $saveto, $i;
+   open my $session_fh, '>', $session_file
+      or die "Cannot open $session_file: $OS_ERROR";
+   print $session_fh $session;
+   close $session_fh;
+}
+print "$i sessions\n";
+
+close $fh;
+exit;
