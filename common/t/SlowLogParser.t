@@ -1005,10 +1005,10 @@ run_test({
    ],
 });
 
-# Parse files that begin with Windows paths.  It also has TWO lines of meta-data.
-# This is from MySQL 5.1 on Windows.
+# Parse files that begin with Windows paths.  It also has TWO lines of
+# meta-data.  This is from MySQL 5.1 on Windows.
 run_test({
-   file => 'samples/slow020.txt',
+   file => 'samples/slow031.txt',
    result => [
       {  Lock_time     => '0.000000',
          Query_time    => '0.453125',
@@ -1191,7 +1191,9 @@ run_test({
    ],
 });
 
+# #############################################################################
 # Test a callback chain.
+# #############################################################################
 my $i = 0;
 my @e = ();
 my $file;
