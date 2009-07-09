@@ -354,6 +354,9 @@ sub _packet_from_server {
                $packet, $session
             );
          } 
+         else {
+            MKDEBUG && _d('Looks like an OK packet but session has no cmd');
+         }
       }
       elsif ( $first_byte eq 'ff' ) {
          my $error = parse_error_packet($data);
@@ -372,6 +375,8 @@ sub _packet_from_server {
                Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
             };
             $session->{state} = 'closing';
+
+            return $self->_make_event($event, $packet, $session);
          }
          elsif ( $session->{cmd} ) {
             # This error should be in response to a query or something
@@ -395,9 +400,13 @@ sub _packet_from_server {
                Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
             };
             $session->{state} = 'ready';
-         }
 
-         return $self->_make_event($event, $packet, $session);
+            return $self->_make_event($event, $packet, $session);
+         }
+         else {
+            MKDEBUG && _d('Looks like an error packet but client is not '
+               . 'authenticating and session has no cmd');
+         }
       }
       elsif ( $first_byte eq 'fe' && $packet->{mysql_data_len} < 9 ) {
          if ( $packet->{mysql_data_len} == 1
@@ -596,6 +605,11 @@ sub _make_event {
       No_index_used      => ($event->{No_index_used}      ? 'Yes' : 'No'),
    };
    MKDEBUG && _d('Properties of event:', Dumper($new_event));
+
+   # Delete cmd to prevent re-making the same event if the
+   # server sends extra stuff that looks like a result set, etc.
+   delete $session->{cmd};
+
    return $new_event;
 }
 
