@@ -39,15 +39,6 @@ my %formatting_function = (
       my $max = parse_timestamp($stats->{max} || '');
       return $min && $max ? "$min to $max" : '';
    },
-   QC_Hit         => \&format_bool_attrib,
-   Full_scan      => \&format_bool_attrib,
-   Full_join      => \&format_bool_attrib,
-   Tmp_table      => \&format_bool_attrib,
-   Disk_tmp_table => \&format_bool_attrib,
-   Filesort       => \&format_bool_attrib,
-   Disk_filesort  => \&format_bool_attrib,
-   No_good_index_used => \&format_bool_attrib,
-   No_index_used      => \&format_bool_attrib,
 );
 
 my $bool_format = '# %3s%% %s';
@@ -121,17 +112,9 @@ sub global_report {
       next unless $attrib_type; 
       next unless exists $stats->{globals}->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
-         if ( $attrib_type ne 'bool') {
-            push @result, sprintf $format, make_label($attrib),
-                  $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
-                  (map { '' } 0..9); # just for good measure
-         }
-         else {
-            # Bools have their own special line format.
-            push @result, sprintf $bool_format,
-                  $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
-                  $attrib;
-         }
+         push @result, sprintf $format, make_label($attrib),
+            $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
+            (map { '' } 0..9); # just for good measure
       }
       else {
          my $store = $stats->{globals}->{$attrib};
@@ -152,10 +135,16 @@ sub global_report {
                format_string_list($store),
                (map { '' } 0..9); # just for good measure
          }
+         elsif ( $attrib_type eq 'bool' ) {
+            push @result,
+               sprintf $bool_format, format_bool_attrib($store), $attrib;
+         }
          else {
             @values = ('', $store->{min}, $store->{max}, '', '', '', '');
          }
-         push @result, sprintf $format, make_label($attrib), @values;
+
+         push @result, sprintf $format, make_label($attrib), @values
+            unless $attrib_type eq 'bool';  # bool does its own thing.
       }
    }
 
@@ -234,17 +223,9 @@ sub event_report {
       my $vals = $store->{$attrib};
       next unless scalar %$vals;
       if ( $formatting_function{$attrib} ) { # Handle special cases
-         if ( $attrib_type ne 'bool' ) {
-            push @result, sprintf $format, make_label($attrib),
-                  $formatting_function{$attrib}->($vals),
-                  (map { '' } 0..9); # just for good measure
-         }
-         else {
-            # Bools have their own special line format.
-            push @result, sprintf $bool_format, 
-                  $formatting_function{$attrib}->($vals),
-                  $attrib;
-         }
+         push @result, sprintf $format, make_label($attrib),
+            $formatting_function{$attrib}->($vals),
+            (map { '' } 0..9); # just for good measure
       }
       else {
          my @values;
@@ -267,11 +248,17 @@ sub event_report {
                (map { '' } 0..9); # just for good measure
             $pct = '';
          }
+         elsif ( $attrib_type eq 'bool' ) {
+            push @result,
+               sprintf $bool_format, format_bool_attrib($vals), $attrib;
+         }
          else {
             @values = ('', $vals->{min}, $vals->{max}, '', '', '', '');
             $pct = 0;
          }
-         push @result, sprintf $format, make_label($attrib), $pct, @values;
+
+         push @result, sprintf $format, make_label($attrib), $pct, @values
+            unless $attrib_type eq 'bool';  # bool does its own thing.
       }
    }
 
