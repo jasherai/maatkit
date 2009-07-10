@@ -2030,7 +2030,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4134
+# MySQLProtocolParser package 4136
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2157,7 +2157,6 @@ sub new {
       version     => '41',
       sessions    => {},
       o           => $args{o},
-      raw_packets => [],  # Raw tcpdump packets before event.
    };
    return bless $self, $class;
 }
@@ -2180,6 +2179,7 @@ sub parse_packet {
          ts          => $packet->{ts},
          state       => undef,
          compress    => undef,
+         raw_packets => [],
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -2193,7 +2193,7 @@ sub parse_packet {
       return;
    }
 
-   push @{$self->{raw_packets}}, $packet->{raw_packet};
+   push @{$session->{raw_packets}}, $packet->{raw_packet};
 
    if ( $session->{compress} ) {
       return unless uncompress_packet($packet);
@@ -2487,7 +2487,7 @@ sub _make_event {
    my ( $self, $event, $packet, $session ) = @_;
    MKDEBUG && _d('Making event');
 
-   $self->{raw_packets} = [];
+   $session->{raw_packets} = [];
 
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
    my $new_event = {
@@ -2830,7 +2830,7 @@ sub fail_session {
       print $errors_fh "$session_dump\n";
       {
          local $LIST_SEPARATOR = "\n";
-         print $errors_fh "@{$self->{raw_packets}}";
+         print $errors_fh "@{$session->{raw_packets}}";
          print $errors_fh "\n";
       }
    }
@@ -5216,6 +5216,327 @@ sub _d {
 
 # ###########################################################################
 # End Daemon package
+# ###########################################################################
+
+# ###########################################################################
+# MemcachedProtocolParser package 4127
+# ###########################################################################
+package MemcachedProtocolParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      server      => $args{server},
+      sessions    => {},
+      o           => $args{o},
+      raw_packets => [],  # Raw tcpdump packets before event.
+   };
+   return bless $self, $class;
+}
+
+sub parse_packet {
+   my ( $self, $packet, $misc ) = @_;
+
+   my $from  = "$packet->{src_host}:$packet->{src_port}";
+   my $to    = "$packet->{dst_host}:$packet->{dst_port}";
+   $self->{server} ||= $from =~ m/:(?:11211)$/ ? $from
+                     : $to   =~ m/:(?:11211)$/ ? $to
+                     :                           undef;
+   my $client = $from eq $self->{server} ? $to : $from;
+   MKDEBUG && _d('Client:', $client);
+
+   if ( !exists $self->{sessions}->{$client} ) {
+      MKDEBUG && _d('New session');
+      $self->{sessions}->{$client} = {
+         client      => $client,
+         state       => undef,
+      };
+   };
+   my $session = $self->{sessions}->{$client};
+
+   if ( $packet->{data_len} == 0 ) {
+      MKDEBUG && _d('No TCP data');
+      return;
+   }
+
+   $packet->{data} = pack('H*', $packet->{data});
+   my $event;
+   if ( $from eq $self->{server} ) {
+      $event = $self->_packet_from_server($packet, $session, $misc);
+   }
+   elsif ( $from eq $client ) {
+      $event = $self->_packet_from_client($packet, $session, $misc);
+   }
+   else {
+      MKDEBUG && _d('Packet origin unknown');
+   }
+
+   MKDEBUG && _d('Done with packet; event:', Dumper($event));
+   return $event;
+}
+
+sub _packet_from_server {
+   my ( $self, $packet, $session, $misc ) = @_;
+   die "I need a packet"  unless $packet;
+   die "I need a session" unless $session;
+
+   MKDEBUG && _d('Packet is from server; client state:', $session->{state});
+   push @{$self->{raw_packets}}, $packet->{raw_packet};
+
+   my $data = $packet->{data};
+
+   if ( !$session->{state} ) {
+      MKDEBUG && _d('Ignoring mid-stream server response');
+      return;
+   }
+
+   if ( $session->{state} eq 'awaiting reply' ) {
+      MKDEBUG && _d('State is awaiting reply');
+      my ($line1, $rest) = $packet->{data} =~ m/\A(.*?)\r\n(.*)?/s;
+
+      my @vals = $line1 =~ m/(\S+)/g;
+      $session->{res} = shift @vals;
+      if ( $session->{cmd} eq 'incr' || $session->{cmd} eq 'decr' ) {
+         MKDEBUG && _d('It is an incr or decr');
+         if ( $session->{res} !~ m/\D/ ) { # It's an integer, not an error
+            MKDEBUG && _d('Got a value for the incr/decr');
+            $session->{val} = $session->{res};
+            $session->{res} = '';
+         }
+      }
+      elsif ( $session->{res} eq 'VALUE' ) {
+         MKDEBUG && _d('It is the result of a "get"');
+         my ($key, $flags, $bytes) = @vals;
+         defined $session->{flags} or $session->{flags} = $flags;
+         defined $session->{bytes} or $session->{bytes} = $bytes;
+         if ( $rest && $bytes ) {
+            MKDEBUG && _d('There is a value');
+            if ( length($rest) > $bytes ) {
+               MKDEBUG && _d('Looks like we got the whole response');
+               $session->{val} = substr($rest, 0, $bytes); # Got the whole response.
+            }
+            else {
+               MKDEBUG && _d('Got partial response, saving for later');
+               push @{$session->{partial}}, [ $packet->{seq}, $rest ];
+               $session->{gathered} += length($rest);
+               $session->{state} = 'partial recv';
+               return; # Prevent firing an event.
+            }
+         }
+      }
+      elsif ( $session->{res} eq 'END' ) {
+         MKDEBUG && _d('Got an END without any data, firing NOT_FOUND');
+         $session->{res} = 'NOT_FOUND';
+      }
+      elsif ( $session->{res} !~ m/STORED|DELETED|NOT_FOUND/ ) {
+         MKDEBUG && _d("Session result:", $session->{res});
+      }
+   }
+   else { # Should be 'partial recv'
+      MKDEBUG && _d('Session state: ', $session->{state});
+      push @{$session->{partial}}, [ $packet->{seq}, $data ];
+      $session->{gathered} += length($data);
+      MKDEBUG && _d('Gathered', $session->{gathered}, 'bytes in',
+         scalar(@{$session->{partial}}), 'packets from server');
+      if ( $session->{gathered} >= $session->{bytes} + 2 ) { # Done.
+         MKDEBUG && _d('End of partial response, preparing event');
+         my $val = join('',
+            map  { $_->[1] }
+            sort { $a->[0] <=> $b->[0] }
+                 @{$session->{partial}});
+         $session->{val} = substr($val, 0, $session->{bytes});
+      }
+      else {
+         MKDEBUG && _d('Partial response continues, no action');
+         return; # Prevent firing event.
+      }
+   }
+
+   my $event = make_event($session, $packet);
+   MKDEBUG && _d('Creating event, deleting session');
+   delete $self->{sessions}->{$session->{client}}; # memcached is stateless!
+   $self->{raw_packets} = []; # Avoid keeping forever
+   return $event;
+}
+
+sub _packet_from_client {
+   my ( $self, $packet, $session, $misc ) = @_;
+   die "I need a packet"  unless $packet;
+   die "I need a session" unless $session;
+
+   MKDEBUG && _d('Packet is from client; state:', $session->{state});
+   push @{$self->{raw_packets}}, $packet->{raw_packet};
+
+   my $event;
+   if ( ($session->{state} || '') =~m/awaiting reply|partial recv/ ) {
+      MKDEBUG && _d("Expected data from the client, looks like interrupted");
+      $session->{res} = 'INTERRUPTED';
+      $event = make_event($session, $packet);
+      my $client = $session->{client};
+      delete @{$session}{keys %$session};
+      $session->{client} = $client;
+   }
+
+   my ($line1, $val);
+   my ($cmd, $key, $flags, $exptime, $bytes);
+   
+   if ( !$session->{state} ) {
+      MKDEBUG && _d('Session state: ', $session->{state});
+      ($line1, $val) = $packet->{data} =~ m/\A(.*?)\r\n(.+)?/s;
+      my @vals = $line1 =~ m/(\S+)/g;
+      $cmd = lc shift @vals;
+      MKDEBUG && _d('$cmd is a ', $cmd);
+      if ( $cmd eq 'set' ) {
+         ($key, $flags, $exptime, $bytes) = @vals;
+         $session->{bytes} = $bytes;
+      }
+      elsif ( $cmd eq 'get' ) {
+         ($key) = @vals;
+      }
+      elsif ( $cmd eq 'delete' ) {
+         ($key) = @vals; # TODO: handle the <queue_time>
+      }
+      elsif ( $cmd eq 'incr' || $cmd eq 'decr' ) {
+         ($key) = @vals;
+      }
+      @{$session}{qw(cmd key flags exptime)}
+         = ($cmd, $key, $flags, $exptime);
+      $session->{host}       = $packet->{src_host};
+      $session->{pos_in_log} = $packet->{pos_in_log};
+      $session->{ts}         = $packet->{ts};
+   }
+   else {
+      MKDEBUG && _d('Session state: ', $session->{state});
+      $val = $packet->{data};
+   }
+
+   $session->{state} = 'awaiting reply'; # Assume we got the whole packet
+   if ( $val ) {
+      if ( $session->{bytes} + 2 == length($val) ) { # +2 for the \r\n
+         MKDEBUG && _d('Got the whole thing');
+         $val =~ s/\r\n\Z//; # We got the whole thing.
+         $session->{val} = $val;
+      }
+      else { # We apparently did NOT get the whole thing.
+         MKDEBUG && _d('Partial send, saving for later');
+         push @{$session->{partial}},
+            [ $packet->{seq}, $val ];
+         $session->{gathered} += length($val);
+         MKDEBUG && _d('Gathered', $session->{gathered}, 'bytes in',
+            scalar(@{$session->{partial}}), 'packets from client');
+         if ( $session->{gathered} >= $session->{bytes} + 2 ) { # Done.
+            MKDEBUG && _d('Message looks complete now, saving value');
+            $val = join('',
+               map  { $_->[1] }
+               sort { $a->[0] <=> $b->[0] }
+                    @{$session->{partial}});
+            $val =~ s/\r\n\Z//;
+            $session->{val} = $val;
+         }
+         else {
+            MKDEBUG && _d('Message not complete');
+            $val = '[INCOMPLETE]';
+            $session->{state} = 'partial send';
+         }
+      }
+   }
+
+   return $event;
+}
+
+sub make_event {
+   my ( $session, $packet ) = @_;
+   my $event = {
+      ts         => $session->{ts},
+      host       => $session->{host},
+      flags      => $session->{flags},
+      exptime    => $session->{exptime},
+      bytes      => $session->{bytes},
+      cmd        => $session->{cmd},
+      key        => $session->{key},
+      val        => $session->{val},
+      res        => $session->{res},
+      Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
+      pos_in_log => $session->{pos_in_log},
+   };
+   return $event;
+}
+
+sub _get_errors_fh {
+   my ( $self ) = @_;
+   my $errors_fh = $self->{errors_fh};
+   return $errors_fh if $errors_fh;
+
+   my $o = $self->{o};
+   if ( $o && $o->has('tcpdump-errors') && $o->got('tcpdump-errors') ) {
+      my $errors_file = $o->get('tcpdump-errors');
+      MKDEBUG && _d('tcpdump-errors file:', $errors_file);
+      open $errors_fh, '>>', $errors_file
+         or die "Cannot open tcpdump-errors file $errors_file: $OS_ERROR";
+   }
+
+   $self->{errors_fh} = $errors_fh;
+   return $errors_fh;
+}
+
+sub fail_session {
+   my ( $self, $session, $reason ) = @_;
+   my $errors_fh = $self->_get_errors_fh();
+   if ( $errors_fh ) {
+      my $session_dump = '# ' . Dumper($session);
+      chomp $session_dump;
+      $session_dump =~ s/\n/\n# /g;
+      print $errors_fh "$session_dump\n";
+      {
+         local $LIST_SEPARATOR = "\n";
+         print $errors_fh "@{$self->{raw_packets}}";
+         print $errors_fh "\n";
+      }
+   }
+   MKDEBUG && _d('Failed session', $session->{client}, 'because', $reason);
+   delete $self->{sessions}->{$session->{client}};
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+sub timestamp_diff {
+   my ( $start, $end ) = @_;
+   my $sd = substr($start, 0, 11, '');
+   my $ed = substr($end,   0, 11, '');
+   my ( $sh, $sm, $ss ) = split(/:/, $start);
+   my ( $eh, $em, $es ) = split(/:/, $end);
+   my $esecs = ($eh * 3600 + $em * 60 + $es);
+   my $ssecs = ($sh * 3600 + $sm * 60 + $ss);
+   if ( $sd eq $ed ) {
+      return sprintf '%.6f', $esecs - $ssecs;
+   }
+   else { # Assume only one day boundary has been crossed, no DST, etc
+      return sprintf '%.6f', ( 86_400 - $ssecs ) + $esecs;
+   }
+}
+
+1;
+
+# ###########################################################################
+# End MemcachedProtocolParser package
 # ###########################################################################
 
 # ###########################################################################
