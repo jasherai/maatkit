@@ -5219,7 +5219,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedProtocolParser package 4127
+# MemcachedProtocolParser package 4140
 # ###########################################################################
 package MemcachedProtocolParser;
 
@@ -5240,7 +5240,6 @@ sub new {
       server      => $args{server},
       sessions    => {},
       o           => $args{o},
-      raw_packets => [],  # Raw tcpdump packets before event.
    };
    return bless $self, $class;
 }
@@ -5261,6 +5260,7 @@ sub parse_packet {
       $self->{sessions}->{$client} = {
          client      => $client,
          state       => undef,
+         raw_packets => [],
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -5269,6 +5269,8 @@ sub parse_packet {
       MKDEBUG && _d('No TCP data');
       return;
    }
+
+   push @{$session->{raw_packets}}, $packet->{raw_packet};
 
    $packet->{data} = pack('H*', $packet->{data});
    my $event;
@@ -5291,8 +5293,7 @@ sub _packet_from_server {
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
-   MKDEBUG && _d('Packet is from server; client state:', $session->{state});
-   push @{$self->{raw_packets}}, $packet->{raw_packet};
+   MKDEBUG && _d('Packet is from server; client state:', $session->{state}); 
 
    my $data = $packet->{data};
 
@@ -5366,7 +5367,7 @@ sub _packet_from_server {
    my $event = make_event($session, $packet);
    MKDEBUG && _d('Creating event, deleting session');
    delete $self->{sessions}->{$session->{client}}; # memcached is stateless!
-   $self->{raw_packets} = []; # Avoid keeping forever
+   $session->{raw_packets} = []; # Avoid keeping forever
    return $event;
 }
 
@@ -5376,7 +5377,6 @@ sub _packet_from_client {
    die "I need a session" unless $session;
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
-   push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    my $event;
    if ( ($session->{state} || '') =~m/awaiting reply|partial recv/ ) {
@@ -5494,13 +5494,14 @@ sub fail_session {
    my ( $self, $session, $reason ) = @_;
    my $errors_fh = $self->_get_errors_fh();
    if ( $errors_fh ) {
+      $session->{reason_for_failure} = $reason;
       my $session_dump = '# ' . Dumper($session);
       chomp $session_dump;
       $session_dump =~ s/\n/\n# /g;
       print $errors_fh "$session_dump\n";
       {
          local $LIST_SEPARATOR = "\n";
-         print $errors_fh "@{$self->{raw_packets}}";
+         print $errors_fh "@{$session->{raw_packets}}";
          print $errors_fh "\n";
       }
    }
@@ -5531,6 +5532,11 @@ sub timestamp_diff {
    else { # Assume only one day boundary has been crossed, no DST, etc
       return sprintf '%.6f', ( 86_400 - $ssecs ) + $esecs;
    }
+}
+
+sub fingerprint {
+   my ( $val ) = @_;
+   $val =~ s/[0-9A-Fa-f]{16,}|\d+/?/g;
 }
 
 1;
@@ -5777,6 +5783,45 @@ sub main {
          return $mysql_proto->parse_packet(@_);
       };
    }
+   # Translate TCP packets into memcached query events.  This sub must be
+   # first because it creates the events for subsequent callbacks.
+   my $mc;
+   if ( $o->get('type') eq 'memcached' ) {
+      $mc = new MemcachedProtocolParser(
+         server => $o->get('watch-server'),
+         o      => $o,
+      );
+      push @callbacks, sub {
+         return $mc->parse_packet(@_);
+      };
+
+      # Add a "fingerprint" to each event.  Normalize event properties.
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         $event->{arg}         = $event->{cmd} . '-' . $event->{key};
+         my $print             = $mc->fingerprint($event->{key});
+         $event->{fingerprint} = join(' ',
+            grep { defined } $event->{cmd}, $print);
+         $event->{key_print}   = $print || '';
+         $event->{bytes}       ||= 0;
+         $event->{flags}       ||= 0;
+         $event->{exptime}     ||= 0;
+         $event->{Query_time}  ||= 0;
+
+         # Create bool vals for certain cmds and results.
+         if ( $event->{cmd} eq 'get' ) {
+            $event->{Get} = $event->{res} eq 'VALUE' ? 'Yes' : 'No';
+         }
+         if ( $event->{cmd} eq 'set' ) {
+            $event->{Set} = $event->{res} eq 'STORED' ? 'Yes' : 'No';
+         }
+         if ( $event->{cmd} eq 'delete' ) {
+            $event->{Delete} = $event->{res} eq 'DELETED' ? 'Yes' : 'No';
+         }
+         # XXX: what constitutes an error or miss?
+         return $event;
+      };
+   }
 
    if ( grep { $_ eq 'fingerprint' } @$groupby ) {
       push @callbacks, sub {
@@ -5938,6 +5983,10 @@ sub main {
             attrib_limit      => $o->get('attribute-value-limit'),
             ignore_attributes => $o->get('ignore-attributes'),
             unroll_limit      => $o->get('check-attributes-limit'),
+            type_for => {
+               val       => 'string',
+               key_print => 'string',
+            },
          );
       }
       elsif ( @{$timeline} ) {
@@ -6035,9 +6084,11 @@ sub main {
 
       # Set up the parser and miscellaneous options to it.
       my $misc   = { oktorun => \$oktorun };
-      my $parser = $o->get('type') eq 'slowlog' ? new SlowLogParser()
-                 : $o->get('type') eq 'tcpdump' ? new TcpdumpParser()
+      my $parser = $o->get('type') eq 'slowlog'   ? new SlowLogParser()
+                 : $o->get('type') eq 'tcpdump'   ? new TcpdumpParser()
+                 : $o->get('type') eq 'memcached' ? new TcpdumpParser()
                  : die("Unknown type " . $o->get('type'));
+
       if ( my $patterns = $o->get('embedded-attributes') ) {
          $misc->{embed}   = qr/$patterns->[0]/o;
          $misc->{capture} = qr/$patterns->[1]/o;
@@ -7503,6 +7554,16 @@ tcpdump can't capture traffic on a Unix socket.  Read
 L<http://bugs.mysql.com/bug.php?id=31577> if you're confused about this.
 
 If you're analyzing traffic to a non-standard port, see L<"--watch-server">.
+
+=item memcached
+
+Similar to tcpdump but expected that the tcpdump output is memcached packets
+instead of MySQL packets.  For example:
+
+  tcpdump -i eth0 port 11211 -s 65535 -x -n -q -tttt \
+    | mk-query-digest --type memcached
+
+memcached uses port 11211 by default.
 
 =back
 
