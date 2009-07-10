@@ -160,7 +160,6 @@ sub new {
       version     => '41',
       sessions    => {},
       o           => $args{o},
-      raw_packets => [],  # Raw tcpdump packets before event.
    };
    return bless $self, $class;
 }
@@ -190,6 +189,7 @@ sub parse_packet {
          ts          => $packet->{ts},
          state       => undef,
          compress    => undef,
+         raw_packets => [],
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -208,7 +208,7 @@ sub parse_packet {
    }
 
    # Save raw packets to dump later in case something fails.
-   push @{$self->{raw_packets}}, $packet->{raw_packet};
+   push @{$session->{raw_packets}}, $packet->{raw_packet};
 
    # Return unless the compressed packet can be uncompressed.
    # If it cannot, then we're helpless and must return.
@@ -575,7 +575,7 @@ sub _make_event {
    MKDEBUG && _d('Making event');
 
    # Clear packets that preceded this event.
-   $self->{raw_packets} = [];
+   $session->{raw_packets} = [];
 
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
    my $new_event = {
@@ -1002,7 +1002,7 @@ sub fail_session {
       print $errors_fh "$session_dump\n";
       {
          local $LIST_SEPARATOR = "\n";
-         print $errors_fh "@{$self->{raw_packets}}";
+         print $errors_fh "@{$session->{raw_packets}}";
          print $errors_fh "\n";
       }
    }
