@@ -279,10 +279,7 @@ sub _packet_from_server {
    # mid-stream.  It's only safe to wait until the client sends a command
    # or to look for the server handshake.
    if ( !$session->{state} ) {
-      if ( $first_byte eq '0a'
-           && length $data >= 33
-           && $data =~ m/00{13}/ )
-      {
+      if ( $first_byte eq '0a' && length $data >= 33 && $data =~ m/00{13}/ ) {
          # It's the handshake packet from the server to the client.
          # 0a is protocol v10 which is essentially the only version used
          # today.  33 is the minimum possible length for a valid server
@@ -306,7 +303,6 @@ sub _packet_from_server {
       if ( $first_byte eq '00' ) { 
          if ( ($session->{state} || '') eq 'client_auth' ) {
             # We logged in OK!  Trigger an admin Connect command.
-            $session->{state} = 'ready';
 
             $session->{compress} = $session->{will_compress};
             delete $session->{will_compress};
@@ -342,7 +338,6 @@ sub _packet_from_server {
                $com = 'Admin';
             }
 
-            $session->{state} = 'ready';
             return $self->_make_event(
                {  cmd           => $com,
                   arg           => $arg,
@@ -374,9 +369,8 @@ sub _packet_from_server {
                ts        => $packet->{ts},
                Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
             };
-            $session->{state} = 'closing';
-
             return $self->_make_event($event, $packet, $session);
+            $session->{state} = 'closing';
          }
          elsif ( $session->{cmd} ) {
             # This error should be in response to a query or something
@@ -393,14 +387,13 @@ sub _packet_from_server {
                     . ucfirst(lc(substr($com_for{$com}, 4)));
                $com = 'Admin';
             }
+
             $event = {
                cmd       => $com,
                arg       => $arg,
                ts        => $packet->{ts},
                Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
             };
-            $session->{state} = 'ready';
-
             return $self->_make_event($event, $packet, $session);
          }
          else {
@@ -409,6 +402,7 @@ sub _packet_from_server {
          }
       }
       elsif ( $first_byte eq 'fe' && $packet->{mysql_data_len} < 9 ) {
+         # EOF packet
          if ( $packet->{mysql_data_len} == 1
               && $session->{state} eq 'client_auth'
               && $packet->{number} == 2 )
@@ -419,7 +413,7 @@ sub _packet_from_server {
          }
          else {
             MKDEBUG && _d('Got an EOF packet');
-            die "You should not have gotten here";
+            die "Got an unexpected EOF packet";
             # ^^^ We shouldn't reach this because EOF should come after a
             # header, field, or row data packet; and we should be firing the
             # event and returning when we see that.  See SVN history for some
@@ -463,7 +457,6 @@ sub _packet_from_server {
                }
             }
 
-            $session->{state} = 'ready';
             return $self->_make_event($event, $packet, $session);
          }
          else {
@@ -562,7 +555,6 @@ sub _packet_from_client {
 
       if ( $com->{code} eq COM_QUIT ) { # Fire right away; will cleanup later.
          MKDEBUG && _d('Got a COM_QUIT');
-         $session->{state} = 'closing';
          return $self->_make_event(
             {  cmd       => 'Admin',
                arg       => 'administrator command: Quit',
@@ -570,6 +562,7 @@ sub _packet_from_client {
             },
             $packet, $session
          );
+         $session->{state} = 'closing';
       }
    }
 
@@ -609,6 +602,10 @@ sub _make_event {
    # Delete cmd to prevent re-making the same event if the
    # server sends extra stuff that looks like a result set, etc.
    delete $session->{cmd};
+
+   # Undef the session state so that we ignore everything from
+   # the server and wait until the client says something again.
+   $session->{state} = undef;
 
    return $new_event;
 }
