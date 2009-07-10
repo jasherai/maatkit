@@ -1,5 +1,8 @@
 Changelog for mk-query-digest:
 
+   * Added memcached parsing; --type memcached (issue 525).
+   * Some boolean attributes didn't print correctly in the report.
+   * Improved tcpdump/MySQL protocol parsing (--type tcpdump).
    * Made --continue-on-error negatable and on by default.
    * Changed --attribute-limit to --attribute-value-limit.
    * Added --check-attributes-limit (issue 514).
