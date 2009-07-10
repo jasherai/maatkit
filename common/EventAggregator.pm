@@ -63,13 +63,14 @@ my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 #              anyway.  Defaults to 1000.
 # attrib_limit Sanity limit for attribute values.  If the value exceeds the
 #              limit, use the last-seen for this class; if none, then 0.
+# type_for     A hashref of attribute names and types.
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(groupby worst) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $attributes = $args{attributes} || {};
-   return bless {
+   my $self = {
       groupby        => $args{groupby},
       detect_attribs => scalar keys %$attributes == 0 ? 1 : 0,
       all_attribs    => [ keys %$attributes ],
@@ -96,7 +97,9 @@ sub new {
       result_samples => {},
       n_events       => 0,
       unrolled_loops => undef,
-   }, $class;
+      type_for       => { %{$args{type_for} || {}} },
+   };
+   return bless $self, $class;
 }
 
 # Delete all collected data, but don't delete things like the generated
@@ -313,7 +316,8 @@ sub make_handler {
 
    # Ripped off from Regexp::Common::number and modified.
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
-   my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
+   my $type = $self->type_for($attrib)         ? $self->type_for($attrib)
+            : $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
    MKDEBUG && _d('Type for', $attrib, 'is', $type,

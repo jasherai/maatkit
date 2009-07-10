@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 71;
+use Test::More tests => 72;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -1015,6 +1015,30 @@ is(
    $ea->results->{classes}->{foo}->{'Query time'}->{min},
    123,
    'Aggregates attributes with spaces in their names'
+);
+
+# Make sure types can be hinted directly.
+$ea = new EventAggregator(
+   groupby    => 'fingerprint',
+   worst      => 'Query time',
+   attributes => {
+      'Query time' => ['Query time'],
+      'Schema'     => ['Schema'],
+   },
+   type_for => {
+      Query_time => 'string',
+   },
+);
+$events = {
+   fingerprint  => 'foo',
+   'Query_time' => 123,
+   'Schema'     => '',
+};
+$ea->aggregate($events);
+is(
+   $ea->type_for('Query_time'),
+   'string',
+   'Query_time type can be hinted directly',
 );
 
 # #############################################################################
