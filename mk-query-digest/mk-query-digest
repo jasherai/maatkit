@@ -3659,8 +3659,9 @@ Transformers->import(
    qw(shorten micro_t parse_timestamp unix_timestamp
       make_checksum percentage_of));
 
-use constant MKDEBUG     => $ENV{MKDEBUG};
-use constant LINE_LENGTH => 74;
+use constant MKDEBUG           => $ENV{MKDEBUG};
+use constant LINE_LENGTH       => 74;
+use constant MAX_STRING_LENGTH => 10;
 
 my %formatting_function = (
    ts => sub {
@@ -3943,20 +3944,30 @@ sub format_string_list {
    if ( exists $stats->{unq} ) {
       my $cnt_for = $stats->{unq};
       if ( 1 == keys %$cnt_for ) {
-         return (1, keys %$cnt_for);
+         my ($str) = keys %$cnt_for;
+         $str = substr($str, 0, LINE_LENGTH - 30) . '...'
+            if length $str > LINE_LENGTH - 30;
+         return (1, $str);
       }
       my $line = '';
       my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
                      keys %$cnt_for;
       my $i = 0;
       foreach my $str ( @top ) {
-         last if length($line) > LINE_LENGTH - 27;
-         $line .= "$str ($cnt_for->{$str}), ";
+         my $print_str;
+         if ( length $str > MAX_STRING_LENGTH ) {
+            $print_str = substr($str, 0, MAX_STRING_LENGTH) . '...';
+         }
+         else {
+            $print_str = $str;
+         }
+         last if (length $line) + (length $print_str)  > LINE_LENGTH - 27;
+         $line .= "$print_str ($cnt_for->{$str}), ";
          $i++;
       }
       $line =~ s/, $//;
-      if ( $i < $#top ) {
-         $line .= "... " . ($#top - $i) . " more";
+      if ( $i < @top ) {
+         $line .= "... " . (@top - $i) . " more";
       }
       return (scalar keys %$cnt_for, $line);
    }

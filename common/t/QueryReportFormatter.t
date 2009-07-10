@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 11;
+use Test::More tests => 15;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -431,6 +431,138 @@ is(
 );
 
 # #############################################################################
+# Test that format_string_list() truncates long strings.
+# #############################################################################
+
+$events = [
+   {  ts   => '071015 21:43:52',
+      cmd  => 'Query',
+      arg  => "SELECT id FROM users WHERE name='foo'",
+      Query_time => 1,
+      foo  => "Hi.  I'm a very long string.  I'm way over the 78 column width that we try to keep lines limited to so text wrapping doesn't make things look all funky and stuff.",
+   },
+];
+
+$expected = <<EOF;
+# Query 1: 0 QPS, 0x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 ________
+# This item is included in the report because it matches --limit.
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       1
+# Exec time    100      1s      1s      1s      1s      1s       0      1s
+# foo                    1 Hi.  I'm a very long string.  I'm way over t...
+EOF
+
+$ea  = new EventAggregator(
+   groupby => 'fingerprint',
+   worst   => 'Query_time',
+   ignore_attributes => [qw(arg cmd)],
+);
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea->aggregate($event);
+}
+
+$result = $qrf->event_report(
+   $ea,
+   select => [ qw(Query_time foo) ],
+   where   => 'select id from users where name=?',
+   rank    => 1,
+   worst   => 'Query_time',
+   reason  => 'top',
+);
+
+is(
+   $result,
+   $expected,
+   'Truncate one long string'
+);
+
+$ea->reset_aggregated_data();
+push @$events,
+   {  ts   => '071015 21:43:55',
+      cmd  => 'Query',
+      arg  => "SELECT id FROM users WHERE name='foo'",
+      Query_time => 2,
+      foo  => "Me too! I'm a very long string yay!  I'm also over the 78 column width that we try to keep lines limited to."
+   };
+
+$expected = <<EOF;
+# Query 1: 0.67 QPS, 1x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 _____
+# This item is included in the report because it matches --limit.
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       2
+# Exec time    100      3s      1s      2s      2s      2s   707ms      2s
+# foo                    2 Hi.  I'm a... (1), Me too! I'... (1)
+EOF
+
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea->aggregate($event);
+}
+
+$result = $qrf->event_report(
+   $ea,
+   select => [ qw(Query_time foo) ],
+   where   => 'select id from users where name=?',
+   rank    => 1,
+   worst   => 'Query_time',
+   reason  => 'top',
+);
+
+is(
+   $result,
+   $expected, 'Truncate multiple long strings'
+);
+
+$ea->reset_aggregated_data();
+push @$events,
+   {  ts   => '071015 21:43:55',
+      cmd  => 'Query',
+      arg  => "SELECT id FROM users WHERE name='foo'",
+      Query_time => 3,
+      foo  => 'Number 3 long string, but I\'ll exceed the line length so I\'ll only show up as "more" :-('
+   };
+
+$expected = <<EOF;
+# Query 1: 1 QPS, 2x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 ________
+# This item is included in the report because it matches --limit.
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       3
+# Exec time    100      6s      1s      3s      2s      3s   780ms      2s
+# foo                    3 Hi.  I'm a... (1), Me too! I'... (1)... 1 more
+EOF
+
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea->aggregate($event);
+}
+
+$result = $qrf->event_report(
+   $ea,
+   select => [ qw(Query_time foo) ],
+   where   => 'select id from users where name=?',
+   rank    => 1,
+   worst   => 'Query_time',
+   reason  => 'top',
+);
+
+is(
+   $result,
+   $expected, 'Truncate multiple strings longer than whole line'
+);
+
+# #############################################################################
 # Done.
 # #############################################################################
+my $output = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $qrf->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 exit;
