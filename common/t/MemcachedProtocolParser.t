@@ -2,9 +2,8 @@
 
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 20;
 use English qw(-no_match_vars);
+use Test::More tests => 20;
 
 require "../MemcachedProtocolParser.pm";
 require "../TcpdumpParser.pm";

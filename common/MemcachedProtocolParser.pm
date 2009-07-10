@@ -38,7 +38,6 @@ sub new {
       server      => $args{server},
       sessions    => {},
       o           => $args{o},
-      raw_packets => [],  # Raw tcpdump packets before event.
    };
    return bless $self, $class;
 }
@@ -64,6 +63,7 @@ sub parse_packet {
       $self->{sessions}->{$client} = {
          client      => $client,
          state       => undef,
+         raw_packets => [],
          # ts -- wait for ts later.
       };
    };
@@ -76,6 +76,9 @@ sub parse_packet {
       MKDEBUG && _d('No TCP data');
       return;
    }
+
+   # Save raw packets to dump later in case something fails.
+   push @{$session->{raw_packets}}, $packet->{raw_packet};
 
    # Finally, parse the packet and maybe create an event.
    $packet->{data} = pack('H*', $packet->{data});
@@ -101,8 +104,7 @@ sub _packet_from_server {
    die "I need a packet"  unless $packet;
    die "I need a session" unless $session;
 
-   MKDEBUG && _d('Packet is from server; client state:', $session->{state});
-   push @{$self->{raw_packets}}, $packet->{raw_packet};
+   MKDEBUG && _d('Packet is from server; client state:', $session->{state}); 
 
    my $data = $packet->{data};
 
@@ -135,7 +137,7 @@ sub _packet_from_server {
          my ($key, $flags, $bytes) = @vals;
          defined $session->{flags} or $session->{flags} = $flags;
          defined $session->{bytes} or $session->{bytes} = $bytes;
-         # Get the value from the $rest.  TODO: there might be multiple responses
+         # Get the value from the $rest. TODO: there might be multiple responses
          if ( $rest && $bytes ) {
             MKDEBUG && _d('There is a value');
             if ( length($rest) > $bytes ) {
@@ -187,7 +189,7 @@ sub _packet_from_server {
    my $event = make_event($session, $packet);
    MKDEBUG && _d('Creating event, deleting session');
    delete $self->{sessions}->{$session->{client}}; # memcached is stateless!
-   $self->{raw_packets} = []; # Avoid keeping forever
+   $session->{raw_packets} = []; # Avoid keeping forever
    return $event;
 }
 
@@ -198,7 +200,6 @@ sub _packet_from_client {
    die "I need a session" unless $session;
 
    MKDEBUG && _d('Packet is from client; state:', $session->{state});
-   push @{$self->{raw_packets}}, $packet->{raw_packet};
 
    my $event;
    if ( ($session->{state} || '') =~m/awaiting reply|partial recv/ ) {
@@ -325,13 +326,14 @@ sub fail_session {
    my ( $self, $session, $reason ) = @_;
    my $errors_fh = $self->_get_errors_fh();
    if ( $errors_fh ) {
+      $session->{reason_for_failure} = $reason;
       my $session_dump = '# ' . Dumper($session);
       chomp $session_dump;
       $session_dump =~ s/\n/\n# /g;
       print $errors_fh "$session_dump\n";
       {
          local $LIST_SEPARATOR = "\n";
-         print $errors_fh "@{$self->{raw_packets}}";
+         print $errors_fh "@{$session->{raw_packets}}";
          print $errors_fh "\n";
       }
    }
