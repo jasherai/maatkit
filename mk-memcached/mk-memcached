@@ -2458,6 +2458,60 @@ sub timestamp_diff {
 # ###########################################################################
 
 # ###########################################################################
+# SlowLogWriter package 3405
+# ###########################################################################
+package SlowLogWriter;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+# Print out in slow-log format.
+sub write {
+   my ( $self, $fh, $event ) = @_;
+   if ( $event->{ts} ) {
+      print $fh "# Time: $event->{ts}\n";
+   }
+   if ( $event->{user} ) {
+      printf $fh "# User\@Host: %s[%s] \@ %s []\n",
+         $event->{user}, $event->{user}, $event->{host};
+   }
+   printf $fh
+      "# Query_time: %d  Lock_time: %d  Rows_sent: %d  Rows_examined: %d\n",
+      # TODO 0  Rows_affected: 0  Rows_read: 1
+      map { $_ || 0 }
+         @{$event}{qw(Query_time Lock_time Rows_sent Rows_examined)};
+   if ( $event->{db} ) {
+      printf $fh "use %s;\n", $event->{db};
+   }
+   if ( $event->{arg} =~ m/^administrator command/ ) {
+      print $fh '# ';
+   }
+   print $fh $event->{arg}, ";\n";
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SlowLogWriter package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -2470,8 +2524,6 @@ package mk_memcached;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 use sigtrap qw(handler finish untrapped normal-signals);
-
-use Data::Dumper;
 
 # Global variables.  Only really essential variables should be here.
 my $oktorun = 1;
@@ -2506,9 +2558,71 @@ sub main {
    # Set up variables for various stuff.
    # ########################################################################
    my $tp = new TcpdumpParser();
-   my $mc = new MemcachedProtocolParser();
-   my $file = shift @ARGV;
-   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $mc = new MemcachedProtocolParser(); # TODO --watch-server
+
+   # ########################################################################
+   # Set up a pipeline of callbacks for the processing.
+   # ########################################################################
+   my @callbacks;
+
+   # Translate TCP packets into memcached query events.  This sub must be first.
+   push @callbacks, sub {
+      return $mc->parse_packet(@_);
+   };
+
+   # Add a "fingerprint" to each event.  Fingerprint both the key and the
+   # cmd/key together. TODO
+   # push @callbacks, sub {
+      # my ( $event ) = @_;
+      # $event->{class} = fingerprint($event->{key});
+      # return $event;
+   # };
+
+   # TODO
+   # if ( $o->get('filter') ) {
+      # my $filter = $o->get('filter');
+      # my $code   = "sub{ my(\$event) = shift; $filter && return \$event; };";
+      # MKDEBUG && _d('--filter code:', $code);
+      # my $sub = eval $code
+         # or die "Error compiling --filter code: $code\n$EVAL_ERROR";
+      # push @callbacks, $sub;
+   # }
+
+   if ( $o->get('print') ) {
+      my $w = new SlowLogWriter();
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         my $log = {
+            Query_time => $event->{Query_time},
+            ts         => $event->{ts},
+            host       => $event->{host},
+            arg        => join(' ',
+               grep { defined $_ } @{$event}{qw(cmd key val)}),
+         };
+         $w->write(*STDOUT, $log);
+         return $event;
+      };
+   }
+
+   my ($fh);
+   my $run_func = sub {
+      if ( !$fh ) {
+         my $file = shift @ARGV or return;
+         if ( $file eq '-' ) {
+            $fh = *STDIN;
+         }
+         else {
+            open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
+         }
+      }
+      my $events;
+      $events = $tp->parse_event($fh, {}, @callbacks);
+      if ( !$events ) {
+         close $fh;
+         $fh = undef;
+      }
+      return $events;
+   };
 
    # ########################################################################
    # Set up variables for iterations and runtime.
@@ -2525,13 +2639,15 @@ sub main {
    ) {
       # TODO: put the run-time stuff inside this loop.
 
+      my $result;
       eval {
-         my $event = $tp->parse_event($fh, {}, sub {
-            print Dumper $mc->parse_packet(@_);
-         });
+         $result = $run_func->();
       };
       if ( $EVAL_ERROR ) {
          print $EVAL_ERROR;
+      }
+      else {
+         last ITERATION unless defined $result;
       }
 
       # Reset the start/end/now times so the next iteration will run for the
@@ -2659,6 +2775,11 @@ ID of the daemonized instance.  The PID file is removed when the
 daemonized instance exits.  The program checks for the existence of the
 PID file when starting; if it exists and the process with the matching PID
 exists, the program exits.
+
+=item --print
+
+Print each event in a format reminiscent of the MySQL slow query log.  There's
+no special reason for this format, except that it seems reasonable somehow.
 
 =item --run-time
 
