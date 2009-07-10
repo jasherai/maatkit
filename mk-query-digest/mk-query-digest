@@ -2030,7 +2030,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4124
+# MySQLProtocolParser package 4134
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2241,10 +2241,7 @@ sub _packet_from_server {
    }
 
    if ( !$session->{state} ) {
-      if ( $first_byte eq '0a'
-           && length $data >= 33
-           && $data =~ m/00{13}/ )
-      {
+      if ( $first_byte eq '0a' && length $data >= 33 && $data =~ m/00{13}/ ) {
          my $handshake = parse_server_handshake_packet($data);
          if ( !$handshake ) {
             $self->fail_session($session, 'failed to parse server handshake');
@@ -2261,7 +2258,6 @@ sub _packet_from_server {
    else {
       if ( $first_byte eq '00' ) { 
          if ( ($session->{state} || '') eq 'client_auth' ) {
-            $session->{state} = 'ready';
 
             $session->{compress} = $session->{will_compress};
             delete $session->{will_compress};
@@ -2295,7 +2291,6 @@ sub _packet_from_server {
                $com = 'Admin';
             }
 
-            $session->{state} = 'ready';
             return $self->_make_event(
                {  cmd           => $com,
                   arg           => $arg,
@@ -2327,9 +2322,8 @@ sub _packet_from_server {
                ts        => $packet->{ts},
                Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
             };
-            $session->{state} = 'closing';
-
             return $self->_make_event($event, $packet, $session);
+            $session->{state} = 'closing';
          }
          elsif ( $session->{cmd} ) {
             my $com = $session->{cmd}->{cmd};
@@ -2344,14 +2338,13 @@ sub _packet_from_server {
                     . ucfirst(lc(substr($com_for{$com}, 4)));
                $com = 'Admin';
             }
+
             $event = {
                cmd       => $com,
                arg       => $arg,
                ts        => $packet->{ts},
                Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
             };
-            $session->{state} = 'ready';
-
             return $self->_make_event($event, $packet, $session);
          }
          else {
@@ -2370,7 +2363,7 @@ sub _packet_from_server {
          }
          else {
             MKDEBUG && _d('Got an EOF packet');
-            die "You should not have gotten here";
+            die "Got an unexpected EOF packet";
          }
       }
       else {
@@ -2402,7 +2395,6 @@ sub _packet_from_server {
                }
             }
 
-            $session->{state} = 'ready';
             return $self->_make_event($event, $packet, $session);
          }
          else {
@@ -2477,7 +2469,6 @@ sub _packet_from_client {
 
       if ( $com->{code} eq COM_QUIT ) { # Fire right away; will cleanup later.
          MKDEBUG && _d('Got a COM_QUIT');
-         $session->{state} = 'closing';
          return $self->_make_event(
             {  cmd       => 'Admin',
                arg       => 'administrator command: Quit',
@@ -2485,6 +2476,7 @@ sub _packet_from_client {
             },
             $packet, $session
          );
+         $session->{state} = 'closing';
       }
    }
 
@@ -2520,6 +2512,8 @@ sub _make_event {
    MKDEBUG && _d('Properties of event:', Dumper($new_event));
 
    delete $session->{cmd};
+
+   $session->{state} = undef;
 
    return $new_event;
 }
@@ -3085,7 +3079,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 4099
+# EventAggregator package 4131
 # ###########################################################################
 package EventAggregator;
 
@@ -3110,7 +3104,7 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $attributes = $args{attributes} || {};
-   return bless {
+   my $self = {
       groupby        => $args{groupby},
       detect_attribs => scalar keys %$attributes == 0 ? 1 : 0,
       all_attribs    => [ keys %$attributes ],
@@ -3137,7 +3131,9 @@ sub new {
       result_samples => {},
       n_events       => 0,
       unrolled_loops => undef,
-   }, $class;
+      type_for       => { %{$args{type_for} || {}} },
+   };
+   return bless $self, $class;
 }
 
 sub reset_aggregated_data {
@@ -3280,7 +3276,8 @@ sub make_handler {
    return unless defined $val; # Can't decide type if it's undef.
 
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
-   my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
+   my $type = $self->type_for($attrib)         ? $self->type_for($attrib)
+            : $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
    MKDEBUG && _d('Type for', $attrib, 'is', $type,
