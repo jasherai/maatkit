@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 16;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 
 require "../MemcachedProtocolParser.pm";
@@ -265,6 +265,48 @@ run_test({
          pos_in_log => 5382,
          res        => 'VALUE',
          ts         => '2009-07-06 22:07:14.411334',
+      },
+   ],
+});
+
+# A session with a delete() that doesn't exist. TODO: delete takes a queue_time.
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump009.txt',
+   result => [
+      {
+         Query_time => '0.000022',
+         bytes      => undef,
+         cmd        => 'delete',
+         exptime    => undef,
+         flags      => undef,
+         host       => '127.0.0.1',
+         key        => 'comment_1873527',
+         pos_in_log => 0,
+         res        => 'NOT_FOUND',
+         ts         => '2009-06-11 21:54:52.244534',
+         val        => undef,
+      },
+   ],
+});
+
+# A session with a delete() that does exist.
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump010.txt',
+   result => [
+      {
+         Query_time => '0.000120',
+         bytes      => undef,
+         cmd        => 'delete',
+         exptime    => undef,
+         flags      => undef,
+         host       => '127.0.0.1',
+         key        => 'my_key',
+         pos_in_log => 0,
+         res        => 'DELETED',
+         ts         => '2009-07-09 22:00:29.066476',
+         val        => undef,
       },
    ],
 });

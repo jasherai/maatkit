@@ -157,7 +157,7 @@ sub _packet_from_server {
          MKDEBUG && _d('Got an END without any data, firing NOT_FOUND');
          $session->{res} = 'NOT_FOUND';
       }
-      elsif ( $session->{res} ne 'STORED' ) {
+      elsif ( $session->{res} !~ m/STORED|DELETED|NOT_FOUND/ ) {
          # Not really sure what else would get us here... want to make a note
          # and not have an uncaught condition.
          MKDEBUG && _d("Session result:", $session->{res});
@@ -229,6 +229,9 @@ sub _packet_from_client {
       }
       elsif ( $cmd eq 'get' ) {
          ($key) = @vals;
+      }
+      elsif ( $cmd eq 'delete' ) {
+         ($key) = @vals; # TODO: handle the <queue_time>
       }
       elsif ( $cmd eq 'incr' || $cmd eq 'decr' ) {
          ($key) = @vals;
