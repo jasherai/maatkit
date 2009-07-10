@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 2;
+use Test::More tests => 3;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -30,13 +30,18 @@ sub no_diff {
 my $run_with = '../mk-memcached ../../common/t/samples/';
 
 ok(
-   no_diff($run_with.'empty', 'empty_report.txt'),
+   no_diff($run_with.'empty', 'reports/empty_report.txt'),
    'Analysis for empty log'
 );
 
 ok(
-   no_diff($run_with.'memc_tcpdump001.txt --print', 'reports/001_report.txt'),
+   no_diff($run_with.'memc_tcpdump001.txt --print --group-by ""', 'reports/001_report-print.txt'),
    'Basic print of events',
+);
+
+ok(
+   no_diff($run_with.'memc_tcpdump001.txt', 'reports/001_report.txt'),
+   'Basic aggregate of events',
 );
 
 # #############################################################################

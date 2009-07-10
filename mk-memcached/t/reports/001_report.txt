@@ -1,3 +1,2 @@
-# Time: 2009-07-04 21:33:39.229179
-# Query_time: 0  Lock_time: 0  Rows_sent: 0  Rows_examined: 0
-set my_key Some value;
+# 1: Query_time 0.00012
+set my_key
