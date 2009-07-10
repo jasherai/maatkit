@@ -101,11 +101,13 @@ sub run_test {
       delete $packet->{raw_packet};
    }
 
-   is_deeply(
-      \@packets,
-      $result,
-      "$file: $desc"
-   );
+   if ( !is_deeply(
+         \@packets,
+         $result,
+         "$file: $desc"
+      ) ) {
+      print Dumper(\@packets);
+   }
    $oktorun = 1; # Reset this here so we don't forget for the next test.
    return;
 }
