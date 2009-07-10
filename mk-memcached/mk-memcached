@@ -2584,26 +2584,12 @@ mk-memcached - Analyze and report on memcached status and performance.
 
 =head1 SYNOPSIS
 
+  tcpdump -i lo port 11211 -s 65535 -x -n -q -tttt | mk-memcached
+
 =head1 DESCRIPTION
 
-=head1 OUTPUT
-
-=head1 FINGERPRINTS
-
-A query fingerprint is the abstracted form of a query, which makes it possible
-to group similar queries together.  Abstracting a query removes literal values,
-normalizes whitespace, and so on.  For example, these two queries:
-
-  SELECT name, password FROM user WHERE id='12823';
-  select name,   password from user
-     where id=5;
-
-Both of those queries will fingerprint to
-
-  select name, password from user where id=?
-
-Once the query's fingerprint is known, we can then talk about a query as though
-it represents all similar queries.
+mk-memcached is a tool that analyzes TCP traffic and reports on how a Memcached
+server is actually used.
 
 =head1 OPTIONS
 
