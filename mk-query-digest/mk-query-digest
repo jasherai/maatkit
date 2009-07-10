@@ -5872,6 +5872,12 @@ sub main {
 
    if ( $o->get('filter') ) {
       my $filter = $o->get('filter');
+      if ( -f $filter && -r $filter ) {
+         MKDEBUG && _d('Reading file', $filter, 'for --filter code');
+         open my $fh, "<", $filter or die "Cannot open $filter: $OS_ERROR";
+         $filter = do { local $/ = undef; <$fh> };
+         close $fh;
+      }
       my $code   = "sub{ my(\$event) = shift; $filter && return \$event; };";
       MKDEBUG && _d('--filter code:', $code);
       my $sub = eval $code
@@ -7015,10 +7021,15 @@ type: string
 
 Discard events for which this Perl code doesn't return true.
 
-This option is a string of Perl code that gets compiled into a subroutine with
-one argument: $event.  This is a hashref.  If the code returns true, the chain
-of callbacks continues; otherwise it ends.  The code is the last statement in
-the subroutine other than C<return $event>.  The subroutine template is:
+This option is a string of Perl code or a file containing Perl code that gets
+compiled into a subroutine with one argument: $event.  This is a hashref.
+If the given value is a readable file, then mk-query-digest reads the entire
+file and uses its contents as the code.  The file should not contain
+a shebang (#!/usr/bin/perl) line.
+
+If the code returns true, the chain of callbacks continues; otherwise it ends.
+The code is the last statement in the subroutine other than C<return $event>. 
+The subroutine template is:
 
   sub { $event = shift; filter && return $event; }
 
