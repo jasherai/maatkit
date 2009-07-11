@@ -286,18 +286,21 @@ sub _packet_from_client {
    return $event;
 }
 
+# The event is not yet suitable for mk-query-digest.  It lacks, for example,
+# an arg and fingerprint attribute.  The event should be passed to
+# MemcachedEvent::make_event() to transform it.
 sub make_event {
    my ( $session, $packet ) = @_;
    my $event = {
-      ts         => $session->{ts},
-      host       => $session->{host},
-      flags      => $session->{flags},
-      exptime    => $session->{exptime},
-      bytes      => $session->{bytes},
       cmd        => $session->{cmd},
       key        => $session->{key},
-      val        => $session->{val},
+      val        => $session->{val} || '',
       res        => $session->{res},
+      ts         => $session->{ts},
+      host       => $session->{host},
+      flags      => $session->{flags}   || 0,
+      exptime    => $session->{exptime} || 0,
+      bytes      => $session->{bytes}   || 0,
       Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
       pos_in_log => $session->{pos_in_log},
    };
