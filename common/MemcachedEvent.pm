@@ -38,6 +38,21 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+# cmds that we know how to handle.
+my %cmds = map { $_ => 1 } qw(
+   set
+   add
+   replace
+   append
+   prepend
+   cas
+   get
+   gets
+   delete
+   incr
+   decr
+);
+
 my %cmd_handler_for = (
    set      => \&handle_storage_cmd,
    add      => \&handle_storage_cmd,
@@ -47,15 +62,11 @@ my %cmd_handler_for = (
    cas      => \&handle_storage_cmd,
    get      => \&handle_retr_cmd,
    gets     => \&handle_retr_cmd,
-   'delete' => \&handle_delete,
-   incr     => \&handle_incr_decr_cmd,
-   decr     => \&handle_incr_decr_cmd,
 );
 
 sub new {
    my ( $class, %args ) = @_;
-   my $self = {
-   };
+   my $self = {};
    return bless $self, $class;
 }
 
@@ -70,8 +81,8 @@ sub make_event {
       return;
    }
 
-   if ( !exists $cmd_handler_for{$event->{cmd}} ) {
-      MKDEBUG && _d('No cmd handler exists for', $event->{cmd});
+   if ( !$cmds{$event->{cmd}} ) {
+      MKDEBUG && _d("Don't know how to handle cmd:", $event->{cmd});
       return;
    }
 
@@ -81,11 +92,23 @@ sub make_event {
    $event->{fingerprint} = $self->fingerprint($event->{arg});
    $event->{key_print}   = $self->fingerprint($event->{key});
 
-   $event->{"Memc_$event->{cmd}"} = 'Yes';  # Got this type of cmd.
+   # Set every cmd so that aggregated totals will be correct.  If we only
+   # set cmd that we get, then all cmds will show as 100% in the report.
+   # This will create a lot of 0% cmds, but --[no]zero-bool will remove them.
+   # Think of events in a Percona-patched log: the attribs like Full_scan are
+   # present for every event.
+   map { $event->{"Memc_$_"} = 'No' } keys %cmds;
+   $event->{"Memc_$event->{cmd}"} = 'Yes';  # Got this cmd.
+   $event->{Memc_miss}            = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
+   $event->{Memc_error}           = 'No';  # A handler may change this.
 
-   # Handle different cmd results to determine errors, misses, etc.
-   # A cmd handler should return the event on success, or nothing on failure.
-   return $cmd_handler_for{$event->{cmd}}->($event);
+   # Handle special results, errors, etc.  The handler should return the
+   # event on success, or nothing on failure.
+   if ( $cmd_handler_for{$event->{cmd}} ) {
+      return $cmd_handler_for{$event->{cmd}}->($event);
+   }
+
+   return $event;
 }
 
 # Replace things that look like placeholders with a ?
@@ -110,7 +133,7 @@ sub fingerprint {
 #   with a "cas" command did not exist or has been deleted.
 sub handle_storage_cmd {
    my ( $event ) = @_;
-
+   
    # There should be a result for any storage cmd.   
    if ( !$event->{res} ) {
       MKDEBUG && _d('No result for event:', Dumper($event));
@@ -118,8 +141,7 @@ sub handle_storage_cmd {
    }
 
    # Technically NOT_STORED is not an error, but we treat it as one.
-   $event->{'Memc_error'} = $event->{res} eq 'STORED'    ? 'No'  : 'Yes';
-   $event->{'Memc_miss'}  = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
+   $event->{'Memc_error'} = $event->{res} eq 'STORED' ? 'No'  : 'Yes';
 
    return $event;
 }
@@ -143,10 +165,12 @@ sub handle_retr_cmd {
    }
 
    $event->{'Memc_error'} = $event->{res} eq 'INTERRUPTED' ? 'Yes' : 'No';
-   $event->{'Memc_miss'}  = $event->{res} eq 'NOT_FOUND'   ? 'Yes' : 'No';
 
    return $event;
 }
+
+# handle_delete() and handle_incr_decr_cmd() are stub subs in case we
+# need them later.
 
 # Possible results for a delete cmd:
 # - "DELETED\r\n" to indicate success
@@ -155,16 +179,6 @@ sub handle_retr_cmd {
 #   found.
 sub handle_delete {
    my ( $event ) = @_;
-
-   # There should be a result for any delete cmd.   
-   if ( !$event->{res} ) {
-      MKDEBUG && _d('No result for event:', Dumper($event));
-      return;
-   }
-
-   $event->{'Memc_error'} = 'No';
-   $event->{'Memc_miss'}  = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
-
    return $event;
 }
 
@@ -177,10 +191,6 @@ sub handle_delete {
 # On failure, res=the result and val=''.
 sub handle_incr_decr_cmd {
    my ( $event ) = @_;
-
-   $event->{'Memc_error'} = 'No';
-   $event->{'Memc_miss'}  = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
-
    return $event;
 }
 
