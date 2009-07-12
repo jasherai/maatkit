@@ -12,6 +12,8 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...atkit/common/LogParser.pm   92.6   86.8   78.6   88.9    n/a  100.0   88.2
 ...kit/common/LogSplitter.pm   92.2   67.5   70.2   93.8    n/a  100.0   83.7
 ...kit/common/MasterSlave.pm   85.9   56.2   48.9   93.8    n/a  100.0   73.6
+.../common/MemcachedEvent.pm   75.4   61.5   33.3   92.3    n/a  100.0   72.9
+...emcachedProtocolParser.pm   80.6   68.4   59.3   73.3    n/a  100.0   75.5
 ...maatkit/common/MockSth.pm  100.0  100.0    n/a  100.0    n/a  100.0  100.0
 ...it/common/MySQLAdvisor.pm   68.6   30.0    n/a   87.5    n/a  100.0   64.2
 ...atkit/common/MySQLDump.pm   65.1   46.3   22.7   73.3    n/a  100.0   56.2

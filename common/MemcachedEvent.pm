@@ -79,22 +79,13 @@ sub make_event {
    # essentially the cmd and key, so this becomes arg.  E.g.: "set mk_key".
    $event->{arg}         = "$event->{cmd} $event->{key}";
    $event->{fingerprint} = $self->fingerprint($event->{arg});
+   $event->{key_print}   = $self->fingerprint($event->{key});
 
-   # Create bool vals for certain cmds and results.  This way we can
-   # see, for example, what percentage of set cmds were successful.
+   $event->{"Memc_$event->{cmd}"} = 'Yes';  # Got this type of cmd.
+
+   # Handle different cmd results to determine errors, misses, etc.
    # A cmd handler should return the event on success, or nothing on failure.
-   if ( $cmd_handler_for{$event->{cmd}}->($event) ) {
-
-      # Now that we're done interpreting and transforming the event,
-      # we delete the attributes cmd, key and res so that EventAggregator
-      # and QueryReportFormatter don't see them; they live on as various
-      # "Memc_..." attributes now.
-      delete @{$event}{qw(cmd key res)};
-
-      return $event;  # Success.
-   }
-
-   return;  # The cmd handler must have failed.
+   return $cmd_handler_for{$event->{cmd}}->($event);
 }
 
 # Replace things that look like placeholders with a ?
@@ -126,9 +117,9 @@ sub handle_storage_cmd {
       return;
    }
 
-   $event->{"Memc_$event->{cmd}"} = $event->{res} eq 'STORED'    ? 'Yes' : 'No';
-   $event->{'Memc_miss'}          = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
-   $event->{'Memc_error'}         = 'No';  # NOT_STORED is not an error
+   # Technically NOT_STORED is not an error, but we treat it as one.
+   $event->{'Memc_error'} = $event->{res} eq 'STORED'    ? 'No'  : 'Yes';
+   $event->{'Memc_miss'}  = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
 
    return $event;
 }
@@ -151,9 +142,9 @@ sub handle_retr_cmd {
       return;
    }
 
-   $event->{"Memc_$event->{cmd}"} = $event->{res} eq 'VALUE'     ? 'Yes' : 'No';
-   $event->{'Memc_miss'}          = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
-   $event->{'Memc_error'}       = $event->{res} eq 'INTERRUPTED' ? 'Yes' : 'No';
+   $event->{'Memc_error'} = $event->{res} eq 'INTERRUPTED' ? 'Yes' : 'No';
+   $event->{'Memc_miss'}  = $event->{res} eq 'NOT_FOUND'   ? 'Yes' : 'No';
+
    return $event;
 }
 
@@ -171,9 +162,8 @@ sub handle_delete {
       return;
    }
 
-   $event->{"Memc_$event->{cmd}"} = $event->{res} eq 'DELETED'   ? 'Yes' : 'No';
-   $event->{'Memc_miss'}          = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
-   $event->{'Memc_error'}         = 'No';
+   $event->{'Memc_error'} = 'No';
+   $event->{'Memc_miss'}  = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
 
    return $event;
 }
@@ -188,9 +178,8 @@ sub handle_delete {
 sub handle_incr_decr_cmd {
    my ( $event ) = @_;
 
-   $event->{"Memc_$event->{cmd}"} = $event->{val}                ? 'Yes' : 'No';
-   $event->{'Memc_miss'}          = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
-   $event->{'Memc_error'}         = 'No';
+   $event->{'Memc_error'} = 'No';
+   $event->{'Memc_miss'}  = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
 
    return $event;
 }
