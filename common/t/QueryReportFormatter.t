@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 15;
+use Test::More tests => 16;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -325,8 +325,8 @@ $expected = <<EOF;
 # Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
 # IDB IO rb              7       2       3    2.33    2.90    0.44    1.96
 # IDB pages             49      11      20   16.33   19.46    3.71   17.65
-# 100% Filesort
-#  66% QC_Hit
+# 100% (3) Filesort
+#  66% (2) QC_Hit
 EOF
 
 $ea  = new EventAggregator(
@@ -366,6 +366,62 @@ is_deeply(
    ],
    'sort_attribs()'
 );
+
+# ############################################################################
+# Test that --[no]zero-bool removes 0% vals.
+# ############################################################################
+$events = [
+   {  ts            => '071015 21:43:52',
+      cmd           => 'Query',
+      arg           => "SELECT id FROM users WHERE name='foo'",
+      Query_time    => '8.000652',
+      Lock_time     => '0.002300',
+      QC_Hit        => 'No',
+      Filesort      => 'No',
+   },
+   {  ts            => '071015 21:43:52',
+      cmd           => 'Query',
+      arg           => "SELECT id FROM users WHERE name='foo'",
+      Query_time    => '1.001943',
+      Lock_time     => '0.002320',
+      QC_Hit        => 'Yes',
+      Filesort      => 'No',
+   },
+   {  ts            => '071015 21:43:53',
+      cmd           => 'Query',
+      arg           => "SELECT id FROM users WHERE name='bar'",
+      Query_time    => '1.000682',
+      Lock_time     => '0.003301',
+      QC_Hit        => 'Yes',
+      Filesort      => 'No',
+   }
+];
+$expected = <<EOF;
+# Overall: 3 total, 1 unique, 3 QPS, 10.00x concurrency __________________
+#                    total     min     max     avg     95%  stddev  median
+# Exec time            10s      1s      8s      3s      8s      3s   992ms
+# Lock time            8ms     2ms     3ms     3ms     3ms   500us     2ms
+# Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
+#  66% (2) QC_Hit
+EOF
+
+$ea  = new EventAggregator(
+   groupby => 'fingerprint',
+   worst   => 'Query_time',
+   ignore_attributes => [qw(arg cmd)],
+);
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea->aggregate($event);
+}
+$result = $qrf->global_report(
+   $ea,
+   select  => [ $ea->get_attributes() ],
+   worst   => 'Query_time',
+   no_zero_bool => 1,
+);
+
+is($result, $expected, 'No zero bool vals');
 
 # #############################################################################
 # Issue 458: mk-query-digest Use of uninitialized value in division (/) at

@@ -42,7 +42,7 @@ my %formatting_function = (
    },
 );
 
-my $bool_format = '# %3s%% %s';
+my $bool_format = '# %3s%% (%d) %s';
 
 sub new {
    my ( $class, %args ) = @_;
@@ -137,8 +137,10 @@ sub global_report {
                (map { '' } 0..9); # just for good measure
          }
          elsif ( $attrib_type eq 'bool' ) {
-            push @result,
-               sprintf $bool_format, format_bool_attrib($store), $attrib;
+            if ( $store->{sum} > 0 || !$opts{no_zero_bool} ) {
+               push @result,
+                  sprintf $bool_format, format_bool_attrib($store), $attrib;
+            }
          }
          else {
             @values = ('', $store->{min}, $store->{max}, '', '', '', '');
@@ -250,8 +252,10 @@ sub event_report {
             $pct = '';
          }
          elsif ( $attrib_type eq 'bool' ) {
-            push @result,
-               sprintf $bool_format, format_bool_attrib($vals), $attrib;
+            if ( $vals->{sum} > 0 || !$opts{no_zero_bool} ) {
+               push @result,
+                  sprintf $bool_format, format_bool_attrib($vals), $attrib;
+            }
          }
          else {
             @values = ('', $vals->{min}, $vals->{max}, '', '', '', '');
@@ -349,8 +353,8 @@ sub format_bool_attrib {
    # all true events and the number of false events is the total
    # number of events minus those that were true.
    my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
-   my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
-   return $p_true;
+   # my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
+   return $p_true, $stats->{sum};
 }
 
 # Does pretty-printing for lists of strings like users, hosts, db.
