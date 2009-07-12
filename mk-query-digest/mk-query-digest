@@ -3646,7 +3646,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 4143
+# QueryReportFormatter package 4152
 # ###########################################################################
 
 
@@ -3672,7 +3672,7 @@ my %formatting_function = (
    },
 );
 
-my $bool_format = '# %3s%% %s';
+my $bool_format = '# %3s%% (%d) %s';
 
 sub new {
    my ( $class, %args ) = @_;
@@ -3758,8 +3758,10 @@ sub global_report {
                (map { '' } 0..9); # just for good measure
          }
          elsif ( $attrib_type eq 'bool' ) {
-            push @result,
-               sprintf $bool_format, format_bool_attrib($store), $attrib;
+            if ( $store->{sum} > 0 || !$opts{no_zero_bool} ) {
+               push @result,
+                  sprintf $bool_format, format_bool_attrib($store), $attrib;
+            }
          }
          else {
             @values = ('', $store->{min}, $store->{max}, '', '', '', '');
@@ -3855,8 +3857,10 @@ sub event_report {
             $pct = '';
          }
          elsif ( $attrib_type eq 'bool' ) {
-            push @result,
-               sprintf $bool_format, format_bool_attrib($vals), $attrib;
+            if ( $vals->{sum} > 0 || !$opts{no_zero_bool} ) {
+               push @result,
+                  sprintf $bool_format, format_bool_attrib($vals), $attrib;
+            }
          }
          else {
             @values = ('', $vals->{min}, $vals->{max}, '', '', '', '');
@@ -3935,8 +3939,7 @@ sub make_label {
 sub format_bool_attrib {
    my ( $stats ) = @_;
    my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
-   my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
-   return $p_true;
+   return $p_true, $stats->{sum};
 }
 
 sub format_string_list {
@@ -5219,7 +5222,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedProtocolParser package 4140
+# MemcachedProtocolParser package 4146
 # ###########################################################################
 package MemcachedProtocolParser;
 
@@ -5458,15 +5461,15 @@ sub _packet_from_client {
 sub make_event {
    my ( $session, $packet ) = @_;
    my $event = {
-      ts         => $session->{ts},
-      host       => $session->{host},
-      flags      => $session->{flags},
-      exptime    => $session->{exptime},
-      bytes      => $session->{bytes},
       cmd        => $session->{cmd},
       key        => $session->{key},
-      val        => $session->{val},
+      val        => $session->{val} || '',
       res        => $session->{res},
+      ts         => $session->{ts},
+      host       => $session->{host},
+      flags      => $session->{flags}   || 0,
+      exptime    => $session->{exptime} || 0,
+      bytes      => $session->{bytes}   || 0,
       Query_time => timestamp_diff($session->{ts}, $packet->{ts}),
       pos_in_log => $session->{pos_in_log},
    };
@@ -5543,6 +5546,141 @@ sub fingerprint {
 
 # ###########################################################################
 # End MemcachedProtocolParser package
+# ###########################################################################
+
+# ###########################################################################
+# MemcachedEvent package 4150
+# ###########################################################################
+package MemcachedEvent;
+
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+my %cmds = map { $_ => 1 } qw(
+   set
+   add
+   replace
+   append
+   prepend
+   cas
+   get
+   gets
+   delete
+   incr
+   decr
+);
+
+my %cmd_handler_for = (
+   set      => \&handle_storage_cmd,
+   add      => \&handle_storage_cmd,
+   replace  => \&handle_storage_cmd,
+   append   => \&handle_storage_cmd,
+   prepend  => \&handle_storage_cmd,
+   cas      => \&handle_storage_cmd,
+   get      => \&handle_retr_cmd,
+   gets     => \&handle_retr_cmd,
+);
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {};
+   return bless $self, $class;
+}
+
+sub make_event {
+   my ( $self, $event ) = @_;
+   return unless $event;
+
+   if ( !$event->{cmd} || !$event->{key} ) {
+      MKDEBUG && _d('Event has no cmd or key:', Dumper($event));
+      return;
+   }
+
+   if ( !$cmds{$event->{cmd}} ) {
+      MKDEBUG && _d("Don't know how to handle cmd:", $event->{cmd});
+      return;
+   }
+
+   $event->{arg}         = "$event->{cmd} $event->{key}";
+   $event->{fingerprint} = $self->fingerprint($event->{arg});
+   $event->{key_print}   = $self->fingerprint($event->{key});
+
+   map { $event->{"Memc_$_"} = 'No' } keys %cmds;
+   $event->{"Memc_$event->{cmd}"} = 'Yes';  # Got this cmd.
+   $event->{Memc_miss}            = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
+   $event->{Memc_error}           = 'No';  # A handler may change this.
+
+   if ( $cmd_handler_for{$event->{cmd}} ) {
+      return $cmd_handler_for{$event->{cmd}}->($event);
+   }
+
+   return $event;
+}
+
+sub fingerprint {
+   my ( $self, $val ) = @_;
+   $val =~ s/[0-9A-Fa-f]{16,}|\d+/?/g;
+   return $val;
+}
+
+sub handle_storage_cmd {
+   my ( $event ) = @_;
+   
+   if ( !$event->{res} ) {
+      MKDEBUG && _d('No result for event:', Dumper($event));
+      return;
+   }
+
+   $event->{'Memc_error'} = $event->{res} eq 'STORED' ? 'No'  : 'Yes';
+
+   return $event;
+}
+
+sub handle_retr_cmd {
+   my ( $event ) = @_;
+
+   if ( !$event->{res} ) {
+      MKDEBUG && _d('No result for event:', Dumper($event));
+      return;
+   }
+
+   $event->{'Memc_error'} = $event->{res} eq 'INTERRUPTED' ? 'Yes' : 'No';
+
+   return $event;
+}
+
+
+sub handle_delete {
+   my ( $event ) = @_;
+   return $event;
+}
+
+sub handle_incr_decr_cmd {
+   my ( $event ) = @_;
+   return $event;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End MemcachedEvent package
 # ###########################################################################
 
 # ###########################################################################
@@ -5785,42 +5923,16 @@ sub main {
    }
    # Translate TCP packets into memcached query events.  This sub must be
    # first because it creates the events for subsequent callbacks.
-   my $mc;
+   my $memc_proto;
+   my $memc_event;
    if ( $o->get('type') eq 'memcached' ) {
-      $mc = new MemcachedProtocolParser(
+      $memc_proto = new MemcachedProtocolParser(
          server => $o->get('watch-server'),
          o      => $o,
       );
+      $memc_event = new MemcachedEvent();
       push @callbacks, sub {
-         return $mc->parse_packet(@_);
-      };
-
-      # Add a "fingerprint" to each event.  Normalize event properties.
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         $event->{arg}         = $event->{cmd} . '-' . $event->{key};
-         my $print             = $mc->fingerprint($event->{key});
-         $event->{fingerprint} = join(' ',
-            grep { defined } $event->{cmd}, $print);
-         $event->{key_print}   = $print || '';
-         $event->{bytes}       ||= 0;
-         $event->{flags}       ||= 0;
-         $event->{exptime}     ||= 0;
-         $event->{Query_time}  ||= 0;
-         $event->{val}         ||= '(none)';  # undef val crashes qrf
-
-         # Create bool vals for certain cmds and results.
-         if ( $event->{cmd} eq 'get' ) {
-            $event->{Get} = $event->{res} eq 'VALUE' ? 'Yes' : 'No';
-         }
-         if ( $event->{cmd} eq 'set' ) {
-            $event->{Set} = $event->{res} eq 'STORED' ? 'Yes' : 'No';
-         }
-         if ( $event->{cmd} eq 'delete' ) {
-            $event->{Delete} = $event->{res} eq 'DELETED' ? 'Yes' : 'No';
-         }
-         # XXX: what constitutes an error or miss?
-         return $event;
+         return $memc_event->make_event( $memc_proto->parse_packet(@_) );
       };
    }
 
@@ -6190,6 +6302,7 @@ sub main {
                   $ea,
                   select => [ grep { $_ !~ m/^(?:user|db)$/ } @select ],
                   worst  => $attrib,
+                  no_zero_bool => !$o->get('zero-bool'),
                );
             }
          }
@@ -6301,6 +6414,7 @@ sub main {
                   rank   => $rank,
                   worst  => $attrib,
                   reason => $explain_why ? $worst[$rank - 1]->[1] : '',
+                  no_zero_bool => !$o->get('zero-bool'),
                ) if $query_report;
                print $qrf->chart_distro(
                   $ea,
@@ -6396,7 +6510,7 @@ sub main {
 
             # Print profile (issue 381).
             if ( $o->get('report-format')->{profile} ) {
-               print "# Rank Query ID           Response time    Calls   R/Call",
+               print "\n# Rank Query ID           Response time    Calls   R/Call",
                      "     Item\n",
                      "# ==== ================== ================ ======= ======",
                      "==== ====\n";
@@ -6634,9 +6748,23 @@ called attributes.  You'll recognize most of the attributes right away:
 Query_time, Lock_time, and so on.  You can just look at a slow log and see them.
 However, there are some that don't exist in the slow log, and slow logs
 may actually include different kinds of attributes (for example, you may have a
-server with the Percona patches).  A full list is at
-L<http://code.google.com/p/maatkit/wiki/EventAttributes>.  These attributes
-show up in lots of different places.
+server with the Percona patches).
+
+For a full list of attributes, see
+L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
+
+=head2 memcached
+
+memcached events have additional attributes related to the memcached protocol:
+cmd, key, res (result) and val.  Also, boolean attributes are created for
+the various commands, misses and errors: Memc_CMD where CMD is a memcached
+command (get, set, delete, etc.), Memc_error and Memc_miss.
+
+These attributes are no different from slow log attributes, so you can use them
+with L<"--report">, L<"--group-by">, in a L<"--filter">, etc.
+
+These attributes and more are documented at
+L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
 
 =head1 OUTPUT
 
@@ -6849,8 +6977,8 @@ Both of those queries will fingerprint to
 Once the query's fingerprint is known, we can then talk about a query as though
 it represents all similar queries.
 
-What C<mk-query-digest> does is analogous to a GROUP BY statement in SQL.  If your
-command-line looks like this,
+What C<mk-query-digest> does is analogous to a GROUP BY statement in SQL.
+If your command-line looks like this,
 
   mk-query-digest /path/to/slow.log --select Rows_read,Rows_sent \
       --group-by fingerprint --order-by Query_time:sum --limit 10
@@ -6865,6 +6993,16 @@ The corresponding pseudo-SQL looks like this:
 
 You can also use the value C<distill>, which is a kind of super-fingerprint.
 See L<"--group-by"> for more.
+
+=head2 memcached
+
+If parsing memcached input (L<"--type"> memcached), the fingerprint is an
+abstracted version of the command and key, with placeholders removed.
+For example, "get user_123_preferences" fingerprints to
+"get user_?_preferences".
+
+There is also a "key_print" which a fingerprinted version of the key.  For
+the example above, its key_print is "user_?_preferences".
 
 =head1 OPTIONS
 
@@ -7139,8 +7277,8 @@ before the grouping takes place:
 =item fingerprint
 
 This causes events to be fingerprinted to abstract queries into
-a canonical form, which is then used to group events together into a class.  See
-L<"FINGERPRINTS"> for more about fingerprinting.
+a canonical form, which is then used to group events together into a class.
+See L<"FINGERPRINTS"> for more about fingerprinting.
 
 =item tables
 
@@ -7155,6 +7293,11 @@ This is a sort of super-fingerprint that collapses queries down
 into a suggestion of what they do, such as C<INSERT SELECT table1 table2>.
 
 =back
+
+If parsing memcached input (L<"--type"> memcached), there are other
+attributes which you can group by: key_print (see memcached section in
+L<"FINGERPRINTS">), cmd, key, res and val (see memcached section in
+L<"ATTRIBUTES">).
 
 =item --help
 
@@ -7600,6 +7743,12 @@ to watch, nothing works right.
 default: yes
 
 Zero out the Rows_XXX properties for administrator command events.
+
+=item --[no]zero-bool
+
+default: no
+
+Print 0% boolean values in report.
 
 =back
 
