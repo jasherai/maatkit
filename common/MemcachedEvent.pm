@@ -99,8 +99,15 @@ sub make_event {
    # present for every event.
    map { $event->{"Memc_$_"} = 'No' } keys %cmds;
    $event->{"Memc_$event->{cmd}"} = 'Yes';  # Got this cmd.
-   $event->{Memc_miss}            = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
    $event->{Memc_error}           = 'No';  # A handler may change this.
+   $event->{Memc_miss}            = 'No';
+   if ( $event->{res} ) {
+      $event->{Memc_miss}         = 'Yes' if $event->{res} eq 'NOT_FOUND';
+   }
+   else {
+      # This normally happens with incr and decr cmds.
+      MKDEBUG && _d('Event has no res:', Dumper($event));
+   }
 
    # Handle special results, errors, etc.  The handler should return the
    # event on success, or nothing on failure.
