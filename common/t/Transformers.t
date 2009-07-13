@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 27;
 
 BEGIN {
    # The timestamps for unix_timestamp are East Coast (EST), so GMT-4.
@@ -35,6 +35,7 @@ is(shorten('100'),     '100',   '100 does not shorten (stays 100)');
 is(shorten('99999', p => 1, d => 1_000), '100.0k', 'Can change float precision and divisor in shorten');
 is(shorten('6.992e+19', 'p', 1, 'd', 1000), '69.9E', 'really big number');
 is(shorten('1000e+52'), '8271806125530276833376576995328.00Y', 'Number bigger than any units');
+is(shorten('583029', p=>0, d=>1_000), '583k', 'Zero float precision');
 
 # #############################################################################
 # secs_to_time() tests.
