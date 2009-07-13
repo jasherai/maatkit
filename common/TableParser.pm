@@ -44,7 +44,7 @@ sub new {
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
-
+   return unless $ddl;
    if ( ref $ddl eq 'ARRAY' ) {
       if ( lc $ddl->[0] eq 'table' ) {
          $ddl = $ddl->[1];

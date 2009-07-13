@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 27;
+use Test::More tests => 28;
 
 use DBI;
 require "../TableParser.pm";
@@ -634,4 +634,23 @@ is_deeply(
    'issue with pairing backticks in column comments (issue 330)'
 );
 
+# #############################################################################
+# Issue 170: mk-parallel-dump dies when table-status Data_length is NULL
+# #############################################################################
+
+# The underlying problem for issue 170 is that MySQLDump doesn't eval some
+# of its queries so when MySQLFind uses it and hits a broken table it dies.
+
+eval {
+   $tp->parse(undef);
+};
+is(
+   $EVAL_ERROR,
+   '',
+   'No error parsing undef ddl'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 exit;
