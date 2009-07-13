@@ -110,6 +110,12 @@ sub find_tables {
       = $self->_filter('tables', sub { $_[0]->{name} },
          $self->_fetch_tbl_list($dbh, %args));
 
+   # Ideally, _fetch_tbl_list() wouldn't return broken tables.  When it
+   # calls MySQLDumper::get_table_status() it could filter broken tables,
+   # but not when it calls get_table_list().  So we just filter them here;
+   # MySQLDumper::get_create_table() will fail on broken tables.
+   my %broken_table;
+
    # Filter tables by engines if needed.
    if ( $self->{need_engine} ) {
       foreach my $tbl ( @tables ) {
@@ -120,13 +126,21 @@ sub find_tables {
          my $struct = $self->{parser}->parse(
             $self->{dumper}->get_create_table(
                $dbh, $self->{quoter}, $args{database}, $tbl_name));
+         $broken_table{$tbl_name} = 1 unless $struct;
          $tbl->{engine} = $struct->{engine};
       }
       @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
    }
 
-   # <database>.<table> => <table> 
-   map { $_->{name} =~ s/^[^.]*\.// } @tables;
+   for my $i ( 0..$#tables ) {
+      # <database>.<table> => <table> 
+      $tables[$i]->{name} =~ s/^[^.]*\.//;
+      
+      if ( $broken_table{$tables[$i]->{name}} ) {
+         MKDEBUG && _d('Removing broken table:', $tables[$i]->{name});
+         delete $tables[$i];
+      }
+   }
 
    # Filter tables by status (if any criteria are defined).
    foreach my $crit ( @{$self->{tables}->{status}} ) {

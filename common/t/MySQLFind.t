@@ -1,28 +1,11 @@
 #!/usr/bin/perl
 
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 41;
 use English qw(-no_match_vars);
+use Test::More tests => 43;
+
 use List::Util qw(max);
-use DBI;
 
 require "../MySQLFind.pm";
 require "../Quoter.pm";
@@ -43,7 +26,7 @@ my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
  
 $sb->create_dbs($dbh,
-   [qw(lost+found test_mysql_finder_1 test_mysql_finder_2)],
+   [qw(lost+found test_mysql_finder_1 test_mysql_finder_2 test)],
    drop => 1, repl => 1);
 
 $f = new MySQLFind(
@@ -514,5 +497,51 @@ is_deeply(
    'finds db and tbl names with space',
 );
 
+# #############################################################################
+# Issue 170: mk-parallel-dump dies when table-status Data_length is NULL
+# #############################################################################
+
+# The underlying problem for issue 170 is that MySQLDump doesn't eval some
+# of its queries so when MySQLFind uses it and hits a broken table it dies.
+
+diag(`cp ../../mk-parallel-dump/t/samples/broken_tbl.frm /tmp/12345/data/test/broken_tbl.frm`);
+$f = new MySQLFind(
+   quoter    => $q,
+   dumper    => $d,
+   parser    => $p,
+   databases => {
+      permit => { 'test' => 1 },
+   },
+   engines   => {
+      reject => { FEDERATED => 1, MRG_MyISAM => 1, },
+   },
+);
+{
+   my $output = '';
+   local *STDERR;
+   open STDERR, '>', \$output;
+
+   @dbs_tbls = ();
+   foreach my $db ( $f->find_databases($dbh) ) {
+      foreach my $tbl ( $f->find_tables($dbh, database => $db) ) {
+         push @dbs_tbls, { db => $db, tbl => $tbl };
+      }
+   }
+
+   like(
+      $output,
+      qr/table may be damaged/,
+      'Warns that table may be damaged'
+   );
+};
+is_deeply(
+   \@dbs_tbls,
+   [],
+   "Doesn't die on broken table"
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 $sb->wipe_clean($dbh);
 exit;
