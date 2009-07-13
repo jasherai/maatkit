@@ -133,15 +133,15 @@ sub fingerprint {
 #   with a "cas" command did not exist or has been deleted.
 sub handle_storage_cmd {
    my ( $event ) = @_;
-   
+
    # There should be a result for any storage cmd.   
    if ( !$event->{res} ) {
       MKDEBUG && _d('No result for event:', Dumper($event));
       return;
    }
 
-   # Technically NOT_STORED is not an error, but we treat it as one.
-   $event->{'Memc_error'} = $event->{res} eq 'STORED' ? 'No'  : 'Yes';
+   $event->{'Memc_Not_Stored'} = $event->{res} eq 'NOT_STORED' ? 'Yes' : 'No';
+   $event->{'Memc_Exists'}     = $event->{res} eq 'EXISTS'     ? 'Yes' : 'No';
 
    return $event;
 }
