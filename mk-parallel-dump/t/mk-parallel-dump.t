@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 32;
+use Test::More tests => 34;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -178,6 +178,25 @@ like(
    $output,
    qr/\d tables.+\d chunks.+\d successes.+1 failures/,
    'Runs but does not die on broken table'
+);
+
+diag(`rm -rf /tmp/12345/data/test/broken_tbl.frm`);
+
+# #############################################################################
+# Issue 527: In mk-parallel-dump - combination of --default-set and --sets
+# does not appear to work as documented
+# #############################################################################
+diag(`rm -rf /tmp/default/*`);
+$sb->load_file('master', 'samples/backup_set.sql', 'test');
+$dbh->do('INSERT INTO test.backupset VALUES ("myset", 0, "test", "t1", NOW())');
+`$cmd --base-dir /tmp/default/ --ignore-databases sakila --sets myset --default-set --set-table test.backupset 2>&1`;
+ok(
+   -d '/tmp/default/myset/test',
+   'Dumped myset (issue 527)'
+);
+ok(
+   -d '/tmp/default/default/mysql',
+   'Dumped default set, too (issue 527)'
 );
 
 # #############################################################################

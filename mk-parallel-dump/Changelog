@@ -1,5 +1,6 @@
 Changelog for mk-parallel-dump:
 
+   * --default-set with --sets did not work properly (issue 527).
    * Script died on broken tables (issue 170).
 
 2009-06-02: version 1.0.16

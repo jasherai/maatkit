@@ -3008,7 +3008,7 @@ sub main {
    SET:
    foreach my $set ( @sets_to_do ) {
 
-      if ( !$o->get('sets') ) { # Must fetch tables.
+      if ( !$o->get('sets') || $o->get('default-set') ) { # Must fetch tables.
          foreach my $database ( @{$databases_for{$set}} ) {
             if ( !$tables_for{$database} ) {
                my @tables = $f->find_tables($dbh, database => $database);
