@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 31;
+use Test::More tests => 32;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -19,6 +19,7 @@ my $mysql = $sb->_use_for('master');
 $sb->create_dbs($dbh, ['test']);
 
 my $output;
+
 SKIP: {
    skip 'Sandbox master does not have the sakila database', 24
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
@@ -166,6 +167,22 @@ like($output, qr/55/, 'First chunk of csv dump (issue 275)');
 $output = `gzip -d -c /tmp/default/test/t1.000001.txt.gz`;
 is($output, "999\n", 'Second chunk of csv dump (issue 275)');
 
+
+# #############################################################################
+# Issue 170: mk-parallel-dump dies when table-status Data_length is NULL
+# #############################################################################
+diag(`rm -rf /tmp/default/`);
+diag(`cp samples/broken_tbl.frm /tmp/12345/data/test/broken_tbl.frm`);
+$output = `$cmd --base-dir /tmp/ -d test 2>&1`;
+like(
+   $output,
+   qr/\d tables.+\d chunks.+\d successes.+1 failures/,
+   'Runs but does not die on broken table'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 diag(`rm -rf /tmp/default/`);
 $sb->wipe_clean($dbh);
 exit;
