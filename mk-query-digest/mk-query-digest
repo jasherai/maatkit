@@ -3646,7 +3646,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 4152
+# QueryReportFormatter package 4157
 # ###########################################################################
 
 
@@ -3672,7 +3672,7 @@ my %formatting_function = (
    },
 );
 
-my $bool_format = '# %3s%% (%d) %s';
+my $bool_format = '# %3s%% %-6s %s';
 
 sub new {
    my ( $class, %args ) = @_;
@@ -3719,10 +3719,10 @@ sub global_report {
 
    my $line = sprintf(
       '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
-      shorten($global_cnt),
-      shorten(scalar keys %{$stats->{classes}}),
-      shorten($qps),
-      shorten($conc));
+      shorten($global_cnt, d=>1_000),
+      shorten(scalar keys %{$stats->{classes}}, d=>1_000),
+      shorten($qps, d=>1_000),
+      shorten($conc), d=>1_000);
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
 
@@ -3805,8 +3805,8 @@ sub event_report {
       '# %s %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
       ($ea->{groupby} eq 'fingerprint' ? 'Query' : 'Item'),
       $opts{rank} || 0,
-      shorten($qps),
-      shorten($conc),
+      shorten($qps, d=>1_000),
+      shorten($conc, d=>1_000),
       make_checksum($opts{where}),
       $sample->{pos_in_log} || 0);
    $line .= ('_' x (LINE_LENGTH - length($line)));
@@ -3939,7 +3939,8 @@ sub make_label {
 sub format_bool_attrib {
    my ( $stats ) = @_;
    my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
-   return $p_true, $stats->{sum};
+   my $n_true = '(' . shorten($stats->{sum}, d=>1_000, p=>0) . ')';
+   return $p_true, $n_true;
 }
 
 sub format_string_list {
@@ -5549,7 +5550,7 @@ sub fingerprint {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedEvent package 4150
+# MemcachedEvent package 4155
 # ###########################################################################
 package MemcachedEvent;
 
@@ -5616,8 +5617,14 @@ sub make_event {
 
    map { $event->{"Memc_$_"} = 'No' } keys %cmds;
    $event->{"Memc_$event->{cmd}"} = 'Yes';  # Got this cmd.
-   $event->{Memc_miss}            = $event->{res} eq 'NOT_FOUND' ? 'Yes' : 'No';
    $event->{Memc_error}           = 'No';  # A handler may change this.
+   $event->{Memc_miss}            = 'No';
+   if ( $event->{res} ) {
+      $event->{Memc_miss}         = 'Yes' if $event->{res} eq 'NOT_FOUND';
+   }
+   else {
+      MKDEBUG && _d('Event has no res:', Dumper($event));
+   }
 
    if ( $cmd_handler_for{$event->{cmd}} ) {
       return $cmd_handler_for{$event->{cmd}}->($event);
@@ -5634,13 +5641,14 @@ sub fingerprint {
 
 sub handle_storage_cmd {
    my ( $event ) = @_;
-   
+
    if ( !$event->{res} ) {
       MKDEBUG && _d('No result for event:', Dumper($event));
       return;
    }
 
-   $event->{'Memc_error'} = $event->{res} eq 'STORED' ? 'No'  : 'Yes';
+   $event->{'Memc_Not_Stored'} = $event->{res} eq 'NOT_STORED' ? 'Yes' : 'No';
+   $event->{'Memc_Exists'}     = $event->{res} eq 'EXISTS'     ? 'Yes' : 'No';
 
    return $event;
 }
@@ -6283,6 +6291,7 @@ sub main {
          # which report's ea we use here because the reports will have the
          # same attributes; they only differ in how they grouped queries.
          my @select = ( $ea{$report->[0]}->get_attributes() );
+         MKDEBUG && _d('attribs for reports:', @select);
          my $qrf    = new QueryReportFormatter();
          if ( $o->get('report-format')->{header} ) {
             my $ea = $ea{$report->[0]};
@@ -7305,7 +7314,7 @@ Show help and exit.
 
 =item --ignore-attributes
 
-type: array; default: arg,cmd,insert_id,ip,port,Thread_id,timestamp
+type: array; default: arg,cmd,insert_id,ip,port,Thread_id,timestamp,exptime,flags,key,res,val
 
 Do not aggregate these attributes when auto-detecting L<"--select">.
 

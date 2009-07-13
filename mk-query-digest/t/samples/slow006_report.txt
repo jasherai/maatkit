@@ -13,13 +13,6 @@
 # Time range 2007-12-18 11:48:27 to 2007-12-18 11:49:30
 # bytes         50      69      23      23      23      23       0      23
 # Merge pas      0       0       0       0       0       0       0       0
-#   0% Disk_filesort
-#   0% Disk_tmp_table
-#   0% Filesort
-#   0% Full_join
-#   0% Full_scan
-#   0% QC_Hit
-#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us  ################################################################
@@ -49,13 +42,6 @@ SELECT col FROM foo_tbl\G
 # Time range 2007-12-18 11:48:57 to 2007-12-18 11:49:07
 # bytes         50      69      23      23      23      23       0      23
 # Merge pas      0       0       0       0       0       0       0       0
-#   0% Disk_filesort
-#   0% Disk_tmp_table
-#   0% Filesort
-#   0% Full_join
-#   0% Full_scan
-#   0% QC_Hit
-#   0% Tmp_table
 # Query_time distribution
 #   1us
 #  10us  ################################################################

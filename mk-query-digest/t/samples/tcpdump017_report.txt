@@ -7,8 +7,6 @@
 # Errors                 4
 # Rows affe              0       0       0       0       0       0       0
 # Warning c              0       0       0       0       0       0       0
-#   0% No_good_index_used
-#   0% No_index_used
 
 # Query 1: 4 QPS, 0.67x concurrency, ID 0xE3A3649C5FAC418D at byte 2548 __
 # This item is included in the report because it matches --limit.
@@ -21,8 +19,6 @@
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0
-#   0% No_good_index_used
-#   0% No_index_used
 # Query_time distribution
 #   1us
 #  10us
@@ -34,6 +30,7 @@
 #  10s+
 # EXPLAIN
 select @@version_comment limit 1\G
+
 # Rank Query ID           Response time    Calls   R/Call     Item
 # ==== ================== ================ ======= ========== ====
 #    1 0xE3A3649C5FAC418D     0.6696 100.0%       4   0.167391 SELECT

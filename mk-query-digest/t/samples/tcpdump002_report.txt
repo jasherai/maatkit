@@ -12,8 +12,6 @@
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0
-#   0% No_good_index_used
-#   0% No_index_used
 # Query_time distribution
 #   1us
 #  10us
@@ -38,8 +36,6 @@ administrator command: Connect\G
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0
-#   0% No_good_index_used
-#   0% No_index_used
 # Query_time distribution
 #   1us
 #  10us
@@ -65,8 +61,6 @@ select @@version_comment limit 1\G
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0
-#   0% No_good_index_used
-#   0% No_index_used
 # Query_time distribution
 #   1us
 #  10us
@@ -92,8 +86,6 @@ select "paris in the the spring" as trick\G
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Warning c      0       0       0       0       0       0       0       0
-#   0% No_good_index_used
-#   0% No_index_used
 # Query_time distribution
 #   1us
 #  10us
