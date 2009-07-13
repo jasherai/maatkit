@@ -325,8 +325,8 @@ $expected = <<EOF;
 # Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
 # IDB IO rb              7       2       3    2.33    2.90    0.44    1.96
 # IDB pages             49      11      20   16.33   19.46    3.71   17.65
-# 100% (3) Filesort
-#  66% (2) QC_Hit
+# 100% (3)    Filesort
+#  66% (2)    QC_Hit
 EOF
 
 $ea  = new EventAggregator(
@@ -402,7 +402,7 @@ $expected = <<EOF;
 # Exec time            10s      1s      8s      3s      8s      3s   992ms
 # Lock time            8ms     2ms     3ms     3ms     3ms   500us     2ms
 # Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
-#  66% (2) QC_Hit
+#  66% (2)    QC_Hit
 EOF
 
 $ea  = new EventAggregator(

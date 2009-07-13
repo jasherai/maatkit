@@ -42,7 +42,7 @@ my %formatting_function = (
    },
 );
 
-my $bool_format = '# %3s%% (%d) %s';
+my $bool_format = '# %3s%% %-6s %s';
 
 sub new {
    my ( $class, %args ) = @_;
@@ -96,10 +96,10 @@ sub global_report {
    # First line
    my $line = sprintf(
       '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
-      shorten($global_cnt),
-      shorten(scalar keys %{$stats->{classes}}),
-      shorten($qps),
-      shorten($conc));
+      shorten($global_cnt, d=>1_000),
+      shorten(scalar keys %{$stats->{classes}}, d=>1_000),
+      shorten($qps, d=>1_000),
+      shorten($conc), d=>1_000);
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
 
@@ -197,8 +197,8 @@ sub event_report {
       '# %s %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
       ($ea->{groupby} eq 'fingerprint' ? 'Query' : 'Item'),
       $opts{rank} || 0,
-      shorten($qps),
-      shorten($conc),
+      shorten($qps, d=>1_000),
+      shorten($conc, d=>1_000),
       make_checksum($opts{where}),
       $sample->{pos_in_log} || 0);
    $line .= ('_' x (LINE_LENGTH - length($line)));
@@ -354,7 +354,8 @@ sub format_bool_attrib {
    # number of events minus those that were true.
    my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
    # my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
-   return $p_true, $stats->{sum};
+   my $n_true = '(' . shorten($stats->{sum}, d=>1_000, p=>0) . ')';
+   return $p_true, $n_true;
 }
 
 # Does pretty-printing for lists of strings like users, hosts, db.
