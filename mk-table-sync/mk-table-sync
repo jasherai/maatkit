@@ -5967,15 +5967,24 @@ sub get_cxn {
 # If no $dbs_tbls list is given, then each DSN specifies its own db.tbl.
 sub check_tables_for_triggers {
    my ( $dsns, $dbs_tbls, %args ) = @_;
-   foreach my $arg ( qw(o dp q du) ) {
+   foreach my $arg ( qw(o dp q du vp) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $du = $args{du};
    my $dp = $args{dp};
+   my $vp = $args{vp};
 
+   DSN:
    foreach my $dsn ( @$dsns ) {
       my %missing_db;
       my $dbh = get_cxn($dsn, %args);
+
+      if ( !$vp->version_ge($dbh, '4.1.0') ) {
+         MKDEBUG && _d('Skipping trigger check on',
+            'host', $dsn->{h}, ':', $dsn->{P},
+            'because it is older than 4.1');
+         next DSN;
+      }
 
       # Each DSN specifies its own db and tbl.
       $dbs_tbls->[0] = { db => $dsn->{D}, tbl => $dsn->{t} } unless $dbs_tbls;
