@@ -5135,6 +5135,30 @@ C<CRC32> is the default checksum function to use, and should be enough for most
 cases.  If you need stronger guarantees that your data is identical, you should
 use one of the other functions.
 
+=head1 ALGORITHM SELECTION
+
+The L<"--algorithm"> option allows you to specify which algorithm you would
+like to use, but it does not guarantee that mk-table-checksum will use this
+algorithm.  mk-table-checksum will ultimately select the best algorithm possible
+given various factors such as the MySQL version and other command line options.
+
+The three basic algorithms in descending order of preference are CHECKSUM,
+BIT_XOR and ACCUM.  CHECKSUM cannot be used if any one of these criteria
+is true:
+
+  * L<"--where"> is used.
+  * L<"--since"> is used.
+  * L<"--chunk-size"> is used.
+  * L<"--replicate"> is used.
+  * L<"--count"> is used.
+  * MySQL version less than 4.1.1.
+
+The BIT_XOR algorithm also requires MySQL version 4.1.1 or later.
+
+After checking these criteria, if the requested L<"--algorithm"> remains then it
+is used, otherwise the first remaining algorithm with the highest preference
+is used.
+
 =head1 CONSISTENT CHECKSUMS
 
 If you are using this tool to verify your slaves still have the same data as the
@@ -5322,6 +5346,7 @@ Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR).
 
 Specifies which checksum algorithm to use.  Valid arguments are CHECKSUM,
 BIT_XOR and ACCUM.  The latter two do cryptographic hash checksums.
+See also L<"ALGORITHM SELECTION">.
 
 CHECKSUM is built into MySQL, but has some disadvantages.  BIT_XOR and ACCUM are
 implemented by SQL queries.  They use a cryptographic hash of all columns
@@ -6088,7 +6113,7 @@ MASTER_POS_WAIT().
 
 type: string
 
-Do only rows matching this C<WHERE> clause (disallows --algorithm CHECKSUM).
+Do only rows matching this C<WHERE> clause (disallows L<"--algorithm"> CHECKSUM).
 
 You can use this option to limit the checksum to only part of the table.  This
 is particularly useful if you have append-only tables and don't want to
