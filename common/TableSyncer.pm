@@ -85,6 +85,8 @@ sub sync_table {
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
 
+   my $sleep = $args{sleep} || 0;
+
    my $can_replace
       = grep { $_->{is_unique} } values %{$args{tbl_struct}->{keys}};
    MKDEBUG && _d('This table\'s replace-ability:', $can_replace);
@@ -268,6 +270,8 @@ sub sync_table {
       $ch->process_rows(1);
 
       $cycle++;
+
+      sleep $sleep;
    }
 
    $ch->process_rows();
