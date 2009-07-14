@@ -5979,10 +5979,11 @@ sub check_tables_for_triggers {
       my %missing_db;
       my $dbh = get_cxn($dsn, %args);
 
-      if ( !$vp->version_ge($dbh, '4.1.0') ) {
+      if ( !$vp->version_ge($dbh, '5.0.2') ) {
          MKDEBUG && _d('Skipping trigger check on',
             'host', $dsn->{h}, ':', $dsn->{P},
-            'because it is older than 4.1');
+            'because it is older than 5.0.2');
+         $dbh->disconnect();
          next DSN;
       }
 
@@ -6760,6 +6761,9 @@ Before syncing tables C<mk-table-sync> checks all destination tables on all
 destination hosts (those tables which will be synced to the source host's
 tables).  If any destination host table has triggers defined on it,
 C<mk-table-sync> will die unless L<"--with-triggers"> is specified.
+
+Triggers were introduced in MySQL v5.0.2, so for older versions this option
+has no effect because triggers will not be checked.
 
 =back
 

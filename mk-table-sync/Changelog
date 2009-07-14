@@ -1,6 +1,7 @@
 Changelog for mk-table-sync:
 
    * Could not sync table to different db or table on different host (issue 40).
+   * Script needlessly checked for triggers on servers <5.0.2 (issue 294).
 
 2009-06-02: version 1.0.16
 
