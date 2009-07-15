@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 5;
 
-require '../RecordsetFromText.pm';
+require '../TextResultSetParser.pm';
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -19,8 +19,8 @@ sub load_file {
    return $contents;
 }
 
-my $r = new RecordsetFromText();
-isa_ok($r, 'RecordsetFromText');
+my $r = new TextResultSetParser();
+isa_ok($r, 'TextResultSetParser');
 
 is_deeply(
    $r->parse( load_file('samples/recset001.txt') ),
