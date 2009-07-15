@@ -5,8 +5,19 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 6;
 
-require '../../common/DSNParser.pm';
+require '../mk-kill';
 require '../../common/Sandbox.pm';
+
+sub output {
+   my $output = '';
+   open my $output_fh, '>', \$output
+      or BAIL_OUT("Cannot capture output to variable: $OS_ERROR");
+   select $output_fh;
+   eval { mk_kill::main(@_); };
+   close $output_fh;
+   select STDOUT;
+   return $EVAL_ERROR ? $EVAL_ERROR : $output;
+}
 
 # Shell out to a sleep(10) query and try to capture the query.  Backticks don't
 # work here.

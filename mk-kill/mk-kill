@@ -1591,7 +1591,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 3571
+# Processlist package 4172
 # ###########################################################################
 package Processlist;
 
@@ -1853,32 +1853,65 @@ sub main {
    # Get configuration information.
    # ########################################################################
    $o = new OptionParser(
-      description => q{kills queries in MySQL},
-      prompt      => '[OPTION]...',
+      description => q{kills queries in MySQL that match certain criteria. }
+                   . q{If FILE is not given, mk-kill connects to MySQL and }
+                   . q{gets queries from SHOW PROCESSLIST.  Or, FILE can be }
+                   . q{SHOW PROCESSLIST output.  Use - to read from STDIN.},
+      prompt      => '[OPTION]... [FILE...]',
+      strict      => 0,
    );
-
    $o->get_specs();
    $o->get_opts();
-   $o->set('interval', max(1, $o->get('busy-time') / 2)) unless $o->got('interval');
+
+   $o->set('interval', max(1, $o->get('busy-time') / 2)) 
+      unless $o->got('interval');
+
+   # --print disables kill unless kill is explicitly given.
+   if ( $o->got('print') && $o->got('kill') ) {
+      $o->set('kill', $o->get('kill'));
+   }
+
    $o->usage_or_errors();
 
    # ########################################################################
-   # Start working.
+   # Connect to MySQL.
    # ########################################################################
-   my $dbh      = get_cxn({$o->opt_values()}, 1);
-   my $proc_sth = $dbh->prepare('SHOW FULL PROCESSLIST');
+   my $dsn      = $dp->parse_options($o);
+   my $dbh      = get_cxn($dsn, 1); 
    my $kill_sth = $dbh->prepare('KILL ?');
-   my $start    = time();
-   my $end      = $start + ($o->get('run-time') || 0); # When we should exit
-   my $now      = $start;
 
+   # ########################################################################
+   # Make input sub that will either get processlist from MySQL or a file.
+   # ########################################################################
+   my $get_proclist;
+   if ( @ARGV ) {
+      MKDEBUG && _d('Getting processlist from files:', @ARGV);
+   }
+   else {
+      MKDEBUG && _d('Getting processlist from MySQL');
+      my $proc_sth = $dbh->prepare('SHOW FULL PROCESSLIST');
+      $get_proclist = sub {
+         $proc_sth->execute();
+         return $proc_sth->fetchall_arrayref({});
+      }
+   }
+
+   # ########################################################################
    # Daemonize only after (potentially) asking for passwords for --ask-pass.
+   # ########################################################################
    my $daemon;
    if ( $o->get('daemonize') ) {
       $daemon = new Daemon(o=>$o);
       $daemon->daemonize();
       MKDEBUG && _d('I am a daemon now');
    }
+
+   # ########################################################################
+   # Start working.
+   # ########################################################################
+   my $start    = time();
+   my $end      = $start + ($o->get('run-time') || 0); # When we should exit
+   my $now      = $start;
 
    my %find_spec = (
       only_oldest  => $o->get('only-oldest'),
@@ -1901,8 +1934,7 @@ sub main {
       ($start == $end || $now < $end)                   # time is exceeded
       && (!$iters_todo || $iters_done++ < $iters_todo ) # or iterations exceeded
    ) {
-      $proc_sth->execute();
-      my $proclist = $proc_sth->fetchall_arrayref({});
+      my $proclist = $get_proclist->();
       my @queries  = $pl->find($proclist, %find_spec);
       foreach my $query ( @queries ) {
          if ( $o->get('print') ) {
@@ -1910,12 +1942,15 @@ sub main {
                ts(time), $query->{Id}, ($query->{Command} || 'NULL'),
                $query->{Time}, ($query->{Info} || 'NULL');
          }
+
          $kill_sth->execute($query->{Id}) if $o->get('kill');
       }
 
       # Don't sleep if we're going to exit after waking up.  If $iters_todo is
-      # 0 (infinity), always sleep.
-      if ( !$iters_todo || $iters_done < $iters_todo ) {
+      # 0 (infinity), always sleep.  And only sleep if we're live (i.e. not
+      # reading from files).
+      if ( (!$iters_todo || $iters_done < $iters_todo)
+            && $dbh ) {
          if ( @queries && $o->get('wait-after-kill') ) {
             MKDEBUG && _d("Sleeping after killing queries");
             sleep $o->get('wait-after-kill');
@@ -2081,7 +2116,12 @@ to infinity.  See also L<--run-time>.
 
 default: yes
 
-Actually kill queries.  The alternative is to just print them out.
+Actually kill matching queries.
+
+The alternative is to just L<"--print"> which queries match and would be
+killed.  If you specify L<"--print"> you must also explicitly specify
+L<"--kill"> to do both print and kill the matching queries, otherwise
+L<"--print"> will disable L<"--kill">.
 
 =item --log
 
@@ -2131,7 +2171,12 @@ Port number to use for connection.
 
 =item --print
 
-Print killed queries on standard output.
+Print killed queries on standard output; disables L<"--kill">.
+
+By default C<mk-kill> kills matching queries.  If you just want to see which
+queries match and would be killed (without actually killing them), specify
+L<"--print">.  To both kill and print the killed queries, you must explicitly
+give L<"--kill"> with L<"--print">.
 
 =item --run-time
 
