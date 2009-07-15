@@ -1,29 +1,9 @@
 #!/usr/bin/perl
 
-# This program is copyright 2008 Percona Inc.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
-
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 5;
 use English qw(-no_match_vars);
-
-use DBI;
+use Test::More tests => 5;
 
 require '../RecordsetFromText.pm';
 
@@ -39,17 +19,11 @@ sub load_file {
    return $contents;
 }
 
-# my $params = {
-#   value_for => {
-#      0 => undef,
-#   },
-# };
-my $r = RecordsetFromText->new();
+my $r = new RecordsetFromText();
 isa_ok($r, 'RecordsetFromText');
 
-my $recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_basic.txt') );
 is_deeply(
-   $recset,
+   $r->parse( load_file('samples/recset001.txt') ),
    [
       {
          Time     => '0',
@@ -65,9 +39,8 @@ is_deeply(
    'Basic tablular processlist'
 );
 
-$recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_vertical_02_rows.txt') );
 is_deeply(
-   $recset,
+   $r->parse( load_file('samples/recset002.txt') ),
    [
       {
          Time     => '4',
@@ -93,12 +66,24 @@ is_deeply(
    '2 row vertical processlist'
 );
 
-$recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_vertical_51_rows.txt') );
-cmp_ok(scalar @{ $recset }, '==', 51, '51 row vertical processlist');
+my $recset = $r->parse ( load_file('samples/recset003.txt') );
+cmp_ok(
+   scalar @$recset,
+   '==',
+   113,
+   '113 row vertical processlist'
+);
 
-$recset = $r->parse ( load_file('samples/RecsetFromTxt-proclist_vertical_113_rows_NULL_Time.txt') );
-cmp_ok(scalar @{ $recset }, '==', 113, '113 row vertical processlist');
+$recset = $r->parse( load_file('samples/recset004.txt') );
+cmp_ok(
+   scalar @$recset,
+   '==',
+   51,
+   '51 row vertical processlist'
+);
 
-# print Dumper($recset);
 
+# #############################################################################
+# Done.
+# #############################################################################
 exit;

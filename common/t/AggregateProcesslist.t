@@ -41,7 +41,7 @@ sub test_aggregate {
 }
 
 test_aggregate(
-   'samples/RecsetFromTxt-proclist_basic.txt',
+   'samples/recset001.txt',
    {
       command => { query     => { time => 0, count => 1 } },
       db      => { ''        => { time => 0, count => 1 } },
@@ -53,7 +53,7 @@ test_aggregate(
 );
 
 test_aggregate(
-   'samples/RecsetFromTxt-proclist_vertical_51_rows.txt',
+   'samples/recset004.txt',
    {
       db => {
          NULL   => { count => 1,  time => 0 },
@@ -79,9 +79,7 @@ test_aggregate(
    'Sample with 51 processes',
 );
 
-my $proclist = $r->parse(
-   load_file('samples/RecsetFromTxt-proclist_vertical_113_rows_NULL_Time.txt'));
-my $aggregate = $apl->aggregate($proclist);
+my $aggregate = $apl->aggregate($r->parse(load_file('samples/recset003.txt')));
 cmp_ok(
    $aggregate->{db}->{NULL}->{count},
    '==',

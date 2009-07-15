@@ -17,35 +17,38 @@
 # ###########################################################################
 # RecordsetFromText package $Revision$
 # ###########################################################################
-
-# RecordsetFromText - Create recordset (array of hashes) from text output
 package RecordsetFromText;
+
+# RecordsetFromText converts the formatted text output of a recordset, like
+# what SHOW PROCESSLIST and EXPLAIN print, into a data struct, like what
+# DBI::selectall_arrayref() returns.  So this:
+#   +----+------+
+#   | Id | User |
+#   +----+------+
+#   | 1  | bob  |
+#   +----+------+
+# becomes this:
+#   [
+#      {
+#         Id   => '1',
+#         User => 'bob',
+#      },
+#   ]
+#
+# Both horizontal and vertical (\G) text outputs are supported.
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Carp;
-use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-# At present $params can contain a hash of alternate values:
-#    key:   value_for
-#    value: {
-#       key:   value from text
-#       value: alternate value
-#    }
-# Example:
-# $params = { value_for => {
-#                NULL => undef,
-#             }
-#           }
-# That would cause any NULL value in the text to be changed to
-# undef in the returned recset.
-
+# Possible args:
+#   * value_for    Hashref of original_val => new_val, used to alter values
+#
 sub new {
-   my ( $class, $params ) = @_;
-   my $self = defined $params ? { %{ $params } } : {};
+   my ( $class, %args ) = @_;
+   my $self = { %args };
    return bless $self, $class;
 }
 
@@ -73,7 +76,14 @@ sub parse_vertical {
    return \%row;
 }
 
-# parse() returns an array of recordset hashes where column/field => value
+# Returns an arrayref of recordset hashrefs like:
+# [
+#    {
+#       Time     => '5',
+#       Command  => 'Query',
+#       db       => 'foo',
+#    },
+# ]
 sub parse {
    my ( $self, $text ) = @_;
    my $recsets_ref;
@@ -107,17 +117,16 @@ sub parse {
       $recsets_ref = _parse_vertical_recset($text, \&parse_vertical);
    }
    else {
-      croak "Cannot determine text type in RecordsetFromText::parse():\n"
-            . $text;
+      die "Cannot determine if text is tabular, tab-separated or veritcal:\n"
+         . $text;
    }
 
-   my $value_for
-      = (exists $self->{value_for} ? $self->{value_for} : 0);
-   if ( $value_for ) {
-      foreach my $recset ( @{ $recsets_ref } ) {
-         foreach my $key ( %{ $recset } ) {
-            $recset->{$key} = $value_for->{ $recset->{$key} }
-               if exists $value_for->{ $recset->{$key} };
+   # Convert values.
+   if ( $self->{value_for} ) {
+      foreach my $recset ( @$recsets_ref ) {
+         foreach my $key ( keys %$recset ) {
+            $recset->{$key} = $self->{value_for}->{ $recset->{$key} }
+               if exists $self->{value_for}->{ $recset->{$key} };
          }
       }
    }
