@@ -67,7 +67,7 @@ Command: Query
    Host: 0.1.2.11:40605
      db: forest
 Command: Query
-   Time: 25
+   Time: 29
   State: preparing
    Info: select treecode0_.treecodeid as treecod1_64_, treecode0_.roomcomfortid as roomcomf2_64_, treecode0_.roomtypeid as roomtypeid64_, treecode0_.roomviewid as roomviewid64_, treecode0_.roomserviceid as roomserv5_64_, treecode0_.roomcategoryid as roomcate6_64_, treecode0_.mindays as mindays64_, treecode0_.partnercode as partnerc8_64_, treecode0_.originalname as original9_64_, treecode0_.isactive as isactive64_, treecode0_.`match` as match11_64_, treecode0_.treeid as treeid64_ from treeCODE treecode0_ where treecode0_.treecodeid in (select treeaddit1_.treecodeid from treeADDITIONALCONTENT treeaddit1_ where treeaddit1_.additionaltypeid=4 and treeaddit1_.value='ABAN' and (treeaddit1_.treecodeid in (select treeaddit2_.treecodeid from treeADDITIONALCONTENT treeaddit2_ where treeaddit2_.additionaltypeid=3 and treeaddit2_.value='MET')))
 *************************** 9. row ***************************
