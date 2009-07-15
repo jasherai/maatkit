@@ -23,6 +23,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...on/MySQLProtocolParser.pm   81.2   59.7   64.3   89.7    n/a  100.0   74.7
 ...it/common/OptionParser.pm   93.6   83.1   91.4   94.7    n/a  100.0   90.2
 ...kit/common/Processlist.pm   88.3   87.5   53.8   82.4    n/a  100.0   75.3
+.../ProcesslistAggregator.pm   85.0   81.2   80.0   85.7    n/a  100.0   83.8
 ...t/common/QueryExecutor.pm   95.7   41.7    n/a  100.0    n/a  100.0   86.6
 ...kit/common/QueryParser.pm   90.0   58.3   50.0   88.9    n/a  100.0   82.8
 ...kit/common/QueryRanker.pm   95.1   72.5   83.3  100.0    n/a  100.0   88.6
@@ -47,5 +48,6 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...common/TableSyncStream.pm   79.5   66.7   50.0   80.0    n/a  100.0   77.4
 ...kit/common/TableSyncer.pm   78.3   48.8   50.0   85.7    n/a  100.0   67.6
 ...t/common/TcpdumpParser.pm  100.0   57.1   80.0  100.0    n/a  100.0   91.7
+...on/TextResultSetParser.pm   75.3   55.0    n/a   84.6    n/a  100.0   72.7
 ...it/common/Transformers.pm   82.4   88.1   90.0   86.7    n/a  100.0   85.4
 ...t/common/VersionParser.pm   60.0    0.0    n/a   75.0    n/a  100.0   54.5

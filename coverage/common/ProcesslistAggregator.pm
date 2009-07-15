@@ -1,18 +1,18 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...n/AggregateProcesslist.pm   85.0   81.2   80.0   85.7    n/a  100.0   83.8
+.../ProcesslistAggregator.pm   85.0   81.2   80.0   85.7    n/a  100.0   83.8
 Total                          85.0   81.2   80.0   85.7    n/a  100.0   83.8
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
-Run:          AggregateProcesslist.t
+Run:          ProcesslistAggregator.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:19:26 2009
-Finish:       Wed Jun 10 17:19:26 2009
+Start:        Wed Jul 15 15:29:45 2009
+Finish:       Wed Jul 15 15:29:45 2009
 
-/home/daniel/dev/maatkit/common/AggregateProcesslist.pm
+/home/daniel/dev/maatkit/common/ProcesslistAggregator.pm
 
 line  err   stmt   bran   cond    sub    pod   time   code
 1                                                     # This program is copyright 2008-2009 Percona Inc.
@@ -32,17 +32,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # AggregateProcesslist package $Revision: 3470 $
+18                                                    # ProcesslistAggregator package $Revision: 4175 $
 19                                                    # ###########################################################################
-20                                                    package AggregateProcesslist;
+20                                                    package ProcesslistAggregator;
 21                                                    
-22             1                    1           109   use strict;
+22             1                    1             8   use strict;
                1                                  2   
                1                                  7   
 23             1                    1             6   use warnings FATAL => 'all';
-               1                                  2   
+               1                                  6   
                1                                  8   
-24             1                    1             5   use English qw(-no_match_vars);
+24             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
                1                                  8   
 25                                                    
@@ -51,47 +51,47 @@ line  err   stmt   bran   cond    sub    pod   time   code
                1                                 11   
 27                                                    
 28                                                    sub new {
-29             1                    1            13      my ( $class, %args ) = @_;
-30    ***      1            50                   14      my $self = {
+29             1                    1            14      my ( $class, %args ) = @_;
+30    ***      1            50                   16      my $self = {
 31                                                          undef_val => $args{undef_val} || 'NULL',
 32                                                       };
-33             1                                 10      return bless $self, $class;
+33             1                                 11      return bless $self, $class;
 34                                                    }
 35                                                    
 36                                                    # Given an arrayref of processes ($proclist), returns an hashref of
 37                                                    # time and counts aggregates for User, Host, db, Command and State.
-38                                                    # See t/AggregateProcesslist.t for examples.
+38                                                    # See t/ProcesslistAggregator.t for examples.
 39                                                    # The $proclist arg is usually the return val of:
 40                                                    #    $dbh->selectall_arrayref('SHOW PROCESSLIST', { Slice => {} } );
 41                                                    sub aggregate {
-42             3                    3            33      my ( $self, $proclist ) = @_;
+42             3                    3            28      my ( $self, $proclist ) = @_;
 43             3                                 11      my $aggregate = {};
-44             3                                  8      foreach my $proc ( @{$proclist} ) {
-               3                                 12   
-45           165                                421         foreach my $field ( keys %{ $proc } ) {
-             165                                766   
+44             3                                 10      foreach my $proc ( @{$proclist} ) {
+               3                                 15   
+45           165                                400         foreach my $field ( keys %{ $proc } ) {
+             165                                798   
 46                                                             # Don't aggregate these fields.
-47          1297    100                        4583            next if $field eq 'Id';
-48          1132    100                        3919            next if $field eq 'Info';
-49           967    100                        3509            next if $field eq 'Time';
+47          1297    100                        4645            next if $field eq 'Id';
+48          1132    100                        3992            next if $field eq 'Info';
+49           967    100                        3418            next if $field eq 'Time';
 50                                                    
 51                                                             # Format the field's value a little.
-52           802                               2429            my $val  = $proc->{ $field };
-53    ***    802     50                        2681               $val  = $self->{undef_val} if !defined $val;
-54           802    100    100                 5613               $val  = lc $val if ( $field eq 'Command' || $field eq 'State' );
-55           802    100                        3054               $val  =~ s/:.*// if $field eq 'Host';
+52           802                               2465            my $val  = $proc->{ $field };
+53    ***    802     50                        2757               $val  = $self->{undef_val} if !defined $val;
+54           802    100    100                 6145               $val  = lc $val if ( $field eq 'Command' || $field eq 'State' );
+55           802    100                        3073               $val  =~ s/:.*// if $field eq 'Host';
 56                                                    
-57           802                               2425            my $time = $proc->{Time};
-58           802    100                        2739               $time = 0 if $time eq 'NULL';
+57           802                               2466            my $time = $proc->{Time};
+58           802    100                        2759               $time = 0 if $time eq 'NULL';
 59                                                    
 60                                                             # Do this last or else $proc->{$field} won't match.
-61           802                               2274            $field = lc $field;
+61           802                               2291            $field = lc $field;
 62                                                    
-63           802                               3328            $aggregate->{ $field }->{ $val }->{time}  += $time;
-64           802                               4752            $aggregate->{ $field }->{ $val }->{count} += 1;
+63           802                               3397            $aggregate->{ $field }->{ $val }->{time}  += $time;
+64           802                               3848            $aggregate->{ $field }->{ $val }->{count} += 1;
 65                                                          }
 66                                                       }
-67             3                                 23      return $aggregate;
+67             3                                 28      return $aggregate;
 68                                                    }
 69                                                    
 70                                                    sub _d {
@@ -107,7 +107,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 78                                                    1;
 79                                                    
 80                                                    # ###########################################################################
-81                                                    # End AggregateProcesslist package
+81                                                    # End ProcesslistAggregator package
 82                                                    # ###########################################################################
 
 
@@ -145,20 +145,20 @@ line  err      %      l  !l&&r !l&&!r   expr
 Covered Subroutines
 -------------------
 
-Subroutine Count Location                                                  
----------- ----- ----------------------------------------------------------
-BEGIN          1 /home/daniel/dev/maatkit/common/AggregateProcesslist.pm:22
-BEGIN          1 /home/daniel/dev/maatkit/common/AggregateProcesslist.pm:23
-BEGIN          1 /home/daniel/dev/maatkit/common/AggregateProcesslist.pm:24
-BEGIN          1 /home/daniel/dev/maatkit/common/AggregateProcesslist.pm:26
-aggregate      3 /home/daniel/dev/maatkit/common/AggregateProcesslist.pm:42
-new            1 /home/daniel/dev/maatkit/common/AggregateProcesslist.pm:29
+Subroutine Count Location                                                   
+---------- ----- -----------------------------------------------------------
+BEGIN          1 /home/daniel/dev/maatkit/common/ProcesslistAggregator.pm:22
+BEGIN          1 /home/daniel/dev/maatkit/common/ProcesslistAggregator.pm:23
+BEGIN          1 /home/daniel/dev/maatkit/common/ProcesslistAggregator.pm:24
+BEGIN          1 /home/daniel/dev/maatkit/common/ProcesslistAggregator.pm:26
+aggregate      3 /home/daniel/dev/maatkit/common/ProcesslistAggregator.pm:42
+new            1 /home/daniel/dev/maatkit/common/ProcesslistAggregator.pm:29
 
 Uncovered Subroutines
 ---------------------
 
-Subroutine Count Location                                                  
----------- ----- ----------------------------------------------------------
-_d             0 /home/daniel/dev/maatkit/common/AggregateProcesslist.pm:71
+Subroutine Count Location                                                   
+---------- ----- -----------------------------------------------------------
+_d             0 /home/daniel/dev/maatkit/common/ProcesslistAggregator.pm:71
 
 
