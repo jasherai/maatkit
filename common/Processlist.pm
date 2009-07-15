@@ -253,7 +253,17 @@ sub fire_event {
 }
 
 # Accepts a PROCESSLIST and a specification of filters to use against it.
-# Returns queries that match the filters. TODO: document
+# Returns queries that match the filters.  The standard process properties
+# are: Id, User, Host, db, Command, Time, State, Info.  These are used for
+# ignore and match.
+#
+# Possible find_spec are:
+#   * only_oldest  Match the oldest running query
+#   * busy_time    Match queries that have been running for longer than this
+#                  time and are in Command=Query status
+#   * ignore       A hashref of properties => regex patterns to ignore
+#   * match        A hashref of properties => regex patterns to match
+#
 sub find {
    my ( $self, $proclist, %find_spec ) = @_;
    my @matches;
