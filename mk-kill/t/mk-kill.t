@@ -23,7 +23,7 @@ sub output {
 # work here.
 system("mysql -h127.1 -P12345 -e 'select sleep(10)' >/dev/null&");
 
-my $output = `perl ../mk-kill -P 12345 -h 127.1 --busy-time 1s --no-kill --print --iterations 20`;
+my $output = `perl ../mk-kill -P 12345 -h 127.1 --busy-time 1s --print --iterations 20`;
 
 # $output ought to be something like
 # 2009-05-27T22:19:40 KILL 5 (Query 1 sec) select sleep(10)
@@ -43,7 +43,7 @@ ok(@times > 7 && @times < 12, 'There are approximately 9 or 10 captures');
 # was 0, and another bug when --run-time was not respected.  Do it all over
 # again, this time with --iterations 0.
 system("mysql -h127.1 -P12345 -e 'select sleep(10)' >/dev/null&");
-$output = `perl ../mk-kill -P 12345 -h 127.1 --busy-time 1s --no-kill --print --iterations 0 --run-time 11s`;
+$output = `perl ../mk-kill -P 12345 -h 127.1 --busy-time 1s --print --iterations 0 --run-time 11s`;
 @times = $output =~ m/\(Query (\d+) sec\)/g;
 ok(@times > 7 && @times < 12, 'Approximately 9 or 10 captures with --iterations 0');
 
@@ -53,7 +53,7 @@ ok(@times > 7 && @times < 12, 'Approximately 9 or 10 captures with --iterations 
 
 # There's no hung queries so we'll just make sure it outputs anything,
 # its debug stuff in this case.
-`../mk-kill -F /tmp/12345/my.sandbox.cnf --interval 1s --iterations 2 --pid /tmp/mk-kill.pid --log /tmp/mk-kill.log --daemonize`;
+`../mk-kill -F /tmp/12345/my.sandbox.cnf --print --interval 1s --iterations 2 --pid /tmp/mk-kill.pid --log /tmp/mk-kill.log --daemonize`;
 $output = `ps -eaf | grep 'mk-kill \-F'`;
 like(
    $output,

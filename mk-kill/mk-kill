@@ -1820,6 +1820,138 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# TextResultSetParser package 4176
+# ###########################################################################
+package TextResultSetParser;
+
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
+}
+
+sub parse_tabular {
+   my ( $text, @cols ) = @_;
+   my %row;
+   my @vals = $text =~ m/\| +([^\|]*?)(?= +\|)/msg;
+   return (undef, \@vals) unless @cols;
+   @row{@cols} = @vals;
+   return (\%row, undef);
+}
+
+sub parse_tab_sep {
+   my ( $text, @cols ) = @_;
+   my %row;
+   my @vals = split(/\t/, $text);
+   return (undef, \@vals) unless @cols;
+   @row{@cols} = @vals;
+   return (\%row, undef);
+}
+
+sub parse_vertical {
+   my ( $text ) = @_;
+   my %row = $text =~ m/^\s*(\w+): ([^\n]*)/msg;
+   return \%row;
+}
+
+sub parse {
+   my ( $self, $text ) = @_;
+   my $result_set;
+
+   if ( $text =~ m/^\+---/m ) { # standard "tabular" output
+      MKDEBUG && _d('text type: standard tabular');
+      my $line_pattern  = qr/^(\| .*)[\r\n]+/m;
+      $result_set
+         = _parse_horizontal_result_set($text, $line_pattern, \&parse_tabular);
+   }
+   elsif ( $text =~ m/^id\tselect_type\t/m ) { # tab-separated
+      MKDEBUG && _d('text type: tab-separated');
+      my $line_pattern  = qr/^(.*?\t.*)[\r\n]+/m;
+      $result_set
+         = _parse_horizontal_result_set($text, $line_pattern, \&parse_tab_sep);
+   }
+   elsif ( $text =~ m/\*\*\* \d+\. row/ ) { # "vertical" output
+      my $n_recs;
+      $n_recs++ while $text =~ m/ \d+\. row /g;
+      MKDEBUG && _d('text-type: vertical,', $n_recs, 'n_recs');
+      if ( $n_recs > 1 ) {
+         MKDEBUG && _d('Multiple result sets');
+         my @v_result_sets;
+         my $v_result_set = _split_vertical_result_sets($text);
+         foreach my $v_result_set ( @$v_result_set ) {
+            push @v_result_sets, $self->parse($v_result_set);
+         }
+         return \@v_result_sets;
+      }
+      $result_set = _parse_vertical_result_set($text, \&parse_vertical);
+   }
+   else {
+      die "Cannot determine if text is tabular, tab-separated or veritcal:\n"
+         . $text;
+   }
+
+   if ( $self->{value_for} ) {
+      foreach my $result_set ( @$result_set ) {
+         foreach my $key ( keys %$result_set ) {
+            $result_set->{$key} = $self->{value_for}->{ $result_set->{$key} }
+               if exists $self->{value_for}->{ $result_set->{$key} };
+         }
+      }
+   }
+
+   return $result_set;
+}
+
+sub _parse_horizontal_result_set {
+   my ( $text, $line_pattern, $sub ) = @_;
+   my @result_sets = ();
+   my @cols        = ();
+   foreach my $line ( $text =~ m/$line_pattern/g ) {
+      my ( $row, $cols ) = $sub->($line, @cols);
+      if ( $row ) {
+         push @result_sets, $row;
+      }
+      else {
+         @cols = @$cols;
+      }
+   }
+   return \@result_sets;
+}
+
+sub _parse_vertical_result_set {
+   my ( $text, $sub ) = @_;
+   return $sub->($text);
+}
+
+sub _split_vertical_result_sets {
+   my ( $text ) = @_;
+   my $ROW_HEADER = '\*{3,} \d+\. row \*{3,}';
+   my @result_sets = $text =~ m/($ROW_HEADER.*?)(?=$ROW_HEADER|\z)/omgs;
+   return \@result_sets;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TextResultSetParser package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -1854,31 +1986,50 @@ sub main {
    # ########################################################################
    $o = new OptionParser(
       description => q{kills queries in MySQL that match certain criteria. }
-                   . q{If FILE is not given, mk-kill connects to MySQL and }
-                   . q{gets queries from SHOW PROCESSLIST.  Or, FILE can be }
-                   . q{SHOW PROCESSLIST output.  Use - to read from STDIN.},
+                   . q{If FILE is not given, mk-kill executes SHOW PROCESSLIST }
+                   . q{on MySQL to get queries.  Else, mk-kill will get }
+                   . q{queries from FILE which should contain the output of }
+                   . q{SHOW PROCESSLIST.  In either case, mk-kill will try }
+                   . q{to kill matching queries on MySQL unless --print or }
+                   . q{--no-kill is given.  If FILE is -, mk-kill reads from }
+                   . q{STDIN.},
       prompt      => '[OPTION]... [FILE...]',
       strict      => 0,
    );
    $o->get_specs();
    $o->get_opts();
 
-   $o->set('interval', max(1, $o->get('busy-time') / 2)) 
-      unless $o->got('interval');
+   if ( !$o->got('busy-time') ) {
+      $o->set('interval', 30) unless $o->got('interval');
+   }
+   else {
+      $o->set('interval', max(1, $o->get('busy-time') / 2))
+         unless $o->got('interval');
+   }
 
    # --print disables kill unless kill is explicitly given.
    if ( $o->got('print') && $o->got('kill') ) {
       $o->set('kill', $o->get('kill'));
    }
 
+   # If parsing files, then these opts are meaningless.
+   if ( @ARGV ) {
+      $o->set('interval', 0);
+   }
+
    $o->usage_or_errors();
 
    # ########################################################################
-   # Connect to MySQL.
+   # Connect to MySQL if not reading files.
    # ########################################################################
-   my $dsn      = $dp->parse_options($o);
-   my $dbh      = get_cxn($dsn, 1); 
-   my $kill_sth = $dbh->prepare('KILL ?');
+   my $dsn;
+   my $dbh;
+   my $kill_sth;
+   if ( !@ARGV ) {
+      $dsn      = $dp->parse_options($o);
+      $dbh      = get_cxn($dsn, 1); 
+      $kill_sth = $dbh->prepare('KILL ?');
+   }
 
    # ########################################################################
    # Make input sub that will either get processlist from MySQL or a file.
@@ -1886,6 +2037,38 @@ sub main {
    my $get_proclist;
    if ( @ARGV ) {
       MKDEBUG && _d('Getting processlist from files:', @ARGV);
+      my $trp = new TextResultSetParser();
+      my $fh;
+      $get_proclist = sub {
+         if ( !$fh ) {
+            my $file = shift @ARGV;
+            die 'No more files' unless $file;
+            if ( $file eq '-' ) {
+               $fh = *STDIN;
+            }
+            else {
+               if ( !open $fh, '<', $file ) {
+                  warn "Cannot open $file: $OS_ERROR";
+                  $fh = undef;
+                  return;
+               }
+            }
+         }
+
+         if ( $fh ) {
+            local $INPUT_RECORD_SEPARATOR = '';
+            my $proclist_text = <$fh>;
+            if ( $proclist_text ) {
+               return $trp->parse($proclist_text);
+            }
+            else {
+               # No more proclists in this file.
+               $fh = undef;
+            }
+         }
+
+         return;
+      };
    }
    else {
       MKDEBUG && _d('Getting processlist from MySQL');
@@ -1893,7 +2076,7 @@ sub main {
       $get_proclist = sub {
          $proc_sth->execute();
          return $proc_sth->fetchall_arrayref({});
-      }
+      };
    }
 
    # ########################################################################
@@ -1925,6 +2108,7 @@ sub main {
       match => {
          Command  => $o->get('match-command'),
          Info     => $o->get('match-info'),
+         State    => $o->get('match-state'),
       },
    );
 
@@ -1934,16 +2118,28 @@ sub main {
       ($start == $end || $now < $end)                   # time is exceeded
       && (!$iters_todo || $iters_done++ < $iters_todo ) # or iterations exceeded
    ) {
-      my $proclist = $get_proclist->();
-      my @queries  = $pl->find($proclist, %find_spec);
-      foreach my $query ( @queries ) {
-         if ( $o->get('print') ) {
-            printf "# %s KILL %d (%s %d sec) %s\n",
-               ts(time), $query->{Id}, ($query->{Command} || 'NULL'),
-               $query->{Time}, ($query->{Info} || 'NULL');
-         }
+      my $proclist;
+      eval { $proclist = $get_proclist->(); };
+      if ( $EVAL_ERROR ) {
+         last if $EVAL_ERROR =~ m/No more files/;
+         die "Error getting SHOW PROCESSLIST: $EVAL_ERROR";
+      }
 
-         $kill_sth->execute($query->{Id}) if $o->get('kill');
+      my @queries;
+      if ( $proclist ) {
+         @queries = $pl->find($proclist, %find_spec);
+         foreach my $query ( @queries ) {
+            if ( $o->get('print') ) {
+               printf "# %s KILL %d (%s %d sec) %s\n",
+                  ts(time), $query->{Id}, ($query->{Command} || 'NULL'),
+                  $query->{Time}, ($query->{Info} || 'NULL');
+            }
+
+            $kill_sth->execute($query->{Id}) if $o->get('kill');
+         }
+      }
+      else {
+         MKDEBUG && _d('No proclist returned');
       }
 
       # Don't sleep if we're going to exit after waking up.  If $iters_todo is
@@ -1998,40 +2194,80 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-kill - Kill MySQL queries.
+mk-kill - Kill MySQL queries that match certain criteria.
 
 =head1 SYNOPSIS
 
-   mk-kill
+Kill queries running longer than 60s:
+
+  mk-kill --busy-time 60 --kill
+
+Print, do not kill, queries running longer than 60s:
+
+  mk-kill --busy-time 60 --print
+
+Check for sleeping processes and kill them all every 10s:
+
+  mk-kill --match-command Sleep --kill --no-only-oldest --interval 10
+
+Print all login processes:
+
+  mk-kill --match-state login --print --no-only-oldest
 
 =head1 DESCRIPTION
 
-mk-kill captures queries from SHOW PROCESSLIST, applies filtering and rules to
-them, and then does something with them.  By default, it kills one or more of
-them.
+mk-kill captures queries from SHOW PROCESSLIST, filters them, and then either
+kills or prints them.  This is also known as a "slow query sniper" in some
+circles.  The idea is to watch for queries that might be consuming too many
+resources, and kill them.
 
-This is also known as a "slow query sniper" in some circles.  The idea is to
-watch for queries that might be consuming too many resources, and kill them.
+For brevity, we talk about killing queries, but they may just be printed
+(or some other future action) depending on what options are given.
 
-There are lots of special rules to follow, such as "don't kill replication
-threads."
+Normally mk-kill connects to MySQL to get queries from SHOW PROCESSLIST.
+Alternatively, it can read SHOW PROCESSLIST output from files.  In this case,
+mk-kill does not connect to MySQL and L<"--kill"> has no effect.  You should
+use L<"--print"> instead when reading files.  The ability to read a file (or
+- for STDIN) allows you to capture SHOW PROCESSLIST and test it later with
+mk-kill to make sure that your matches kill the proper queries.  There are a
+lot of special rules to follow, such as "don't kill replication threads,"
+so be careful to not kill something important!
+
+Two important options to know are L<"--busy-time"> and L<"--[no]only-oldest">.
+First, whereas most match/filter options match their corresponding value from
+SHOW PROCESSLIST (e.g. L<"--match-command"> matches a query's Command value),
+the Time value is matched by L<"--busy-time">.  See also L<"--interval">.
+
+Secondly, L<"--[no]only-oldest"> affects which matching query is killed.
+By default, the matching query with the highest Time value is killed.  So
+if you want to match and kill ALL queries for a certain criteria regardless
+of which is the "oldest", you must specify C<--no-only-oldest>.
 
 mk-kill is a work in progress, and there is much more it could do.
 
+=head1 OUTPUT
+
+If only L<"--kill"> then there is no output.  If only L<"--print"> then a
+timestamped KILL statement if printed for every query that would have
+been killed, like:
+
+  # 2009-07-15T15:04:01 KILL 8 (Query 42 sec) SELECT * FROM huge_table
+
+The line shows a timestamp, the query's Id (8), its Time (42 sec) and its
+Info (usually the query SQL).
+
+If both L<"--kill"> and L<"--print"> are given, then matching queries are
+killed and a line for each like the one above is printed.
+
 =head1 OPTIONS
+
+Specify at least one of L<"--kill"> or L<"--print">.
 
 =over
 
 =item --ask-pass
 
 Prompt for a password when connecting to MySQL.
-
-=item --busy-time
-
-type: time; default: 60s
-
-Kill connections that have been running for longer than this time.  The queries
-must be in Command=Query status.
 
 =item --charset
 
@@ -2071,56 +2307,29 @@ short form: -h; type: string
 
 Connect to host.
 
-=item --ignore-command
-
-type: string; default: Binlog.Dump
-
-Ignore queries whose Command matches this Perl regex.  The default is to keep
-the slave threads from being killed on the master.
-
-=item --[no]ignore-self
-
-default: yes
-
-Don't kill mk-kill's own connection.
-
-=item --ignore-state
-
-type: string; default: Locked
-
-Ignore queries whose State matches this Perl regex.  The default is to keep
-threads from being killed if they are locked waiting for another thread.
-
-=item --ignore-user
-
-type: string; default: system.user
-
-Ignore queries whose user matches this Perl regex.  The default is to keep the
-replication threads from being killed on the slave.
-
 =item --interval
 
 type: time
 
-How often to check for queries to run.  The default is half as often as
-L<"--busy-time">.
+How often to check for queries to kill.  If L<"--busy-time"> is not given,
+then the default interval is 30 seconds.  Else , the default is half as often
+as L<"--busy-time">.  If both L<"--interval"> and L<"--busy-time"> are given,
+then the explicit L<"--interval"> value is used.
 
 =item --iterations
 
 type: int; default: 1
 
 How many times to iterate through the find-and-kill cycle.  If 0, iterate
-to infinity.  See also L<--run-time>.
+to infinity.  See also L<"--run-time">.
 
-=item --[no]kill
-
-default: yes
+=item --kill
 
 Actually kill matching queries.
 
 The alternative is to just L<"--print"> which queries match and would be
 killed.  If you specify L<"--print"> you must also explicitly specify
-L<"--kill"> to do both print and kill the matching queries, otherwise
+L<"--kill"> to both print and kill the matching queries, otherwise
 L<"--print"> will disable L<"--kill">.
 
 =item --log
@@ -2128,25 +2337,6 @@ L<"--print"> will disable L<"--kill">.
 type: string
 
 Print all output to this file when daemonized.
-
-=item --match-command
-
-type: string
-
-Kill only queries whose Command matches this Perl regex.
-
-=item --match-info
-
-type: string
-
-Kill only queries whose Info (query) matches this Perl regex.
-
-=item --[no]only-oldest
-
-default: yes
-
-Only kill the single oldest query.  This is to prevent killing queries that
-aren't really long-running, they're just long-waiting.
 
 =item --password
 
@@ -2171,12 +2361,11 @@ Port number to use for connection.
 
 =item --print
 
-Print killed queries on standard output; disables L<"--kill">.
+Print, don't kill, matching queries; disables L<"--kill">.
 
-By default C<mk-kill> kills matching queries.  If you just want to see which
-queries match and would be killed (without actually killing them), specify
-L<"--print">.  To both kill and print the killed queries, you must explicitly
-give L<"--kill"> with L<"--print">.
+If you just want to see which queries match and would be killed without
+actually killing them, specify L<"--print">.  To both kill and print
+matching queries, you must explicitly give L<"--kill"> with L<"--print">.
 
 =item --run-time
 
@@ -2215,6 +2404,76 @@ Wait after killing a query, before looking for more to kill.  The purpose of
 this is to give blocked queries a chance to execute, so we don't kill a query
 that's blocking a bunch of others, and then kill the others immediately
 afterwards.
+
+=back
+
+=head2 MATCHES
+
+These options specify what criteria a query must match for C<mk-kill>
+to either L<"--kill"> or L<"--print"> it.
+
+=over
+
+=item --busy-time
+
+type: time
+
+Kill connections that have been running for longer than this time.  The queries
+must be in Command=Query status.  This matches a query's Time value as
+reported by SHOW PROCESSLIST.
+
+=item --ignore-command
+
+type: string; group: Matches; default: Binlog.Dump
+
+Ignore queries whose Command matches this Perl regex.  The default is to keep
+the slave threads from being killed on the master.
+
+=item --[no]ignore-self
+
+default: yes; group: Matches
+
+Don't kill mk-kill's own connection.
+
+=item --ignore-state
+
+type: string; group: Matches; default: Locked
+
+Ignore queries whose State matches this Perl regex.  The default is to keep
+threads from being killed if they are locked waiting for another thread.
+
+=item --ignore-user
+
+type: string; group: Matches; default: system.user
+
+Ignore queries whose user matches this Perl regex.  The default is to keep the
+replication threads from being killed on the slave.
+
+=item --match-command
+
+type: string; group: Matches
+
+Kill only queries whose Command matches this Perl regex.
+
+=item --match-info
+
+type: string; group: Matches
+
+Kill only queries whose Info (query) matches this Perl regex.
+
+=item --match-state
+
+type: string
+
+Kill only queries whose State matches this Perl regex.
+
+=item --[no]only-oldest
+
+default: yes; group: Matches
+
+Only kill the single oldest query.  This is to prevent killing queries that
+aren't really long-running, they're just long-waiting.  This sorts matching
+queries by Time and kills the one with the highest Time value.
 
 =back
 
