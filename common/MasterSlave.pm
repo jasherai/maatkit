@@ -104,66 +104,100 @@ sub recurse_to_slaves {
    }
 }
 
-# Finds slave hosts by trying SHOW PROCESSLIST and guessing which ones are
-# slaves, and if that doesn't reveal anything, looks at SHOW SLAVE STATUS.
+# Finds slave hosts by trying different methods.  The default preferred method
+# is trying SHOW PROCESSLIST (processlist) and guessing which ones are slaves,
+# and if that doesn't reveal anything, then try SHOW SLAVE STATUS (hosts).
+# One exception is if the port is non-standard (3306), indicating that the port
+# from SHOW SLAVE HOSTS may be important.  Then only the hosts methods is used.
+#
 # Returns a list of DSN hashes.  Optional extra keys in the DSN hash are
 # master_id and server_id.  Also, the 'source' key is either 'processlist' or
-# 'hosts'.  If $method is given, uses that method instead of defaults.  The
-# default is to use 'processlist' unless the port is non-standard (indicating
-# that the port # from SHOW SLAVE HOSTS may be important).
+# 'hosts'.
+#
+# If a method is given, it becomes the preferred (first tried) method.
+# Searching stops as soon as a method finds slaves.
 sub find_slave_hosts {
    my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
-   $method ||= '';
-   MKDEBUG && _d('Looking for slaves on', $dsn_parser->as_string($dsn));
+
+   my @methods = qw(processlist hosts);
+   if ( $method ) {
+      # Remove all but the given method.
+      @methods = grep { $_ ne $method } @methods;
+      # Add given method to the head of the list.
+      unshift @methods, $method;
+   }
+   else {
+      if ( ($dsn->{P} || 3306) != 3306 ) {
+         MKDEBUG && _d('Port number is non-standard; using only hosts method');
+         @methods = qw(hosts);
+      }
+   }
+   MKDEBUG && _d('Looking for slaves on', $dsn_parser->as_string($dsn),
+      'using methods', @methods);
 
    my @slaves;
-
-   if ( (!$method && ($dsn->{P}||3306) == 3306) || $method eq 'processlist' ) {
-      @slaves =
-         map  {
-            my $slave        = $dsn_parser->parse("h=$_", $dsn);
-            $slave->{source} = 'processlist';
-            $slave;
-         }
-         grep { $_ }
-         map  {
-            my ( $host ) = $_->{host} =~ m/^([^:]+):/;
-            if ( $host eq 'localhost' ) {
-               $host = '127.0.0.1'; # Replication never uses sockets.
-            }
-            $host;
-         } $self->get_connected_slaves($dbh);
-   }
-
-   # Fall back to SHOW SLAVE HOSTS, which is significantly less reliable.
-   # Machines tend to share the host list around with every machine in the
-   # replication hierarchy, but they don't update each other when machines
-   # disconnect or change to use a different master or something.  So there is
-   # lots of cruft in SHOW SLAVE HOSTS.
-   if ( !@slaves ) {
-      my $sql = 'SHOW SLAVE HOSTS';
-      MKDEBUG && _d($dbh, $sql);
-      @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
-
-      # Convert SHOW SLAVE HOSTS into DSN hashes.
-      if ( @slaves ) {
-         MKDEBUG && _d('Found some SHOW SLAVE HOSTS info');
-         @slaves = map {
-            my %hash;
-            @hash{ map { lc $_ } keys %$_ } = values %$_;
-            my $spec = "h=$hash{host},P=$hash{port}"
-               . ( $hash{user} ? ",u=$hash{user}" : '')
-               . ( $hash{password} ? ",p=$hash{password}" : '');
-            my $dsn           = $dsn_parser->parse($spec, $dsn);
-            $dsn->{server_id} = $hash{server_id};
-            $dsn->{master_id} = $hash{master_id};
-            $dsn->{source}    = 'hosts';
-            $dsn;
-         } @slaves;
-      }
+   METHOD:
+   foreach my $method ( @methods ) {
+      my $find_slaves = "_find_slaves_by_$method";
+      MKDEBUG && _d('Finding slaves with', $find_slaves);
+      @slaves = $self->$find_slaves($dsn_parser, $dbh, $dsn);
+      last METHOD if @slaves;
    }
 
    MKDEBUG && _d('Found', scalar(@slaves), 'slaves');
+   return @slaves;
+}
+
+sub _find_slaves_by_processlist {
+   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+
+   my @slaves = map  {
+      my $slave        = $dsn_parser->parse("h=$_", $dsn);
+      $slave->{source} = 'processlist';
+      $slave;
+   }
+   grep { $_ }
+   map  {
+      my ( $host ) = $_->{host} =~ m/^([^:]+):/;
+      if ( $host eq 'localhost' ) {
+         $host = '127.0.0.1'; # Replication never uses sockets.
+      }
+      $host;
+   } $self->get_connected_slaves($dbh);
+
+   return @slaves;
+}
+
+# SHOW SLAVE HOSTS is significantly less reliable.
+# Machines tend to share the host list around with every machine in the
+# replication hierarchy, but they don't update each other when machines
+# disconnect or change to use a different master or something.  So there is
+# lots of cruft in SHOW SLAVE HOSTS.
+sub _find_slaves_by_hosts {
+   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+
+   my @slaves;
+   my $sql = 'SHOW SLAVE HOSTS';
+   MKDEBUG && _d($dbh, $sql);
+   @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+
+   # Convert SHOW SLAVE HOSTS into DSN hashes.
+   if ( @slaves ) {
+      MKDEBUG && _d('Found some SHOW SLAVE HOSTS info');
+      @slaves = map {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         my $spec = "h=$hash{host},P=$hash{port}"
+            . ( $hash{user} ? ",u=$hash{user}" : '')
+            . ( $hash{password} ? ",p=$hash{password}" : '');
+         my $dsn           = $dsn_parser->parse($spec, $dsn);
+         $dsn->{server_id} = $hash{server_id};
+         $dsn->{master_id} = $hash{master_id};
+         $dsn->{source}    = 'hosts';
+         $dsn;
+      } @slaves;
+   }
+
    return @slaves;
 }
 
