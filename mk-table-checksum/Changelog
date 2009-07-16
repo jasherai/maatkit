@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --recursion-method option (issue 181).
    * Added modulo and offset to list of overridable arguments (issue 467).
 
 2009-06-02: version 1.2.6

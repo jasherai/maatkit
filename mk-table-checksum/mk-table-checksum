@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# TableParser package 3475
+# TableParser package 4161
 # ###########################################################################
 package TableParser;
 
@@ -45,7 +45,7 @@ sub new {
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
-
+   return unless $ddl;
    if ( ref $ddl eq 'ARRAY' ) {
       if ( lc $ddl->[0] eq 'table' ) {
          $ddl = $ddl->[1];
@@ -1890,7 +1890,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 3312
+# MySQLDump package 4160
 # ###########################################################################
 package MySQLDump;
 
@@ -1937,6 +1937,7 @@ sub dump {
 
    if ( $what eq 'table' ) {
       my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      return unless $ddl;
       if ( $ddl->[0] eq 'table' ) {
          return $before
             . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
@@ -2020,7 +2021,12 @@ sub get_create_table {
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
-      my $href = $dbh->selectrow_hashref($sql);
+      my $href;
+      eval { $href = $dbh->selectrow_hashref($sql); };
+      if ( $EVAL_ERROR ) {
+         warn "Failed to $sql.  The table may be damaged.\nError: $EVAL_ERROR";
+         return;
+      }
       $self->_use_db($dbh, $quoter, $curr_db);
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
@@ -2632,7 +2638,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 3186
+# MySQLFind package 4162
 # ###########################################################################
 package MySQLFind;
 
@@ -2696,6 +2702,8 @@ sub find_tables {
       = $self->_filter('tables', sub { $_[0]->{name} },
          $self->_fetch_tbl_list($dbh, %args));
 
+   my %broken_table;
+
    if ( $self->{need_engine} ) {
       foreach my $tbl ( @tables ) {
          next if $tbl->{engine};
@@ -2703,12 +2711,20 @@ sub find_tables {
          my $struct = $self->{parser}->parse(
             $self->{dumper}->get_create_table(
                $dbh, $self->{quoter}, $args{database}, $tbl_name));
+         $broken_table{$tbl_name} = 1 unless $struct;
          $tbl->{engine} = $struct->{engine};
       }
       @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
    }
 
-   map { $_->{name} =~ s/^[^.]*\.// } @tables;
+   for my $i ( 0..$#tables ) {
+      $tables[$i]->{name} =~ s/^[^.]*\.//;
+      
+      if ( $broken_table{$tables[$i]->{name}} ) {
+         MKDEBUG && _d('Removing broken table:', $tables[$i]->{name});
+         delete $tables[$i];
+      }
+   }
 
    foreach my $crit ( @{$self->{tables}->{status}} ) {
       my ($key, $test) = %$crit;
@@ -2843,7 +2859,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 3186
+# MasterSlave package 4182
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2915,51 +2931,78 @@ sub recurse_to_slaves {
 
 sub find_slave_hosts {
    my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
-   $method ||= '';
-   MKDEBUG && _d('Looking for slaves on', $dsn_parser->as_string($dsn));
+
+   my @methods = qw(processlist hosts);
+   if ( $method ) {
+      @methods = grep { $_ ne $method } @methods;
+      unshift @methods, $method;
+   }
+   else {
+      if ( ($dsn->{P} || 3306) != 3306 ) {
+         MKDEBUG && _d('Port number is non-standard; using only hosts method');
+         @methods = qw(hosts);
+      }
+   }
+   MKDEBUG && _d('Looking for slaves on', $dsn_parser->as_string($dsn),
+      'using methods', @methods);
 
    my @slaves;
-
-   if ( (!$method && ($dsn->{P}||3306) == 3306) || $method eq 'processlist' ) {
-      @slaves =
-         map  {
-            my $slave        = $dsn_parser->parse("h=$_", $dsn);
-            $slave->{source} = 'processlist';
-            $slave;
-         }
-         grep { $_ }
-         map  {
-            my ( $host ) = $_->{host} =~ m/^([^:]+):/;
-            if ( $host eq 'localhost' ) {
-               $host = '127.0.0.1'; # Replication never uses sockets.
-            }
-            $host;
-         } $self->get_connected_slaves($dbh);
-   }
-
-   if ( !@slaves ) {
-      my $sql = 'SHOW SLAVE HOSTS';
-      MKDEBUG && _d($dbh, $sql);
-      @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
-
-      if ( @slaves ) {
-         MKDEBUG && _d('Found some SHOW SLAVE HOSTS info');
-         @slaves = map {
-            my %hash;
-            @hash{ map { lc $_ } keys %$_ } = values %$_;
-            my $spec = "h=$hash{host},P=$hash{port}"
-               . ( $hash{user} ? ",u=$hash{user}" : '')
-               . ( $hash{password} ? ",p=$hash{password}" : '');
-            my $dsn           = $dsn_parser->parse($spec, $dsn);
-            $dsn->{server_id} = $hash{server_id};
-            $dsn->{master_id} = $hash{master_id};
-            $dsn->{source}    = 'hosts';
-            $dsn;
-         } @slaves;
-      }
+   METHOD:
+   foreach my $method ( @methods ) {
+      my $find_slaves = "_find_slaves_by_$method";
+      MKDEBUG && _d('Finding slaves with', $find_slaves);
+      @slaves = $self->$find_slaves($dsn_parser, $dbh, $dsn);
+      last METHOD if @slaves;
    }
 
    MKDEBUG && _d('Found', scalar(@slaves), 'slaves');
+   return @slaves;
+}
+
+sub _find_slaves_by_processlist {
+   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+
+   my @slaves = map  {
+      my $slave        = $dsn_parser->parse("h=$_", $dsn);
+      $slave->{source} = 'processlist';
+      $slave;
+   }
+   grep { $_ }
+   map  {
+      my ( $host ) = $_->{host} =~ m/^([^:]+):/;
+      if ( $host eq 'localhost' ) {
+         $host = '127.0.0.1'; # Replication never uses sockets.
+      }
+      $host;
+   } $self->get_connected_slaves($dbh);
+
+   return @slaves;
+}
+
+sub _find_slaves_by_hosts {
+   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+
+   my @slaves;
+   my $sql = 'SHOW SLAVE HOSTS';
+   MKDEBUG && _d($dbh, $sql);
+   @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+
+   if ( @slaves ) {
+      MKDEBUG && _d('Found some SHOW SLAVE HOSTS info');
+      @slaves = map {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         my $spec = "h=$hash{host},P=$hash{port}"
+            . ( $hash{user} ? ",u=$hash{user}" : '')
+            . ( $hash{password} ? ",p=$hash{password}" : '');
+         my $dsn           = $dsn_parser->parse($spec, $dsn);
+         $dsn->{server_id} = $hash{server_id};
+         $dsn->{master_id} = $hash{master_id};
+         $dsn->{source}    = 'hosts';
+         $dsn;
+      } @slaves;
+   }
+
    return @slaves;
 }
 
@@ -3654,7 +3697,8 @@ sub main {
                   args_for => \%args_for,
                   %common_modules
                );
-            }
+            },
+            method => $o->get('recursion-method'),
          }
       );
       return $exit_status unless $o->get('recheck');
@@ -5771,6 +5815,25 @@ Do not print checksum results.
 =item --recheck
 
 Re-checksum chunks that L<"--replicate-check"> found to be different.
+
+=item --recursion-method
+
+type: string
+
+Preferred recursion method used to find slaves for L<"--replicate-check">.
+
+Possible methods are:
+
+  METHOD       USES
+  ===========  ================
+  processlist  SHOW PROCESSLIST
+  hosts        SHOW SLAVE HOSTS
+
+The processlist method is preferred because SHOW SLAVE HOSTS is not reliable.
+However, the hosts method is required if the server uses a non-standard
+port (not 3306).  Usually mk-table-checksum does the right thing and finds
+the slaves, but you may give a preferred method and it will be used first.
+If it doesn't find any slaves, the other methods will be tried.
 
 =item --replicate
 
