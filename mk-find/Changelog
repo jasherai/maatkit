@@ -1,5 +1,7 @@
 Changelog for mk-find:
 
+   * Added tests --column-name, --view, --procedure, --function, --trigger
+     and --trigger-table.
    * Converted script to runnable module (issue 315).
 
 2009-06-30: version 0.9.17
