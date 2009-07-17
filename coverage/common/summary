@@ -1,5 +1,4 @@
 File                           stmt   bran   cond    sub    pod   time  total
-...n/AggregateProcesslist.pm   85.0   81.2   80.0   85.7    n/a  100.0   83.8
 ...t/common/ChangeHandler.pm   70.1   53.1   55.6   83.3    n/a  100.0   67.7
 .../maatkit/common/Daemon.pm   59.7   37.0   66.7   83.3    n/a  100.0   54.9
 ...mon/DuplicateKeyFinder.pm  100.0   79.2   87.5  100.0    n/a  100.0   94.1
@@ -24,14 +23,13 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...it/common/OptionParser.pm   93.6   83.1   91.4   94.7    n/a  100.0   90.2
 ...kit/common/Processlist.pm   88.3   87.5   53.8   82.4    n/a  100.0   75.3
 .../ProcesslistAggregator.pm   85.0   81.2   80.0   85.7    n/a  100.0   83.8
-...t/common/QueryExecutor.pm   95.7   41.7    n/a  100.0    n/a  100.0   86.6
+...t/common/QueryExecutor.pm   93.9   54.2    n/a  100.0    n/a  100.0   87.3
 ...kit/common/QueryParser.pm   90.0   58.3   50.0   88.9    n/a  100.0   82.8
-...kit/common/QueryRanker.pm   95.1   72.5   83.3  100.0    n/a  100.0   88.6
+...kit/common/QueryRanker.pm   92.6   74.1   83.3  100.0    n/a  100.0   88.1
 ...n/QueryReportFormatter.pm   96.9   80.2   66.7  100.0    n/a  100.0   90.0
 ...kit/common/QueryReview.pm   91.0   68.2   66.7   91.7    n/a  100.0   84.7
 ...t/common/QueryRewriter.pm   91.5   87.5   53.3   93.8    n/a  100.0   88.0
 .../maatkit/common/Quoter.pm  100.0  100.0  100.0  100.0    n/a  100.0  100.0
-...mmon/RecordsetFromText.pm   75.0   54.2    n/a   86.7    n/a  100.0   72.4
 ...maatkit/common/RowDiff.pm   93.1   87.5   81.0   88.9    n/a  100.0   88.8
 .../common/SchemaDiscover.pm   91.4   41.7  100.0   87.5    n/a  100.0   86.0
 .../common/SchemaFindText.pm   86.4   80.0    n/a   88.9    n/a  100.0   85.7
