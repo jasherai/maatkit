@@ -211,5 +211,5 @@ like(
    qr/Complete test coverage/,
    '_d() works'
 );
-# $sb->wipe_clean($dbh1);
+$sb->wipe_clean($dbh1);
 exit;
