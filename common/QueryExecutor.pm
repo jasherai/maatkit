@@ -36,8 +36,7 @@ sub new {
    foreach my $arg ( qw() ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $self = {
-   };
+   my $self = {};
    return bless $self, $class;
 }
 
@@ -126,6 +125,70 @@ sub _exec_query {
       warnings      => $warnings,
       warning_count => $warning_count->[0]->{'@@warning_count'},
    };
+
+   return $results;
+}   
+
+sub checksum_results {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(query host1_dbh host2_dbh database
+                        Quoter MySQLDump TableParser) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   MKDEBUG && _d('query:', $args{query});
+   my $host1_results = $self->_checksum_results(%args, dbh => $args{host1_dbh});
+   my $host2_results = $self->_checksum_results(%args, dbh => $args{host2_dbh});
+
+   return {
+      host1 => $host1_results,
+      host2 => $host2_results,
+   };
+}
+
+
+sub _checksum_results {
+   my ( $self, %args ) = @_;
+   # args are checked in checksum_results().
+   my $query = $args{query};
+   my $db    = $args{database};
+   my $dbh   = $args{dbh};
+   my $du    = $args{MySQLDump};
+   my $tp    = $args{TableParser};
+   my $q     = $args{Quoter};
+
+   my $tmp_tbl    = 'mk_upgrade';
+   my $tmp_db_tbl = $q->quote($db, $tmp_tbl);
+
+   eval {
+      $dbh->do("DROP TABLE IF EXISTS $tmp_db_tbl");
+      $dbh->do("SET storage_engine=MyISAM");
+      my $sql = "CREATE TEMPORARY TABLE $tmp_db_tbl AS $query";
+      $dbh->do($sql)
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return $EVAL_ERROR;
+   }
+
+   my $n_rows = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $tmp_db_tbl");
+   my $tbl_checksum = $dbh->selectall_arrayref("CHECKSUM TABLE $tmp_db_tbl");
+
+   my $tbl_struct;
+   my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
+   if ( $ddl->[0] eq 'table' ) {
+      eval { $tbl_struct = $tp->parse($ddl) };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d('Failed to parse', $tmp_db_tbl, ':', $EVAL_ERROR);
+      }
+   }
+
+   my $results = {
+      table_checksum => $tbl_checksum->[0]->[1],
+      n_rows         => $n_rows->[0]->[0],
+      table_struct   => $tbl_struct,
+   };
+   MKDEBUG && _d('checksum results:', Dumper($results));
 
    return $results;
 }   

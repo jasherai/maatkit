@@ -3,11 +3,19 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 13;
+use Test::More tests => 17;
 
 require '../QueryExecutor.pm';
+require '../Quoter.pm';
+require '../MySQLDump.pm';
+require '../TableParser.pm';
 require '../DSNParser.pm';
 require '../Sandbox.pm';
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -19,6 +27,9 @@ my $dbh2 = $sb->get_dbh_for('slave1')
 $sb->create_dbs($dbh1, [qw(test)]);
 # Reusing this sample because it's short and simple.
 $sb->load_file('master', 'samples/issue_47.sql');
+
+$dbh1->do('USE test');
+$dbh2->do('USE test');
 
 my $qe = new QueryExecutor();
 isa_ok($qe, 'QueryExecutor');
@@ -132,6 +143,61 @@ is_deeply(
 );
 
 # #############################################################################
+# Test checksum_results.
+# #############################################################################
+
+my $du = new MySQLDump();
+my $tp = new TableParser();
+my $q  = new Quoter();
+my %modules = (
+   MySQLDump   => $du,
+   TableParser => $tp,
+   Quoter      => $q
+);
+
+# The test that execs "INSERT INTO test.issue_47 VALUES (-1)" makes host2
+# get an extra row because it's slave to host1 so it's effectively ran twice.
+
+$results = $qe->checksum_results(
+   query     => 'SELECT * FROM test.issue_47',
+   database  => 'test',
+   host1_dbh => $dbh1,
+   host2_dbh => $dbh2,
+   %modules,
+);
+is(
+   $results->{host1}->{n_rows},
+   10,
+   'compare results n_rows on host1'
+);
+is(
+   $results->{host2}->{n_rows},
+   11,
+   'compare results n_rows on host1'
+);
+cmp_ok(
+   $results->{host1}->{n_rows},
+   '!=',
+   $results->{host2}->{n_rows},
+   'compare results host1 != host2 checksum'
+);
+
+# Make host1 and host2 identical again.
+$dbh1->do('DELETE FROM test.issue_47 WHERE userid = 0');
+$results = $qe->checksum_results(
+   query     => 'SELECT * FROM test.issue_47',
+   database  => 'test',
+   host1_dbh => $dbh1,
+   host2_dbh => $dbh2,
+   %modules,
+);
+is(
+   $results->{host1}->{n_rows},
+   $results->{host2}->{n_rows},
+   'compare results host1 == host2 checksum'
+);
+
+# #############################################################################
 # Done.
 # #############################################################################
 $output = '';
@@ -145,5 +211,5 @@ like(
    qr/Complete test coverage/,
    '_d() works'
 );
-$sb->wipe_clean($dbh1);
+# $sb->wipe_clean($dbh1);
 exit;
