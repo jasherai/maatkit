@@ -3789,8 +3789,11 @@ sub main {
       my ( $event ) = @_;
       return unless $event->{cmd} eq 'Query';
       return unless $event->{arg};
-      return $event if $event->{arg} =~ m/^SELECT/i;  # Query passes.
-      return;  # Non-SELECT; query fails.
+      if ( $event->{arg} =~ m/(?:^SELECT|(?:\*\/\s*SELECT))/i ) {
+         return $event; # Query passes.
+      }
+      MKDEBUG && _d('Not a SELECT query');
+      return;  # Query fails.
    };
 
    # User-defined filter.
