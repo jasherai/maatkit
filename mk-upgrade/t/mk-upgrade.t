@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -64,7 +64,7 @@ like(
 # #############################################################################
 # Test some output.
 # #############################################################################
-$output = output(@hosts, 'samples/q001.txt');
+$output = output(@hosts, '--no-compare-results', 'samples/q001.txt');
 
 # Zero out vals that change.
 $output =~ s/Query time: (\S+)/Query time: 0/g;
@@ -84,6 +84,21 @@ is(
 # #############################################################################
 
 # How to reproduce?
+
+# #############################################################################
+# Test result comparison.
+# #############################################################################
+$output = output(@hosts, 'samples/q001.txt');
+
+# Zero out vals that change.
+$output =~ s/Query time: (\S+)/Query time: 0/g;
+$output =~ s/line (\d+)/line 0/g;
+
+is(
+   $output,
+   load_file('samples/r001-with-results.txt'),
+   'Basic output with results'
+);
 
 # #############################################################################
 # Done.

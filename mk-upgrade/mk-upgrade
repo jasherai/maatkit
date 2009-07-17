@@ -3823,6 +3823,7 @@ sub main {
             $host1_dbh->do("USE $db");
             $host2_dbh->do("USE $db");  
             $current_db = $db;
+            $event->{db} = $db;
          }
 
          # On some systems, MySQL doesn't always clear the warnings list
@@ -3871,6 +3872,7 @@ sub main {
          eval {
             my $results = $qexec->checksum_results(
                query       => $query,
+               database    => $event->{db},
                host1_dbh   => $host1_dbh,
                host2_dbh   => $host2_dbh,
                MySQLDump   => $du,
@@ -3904,12 +3906,13 @@ sub main {
          $results{ $query }->{rank} += 100;
          push @{$results{ $query }->{reasons}},
             "Query cannot be executed (rank+100)";
+         return;
       }
       return $event;
    };
 
+   # Rank the queries' result checksums, row counts, etc.
    if ( $o->get('compare-results') ) {
-      # Rank the queries' results.
       push @callbacks, sub {
          my ( $event ) = @_;
          my $query = $event->{arg};
@@ -4016,6 +4019,12 @@ sub main {
       print_execution_results('host1', $results{$query}->{execution}->{host1});
       print_execution_results('host2', $results{$query}->{execution}->{host2});
 
+      if ( $o->get('compare-results') ) {
+         print "# Result Set Results:\n";
+         print_result_results($results{$query}->{results}->{host1},
+            $results{$query}->{results}->{host2});
+      }
+
       print "$query\n\n";
    }
 
@@ -4047,6 +4056,24 @@ sub print_execution_results {
    }
    else { 
       print "#   Error executing query on $host: $res";
+   }
+
+   print "#\n";  # Spacing between hosts.
+
+   return;
+}
+
+sub print_result_results {
+   my ( $res1, $res2 ) = @_;
+
+   if ( ref $res1 && ref $res2 ) {
+      print "# Table checksums: $res1->{table_checksum} (host1), "
+         . "$res2->{table_checksum} (host2)\n";
+      print "# Row count: $res1->{n_rows} (host1), "
+         . "$res2->{n_rows} (host2)\n";
+   }
+   else {
+      print "# (None)\n";
    }
 
    print "#\n";  # Spacing between hosts.
@@ -4145,7 +4172,7 @@ runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
 binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
 
-=item --compare-results
+=item --[no]compare-results
 
 default: yes
 
