@@ -50,12 +50,12 @@ sub new {
    return bless $self, $class;
 }
 
-# Ranks execution results from QueryExecutor.  Returns an array:
+# Ranks execution results from QueryExecutor::exec().  Returns an array:
 #   (
 #      rank,         # Integer rank value
 #      ( reasons ),  # List of reasons for each rank increase
 #   )
-sub rank {
+sub rank_execution {
    my ( $self, $results ) = @_;
    die "I need a results argument" unless $results;
    
@@ -160,6 +160,86 @@ sub compare_warnings {
 
    # TODO: if we ever want to see the new warnings, we'll just have to
    #       modify this sub a litte.  %new_warnings is a placeholder for now.
+
+   return $rank_inc, @reasons;
+}
+
+# Ranks results from QueryExecutor::compare_results().  Returns an array:
+#   (
+#      rank,         # Integer rank value
+#      ( reasons ),  # List of reasons for each rank increase
+#   )
+sub rank_results {
+   my ( $self, $results ) = @_;
+   die "I need a results argument" unless $results;
+
+   my $rank    = 0;   # total rank
+   my @reasons = ();  # all reasons
+   my @res     = ();  # ($rank, @reasons) for each comparison
+   my $host1   = $results->{host1};
+   my $host2   = $results->{host2};
+
+   if ( $host1->{table_checksum} ne $host2->{table_checksum} ) {
+      $rank += 50;
+      push @reasons, "Table checksums do not match (rank+50)";
+   }
+
+   if ( $host1->{n_rows} != $host2->{n_rows} ) {
+      $rank += 50;
+      push @reasons, "Number of rows do not match (rank+50)";
+   }
+
+   @res = $self->compare_table_structs($host1->{table_struct},
+                                       $host2->{table_struct});
+   $rank += shift @res;
+   push @reasons, @res;
+
+   return $rank, @reasons;
+}
+
+sub compare_table_structs {
+   my ( $self, $s1, $s2 ) = @_;
+   die "I need a s1 argument" unless defined $s1;
+   die "I need a s2 argument" unless defined $s2;
+
+   my $rank_inc = 0;
+   my @reasons  = ();
+
+   # Compare number of columns.
+   if ( scalar @{$s1->{cols}} != scalar @{$s2->{cols}} ) {
+      my $inc = 2 * abs( scalar @{$s1->{cols}} - scalar @{$s2->{cols}} );
+      $rank_inc += $inc;
+      push @reasons, 'Tables have different columns counts: '
+         . scalar @{$s1->{cols}} . ' columns on host1, '
+         . scalar @{$s2->{cols}} . " columns on host2 (rank+$inc)";
+   }
+
+   # Compare column types.
+   my %host1_missing_cols = %{$s2->{type_for}};  # Make a copy to modify.
+   my @host2_missing_cols;
+   foreach my $col ( keys %{$s1->{type_for}} ) {
+      if ( exists $s2->{type_for}->{$col} ) {
+         if ( $s1->{type_for}->{$col} ne $s2->{type_for}->{$col} ) {
+            $rank_inc += 3;
+            push @reasons, "Types for $col column differ: "
+               . "'$s1->{type_for}->{$col}' on host1, "
+               . "'$s2->{type_for}->{$col}' on host2 (rank+3)";
+         }
+         delete $host1_missing_cols{$col};
+      }
+      else {
+         push @host2_missing_cols, $col;
+      }
+   }
+
+   foreach my $col ( @host2_missing_cols ) {
+      $rank_inc += 5;
+      push @reasons, "Column $col exists on host1 but not on host2 (rank+5)";
+   }
+   foreach my $col ( keys %host1_missing_cols ) {
+      $rank_inc += 5;
+      push @reasons, "Column $col exists on host2 but not on host1 (rank+5)";
+   }
 
    return $rank_inc, @reasons;
 }
