@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 8;
 
 require '../mk-kill';
 require '../../common/Sandbox.pm';
@@ -77,6 +77,24 @@ ok(
 
 diag(`rm -rf /tmp/mk-kill.log`);
 
+# #############################################################################
+# Test --execute-command action.
+# #############################################################################
+diag(`rm -rf /tmp/mk-kill-test.txt`);
+is(
+   output(qw(../../common/t/samples/recset001.txt --match-command Query --execute-command), 'echo hello > /tmp/mk-kill-test.txt'),
+   '',
+   'No output without --print'
+);
+
+chomp($output = `cat /tmp/mk-kill-test.txt`),
+is(
+   $output,
+   'hello',
+   '--execute-command'
+);
+
+diag(`rm -rf /tmp/mk-kill-test.txt`);
 # #############################################################################
 # Done.
 # #############################################################################

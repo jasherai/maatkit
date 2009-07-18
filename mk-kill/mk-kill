@@ -1962,8 +1962,10 @@ sub _d {
 package mk_kill;
 
 use English qw(-no_match_vars);
-Transformers->import qw(ts);
+use POSIX qw(setsid);
 use List::Util qw(max);
+
+Transformers->import qw(ts);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1985,13 +1987,12 @@ sub main {
    # Get configuration information.
    # ########################################################################
    $o = new OptionParser(
-      description => q{kills queries in MySQL that match certain criteria. }
+      description => q{kills, prints or executes another script for queries }
+                   . q{in MySQL that match certain criteria.  }
                    . q{If FILE is not given, mk-kill executes SHOW PROCESSLIST }
                    . q{on MySQL to get queries.  Else, mk-kill will get }
                    . q{queries from FILE which should contain the output of }
-                   . q{SHOW PROCESSLIST.  In either case, mk-kill will try }
-                   . q{to kill matching queries on MySQL unless --print or }
-                   . q{--no-kill is given.  If FILE is -, mk-kill reads from }
+                   . q{SHOW PROCESSLIST.  If FILE is -, mk-kill reads from }
                    . q{STDIN.},
       prompt      => '[OPTION]... [FILE...]',
       strict      => 0,
@@ -2007,12 +2008,7 @@ sub main {
          unless $o->got('interval');
    }
 
-   # --print disables kill unless kill is explicitly given.
-   if ( $o->got('print') && $o->got('kill') ) {
-      $o->set('kill', $o->get('kill'));
-   }
-
-   # If parsing files, then these opts are meaningless.
+   # If parsing files, then don't wait.
    if ( @ARGV ) {
       $o->set('interval', 0);
    }
@@ -2128,14 +2124,20 @@ sub main {
       my @queries;
       if ( $proclist ) {
          @queries = $pl->find($proclist, %find_spec);
+         MATCHING_QUERY:
          foreach my $query ( @queries ) {
             if ( $o->get('print') ) {
                printf "# %s KILL %d (%s %d sec) %s\n",
                   ts(time), $query->{Id}, ($query->{Command} || 'NULL'),
                   $query->{Time}, ($query->{Info} || 'NULL');
             }
-
-            $kill_sth->execute($query->{Id}) if $o->get('kill');
+            if ( $o->get('execute-command') ) {
+               exec_cmd($o->get('execute-command'));
+            }
+            if ( $o->get('kill') ) {
+               sleep $o->get('wait-before-kill') if $o->get('wait-before-kill');
+               $kill_sth->execute($query->{Id});
+            }
          }
       }
       else {
@@ -2162,6 +2164,11 @@ sub main {
    return 0;
 }
 
+
+# ############################################################################
+# Subroutines.
+# ############################################################################
+
 sub get_cxn {
    my ( $dsn, $ac ) = @_;
    if ( $o->get('ask-pass') ) {
@@ -2170,6 +2177,28 @@ sub get_cxn {
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit => $ac});
    $dbh->{InactiveDestroy} = 1; # Because of forking.
    return $dbh;
+}
+
+# Forks and detaches from parent to execute the given command;
+# does not block parent.
+sub exec_cmd {
+   my ( $cmd ) = @_;
+   MKDEBUG && _d('exec cmd:', $cmd);
+   return unless $cmd;
+
+   my $pid = fork();
+   if ( $pid ) {
+      # parent
+      MKDEBUG && _d('child pid:', $pid);
+      return $pid;
+   }
+
+   # child
+   POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
+   my $retval = system($cmd);
+   $retval = $retval >> 8;
+   MKDEBUG && _d('child exit status:', $retval);
+   exit $retval;
 }
 
 sub _d {
@@ -2259,9 +2288,13 @@ Info (usually the query SQL).
 If both L<"--kill"> and L<"--print"> are given, then matching queries are
 killed and a line for each like the one above is printed.
 
+Any command executed by L<"--execute-command"> is responsible for its own
+output and logging.  After being executed, mk-kill has no control or interaction
+with the command.
+
 =head1 OPTIONS
 
-Specify at least one of L<"--kill"> or L<"--print">.
+Specify at least one of L<"--kill">, L<"--print"> or L<"--execute-command">.
 
 =over
 
@@ -2323,15 +2356,6 @@ type: int; default: 1
 How many times to iterate through the find-and-kill cycle.  If 0, iterate
 to infinity.  See also L<"--run-time">.
 
-=item --kill
-
-Actually kill matching queries.
-
-The alternative is to just L<"--print"> which queries match and would be
-killed.  If you specify L<"--print"> you must also explicitly specify
-L<"--kill"> to both print and kill the matching queries, otherwise
-L<"--print"> will disable L<"--kill">.
-
 =item --log
 
 type: string
@@ -2358,14 +2382,6 @@ it exists and the process with the matching PID exists, the program exits.
 short form: -P; type: int
 
 Port number to use for connection.
-
-=item --print
-
-Print, don't kill, matching queries; disables L<"--kill">.
-
-If you just want to see which queries match and would be killed without
-actually killing them, specify L<"--print">.  To both kill and print
-matching queries, you must explicitly give L<"--kill"> with L<"--print">.
 
 =item --run-time
 
@@ -2405,12 +2421,20 @@ this is to give blocked queries a chance to execute, so we don't kill a query
 that's blocking a bunch of others, and then kill the others immediately
 afterwards.
 
+=item --wait-before-kill
+
+type: time
+
+Wait before killing a query.  The purpose of this is to give
+L<"--execute-command"> a chance to see the matching query and gather other
+MySQL or system information before it's killed.
+
 =back
 
 =head2 MATCHES
 
 These options specify what criteria a query must match for C<mk-kill>
-to either L<"--kill"> or L<"--print"> it.
+to either L<"--kill">, L<"--print"> or L<"--execute-command"> for it.
 
 =over
 
@@ -2463,7 +2487,7 @@ Kill only queries whose Info (query) matches this Perl regex.
 
 =item --match-state
 
-type: string
+type: string; group: Matches
 
 Kill only queries whose State matches this Perl regex.
 
@@ -2474,6 +2498,55 @@ default: yes; group: Matches
 Only kill the single oldest query.  This is to prevent killing queries that
 aren't really long-running, they're just long-waiting.  This sorts matching
 queries by Time and kills the one with the highest Time value.
+
+=back
+
+=head2 ACTIONS
+
+When a query matches, one or more of these actions is taken.  The actions are
+taken in this order: L<"--print">, L<"--execute-command">, L<"--kill">.
+If given, mk-kill sleeps for L<"--wait-before-kill"> before L<"--kill"> (if
+L<"--kill"> is given).  This order allows L<"--execute-command"> to see the 
+output of L<"--print"> and the query before L<"--kill">.  This may be helpful
+because mk-kill does not pass any information to L<"--execute-command">.
+
+=over
+
+=item --execute-command
+
+type: string; group: Actions
+
+Execute this command when a query matches.
+
+After the command is executed, mk-kill has no control over it, so the command
+is responsible for its own info gathering, logging, interval, etc.  The
+command is excuted each time a query matches, so be careful that the command
+behaves well when multiple instances are ran.  No information from mk-kill is
+passed to the command.
+
+See also L<"--wait-before-kill">.
+
+=item --kill
+
+group: Actions
+
+Actually kill matching queries.
+
+This option makes mk-kill kill matching queries in MySQL.  Unless L<"--print">
+is also given, no other information is printed that shows that mk-kill
+matched and killed a query.
+
+See also L<"--wait-before-kill"> and L<"--wait-after-kill">.
+
+=item --print
+
+group: Actions
+
+Print a KILL statement for matching queries; does not actually kill queries.
+
+If you just want to see which queries match and would be killed without
+actually killing them, specify L<"--print">.  To both kill and print
+matching queries, specify both L<"--kill"> and L<"--print">.
 
 =back
 
