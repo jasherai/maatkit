@@ -1591,7 +1591,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 4172
+# Processlist package 4201
 # ###########################################################################
 package Processlist;
 
@@ -1728,6 +1728,7 @@ sub find {
    QUERY:
    foreach my $query ( @$proclist ) {
       my $matched = 0;
+
       if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
          if ( $query->{Time} < $find_spec{busy_time} ) {
             MKDEBUG && _d("Query isn't running long enough");
@@ -1735,18 +1736,28 @@ sub find {
          }
          $matched++;
       }
+
+      if ( $find_spec{idle_time} && ($query->{Command} || '') eq 'Sleep' ) {
+         if ( $query->{Time} < $find_spec{idle_time} ) {
+            MKDEBUG && _d("Query isn't idle long enough");
+            next QUERY;
+         }
+         $matched++;
+      }
+
       PROPERTY:
       foreach my $property ( qw(Id User Host db State Command Info) ) {
          my $filter = "_find_match_$property";
          if ( defined $find_spec{ignore}->{$property}
-            && $self->$filter($query, $find_spec{ignore}->{$property})
-         ) {
-            MKDEBUG && _d("Query matches 'ignore' filter on $property, skipping");
+              && $self->$filter($query, $find_spec{ignore}->{$property}) ) {
+            MKDEBUG && _d("Query matches 'ignore' filter on',
+               $property, skipping");
             next QUERY;
          }
          if ( defined $find_spec{match}->{$property} ) {
             if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
-               MKDEBUG && _d("Query doesn't match 'match' filter on $property, skipping");
+               MKDEBUG && _d("Query doesn't match 'match' filter on',
+                  $property, skipping");
                next QUERY;
             }
             $matched++;
@@ -1756,11 +1767,13 @@ sub find {
          MKDEBUG && _d("Query passed all defined filters, adding");
          push @matches, $query;
       }
-   }
+   } # QUERY
+
    if ( @matches && $find_spec{only_oldest} ) {
       my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
       @matches = $oldest;
    }
+
    return @matches;
 }
 
@@ -1820,7 +1833,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TextResultSetParser package 4176
+# TextResultSetParser package 4198
 # ###########################################################################
 package TextResultSetParser;
 
@@ -1828,6 +1841,11 @@ package TextResultSetParser;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1837,7 +1855,7 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_tabular {
+sub _parse_tabular {
    my ( $text, @cols ) = @_;
    my %row;
    my @vals = $text =~ m/\| +([^\|]*?)(?= +\|)/msg;
@@ -1846,7 +1864,7 @@ sub parse_tabular {
    return (\%row, undef);
 }
 
-sub parse_tab_sep {
+sub _parse_tab_sep {
    my ( $text, @cols ) = @_;
    my %row;
    my @vals = split(/\t/, $text);
@@ -1855,9 +1873,10 @@ sub parse_tab_sep {
    return (\%row, undef);
 }
 
-sub parse_vertical {
+sub parse_vertical_row {
    my ( $text ) = @_;
-   my %row = $text =~ m/^\s*(\w+): ([^\n]*)/msg;
+   my %row = $text =~ m/^\s*(\w+):(?: ([^\n]*))?/msg;
+   MKDEBUG && _d('vertical row:', Dumper(\%row));
    return \%row;
 }
 
@@ -1866,31 +1885,22 @@ sub parse {
    my $result_set;
 
    if ( $text =~ m/^\+---/m ) { # standard "tabular" output
-      MKDEBUG && _d('text type: standard tabular');
+      MKDEBUG && _d('Result set text is standard tabular');
       my $line_pattern  = qr/^(\| .*)[\r\n]+/m;
       $result_set
-         = _parse_horizontal_result_set($text, $line_pattern, \&parse_tabular);
+         = parse_horizontal_row($text, $line_pattern, \&_parse_tabular);
    }
    elsif ( $text =~ m/^id\tselect_type\t/m ) { # tab-separated
-      MKDEBUG && _d('text type: tab-separated');
+      MKDEBUG && _d('Result set text is tab-separated');
       my $line_pattern  = qr/^(.*?\t.*)[\r\n]+/m;
       $result_set
-         = _parse_horizontal_result_set($text, $line_pattern, \&parse_tab_sep);
+         = parse_horizontal_row($text, $line_pattern, \&_parse_tab_sep);
    }
    elsif ( $text =~ m/\*\*\* \d+\. row/ ) { # "vertical" output
-      my $n_recs;
-      $n_recs++ while $text =~ m/ \d+\. row /g;
-      MKDEBUG && _d('text-type: vertical,', $n_recs, 'n_recs');
-      if ( $n_recs > 1 ) {
-         MKDEBUG && _d('Multiple result sets');
-         my @v_result_sets;
-         my $v_result_set = _split_vertical_result_sets($text);
-         foreach my $v_result_set ( @$v_result_set ) {
-            push @v_result_sets, $self->parse($v_result_set);
-         }
-         return \@v_result_sets;
+      MKDEBUG && _d('Result set text is vertical (\G)');
+      foreach my $row ( split_vertical_rows($text) ) {
+         push @$result_set, parse_vertical_row($row);
       }
-      $result_set = _parse_vertical_result_set($text, \&parse_vertical);
    }
    else {
       die "Cannot determine if text is tabular, tab-separated or veritcal:\n"
@@ -1909,7 +1919,7 @@ sub parse {
    return $result_set;
 }
 
-sub _parse_horizontal_result_set {
+sub parse_horizontal_row {
    my ( $text, $line_pattern, $sub ) = @_;
    my @result_sets = ();
    my @cols        = ();
@@ -1925,16 +1935,11 @@ sub _parse_horizontal_result_set {
    return \@result_sets;
 }
 
-sub _parse_vertical_result_set {
-   my ( $text, $sub ) = @_;
-   return $sub->($text);
-}
-
-sub _split_vertical_result_sets {
+sub split_vertical_rows {
    my ( $text ) = @_;
    my $ROW_HEADER = '\*{3,} \d+\. row \*{3,}';
-   my @result_sets = $text =~ m/($ROW_HEADER.*?)(?=$ROW_HEADER|\z)/omgs;
-   return \@result_sets;
+   my @rows = $text =~ m/($ROW_HEADER.*?)(?=$ROW_HEADER|\z)/omgs;
+   return @rows;
 }
 
 sub _d {
@@ -2093,18 +2098,25 @@ sub main {
    my $now      = $start;
 
    my %find_spec = (
-      only_oldest  => $o->get('only-oldest'),
-      busy_time    => $o->get('busy-time'),
+      only_oldest => $o->get('only-oldest'),
+      busy_time   => $o->get('busy-time'),
+      idle_time   => $o->get('idle-time'),
       ignore => {
-         Id       => $o->get('ignore-self') ? $dbh->{mysql_thread_id} : undef,
-         User     => $o->get('ignore-user'),
          Command  => $o->get('ignore-command'),
+         db       => $o->get('ignore-db'),
+         Host     => $o->get('ignore-host'),
+         Id       => $o->get('ignore-self') ? $dbh->{mysql_thread_id} : undef,
+         Info     => $o->get('ignore-info'),
          State    => $o->get('ignore-state'),
+         User     => $o->get('ignore-user'),
       },
       match => {
          Command  => $o->get('match-command'),
+         db       => $o->get('match-db'),
+         Host     => $o->get('match-host'),
          Info     => $o->get('match-info'),
          State    => $o->get('match-state'),
+         User     => $o->get('match-user'),
       },
    );
 
@@ -2435,16 +2447,27 @@ MySQL or system information before it's killed.
 
 These options specify what criteria a query must match for C<mk-kill>
 to either L<"--kill">, L<"--print"> or L<"--execute-command"> for it.
+The ignore commands take precedence.  The matches for command, db, host, etc.
+correspond to the columns returned by SHOW PROCESSLIST: Command, db, Host, etc.
+All pattern matches are case-senstive.
 
 =over
 
 =item --busy-time
 
-type: time
+type: time; group: Matches
 
 Kill connections that have been running for longer than this time.  The queries
 must be in Command=Query status.  This matches a query's Time value as
 reported by SHOW PROCESSLIST.
+
+=item --idle-time
+
+type: time; group: Matches
+
+Kill connections that have been idle/sleeping for longer than this time.
+The queries must be in Command=Sleep status.  This matches a query's Time
+value as reported by SHOW PROCESSLIST.
 
 =item --ignore-command
 
@@ -2452,6 +2475,24 @@ type: string; group: Matches; default: Binlog.Dump
 
 Ignore queries whose Command matches this Perl regex.  The default is to keep
 the slave threads from being killed on the master.
+
+=item --ignore-db
+
+type: string; group: Matches
+
+Ignore queries whose db (database) matches this Perl regex.
+
+=item --ignore-host
+
+type: string; group: Matches
+
+Ignore queries whose Host matches this Perl regex.
+
+=item --ignore-info
+
+type: string; group: Matches
+
+Ignore queries whose Info (query) matches this Perl regex.
 
 =item --[no]ignore-self
 
@@ -2479,6 +2520,20 @@ type: string; group: Matches
 
 Kill only queries whose Command matches this Perl regex.
 
+=item --match-db
+
+type: string; group: Matches
+
+Kill only queries whose db (database) matches this Perl regex.
+
+=item --match-host
+
+type: string; group: Matches
+
+Kill only queries whose Host matches this Perl regex.
+
+The Host value often time includes the port like "host:port".
+
 =item --match-info
 
 type: string; group: Matches
@@ -2490,6 +2545,12 @@ Kill only queries whose Info (query) matches this Perl regex.
 type: string; group: Matches
 
 Kill only queries whose State matches this Perl regex.
+
+=item --match-user
+
+type: string; group: Matches
+
+Kill only queries whose User matches this Perl regex.
 
 =item --[no]only-oldest
 
