@@ -1690,7 +1690,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 3571
+# Processlist package 4172
 # ###########################################################################
 package Processlist;
 
@@ -1919,7 +1919,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 3951
+# TcpdumpParser package 4195
 # ###########################################################################
 package TcpdumpParser;
 
@@ -1981,7 +1981,7 @@ sub _parse_packet {
    my ( $src_host, $src_port ) = $source =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
    my ( $dst_host, $dst_port ) = $dest   =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
 
-   (my $data = join('', $packet =~ m/\t0x[0-9a-f]+:  (.*)/g)) =~ s/\s+//g; 
+   (my $data = join('', $packet =~ m/\s+0x[0-9a-f]+:\s+(.*)/g)) =~ s/\s+//g; 
 
    my $ip_hlen = hex(substr($data, 1, 1)); # Num of 32-bit words in header.
    my $ip_plen = hex(substr($data, 4, 4)); # Num of BYTES in IPv4 datagram.
@@ -2030,7 +2030,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4136
+# MySQLProtocolParser package 4196
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2196,7 +2196,7 @@ sub parse_packet {
    push @{$session->{raw_packets}}, $packet->{raw_packet};
 
    if ( $session->{compress} ) {
-      return unless uncompress_packet($packet);
+      return unless $self->uncompress_packet($packet, $session);
    }
 
    remove_mysql_header($packet);
@@ -2716,7 +2716,7 @@ sub uncompress_data {
    die "I need data" unless $data;
    die "I need a len argument" unless $len;
    die "I need a scalar reference to data" unless ref $data eq 'SCALAR';
-   MKDEBUG && _d('Uncompressing packet');
+   MKDEBUG && _d('Uncompressing data');
    our $InflateError;
 
    my $comp_bin_data = pack('H*', $$data);
@@ -2742,7 +2742,7 @@ sub detect_compression {
       $session->{compress} = 1;
 
       $packet->{data} = $packet->{mysql_hdr} . $packet->{data};
-      return 0 unless uncompress_packet($packet);
+      return 0 unless $self->uncompress_packet($packet, $session);
       remove_mysql_header($packet);
    }
    else {
@@ -2753,8 +2753,9 @@ sub detect_compression {
 }
 
 sub uncompress_packet {
-   my ( $packet ) = @_;
-   die "I need a packet" unless $packet;
+   my ( $self, $packet, $session ) = @_;
+   die "I need a packet"  unless $packet;
+   die "I need a session" unless $session;
 
 
    my $data            = \$packet->{data};
@@ -2773,6 +2774,7 @@ sub uncompress_packet {
          $packet->{data} = $$data;
       };
       if ( $EVAL_ERROR ) {
+         $self->fail_session($session, 'failed to uncompress packet');
          die "Cannot uncompress packet.  Check that IO::Uncompress::Inflate "
             . "is installed.\nError: $EVAL_ERROR";
       }
@@ -4326,7 +4328,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 3312
+# MySQLDump package 4160
 # ###########################################################################
 package MySQLDump;
 
@@ -4373,6 +4375,7 @@ sub dump {
 
    if ( $what eq 'table' ) {
       my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      return unless $ddl;
       if ( $ddl->[0] eq 'table' ) {
          return $before
             . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
@@ -4456,7 +4459,12 @@ sub get_create_table {
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
-      my $href = $dbh->selectrow_hashref($sql);
+      my $href;
+      eval { $href = $dbh->selectrow_hashref($sql); };
+      if ( $EVAL_ERROR ) {
+         warn "Failed to $sql.  The table may be damaged.\nError: $EVAL_ERROR";
+         return;
+      }
       $self->_use_db($dbh, $quoter, $curr_db);
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
@@ -4627,7 +4635,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 3475
+# TableParser package 4161
 # ###########################################################################
 package TableParser;
 
@@ -4645,7 +4653,7 @@ sub new {
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
-
+   return unless $ddl;
    if ( ref $ddl eq 'ARRAY' ) {
       if ( lc $ddl->[0] eq 'table' ) {
          $ddl = $ddl->[1];
