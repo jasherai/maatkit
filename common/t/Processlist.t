@@ -3,15 +3,20 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 18;
+use Test::More tests => 19;
 
 require '../Processlist.pm';
+require '../MaatkitTest.pm';
+require '../TextResultSetParser.pm';
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
 
-my $pl = Processlist->new();
+my $pl  = new Processlist();
+my $rsp = new TextResultSetParser();
+
+MaatkitTest->import(qw(load_file));
 
 my @events;
 my $callback = sub { push @events, @_ };
@@ -440,3 +445,39 @@ is_deeply(\@queries, $expected, 'Basic find()');
 );
 
 is(scalar(@queries), 0, 'Did not find any query');
+
+%find_spec = (
+   only_oldest  => 1,
+   busy_time    => undef,
+   idle_time    => 15,
+   ignore => {
+   },
+   match => {
+   },
+);
+is_deeply(
+   [
+      $pl->find(
+         $rsp->parse(load_file('samples/recset003.txt')),
+         %find_spec,
+      )
+   ],
+   [
+      {
+         Id    => '29392005',
+         User  => 'remote',
+         Host  => '1.2.3.148:49718',
+         db    => 'happy',
+         Command => 'Sleep',
+         Time  => '17',
+         State => undef,
+         Info  => 'NULL',
+      }
+   ],
+   'idle_time'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
+exit;

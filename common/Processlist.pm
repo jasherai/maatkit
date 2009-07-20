@@ -259,8 +259,10 @@ sub fire_event {
 #
 # Possible find_spec are:
 #   * only_oldest  Match the oldest running query
-#   * busy_time    Match queries that have been running for longer than this
-#                  time and are in Command=Query status
+#   * busy_time    Match queries that have been Command=Query for longer than
+#                  this time
+#   * idle_time    Match queries that have been Command=Sleep for longer than
+#                  this time
 #   * ignore       A hashref of properties => regex patterns to ignore
 #   * match        A hashref of properties => regex patterns to match
 #
@@ -270,26 +272,38 @@ sub find {
    QUERY:
    foreach my $query ( @$proclist ) {
       my $matched = 0;
+
+      # Match special busy_time.
       if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
          if ( $query->{Time} < $find_spec{busy_time} ) {
-            # TODO: This won't work with idle_time
             MKDEBUG && _d("Query isn't running long enough");
             next QUERY;
          }
          $matched++;
       }
+
+      # Match special idle_time.
+      if ( $find_spec{idle_time} && ($query->{Command} || '') eq 'Sleep' ) {
+         if ( $query->{Time} < $find_spec{idle_time} ) {
+            MKDEBUG && _d("Query isn't idle long enough");
+            next QUERY;
+         }
+         $matched++;
+      }
+
       PROPERTY:
       foreach my $property ( qw(Id User Host db State Command Info) ) {
          my $filter = "_find_match_$property";
          if ( defined $find_spec{ignore}->{$property}
-            && $self->$filter($query, $find_spec{ignore}->{$property})
-         ) {
-            MKDEBUG && _d("Query matches 'ignore' filter on $property, skipping");
+              && $self->$filter($query, $find_spec{ignore}->{$property}) ) {
+            MKDEBUG && _d("Query matches 'ignore' filter on',
+               $property, skipping");
             next QUERY;
          }
          if ( defined $find_spec{match}->{$property} ) {
             if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
-               MKDEBUG && _d("Query doesn't match 'match' filter on $property, skipping");
+               MKDEBUG && _d("Query doesn't match 'match' filter on',
+                  $property, skipping");
                next QUERY;
             }
             $matched++;
@@ -299,11 +313,13 @@ sub find {
          MKDEBUG && _d("Query passed all defined filters, adding");
          push @matches, $query;
       }
-   }
+   } # QUERY
+
    if ( @matches && $find_spec{only_oldest} ) {
       my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
       @matches = $oldest;
    }
+
    return @matches;
 }
 
