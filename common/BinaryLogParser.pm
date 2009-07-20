@@ -96,6 +96,7 @@ sub parse_event {
       delete $self->{term};
    }
 
+   MKDEBUG && _d('Properties of event:', Dumper($event));
    foreach my $callback ( @callbacks ) {
       last unless $event = $callback->($event);
    }
