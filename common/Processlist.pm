@@ -296,14 +296,14 @@ sub find {
          my $filter = "_find_match_$property";
          if ( defined $find_spec{ignore}->{$property}
               && $self->$filter($query, $find_spec{ignore}->{$property}) ) {
-            MKDEBUG && _d("Query matches 'ignore' filter on',
-               $property, skipping");
+            MKDEBUG && _d('Query matches ignore', $property, 'filter:',
+               $find_spec{ignore}->{$property}, '=~', $query->{$property});
             next QUERY;
          }
          if ( defined $find_spec{match}->{$property} ) {
             if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
-               MKDEBUG && _d("Query doesn't match 'match' filter on',
-                  $property, skipping");
+               MKDEBUG && _d('Query does not match', $property, 'filter:',
+                  $find_spec{match}->{$property}, '!~', $query->{$property});
                next QUERY;
             }
             $matched++;
