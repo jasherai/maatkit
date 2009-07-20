@@ -40,157 +40,264 @@ sub new {
    return bless $self, $class;
 }
 
-# Executes the given query on the two given host dbhs.
-# Returns a hashref with query execution time and number of errors
-# and warnings produced on each host:
-#    {
-#       host1 => {
-#          Query_time    => 1.123456,  # Query execution time
-#          warning_count => 3,         # @@warning_count,
-#          warnings      => {          # SHOW WARNINGS
-#             1062 => {
-#                Level   => "Error",
-#                Code    => "1062",
-#                Message => "Duplicate entry '1' for key 1",
-#             }
-#          },
-#       },
-#       host2 => {
-#          etc.
-#       }
-#    }
-# If the query cannot be executed on a host, an error string is returned
-# for that host instead of the hashref of results.
+# Executes a query on the given host dbhs, calling pre- and post-execution
+# callbacks for each host.  Returns an array of hashrefs, one for each host,
+# with results from whatever the callbacks return.  Each callback usually
+# returns a name (of what its results are called) and hashref with values
+# for its results.  Or, a callback my return nothing in which case it's
+# ignored (to allow setting MySQL vars, etc.)
 #
-# Optional arguments are:
-#   * pre_exec_query     Execute this query before executing main query
-#   * post_exec_query    Execute this query after executing main query
+# All callbacks are passed the query and the current host's dbh.  Post-exec
+# callbacks get an extra args: Query_time which is the query's execution time
+# rounded to six places (microsecond precision).
+#
+# Some common callbacks are provided in this package: get_Query_time(),
+# get_warnings(), clear_warnings(), checksum_results().
+#
+# If the query cannot be executed on a host, an error string is returned
+# for that host instead of a hashref of results.
+#
+# Required arguments:
+#   * query                The query to execute
+#   * pre_exec_callbacks   Arrayref of pre-exec query callback subs
+#   * post_exec_callbacks  Arrayref of post-exec query callback subs
+#   * dbhs                 Arrayref of host dbhs
 #
 sub exec {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(query host1_dbh host2_dbh) ) {
+   foreach my $arg ( qw(query dbhs pre_exec_callbacks post_exec_callbacks) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   my $query = $args{query};
+   my $dbhs  = $args{dbhs};
+   my $pre   = $args{pre_exec_callbacks};
+   my $post  = $args{post_exec_callbacks};
 
-   if ( $args{pre_exec_query} ) {
-      MKDEBUG && _d('pre-exec query:', $args{pre_exec_query});
-      $self->_exec_query($args{pre_exec_query}, $args{host1_dbh});
-      $self->_exec_query($args{pre_exec_query}, $args{host2_dbh});
-   }
+   MKDEBUG && _d('exec:', $query);
 
-   MKDEBUG && _d('query:', $args{query});
-   my $host1_results = $self->_exec_query($args{query}, $args{host1_dbh});
-   my $host2_results = $self->_exec_query($args{query}, $args{host2_dbh});
+   my @results;
+   my $hostno = -1;
+   HOST:
+   foreach my $dbh ( @$dbhs ) {
+      $hostno++;  # Increment this now because we might not reach loop's end.
+      $results[$hostno] = {};
+      my $results = $results[$hostno];
 
-   if ( $args{post_exec_query} ) {
-      MKDEBUG && _d('post-exec query:', $args{post_exec_query});
-      $self->_exec_query($args{post_exec_query}, $args{host1_dbh});
-      $self->_exec_query($args{post_exec_query}, $args{host2_dbh});
-   }
+      # Call pre-exec callbacks.
+      foreach my $callback ( @$pre ) {
+         my ($name, $res);
+         eval {
+            ($name, $res) = $callback->(
+               query => $query,
+               dbh   => $dbh
+            );
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d('Error during pre-exec callback:', $EVAL_ERROR);
+            $results = $EVAL_ERROR;
+            next HOST;
+         }
+         $results->{$name} = $res if $name;
+      }
 
-   return {
-      host1 => $host1_results,
-      host2 => $host2_results,
-   };
+      # Execute the query on this host. 
+      my ( $start, $end, $query_time );
+      eval {
+         $start = time();
+         $dbh->do($query);
+         $end   = time();
+         $query_time = sprintf '%.6f', $end - $start;
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d('Error executing query on host', $hostno, ':',
+            $EVAL_ERROR);
+         $results = $EVAL_ERROR;
+         next HOST;
+      }
+
+      # Call post-exec callbacks.
+      foreach my $callback ( @$post ) {
+         my ($name, $res);
+         eval {
+            ($name, $res) = $callback->(
+               query      => $query,
+               dbh        => $dbh,
+               Query_time => $query_time,
+            );
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d('Error during post-exec callback:', $EVAL_ERROR);
+            $results = $EVAL_ERROR;
+            next HOST;
+         }
+         $results->{$name} = $res if $name;
+      }
+   } # HOST
+
+   MKDEBUG && _d('results:', Dumper(\@results));
+   return @results;
 }
 
-# This sub is called by exec() to do its common work:
-# execute, time and get warnings for a query on a given host.
-sub _exec_query {
-   my ( $self, $query, $dbh ) = @_;
-   die "I need a query" unless $query;
-   die "I need a dbh"   unless $dbh;
+sub get_query_time {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(Query_time) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $name = 'Query_time';
+   MKDEBUG && _d($name);
+   return $name, $args{Query_time};
+}
 
-   my ( $start, $end, $query_time );
+# Returns an array with its name and a hashref with warnings/errors:
+# (
+#   warnings,
+#   {
+#     count => 3,         # @@warning_count,
+#     codes => {          # SHOW WARNINGS
+#       1062 => {
+#         Level   => "Error",
+#         Code    => "1062",
+#         Message => "Duplicate entry '1' for key 1",
+#       }
+#     },
+#   }
+# )
+sub get_warnings {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh = $args{dbh};
+
+   my $name = 'warnings';
+   MKDEBUG && _d($name);
+
+   my $warnings;
+   my $warning_count;
    eval {
-      $start = time();
-      $dbh->do($query);
-      $end   = time();
-      $query_time = sprintf '%.6f', $end - $start;
+      $warnings      = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
+      $warning_count = $dbh->selectall_arrayref('SELECT @@warning_count',
+         { Slice => {} });
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d($EVAL_ERROR);
-      return $EVAL_ERROR;
+      MKDEBUG && _d('Error getting warnings:', $EVAL_ERROR);
+      return $name, $EVAL_ERROR;
    }
-
-   my $warnings = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
-   MKDEBUG && _d('warnings:', Dumper($warnings));
-
-   my $warning_count = $dbh->selectall_arrayref('SELECT @@warning_count',
-      { Slice => {} });
-   MKDEBUG && _d('warning count:', Dumper($warning_count));
-
    my $results = {
-      Query_time    => $query_time,
-      warnings      => $warnings,
-      warning_count => $warning_count->[0]->{'@@warning_count'},
+      codes => $warnings,
+      count => $warning_count->[0]->{'@@warning_count'},
    };
 
-   return $results;
-}   
-
-sub checksum_results {
-   my ( $self, %args ) = @_;
-   foreach my $arg ( qw(query host1_dbh host2_dbh database
-                        Quoter MySQLDump TableParser) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-
-   MKDEBUG && _d('query:', $args{query});
-   my $host1_results = $self->_checksum_results(%args, dbh => $args{host1_dbh});
-   my $host2_results = $self->_checksum_results(%args, dbh => $args{host2_dbh});
-
-   return {
-      host1 => $host1_results,
-      host2 => $host2_results,
-   };
+   return $name, $results;
 }
 
-
-sub _checksum_results {
+sub clear_warnings {
    my ( $self, %args ) = @_;
-   # args are checked in checksum_results().
-   my $query = $args{query};
-   my $db    = $args{database};
-   my $dbh   = $args{dbh};
-   my $du    = $args{MySQLDump};
-   my $tp    = $args{TableParser};
-   my $q     = $args{Quoter};
+   foreach my $arg ( qw(dbh query QueryParser) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh     = $args{dbh};
+   my $query   = $args{query};
+   my $qparser = $args{QueryParser};
 
-   my $tmp_tbl    = 'mk_upgrade';
+   MKDEBUG && _d('clear_warnings');
+
+   # On some systems, MySQL doesn't always clear the warnings list
+   # after a good query.  This causes good queries to show warnings
+   # from previous bad queries.  A work-around/hack is to
+   # SELECT * FROM table LIMIT 0 which seems to always clear warnings.
+   my @tables = $qparser->get_tables($query);
+   if ( @tables ) {
+      MKDEBUG && _d('tables:', @tables);
+      my $sql = "SELECT * FROM $tables[0] LIMIT 0";
+      MKDEBUG && _d($sql);
+      $dbh->do($sql);
+   }
+   else {
+      warn "Cannot clear warnings because the tables for this query cannot "
+         . "be parsed: $query";
+   }
+   return;
+}
+
+# This sub and checksum_results() require that you append
+# "CREATE TEMPORARY TABLE database.tmp_table AS" to the query before
+# calling exec().  This sub drops an old tmp table if it exists,
+# and sets the default storage engine to MyISAM.
+sub pre_checksum_results {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(dbh database tmp_table Quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh     = $args{dbh};
+   my $db      = $args{database};
+   my $tmp_tbl = $args{tmp_table};
+   my $du      = $args{MySQLDump};
+   my $tp      = $args{TableParser};
+   my $q       = $args{Quoter};
+
+   MKDEBUG && _d('pre_checksum_results');
+
    my $tmp_db_tbl = $q->quote($db, $tmp_tbl);
-
    eval {
       $dbh->do("DROP TABLE IF EXISTS $tmp_db_tbl");
       $dbh->do("SET storage_engine=MyISAM");
-      my $sql = "CREATE TEMPORARY TABLE $tmp_db_tbl AS $query";
-      $dbh->do($sql)
+   };
+   die $EVAL_ERROR if $EVAL_ERROR;
+   return;
+}
+
+# Either call pre_check_results() as a pre-exec callback to exec() or
+# do what it does manually before calling this sub as a post-exec callback.
+# This sub checksums the tmp table created when the query was executed
+# with "CREATE TEMPORARY TABLE database.tmp_table AS" alreay appended to it.
+sub checksum_results {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(dbh database tmp_table MySQLDump TableParser Quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh     = $args{dbh};
+   my $db      = $args{database};
+   my $tmp_tbl = $args{tmp_table};
+   my $du      = $args{MySQLDump};
+   my $tp      = $args{TableParser};
+   my $q       = $args{Quoter};
+
+   my $tmp_db_tbl = $q->quote($db, $tmp_tbl);
+   my $name = 'results';
+   MKDEBUG && _d($name);
+
+   my $n_rows;
+   my $tbl_checksum;
+   eval {
+      $n_rows = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $tmp_db_tbl");
+      $tbl_checksum = $dbh->selectall_arrayref("CHECKSUM TABLE $tmp_db_tbl");
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d($EVAL_ERROR);
-      return $EVAL_ERROR;
+      MKDEBUG && _d('Error counting rows or checksumming', $tmp_db_tbl, ':',
+         $EVAL_ERROR);
+      return $name, $EVAL_ERROR;
    }
-
-   my $n_rows = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $tmp_db_tbl");
-   my $tbl_checksum = $dbh->selectall_arrayref("CHECKSUM TABLE $tmp_db_tbl");
 
    my $tbl_struct;
    my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
    if ( $ddl->[0] eq 'table' ) {
-      eval { $tbl_struct = $tp->parse($ddl) };
+      eval {
+         $tbl_struct = $tp->parse($ddl)
+      };
       if ( $EVAL_ERROR ) {
          MKDEBUG && _d('Failed to parse', $tmp_db_tbl, ':', $EVAL_ERROR);
+         return $name, $EVAL_ERROR;
       }
    }
 
    my $results = {
-      table_checksum => $tbl_checksum->[0]->[1],
-      n_rows         => $n_rows->[0]->[0],
-      table_struct   => $tbl_struct,
+      checksum     => $tbl_checksum->[0]->[1],
+      n_rows       => $n_rows->[0]->[0],
+      table_struct => $tbl_struct,
    };
-   MKDEBUG && _d('checksum results:', Dumper($results));
 
-   return $results;
+   return $name, $results;
 }   
 
 sub _d {

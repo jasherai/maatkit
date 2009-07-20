@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 17;
+use Test::More tests => 19;
 
 require '../QueryExecutor.pm';
 require '../Quoter.pm';
@@ -34,45 +34,53 @@ $dbh2->do('USE test');
 my $qe = new QueryExecutor();
 isa_ok($qe, 'QueryExecutor');
 
-my $results;
+my $dbhs = [$dbh1, $dbh2];
+my @pre;
+my @post;
+my @results;
 my $output;
 
 # #############################################################################
 # Test basic functionality and results.
 # #############################################################################
-$results = $qe->exec(
-   query     => 'SELECT * FROM test.issue_47',
-   host1_dbh => $dbh1,
-   host2_dbh => $dbh2,
+@post = (
+   sub { $qe->get_query_time(@_); },
+   sub { $qe->get_warnings(@_);   },
+);
+@results = $qe->exec(
+   query => 'SELECT * FROM test.issue_47',
+   dbhs  => $dbhs,
+   pre_exec_callbacks  => \@pre,
+   post_exec_callbacks => \@post,
 );
 
 like(
-   $results->{host1}->{Query_time},
+   $results[0]->{Query_time},
    qr/[\d\.]+/,
-   "host1 Query_time ($results->{host1}->{Query_time})",
+   "host1 Query_time ($results[0]->{Query_time})",
 );
 like(
-   $results->{host2}->{Query_time},
+   $results[1]->{Query_time},
    qr/[\d\.]+/,
-   "host2 Query_time ($results->{host1}->{Query_time})",
+   "host2 Query_time ($results[1]->{Query_time})",
 );
 is_deeply(
-   $results->{host1}->{warnings},
+   $results[0]->{warnings}->{codes},
    {},
    'No warnings on host1'
 );
 is_deeply(
-   $results->{host2}->{warnings},
+   $results[1]->{warnings}->{codes},
    {},
    'No warnings on host2'
 );
 is(
-   $results->{host1}->{warning_count},
+   $results[0]->{warnings}->{count},
    0,
    'Zero warning count on host1'
 );
 is(
-   $results->{host2}->{warning_count},
+   $results[1]->{warnings}->{count},
    0,
    'Zero warning count on host2'
 );
@@ -80,18 +88,19 @@ is(
 # #############################################################################
 # Test warnings.
 # #############################################################################
-$results = $qe->exec(
+@results = $qe->exec(
    query     => 'INSERT INTO test.issue_47 VALUES (-1)',
-   host1_dbh => $dbh1,
-   host2_dbh => $dbh2,
+   dbhs  => $dbhs,
+   pre_exec_callbacks  => \@pre,
+   post_exec_callbacks => \@post,
 );
 like(
-   $results->{host1}->{warnings}->{1264}->{Message},
+   $results[0]->{warnings}->{codes}->{1264}->{Message},
    qr/Out of range value/,
    'Warning text from SHOW WARNINGS'
 );
 is(
-   $results->{host1}->{warning_count},
+   $results[0]->{warnings}->{count},
    1,
    'Warning count'
 );
@@ -100,46 +109,68 @@ is(
 # Test pre and post-exec queries.
 # #############################################################################
 $dbh1->do('SET @a = "foo"');
-$results = $qe->exec(
-   pre_exec_query  => 'SET @a = "before"',
-   query           => 'SELECT * FROM test.issue_47',
-   host1_dbh => $dbh1,
-   host2_dbh => $dbh2,
+push @pre, sub {
+   my ( %args ) = @_;
+   $args{dbh}->do('SET @a = "before"');
+   return;
+};
+@post = ();
+@results = $qe->exec(
+   query => 'SELECT * FROM test.issue_47',
+   dbhs  => $dbhs,
+   pre_exec_callbacks  => \@pre,
+   post_exec_callbacks => \@post,
 );
 my $var = $dbh1->selectall_arrayref('SELECT @a');
 is_deeply(
    $var,
    [['before']],
-   'pre-exec query'
+   'pre-exec callbacks'
 );
 
 $dbh1->do('SET @a = "foo"');
-$results = $qe->exec(
-   query           => 'SELECT * FROM test.issue_47',
-   post_exec_query => 'SET @a = "after"',
-   host1_dbh => $dbh1,
-   host2_dbh => $dbh2,
+@pre = ();
+push @post, sub {
+   my ( %args ) = @_;
+   $args{dbh}->do('SET @a = "after"');
+   return;
+};
+@results = $qe->exec(
+   query => 'SELECT * FROM test.issue_47',
+   dbhs  => $dbhs,
+   pre_exec_callbacks  => \@pre,
+   post_exec_callbacks => \@post,
 );
 $var = $dbh1->selectall_arrayref('SELECT @a');
 is_deeply(
    $var,
    [['after']],
-   'pre-exec query'
+   'post-exec callbacks'
 );
 
 $dbh1->do('SET @a = 0');
-$results = $qe->exec(
-   pre_exec_query  => 'SET @a = 1',
-   query           => 'SELECT * FROM test.issue_47',
-   post_exec_query => 'SET @a = @a + 1',
-   host1_dbh => $dbh1,
-   host2_dbh => $dbh2,
+@pre = (sub {
+   my ( %args ) = @_;
+   $args{dbh}->do('SET @a = 1');
+   return;
+});
+@post = (sub {
+   my ( %args ) = @_;
+   $args{dbh}->do('SET @a = @a + 1');
+   return;
+});
+
+@results = $qe->exec(
+   query => 'SELECT * FROM test.issue_47',
+   dbhs  => $dbhs,
+   pre_exec_callbacks  => \@pre,
+   post_exec_callbacks => \@post,
 );
 $var = $dbh1->selectall_arrayref('SELECT @a');
 is_deeply(
    $var,
    [['2']],
-   'pre and post-exec query'
+   'pre- and post-exec callbacks'
 );
 
 # #############################################################################
@@ -155,46 +186,60 @@ my %modules = (
    Quoter      => $q
 );
 
+my $tmp_table = 'QueryExecutor';
+
 # The test that execs "INSERT INTO test.issue_47 VALUES (-1)" makes host2
 # get an extra row because it's slave to host1 so it's effectively ran twice.
-
-$results = $qe->checksum_results(
-   query     => 'SELECT * FROM test.issue_47',
-   database  => 'test',
-   host1_dbh => $dbh1,
-   host2_dbh => $dbh2,
-   %modules,
+# Therefore, the checksums and the row counts shouldn't match.
+@pre = (sub {
+   return $qe->pre_checksum_results(@_, database=>'test', tmp_table=>$tmp_table, %modules);
+});
+@post = (sub {
+   return $qe->checksum_results(@_, database=>'test', tmp_table=>$tmp_table, %modules);
+});
+@results = $qe->exec(
+   query     => "CREATE TEMPORARY TABLE test.$tmp_table AS SELECT * FROM test.issue_47",
+   dbhs  => $dbhs,
+   pre_exec_callbacks  => \@pre,
+   post_exec_callbacks => \@post,
 );
 is(
-   $results->{host1}->{n_rows},
+   $results[0]->{results}->{n_rows},
    10,
-   'compare results n_rows on host1'
+   'results n_rows on host1'
 );
 is(
-   $results->{host2}->{n_rows},
+   $results[1]->{results}->{n_rows},
    11,
-   'compare results n_rows on host1'
+   'results n_rows on host1'
+);
+ok(
+    $results[0]->{results}->{checksum},  
+   'Got table checksum'
 );
 cmp_ok(
-   $results->{host1}->{n_rows},
-   '!=',
-   $results->{host2}->{n_rows},
-   'compare results host1 != host2 checksum'
+   $results[0]->{results}->{checksum},
+   'ne',
+   $results[1]->{results}->{checksum},
+   'results checksums host1 != host2'
 );
 
 # Make host1 and host2 identical again.
 $dbh1->do('DELETE FROM test.issue_47 WHERE userid = 0');
-$results = $qe->checksum_results(
-   query     => 'SELECT * FROM test.issue_47',
-   database  => 'test',
-   host1_dbh => $dbh1,
-   host2_dbh => $dbh2,
-   %modules,
+@results = $qe->exec(
+   query     => "CREATE TEMPORARY TABLE test.$tmp_table AS SELECT * FROM test.issue_47",
+   dbhs  => $dbhs,
+   pre_exec_callbacks  => \@pre,
+   post_exec_callbacks => \@post,
+);
+ok(
+    $results[0]->{results}->{checksum},  
+   'Got table checksum'
 );
 is(
-   $results->{host1}->{n_rows},
-   $results->{host2}->{n_rows},
-   'compare results host1 == host2 checksum'
+   $results[0]->{results}->{checksum},
+   $results[1]->{results}->{checksum},
+   'results checksums host1 == host2'
 );
 
 # #############################################################################
