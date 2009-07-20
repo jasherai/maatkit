@@ -94,12 +94,14 @@ sub global_report {
    }
 
    # First line
+   MKDEBUG && _d('global_cnt:', $global_cnt, 'unique:',
+      scalar keys %{$stats->{classes}}, 'qps:', $qps, 'conc:', $conc);
    my $line = sprintf(
       '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
       shorten($global_cnt, d=>1_000),
       shorten(scalar keys %{$stats->{classes}}, d=>1_000),
       shorten($qps, d=>1_000),
-      shorten($conc), d=>1_000);
+      shorten($conc, d=>1_000));
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
 
