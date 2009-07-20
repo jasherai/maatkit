@@ -213,7 +213,7 @@ sub parse_packet {
    # Return unless the compressed packet can be uncompressed.
    # If it cannot, then we're helpless and must return.
    if ( $session->{compress} ) {
-      return unless uncompress_packet($packet);
+      return unless $self->uncompress_packet($packet, $session);
    }
 
    # Remove the first MySQL header.  A single TCP packet can contain many
@@ -853,7 +853,7 @@ sub uncompress_data {
    die "I need data" unless $data;
    die "I need a len argument" unless $len;
    die "I need a scalar reference to data" unless ref $data eq 'SCALAR';
-   MKDEBUG && _d('Uncompressing packet');
+   MKDEBUG && _d('Uncompressing data');
    our $InflateError;
 
    # Pack hex string into compressed binary data.
@@ -898,7 +898,7 @@ sub detect_compression {
       # of the compression header.  We must restore these 4 bytes, then
       # uncompress and remove the MySQL header.  We only do this once.
       $packet->{data} = $packet->{mysql_hdr} . $packet->{data};
-      return 0 unless uncompress_packet($packet);
+      return 0 unless $self->uncompress_packet($packet, $session);
       remove_mysql_header($packet);
    }
    else {
@@ -911,8 +911,9 @@ sub detect_compression {
 # Returns 1 if the packet was uncompressed or 0 if we can't uncompress.
 # Failure is usually due to IO::Uncompress not being available.
 sub uncompress_packet {
-   my ( $packet ) = @_;
-   die "I need a packet" unless $packet;
+   my ( $self, $packet, $session ) = @_;
+   die "I need a packet"  unless $packet;
+   die "I need a session" unless $session;
 
    # From the doc: "A compressed packet header is:
    #    packet length (3 bytes),
@@ -938,6 +939,7 @@ sub uncompress_packet {
          $packet->{data} = $$data;
       };
       if ( $EVAL_ERROR ) {
+         $self->fail_session($session, 'failed to uncompress packet');
          die "Cannot uncompress packet.  Check that IO::Uncompress::Inflate "
             . "is installed.\nError: $EVAL_ERROR";
       }
