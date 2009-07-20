@@ -3,21 +3,16 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 require '../TextResultSetParser.pm';
+require '../MaatkitTest.pm';
+
+MaatkitTest->import(qw(load_file));
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
-
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
 
 my $r = new TextResultSetParser();
 isa_ok($r, 'TextResultSetParser');
@@ -82,6 +77,22 @@ cmp_ok(
    '51 row vertical processlist'
 );
 
+is_deeply(
+   $r->parse( load_file('samples/recset005.txt') ),
+   [
+      {
+         Id    => '29392005',
+         User  => 'remote',
+         Host  => '1.2.3.148:49718',
+         db    => 'happy',
+         Command => 'Sleep',
+         Time  => '17',
+         State => undef,
+         Info  => 'NULL',
+      }
+   ],
+   '1 vertical row, No State value'
+);
 
 # #############################################################################
 # Done.

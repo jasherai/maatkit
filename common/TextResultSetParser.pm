@@ -41,6 +41,11 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # Possible args:
@@ -52,7 +57,7 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_tabular {
+sub _parse_tabular {
    my ( $text, @cols ) = @_;
    my %row;
    my @vals = $text =~ m/\| +([^\|]*?)(?= +\|)/msg;
@@ -61,7 +66,7 @@ sub parse_tabular {
    return (\%row, undef);
 }
 
-sub parse_tab_sep {
+sub _parse_tab_sep {
    my ( $text, @cols ) = @_;
    my %row;
    my @vals = split(/\t/, $text);
@@ -70,9 +75,10 @@ sub parse_tab_sep {
    return (\%row, undef);
 }
 
-sub parse_vertical {
+sub parse_vertical_row {
    my ( $text ) = @_;
-   my %row = $text =~ m/^\s*(\w+): ([^\n]*)/msg;
+   my %row = $text =~ m/^\s*(\w+):(?: ([^\n]*))?/msg;
+   MKDEBUG && _d('vertical row:', Dumper(\%row));
    return \%row;
 }
 
@@ -90,31 +96,22 @@ sub parse {
 
    # Detect text type: tabular, tab-separated, or vertical
    if ( $text =~ m/^\+---/m ) { # standard "tabular" output
-      MKDEBUG && _d('text type: standard tabular');
+      MKDEBUG && _d('Result set text is standard tabular');
       my $line_pattern  = qr/^(\| .*)[\r\n]+/m;
       $result_set
-         = _parse_horizontal_result_set($text, $line_pattern, \&parse_tabular);
+         = parse_horizontal_row($text, $line_pattern, \&_parse_tabular);
    }
    elsif ( $text =~ m/^id\tselect_type\t/m ) { # tab-separated
-      MKDEBUG && _d('text type: tab-separated');
+      MKDEBUG && _d('Result set text is tab-separated');
       my $line_pattern  = qr/^(.*?\t.*)[\r\n]+/m;
       $result_set
-         = _parse_horizontal_result_set($text, $line_pattern, \&parse_tab_sep);
+         = parse_horizontal_row($text, $line_pattern, \&_parse_tab_sep);
    }
    elsif ( $text =~ m/\*\*\* \d+\. row/ ) { # "vertical" output
-      my $n_recs;
-      $n_recs++ while $text =~ m/ \d+\. row /g;
-      MKDEBUG && _d('text-type: vertical,', $n_recs, 'n_recs');
-      if ( $n_recs > 1 ) {
-         MKDEBUG && _d('Multiple result sets');
-         my @v_result_sets;
-         my $v_result_set = _split_vertical_result_sets($text);
-         foreach my $v_result_set ( @$v_result_set ) {
-            push @v_result_sets, $self->parse($v_result_set);
-         }
-         return \@v_result_sets;
+      MKDEBUG && _d('Result set text is vertical (\G)');
+      foreach my $row ( split_vertical_rows($text) ) {
+         push @$result_set, parse_vertical_row($row);
       }
-      $result_set = _parse_vertical_result_set($text, \&parse_vertical);
    }
    else {
       die "Cannot determine if text is tabular, tab-separated or veritcal:\n"
@@ -134,7 +131,7 @@ sub parse {
    return $result_set;
 }
 
-sub _parse_horizontal_result_set {
+sub parse_horizontal_row {
    my ( $text, $line_pattern, $sub ) = @_;
    my @result_sets = ();
    my @cols        = ();
@@ -150,16 +147,11 @@ sub _parse_horizontal_result_set {
    return \@result_sets;
 }
 
-sub _parse_vertical_result_set {
-   my ( $text, $sub ) = @_;
-   return $sub->($text);
-}
-
-sub _split_vertical_result_sets {
+sub split_vertical_rows {
    my ( $text ) = @_;
    my $ROW_HEADER = '\*{3,} \d+\. row \*{3,}';
-   my @result_sets = $text =~ m/($ROW_HEADER.*?)(?=$ROW_HEADER|\z)/omgs;
-   return \@result_sets;
+   my @rows = $text =~ m/($ROW_HEADER.*?)(?=$ROW_HEADER|\z)/omgs;
+   return @rows;
 }
 
 sub _d {
