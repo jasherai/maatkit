@@ -113,7 +113,7 @@ sub _parse_packet {
    my ( $src_host, $src_port ) = $source =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
    my ( $dst_host, $dst_port ) = $dest   =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
 
-   (my $data = join('', $packet =~ m/\t0x[0-9a-f]+:  (.*)/g)) =~ s/\s+//g; 
+   (my $data = join('', $packet =~ m/\s+0x[0-9a-f]+:\s+(.*)/g)) =~ s/\s+//g; 
 
    # Find length information in the IPv4 header.  Typically 5 32-bit
    # words.  See http://en.wikipedia.org/wiki/IPv4#Header
