@@ -1690,7 +1690,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 4172
+# Processlist package 4201
 # ###########################################################################
 package Processlist;
 
@@ -1827,6 +1827,7 @@ sub find {
    QUERY:
    foreach my $query ( @$proclist ) {
       my $matched = 0;
+
       if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
          if ( $query->{Time} < $find_spec{busy_time} ) {
             MKDEBUG && _d("Query isn't running long enough");
@@ -1834,18 +1835,28 @@ sub find {
          }
          $matched++;
       }
+
+      if ( $find_spec{idle_time} && ($query->{Command} || '') eq 'Sleep' ) {
+         if ( $query->{Time} < $find_spec{idle_time} ) {
+            MKDEBUG && _d("Query isn't idle long enough");
+            next QUERY;
+         }
+         $matched++;
+      }
+
       PROPERTY:
       foreach my $property ( qw(Id User Host db State Command Info) ) {
          my $filter = "_find_match_$property";
          if ( defined $find_spec{ignore}->{$property}
-            && $self->$filter($query, $find_spec{ignore}->{$property})
-         ) {
-            MKDEBUG && _d("Query matches 'ignore' filter on $property, skipping");
+              && $self->$filter($query, $find_spec{ignore}->{$property}) ) {
+            MKDEBUG && _d("Query matches 'ignore' filter on',
+               $property, skipping");
             next QUERY;
          }
          if ( defined $find_spec{match}->{$property} ) {
             if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
-               MKDEBUG && _d("Query doesn't match 'match' filter on $property, skipping");
+               MKDEBUG && _d("Query doesn't match 'match' filter on',
+                  $property, skipping");
                next QUERY;
             }
             $matched++;
@@ -1855,11 +1866,13 @@ sub find {
          MKDEBUG && _d("Query passed all defined filters, adding");
          push @matches, $query;
       }
-   }
+   } # QUERY
+
    if ( @matches && $find_spec{only_oldest} ) {
       my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
       @matches = $oldest;
    }
+
    return @matches;
 }
 
@@ -3648,7 +3661,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 4157
+# QueryReportFormatter package 4205
 # ###########################################################################
 
 
@@ -3719,12 +3732,14 @@ sub global_report {
       };
    }
 
+   MKDEBUG && _d('global_cnt:', $global_cnt, 'unique:',
+      scalar keys %{$stats->{classes}}, 'qps:', $qps, 'conc:', $conc);
    my $line = sprintf(
       '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
       shorten($global_cnt, d=>1_000),
       shorten(scalar keys %{$stats->{classes}}, d=>1_000),
       shorten($qps, d=>1_000),
-      shorten($conc), d=>1_000);
+      shorten($conc, d=>1_000));
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
 
@@ -7322,7 +7337,7 @@ Show help and exit.
 
 =item --ignore-attributes
 
-type: array; default: arg,cmd,insert_id,ip,port,Thread_id,timestamp,exptime,flags,key,res,val
+type: array; default: arg,cmd,insert_id,ip,port,Thread_id,timestamp,exptime,flags,key,res,val,server_id,offset,end,xid
 
 Do not aggregate these attributes when auto-detecting L<"--select">.
 
