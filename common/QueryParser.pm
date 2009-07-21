@@ -190,10 +190,17 @@ sub split {
    # we must re-attach each verb to its statement; we do this later...
    my @split_statements = grep { $_ } split(m/\b($verbs\b)/io, $query);
 
-   # ...Re-attach verbs to their statements.
    my @statements;
-   for ( my $i = 0; $i <= $#split_statements; $i += 2 ) {
-      push @statements, $split_statements[$i].$split_statements[$i+1];
+   if ( @split_statements == 1 ) {
+      # This happens if the query has no verbs, so it's probably a single
+      # statement.
+      push @statements, $query;
+   }
+   else {
+      # ...Re-attach verbs to their statements.
+      for ( my $i = 0; $i <= $#split_statements; $i += 2 ) {
+         push @statements, $split_statements[$i].$split_statements[$i+1];
+      }
    }
 
    # Wrap stmts in <> to make it more clear where each one begins/ends.

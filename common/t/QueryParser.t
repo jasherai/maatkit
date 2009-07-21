@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 92;
+use Test::More tests => 93;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -542,6 +542,15 @@ is_deeply(
       'select dt,hr from db2.tbl2 where foo = 1',
    ],
    'split 2 statements, INSERT ... SELECT'
+);
+
+$sql = 'create table if not exists db.tbl (primary key (lmp), id int not null unique key auto_increment, lmp datetime)';
+is_deeply(
+   [ $qp->split($sql) ],
+   [
+      $sql,
+   ],
+   'split 1 statement, CREATE'
 );
 
 # #############################################################################
