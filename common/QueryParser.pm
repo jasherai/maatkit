@@ -188,7 +188,7 @@ sub split {
    #   INSERT INTO ... SELECT ...
    # split returns ('INSERT', 'INTO ...', 'SELECT', '...').  Therefore,
    # we must re-attach each verb to its statement; we do this later...
-   my @split_statements = grep { $_ } split(m/\b($verbs\b)/io, $query);
+   my @split_statements = grep { $_ } split(m/\b($verbs\b(?!(?:\s*\()))/io, $query);
 
    my @statements;
    if ( @split_statements == 1 ) {

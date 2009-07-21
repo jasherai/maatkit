@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 93;
+use Test::More tests => 94;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -551,6 +551,15 @@ is_deeply(
       $sql,
    ],
    'split 1 statement, CREATE'
+);
+
+$sql = "select num from db.tbl where replace(col,' ','') = 'foo'";
+is_deeply(
+   [ $qp->split($sql) ],
+   [
+      $sql,
+   ],
+   'split 1 statement, SELECT with REPLACE() function'
 );
 
 # #############################################################################
