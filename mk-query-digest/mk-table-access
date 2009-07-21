@@ -1732,18 +1732,6 @@ interrupt with CTRL-C).  See also L<"--iterations">.
 
 Show version and exit.
 
-=item --watch-server
-
-type: string
-
-Which IP address and port is the server when parsing tcpdump output. This option
-tells mk-query-digest whether a given TCP packet is from client to server, or
-server to client.  If you don't specify it, mk-query-digest tries to guess the
-host and port of the server by looking for port 3306 or port "mysql".  If you're
-watching a server with a non-standard port, this won't work, and you'll need to
-specify the IP address and port to watch.  If mk-query-digest doesn't know what
-to watch, nothing works right.
-
 =back
 
 =head1 DOWNLOADING
@@ -1786,7 +1774,7 @@ running with the C<MKDEBUG=1> environment variable.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+This program is copyright 2009-@CURRENTYEAR@ Percona Inc.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
