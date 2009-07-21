@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 89;
+use Test::More tests => 92;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -513,4 +513,38 @@ is($qp->has_derived_table(
    'select * from foo where a in(select a from b)'),
    '', 'no derived on correlated');
 
+# #############################################################################
+# Test split().
+# #############################################################################
+is_deeply(
+   [ $qp->split('SELECT * FROM db.tbl WHERE id = 1') ],
+   [
+      'SELECT * FROM db.tbl WHERE id = 1',
+   ],
+   'split 1 statement, SELECT'
+);
+
+my $sql = 'replace into db1.tbl2 (dt, hr) select foo, bar from db2.tbl2 where id = 1 group by foo';
+is_deeply(
+   [ $qp->split($sql) ],
+   [
+      'replace into db1.tbl2 (dt, hr) ',
+      'select foo, bar from db2.tbl2 where id = 1 group by foo',
+   ],
+   'split 2 statements, REPLACE ... SELECT'
+);
+
+$sql = 'insert into db1.tbl 1 (dt,hr) select dt,hr from db2.tbl2 where foo = 1';
+is_deeply(
+   [ $qp->split($sql) ],
+   [
+      'insert into db1.tbl 1 (dt,hr) ',
+      'select dt,hr from db2.tbl2 where foo = 1',
+   ],
+   'split 2 statements, INSERT ... SELECT'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 exit;

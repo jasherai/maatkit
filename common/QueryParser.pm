@@ -171,6 +171,36 @@ sub get_aliases {
    return $aliases;
 }
 
+# Splits a compound statement and returns an array with each sub-statement.
+# Example:
+#    INSERT INTO ... SELECT ...
+# is split into two statements: "INSERT INTO ..." and "SELECT ...".
+sub split {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   MKDEBUG && _d('Splitting', $query);
+
+   my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION}i;
+
+   # This splits a statement on the above verbs which means that the verb
+   # gets chopped out.  Capturing the verb (e.g. ($verb)) will retain it,
+   # but then it's disjointed from its statement.  Example: for this query,
+   #   INSERT INTO ... SELECT ...
+   # split returns ('INSERT', 'INTO ...', 'SELECT', '...').  Therefore,
+   # we must re-attach each verb to its statement; we do this later...
+   my @split_statements = grep { $_ } split(m/\b($verbs\b)/io, $query);
+
+   # ...Re-attach verbs to their statements.
+   my @statements;
+   for ( my $i = 0; $i <= $#split_statements; $i += 2 ) {
+      push @statements, $split_statements[$i].$split_statements[$i+1];
+   }
+
+   # Wrap stmts in <> to make it more clear where each one begins/ends.
+   MKDEBUG && _d('statements:', map { $_ ? "<$_>" : 'none' } @statements);
+   return @statements;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
