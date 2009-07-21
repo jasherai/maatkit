@@ -1690,7 +1690,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 4201
+# Processlist package 4207
 # ###########################################################################
 package Processlist;
 
@@ -1849,14 +1849,14 @@ sub find {
          my $filter = "_find_match_$property";
          if ( defined $find_spec{ignore}->{$property}
               && $self->$filter($query, $find_spec{ignore}->{$property}) ) {
-            MKDEBUG && _d("Query matches 'ignore' filter on',
-               $property, skipping");
+            MKDEBUG && _d('Query matches ignore', $property, 'filter:',
+               $find_spec{ignore}->{$property}, '=~', $query->{$property});
             next QUERY;
          }
          if ( defined $find_spec{match}->{$property} ) {
             if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
-               MKDEBUG && _d("Query doesn't match 'match' filter on',
-                  $property, skipping");
+               MKDEBUG && _d('Query does not match', $property, 'filter:',
+                  $find_spec{match}->{$property}, '!~', $query->{$property});
                next QUERY;
             }
             $matched++;
@@ -4220,7 +4220,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 3637
+# QueryParser package 4214
 # ###########################################################################
 package QueryParser;
 
@@ -4326,6 +4326,30 @@ sub get_aliases {
       $aliases->{DATABASE}->{$tbl} = $db if $db;
    }
    return $aliases;
+}
+
+sub split {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   $query =~ s/^\s+//;
+   MKDEBUG && _d('Splitting', $query);
+
+   my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
+
+   my @split_statements = grep { $_ } split(m/\b($verbs\b(?!(?:\s*\()))/io, $query);
+
+   my @statements;
+   if ( @split_statements == 1 ) {
+      push @statements, $query;
+   }
+   else {
+      for ( my $i = 0; $i <= $#split_statements; $i += 2 ) {
+         push @statements, $split_statements[$i].$split_statements[$i+1];
+      }
+   }
+
+   MKDEBUG && _d('statements:', map { $_ ? "<$_>" : 'none' } @statements);
+   return @statements;
 }
 
 sub _d {
