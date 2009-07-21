@@ -1,0 +1,2568 @@
+#!/usr/bin/env perl
+
+# This program is copyright 2009-@CURRENTYEAR@ Percona Inc.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
+
+# ###########################################################################
+# Quoter package 3186
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+sub quote_val {
+   my ( $self, @vals ) = @_;
+   return join(', ',
+      map {
+         if ( defined $_ ) {
+            $_ =~ s/(['\\])/\\$1/g;
+            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
+         }
+         else {
+            'NULL';
+         }
+      } @vals
+   );
+}
+
+sub split_unquote {
+   my ( $self, $db_tbl, $default_db ) = @_;
+   $db_tbl =~ s/`//g;
+   my ( $db, $tbl ) = split(/[.]/, $db_tbl);
+   if ( !$tbl ) {
+      $tbl = $db;
+      $db  = $default_db;
+   }
+   return ($db, $tbl);
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
+# ###########################################################################
+# OptionParser package 3945
+# ###########################################################################
+package OptionParser;
+
+use strict;
+use warnings FATAL => 'all';
+
+use Getopt::Long;
+use List::Util qw(max);
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+my %attributes = (
+   'type'       => 1,
+   'short form' => 1,
+   'group'      => 1,
+   'default'    => 1,
+   'cumulative' => 1,
+   'negatable'  => 1,
+);
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(description) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   $program_name ||= $PROGRAM_NAME;
+
+   my $self = {
+      description    => $args{description},
+      prompt         => $args{prompt} || '<options>',
+      strict         => (exists $args{strict} ? $args{strict} : 1),
+      dp             => $args{dp}     || undef,
+      program_name   => $program_name,
+      opts           => {},
+      got_opts       => 0,
+      short_opts     => {},
+      defaults       => {},
+      groups         => {},
+      allowed_groups => {},
+      errors         => [],
+      rules          => [],  # desc of rules for --help
+      mutex          => [],  # rule: opts are mutually exclusive
+      atleast1       => [],  # rule: at least one opt is required
+      disables       => {},  # rule: opt disables other opts 
+      defaults_to    => {},  # rule: opt defaults to value of other opt
+      default_files  => [
+         "/etc/maatkit/maatkit.conf",
+         "/etc/maatkit/$program_name.conf",
+         "$ENV{HOME}/.maatkit.conf",
+         "$ENV{HOME}/.$program_name.conf",
+      ],
+   };
+   return bless $self, $class;
+}
+
+sub get_specs {
+   my ( $self, $file ) = @_;
+   my @specs = $self->_pod_to_specs($file);
+   $self->_parse_specs(@specs);
+   return;
+}
+
+sub get_defaults_files {
+   my ( $self ) = @_;
+   return @{$self->{default_files}};
+}
+
+sub _pod_to_specs {
+   my ( $self, $file ) = @_;
+   $file ||= __FILE__;
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+
+   my %types = (
+      string => 's', # standard Getopt type
+      'int'  => 'i', # standard Getopt type
+      float  => 'f', # standard Getopt type
+      Hash   => 'H', # hash, formed from a comma-separated list
+      hash   => 'h', # hash as above, but only if a value is given
+      Array  => 'A', # array, similar to Hash
+      array  => 'a', # array, similar to hash
+      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dp}
+      size   => 'z', # size with kMG suffix (powers of 2^10)
+      'time' => 'm', # time, with an optional suffix of s/h/m/d
+   );
+   my @specs = ();
+   my @rules = ();
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $para =~ s/$POD_link_re/$1/go;
+      MKDEBUG && _d('Option rule:', $para);
+      push @rules, $para;
+   }
+
+   die 'POD has no OPTIONS section' unless $para;
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         chomp $para;
+         MKDEBUG && _d($para);
+         my %attribs;
+
+         $para = <$fh>; # read next paragraph, possibly attributes
+
+         if ( $para =~ m/: / ) { # attributes
+            $para =~ s/\s+\Z//g;
+            %attribs = map {
+                  my ( $attrib, $val) = split(/: /, $_);
+                  die "Unrecognized attribute for --$option: $attrib"
+                     unless $attributes{$attrib};
+                  ($attrib, $val);
+               } split(/; /, $para);
+            if ( $attribs{'short form'} ) {
+               $attribs{'short form'} =~ s/-//;
+            }
+            $para = <$fh>; # read next paragraph, probably short help desc
+         }
+         else {
+            MKDEBUG && _d('Option has no attributes');
+         }
+
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/$POD_link_re/$1/go;
+
+         $para =~ s/\.(?:\n.*| [A-Z].*|\Z)//s;
+         MKDEBUG && _d('Short help:', $para);
+
+         die "No description after option spec $option" if $para =~ m/^=item/;
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $attribs{'negatable'} = 1;
+         }
+
+         push @specs, {
+            spec  => $option
+               . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
+               . ($attribs{'negatable'}  ? '!'                          : '' )
+               . ($attribs{'cumulative'} ? '+'                          : '' )
+               . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
+            desc  => $para
+               . ($attribs{default} ? " (default $attribs{default})" : ''),
+            group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+
+
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   die 'No valid specs in POD OPTIONS' unless @specs;
+
+   close $fh;
+   return @specs, @rules;
+}
+
+sub _parse_specs {
+   my ( $self, @specs ) = @_;
+   my %disables; # special rule that requires deferred checking
+
+   foreach my $opt ( @specs ) {
+      if ( ref $opt ) { # It's an option spec, not a rule.
+         MKDEBUG && _d('Parsing opt spec:',
+            map { ($_, '=>', $opt->{$_}) } keys %$opt);
+
+         my ( $long, $short ) = $opt->{spec} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         if ( !$long ) {
+            die "Cannot parse long option from spec $opt->{spec}";
+         }
+         $opt->{long} = $long;
+
+         die "Duplicate long option --$long" if exists $self->{opts}->{$long};
+         $self->{opts}->{$long} = $opt;
+
+         if ( length $long == 1 ) {
+            MKDEBUG && _d('Long opt', $long, 'looks like short opt');
+            $self->{short_opts}->{$long} = $long;
+         }
+
+         if ( $short ) {
+            die "Duplicate short option -$short"
+               if exists $self->{short_opts}->{$short};
+            $self->{short_opts}->{$short} = $long;
+            $opt->{short} = $short;
+         }
+         else {
+            $opt->{short} = undef;
+         }
+
+         $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
+         $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
+         $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
+
+         $opt->{group} ||= 'default';
+         $self->{groups}->{ $opt->{group} }->{$long} = 1;
+
+         $opt->{value} = undef;
+         $opt->{got}   = 0;
+
+         my ( $type ) = $opt->{spec} =~ m/=(.)/;
+         $opt->{type} = $type;
+         MKDEBUG && _d($long, 'type:', $type);
+
+         if ( $type && $type eq 'd' && !$self->{dp} ) {
+            die "$opt->{long} is type DSN (d) but no dp argument "
+               . "was given when this OptionParser object was created";
+         }
+
+         $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
+
+         if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            if ( $opt->{is_negatable} ) {
+               $def = $def eq 'yes' ? 1
+                    : $def eq 'no'  ? 0
+                    : $def;
+            }
+            $self->{defaults}->{$long} = defined $def ? $def : 1;
+            MKDEBUG && _d($long, 'default:', $def);
+         }
+
+         if ( $long eq 'config' ) {
+            $self->{defaults}->{$long} = join(',', $self->get_defaults_files());
+         }
+
+         if ( (my ($dis) = $opt->{desc} =~ m/(disables .*)/) ) {
+            $disables{$long} = $dis;
+            MKDEBUG && _d('Deferring check of disables rule for', $opt, $dis);
+         }
+
+         $self->{opts}->{$long} = $opt;
+      }
+      else { # It's an option rule, not a spec.
+         MKDEBUG && _d('Parsing rule:', $opt); 
+         push @{$self->{rules}}, $opt;
+         my @participants = $self->_get_participants($opt);
+         my $rule_ok = 0;
+
+         if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{mutex}}, \@participants;
+            MKDEBUG && _d(@participants, 'are mutually exclusive');
+         }
+         if ( $opt =~ m/at least one|one and only one/ ) {
+            $rule_ok = 1;
+            push @{$self->{atleast1}}, \@participants;
+            MKDEBUG && _d(@participants, 'require at least one');
+         }
+         if ( $opt =~ m/default to/ ) {
+            $rule_ok = 1;
+            $self->{defaults_to}->{$participants[0]} = $participants[1];
+            MKDEBUG && _d($participants[0], 'defaults to', $participants[1]);
+         }
+         if ( $opt =~ m/restricted to option groups/ ) {
+            $rule_ok = 1;
+            my ($groups) = $opt =~ m/groups ([\w\s\,]+)/;
+            my @groups = split(',', $groups);
+            %{$self->{allowed_groups}->{$participants[0]}} = map {
+               s/\s+//;
+               $_ => 1;
+            } @groups;
+         }
+
+         die "Unrecognized option rule: $opt" unless $rule_ok;
+      }
+   }
+
+   foreach my $long ( keys %disables ) {
+      my @participants = $self->_get_participants($disables{$long});
+      $self->{disables}->{$long} = \@participants;
+      MKDEBUG && _d('Option', $long, 'disables', @participants);
+   }
+
+   return; 
+}
+
+sub _get_participants {
+   my ( $self, $str ) = @_;
+   my @participants;
+   foreach my $long ( $str =~ m/--(?:\[no\])?([\w-]+)/g ) {
+      die "Option --$long does not exist while processing rule $str"
+         unless exists $self->{opts}->{$long};
+      push @participants, $long;
+   }
+   MKDEBUG && _d('Participants for', $str, ':', @participants);
+   return @participants;
+}
+
+sub opts {
+   my ( $self ) = @_;
+   my %opts = %{$self->{opts}};
+   return %opts;
+}
+
+sub opt_values {
+   my ( $self ) = @_;
+   my %opts = map {
+      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
+              : $_;
+      $opt => $self->{opts}->{$_}->{value}
+   } keys %{$self->{opts}};
+   return %opts;
+}
+
+sub short_opts {
+   my ( $self ) = @_;
+   my %short_opts = %{$self->{short_opts}};
+   return %short_opts;
+}
+
+sub set_defaults {
+   my ( $self, %defaults ) = @_;
+   $self->{defaults} = {};
+   foreach my $long ( keys %defaults ) {
+      die "Cannot set default for nonexistent option $long"
+         unless exists $self->{opts}->{$long};
+      $self->{defaults}->{$long} = $defaults{$long};
+      MKDEBUG && _d('Default val for', $long, ':', $defaults{$long});
+   }
+   return;
+}
+
+sub get_defaults {
+   my ( $self ) = @_;
+   return $self->{defaults};
+}
+
+sub get_groups {
+   my ( $self ) = @_;
+   return $self->{groups};
+}
+
+sub _set_option {
+   my ( $self, $opt, $val ) = @_;
+   my $long = exists $self->{opts}->{$opt}       ? $opt
+            : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
+            : die "Getopt::Long gave a nonexistent option: $opt";
+
+   $opt = $self->{opts}->{$long};
+   if ( $opt->{is_cumulative} ) {
+      $opt->{value}++;
+   }
+   else {
+      $opt->{value} = $val;
+   }
+   $opt->{got} = 1;
+   MKDEBUG && _d('Got option', $long, '=', $val);
+}
+
+sub get_opts {
+   my ( $self ) = @_; 
+
+   foreach my $long ( keys %{$self->{opts}} ) {
+      $self->{opts}->{$long}->{got} = 0;
+      $self->{opts}->{$long}->{value}
+         = exists $self->{defaults}->{$long}       ? $self->{defaults}->{$long}
+         : $self->{opts}->{$long}->{is_cumulative} ? 0
+         : undef;
+   }
+   $self->{got_opts} = 0;
+
+   $self->{errors} = [];
+
+   if ( @ARGV && $ARGV[0] eq "--config" ) {
+      shift @ARGV;
+      $self->_set_option('config', shift @ARGV);
+   }
+   if ( $self->has('config') ) {
+      my @extra_args;
+      foreach my $filename ( split(',', $self->get('config')) ) {
+         eval {
+            push @ARGV, $self->_read_config_file($filename);
+         };
+         if ( $EVAL_ERROR ) {
+            if ( $self->got('config') ) {
+               die $EVAL_ERROR;
+            }
+            elsif ( MKDEBUG ) {
+               _d($EVAL_ERROR);
+            }
+         }
+      }
+      unshift @ARGV, @extra_args;
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions(
+      map    { $_->{spec} => sub { $self->_set_option(@_); } }
+      grep   { $_->{long} ne 'config' } # --config is handled specially above.
+      values %{$self->{opts}}
+   ) or $self->save_error('Error parsing options');
+
+   if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
+      printf("%s  Ver %s Distrib %s Changeset %s\n",
+         $self->{program_name}, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+            or die "Cannot print: $OS_ERROR";
+      exit 0;
+   }
+
+   if ( @ARGV && $self->{strict} ) {
+      $self->save_error("Unrecognized command-line options @ARGV");
+   }
+
+   foreach my $mutex ( @{$self->{mutex}} ) {
+      my @set = grep { $self->{opts}->{$_}->{got} } @$mutex;
+      if ( @set > 1 ) {
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$mutex}[ 0 .. scalar(@$mutex) - 2] )
+                 . ' and --'.$self->{opts}->{$mutex->[-1]}->{long}
+                 . ' are mutually exclusive.';
+         $self->save_error($err);
+      }
+   }
+
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { $self->{opts}->{$_}->{got} } @$required;
+      if ( @set == 0 ) {
+         my $err = join(', ', map { "--$self->{opts}->{$_}->{long}" }
+                      @{$required}[ 0 .. scalar(@$required) - 2] )
+                 .' or --'.$self->{opts}->{$required->[-1]}->{long};
+         $self->save_error("Specify at least one of $err");
+      }
+   }
+
+   foreach my $long ( keys %{$self->{opts}} ) {
+      my $opt = $self->{opts}->{$long};
+      if ( $opt->{got} ) {
+         if ( exists $self->{disables}->{$long} ) {
+            my @disable_opts = @{$self->{disables}->{$long}};
+            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
+            MKDEBUG && _d('Unset options', @disable_opts,
+               'because', $long,'disables them');
+         }
+
+         if ( exists $self->{allowed_groups}->{$long} ) {
+
+            my @restricted_groups = grep {
+               !exists $self->{allowed_groups}->{$long}->{$_}
+            } keys %{$self->{groups}};
+
+            my @restricted_opts;
+            foreach my $restricted_group ( @restricted_groups ) {
+               RESTRICTED_OPT:
+               foreach my $restricted_opt (
+                  keys %{$self->{groups}->{$restricted_group}} )
+               {
+                  next RESTRICTED_OPT if $restricted_opt eq $long;
+                  push @restricted_opts, $restricted_opt
+                     if $self->{opts}->{$restricted_opt}->{got};
+               }
+            }
+
+            if ( @restricted_opts ) {
+               my $err;
+               if ( @restricted_opts == 1 ) {
+                  $err = "--$restricted_opts[0]";
+               }
+               else {
+                  $err = join(', ',
+                            map { "--$self->{opts}->{$_}->{long}" }
+                            grep { $_ } 
+                            @restricted_opts[0..scalar(@restricted_opts) - 2]
+                         )
+                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+               }
+               $self->save_error("--$long is not allowed with $err");
+            }
+         }
+
+      }
+      elsif ( $opt->{is_required} ) { 
+         $self->save_error("Required option --$long must be specified");
+      }
+
+      $self->_validate_type($opt);
+   }
+
+   $self->{got_opts} = 1;
+   return;
+}
+
+sub _validate_type {
+   my ( $self, $opt ) = @_;
+   return unless $opt && $opt->{type};
+   my $val = $opt->{value};
+
+   if ( $val && $opt->{type} eq 'm' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
+      my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+      if ( !$suffix ) {
+         my ( $s ) = $opt->{desc} =~ m/\(suffix (.)\)/;
+         $suffix = $s || 's';
+         MKDEBUG && _d('No suffix given; using', $suffix, 'for',
+            $opt->{long}, '(value:', $val, ')');
+      }
+      if ( $suffix =~ m/[smhd]/ ) {
+         $val = $suffix eq 's' ? $num            # Seconds
+              : $suffix eq 'm' ? $num * 60       # Minutes
+              : $suffix eq 'h' ? $num * 3600     # Hours
+              :                  $num * 86400;   # Days
+         $opt->{value} = $val;
+         MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
+      }
+      else {
+         $self->save_error("Invalid time suffix for --$opt->{long}");
+      }
+   }
+   elsif ( $val && $opt->{type} eq 'd' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a DSN');
+      my $from_key = $self->{defaults_to}->{ $opt->{long} };
+      my $default = {};
+      if ( $from_key ) {
+         MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
+         $default = $self->{dp}->parse(
+            $self->{dp}->as_string($self->{opts}->{$from_key}->{value}) );
+      }
+      $opt->{value} = $self->{dp}->parse($val, $default);
+   }
+   elsif ( $val && $opt->{type} eq 'z' ) {
+      MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
+      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+      if ( defined $num ) {
+         if ( $factor ) {
+            $num *= $factor_for{$factor};
+            MKDEBUG && _d('Setting option', $opt->{y},
+               'to num', $num, '* factor', $factor);
+         }
+         $opt->{value} = ($pre || '') . $num;
+      }
+      else {
+         $self->save_error("Invalid size for --$opt->{long}");
+      }
+   }
+   elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
+      $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
+   }
+   elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
+      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
+   }
+   else {
+      MKDEBUG && _d('Nothing to validate for option',
+         $opt->{long}, 'type', $opt->{type}, 'value', $val);
+   }
+
+   return;
+}
+
+sub get {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{value};
+}
+
+sub got {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   return $self->{opts}->{$long}->{got};
+}
+
+sub has {
+   my ( $self, $opt ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   return defined $long ? exists $self->{opts}->{$long} : 0;
+}
+
+sub set {
+   my ( $self, $opt, $val ) = @_;
+   my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+   die "Option $opt does not exist"
+      unless $long && exists $self->{opts}->{$long};
+   $self->{opts}->{$long}->{value} = $val;
+   return;
+}
+
+sub save_error {
+   my ( $self, $error ) = @_;
+   push @{$self->{errors}}, $error;
+}
+
+sub errors {
+   my ( $self ) = @_;
+   return $self->{errors};
+}
+
+sub prompt {
+   my ( $self ) = @_;
+   return "Usage: $PROGRAM_NAME $self->{prompt}\n";
+}
+
+sub descr {
+   my ( $self ) = @_;
+   my $descr  = $self->{program_name} . ' ' . ($self->{description} || '')
+              . "  For more details, please use the --help option, "
+              . "or try 'perldoc $PROGRAM_NAME' "
+              . "for complete documentation.";
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr =~ s/ +$//mg;
+   return $descr;
+}
+
+sub usage_or_errors {
+   my ( $self ) = @_;
+   if ( $self->{opts}->{help}->{got} ) {
+      print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
+      exit 0;
+   }
+   elsif ( scalar @{$self->{errors}} ) {
+      print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
+      exit 0;
+   }
+   return;
+}
+
+sub print_errors {
+   my ( $self ) = @_;
+   my $usage = $self->prompt() . "\n";
+   if ( (my @errors = @{$self->{errors}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors)
+              . "\n";
+   }
+   return $usage . "\n" . $self->descr();
+}
+
+sub print_usage {
+   my ( $self ) = @_;
+   die "Run get_opts() before print_usage()" unless $self->{got_opts};
+   my @opts = values %{$self->{opts}};
+
+   my $maxl = max(
+      map { length($_->{long}) + ($_->{is_negatable} ? 4 : 0) }
+      @opts);
+
+   my $maxs = max(0,
+      map { length($_) + ($self->{opts}->{$_}->{is_negatable} ? 4 : 0) }
+      values %{$self->{short_opts}});
+
+   my $lcol = max($maxl, ($maxs + 3));
+   my $rcol = 80 - $lcol - 6;
+   my $rpad = ' ' x ( 80 - $rcol );
+
+   $maxs = max($lcol - 3, $maxs);
+
+   my $usage = $self->descr() . "\n" . $self->prompt();
+
+   my @groups = reverse sort grep { $_ ne 'default'; } keys %{$self->{groups}};
+   push @groups, 'default';
+
+   foreach my $group ( reverse @groups ) {
+      $usage .= "\n".($group eq 'default' ? 'Options' : $group).":\n\n";
+      foreach my $opt (
+         sort { $a->{long} cmp $b->{long} }
+         grep { $_->{group} eq $group }
+         @opts )
+      {
+         my $long  = $opt->{is_negatable} ? "[no]$opt->{long}" : $opt->{long};
+         my $short = $opt->{short};
+         my $desc  = $opt->{desc};
+         if ( $opt->{type} && $opt->{type} eq 'm' ) {
+            my ($s) = $desc =~ m/\(suffix (.)\)/;
+            $s    ||= 's';
+            $desc =~ s/\s+\(suffix .\)//;
+            $desc .= ".  Optional suffix s=seconds, m=minutes, h=hours, "
+                   . "d=days; if no suffix, $s is used.";
+         }
+         $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+         $desc =~ s/ +$//mg;
+         if ( $short ) {
+            $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+         }
+         else {
+            $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+         }
+      }
+   }
+
+   if ( (my @rules = @{$self->{rules}}) ) {
+      $usage .= "\nRules:\n\n";
+      $usage .= join("\n", map { "  $_" } @rules) . "\n";
+   }
+   if ( $self->{dp} ) {
+      $usage .= "\n" . $self->{dp}->usage();
+   }
+   $usage .= "\nOptions and values after processing arguments:\n\n";
+   foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
+      my $val   = $opt->{value};
+      my $type  = $opt->{type} || '';
+      my $bool  = $opt->{spec} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val             ? '(No value)'
+                : $type eq 'd'              ? $self->{dp}->as_string($val)
+                : $type =~ m/H|h/           ? join(',', sort keys %$val)
+                : $type =~ m/A|a/           ? join(',', @$val)
+                :                             $val;
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $opt->{long}, $val);
+   }
+   return $usage;
+}
+
+sub prompt_noecho {
+   shift @_ if ref $_[0] eq __PACKAGE__;
+   my ( $prompt ) = @_;
+   local $OUTPUT_AUTOFLUSH = 1;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
+   my $response;
+   eval {
+      require Term::ReadKey;
+      Term::ReadKey::ReadMode('noecho');
+      chomp($response = <STDIN>);
+      Term::ReadKey::ReadMode('normal');
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
+   }
+   return $response;
+}
+
+if ( MKDEBUG ) {
+   print '# ', $^X, ' ', $], "\n";
+   my $uname = `uname -a`;
+   if ( $uname ) {
+      $uname =~ s/\s+/ /g;
+      print "# $uname\n";
+   }
+   printf("# %s  Ver %s Distrib %s Changeset %s line %d\n",
+      $PROGRAM_NAME, ($main::VERSION || ''), ($main::DISTRIB || ''),
+      ($main::SVN_REV || ''), __LINE__);
+   print('# Arguments: ',
+      join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+sub _read_config_file {
+   my ( $self, $filename ) = @_;
+   open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
+   my @args;
+   my $prefix = '--';
+   my $parse  = 1;
+
+   LINE:
+   while ( my $line = <$fh> ) {
+      chomp $line;
+      next LINE if $line =~ m/^\s*(?:\#|\;|$)/;
+      $line =~ s/\s+#.*$//g;
+      $line =~ s/^\s+|\s+$//g;
+      if ( $line eq '--' ) {
+         $prefix = '';
+         $parse  = 0;
+         next LINE;
+      }
+      if ( $parse
+         && (my($opt, $arg) = $line =~ m/^\s*([^=\s]+?)(?:\s*=\s*(.*?)\s*)?$/)
+      ) {
+         push @args, grep { defined $_ } ("$prefix$opt", $arg);
+      }
+      elsif ( $line =~ m/./ ) {
+         push @args, $line;
+      }
+      else {
+         die "Syntax error in file $filename at line $INPUT_LINE_NUMBER";
+      }
+   }
+   close $fh;
+   return @args;
+}
+
+sub read_para_after {
+   my ( $self, $file, $regex ) = @_;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=pod$/m;
+      last;
+   }
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/$regex/;
+      last;
+   }
+   $para = <$fh>;
+   chomp($para);
+   close $fh or die "Can't close $file: $OS_ERROR";
+   return $para;
+}
+
+sub clone {
+   my ( $self ) = @_;
+
+   my %clone = map {
+      my $hashref  = $self->{$_};
+      my $val_copy = {};
+      foreach my $key ( keys %$hashref ) {
+         my $ref = ref $hashref->{$key};
+         $val_copy->{$key} = !$ref           ? $hashref->{$key}
+                           : $ref eq 'HASH'  ? { %{$hashref->{$key}} }
+                           : $ref eq 'ARRAY' ? [ @{$hashref->{$key}} ]
+                           : $hashref->{$key};
+      }
+      $_ => $val_copy;
+   } qw(opts short_opts defaults);
+
+   foreach my $scalar ( qw(got_opts) ) {
+      $clone{$scalar} = $self->{$scalar};
+   }
+
+   return bless \%clone;     
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
+
+# ###########################################################################
+# QueryRewriter package 3383
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package QueryRewriter;
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
+                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START}xi;
+my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
+my $bal;
+$bal         = qr/
+                  \(
+                  (?:
+                     (?> [^()]+ )    # Non-parens without backtracking
+                     |
+                     (??{ $bal })    # Group with matching parens
+                  )*
+                  \)
+                 /x;
+
+my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
+my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
+}
+
+sub strip_comments {
+   my ( $self, $query ) = @_;
+   $query =~ s/$olc_re//go;
+   $query =~ s/$mlc_re//go;
+   return $query;
+}
+
+sub shorten {
+   my ( $self, $query, $length ) = @_;
+   $query =~ s{
+      \A(
+         (?:INSERT|REPLACE)
+         (?:\s+LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)?
+         (?:\s\w+)*\s+\S+\s+VALUES\s*\(.*?\)
+      )
+      \s*,\s*\(.*?(ON\s+DUPLICATE|\Z)}
+      {$1 /*... omitted ...*/$2}xsi;
+
+   return $query unless $query =~ m/IN\s*\(\s*(?!select)/i;
+
+   if ( $length && length($query) > $length ) {
+      my ($left, $mid, $right) = $query =~ m{
+         (\A.*?\bIN\s*\()     # Everything up to the opening of IN list
+         ([^\)]+)             # Contents of the list
+         (\).*\Z)             # The rest of the query
+      }xsi;
+      if ( $left ) {
+         my $targ = $length - length($left) - length($right);
+         my @vals = split(/,/, $mid);
+         my @left = shift @vals;
+         my @right;
+         my $len  = length($left[0]);
+         while ( @vals && $len < $targ / 2 ) {
+            $len += length($vals[0]) + 1;
+            push @left, shift @vals;
+         }
+         while ( @vals && $len < $targ ) {
+            $len += length($vals[-1]) + 1;
+            unshift @right, pop @vals;
+         }
+         $query = $left . join(',', @left)
+                . (@right ? ',' : '')
+                . " /*... omitted " . scalar(@vals) . " items ...*/ "
+                . join(',', @right) . $right;
+      }
+   }
+
+   return $query;
+}
+
+sub fingerprint {
+   my ( $self, $query ) = @_;
+
+   $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
+      && return 'mysqldump';
+   $query =~ m#/\*\w+\.\w+:[0-9]/[0-9]\*/#     # mk-table-checksum, etc query
+      && return 'maatkit';
+   $query =~ m/\A# administrator command: /
+      && return $query;
+   $query =~ m/\A\s*(call\s+\S+)\(/i
+      && return lc($1); # Warning! $1 used, be careful.
+   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)? INTO .+? VALUES \(.*?\)),\(/i ) {
+      $query = $beginning; # Shorten multi-value INSERT statements ASAP
+   }
+
+   $query =~ s/$olc_re//go;
+   $query =~ s/$mlc_re//go;
+   $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
+      && return $query;
+
+   $query =~ s/\\["']//g;                # quoted strings
+   $query =~ s/".*?"/?/sg;               # quoted strings
+   $query =~ s/'.*?'/?/sg;               # quoted strings
+   $query =~ s/[0-9+-][0-9a-f.xb+-]*/?/g;# Anything vaguely resembling numbers
+   $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+   $query =~ s/\A\s+//;                  # Chop off leading whitespace
+   chomp $query;                         # Kill trailing whitespace
+   $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+   $query = lc $query;
+   $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
+   $query =~ s{                          # Collapse IN and VALUES lists
+               \b(in|values?)(?:[\s,]*\([\s?,]*\))+
+              }
+              {$1(?+)}gx;
+   $query =~ s{                          # Collapse UNION
+               \b(select\s.*?)(?:(\sunion(?:\sall)?)\s\1)+
+              }
+              {$1 /*repeat$2*/}xg;
+   $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
+   return $query;
+}
+
+sub distill {
+   my ( $self, $query, %args ) = @_;
+   my $qp = $args{qp} || $self->{QueryParser};
+   die "I need a qp argument" unless $qp;
+
+   $query =~ m/\A\s*call\s+(\S+)\(/i
+      && return "CALL $1"; # Warning! $1 used, be careful.
+   $query =~ m/\A# administrator/
+      && return "ADMIN";
+   $query =~ m/\A\s*use\s+/
+      && return "USE";
+
+   my @verbs = $query =~ m/\b($verbs)\b/gio;
+   @verbs    = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
+   };
+   my $verbs = join(q{ }, @verbs);
+   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+
+   my @tables = map {
+      $_ =~ s/`//g;
+      $_ =~ s/(_?)[0-9]+/$1?/g;
+      $_;
+   } $qp->get_tables($query);
+
+   @tables = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
+   };
+
+   $query = join(q{ }, $verbs, @tables);
+   return $query;
+}
+
+sub convert_to_select {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   $query =~ s{
+                 \A.*?
+                 update\s+(.*?)
+                 \s+set\b(.*?)
+                 (?:\s*where\b(.*?))?
+                 (limit\s*[0-9]+(?:\s*,\s*[0-9]+)?)?
+                 \Z
+              }
+              {__update_to_select($1, $2, $3, $4)}exsi
+      || $query =~ s{
+                    \A.*?
+                    (?:insert|replace)\s+
+                    .*?\binto\b(.*?)\(([^\)]+)\)\s*
+                    values?\s*(\(.*?\))\s*
+                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select($1, $2, $3)}exsi
+      || $query =~ s{
+                    \A.*?
+                    delete\s+(.*?)
+                    \bfrom\b(.*)
+                    \Z
+                 }
+                 {__delete_to_select($1, $2)}exsi;
+   $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
+   $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
+   return $query;
+}
+
+sub convert_select_list {
+   my ( $self, $query ) = @_;
+   $query =~ s{
+               \A\s*select(.*?)\bfrom\b
+              }
+              {$1 =~ m/\*/ ? "select 1 from" : "select isnull(coalesce($1)) from"}exi;
+   return $query;
+}
+
+sub __delete_to_select {
+   my ( $delete, $join ) = @_;
+   if ( $join =~ m/\bjoin\b/ ) {
+      return "select 1 from $join";
+   }
+   return "select * from $join";
+}
+
+sub __insert_to_select {
+   my ( $tbl, $cols, $vals ) = @_;
+   MKDEBUG && _d('Args:', @_);
+   my @cols = split(/,/, $cols);
+   MKDEBUG && _d('Cols:', @cols);
+   $vals =~ s/^\(|\)$//g; # Strip leading/trailing parens
+   my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|[^,]+)/g;
+   MKDEBUG && _d('Vals:', @vals);
+   if ( @cols == @vals ) {
+      return "select * from $tbl where "
+         . join(' and ', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
+   }
+   else {
+      return "select * from $tbl limit 1";
+   }
+}
+
+sub __update_to_select {
+   my ( $from, $set, $where, $limit ) = @_;
+   return "select $set from $from "
+      . ( $where ? "where $where" : '' )
+      . ( $limit ? " $limit "      : '' );
+}
+
+sub wrap_in_derived {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   return $query =~ m/\A\s*select/i
+      ? "select 1 from ($query) as x limit 1"
+      : $query;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End QueryRewriter package
+# ###########################################################################
+
+# ###########################################################################
+# SlowLogParser package 3980
+# ###########################################################################
+package SlowLogParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Data::Dumper;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
+my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
+my $slow_log_hd_line = qr{
+      ^(?:
+      T[cC][pP]\s[pP]ort:\s+\d+ # case differs on windows/unix
+      |
+      [/A-Z].*mysqld,\sVersion.*(?:started\swith:|embedded\slibrary)
+      |
+      Time\s+Id\s+Command
+      ).*\n
+   }xm;
+
+sub parse_event {
+   my ( $self, $fh, $misc, @callbacks ) = @_;
+   my $oktorun_here = 1;
+   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
+   my $num_events   = 0;
+
+   my @pending;
+   local $INPUT_RECORD_SEPARATOR = ";\n#";
+   my $trimlen    = length($INPUT_RECORD_SEPARATOR);
+   my $pos_in_log = tell($fh);
+   my $stmt;
+
+   EVENT:
+   while ( $$oktorun
+           && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
+      my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
+      $pos_in_log = tell($fh);
+
+      if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
+         my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
+         if ( @chunks > 1 ) {
+            MKDEBUG && _d("Found multiple chunks");
+            $stmt = shift @chunks;
+            unshift @pending, @chunks;
+         }
+      }
+
+      $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+      $stmt =~ s/;\n#?\Z//;
+
+
+      my ($got_ts, $got_uh, $got_ac, $got_db, $got_set, $got_embed);
+      my $pos = 0;
+      my $len = length($stmt);
+      my $found_arg = 0;
+      LINE:
+      while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
+         $pos     = pos($stmt);  # Be careful not to mess this up!
+         my $line = $1;          # Necessary for /g and pos() to work.
+         MKDEBUG && _d($line);
+
+         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+
+            if ( !$got_ts && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)) {
+               MKDEBUG && _d("Got ts", $time);
+               push @properties, 'ts', $time;
+               ++$got_ts;
+               if ( !$got_uh
+                  && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
+               ) {
+                  MKDEBUG && _d("Got user, host, ip", $user, $host, $ip);
+                  push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+                  ++$got_uh;
+               }
+            }
+
+            elsif ( !$got_uh
+                  && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
+            ) {
+               MKDEBUG && _d("Got user, host, ip", $user, $host, $ip);
+               push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+               ++$got_uh;
+            }
+
+            elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
+               MKDEBUG && _d("Got admin command");
+               push @properties, 'cmd', 'Admin', 'arg', $line;
+               push @properties, 'bytes', length($properties[-1]);
+               ++$found_arg;
+               ++$got_ac;
+            }
+
+            elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
+               MKDEBUG && _d("Got some line with properties");
+               my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
+               push @properties, @temp;
+            }
+
+            elsif ( !$got_db && (my ( $db ) = $line =~ m/^use ([^;]+)/ ) ) {
+               MKDEBUG && _d("Got a default database:", $db);
+               push @properties, 'db', $db;
+               ++$got_db;
+            }
+
+            elsif (!$got_set && (my ($setting) = $line =~ m/^SET\s+([^;]*)/)) {
+               MKDEBUG && _d("Got some setting:", $setting);
+               push @properties, split(/,|\s*=\s*/, $setting);
+               ++$got_set;
+            }
+
+            if ( !$found_arg && $pos == $len ) {
+               MKDEBUG && _d("Did not find arg, looking for special cases");
+               local $INPUT_RECORD_SEPARATOR = ";\n";
+               if ( defined(my $l = <$fh>) ) {
+                  chomp $l;
+                  MKDEBUG && _d("Found admin statement", $l);
+                  push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+                  push @properties, 'bytes', length($properties[-1]);
+                  $found_arg++;
+               }
+               else {
+                  MKDEBUG && _d("I can't figure out what to do with this line");
+                  next EVENT;
+               }
+            }
+         }
+         else {
+            MKDEBUG && _d("Got the query/arg line");
+            my $arg = substr($stmt, $pos - length($line));
+            push @properties, 'arg', $arg, 'bytes', length($arg);
+            if ( $misc && $misc->{embed}
+               && ( my ($e) = $arg =~ m/($misc->{embed})/)
+            ) {
+               push @properties, $e =~ m/$misc->{capture}/g;
+            }
+            last LINE;
+         }
+      }
+
+      MKDEBUG && _d('Properties of event:', Dumper(\@properties));
+      my $event = { @properties };
+      foreach my $callback ( @callbacks ) {
+         last unless $event = $callback->($event);
+      }
+      ++$num_events;
+      last EVENT unless @pending;
+   }
+   return $num_events;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SlowLogParser package
+# ###########################################################################
+
+# ###########################################################################
+# QueryParser package 4210
+# ###########################################################################
+package QueryParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
+our $tbl_regex = qr{
+         \b(?:FROM|JOIN|(?<!KEY\s)UPDATE|INTO) # Words that precede table names
+         \b\s*
+         ($tbl_ident
+            (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
+         )
+      }xio;
+our $has_derived = qr{
+      \b(?:FROM|JOIN|,)
+      \s*\(\s*SELECT
+   }xi;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub get_tables {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   MKDEBUG && _d('Getting tables for', $query);
+
+   $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
+
+   $query =~ s/\\["']//g;                # quoted strings
+   $query =~ s/".*?"/?/sg;               # quoted strings
+   $query =~ s/'.*?'/?/sg;               # quoted strings
+
+   my @tables;
+   foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
+      MKDEBUG && _d('Match tables:', $tbls);
+      foreach my $tbl ( split(',', $tbls) ) {
+         $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
+         push @tables, $tbl;
+      }
+   }
+   return @tables;
+}
+
+sub has_derived_table {
+   my ( $self, $query ) = @_;
+   my $match = $query =~ m/$has_derived/;
+   MKDEBUG && _d($query, 'has ' . ($match ? 'a' : 'no') . ' derived table');
+   return $match;
+}
+
+sub get_aliases {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   my $aliases;
+
+   $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
+
+   $query =~ s/ (?:INNER|OUTER|CROSS|LEFT|RIGHT|NATURAL)//ig;
+
+   my ($tbl_refs, $from) = $query =~ m{
+      (
+         (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
+         .+?                       # Table refs
+      )
+      (?:\s+|\z)                   # If the query does not end with the table
+      (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
+   }ix;
+
+   die "Failed to parse table references from $query"
+      unless $tbl_refs && $from;
+
+   MKDEBUG && _d('tbl refs:', $tbl_refs);
+
+   my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
+
+   my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
+
+   $tbl_refs =~ s/ = /=/g;
+
+   while (
+      $tbl_refs =~ m{
+         $before_tbl\b\s*
+            ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
+         \s*$after_tbl
+      }xgio )
+   {
+      my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
+      MKDEBUG && _d('Match table:', $tbl_ref);
+
+      if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
+         MKDEBUG && _d('Subquery', $tbl_ref);
+         $aliases->{$alias} = undef;
+         next;
+      }
+
+      my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
+      $aliases->{$alias || $tbl} = $tbl;
+      $aliases->{DATABASE}->{$tbl} = $db if $db;
+   }
+   return $aliases;
+}
+
+sub split {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   MKDEBUG && _d('Splitting', $query);
+
+   my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION}i;
+
+   my @split_statements = grep { $_ } split(m/\b($verbs\b)/io, $query);
+
+   my @statements;
+   for ( my $i = 0; $i <= $#split_statements; $i += 2 ) {
+      push @statements, $split_statements[$i].$split_statements[$i+1];
+   }
+
+   MKDEBUG && _d('statements:', map { $_ ? "<$_>" : 'none' } @statements);
+   return @statements;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End QueryParser package
+# ###########################################################################
+
+# ###########################################################################
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
+# ###########################################################################
+package mk_table_access;
+
+use English qw(-no_match_vars);
+use Time::Local qw(timelocal);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+$OUTPUT_AUTOFLUSH     = 1;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+use sigtrap 'handler', \&sig_int, 'normal-signals';
+
+# Global variables.  Only really essential variables should be here.
+my $oktorun = 1;
+my $q  = new Quoter();
+my $qp = new QueryParser();
+my $qr = new QueryRewriter(QueryParser=>$qp);
+
+sub main {
+   @ARGV = @_;  # set global ARGV for this package
+
+   # ##########################################################################
+   # Get configuration information.
+   # ##########################################################################
+   my $o = new OptionParser(
+      strict      => 0,
+      prompt      => '[OPTION...] FILE',
+      description => q{parses and analyzes psuedo slow log files to determine }
+                   . q{which tables each query reads from and writes to. }
+   );
+   $o->get_specs();
+   $o->get_opts();
+
+
+   if ( !$o->get('help') ) {
+   }
+
+   $o->usage_or_errors();
+
+   # ########################################################################
+   # Set up an array of callbacks to filter and transform events.  The first
+   # one should add the fingerprint to the event (except if we're parsing
+   # tcpdump output; see below).  After that, callbacks can do anything, as
+   # long as they return the event (failing to return the event terminates
+   # the chain).
+   # ########################################################################
+   my @callbacks;
+
+   # Split the statement into its sub-statements.
+   push @callbacks, sub {
+      my ( $event ) = @_;
+      # Skip events which do not have the group_by attribute.
+      my $group_by_val = $event->{arg};
+      return 0 unless defined $group_by_val;
+      $event->{fingerprint} = $qr->fingerprint($group_by_val);
+      return $event;
+   };
+
+   # For each (sub)statement, get its tables, and then...
+   push @callbacks, sub {
+      my ( $event ) = @_;
+      return $event;
+   };
+
+   # ..determine if the statement is reading from or writing to those tables.
+   push @callbacks, sub {
+      my ( $event ) = @_;
+      return $event;
+   };
+
+   # Finally, print the query table access summary.
+   push @callbacks, sub {
+      my ( $event ) = @_;
+      return $event;
+   };
+
+   # ##########################################################################
+   # Create the run_func.
+   # ##########################################################################
+   if ( @ARGV == 0 ) {
+      push @ARGV, '-'; # Magical STDIN filename.
+   }
+
+   # Set up the parser and miscellaneous options to it.
+   my $misc   = { oktorun => \$oktorun };
+   my $parser = new SlowLogParser();
+
+   # TODO: carry the last db and ts values forward if they're undefined
+   # now.  Do that by unshifting a new callback onto the front of @callbacks.
+   my $fh;
+   my $run_func = sub {
+      if ( !$fh ) {
+         my $file = shift @ARGV or return;
+         if ( $file eq '-' ) {
+            $fh = *STDIN;
+         }
+         else {
+            open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
+         }
+      }
+
+      my $events;
+      $events = $parser->parse_event($fh, $misc, @callbacks);
+      if ( !$events ) {
+         close $fh;
+         $fh = undef;
+      }
+      return $events;
+   };
+
+   # ##########################################################################
+   # Parse the input.
+   # ##########################################################################
+   my $start = time();
+   my $end   = $start + ($o->get('run-time') || 0); # When we should exit
+   my $now   = $start;
+
+   EVENT:
+   while ( $oktorun && ($start == $end || $now < $end) ) {
+      my $result;
+      eval {
+         $result = $run_func->();
+      };
+      if ( $EVAL_ERROR ) {
+         _d($EVAL_ERROR);
+         last EVENT unless $o->get('continue-on-error');
+      }
+      else {
+         $now = time();
+         last EVENT unless defined $result;
+      }
+   }
+
+   return 0;
+} # End main().
+
+# ############################################################################
+# Subroutines.
+# ############################################################################
+sub extract_tables {
+   my ( $query, $default_db ) = @_;
+   my @tables;
+   my %seen;
+   foreach my $db_tbl ( $qp->get_tables($query) ) {
+      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
+      push @tables, [ $db || $default_db, $tbl ];
+   }
+   return @tables;
+}
+
+# Gets a default database and a list of arrayrefs of [db, tbl] to print out
+sub print_tables {
+   my ( @tables ) = @_;
+   return unless @tables;
+   print "# Tables\n";
+   foreach my $db_tbl ( @tables ) {
+      my ( $db, $tbl ) = @$db_tbl;
+      print '#    SHOW TABLE STATUS',
+         ($db ? " FROM `$db`" : ''), " LIKE '$tbl'\\G\n";
+      print "#    SHOW CREATE TABLE ",
+         $q->quote(grep { $_ } @$db_tbl), "\\G\n";
+   }
+}
+
+# Catches signals so we can exit gracefully.
+# TODO: test this
+# TODO: break wait for <$fh> with SIGINT.  Possibly by closing all $fh?
+sub sig_int {
+   my ( $signal ) = @_;
+   if ( $oktorun ) {
+      print STDERR "# Caught SIG$signal.\n";
+      $oktorun = 0;
+   }
+   else {
+      print STDERR "# Exiting on SIG$signal.\n";
+      exit(1);
+   }
+}
+
+sub make_alt_attrib {
+   my ( $alt_attrib ) = @_;
+   my @alts   = split('\|', $alt_attrib);
+   my $attrib = shift @alts;
+   MKDEBUG && _d('Primary attrib:', $attrib, 'aliases:', @alts);
+   my @lines;
+   push @lines,
+      'sub { my ( $event ) = @_; ',
+      "if ( exists \$event->{'$attrib'} ) { ",
+      (map { "delete \$event->{'$_'}; "; } @alts),
+      'return $event; }',     
+      # Primary attrib doesn't exist; look for alts
+      (map {
+         "if ( exists \$event->{'$_'} ) { "
+         . "\$event->{'$attrib'} = \$event->{'$_'}; "
+         . "delete \$event->{'$_'}; "
+         . 'return $event; }';
+      } @alts),
+      'return $event; }';
+   MKDEBUG && _d('attrib alias sub for', $attrib, ':', @lines);
+   my $sub = eval join("\n", @lines);
+   die if $EVAL_ERROR;
+   return $sub;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+# ############################################################################
+# Run the program.
+# ############################################################################
+if ( !caller ) { exit main(@ARGV); }
+
+1; # Because this is a module as well as a script.
+
+# #############################################################################
+# Documentation.
+# #############################################################################
+
+=pod
+
+=head1 NAME
+
+mk-table-access
+
+=head1 SYNOPSIS
+
+  mk-table-access FILE
+
+=head1 DESCRIPTION
+
+mk-table-access.
+
+=head1 OPTIONS
+
+DSN values in L<"--review-history"> default to values in L<"--review"> if COPY
+is yes.
+
+=over
+
+=item --attribute-aliases
+
+type: array; default: db|Schema
+
+List of attribute|alias,etc.
+
+Certain attributes have multiple names, like db and Schema.  If an event does
+not have the priamry attribute, mk-query-digest looks for an alias attribute.
+If it finds an alias, it creates the primary attribute with the alias
+attribute's value and removes the alias attribute.
+
+If the event has the primary attribute, all alias attributes are deleted.
+
+This helps to simplify event attributes so that, for example, there will not
+be report lines for both db and Schema.
+
+=item --attribute-value-limit
+
+type: int; default: 4294967296
+
+A sanity limit for attribute values.
+
+This option deals with bugs in slow-logging functionality that causes large
+values for attributes.  If the attribute's value is bigger than this, the
+last-seen value for that class of query is used instead.
+
+=item --check-attributes-limit
+
+type: int; default: 1000
+
+Stop checking for new attributes after this many events.
+
+For better speed, mk-query-digest stops checking events for new attributes
+after a certain number of events.  Any new attributes after this number
+will be ignored and will not be reported.
+
+One special case is new attributes for pre-existing query classes
+(see L<"--group-by"> about query classes).  New attributes will not be added
+to pre-existing query classes even if the attributes are detected before the
+L<"--check-attributes-limit"> limit.
+
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
+
+=item --[no]continue-on-error
+
+default: yes
+
+Continue parsing even if there is an error.
+
+=item --create-review-history-table
+
+Create the L<"--review-history"> table if it does not exist.
+
+This option causes the table specified by L<"--review-history"> to be created
+with the default structure shown in the documentation for that option.
+
+=item --create-review-table
+
+Create the L<"--review"> table if it does not exist.
+
+This option causes the table specified by L<"--review"> to be created with the
+default structure shown in the documentation for that option.
+
+=item --daemonize
+
+Fork to the background and detach from the shell.  POSIX
+operating systems only.
+
+=item --embedded-attributes
+
+type: array
+
+Two Perl regex patterns to capture pseudo-attributes embedded in queries.
+
+Embedded attributes might be special attribute-value pairs that you've hidden
+in comments.  The first regex should match the entire set of attributes (in
+case there are multiple).  The second regex should match and capture
+attribute-value pairs from the first regex.
+
+For example, suppose your query looks like the following:
+
+  SELECT * from users -- file: /login.php, line: 493;
+
+You might run mk-query-digest with the following option:
+
+  mk-query-digest --embedded-attributes ' -- .*','(\w+): ([^\,]+)'
+
+The first regular expression captures the whole comment:
+
+  " -- file: /login.php, line: 493;"
+
+The second one splits it into attribute-value pairs and adds them to the event:
+
+   ATTRIBUTE  VALUE
+   =========  ==========
+   file       /login.php
+   line       493
+
+B<NOTE>: All commas in the regex patterns must be escaped with \ otherwise
+the pattern will break.
+
+=item --execute
+
+type: DSN
+
+Execute queries on this DSN.
+
+Adds a callback into the chain, after filters but before L<"--report">.  Events
+are executed on this DSN.  If they are successful, the time they take to execute
+overwrites the event's Query_time attribute.  If unsuccessful, the callback
+returns false and terminates the chain.
+
+If the connection fails, mk-query-digest tries to reconnect once per second.
+See also L<"--mirror">.
+
+=item --expected-range
+
+type: array; default: 5,10
+
+Explain items when there are more or fewer than expected.
+
+Defines the number of items expected to be seen in the report given by
+L<"--report">, as controlled by L<"--limit"> and L<"--outliers">.  If there are
+more or fewer items in the report, each one will explain why it was included.
+
+=item --explain
+
+type: DSN
+
+Run EXPLAIN for the sample query with this DSN and print results.
+
+This works only when L<"--report"> includes fingerprint.  It causes
+mk-query-digest to run EXPLAIN and include the output into the report.  For
+safety, queries that appear to have a subquery that EXPLAIN will execute won't
+be EXPLAINed.  Those are typically "derived table" queries of the form
+
+  select ... from ( select .... ) der;
+
+=item --filter
+
+type: string
+
+Discard events for which this Perl code doesn't return true.
+
+This option is a string of Perl code or a file containing Perl code that gets
+compiled into a subroutine with one argument: $event.  This is a hashref.
+If the given value is a readable file, then mk-query-digest reads the entire
+file and uses its contents as the code.  The file should not contain
+a shebang (#!/usr/bin/perl) line.
+
+If the code returns true, the chain of callbacks continues; otherwise it ends.
+The code is the last statement in the subroutine other than C<return $event>. 
+The subroutine template is:
+
+  sub { $event = shift; filter && return $event; }
+
+Therefore, filter must produce syntactically valid code given that template.
+For example, an if-else branch would not be valid:
+
+  --filter 'if () { } else { }'  # WRONG
+
+To accomplish something more complex like this would require a more complex
+filter:
+
+  --filter 'my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0 } $event_ok'  # OK
+
+If the filter code won't compile, mk-query-digest will die with an error.
+If the filter code does compile, an error may still occur at runtime if the
+code tries to do something wrong (like pattern match an undefined value).
+mk-query-digest does not provide any safeguards so code carefully!
+
+An example filter that discards everything but SELECT statements:
+
+  --filter '$event->{arg} =~ m/^select/i'
+
+This is compiled into a subroutine like the following:
+
+  sub { $event = shift; $event->{arg} =~ m/^select/i && return $event; }
+
+It is permissible for the code to have side effects (to alter $event).
+
+You can find an explanation of the structure of $event at
+L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
+
+Here are more examples of filter code:
+
+=over
+
+=item Host/IP matches domain.com
+
+--filter '($event->{host} || $event->{ip} || "") =~ m/domain.com/'
+
+Sometimes MySQL logs the host where the IP is expected.  Therefore, we
+check both.
+
+=item User matches john
+
+--filter '($event->{user} || "") =~ m/john/'
+
+=item More than 1 warning
+
+--filter '($event->{Warning_count} || 0) > 1'
+
+=item Query does full table scan or full join
+
+--filter '(($event->{Full_scan} || "") eq "Yes") || (($event->{Full_join} || "") eq "Yes")'
+
+=item Query was not served from query cache
+
+--filter '($event->{QC_Hit} || "") eq "No"'
+
+=item Query is 1 MB or larger
+
+--filter '$event->{bytes} >= 1_048_576'
+
+=back
+
+=item --fingerprints
+
+Add query fingerprints to the L<"--report">.  This is mostly useful
+for debugging purposes.
+
+=item --[no]for-explain
+
+default: yes
+
+Print extra information to make analysis easy.
+
+This option adds code snippets to make it easy to run SHOW CREATE TABLE and SHOW
+TABLE STATUS for the query's tables.  It also rewrites non-SELECT queries into a
+SELECT that might be helpful for determining the non-SELECT statement's index
+usage.
+
+=item --group-by
+
+type: Array
+
+Which attribute of the events to group by.
+
+This option is a comma-separated list of items that defaults to the same items
+as L<"--report"> but may contain extras.
+
+In general, you can group queries into classes based on any attribute of the
+query, such as C<user> or C<db>, which will by default show you which users
+and which databases get the most C<Query_time>.
+
+Every value must have a corresponding value in the same position in
+L<"--order-by">.  However, adding values to L<"--group-by"> will automatically
+add values to L<"--order-by">, for your convenience.  And, since L<"--report">
+automatically adds values to L<"--group-by">, these cascade through to
+L<"--order-by">.  So you generally don't need to think about anything except
+L<"--report">.
+
+There are several magical values that cause some extra data mining to happen
+before the grouping takes place:
+
+=over
+
+=item fingerprint
+
+This causes events to be fingerprinted to abstract queries into
+a canonical form, which is then used to group events together into a class.
+See L<"FINGERPRINTS"> for more about fingerprinting.
+
+=item tables
+
+This causes events to be inspected for what appear to be tables, and
+then aggregated by that.  Note that a query that contains two or more tables
+will be counted as many times as there are tables; so a join against two tables
+will count the Query_time against both tables.
+
+=item distill
+
+This is a sort of super-fingerprint that collapses queries down
+into a suggestion of what they do, such as C<INSERT SELECT table1 table2>.
+
+=back
+
+If parsing memcached input (L<"--type"> memcached), there are other
+attributes which you can group by: key_print (see memcached section in
+L<"FINGERPRINTS">), cmd, key, res and val (see memcached section in
+L<"ATTRIBUTES">).
+
+=item --help
+
+Show help and exit.
+
+=item --ignore-attributes
+
+type: array; default: arg,cmd,insert_id,ip,port,Thread_id,timestamp,exptime,flags,key,res,val,server_id,offset,end,xid
+
+Do not aggregate these attributes when auto-detecting L<"--select">.
+
+If you do not specify L<"--select"> then mk-query-digest auto-detects and
+aggregates every attribute that it finds in the slow log.  Some attributes,
+however, should not be aggregated.  This option allows you to specify a list
+of attributes to ignore.  This only works when no explicit L<"--select"> is
+given.
+
+=item --interval
+
+type: float; default: .1
+
+How frequently to poll the processlist, in seconds.
+
+=item --iterations
+
+type: int; default: 1
+
+How many times to iterate through the collect-and-report cycle.  If 0, iterate
+to infinity.  See also L<--run-time>.
+
+=item --limit
+
+type: Array; default: 95%:20
+
+Limit output to the given percentage or count.
+
+If the argument is an integer, report only the top N worst queries.  If the
+argument is an integer followed by the C<%> sign, report that percentage of the
+worst queries.  If the percentage is followed by a colon and another integer,
+report the top percentage or the number specified by that integer, whichever
+comes first.
+
+The value is actually a comma-separated array of values, one for each item in
+L<"--report">.  If you don't specify a value for any of those items, the default
+is the top 95%.
+
+See also L<"--outliers">.
+
+=item --log
+
+type: string
+
+Print all output to this file when daemonized.
+
+=item --mirror
+
+type: float
+
+How often to check whether connections should be moved, depending on
+C<read_only>.  Requires L<"--processlist"> and L<"--execute">.
+
+This option causes mk-query-digest to check every N seconds whether it is reading
+from a read-write server and executing against a read-only server, which is a
+sensible way to set up two servers if you're doing something like master-master
+replication.  The L<http://code.google.com/p/mysql-master-master/> master-master
+toolkit does this. The aim is to keep the passive server ready for failover,
+which is impossible without putting it under a realistic workload.
+
+=item --order-by
+
+type: Array; default: Query_time:sum
+
+Sort events by this attribute and aggregate function.
+
+This is a comma-separated list of order-by expressions, one for each attribute
+you wish to report by (see L<"--report">).  The syntax is attribute:aggregate.
+Valid aggregates are sum, min, max, cnt.  See the default value for an example.
+
+This option is automatically altered by L<"--group-by">.  If you specify an
+attribute that doesn't exist in the events that are parsed and aggregated,
+mk-query-digest falls back to the default with a notice just at the beginning
+of the per-item report.
+
+=item --outliers
+
+type: array; default: Query_time:1:10
+
+Report outliers by attribute:percentile:count.
+
+The syntax of this option is a comma-separated list of colon-delimited strings.
+The first field is the attribute by which an outlier is defined.  The second is
+a number that is compared to the attribute's 95th percentile.  The third is
+optional, and is compared to the attribute's cnt aggregate.  Queries that pass
+this specification are added to the report, regardless of any limits you
+specified in L<"--limit">.
+
+For example, to report queries whose 95th percentile Query_time is at least 60
+seconds and which are seen at least 5 times, use the following argument:
+
+  --outliers Query_time:60:5
+
+You can specify an --outliers option for each value in L<"--report">.
+
+=item --pid
+
+type: string
+
+Create the given PID file when daemonized.  The file contains the process
+ID of the daemonized instance.  The PID file is removed when the
+daemonized instance exits.  The program checks for the existence of the
+PID file when starting; if it exists and the process with the matching PID
+exists, the program exits.
+
+=item --print
+
+Print log events to STDOUT in standard slow-query-log format.
+
+=item --processlist
+
+type: DSN
+
+Poll this DSN's processlist for queries, with L<"--interval"> sleep between.
+
+If the connection fails, mk-query-digest tries to reopen it once per second. See
+also L<"--mirror">.
+
+=item --report
+
+type: Array; default: fingerprint
+
+Print out reports on the aggregate results from L<"--group-by">.
+
+This is the standard slow-log analysis functionality.  See L<"OUTPUT"> for the
+description of what this does and what the results look like.
+
+Any value you specify here automatically adds a corresponding value to
+L<"--group-by">.
+
+=item --report-all
+
+Include all queries, even if they have already been reviewed.
+
+=item --report-format
+
+type: Hash; default: rusage,header,query_report,profile
+
+Print these elements in the query analysis report.  Valid element names are
+rusage, header, query_report, and profile.  The rusage is information about CPU
+times and memory usage.  The header is information about the entire analysis
+run.  The query_report is detailed information on each query in the report.  The
+profile is a compact table of queries for an at-a-glance view of the report.
+Order does not matter; you cannot use this parameter to influence the order of
+items in the report, only the presence or absence of items.
+
+See L<"OUTPUT"> for more information on the various parts of the query report.
+
+=item --review
+
+type: DSN
+
+Store a sample of each class of query in this DSN.
+
+The argument specifies a table to store all unique query fingerprints in.  The
+table must have at least the following columns, but you can add any more columns
+you wish.  The following CREATE TABLE definition is also used for
+L<"--create-review-table">.  MAGIC_create_review:
+
+  CREATE TABLE query_review (
+     checksum     BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+     fingerprint  TEXT NOT NULL,
+     sample       TEXT NOT NULL,
+     first_seen   DATETIME,
+     last_seen    DATETIME,
+     reviewed_by  VARCHAR(20),
+     reviewed_on  DATETIME,
+     comments     TEXT
+  )
+
+The columns are as follows:
+
+  COLUMN       MEANING
+  ===========  ===============
+  checksum     A 64-bit checksum of the query fingerprint
+  fingerprint  The abstracted version of the query; its primary key
+  sample       The query text of a sample of the class of queries
+  first_seen   The smallest timestamp of this class of queries
+  last_seen    The largest timestamp of this class of queries
+  reviewed_by  Initially NULL; if set, query is skipped thereafter
+  reviewed_on  Initially NULL; not assigned any special meaning
+  comments     Initially NULL; not assigned any special meaning
+
+Note that the C<fingerprint> column is the true primary key for a class of
+queries.  The C<checksum> is just a cryptographic hash of this value, which
+provides a shorter value that is very likely to also be unique.
+
+After the tool generates the fingerprint report for L<"--report">, it uses the
+aggregated values from the report to fill the review table.  When you're done,
+your table should contain a row for each fingerprint.  This option depends on
+C<--report fingerprint>.  It will not work otherwise.
+
+=item --review-history
+
+type: DSN
+
+The table in which to store historical values for review trend analysis.
+
+Each time you review queries with L<"--review">, mk-query-digest will save
+information into this table so you can see how classes of queries have changed
+over time.
+
+This DSN inherits unspecified values from --review.  It should mention a
+table in which to store statistics about each class of queries.  mk-query-digest
+verifies the existence of the table, and your privileges to insert, delete and
+update on that table.
+
+mk-query-digest then inspects the columns in the table.  The table must have at
+least the following columns:
+
+  CREATE TABLE query_review_history (
+    checksum     BIGINT UNSIGNED NOT NULL,
+    sample       TEXT NOT NULL
+  );
+
+Any columns not mentioned above are inspected to see if they follow a certain
+naming convention.  The column is special if the name ends with an underscore
+followed by any of these MAGIC_history_cols values:
+
+  pct|avt|cnt|sum|min|max|pct_95|stddev|median|rank
+
+If the column ends with one of those values, then the prefix is interpreted as
+the event attribute to store in that column, and the suffix is interpreted as
+the metric to be stored.  For example, a column named Query_time_min will be
+used to store the minimum Query_time for the class of events.  The presence of
+this column will also add Query_time to the L<"--select"> list.
+
+The table should also have a primary key, but that is up to you, depending on
+how you want to store the historical data.  We suggest adding ts_min and ts_max
+columns and making them part of the primary key along with the checksum.  But
+you could also just add a ts_min column and make it a DATE type, so you'd get
+one row per class of queries per day.
+
+The default table structure follows.  The following MAGIC_create_review_history
+table definition is used for L<"--create-review-history-table">:
+
+ CREATE TABLE query_review_history (
+   checksum             BIGINT UNSIGNED NOT NULL,
+   sample               TEXT NOT NULL,
+   ts_min               DATETIME,
+   ts_max               DATETIME,
+   ts_cnt               FLOAT,
+   Query_time_sum       FLOAT,
+   Query_time_min       FLOAT,
+   Query_time_max       FLOAT,
+   Query_time_pct_95    FLOAT,
+   Query_time_stddev    FLOAT,
+   Query_time_median    FLOAT,
+   Lock_time_sum        FLOAT,
+   Lock_time_min        FLOAT,
+   Lock_time_max        FLOAT,
+   Lock_time_pct_95     FLOAT,
+   Lock_time_stddev     FLOAT,
+   Lock_time_median     FLOAT,
+   Rows_sent_sum        FLOAT,
+   Rows_sent_min        FLOAT,
+   Rows_sent_max        FLOAT,
+   Rows_sent_pct_95     FLOAT,
+   Rows_sent_stddev     FLOAT,
+   Rows_sent_median     FLOAT,
+   Rows_examined_sum    FLOAT,
+   Rows_examined_min    FLOAT,
+   Rows_examined_max    FLOAT,
+   Rows_examined_pct_95 FLOAT,
+   Rows_examined_stddev FLOAT,
+   Rows_examined_median FLOAT,
+   PRIMARY KEY(checksum, ts_min, ts_max)
+ );
+
+Note that we store the count (cnt) for the ts attribute only; it will be
+redundant to store this for other attributes.
+
+=item --run-time
+
+type: time
+
+How long to run before exiting.  The default is to run forever (you can
+interrupt with CTRL-C).  See also L<"--iterations">.
+
+=item --sample
+
+type: int
+
+Filter out all but the first N occurrences of each query.  The queries are
+filtered on the first value in L<"--group-by">, so by default, this will filter
+by query fingerprint.  For example, C<--sample 2> will permit two sample queries
+for each fingerprint.  Useful in conjunction with L<"--print"> to print out the
+queries.  You probably want to set L<"--report"> to the empty string to avoid
+the overhead of aggregating and reporting, if you're just using this to print
+out samples of queries.  A complete example:
+
+  mk-query-digest --sample 2 --report '' --group-by fingerprint --print slow.log
+
+=item --select
+
+type: Array
+
+Compute aggregate statistics for these attributes.
+
+By default mk-query-digest auto-detects, aggregates and prints metrics for
+every query attribute that it finds in the slow query log.  This option
+specifies a list of only the attributes that you want.  You can specify an
+alternative attribute with a colon.  For example, C<db:Schema> uses db if it's
+available, and Schema if it's not.
+
+Previously, mk-query-digest only aggregated these attributes:
+
+  Query_time,Lock_time,Rows_sent,Rows_examined,user,db:Schema,ts
+
+Attributes specified in the L<"--review-history"> table will always be selected 
+even if you do not specify L<"--select">.
+
+See also L<"--ignore-attributes"> and L<"ATTRIBUTES">.
+
+=item --shorten
+
+type: int; default: 1024
+
+Shorten long statements in reports.
+
+Shortens long statements, replacing the omitted portion with a C</*... omitted
+...*/> comment.  This applies only to the output in reports, not to information
+stored for L<"--review"> or other places.  It prevents a large statement from
+causing difficulty in a report.  The argument is the preferred length of the
+shortened statement.  Not all statements can be shortened, but very large INSERT
+and similar statements often can; and so can IN() lists, although only the first
+such list in the statement will be shortened.
+
+If it shortens something beyond recognition, you can find the original statement
+in the log, at the offset shown in the report header (see L<"OUTPUT">).
+
+=item --tcpdump-errors
+
+type: string
+
+Write the tcpdump data to this file on error.  If mk-query-digest doesn't
+parse the stream correctly for some reason, the session's packets since the
+last query event will be written out to create a usable test case.  If this
+happens, mk-query-digest will not raise an error; it will just discard the
+session's saved state and permit the tool to continue working.  See L<"tcpdump">
+for more information about parsing tcpdump output.
+
+=item --timeline
+
+type: Array
+
+Show a timeline of events (disables L<"--report">).
+
+This option makes mk-query-digest aggregate events into a timeline by the
+specified attribute.  Each event is compared to the previous one, and if the
+specified attribute is the same, they are aggregated together.  At the end, the
+report prints out the timestamp, interval, count and value of each aggregated
+group of events.
+
+The setting cascades to L<"--order-by"> and L<"--group-by"> just like
+L<"--report"> does.  At this time, L<"--timeline"> and L<"--report"> are
+mutually exclusive, and since L<"--report"> has a default value, setting
+L<"--timeline"> will merely unset L<"--report">.
+
+Example:
+
+  mk-query-digest /path/to/log --timeline distill
+
+=item --type
+
+type: string
+
+The type of input to parse (default slowlog).  The permitted types are
+
+=over
+
+=item slowlog
+
+Parse a log file in any varation of MySQL slow-log format.
+
+=item tcpdump
+
+mk-query-digest does not actually watch the network (i.e. it does NOT "sniff
+packets").  Instead, it's just parsing the output of tcpdump.  You are
+responsible for generating this output; mk-query-digest does not do it for you.
+Then you send this to mk-query-digest as you would any log file: as files on the
+command line or to STDIN.
+
+The parser expects the input to be formatted with the following options: C<-x -n
+-q -tttt>.  For example, if you want to capture output from your local machine,
+you can do something like
+
+  tcpdump -i eth0 port 3306 -s 65535 -c 1000 -x -n -q -tttt \
+    | mk-query-digest --type tcpdump
+
+The other tcpdump parameters, such as -s, -c, and -i, are up to you.  Just make
+sure the output looks like this:
+
+  2009-04-12 09:50:16.804849 IP 127.0.0.1.42167 > 127.0.0.1.3306: tcp 37
+      0x0000:  4508 0059 6eb2 4000 4006 cde2 7f00 0001
+      0x0010:  ....
+
+Remember tcpdump has a handy -c option to stop after it captures some number of
+packets!  That's very useful for testing your tcpdump command.  Note that
+tcpdump can't capture traffic on a Unix socket.  Read
+L<http://bugs.mysql.com/bug.php?id=31577> if you're confused about this.
+
+If you're analyzing traffic to a non-standard port, see L<"--watch-server">.
+
+=item memcached
+
+Similar to tcpdump but expected that the tcpdump output is memcached packets
+instead of MySQL packets.  For example:
+
+  tcpdump -i eth0 port 11211 -s 65535 -x -n -q -tttt \
+    | mk-query-digest --type memcached
+
+memcached uses port 11211 by default.
+
+=back
+
+=item --version
+
+Show version and exit.
+
+=item --watch-server
+
+type: string
+
+Which IP address and port is the server when parsing tcpdump output. This option
+tells mk-query-digest whether a given TCP packet is from client to server, or
+server to client.  If you don't specify it, mk-query-digest tries to guess the
+host and port of the server by looking for port 3306 or port "mysql".  If you're
+watching a server with a non-standard port, this won't work, and you'll need to
+specify the IP address and port to watch.  If mk-query-digest doesn't know what
+to watch, nothing works right.
+
+=item --[no]zero-admin
+
+default: yes
+
+Zero out the Rows_XXX properties for administrator command events.
+
+=item --[no]zero-bool
+
+default: no
+
+Print 0% boolean values in report.
+
+=back
+
+=head1 DOWNLOADING
+
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
+
+=head1 ENVIRONMENT
+
+The environment variable C<MKDEBUG> enables verbose debugging output in all of
+the Maatkit tools:
+
+   MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl and some core packages that ought to be installed in any
+reasonably new version of Perl.
+
+=head1 BUGS
+
+Please use Google Code Issues and Groups to report bugs or request support:
+L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
+discuss Maatkit.
+
+Please include the complete command-line used to reproduce the problem you are
+seeing, the version of all MySQL servers involved, the complete output of the
+tool when run with L<"--version">, and if possible, debugging output produced by
+running with the C<MKDEBUG=1> environment variable.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+DDaniel Nichter
+
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
+
+=cut
