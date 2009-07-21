@@ -178,9 +178,10 @@ sub get_aliases {
 sub split {
    my ( $self, $query ) = @_;
    return unless $query;
+   $query =~ s/^\s+//;
    MKDEBUG && _d('Splitting', $query);
 
-   my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION}i;
+   my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
 
    # This splits a statement on the above verbs which means that the verb
    # gets chopped out.  Capturing the verb (e.g. ($verb)) will retain it,

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 94;
+use Test::More tests => 96;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -562,6 +562,25 @@ is_deeply(
    'split 1 statement, SELECT with REPLACE() function'
 );
 
+$sql = "
+               INSERT INTO db.tbl (i, t, c, m) VALUES (237527, '', 0, '1 rows')";
+is_deeply(
+   [ $qp->split($sql) ],
+   [
+      "INSERT INTO db.tbl (i, t, c, m) VALUES (237527, '', 0, '1 rows')",
+   ],
+   'split 1 statement, INSERT with leading newline and spaces'
+);
+
+$sql = 'create table db1.tbl1 SELECT id FROM db2.tbl2 WHERE time = 46881;';
+is_deeply(
+   [ $qp->split($sql) ],
+   [
+      'create table db1.tbl1 ',
+      'SELECT id FROM db2.tbl2 WHERE time = 46881;',
+   ],
+   'split 2 statements, CREATE ... SELECT'
+);
 # #############################################################################
 # Done.
 # #############################################################################
