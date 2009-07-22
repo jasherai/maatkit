@@ -1363,7 +1363,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4214
+# QueryParser package 4217
 # ###########################################################################
 package QueryParser;
 
@@ -1394,6 +1394,14 @@ sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
    MKDEBUG && _d('Getting tables for', $query);
+
+   if ( $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i ) {
+      MKDEBUG && _d('Special table type:', $1);  # Using $1, watch out!
+      $query =~ s/IF NOT EXISTS//i;
+      my ($tbl) = $query =~ m/TABLE\s+($tbl_ident)(\s+.*)?/i;
+      MKDEBUG && _d('Matches table:', $tbl);
+      return ($tbl);
+   }
 
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
@@ -1474,7 +1482,9 @@ sub get_aliases {
 sub split {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query =~ s/^\s+//;
+   $query = remove_comments($query);
+   $query =~ s/^\s+//;      # Remove leading spaces.
+   $query =~ s/\s{2,}/ /g;  # Remove extra spaces.
    MKDEBUG && _d('Splitting', $query);
 
    my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
@@ -1493,6 +1503,13 @@ sub split {
 
    MKDEBUG && _d('statements:', map { $_ ? "<$_>" : 'none' } @statements);
    return @statements;
+}
+
+sub remove_comments {
+   my ( $query ) = @_;
+   return unless $query;
+   $query =~ s!/\*.*?\*/! !g;
+   return $query;
 }
 
 sub _d {
@@ -1577,10 +1594,13 @@ sub main {
 
       foreach my $stmt ( @$statements ) {
          my $n_tables = 0;
-         foreach my $tbl ( $qp->get_tables($stmt) ) {
+         foreach my $db_tbl ( $qp->get_tables($stmt) ) {
+            my ($db, $tbl) = $q->split_unquote($db_tbl, $event->{Schema});
             $n_tables++;
             my $rw = $stmt =~ m/^\s*SELECT\b/i ? 'r' : 'w';
-            print "$rw $tbl\n";
+            MKDEBUG && _d('Query_id:', $event->{Query_id}, 'rw:', $rw,
+               'db:', $db, 'tbl:', $tbl);
+            print "$rw " . ($db ? "$db.$tbl" : $tbl) . "\n";
          }
          if ( !$n_tables ) {
             # This happens with statements that QueryParser::get_tables()
