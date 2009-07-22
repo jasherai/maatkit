@@ -46,102 +46,118 @@ test_compare_query_times(10.0,     10.1,     1, '10s threshold');
 # #############################################################################
 # Test execution ranking.
 # #############################################################################
-my $results = {
-   host1 => {
-      Query_time    => 0.001020,
-      warning_count => 0,
-      warnings      => {},
+my @results = (
+   {
+      Query_time  => 0.001020,
+      warnings    => {
+         count => 0,
+         codes => {},
+      },
    },
-   host2 => {
-      Query_time    => 0.001100,
-      warning_count => 0,
-      warnings      => {},
+   {
+      Query_time => 0.001100,
+      warnings    => {
+         count => 0,
+         codes => {},
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_execution($results) ],
+   [ $qr->rank_results(@results) ],
    [ 0 ],
    'No warnings, no time diff (0)'
 );
 
-$results = {
-   host1 => {
-      Query_time    => 0.1,
-      warning_count => 1,
-      warnings      => {
-         1264 => {
-            Level   => 'Warning',
-            Code    => '1264',
-            Message => "Out of range value adjusted for column 'userid' at row 1",
-         }
+@results = (
+   {
+      Query_time  => 0.1,
+      warnings    => {
+         count => 1,
+         codes => {
+            1264 => {
+               Level   => 'Warning',
+               Code    => '1264',
+               Message => "Out of range value adjusted for column 'userid' at row 1",
+            }
+         },
+      }
+   },
+   {
+      Query_time  => 0.1,
+      warnings    => {
+         count => 1,
+         codes => {
+            1264 => { 
+               Level   => 'Warning',
+               Code    => '1264',
+               Message => "Out of range value adjusted for column 'userid' at row 1",
+            }
+         },
       },
    },
-   host2 => {
-      Query_time    => 0.1,
-      warning_count => 1,
-      warnings      => {
-         1264 => { 
-            Level   => 'Warning',
-            Code    => '1264',
-            Message => "Out of range value adjusted for column 'userid' at row 1",
-         }
-      },
-   },
-};
+);
 is_deeply(
-   [ $qr->rank_execution($results) ],
+   [ $qr->rank_results(@results) ],
    [ 1,
      'Query has warnings (rank+1)'
    ],
    'Same warning, no time diff (1)'
 );
 
-$results = {
-   host1 => {
-      Query_time    => 0.003020,
-      warning_count => 0,
-      warnings      => {},
+@results = (
+   {
+      Query_time  => 0.003020,
+      warnings    => {
+         count => 0,
+         codes => {},
+      }
    },
-   host2 => {
-      Query_time    => 0.000100,
-      warning_count => 0,
-      warnings      => {},
+   {
+      Query_time  => 0.000100,
+      warnings    => {
+         count => 0,
+         codes => {},
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_execution($results) ],
+   [ $qr->rank_results(@results) ],
    [ 2,
      'Query times differ significantly: host1 in 1ms range, host2 in 100us range (rank+2)',
    ],
    'No warnings, time diff (2)'
 );
 
-$results = {
-   host1 => {
-      Query_time    => 0.1,
-      warning_count => 1,
-      warnings      => {
-         1264 => {
-            Level   => 'Error',
-            Code    => '1264',
-            Message => "Out of range value adjusted for column 'userid' at row 1",
-         }
+@results = (
+   {
+      Query_time  => 0.1,
+      warnings    => {
+         count => 1,
+         codes => {
+            1264 => {
+               Level   => 'Error',
+               Code    => '1264',
+               Message => "Out of range value adjusted for column 'userid' at row 1",
+            }
+         },
+      }
+   },
+   {
+      Query_time  => 0.1,
+      warnings    => {
+         count => 1,
+         codes => {
+            1264 => {
+               Level   => 'Warning',
+               Code    => '1264',
+               Message => "Out of range value adjusted for column 'userid' at row 1",
+            }
+         },
       },
    },
-   host2 => {
-      Query_time    => 0.1,
-      warning_count => 1,
-      warnings      => {
-         1264 => {
-            Level   => 'Warning',
-            Code    => '1264',
-            Message => "Out of range value adjusted for column 'userid' at row 1",
-         }
-      },
-   },
-};
+);
 is_deeply(
-   [ $qr->rank_execution($results) ],
+   [ $qr->rank_results(@results) ],
    [ 3,
      'Query has warnings (rank+1)',
      'Error 1264 changes level: Error on host1, Warning on host2 (rank+2)',
@@ -149,26 +165,30 @@ is_deeply(
    'Same warning, different level (3)'
 );
 
-$results = {
-   host1 => {
-      Query_time    => 0.1,
-      warning_count => 1,
-      warnings      => {
-         1264 => {
-            Level   => 'Warning',
-            Code    => '1264',
-            Message => "Out of range value adjusted for column 'userid' at row 1",
-         }
-      },
+@results = (
+   {
+      Query_time  => 0.1,
+      warnings    => {
+         count => 1,
+         codes => {
+            1264 => {
+               Level   => 'Warning',
+               Code    => '1264',
+               Message => "Out of range value adjusted for column 'userid' at row 1",
+            }
+         },
+      }
    },
-   host2 => {
+   {
       Query_time    => 0.1,
-      warning_count => 0,
-      warnings      => {},
+      warnings    => {
+         count => 0,
+         codes => {},
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_execution($results) ],
+   [ $qr->rank_results(@results) ],
    [ 5,
      'Query has warnings (rank+1)',
      'Warning counts differ by 1 (rank+1)',
@@ -177,26 +197,30 @@ is_deeply(
    'Warning on host1 but not host2 (5)'
 );
 
-$results = {
-   host1 => {
+@results = (
+   {
       Query_time    => 0.1,
-      warning_count => 0,
-      warnings      => {},
+      warnings    => {
+         count => 0,
+         codes => {},
+      }
    },
-   host2 => {
+   {
       Query_time    => 0.1,
-      warning_count => 1,
-      warnings      => {
-         1264 => {
-            Level   => 'Warning',
-            Code    => '1264',
-            Message => "Out of range value adjusted for column 'userid' at row 1",
-         }
-      },
+      warnings    => {
+         count => 1,
+         codes => {
+            1264 => {
+               Level   => 'Warning',
+               Code    => '1264',
+               Message => "Out of range value adjusted for column 'userid' at row 1",
+            }
+         },
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_execution($results) ],
+   [ $qr->rank_results(@results) ],
    [ 5,
      'Query has warnings (rank+1)',
      'Warning counts differ by 1 (rank+1)',
@@ -205,37 +229,41 @@ is_deeply(
    'Warning on host2 but not host1 (5)'
 );
 
-$results = {
-   host1 => {
+@results = (
+   {
       Query_time    => 0.1,
-      warning_count => 2,
-      warnings      => {
-         1264 => {
-            Level   => 'Warning',
-            Code    => '1264',
-            Message => "Out of range value adjusted for column 'userid' at row 1",
+      warnings    => {
+         count => 2,
+         codes => {
+            1264 => {
+               Level   => 'Warning',
+               Code    => '1264',
+               Message => "Out of range value adjusted for column 'userid' at row 1",
+            },
+            1062 => {
+               Level   => 'Error',
+               Code    => '1062',
+               Message => "Duplicate entry '1' for key 1",
+            },
          },
-         1062 => {
-            Level   => 'Error',
-            Code    => '1062',
-            Message => "Duplicate entry '1' for key 1",
-         },
-      },
+      }
    },
-   host2 => {
+   {
       Query_time    => 0.1,
-      warning_count => 1,
-      warnings      => {
-         1264 => {
-            Level   => 'Warning',
-            Code    => '1264',
-            Message => "Out of range value adjusted for column 'userid' at row 1",
+      warnings    => {
+         count => 1,
+         codes => {
+            1264 => {
+               Level   => 'Warning',
+               Code    => '1264',
+               Message => "Out of range value adjusted for column 'userid' at row 1",
+            },
          },
-      },
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_execution($results) ],
+   [ $qr->rank_results(@results) ],
    [ 5,
      'Query has warnings (rank+1)',
      'Warning counts differ by 1 (rank+1)',
@@ -244,32 +272,36 @@ is_deeply(
    'One new warning, one old warning (5)'
 );
 
-$results = {
-   host1 => {
+@results = (
+   {
       Query_time    => 0.1,
-      warning_count => 1,
-      warnings      => {
-         1062 => {
-            Level   => 'Error',
-            Code    => '1062',
-            Message => "Duplicate entry '1' for key 1",
-         }
-      },
+      warnings    => {
+         count => 1,
+         codes => {
+            1062 => {
+               Level   => 'Error',
+               Code    => '1062',
+               Message => "Duplicate entry '1' for key 1",
+            }
+         },
+      }
    },
-   host2 => {
+   {
       Query_time    => 0.1,
-      warning_count => 1,
-      warnings      => {
-         1264 => {
-            Level   => 'Warning',
-            Code    => '1264',
-            Message => "Out of range value adjusted for column 'userid' at row 1",
-         }
-      },
+      warnings    => {
+         count => 1,
+         codes => {
+            1264 => {
+               Level   => 'Warning',
+               Code    => '1264',
+               Message => "Out of range value adjusted for column 'userid' at row 1",
+            }
+         },
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_execution($results) ],
+   [ $qr->rank_results(@results) ],
    [ 7,
      'Query has warnings (rank+1)',
      'Error 1062 on host1 is new (rank+3)',
@@ -281,94 +313,106 @@ is_deeply(
 # #############################################################################
 # Test result ranking.
 # #############################################################################
-$results = {
-   host1 => {
-      n_rows         => 10,
-      table_checksum => '123',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'int',
-            b => 'char',
+@results = (
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '123',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'int',
+               b => 'char',
+            },
          },
-      },
+      }
    },
-   host2 => {
-      n_rows         => 10,
-      table_checksum => '123',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'int',
-            b => 'char',
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '123',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'int',
+               b => 'char',
+            },
          },
-      },
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_results($results) ],
+   [ $qr->rank_results(@results) ],
    [ 0 ],
    'No checksum, row or col diffs (0)'
 );
 
-$results = {
-   host1 => {
-      n_rows         => 10,
-      table_checksum => '123',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'int',
-            b => 'char',
+@results = (
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '123',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'int',
+               b => 'char',
+            },
          },
-      },
+      }
    },
-   host2 => {
-      n_rows         => 10,
-      table_checksum => '124',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'int',
-            b => 'char',
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '124',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'int',
+               b => 'char',
+            },
          },
-      },
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_results($results) ],
+   [ $qr->rank_results(@results) ],
    [ 50,
      'Table checksums do not match (rank+50)'
    ],
    'Only table checksums differ (50)'
 );
 
-$results = {
-   host1 => {
-      n_rows         => 11,
-      table_checksum => '123',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'int',
-            b => 'char',
+@results = (
+   {
+      results => {
+         n_rows         => 11,
+         checksum => '123',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'int',
+               b => 'char',
+            },
          },
-      },
+      }
    },
-   host2 => {
-      n_rows         => 10,
-      table_checksum => '124',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'int',
-            b => 'char',
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '124',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'int',
+               b => 'char',
+            },
          },
-      },
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_results($results) ],
+   [ $qr->rank_results(@results) ],
    [ 100,
      'Table checksums do not match (rank+50)',
      'Number of rows do not match (rank+50)',
@@ -376,94 +420,106 @@ is_deeply(
    'Table checksums and rows differ (100)'
 );
 
-$results = {
-   host1 => {
-      n_rows         => 10,
-      table_checksum => '124',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'int',
-            b => 'char',
+@results = (
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '124',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'int',
+               b => 'char',
+            },
          },
-      },
+      }
    },
-   host2 => {
-      n_rows         => 10,
-      table_checksum => '124',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'bigint',
-            b => 'char',
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '124',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'bigint',
+               b => 'char',
+            },
          },
-      },
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_results($results) ],
+   [ $qr->rank_results(@results) ],
    [ 3,
      "Types for a column differ: 'int' on host1, 'bigint' on host2 (rank+3)",
    ],
    'Column type differs (3)'
 );
 
-$results = {
-   host1 => {
-      n_rows         => 10,
-      table_checksum => '124',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'bigint',
+@results = (
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '124',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'bigint',
+            },
          },
-      },
+      }
    },
-   host2 => {
-      n_rows         => 10,
-      table_checksum => '124',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'bigint',
-            b => 'char',
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '124',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'bigint',
+               b => 'char',
+            },
          },
-      },
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_results($results) ],
+   [ $qr->rank_results(@results) ],
    [ 5,
      "Column b exists on host2 but not on host1 (rank+5)",
    ],
    'host1 missing a column (5)'
 );
 
-$results = {
-   host1 => {
-      n_rows         => 10,
-      table_checksum => '124',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'bigint',
-            b => 'char',
+@results = (
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '124',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'bigint',
+               b => 'char',
+            },
          },
-      },
+      }
    },
-   host2 => {
-      n_rows         => 10,
-      table_checksum => '124',
-      table_struct   => {
-         cols     => [qw(a b)],
-         type_for => {
-            a => 'bigint',
+   {
+      results => {
+         n_rows         => 10,
+         checksum => '124',
+         table_struct   => {
+            cols     => [qw(a b)],
+            type_for => {
+               a => 'bigint',
+            },
          },
-      },
+      }
    },
-};
+);
 is_deeply(
-   [ $qr->rank_results($results) ],
+   [ $qr->rank_results(@results) ],
    [ 5,
      "Column b exists on host1 but not on host2 (rank+5)",
    ],

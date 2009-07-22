@@ -20,7 +20,7 @@
 package QueryRanker;
 
 # Read http://code.google.com/p/maatkit/wiki/QueryRankerInternals for
-# details about this module.
+# details about this module.  In brief, it ranks QueryExecutor results.
 
 use strict;
 use warnings FATAL => 'all';
@@ -40,6 +40,12 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 my @bucket_threshold = qw(500 100  100   500 50   50    20 1   );
 my @bucket_labels    = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
+my %ranker_for = (
+   Query_time => \&rank_query_times,
+   warnings   => \&rank_warnings,
+   results    => \&rank_result_sets,
+);
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw() ) {
@@ -50,39 +56,77 @@ sub new {
    return bless $self, $class;
 }
 
-# Ranks execution results from QueryExecutor::exec().  Returns an array:
-#   (
-#      rank,         # Integer rank value
-#      ( reasons ),  # List of reasons for each rank increase
-#   )
-sub rank_execution {
-   my ( $self, $results ) = @_;
-   die "I need a results argument" unless $results;
-   
+sub rank_results {
+   my ( $self, @results ) = @_;
+   return unless @results > 1;
+
+   my $rank           = 0;
+   my @reasons        = ();
+   my $master_results = shift @results;
+
+   RESULTS:
+   foreach my $results ( keys %$master_results ) {
+      my $compare = $ranker_for{$results};
+      if ( !$compare ) {
+         warn "I don't know how to rank $results results";
+         next RESULTS;
+      }
+
+      my $master = $master_results->{$results};
+
+      HOST:
+      my $i = 1;  # host1 is master...
+      foreach my $host_results ( @results ) {
+         $i++; # ...so we start with host2.
+         if ( !exists $host_results->{$results} ) {
+            warn "Host$i doesn't have $results results";
+            next HOST;
+         }
+
+         my $host = $host_results->{$results};
+
+         my @res = $compare->($self, $master, $host);
+         $rank += shift @res;
+         push @reasons, @res;
+      } 
+   }
+
+   return $rank, @reasons;
+}
+
+sub rank_query_times {
+   my ( $self, $host1, $host2 ) = @_;
    my $rank    = 0;   # total rank
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
-   my $host1   = $results->{host1};
-   my $host2   = $results->{host2};
 
-   @res = $self->compare_query_times($host1->{Query_time},$host2->{Query_time});
+   @res = $self->compare_query_times($host1, $host2);
    $rank += shift @res;
    push @reasons, @res;
+
+   return $rank, @reasons;
+}
+
+sub rank_warnings {
+   my ( $self, $host1, $host2 ) = @_;
+   my $rank    = 0;   # total rank
+   my @reasons = ();  # all reasons
+   my @res     = ();  # ($rank, @reasons) for each comparison
 
    # Always rank queries with warnings above queries without warnings
    # or queries with identical warnings and no significant time difference.
    # So any query with a warning will have a minimum rank of 1.
-   if ( $host1->{warning_count} > 0 || $host2->{warning_count} > 0 ) {
+   if ( $host1->{count} > 0 || $host2->{count} > 0 ) {
       $rank += 1;
       push @reasons, "Query has warnings (rank+1)";
    }
 
-   if ( my $diff = abs($host1->{warning_count} - $host2->{warning_count}) ) {
+   if ( my $diff = abs($host1->{count} - $host2->{count}) ) {
       $rank += $diff;
       push @reasons, "Warning counts differ by $diff (rank+$diff)";
    }
 
-   @res = $self->compare_warnings($host1->{warnings}, $host2->{warnings});
+   @res = $self->compare_warnings($host1->{codes}, $host2->{codes});
    $rank += shift @res;
    push @reasons, @res;
 
@@ -164,22 +208,13 @@ sub compare_warnings {
    return $rank_inc, @reasons;
 }
 
-# Ranks results from QueryExecutor::compare_results().  Returns an array:
-#   (
-#      rank,         # Integer rank value
-#      ( reasons ),  # List of reasons for each rank increase
-#   )
-sub rank_results {
-   my ( $self, $results ) = @_;
-   die "I need a results argument" unless $results;
-
+sub rank_result_sets {
+   my ( $self, $host1, $host2 ) = @_;
    my $rank    = 0;   # total rank
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
-   my $host1   = $results->{host1};
-   my $host2   = $results->{host2};
 
-   if ( $host1->{table_checksum} ne $host2->{table_checksum} ) {
+   if ( $host1->{checksum} ne $host2->{checksum} ) {
       $rank += 50;
       push @reasons, "Table checksums do not match (rank+50)";
    }
