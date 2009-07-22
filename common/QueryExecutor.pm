@@ -226,21 +226,17 @@ sub clear_warnings {
 # and sets the default storage engine to MyISAM.
 sub pre_checksum_results {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(dbh database tmp_table Quoter) ) {
+   foreach my $arg ( qw(dbh tmp_table Quoter) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $dbh     = $args{dbh};
-   my $db      = $args{database};
    my $tmp_tbl = $args{tmp_table};
-   my $du      = $args{MySQLDump};
-   my $tp      = $args{TableParser};
    my $q       = $args{Quoter};
 
    MKDEBUG && _d('pre_checksum_results');
 
-   my $tmp_db_tbl = $q->quote($db, $tmp_tbl);
    eval {
-      $dbh->do("DROP TABLE IF EXISTS $tmp_db_tbl");
+      $dbh->do("DROP TABLE IF EXISTS $tmp_tbl");
       $dbh->do("SET storage_engine=MyISAM");
    };
    die $EVAL_ERROR if $EVAL_ERROR;
@@ -253,42 +249,57 @@ sub pre_checksum_results {
 # with "CREATE TEMPORARY TABLE database.tmp_table AS" alreay appended to it.
 sub checksum_results {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(dbh database tmp_table MySQLDump TableParser Quoter) ) {
+   foreach my $arg ( qw(dbh tmp_table MySQLDump TableParser Quoter) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $dbh     = $args{dbh};
-   my $db      = $args{database};
    my $tmp_tbl = $args{tmp_table};
    my $du      = $args{MySQLDump};
    my $tp      = $args{TableParser};
    my $q       = $args{Quoter};
 
-   my $tmp_db_tbl = $q->quote($db, $tmp_tbl);
    my $name = 'results';
    MKDEBUG && _d($name);
 
    my $n_rows;
    my $tbl_checksum;
    eval {
-      $n_rows = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $tmp_db_tbl");
-      $tbl_checksum = $dbh->selectall_arrayref("CHECKSUM TABLE $tmp_db_tbl");
+      $n_rows = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $tmp_tbl");
+      $tbl_checksum = $dbh->selectall_arrayref("CHECKSUM TABLE $tmp_tbl");
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('Error counting rows or checksumming', $tmp_db_tbl, ':',
+      MKDEBUG && _d('Error counting rows or checksumming', $tmp_tbl, ':',
          $EVAL_ERROR);
       return $name, $EVAL_ERROR;
    }
 
+   # Get parse the tmp table's struct if we can.
    my $tbl_struct;
-   my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
-   if ( $ddl->[0] eq 'table' ) {
-      eval {
-         $tbl_struct = $tp->parse($ddl)
-      };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d('Failed to parse', $tmp_db_tbl, ':', $EVAL_ERROR);
-         return $name, $EVAL_ERROR;
+   my $db = $args{database};
+   if ( !$db ) {
+      # No db given so check if tmp has db.
+      ($db, undef) = $q->split_unquote($tmp_tbl);
+   }
+   if ( $db ) {
+      my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
+      if ( $ddl->[0] eq 'table' ) {
+         eval {
+            $tbl_struct = $tp->parse($ddl)
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d('Failed to parse', $tmp_tbl, ':', $EVAL_ERROR);
+            return $name, $EVAL_ERROR;
+         }
       }
+   }
+   else {
+      MKDEBUG && _d('Cannot parse', $tmp_tbl, 'because no database');
+   }
+
+   my $sql = "DROP TABLE IF EXISTS $tmp_tbl";
+   eval { $dbh->do($sql); };
+   if ( $EVAL_ERROR ) {
+      warn "Cannot $sql: $EVAL_ERROR";
    }
 
    my $results = {
