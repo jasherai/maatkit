@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 96;
+use Test::More tests => 104;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -497,6 +497,63 @@ is_deeply(
    'Not confused by quoted string'
 );
 
+
+is_deeply(
+   [ $qp->get_tables(
+      'create table db.tbl (i int)')
+   ],
+   [qw(db.tbl)],
+   'get_tables: CREATE TABLE'
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'create TEMPORARY table db.tbl2 (i int)')
+   ],
+   [qw(db.tbl2)],
+   'get_tables: CREATE TEMPORARY TABLE'
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'create table if not exists db.tbl (i int)')
+   ],
+   [qw(db.tbl)],
+   'get_tables: CREATE TABLE IF NOT EXISTS'
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'create TEMPORARY table IF NOT EXISTS db.tbl3 (i int)')
+   ],
+   [qw(db.tbl3)],
+   'get_tables: CREATE TEMPORARY TABLE IF NOT EXISTS'
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'ALTER TABLE db.tbl ADD COLUMN (j int)')
+   ],
+   [qw(db.tbl)],
+   'get_tables: ALTER TABLE'
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'DROP TABLE db.tbl')
+   ],
+   [qw(db.tbl)],
+   'get_tables: DROP TABLE'
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'truncate table db.tbl')
+   ],
+   [qw(db.tbl)],
+   'get_tables: TRUNCATE TABLE'
+);
+
 ok($qp->has_derived_table(
    'select * from ( select 1) as x'),
    'simple derived');
@@ -581,6 +638,17 @@ is_deeply(
    ],
    'split 2 statements, CREATE ... SELECT'
 );
+
+$sql = "/*<font color = 'blue'>MAIN FUNCTION </font><br>*/                 insert into p.b317  (foo) select p.b1927.rtb as pr   /* inner join  pa7.r on pr.pd = c.pd */            inner join m.da on da.hr=p.hr and  da.node=pr.node     ;";
+is_deeply(
+   [ $qp->split($sql) ],
+   [
+      'insert into p.b317 (foo) ',
+      'select p.b1927.rtb as pr inner join m.da on da.hr=p.hr and da.node=pr.node ;',
+   ],
+   'split statements with comment blocks'
+);
+
 # #############################################################################
 # Done.
 # #############################################################################

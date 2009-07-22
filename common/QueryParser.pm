@@ -59,6 +59,15 @@ sub get_tables {
    return unless $query;
    MKDEBUG && _d('Getting tables for', $query);
 
+   # Handle CREATE, ALTER, TRUNCATE and DROP TABLE.
+   if ( $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i ) {
+      MKDEBUG && _d('Special table type:', $1);  # Using $1, watch out!
+      $query =~ s/IF NOT EXISTS//i;
+      my ($tbl) = $query =~ m/TABLE\s+($tbl_ident)(\s+.*)?/i;
+      MKDEBUG && _d('Matches table:', $tbl);
+      return ($tbl);
+   }
+
    # These keywords may appear between UPDATE or SELECT and the table refs.
    # They need to be removed so that they are not mistaken for tables.
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
@@ -178,7 +187,9 @@ sub get_aliases {
 sub split {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query =~ s/^\s+//;
+   $query = remove_comments($query);
+   $query =~ s/^\s+//;      # Remove leading spaces.
+   $query =~ s/\s{2,}/ /g;  # Remove extra spaces.
    MKDEBUG && _d('Splitting', $query);
 
    my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
@@ -207,6 +218,13 @@ sub split {
    # Wrap stmts in <> to make it more clear where each one begins/ends.
    MKDEBUG && _d('statements:', map { $_ ? "<$_>" : 'none' } @statements);
    return @statements;
+}
+
+sub remove_comments {
+   my ( $query ) = @_;
+   return unless $query;
+   $query =~ s!/\*.*?\*/! !g;
+   return $query;
 }
 
 sub _d {
