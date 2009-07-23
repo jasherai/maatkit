@@ -55,16 +55,16 @@ sub new {
       # Override default args above.
       %args,
       # These args cannot be overridden.
-      n_dirs_total      => 0,  # total number of dirs created
-      n_files_total     => 0,  # total number of session files created
-      n_files_this_dir  => -1, # number of session files in current dir
-      session_fhs       => [], # filehandles for each session
-      n_open_fhs        => 0,  # current number of open session filehandles
-      n_events_total    => 0,  # total number of events in log
-      n_events_saved    => 0,  # total number of events saved
-      n_session_skipped => 0,  # total number of sessions skipped
-      n_sessions_saved  => 0,  # number of sessions saved
-      sessions          => {}, # sessions data store
+      n_dirs_total       => 0,  # total number of dirs created
+      n_files_total      => 0,  # total number of session files created
+      n_files_this_dir   => -1, # number of session files in current dir
+      session_fhs        => [], # filehandles for each session
+      n_open_fhs         => 0,  # current number of open session filehandles
+      n_events_total     => 0,  # total number of events in log
+      n_events_saved     => 0,  # total number of events saved
+      n_sessions_skipped => 0,  # total number of sessions skipped
+      n_sessions_saved   => 0,  # number of sessions saved
+      sessions           => {}, # sessions data store
    };
 
    MKDEBUG && _d('new LogSplitter final args:', Dumper($self));
@@ -363,7 +363,15 @@ sub make_rr_iter {
 
 sub print_split_summary {
    my ( $self ) = @_;
-#   print Dumper($self);
+   print "Split summary:\n";
+   my $fmt = "%-20s %-10s\n";
+   printf $fmt, 'Total sessions',
+      $self->{n_sessions_saved} + $self->{n_sessions_skipped};
+   printf $fmt, 'Sessions saved',
+      $self->{n_sessions_saved};
+   printf $fmt, 'Total events', $self->{n_events_total};
+   printf $fmt, 'Events saved', $self->{n_events_saved};
+   return;
 }
 
 sub _d {
