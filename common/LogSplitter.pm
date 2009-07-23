@@ -65,6 +65,7 @@ sub new {
       n_sessions_skipped => 0,  # total number of sessions skipped
       n_sessions_saved   => 0,  # number of sessions saved
       sessions           => {}, # sessions data store
+      created_dirs       => [],
    };
 
    MKDEBUG && _d('new LogSplitter final args:', Dumper($self));
@@ -291,6 +292,7 @@ sub _get_next_session_file {
             die "Cannot create new directory $new_dir: $OS_ERROR";
          }
          MKDEBUG && _d('Created new base_dir', $new_dir);
+         push @{$self->{created_dirs}}, $new_dir;
       }
       elsif ( MKDEBUG ) {
          _d($new_dir, 'already exists');
@@ -342,6 +344,14 @@ sub _merge_session_files {
    foreach my $single_session_file ( @single_session_files ) {
       my $multi_session_file = $multi_session_files[ $i->() ];
       my $cmd = "cat $single_session_file >> $multi_session_file";
+      eval { `$cmd`; };
+      if ( $EVAL_ERROR ) {
+         warn "Failed to `$cmd`: $OS_ERROR";
+      }
+   }
+
+   foreach my $created_dir ( @{$self->{created_dirs}} ) {
+      my $cmd = "rm -rf $created_dir";
       eval { `$cmd`; };
       if ( $EVAL_ERROR ) {
          warn "Failed to `$cmd`: $OS_ERROR";

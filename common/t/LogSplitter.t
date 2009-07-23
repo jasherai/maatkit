@@ -195,6 +195,11 @@ like(
    'Merges 2_000 sessions'
 );
 
+ok(
+   !-d "$tmpdir/1",
+   'Removes tmp dirs after merging'
+);
+
 diag(`rm -rf $tmpdir`);
 exit;
 
