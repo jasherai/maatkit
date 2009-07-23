@@ -156,10 +156,11 @@ my %flag_for = (
 sub new {
    my ( $class, %args ) = @_;
    my $self = {
-      server      => $args{server},
-      version     => '41',
-      sessions    => {},
-      o           => $args{o},
+      server         => $args{server},
+      version        => '41',
+      sessions       => {},
+      o              => $args{o},
+      fake_thread_id => 1,  # see _make_event()
    };
    return bless $self, $class;
 }
@@ -576,6 +577,13 @@ sub _make_event {
 
    # Clear packets that preceded this event.
    $session->{raw_packets} = [];
+
+   if ( !$session->{thread_id} ) {
+      # Only the server handshake packet gives the thread id, so for
+      # sessions caught mid-stream we assign a fake thread id.
+      MKDEBUG && _d('Giving session fake thread id', $self->{fake_thread_id});
+      $session->{thread_id} = $self->{fake_thread_id}++;
+   }
 
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
    my $new_event = {
