@@ -160,7 +160,7 @@ sub new {
       version        => '41',
       sessions       => {},
       o              => $args{o},
-      fake_thread_id => 1,  # see _make_event()
+      fake_thread_id => 2**32,  # see _make_event()
    };
    return bless $self, $class;
 }
