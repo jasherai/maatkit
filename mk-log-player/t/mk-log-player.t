@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 14;
+use Test::More tests => 12;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -32,55 +32,75 @@ like(
    '--play requires host'
 );
 
-$output = `../mk-log-player --play foo --print 2>&1`;
+$output = `../mk-log-player --play foo h=localhost --print 2>&1`;
 like(
    $output,
-   qr/Cannot open session file/,
-   'Dies if no session file'
+   qr/foo is not a file/,
+   'Dies if no valid session files are given'
 );
 
 # #############################################################################
 # Test log splitting.
 # #############################################################################
-$output = `../mk-log-player -v --saveto $tmpdir --split Thread_id samples/log001.txt`;
-like($output, qr/Parsed sessions\s+4/, 'Reports 4 sessions parsed');
-foreach my $n ( 1..4 ) {
-   my $retval = system("diff $tmpdir/1/mysql_log_session_000$n samples/log001_session_$n.txt 1>/dev/null 2>/dev/null");
-   cmp_ok($retval >> 8, '==', 0, "Session $n of 4 has correct quries");
-}
+$output = `../mk-log-player --base-dir $tmpdir --session-files 2 --split Thread_id samples/log001.txt`;
+like(
+   $output,
+   qr/Sessions saved\s+4/,
+   'Reports 2 sessions saved'
+);
+
+ok(
+   -f "$tmpdir/sessions-1.txt",
+   "sessions-1.txt created"
+);
+ok(
+   -f "$tmpdir/sessions-2.txt",
+   "sessions-2.txt created"
+);
+
+chomp($output = `cat $tmpdir/sessions-[12].txt | wc -l`);
+is(
+   $output,
+   34,
+   'Session files have correct number of lines'
+);
 
 # #############################################################################
 # Test --print.
 # #############################################################################
-$output = `../mk-log-player --play $tmpdir/1 --print`;
-like($output, qr/session 4 query 2/, "Prints sessions' queries without DSN");
+diag(`mkdir $tmpdir/results`);
+`../mk-log-player --threads 1 --base-dir $tmpdir/results --play $tmpdir/sessions-1.txt --print`;
+$output = `cat $tmpdir/results/*`;
+like(
+   $output,
+   qr/use mk_log/,
+   "Prints sessions' queries without DSN"
+);
 
 # #############################################################################
 # Test session playing.
 # #############################################################################
 SKIP: {
-   skip 'Cannot connect to sandbox master', 4 unless $dbh;
+   skip 'Cannot connect to sandbox master', 3 unless $dbh;
 
    $sb->load_file('master', 'samples/log.sql');
 
-   $output = `../mk-log-player --play $tmpdir/1 h=127.1,P=12345`;
-   # This SELECT stmt should be the last (session 4, query 1)
-   like($output, qr/SELECT a FROM tbl1 WHERE a = 3/, 'Reports 4 sessions played');
+   $output = `../mk-log-player --play $tmpdir/ h=127.1,P=12345`;
 
    my $r = $dbh->selectall_arrayref('select * from mk_log_player_1.tbl1 where a = 100 OR a = 555;');
    is_deeply(
       $r,
       [[100], [555]],
-      'Expected table changes were made',
+      '--play made table changes',
    );
 
    $sb->load_file('master', 'samples/log.sql');
-   $output = `../mk-log-player --onlyselect --play $tmpdir/1 h=127.1,P=12345`;
+   $output = `../mk-log-player --only-select --play $tmpdir/ h=127.1,P=12345`;
    $r = $dbh->selectall_arrayref('select * from mk_log_player_1.tbl1 where a = 100 OR a = 555;');
    is_deeply(
       $r,
       [],
-      'Tables were not changed with --onlyselect',
+      'No table changes with --only-select',
    );
 
    # #########################################################################
@@ -101,9 +121,10 @@ SKIP: {
 # #############################################################################
 # Issue 418: mk-log-player dies trying to play statements with blank lines
 # #############################################################################
-diag(`rm -rf $tmpdir/*`);
-$output = `../mk-log-player --split Thread_id --saveto $tmpdir ../../common/t/samples/slow020.txt`;
-$output = `../mk-log-player --play $tmpdir/1 --print | diff samples/play_slow020.txt -`;
+diag(`rm -rf $tmpdir/*; mkdir $tmpdir/results`);
+$output = `../mk-log-player --split Thread_id --base-dir $tmpdir ../../common/t/samples/slow020.txt`;
+$output = `../mk-log-player --play $tmpdir --threads 1 --base-dir $tmpdir/results --print | diff samples/play_slow020.txt -`;
+
 is(
    $output,
    '',

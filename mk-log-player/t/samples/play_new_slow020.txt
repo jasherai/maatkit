@@ -1,6 +1,0 @@
-/* proc 1 session 1 query 1 */ USE `db1`
-/* proc 1 session 1 query 2 */ SELECT * FROM foo WHERE bar = 'bar'
-/* proc 1 session 1 query 3 */ USE `db`
-/* proc 1 session 1 query 4 */ INSERT INTO tbl VALUES (1), (2), (3)
-/* proc 1 session 1 query 5 */ USE `db2`
-/* proc 1 session 1 query 6 */ SELECT * FROM foo

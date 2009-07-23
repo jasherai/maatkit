@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 3695
+# OptionParser package 3945
 # ###########################################################################
 package OptionParser;
 
@@ -39,6 +39,15 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+my %attributes = (
+   'type'       => 1,
+   'short form' => 1,
+   'group'      => 1,
+   'default'    => 1,
+   'cumulative' => 1,
+   'negatable'  => 1,
+);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -136,7 +145,12 @@ sub _pod_to_specs {
 
          if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            %attribs = map {
+                  my ( $attrib, $val) = split(/: /, $_);
+                  die "Unrecognized attribute for --$option: $attrib"
+                     unless $attributes{$attrib};
+                  ($attrib, $val);
+               } split(/; /, $para);
             if ( $attribs{'short form'} ) {
                $attribs{'short form'} =~ s/-//;
             }
@@ -861,7 +875,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 3192
+# SlowLogParser package 3980
 # ###########################################################################
 package SlowLogParser;
 
@@ -891,7 +905,9 @@ my $slow_log_hd_line = qr{
 
 sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $num_events = 0;
+   my $oktorun_here = 1;
+   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
+   my $num_events   = 0;
 
    my @pending;
    local $INPUT_RECORD_SEPARATOR = ";\n#";
@@ -900,7 +916,8 @@ sub parse_event {
    my $stmt;
 
    EVENT:
-   while ( defined($stmt = shift @pending) or defined($stmt = <$fh>) ) {
+   while ( $$oktorun
+           && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 
@@ -1289,7 +1306,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 3643
+# LogSplitter package 4223
 # ###########################################################################
 
 package LogSplitter;
@@ -1298,141 +1315,129 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 use constant MKDEBUG           => $ENV{MKDEBUG};
 use constant MAX_OPEN_FILES    => 1000;
 use constant CLOSE_N_LRU_FILES => 100;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(attribute saveto_dir lp) ) {
+   foreach my $arg ( qw(attribute base_dir SlowLogParser session_files) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   $args{saveto_dir} .= '/' if substr($args{saveto_dir}, -1, 1) ne '/';
+   $args{base_dir} .= '/' if substr($args{base_dir}, -1, 1) ne '/';
 
    my $self = {
+      base_file_name    => 'session',
+      max_dirs          => 1_000,
+      max_files_per_dir => 5_000,
+      max_sessions      => 5_000_000,  # max_dirs * max_files_per_dir
+      merge_sessions    => 1,
+      session_files     => 64,
+      quiet             => 0,
+      verbose           => 0,
       %args,
-      n_dirs          => 0,  # number of dirs created
-      n_files         => -1, # number of session files in current dir
-      n_sessions      => 0,  # number of sessions saved
-      n_session_files => 0,  # number of session files created
-      session_fhs     => [], # filehandles for each session
-      n_open_fhs      => 0,  # number of open session filehandles
-      sessions        => {}, # sessions data store
-      n_events_total  => 0,  # number of total queries in log
-      n_events_saved  => 0,  # number of queries split and saved from log
+      n_dirs_total       => 0,  # total number of dirs created
+      n_files_total      => 0,  # total number of session files created
+      n_files_this_dir   => -1, # number of session files in current dir
+      session_fhs        => [], # filehandles for each session
+      n_open_fhs         => 0,  # current number of open session filehandles
+      n_events_total     => 0,  # total number of events in log
+      n_events_saved     => 0,  # total number of events saved
+      n_sessions_skipped => 0,  # total number of sessions skipped
+      n_sessions_saved   => 0,  # number of sessions saved
+      sessions           => {}, # sessions data store
+      created_dirs       => [],
    };
-   $self->{maxfiles}          ||= 100;
-   $self->{maxdirs}           ||= 100;
-   $self->{maxsessions}       ||= 100000;
-   $self->{maxsessionfiles}   ||= 0;
-   $self->{verbose}           ||= 0;
-   $self->{session_file_name} ||= 'mysql_log_session_';
 
+   MKDEBUG && _d('new LogSplitter final args:', Dumper($self));
    return bless $self, $class;
 }
 
-sub split_logs {
-   my ( $self, $logs ) = @_;
-   my $oktorun = 1; # true as long as we haven't created too many
+sub split {
+   my ( $self, @logs ) = @_;
+   my $oktorun = 1; # True as long as we haven't created too many
 
-   @{$self}{qw(n_dirs n_files n_sessions n_session_files n_events_total n_events_saved)} = qw(0 -1 0 0 0 0);
-
-   $self->{sessions} = {};
-
-   if ( !defined $logs || scalar @$logs == 0 ) {
+   if ( @logs == 0 ) {
       MKDEBUG && _d('Implicitly reading STDIN because no logs were given');
-      push @$logs, '-';
+      push @logs, '-';
    }
 
    my @callbacks;
-   if ( $self->{maxsessionfiles} ) {
-      push @callbacks, sub {
-         my ( $event ) = @_;
-         $self->{n_events_total}++;
-         my ( $session, $sesion_id ) = $self->_get_session_ds($event);
-         return unless defined $session;
-         $self->{n_sessions}++ if !$session->{already_seen}++;
-         my $db = $event->{db} || $event->{Schema};
-         if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
-            push @{$session->{queries}}, "USE `$db`";
-            $session->{db} = $db;
-         }
-         push @{$session->{queries}}, flatten($event->{arg});
-         $self->{n_events_saved}++;
-         return;
-      };
-   }
-   else {
-      push @callbacks, sub {
-         my ( $event ) = @_; 
-         $self->{n_events_total}++;
-         my ($session, $session_id) = $self->_get_session_ds($event);
-         return unless defined $session;
+   push @callbacks, sub {
+      my ( $event ) = @_; 
+      my ($session, $session_id) = $self->_get_session_ds($event);
+      return unless $session;
 
-         if ( !defined $session->{fh} ) {
-            $self->{n_sessions}++;
-            MKDEBUG && _d('New session:', $session_id, ',',
-               $self->{n_sessions}, 'of', $self->{maxsessions});
+      if ( !defined $session->{fh} ) {
+         $self->{n_sessions_saved}++;
+         MKDEBUG && _d('New session:', $session_id, ',',
+            $self->{n_sessions_saved}, 'of', $self->{max_sessions});
 
-            my $session_file = $self->_next_session_file();
-            if ( !$session_file ) {
-               $oktorun = 0;
-               MKDEBUG && _d('No longer oktorun because no _next_session_file');
-               return;
-            }
-
-            $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
-
-            open my $fh, '>', $session_file
-               or die "Cannot open log split file $session_file: $OS_ERROR";
-            print $fh "-- ONE SESSION\n";
-            $session->{fh} = $fh;
-            $self->{n_open_fhs}++;
-
-            $session->{active}       = 1;
-            $session->{session_file} = $session_file;
-            push @{ $self->{session_fhs} },
-               { fh => $fh, session_id => $session_id };
-
-            MKDEBUG && _d('Created', $session_file, 'for session',
-               $self->{attribute}, '=', $session_id);
-         }
-         elsif ( !$session->{active} ) {
-
-            $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
-
-             open $session->{fh}, '>>', $session->{session_file}
-                or die "Cannot reopen log split file "
-                  . "$session->{session_file}: $OS_ERROR";
-             $self->{n_open_fhs}++;
-
-             $session->{active} = 1;
-
-             MKDEBUG && _d('Reopend', $session->{session_file}, 'for session',
-               $self->{attribute}, '=', $session_id);
-         }
-         else {
-            MKDEBUG && _d('Event belongs to active session', $session_id);
+         my $session_file = $self->_get_next_session_file();
+         if ( !$session_file ) {
+            $oktorun = 0;
+            MKDEBUG && _d('Not oktorun because no _get_next_session_file');
+            return;
          }
 
-         my $session_fh = $session->{fh};
+         $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
 
-         my $db = $event->{db} || $event->{Schema};
-         if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
-            print $session_fh "USE `$db`\n\n";
-            $session->{db} = $db;
-         }
+         open my $fh, '>', $session_file
+            or die "Cannot open session file $session_file: $OS_ERROR";
+         $session->{fh} = $fh;
+         $self->{n_open_fhs}++;
 
-         print $session_fh flatten($event->{arg}), "\n\n";
-         $self->{n_events_saved}++;
+         $session->{active}       = 1;
+         $session->{session_file} = $session_file;
 
-         return;
-      };
-   }
+         push @{$self->{session_fhs}}, { fh => $fh, session_id => $session_id };
 
+         MKDEBUG && _d('Created', $session_file, 'for session',
+            $self->{attribute}, '=', $session_id);
+
+         print $fh "-- START SESSION $session_id\n\n";
+      }
+      elsif ( !$session->{active} ) {
+
+         $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
+
+          open $session->{fh}, '>>', $session->{session_file}
+             or die "Cannot reopen session file "
+               . "$session->{session_file}: $OS_ERROR";
+
+          $session->{active} = 1;
+          $self->{n_open_fhs}++;
+
+          MKDEBUG && _d('Reopend', $session->{session_file}, 'for session',
+            $self->{attribute}, '=', $session_id);
+      }
+      else {
+         MKDEBUG && _d('Event belongs to active session', $session_id);
+      }
+
+      my $session_fh = $session->{fh};
+
+      my $db = $event->{db} || $event->{Schema};
+      if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
+         print $session_fh "use $db\n\n";
+         $session->{db} = $db;
+      }
+
+      print $session_fh flatten($event->{arg}), "\n\n";
+      $self->{n_events_saved}++;
+
+      return $event;
+   };
+
+   my $lp = $self->{SlowLogParser};
    LOG:
-   foreach my $log ( @$logs ) {
+   foreach my $log ( @logs ) {
       next unless defined $log;
       if ( !-f $log && $log ne '-' ) {
          warn "Skipping $log because it is not a file";
@@ -1443,45 +1448,22 @@ sub split_logs {
          $fh = *STDIN;
       }
       else {
-         open $fh, "<", $log or warn "Cannot open $log: $OS_ERROR\n";
+         if ( !open $fh, "<", $log ) {
+            warn "Cannot open $log: $OS_ERROR\n";
+            next LOG;
+         }
       }
       if ( $fh ) {
-         1 while ($oktorun && $self->{lp}->parse_event($fh, undef, @callbacks));
-         close $fh;
-         last LOG if !$oktorun;
-      }
-   }
-
-   my $sessions_per_file;
-   if ( $self->{maxsessionfiles} ) {   
-      for my $i ( 1..$self->{maxsessionfiles} ) {
-         my $session_file = $self->_next_session_file($i);
-         last if !$session_file;
-         open my $fh, '>', $session_file
-            or die "Cannot open session file $session_file: $OS_ERROR";
-         $self->{n_session_files}++;
-         print $fh "-- MULTIPLE SESSIONS\n";
-         push @{ $self->{session_fhs} },
-            { fh => $fh, session_file => $session_file };
-      }
-
-      $sessions_per_file = int($self->{n_sessions} / $self->{maxsessionfiles});
-      MKDEBUG && _d($self->{n_sessions}, 'session,',
-         $sessions_per_file, 'per file');
-
-      my $i      = 0;
-      my $file_n = 0;
-      my $fh     = $self->{session_fhs}->[0]->{fh};
-      while ( my ($session_id, $session) = each %{$self->{sessions}} ) {
-         $session->{session_file}
-            = $self->{session_fhs}->[$file_n]->{session_file}; 
-         print $fh join("\n\n", @{$session->{queries}});
-         print $fh "\n"; # because join() doesn't do this
-         print $fh "-- END SESSION\n\n";
-         if ( ++$i >= $sessions_per_file ) {
-            $i = 0;
-            $file_n++ if $file_n < $self->{n_session_files} - 1;
-            $fh = $self->{session_fhs}->[$file_n]->{fh};
+         MKDEBUG && _d('Splitting', $log);
+         while ( $oktorun ) {
+            my $events = $lp->parse_event($fh, undef, @callbacks);
+            $self->{n_events_total} += $events;
+            last LOG unless $oktorun;
+            if ( !$events ) {
+               MKDEBUG && _d('No more events in', $log);
+               close $fh;
+               next LOG;
+            }
          }
       }
    }
@@ -1491,26 +1473,8 @@ sub split_logs {
    }
    $self->{n_open_fhs}  = 0;
 
-   if ( $self->{verbose} ) {
-      my $fmt = "%-22s %15s %15s\n";
-      printf($fmt, 'SPLIT SUMMARY', 'COUNT', 'MAX ALLOWED');
-      printf($fmt, 'Parsed sessions', $self->{n_sessions},$self->{maxsessions});
-      printf($fmt, 'Directories created', $self->{n_dirs}, $self->{maxdirs});
-      printf($fmt, 'Session files created', $self->{n_session_files},
-         $self->{maxfiles});
-      printf($fmt, 'Sessions per file', $sessions_per_file,
-         $self->{maxsessionfiles}) if $self->{maxsessionfiles};
-      printf($fmt, 'Events read', $self->{n_events_total}, '');
-      printf($fmt, 'Events saved', $self->{n_events_saved}, '');
-
-      print "\n";
-      $fmt = "%-16s %-60s\n";
-      printf($fmt, $self->{attribute}, 'SAVED IN SESSION FILE');
-      foreach my $session_id ( sort keys %{ $self->{sessions} } ) {
-         my $session = $self->{sessions}->{ $session_id };
-         printf($fmt, $session_id, $session->{session_file}); 
-      }
-   }
+   $self->_merge_session_files() if $self->{merge_sessions};
+   $self->print_split_summary() unless $self->{quiet};
 
    return;
 }
@@ -1519,39 +1483,37 @@ sub _get_session_ds {
    my ( $self, $event ) = @_;
 
    my $attrib = $self->{attribute};
-   if ( !exists $event->{ $attrib } ) {
-      if ( MKDEBUG ) {
-         use Data::Dumper;
-         _d('No attribute', $attrib, 'in event:', Dumper($event));
-      }
+   if ( !$event->{ $attrib } ) {
+      MKDEBUG && _d('No attribute', $attrib, 'in event:', Dumper($event));
       return;
    }
 
-   return if !defined $event->{arg};
+   return unless $event->{arg};
 
-   return if $event->{cmd} eq 'Admin';
+   return if ($event->{cmd} || '') eq 'Admin';
 
    my $session;
    my $session_id = $event->{ $attrib };
 
-   if ( $self->{n_sessions} < $self->{maxsessions} ) {
+   if ( $self->{n_sessions_saved} < $self->{max_sessions} ) {
       $session = $self->{sessions}->{ $session_id } ||= {};
    }
    elsif ( exists $self->{sessions}->{ $session_id } ) {
       $session = $self->{sessions}->{ $session_id };
    }
    else {
+      $self->{n_sessions_skipped} += 1;
       MKDEBUG && _d('Skipping new session', $session_id,
-         'because maxsessions is reached');
+         'because max_sessions is reached');
    }
 
-   return ($session, $session_id);
+   return $session, $session_id;
 }
 
 sub _close_lru_session {
    my ( $self ) = @_;
    my $session_fhs = $self->{session_fhs};
-   my $lru_n       = $self->{n_sessions} - MAX_OPEN_FILES - 1;
+   my $lru_n       = $self->{n_sessions_saved} - MAX_OPEN_FILES - 1;
    my $close_to_n  = $lru_n + CLOSE_N_LRU_FILES - 1;
 
    MKDEBUG && _d('Closing session fhs', $lru_n, '..', $close_to_n,
@@ -1566,32 +1528,40 @@ sub _close_lru_session {
    return;
 }
 
-sub _next_session_file {
+sub _get_next_session_file {
    my ( $self, $n ) = @_;
-   return '' if $self->{n_dirs} >= $self->{maxdirs};
+   return if $self->{n_dirs_total} >= $self->{max_dirs};
 
-   if ( $self->{n_files} >= $self->{maxfiles} || $self->{n_files} < 0) {
-      $self->{n_dirs}++;
-      $self->{n_files} = 0;
-      my $new_dir = "$self->{saveto_dir}$self->{n_dirs}";
+   if ( ($self->{n_files_this_dir} >= $self->{max_files_per_dir})
+        || $self->{n_files_this_dir} < 0 ) {
+      $self->{n_dirs_total}++;
+      $self->{n_files_this_dir} = 0;
+      my $new_dir = "$self->{base_dir}$self->{n_dirs_total}";
       if ( !-d $new_dir ) {
          my $retval = system("mkdir $new_dir");
          if ( ($retval >> 8) != 0 ) {
             die "Cannot create new directory $new_dir: $OS_ERROR";
          }
-         MKDEBUG && _d('Created new saveto_dir', $new_dir);
+         MKDEBUG && _d('Created new base_dir', $new_dir);
+         push @{$self->{created_dirs}}, $new_dir;
       }
       elsif ( MKDEBUG ) {
-         _d('saveto_dir', $new_dir, 'already exists');
+         _d($new_dir, 'already exists');
       }
    }
+   else {
+      MKDEBUG && _d('No dir created; n_files_this_dir:',
+         $self->{n_files_this_dir}, 'n_files_total:',
+         $self->{n_files_total});
+   }
 
-   $self->{n_files}++;
-   my $dir_n        = $self->{n_dirs} . '/';
-   my $session_n    = sprintf '%04d', $n || $self->{n_sessions};
-   my $session_file = $self->{saveto_dir}
+   $self->{n_files_total}++;
+   $self->{n_files_this_dir}++;
+   my $dir_n        = $self->{n_dirs_total} . '/';
+   my $session_n    = sprintf '%d', $n || $self->{n_sessions_saved};
+   my $session_file = $self->{base_dir}
                     . $dir_n
-                    . $self->{session_file_name} . $session_n;
+                    . $self->{base_file_name}."-$session_n.txt";
    MKDEBUG && _d('Next session file', $session_file);
    return $session_file;
 }
@@ -1599,8 +1569,68 @@ sub _next_session_file {
 sub flatten {
    my ( $query ) = @_;
    return unless $query;
+   $query =~ s!/\*.*?\*/! !g;
+   $query =~ s/^\s+//;
    $query =~ s/\s{2,}/ /g;
    return $query;
+}
+
+sub _merge_session_files {
+   my ( $self ) = @_;
+
+   print "Merging session files...\n" unless $self->{quiet};
+
+   my @multi_session_files;
+   for my $i ( 1..$self->{session_files} ) {
+      push @multi_session_files, $self->{base_dir} ."sessions-$i.txt";
+   }
+
+   my @single_session_files = map {
+      $_->{session_file};
+   } values %{$self->{sessions}};
+
+   my $i = make_rr_iter(0, $#multi_session_files);  # round-robin iterator
+   foreach my $single_session_file ( @single_session_files ) {
+      my $multi_session_file = $multi_session_files[ $i->() ];
+      my $cmd = "cat $single_session_file >> $multi_session_file";
+      eval { `$cmd`; };
+      if ( $EVAL_ERROR ) {
+         warn "Failed to `$cmd`: $OS_ERROR";
+      }
+   }
+
+   foreach my $created_dir ( @{$self->{created_dirs}} ) {
+      my $cmd = "rm -rf $created_dir";
+      eval { `$cmd`; };
+      if ( $EVAL_ERROR ) {
+         warn "Failed to `$cmd`: $OS_ERROR";
+      }
+   }
+
+   return;
+}
+
+sub make_rr_iter {
+   my ( $start, $end ) = @_;
+   my $current = $start;
+   return sub {
+      $current = $start if $current > $end ;
+      $current++;  # For next iteration.
+      return $current - 1;
+   };
+}
+
+sub print_split_summary {
+   my ( $self ) = @_;
+   print "Split summary:\n";
+   my $fmt = "%-20s %-10s\n";
+   printf $fmt, 'Total sessions',
+      $self->{n_sessions_saved} + $self->{n_sessions_skipped};
+   printf $fmt, 'Sessions saved',
+      $self->{n_sessions_saved};
+   printf $fmt, 'Total events', $self->{n_events_total};
+   printf $fmt, 'Events saved', $self->{n_events_saved};
+   return;
 }
 
 sub _d {
@@ -1955,7 +1985,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 3407
+# Transformers package 3972
 # ###########################################################################
 
 package Transformers;
@@ -2089,7 +2119,7 @@ sub parse_timestamp {
 sub unix_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
+     = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?$/ )
    {
       return timelocal($s, $i, $h, $d, $m - 1, $y);
    }
@@ -2118,7 +2148,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3543
+# EventAggregator package 4131
 # ###########################################################################
 package EventAggregator;
 
@@ -2139,24 +2169,40 @@ my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(groupby worst attributes) ) {
+   foreach my $arg ( qw(groupby worst) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-
-   return bless {
-      groupby      => $args{groupby},
-      attributes   => {
+   my $attributes = $args{attributes} || {};
+   my $self = {
+      groupby        => $args{groupby},
+      detect_attribs => scalar keys %$attributes == 0 ? 1 : 0,
+      all_attribs    => [ keys %$attributes ],
+      ignore_attribs => {
          map  { $_ => $args{attributes}->{$_} }
          grep { $_ ne $args{groupby} }
-         keys %{$args{attributes}}
+         @{$args{ignore_attributes}}
+      },
+      attributes     => {
+         map  { $_ => $args{attributes}->{$_} }
+         grep { $_ ne $args{groupby} }
+         keys %$attributes
+      },
+      alt_attribs    => {
+         map  { $_ => make_alt_attrib(@{$args{attributes}->{$_}}) }
+         grep { $_ ne $args{groupby} }
+         keys %$attributes
       },
       worst        => $args{worst},
-      unroll_limit => $args{unroll_limit} || 50,
+      unroll_limit => $args{unroll_limit} || 1000,
       attrib_limit => $args{attrib_limit},
       result_classes => {},
       result_globals => {},
       result_samples => {},
-   }, $class;
+      n_events       => 0,
+      unrolled_loops => undef,
+      type_for       => { %{$args{type_for} || {}} },
+   };
+   return bless $self, $class;
 }
 
 sub reset_aggregated_data {
@@ -2170,6 +2216,7 @@ sub reset_aggregated_data {
       delete @{$class}{keys %$class};
    }
    delete @{$self->{result_samples}}{keys %{$self->{result_samples}}};
+   $self->{n_events} = 0;
 }
 
 sub aggregate {
@@ -2178,69 +2225,93 @@ sub aggregate {
    my $group_by = $event->{$self->{groupby}};
    return unless defined $group_by;
 
-   if ( exists $self->{unrolled_loops} ) {
-      return $self->{unrolled_loops}->($self, $event, $group_by);
-   }
+   $self->{n_events}++;
+   MKDEBUG && _d('event', $self->{n_events});
 
-   my @attrs = sort keys %{$self->{attributes}};
-   ATTRIB:
-   foreach my $attrib ( @attrs ) {
-      GROUPBY:
-      foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
-         my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
-         my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
-         my $samples       = $self->{result_samples};
-         my $handler = $self->{handlers}->{ $attrib };
-         if ( !$handler ) {
-            $handler = $self->make_handler(
-               $attrib,
-               $event,
-               wor => $self->{worst} eq $attrib,
-               alt => $self->{attributes}->{$attrib},
-            );
-            $self->{handlers}->{$attrib} = $handler;
+   return $self->{unrolled_loops}->($self, $event, $group_by)
+      if $self->{unrolled_loops};
+
+   if ( $self->{n_events} <= $self->{unroll_limit} ) {
+
+      $self->add_new_attributes($event) if $self->{detect_attribs};
+
+      ATTRIB:
+      foreach my $attrib ( keys %{$self->{attributes}} ) {
+
+         if ( !exists $event->{$attrib} ) {
+            MKDEBUG && _d("attrib doesn't exist in event:", $attrib);
+            my $alt_attrib = $self->{alt_attribs}->{$attrib}->($event);
+            MKDEBUG && _d('alt attrib:', $alt_attrib);
+            next ATTRIB unless $alt_attrib;
          }
-         next GROUPBY unless $handler;
-         $samples->{$val} ||= $event; # Initialize to the first event.
-         $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
+
+         GROUPBY:
+         foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
+            my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
+            my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+            my $samples       = $self->{result_samples};
+            my $handler = $self->{handlers}->{ $attrib };
+            if ( !$handler ) {
+               $handler = $self->make_handler(
+                  $attrib,
+                  $event,
+                  wor => $self->{worst} eq $attrib,
+                  alt => $self->{attributes}->{$attrib},
+               );
+               $self->{handlers}->{$attrib} = $handler;
+            }
+            next GROUPBY unless $handler;
+            $samples->{$val} ||= $event; # Initialize to the first event.
+            $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
+         }
       }
    }
+   else {
+      $self->_make_unrolled_loops($event);
+      $self->{unrolled_loops}->($self, $event, $group_by);
+   }
 
-   if ( $self->{n_queries}++ > 50 # Give up waiting after 50 events.
-      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs
-   ) {
-      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
-      my $globs = $self->{result_globals}; # Global stats for each
-      my $samples = $self->{result_samples};
+   return;
+}
 
-      my @lines = (
-         'my ( $self, $event, $group_by ) = @_;',
-         'my ($val, $class, $global, $idx);',
-         (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
-         'my $temp = $self->{result_classes}->{ $group_by }
-            ||= { map { $_ => { } } @attrs };',
-         '$samples->{$group_by} ||= $event;', # Always start with the first.
+sub _make_unrolled_loops {
+   my ( $self, $event ) = @_;
+
+   my $group_by = $event->{$self->{groupby}};
+
+   my @attrs   = grep { $self->{handlers}->{$_} } keys %{$self->{attributes}};
+   my $globs   = $self->{result_globals}; # Global stats for each
+   my $samples = $self->{result_samples};
+
+   my @lines = (
+      'my ( $self, $event, $group_by ) = @_;',
+      'my ($val, $class, $global, $idx);',
+      (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
+      'my $temp = $self->{result_classes}->{ $group_by }
+         ||= { map { $_ => { } } @attrs };',
+      '$samples->{$group_by} ||= $event;', # Always start with the first.
+   );
+   foreach my $i ( 0 .. $#attrs ) {
+      push @lines, (
+         '$class  = $temp->{"'  . $attrs[$i] . '"};',
+         '$global = $globs->{"' . $attrs[$i] . '"};',
+         $self->{unrolled_for}->{$attrs[$i]},
       );
-      foreach my $i ( 0 .. $#attrs ) {
-         push @lines, (
-            '$class  = $temp->{"'  . $attrs[$i] . '"};',
-            '$global = $globs->{"' . $attrs[$i] . '"};',
-            $self->{unrolled_for}->{$attrs[$i]},
-         );
-      }
-      if ( ref $group_by ) {
-         push @lines, '}'; # Close the loop opened above
-      }
-      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
-      unshift @lines, 'sub {';
-      push @lines, '}';
-
-      my $code = join("\n", @lines);
-      MKDEBUG && _d('Unrolled subroutine:', @lines);
-      my $sub = eval $code;
-      die if $EVAL_ERROR;
-      $self->{unrolled_loops} = $sub;
    }
+   if ( ref $group_by ) {
+      push @lines, '}'; # Close the loop opened above
+   }
+   @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+   unshift @lines, 'sub {';
+   push @lines, '}';
+
+   my $code = join("\n", @lines);
+   MKDEBUG && _d('Unrolled subroutine:', @lines);
+   my $sub = eval $code;
+   die $EVAL_ERROR if $EVAL_ERROR;
+   $self->{unrolled_loops} = $sub;
+
+   return;
 }
 
 sub results {
@@ -2274,7 +2345,8 @@ sub make_handler {
    return unless defined $val; # Can't decide type if it's undef.
 
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
-   my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
+   my $type = $self->type_for($attrib)         ? $self->type_for($attrib)
+            : $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
    MKDEBUG && _d('Type for', $attrib, 'is', $type,
@@ -2289,7 +2361,7 @@ sub make_handler {
       unq => $type =~ m/bool|string/ ? 1 : 0,
       all => $type eq 'num'          ? 1 : 0,
       glo => 1,
-      trf => ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0} : undef,
+      trf => ($type eq 'bool') ? q{(($val || '') eq 'Yes') ? 1 : 0} : undef,
       wor => 0,
       alt => [],
       %args,
@@ -2412,7 +2484,7 @@ sub bucket_value {
 
       for my $base10_bucket ( 0..($#base10_starts-1) ) {
          my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
-         MKDEBUG && _d('Base 10 bucket $base10_bucket maps to',
+         MKDEBUG && _d('Base 10 bucket', $base10_bucket, 'maps to',
             'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
          for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
             $buck_tens[$base1_05_bucket] = $base10_bucket;
@@ -2578,6 +2650,56 @@ sub top_events {
    return @chosen;
 }
 
+sub add_new_attributes {
+   my ( $self, $event ) = @_;
+   return unless $event;
+
+   map {
+      my $attrib = $_;
+      $self->{attributes}->{$attrib}  = [$attrib];
+      $self->{alt_attribs}->{$attrib} = make_alt_attrib($attrib);
+      push @{$self->{all_attribs}}, $attrib;
+      MKDEBUG && _d('Added new attribute:', $attrib);
+   }
+   grep {
+      $_ ne $self->{groupby}
+      && !exists $self->{attributes}->{$_}
+      && !exists $self->{ignore_attribs}->{$_}
+   }
+   keys %$event;
+
+   return;
+}
+
+sub get_attributes {
+   my ( $self ) = @_;
+   return @{$self->{all_attribs}};
+}
+
+sub events_processed {
+   my ( $self ) = @_;
+   return $self->{n_events};
+}
+
+sub make_alt_attrib {
+   my ( @attribs ) = @_;
+
+   my $attrib = shift @attribs;  # Primary attribute.
+   return sub {} unless @attribs;  # No alternates.
+
+   my @lines;
+   push @lines, 'sub { my ( $event ) = @_; my $alt_attrib;';
+   push @lines, map  {
+         "\$alt_attrib = '$_' if !defined \$alt_attrib "
+         . "&& exists \$event->{'$_'};"
+      } @attribs;
+   push @lines, 'return $alt_attrib; }';
+   MKDEBUG && _d('alt attrib sub for', $attrib, ':', @lines);
+   my $sub = eval join("\n", @lines);
+   die if $EVAL_ERROR;
+   return $sub;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -2604,8 +2726,12 @@ package mk_log_player;
 
 use POSIX;
 use Time::HiRes qw(time usleep);
+use File::Basename qw(dirname);
+use File::Find;
+use File::Spec;
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 use English qw(-no_match_vars);
@@ -2615,12 +2741,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 my $o;
 my $dp;
 
-# These vars are mostly used by get_next_session_itr().
-# TODO: modularize this; something like SessionItr.pm.
-my @session_files;
-my $session_file;
-my $session_fh;
-my $done_reading_session_file = 1;
+
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -2638,10 +2759,9 @@ sub main {
    $o->get_specs();
    $o->get_opts();
 
-   $dp->prop('autokey', 'h');
    $dp->prop('set-vars', $o->get('set-vars'));
 
-   # If not --split, then the remaining argv should be a DSN.
+   # If not --split then the remaining arg should be a DSN for --play.
    my $dsn;
    if ( !$o->get('split') && !$o->get('print') ) {
       $dsn = $dp->parse_options($o);
@@ -2652,15 +2772,20 @@ sub main {
       }
    }
 
+   if ( !-d $o->get('base-dir') ) {
+      $o->save_error('Invalid --base-dir: '
+         . $o->get('base-dir') . ' is not a directory');
+   }
+
    $o->usage_or_errors();
 
    # #########################################################################
    # Split the logs into session files and exit.
    # #########################################################################
    my $split  = $o->get('split');
-   my $saveto = $o->get('saveto');
+   my $base_dir = $o->get('base-dir');
    if ( $split ) {
-      die "$saveto is not a directory" if !-d $saveto;
+      die "$base_dir is not a directory" if !-d $base_dir;
 
       # It's sad because I wrote this script but I still frequently forget
       # to specify the split attribute (Thread_id, etc.). So the log file
@@ -2673,17 +2798,16 @@ sub main {
 
       my $lp = new SlowLogParser;
       my $ls = new LogSplitter(
-         attribute         => $split,
-         saveto_dir        => $saveto,
-         maxdirs           => $o->get('maxdirs'),
-         maxfiles          => $o->get('maxfiles'),
-         maxsessions       => $o->get('maxsessions'),
-         maxsessionfiles   => $o->get('maxsessionfiles'),
-         verbose           => $o->get('verbose'),
-         session_file_name => $o->get('sessionfilename'),
-         lp                => $lp,
+         attribute      => $split,
+         base_dir       => $base_dir,
+         base_file_name => $o->get('base-file-name'),
+         max_sessions   => $o->get('max-sessions'),
+         session_files  => $o->get('session-files'),
+         quiet          => $o->get('quiet'),
+         verbose        => $o->get('verbose'),
+         SlowLogParser  => $lp,
       );
-      $ls->split_logs(\@ARGV);
+      $ls->split(@ARGV);
 
       return 0;
    }
@@ -2692,6 +2816,7 @@ sub main {
    # Make list of session files to play. If playing a whole, the log is
    # treated as one big session file.
    # ######################################################################### 
+   my @session_files;
    foreach my $session_file ( split ',', $o->get('play') ) {
       # The session "file" might actually be a dir, in which case we
       # read ALL files in that dir.
@@ -2706,7 +2831,12 @@ sub main {
          closedir $dir;
       }
       else {
-         push @session_files, $session_file;
+         if ( !-f $session_file ) {
+            warn "$session_file is not a file";
+         }
+         else {
+            push @session_files, $session_file;
+         }
       }
    }
 
@@ -2716,6 +2846,36 @@ sub main {
       warn 'No valid session files';
       return 0;
    }
+
+   my $n_session_files = scalar @session_files;
+   print "Found $n_session_files session files.\n" unless $o->get('quiet');
+
+   if ( $o->get('threads') > $n_session_files ) {
+      warn "--threads is greater than the number of session files.  "
+         . "Only $n_session_files concurrent process will be ran";
+      $o->set('threads', $n_session_files);
+   }
+   my $threads = $o->get('threads');
+
+   my $files_per_child  = int( $n_session_files / $threads );
+   print "Each process will play $files_per_child multi-session files.\n"
+      unless $o->get('quiet');
+
+   my @child_tasks;
+   my $n = 0;
+   for my $childno ( 0..($threads-1) ) {
+      my $i = 0;
+      while ( $i++ < $files_per_child
+              && (my $session_file = pop @session_files) ) {
+         push @{$child_tasks[$childno]}, $session_file;
+         $n++;
+         print "Process ", $childno+1, " assigned $session_file ($n)\n"
+            if $o->get('verbose');
+      }
+   }
+
+   # Shouldn't happen...
+   warn "There are unassigned session files" if @session_files > 0;
 
    # #########################################################################
    # Connect parent to MySQL.
@@ -2747,43 +2907,39 @@ sub main {
       }
    };
 
-   my $qr = new QueryRewriter(); # shared by the children
-   my $session_n = 0;
-   my $session_itr;
+   # Fork the child processes.
+   print "Running processes...\n" unless $o->get('quiet');
+   for my $childno ( 0..($threads-1) ) {
+      my $child_tasks = $child_tasks[$childno];
 
+      my $pid = fork();
+      die "Cannot fork process $childno: $OS_ERROR" unless defined $pid;
+      if ( $pid ) {              # I'm the parent.
+         $children{$pid} = $childno + 1;
+      }
+      else {                     # I'm the child.
+         $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
+         MKDEBUG && _d('Child PID', $PID, 'started');
+         play_session($dsn, ($childno + 1), $child_tasks);
+         MKDEBUG && _d('Child PID', $PID, 'finished');
+         return 0;
+      }
+   } 
+   print "All processes are running; waiting for them to finish...\n"
+      unless $o->get('quiet');
 
-   # Some opts that we use frequently.
-   my $concurrency    = $o->get('concurrency');
-   my $delay_sessions = $o->get('delaysessions');
-
+   # Wait for and reap the child processes.
    do {
-      wait_for_server($parent_dbh, $dsn) unless $o->get('print');
-
-      while ( $concurrency > keys %children
-              && ($session_itr = get_next_session_itr()) ) {
-         usleep( get_delay($delay_sessions) );
-         $session_n++;
-         my $pid = fork();
-         die "Cannot fork: $OS_ERROR" unless defined $pid;
-         if ( $pid ) {              # I'm the parent.
-            $children{$pid} = $session_file;
-         }
-         else {                     # I'm the child.
-            $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
-            MKDEBUG && _d('Child PID', $PID, 'got', $session_file, $session_n);
-            play_session($dsn, $session_n, $session_itr);
-            MKDEBUG && _d('Child PID', $PID, 'done');
-            return 0;
-         }
-      } 
-
       # Possibly wait for child.
       my $reaped = 0;
       foreach my $pid ( keys %exited_children ) { 
+         $reaped = 1;
+         print "Process ", $children{$pid}, " finished with exit status ",
+            $exited_children{$pid}->{exit_status}, ".\n"
+            unless $o->get('quiet');
+         MKDEBUG && _d('Reaped child PID', $pid);
          delete $children{$pid};
          delete $exited_children{$pid};
-         $reaped = 1;
-         MKDEBUG && _d('Reaped child PID', $pid);
       }
 
       if ( keys %children && !$reaped ) {
@@ -2791,261 +2947,102 @@ sub main {
          # and signal while we're not sleeping, so if we sleep forever we may
          # not get the signal.
          MKDEBUG && _d('Sleeping to wait for children');
-         sleep(1);
+         sleep 1;
       }
       MKDEBUG && _d(scalar keys %children, 'children are still working');
 
-   } while ( $session_itr || keys %children );
+   } while ( keys %children );
 
+   print "All processes have finished.\n" unless $o->get('quiet');
    return 0;
 }
 
 # #############################################################################
 # Subroutines.
 # #############################################################################
+sub play_session {
+   my ( $dsn, $childno, $session_files ) = @_;
 
-sub wait_for_server {
-   my ( $dbh, $dsn ) = @_;
-   my $tries = 0;
-   while ( !$dbh->ping && $tries++ < $o->get('wait') ) {
-      sleep(1);
-      eval {
-         $dbh = get_cxn($dsn);
-      };
-      if ( $EVAL_ERROR ) {
-         warn 'Waiting: ' . scalar(localtime) . ' '
-            . mysql_error_msg($EVAL_ERROR);
-      }
-   }
-   if ( $tries >= $o->get('wait') ) {
-      die "Too many retries while waiting for server, exiting.\n";
-   }
-   return;
-}
+   my $query_time;
+   my $slowlog_fmt = "# Thread_id: %s  Query_time: %.6f  Schema: %s\n%s;\n";
+   my $only_select = $o->get('only-select');
+   my $warnings    = $o->get('warnings');
+   my $print       = $o->get('print');
+   my $dbh         = get_cxn($dsn) unless $print;
 
-sub get_next_session_itr {
-   if ( $done_reading_session_file ) {
-      MKDEBUG && _d("Done reading session file",
-         ($session_file || '(opening first session file)'));
-      close $session_fh if defined $session_fh;
-      $session_file = shift @session_files;
-      return unless defined $session_file;
-      MKDEBUG && _d('Opened session file', $session_file);
+   # Each thread writes to its own file because contention will not allow
+   # them all to write correctly to STDOUT at once.
+   my $base_dir    = $o->get('base-dir');
+   my $output_file = $base_dir . '/'
+                   . $o->get('base-file-name') . "-results-$PID.txt";
+   open my $output_fh, '>', $output_file
+      or die "Cannot open $output_file for writing: $OS_ERROR";
+   MKDEBUG && _d('Proc', $childno, 'writing to', $output_file);
 
-      if ( $session_file eq '-' ) {
-         $session_fh = *STDIN;
-      }
-      else {
+   local $INPUT_RECORD_SEPARATOR = '';
+
+   ITERATION:
+   for my $iteration_n ( 1..$o->get('iterations') ) {
+      MKDEBUG && _d('Proc', $childno, 'starting iteration', $iteration_n);
+
+      SESSION_FILE:
+      foreach my $session_file ( @$session_files ) {
+         my $session_fh;
+         my $session_n;
          if ( !open $session_fh, '<', $session_file ) {
             warn "Cannot open session file $session_file: $OS_ERROR";
-            $done_reading_session_file = 1;
-            return get_next_session_itr();
+            next SESSION_FILE;
          }
-      }
 
-      # TODO: don't hard-code the delimiters below. Make them constants
-      # or something in LogSplitter.
-      # TODO: will this even work if reading STDIN?
-      my $first_line = <$session_fh>;
-      if ( $first_line =~ m/-- MULTIPLE SESSIONS/ ) {
-         MKDEBUG && _d('Multiple sessions in this file');
-         $done_reading_session_file = 0;
-         return get_next_session_itr();
-      }
-      elsif ( $first_line =~ m/-- ONE SESSION/ ) {
-         MKDEBUG && _d('One session in this file');
-         $done_reading_session_file = 1;
-         return sub {
-            local $INPUT_RECORD_SEPARATOR = '';
-            my $query = <$session_fh>;
-            $query =~ s/\n+$// if $query;
-            return $query;
-         };
-      }
-      else {
-         warn "Malformed session file: $session_file\n"
-            . "First line is not -- MULTIPLE SESSION or -- ONE SESSION";
-         $done_reading_session_file = 1;
-         return get_next_session_itr();
-      }
-   }
-   else {
-      local $INPUT_RECORD_SEPARATOR = "\n-- END SESSION\n\n";
-      my $session = <$session_fh>;
-      if ( $session ) {
-         MKDEBUG && _d('Read a session in', $session_file);
-         $done_reading_session_file = 0;
-         chomp $session;
-         my @queries = split("\n\n", $session);
-         return sub { return shift @queries; };
-      }
-      else {
+         my $db;
+         QUERY:
+         while ( my $query = <$session_fh> ) {
+            if ( $print ) {
+               print $output_fh $query;
+               next QUERY;
+            }
+
+            if ( $query =~ m/^-- START SESSION (\S+)/ ) {
+               $session_n = $1;
+               next QUERY;
+            }
+
+            if ( $only_select && $query !~ m/^(?:SELECT|USE) /i ) {
+               MKDEBUG && _d('Skipping query for --only-select:', $query);
+               next QUERY;
+            }
+
+            if ( $query =~ m/^use (\S+)/ ) {
+               $db = $1;
+               eval { $dbh->do($query); };
+               if ( $EVAL_ERROR && $warnings ) {
+                  warn_error($childno, $session_n, $query,$dbh->errstr());
+               }
+               next QUERY;
+            }
+
+            $query_time = time;
+            eval { $dbh->do($query); };
+            if ( $EVAL_ERROR && $warnings ) {
+               warn_error($childno, $session_n, $query, $dbh->errstr());
+               next QUERY;
+            }
+
+            chomp $query;
+            printf $output_fh $slowlog_fmt,
+               "$childno$session_n",
+               time - $query_time,
+               ($db || ''),
+               $query;
+         } # QUERY
+
          MKDEBUG && _d('No more sessions in', $session_file);
-         $done_reading_session_file = 1;
-         return get_next_session_itr();
-      }
-   }
-}
+         close $session_fh;
+      } # SESSION_FILE
+   } # ITERATION
 
-sub play_session {
-   my ( $dsn, $session_n, $get_next_query ) = @_;
-   my $dbh        = get_cxn($dsn) unless $o->get('print');
-   my $query_n    = 0;
-   my $ea         = new EventAggregator(
-      groupby      => 'arg',
-      attributes   => {
-         query_time => [qw(query_time)],
-         n_rows     => [qw(n_rows)],
-      },
-      worst=>       => 'query_time',
-   );
-
-   # Frequently used opts.
-   my $only_select   = $o->get('onlyselect');
-   my $delay_queries = $o->get('delayqueries');
-   my $print         = $o->get('print');
-
-   my $total_time = time;
-   QUERY:
-   while ( defined (my $query = $get_next_query->()) ) {
-
-      if ( $only_select && $query !~ m/^(?:SELECT|USE) /i ) {
-         MKDEBUG && _d('Skipping query for --onlyselect:', $query);
-         next QUERY;
-      }
-
-      $query_n++;
-
-      if ( $print ) {
-         print "/* session $session_n query $query_n */ $query\n";
-         next QUERY;
-      }
-
-      # USE statements are not timed.
-      if ( $query =~ /^USE /i ) {
-         eval { $dbh->do($query); };
-         if ( $EVAL_ERROR ) {
-            warn_error($session_n, $query_n, $query, $dbh->errstr());
-         }
-         next QUERY;
-      }
-
-      usleep( get_delay($delay_queries) );
-
-      my $n_rows           = 0;
-      my $query_start_time = time;
-
-      if ( $query =~ m/^SELECT /i ) {
-         # Count number of rows returned by SELECTs.
-         my $results;
-         eval { $results = $dbh->selectall_arrayref($query); };
-         if ( $EVAL_ERROR ) {
-            warn_error($session_n, $query_n, $query, $dbh->errstr());
-            next QUERY;
-         }
-         $n_rows = scalar @$results;
-      }
-      else {
-         # Non-SELECTs do not return anything, therefore we can
-         # just do() them.
-         eval { $dbh->do($query); };
-         if ( $EVAL_ERROR ) {
-            warn_error($session_n, $query_n, $query, $dbh->errstr());
-            next QUERY;
-         }
-      }
-
-      my $event = {
-         arg        => $query,
-         query_time => time - $query_start_time,
-         n_rows     => $n_rows,
-      };
-      $ea->aggregate($event);
-   }
-
-   if ( !$print ) {
-      $total_time = time - $total_time;
-      $dbh->disconnect();
-      my $results = $ea->results();
-      report_session_stats($session_n, $total_time, $results);
-  } 
-
-   return;
-}
-
-sub report_session_stats {
-   my ( $session_n, $total_time, $results ) = @_;
-   my $global = $results->{globals};
-
-   if ( !$global->{query_time}->{cnt} ) {
-      # This can happen if a session was all non-SELECTs and
-      # --onlyselect was given.
-      MKDEBUG && _d("Session", $session_n, "has no valid queries");
-      return;
-   }
-
-   # Global Queries and Rows per second, and avg query time.
-   my $qps = sprintf '%.6f',
-      $global->{query_time}->{sum} / ($global->{query_time}->{cnt} || 1);
-   my $avg = sprintf '%.6f',
-      $global->{query_time}->{sum} / ($global->{query_time}->{cnt} || 1);
-   my $rps = sprintf '%.6f',
-      $global->{query_time}->{sum} / ($global->{n_rows}->{sum} || 1);
-
-   # Stats for all queries (global).
-   my $s = $o->get('csv') ? ',' : "\t";
-   print "session number"
-      .  "$s"."total time"
-      .  "$s"."min query time"
-      .  "$s"."max query time"
-      .  "$s"."avg query time"
-      .  "$s"."number of queries"
-      .  "$s"."queries per second"
-      .  "$s"."number of rows"
-      .  "$s"."rows per second"
-      .  "\n";
-
-   print "$session_n"
-      .  "$s$global->{query_time}->{sum}"
-      .  "$s$global->{query_time}->{min}"
-      .  "$s$global->{query_time}->{max}"
-      .  "$s$avg"
-      .  "$s$global->{query_time}->{cnt}"
-      .  "$s$qps"
-      .  "$s$global->{n_rows}->{sum}"
-      .  "$s$rps"
-      .  "\n";
-
-   # Per-query stats.
-   print "query count"
-      .  "$s"."total time"
-      .  "$s"."min time"
-      .  "$s"."max time"
-      .  "$s"."avg time"
-      .  "$s"."total rows"
-      .  "$s"."min rows"
-      .  "$s"."max rows"
-      .  "$s"."sample"
-      .  "\n";
-
-   while ( my ($class, $query) = each %{$results->{classes}} ) {
-      $avg = sprintf('%.6f',
-         $query->{query_time}->{sum} / $query->{query_time}->{cnt});
-      my $sample = $results->{samples}->{$class}->{arg};
-
-      print "$query->{query_time}->{cnt}"
-         .  "$s$query->{query_time}->{sum}"
-         .  "$s$query->{query_time}->{min}"
-         .  "$s$query->{query_time}->{max}"
-         .  "$s$avg"
-         .  "$s$query->{n_rows}->{sum}"
-         .  "$s$query->{n_rows}->{min}"
-         .  "$s$query->{n_rows}->{max}"
-         .  "$s$sample"
-         .  "\n";
-   }
-   print "\n";
-
+   close $output_fh;
+   $dbh->disconnect() if $dbh;
    return;
 }
 
@@ -3073,9 +3070,8 @@ sub get_cxn {
 }
 
 sub warn_error {
-   my ( $session_n, $query_n, $query, $warning ) = @_;
-   return unless $o->get('warn-errors');
-   warn "Query $query_n '$query' in session $session_n caused an error: "
+   my ( $childno, $session_n, $query, $warning ) = @_;
+   warn "Query '$query' in proc $childno session $session_n caused an error: "
       . "$warning\n";
    return;
 }
@@ -3107,42 +3103,82 @@ mk-log-player - Split and play MySQL slow logs.
 
 =head1 SYNOPSIS
 
-   # Split mysql-slow.log into sessions grouped by Thread_id 
-   # (one session per file). Then play all those sessions against host1.
-   mk-log-player --split Thread_id mysql-slow.log
-   mk-log-player --play  /tmp/mysql_log_session_* h=host1
+Split slow.log into sessions grouped by Thread_id:
+
+  mk-log-player --split Thread_id slow.log
+
+Play all those sessions against host1:
+
+  mk-log-player --play /tmp/mysql_log_session_* h=host1 --base-dir results/
+
+Use L<mk-query-digest> to summarize the results:
+
+  mk-query-digest /tmp/
 
 =head1 DESCRIPTION
 
-mk-log-player splits and plays MySQL slow logs.
+mk-log-player does two things: it splits MySQL slow logs into session files
+and it plays (executes) queries in session files on a MySQL server.  Only
+session files can be played; slow logs cannot be played directly without
+being split.
+
+A session is a group of queries from the slow log that all
+share a common attribute.  Usually this attribute is Thead_id.  This common
+attribute is specified with the L<"--split"> option.  Multiple sessions are
+saved into a single sesssion file.  See L<"--session-files">,
+L<"--max-sessions">, L<"--base-file-name"> and L<"--base-dir">.  These
+session files are then played with L<"--play">.
 
 =head1 OPTIONS
 
-Specify at least one of --play or --split.
+Specify at least one of L<"--play"> or L<"--split">.
 
---play and --split are mutually exclusive.
+L<"--play"> and L<"--split"> are mutually exclusive.
 
 =over
 
 =item --ask-pass
 
+group: Play
+
 Prompt for a password when connecting to MySQL.
+
+=item --base-dir
+
+type: string; default: ./
+
+Base directory for L<"--split"> session files and L<"--play"> result file.
+
+=item --base-file-name
+
+type: string; default: session
+
+Base file name for L<"--split"> session files and L<"--play"> result file.
+
+Each L<"--split"> session file will be saved as <base-file-name>-N.txt, where
+N is a four digit, zero-padded session ID.  For example: session-0003.txt.
+
+Each L<"--play"> result file will be saved as <base-file-name>-results-PID.txt,
+where PID is the process ID of the executing thread.
+
+All files are saved in L<"--base-dir">.
 
 =item --charset
 
+group: Play
+
 short form: -A; type: string
 
-Default character set.  If the value is utf8, sets Perl's binmode on
-STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
-runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
-binmode on STDOUT without the utf8 layer, and runs SET NAMES after
-connecting to MySQL.
+Default character set.  If the value is utf8, sets Perl's binmode on STDOUT to
+utf8, passes the mysql_enable_utf8 option to DBD::mysql, and runs SET NAMES UTF8
+after connecting to MySQL.  Any other value sets binmode on STDOUT without the
+utf8 layer, and runs SET NAMES after connecting to MySQL.
 
-=item --concurrency
+=item --threads
 
-type: int; default: 1
+type: int; default: 2; group: Play
 
-Number of concurrent sessions to play.
+Number of threads used to play sessions concurrently.
 
 =item --config
 
@@ -3151,36 +3187,11 @@ type: Array
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
 
-=item --csv
-
-Comma-separate output of performance metrics.
-
 =item --defaults-file
 
 short form: -F; type: string
 
-Only read mysql options from the given file.  You must give an absolute
-pathname.
-
-=item --delayqueries
-
-type: array; default: 0
-
-Amount of delay time between executing queries in each session.  Delay time is
-given in seconds (with microsecond precision) and can either be a single value
-or a range. Single values cause an exact delay of the value time (example: 0.010
-= delay 10 milliseconds). Ranges cause a random delay between the given value
-times (example: 0.001,1 = random delay from 1 millisecond to 1 second).
-
-=item --delaysessions
-
-type: array; default: 0
-
-Amount of delay time between playing sessions.  Delay time is given in seconds
-(with microsecond precision) and can either be a single value or a range. Single
-values cause an exact delay of the value time (example: 0.010 = delay 10
-milliseconds). Ranges cause a random delay between the given value times
-(example: 0.001,1 = random delay from 1 millisecond to 1 second).
+Only read mysql options from the given file.
 
 =item --help
 
@@ -3188,131 +3199,102 @@ Show help and exit.
 
 =item --host
 
-short form: -h; type: string
+short form: -h; type: string; group: Play
 
 Connect to host.
 
-=item --maxdirs
+=item --iterations
 
-type: int; default: 100
+type: int; default: 1; group: Play
 
-Max number of directories to create for saving session files.
+How many times each thread should play all its session files.
 
-So that one directory does not become overloaded with session files,
-C<mk-log-player> creates up to this many directories and saves up to
-L<"--maxfiles"> in each directory.
+=item --max-sessions
 
-Each directory is a sub-directory of L<"--saveto">, numbered sequentially
-starting with 1/.
+type: int; default: 5000000; group: Split
 
-L<"--maxdirs"> and L<"--maxfiles"> and L<"--maxsessions"> are never exceeded.
-If one option limits another, the most restrictive option is respected and
-the other options will not reach their maximums. The default values for
-L<"--maxdirs"> and L<"--maxfiles"> allow for 100,000 sessions: 100 files
-in 100 directories.
+Maximum number of sessions to L<"--split">.
 
-=item --maxfiles
-
-type: int; default: 100
-
-Max number of session failes to create per directory.
-
-L<"--maxdirs"> and L<"--maxfiles"> and L<"--maxsessions"> are never exceeded.
-If one option limits another, the most restrictive option is respected and
-the other options will not reach their maximums. The default values for
-L<"--maxdirs"> and L<"--maxfiles"> allow for 100,000 sessions: 100 files
-in 100 directories.
-
-=item --maxsessionfiles
-
-type: int; default: 0
-
-Max number of session files in which sessions are saved with --split.  By
-default, one session is saved in one file up to L<"--maxsessions"> (and
-L<"--maxfiles"> and L<"--maxdirs">). This option causes several sessions to be
-saved to a limited number of files up to L<"--maxsessions">.
-
-For example, if you want to split a lot with 10,000 sessions into only two
-session files, each one containing 5,000 session, then specify
---maxsessionfiles 2.
-
-If, for the same 10,000 session log, you specify --maxsessionfiles 2
-and --maxsessions 2000, then the two session files will each contain 1,000
-sessions.
-
-=item --maxsessions
-
-type: int
-
-Max number of sessions to save with --split.  By default, C<mk-log-player> tries
-to save every session from the main log file. For huge logs, however, this can
-result in hundreds of thousands of sessions. This option causes only the first N
-number of sessions to be saved.  See also L<"--maxdirs"> and L<"--maxfiles">.
-
-=item --onlyselect
-
-Play only SELECT queries.
+By default, C<mk-log-player> tries to split every session from the log file.
+For huge logs, however, this can result in millions of sessions.  This
+option causes only the first N number of sessions to be saved.  All sessions
+after this number are ignored, but sessions split before this number will
+continue to have their queries split even if those queries appear near the end
+of the log and after this number has been reached.
 
 =item --password
 
-short form: -p; type: string
+short form: -p; type: string; group: Play
 
 Password to use when connecting.
 
-=item --play
-
-type: string
-
-Play (execute) session files created by --split.  The argument to play must be a
-comma-separated list of session files created by L<"--split"> or a directory.
-If the argument is a directory, ALL files in that directory will be played.
-
 =item --port
 
-short form: -P; type: int
+short form: -P; type: int; group: Play
 
 Port number to use for connection.
 
+=item --only-select
+
+group: Play
+
+Play only SELECT and USE queries; ignore all others.
+
+=item --play
+
+type: string; group: Play
+
+Play (execute) session files created by --split.
+
+The argument to play must be a commaxn-separated list of session files
+created by L<"--split"> or a directory. If the argument is a directory,
+ALL files in that directory will be played.
+
 =item --print
+
+group: Play
 
 Print queries instead of playing them.
 
-=item --saveto
+=item --session-files
 
-type: string; default: /tmp/
+type: int; default: 8; group: Split
 
-Base directory under  which to save session files.
+Number of session files to create with L<"--split">.
 
-Up to L<"--maxdirs"> additional directories will be created under this
-directory.
+The number of session files should either be equal to the number of
+L<"--threads"> you intend to L<"--play"> or be an even multiple of
+L<"--threads">.  This number is important for maximum performance because it:
+  * allows each thread to have roughly the same amount of sessions to play
+  * avoids having to open/close many session files
+  * avoids disk IO overhead by doing large sequential reads
 
-=item --sessionfilename
+You may want to increase this number beyond L<"--threads"> if each session
+file becomes too large.  For example, splitting a 20G log into 8 sessions
+files may yield roughly eight 2G session files.
 
-type: string; default: mysql_log_session_
+See also L<"--max-sessions">.
 
-Base name for session files saved by --split.
+=item --quiet
 
-Each session file saved by L<"--split"> will begin with this base session
-name and then be postfixed with a 4-digit, zero-padded session ID. For
-example, with the default session file name: mysql_log_session_0001,
-mysql_log_session_0002, etc.
+Do not print anything.
 
 =item --set-vars
 
-type: string; default: wait_timeout=10000
+type: string; group: Play; default: wait_timeout=10000
 
-Set these MySQL variables.  Immediately after connecting to MySQL, this
-string will be appended to SET and executed.
+Set these MySQL variables.  Immediately after connecting to MySQL, this string
+will be appended to SET and executed.
 
 =item --socket
 
-short form: -S; type: string
+short form: -S; type: string; group: Play
 
 Socket file to use for connection.
 
 =item --split
 
-type: string
+type: string; group: Split
 
 Split log by given attribute to create session files.
 
@@ -3321,7 +3303,7 @@ etc.
 
 =item --user
 
-short form: -u; type: string
+short form: -u; type: string; group: Play
 
 User for login if not current user.
 
@@ -3335,17 +3317,23 @@ Increase verbosity; can specifiy multiple times.
 
 Show version and exit.
 
-=item --wait
+=item --wait-between-sessions
 
-short form: -w; type: time; default: 5m
+type: array; default: 0; group: Play
 
-Wait limit when server is down.
+Not implemented yet.
 
-=item --[no]warn-errors
+The wait time is given in seconds with microsecond precision and can be either
+a single value or a range.  A single value causes an exact wait; example:
+0.010 = wait 10 milliseconds.  A range causes a random wait between
+the given value times; example: 0.001,1 = random wait from 1 millisecond to
+1 second.
 
-default: yes
+=item --[no]warnings
 
-Warn about SQL errors such as invalid queries.
+default: no; group: Play
+
+Print warnings about SQL errors such as invalid queries to STDERR.
 
 =back
 
@@ -3364,17 +3352,18 @@ of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
 needed.  The first URL gets the latest released version of the tool, and the
 second gets the latest trunk code from Subversion.
 
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
 =head1 ENVIRONMENT
 
 The environment variable C<MKDEBUG> enables verbose debugging output in all of
 the Maatkit tools:
 
    MKDEBUG=1 mk-....
-
-=head1 SYSTEM REQUIREMENTS
-
-You need Perl and some core packages that ought to be
-installed in any reasonably new version of Perl.
 
 =head1 BUGS
 
