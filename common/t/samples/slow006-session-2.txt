@@ -1,5 +1,6 @@
--- ONE SESSION
-USE `bar`
+-- START SESSION 20
+
+use bar
 
 SELECT col FROM bar_tbl
 

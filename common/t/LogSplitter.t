@@ -17,137 +17,186 @@ sub test_diff {
    return !$retval;
 }
 
-my $tmpdir = '/tmp/logettes';
+my $tmpdir = '/tmp/LogSplitter';
 diag(`rm -rf $tmpdir ; mkdir $tmpdir`);
 
 my $lp = new SlowLogParser();
 my $ls = new LogSplitter(
-   attribute  => 'foo',
-   saveto_dir => "$tmpdir/",
-   lp         => $lp,
-   verbose    => 0,
+   attribute     => 'foo',
+   base_dir      => $tmpdir,
+   SlowLogParser => $lp,
+   session_files => 3,
+   quiet         => 1,
 );
 
 isa_ok($ls, 'LogSplitter');
+
+diag(`rm -rf $tmpdir ; mkdir $tmpdir`);
 
 # This creates an implicit test to make sure that
 # split_logs() will not die if the saveto_dir already
 # exists. It should just use the existing dir.
 diag(`mkdir $tmpdir/1`); 
 
-$ls->split_logs(['samples/slow006.txt']);
-ok($ls->{n_sessions} == 0, 'Parsed zero sessions for bad attribute');
-
-$ls = new LogSplitter(
-   attribute  => 'Thread_id',
-   saveto_dir => "$tmpdir/",
-   lp         => $lp,
-   verbose    => 0,
+$ls->split('samples/slow006.txt');
+is(
+   $ls->{n_sessions_saved},
+   0,
+   'Parsed zero sessions for bad attribute'
 );
-$ls->split_logs(['samples/slow006.txt' ]);
-ok(-f "$tmpdir/1/mysql_log_session_0001", 'Basic log split 0001 exists');
-ok(-f "$tmpdir/1/mysql_log_session_0002", 'Basic log split 0002 exists');
-ok(-f "$tmpdir/1/mysql_log_session_0003", 'Basic log split 0003 exists');
+
+is(
+   $ls->{n_events_total},
+   6,
+   'Parsed all events'
+);
+
+# #############################################################################
+# Test a simple split of 6 events, 3 sessions into 3 session files.
+# #############################################################################
+diag(`rm -rf $tmpdir/*`);
+$ls = new LogSplitter(
+   attribute      => 'Thread_id',
+   base_dir       => $tmpdir,
+   SlowLogParser  => $lp,
+   session_files  => 3,
+   quiet          => 1,
+   merge_sessions => 0,
+);
+$ls->split('samples/slow006.txt');
+ok(-f "$tmpdir/1/session-1.txt", 'Basic split session 1 file exists');
+ok(-f "$tmpdir/1/session-2.txt", 'Basic split session 2 file exists');
+ok(-f "$tmpdir/1/session-3.txt", 'Basic split session 3 file exists');
 
 my $output;
 
-$output = `diff $tmpdir/1/mysql_log_session_0001 samples/slow006_split-0001.txt`;
-ok(!$output, 'Basic log split 0001 has correct SQL statements');
-$output = `diff $tmpdir/1/mysql_log_session_0002 samples/slow006_split-0002.txt`;
-ok(!$output, 'Basic log split 0002 has correct SQL statements');
-$output = `diff $tmpdir/1/mysql_log_session_0003 samples/slow006_split-0003.txt`;
-ok(!$output, 'Basic log split 0003 has correct SQL statements');
+$output = `diff $tmpdir/1/session-1.txt samples/slow006-session-1.txt`;
+is(
+   $output,
+   '',
+   'Session 1 file has correct SQL statements'
+);
 
+$output = `diff $tmpdir/1/session-2.txt samples/slow006-session-2.txt`;
+is(
+   $output,
+   '',
+   'Session 2 file has correct SQL statements'
+);
+
+$output = `diff $tmpdir/1/session-3.txt samples/slow006-session-3.txt`;
+is(
+   $output,
+   '',
+   'Session 3 file has correct SQL statements'
+);
+
+# #############################################################################
+# Test splitting more sessions than we can have open filehandles at once.
+# #############################################################################
 diag(`rm -rf $tmpdir/*`);
+$ls = new LogSplitter(
+   attribute      => 'Thread_id',
+   base_dir       => $tmpdir,
+   SlowLogParser  => $lp,
+   session_files  => 10,
+   quiet          => 1,
+   merge_sessions => 0,
+);
+$ls->split('samples/slow009.txt');
+chomp($output = `ls -1 $tmpdir/1/ | wc -l`);
+is(
+   $output,
+   2000,
+   'Splits 2_000 sessions'
+);
 
-$ls->split_logs(['samples/slow009.txt']);
-chomp($output = `ls -1 $tmpdir/20/ | tail -n 1`);
-is($output, 'mysql_log_session_2000', 'Makes 20 dirs for 2,000 sessions');
-$output = `cat $tmpdir/20/mysql_log_session_2000`;
-like($output, qr/SELECT 2001 FROM foo/, '2,000th session has correct SQL');
-$output = `cat $tmpdir/1/mysql_log_session_0012`;
-like($output, qr/SELECT 12 FROM foo\n\nSELECT 1234 FROM foo/, 'Reopened and appended to previously closed session');
+$output = `cat $tmpdir/1/session-2000.txt`;
+like(
+   $output,
+   qr/SELECT 2001 FROM foo/,
+   '2_000th session has correct SQL'
+);
 
+$output = `cat $tmpdir/1/session-12.txt`;
+like(
+   $output, qr/SELECT 12 FROM foo\n\nSELECT 1234 FROM foo/,
+   'Reopened and appended to previously closed session'
+);
+
+# #############################################################################
+# Test max_sessions.
+# #############################################################################
 diag(`rm -rf $tmpdir/*`);
+$ls = new LogSplitter(
+   attribute      => 'Thread_id',
+   base_dir       => $tmpdir,
+   SlowLogParser  => $lp,
+   session_files  => 10,
+   quiet          => 1,
+   merge_sessions => 0,
+   max_sessions   => 10,
+);
+$ls->split('samples/slow009.txt');
+chomp($output = `ls -1 $tmpdir/1/ | wc -l`);
+is(
+   $output,
+   '10',
+   'max_sessions works (1/3)',
+);
+is(
+   $ls->{n_sessions_saved},
+   '10',
+   'max_sessions works (2/3)'
+);
+is(
+   $ls->{n_files_total},
+   '10',
+   'max_sessions works (3/3)'
+);
 
-$ls->{maxsessions} = 10;
-$ls->split_logs(['samples/slow009.txt']);
-chomp($output = `ls -1 $tmpdir/1/ | tail -n 1`);
-is($output, 'mysql_log_session_0010', 'maxsessions works (1/3)');
-is($ls->{n_sessions}, '10', 'maxsessions works (2/3)');
-is($ls->{n_files}, '10', 'maxsessions works (3/3)');
-
+# #############################################################################
+# Check that all filehandles are closed.
+# #############################################################################
 is_deeply(
    $ls->{session_fhs},
    [],
    'Closes open fhs'
 );
 
-diag(`rm -rf $tmpdir/*`);
-$output = `cat samples/slow006.txt | samples/log_splitter.pl`;
-like($output, qr/Parsed sessions\s+3/, 'Reads STDIN implicitly');
+#diag(`rm -rf $tmpdir/*`);
+#$output = `cat samples/slow006.txt | samples/log_splitter.pl`;
+#like($output, qr/Parsed sessions\s+3/, 'Reads STDIN implicitly');
 
-diag(`rm -rf $tmpdir/*`);
-$output = `cat samples/slow006.txt | samples/log_splitter.pl -`;
-like($output, qr/Parsed sessions\s+3/, 'Reads STDIN explicitly');
+#diag(`rm -rf $tmpdir/*`);
+#$output = `cat samples/slow006.txt | samples/log_splitter.pl -`;
+#like($output, qr/Parsed sessions\s+3/, 'Reads STDIN explicitly');
 
-diag(`rm -rf $tmpdir/*`);
-$output = `cat samples/slow006.txt | samples/log_splitter.pl blahblah`;
-like($output, qr/Parsed sessions\s+0/, 'Does nothing if no valid logs are given');
+#diag(`rm -rf $tmpdir/*`);
+#$output = `cat samples/slow006.txt | samples/log_splitter.pl blahblah`;
+#like($output, qr/Parsed sessions\s+0/, 'Does nothing if no valid logs are given');
 
+# #############################################################################
+# Test session file merging.
+# #############################################################################
 diag(`rm -rf $tmpdir/*`);
 $ls = new LogSplitter(
-   attribute   => 'Thread_id',
-   saveto_dir  => "$tmpdir/",
-   lp          => $lp,
-   verbose           => undef,
-   maxsessions       => undef,
-   maxfiles          => undef,
-   maxdirs           => undef,
-   session_file_name => undef,
+   attribute      => 'Thread_id',
+   base_dir       => $tmpdir,
+   SlowLogParser  => $lp,
+   session_files  => 10,
+   quiet          => 1,
 );
-cmp_ok($ls->{verbose}, '==', '0', 'Undef verbose gets default');
-cmp_ok($ls->{maxsessions}, '==', '100000', 'Undef maxsessions gets default');
-cmp_ok($ls->{maxfiles}, '==', '100', 'Undef maxfiles gets default');
-cmp_ok($ls->{maxdirs}, '==', '100', 'Undef maxdirs gets default');
-is($ls->{session_file_name}, 'mysql_log_session_', 'Undef session_file_name gets default');
-
-# Test maxsessionfiles (multiple sessions in a limited number of files).
-$ls = new LogSplitter(
-   attribute       => 'Thread_id',
-   saveto_dir      => "$tmpdir/",
-   lp              => $lp,
-   verbose         => 1,
-   maxsessionfiles => 2,
-);
-
-open OUTPUT, '>', \$output;
-select OUTPUT;
-
-$ls->split_logs(['samples/slow006.txt' ]);
-
-close OUTPUT;
-select STDOUT;
-
-is(`ls -1 $tmpdir/1/ | wc -l`, "2\n", 'maxsessionfiles created only 2 files');
-ok(
-   test_diff("$tmpdir/1/mysql_log_session_0001", 'samples/maxsessionfiles_01'),
-   'maxsessionfiles file 1 of 2'
-);
-ok(
-   test_diff("$tmpdir/1/mysql_log_session_0002", 'samples/maxsessionfiles_02'),
-   'maxsessionfiles file 2 of 2'
-);
+$ls->split('samples/slow009.txt');
+$output = `grep 'START SESSION' $tmpdir/sessions-*.txt | cut -d' ' -f 4 | sort -n`;
 like(
    $output,
-   qr/Events read\s+6/,
-   'Counts total events'
+   qr/^1\n2\n3\n[\d\n]+2001$/,
+   'Merges 2_000 sessions'
 );
-like(
-   $output,
-   qr/Events saved\s+6/,
-   'Counts saved events'
-);
+
+diag(`rm -rf $tmpdir`);
+exit;
 
 # #############################################################################
 # Issue 418: mk-log-player dies trying to play statements with blank lines
@@ -162,8 +211,8 @@ $ls = new LogSplitter(
    lp         => $lp,
    verbose    => 0,
 );
-$ls->split_logs(['samples/slow020.txt' ]);
-$output = `diff $tmpdir/1/mysql_log_session_0001 samples/split_slow020.txt`;
+$ls->split(['samples/slow020.txt' ]);
+$output = `diff $tmpdir/1/session-0001 samples/split_slow020.txt`;
 is(
    $output,
    '',
@@ -179,13 +228,16 @@ $ls = new LogSplitter(
    verbose         => 0,
    maxsessionfiles => 1,
 );
-$ls->split_logs(['samples/slow020.txt' ]);
-$output = `diff $tmpdir/1/mysql_log_session_0001 samples/split_slow020_msf.txt`;
+$ls->split(['samples/slow020.txt' ]);
+$output = `diff $tmpdir/1/session-0001 samples/split_slow020_msf.txt`;
 is(
    $output,
    '',
    'Collapse multiple \n and \s with --maxsessionfiles (issue 418)'
 );
 
+# #############################################################################
+# Done.
+# #############################################################################
 diag(`rm -rf $tmpdir`);
 exit;
