@@ -2043,7 +2043,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4196
+# MySQLProtocolParser package 4226
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2166,10 +2166,11 @@ my %flag_for = (
 sub new {
    my ( $class, %args ) = @_;
    my $self = {
-      server      => $args{server},
-      version     => '41',
-      sessions    => {},
-      o           => $args{o},
+      server         => $args{server},
+      version        => '41',
+      sessions       => {},
+      o              => $args{o},
+      fake_thread_id => 1,  # see _make_event()
    };
    return bless $self, $class;
 }
@@ -2501,6 +2502,11 @@ sub _make_event {
    MKDEBUG && _d('Making event');
 
    $session->{raw_packets} = [];
+
+   if ( !$session->{thread_id} ) {
+      MKDEBUG && _d('Giving session fake thread id', $self->{fake_thread_id});
+      $session->{thread_id} = $self->{fake_thread_id}++;
+   }
 
    my ($host, $port) = $session->{client} =~ m/((?:\d+\.){3}\d+)\:(\w+)/;
    my $new_event = {
@@ -3042,7 +3048,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogWriter package 3405
+# SlowLogWriter package 4227
 # ###########################################################################
 package SlowLogWriter;
 
@@ -3066,10 +3072,42 @@ sub write {
       printf $fh "# User\@Host: %s[%s] \@ %s []\n",
          $event->{user}, $event->{user}, $event->{host};
    }
+   if ( $event->{Thread_id} ) {
+      printf $fh "# Thread_id: $event->{Thread_id}\n";
+   }
+
+   my $percona_patched = exists $event->{QC_Hit} ? 1 : 0;
+   my $df;  # Decimal/microsecond or integer format.
+   if ( $percona_patched ) {
+      $df = '.6f';
+   }
+   else {
+      $df = 'd';
+   }
+
    printf $fh
-      "# Query_time: %d  Lock_time: %d  Rows_sent: %d  Rows_examined: %d\n",
+      "# Query_time: %$df  Lock_time: %$df  Rows_sent: %d  Rows_examined: %d\n",
       map { $_ || 0 }
          @{$event}{qw(Query_time Lock_time Rows_sent Rows_examined)};
+
+   if ( $percona_patched ) {
+      printf $fh
+         "# QC_Hit: %s  Full_scan: %s  Full_join: %s  Tmp_table: %s  Disk_tmp_table: %s\n# Filesort: %s  Disk_filesort: %s  Merge_passes: %d\n",
+         map { $_ || 0 }
+            @{$event}{qw(QC_Hit Full_scan Full_join Tmp_table Disk_tmp_table Filesort Disk_filesort Merge_passes)};
+
+      if ( exists $event->{InnoDB_IO_r_ops} ) {
+         printf $fh
+            "#   InnoDB_IO_r_ops: %d  InnoDB_IO_r_bytes: %d  InnoDB_IO_r_wait: %$df\n#   InnoDB_rec_lock_wait: %$df  InnoDB_queue_wait: %$df\n#   InnoDB_pages_distinct: %d\n",
+            map { $_ || 0 }
+               @{$event}{qw(InnoDB_IO_r_ops InnoDB_IO_r_bytes InnoDB_IO_r_wait InnoDB_rec_lock_wait InnoDB_queue_wait InnoDB_pages_distinct)};
+
+      } 
+      else {
+         printf $fh "# No InnoDB statistics available for this query\n";
+      }
+   }
+
    if ( $event->{db} ) {
       printf $fh "use %s;\n", $event->{db};
    }
@@ -3077,6 +3115,8 @@ sub write {
       print $fh '# ';
    }
    print $fh $event->{arg}, ";\n";
+
+   return;
 }
 
 sub _d {
@@ -4220,7 +4260,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4214
+# QueryParser package 4217
 # ###########################################################################
 package QueryParser;
 
@@ -4251,6 +4291,14 @@ sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
    MKDEBUG && _d('Getting tables for', $query);
+
+   if ( $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i ) {
+      MKDEBUG && _d('Special table type:', $1);  # Using $1, watch out!
+      $query =~ s/IF NOT EXISTS//i;
+      my ($tbl) = $query =~ m/TABLE\s+($tbl_ident)(\s+.*)?/i;
+      MKDEBUG && _d('Matches table:', $tbl);
+      return ($tbl);
+   }
 
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
@@ -4331,7 +4379,9 @@ sub get_aliases {
 sub split {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query =~ s/^\s+//;
+   $query = remove_comments($query);
+   $query =~ s/^\s+//;      # Remove leading spaces.
+   $query =~ s/\s{2,}/ /g;  # Remove extra spaces.
    MKDEBUG && _d('Splitting', $query);
 
    my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
@@ -4350,6 +4400,13 @@ sub split {
 
    MKDEBUG && _d('statements:', map { $_ ? "<$_>" : 'none' } @statements);
    return @statements;
+}
+
+sub remove_comments {
+   my ( $query ) = @_;
+   return unless $query;
+   $query =~ s!/\*.*?\*/! !g;
+   return $query;
 }
 
 sub _d {
