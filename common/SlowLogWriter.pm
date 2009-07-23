@@ -40,11 +40,47 @@ sub write {
       printf $fh "# User\@Host: %s[%s] \@ %s []\n",
          $event->{user}, $event->{user}, $event->{host};
    }
+   if ( $event->{Thread_id} ) {
+      printf $fh "# Thread_id: $event->{Thread_id}\n";
+   }
+
+   # Tweak output according to log type: either classic or Percona-patched.
+   my $percona_patched = exists $event->{QC_Hit} ? 1 : 0;
+   my $df;  # Decimal/microsecond or integer format.
+   if ( $percona_patched ) {
+      $df = '.6f';
+   }
+   else {
+      $df = 'd';
+   }
+
+   # Classic slow log attribs.
    printf $fh
-      "# Query_time: %d  Lock_time: %d  Rows_sent: %d  Rows_examined: %d\n",
+      "# Query_time: %$df  Lock_time: %$df  Rows_sent: %d  Rows_examined: %d\n",
       # TODO 0  Rows_affected: 0  Rows_read: 1
       map { $_ || 0 }
          @{$event}{qw(Query_time Lock_time Rows_sent Rows_examined)};
+
+   if ( $percona_patched ) {
+      # First 2 lines of Percona-patched attribs.
+      printf $fh
+         "# QC_Hit: %s  Full_scan: %s  Full_join: %s  Tmp_table: %s  Disk_tmp_table: %s\n# Filesort: %s  Disk_filesort: %s  Merge_passes: %d\n",
+         map { $_ || 0 }
+            @{$event}{qw(QC_Hit Full_scan Full_join Tmp_table Disk_tmp_table Filesort Disk_filesort Merge_passes)};
+
+      if ( exists $event->{InnoDB_IO_r_ops} ) {
+         # Optional 3 lines of Percona-patched InnoDB attribs.
+         printf $fh
+            "#   InnoDB_IO_r_ops: %d  InnoDB_IO_r_bytes: %d  InnoDB_IO_r_wait: %$df\n#   InnoDB_rec_lock_wait: %$df  InnoDB_queue_wait: %$df\n#   InnoDB_pages_distinct: %d\n",
+            map { $_ || 0 }
+               @{$event}{qw(InnoDB_IO_r_ops InnoDB_IO_r_bytes InnoDB_IO_r_wait InnoDB_rec_lock_wait InnoDB_queue_wait InnoDB_pages_distinct)};
+
+      } 
+      else {
+         printf $fh "# No InnoDB statistics available for this query\n";
+      }
+   }
+
    if ( $event->{db} ) {
       printf $fh "use %s;\n", $event->{db};
    }
@@ -52,6 +88,8 @@ sub write {
       print $fh '# ';
    }
    print $fh $event->{arg}, ";\n";
+
+   return;
 }
 
 sub _d {
