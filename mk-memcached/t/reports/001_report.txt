@@ -1,2 +1,0 @@
-# 1: Query_time 0.00012
-set my_key
