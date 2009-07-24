@@ -371,12 +371,6 @@ sub timestamp_diff {
    }
 }
 
-# Replace things that look like placeholders with a ?
-sub fingerprint {
-   my ( $val ) = @_;
-   $val =~ s/[0-9A-Fa-f]{16,}|\d+/?/g;
-}
-
 1;
 
 # ###########################################################################
