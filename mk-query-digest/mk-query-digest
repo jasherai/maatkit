@@ -6335,9 +6335,11 @@ sub main {
             my $file = shift @ARGV or return;
             if ( $file eq '-' ) {
                $fh = *STDIN;
+               MKDEBUG && _d('Reading STDIN');
             }
             else {
                open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
+               MKDEBUG && _d('Reading', $file);
             }
          }
          # TODO: non-blocking I/O so we can respond to CTRL-C.  See
