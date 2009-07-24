@@ -2870,7 +2870,7 @@ sub main {
          push @{$child_tasks[$childno]}, $session_file;
          $n++;
          print "Process ", $childno+1, " assigned $session_file ($n)\n"
-            if $o->get('verbose');
+            if $o->get('verbose') && !$o->get('quiet');
       }
    }
 
@@ -3103,17 +3103,17 @@ mk-log-player - Split and play MySQL slow logs.
 
 =head1 SYNOPSIS
 
-Split slow.log into sessions grouped by Thread_id:
+Split slow.log on Thread_id into 16 session files, save in ./sessions:
 
-  mk-log-player --split Thread_id slow.log
+  mk-log-player --split Thread_id --session-files 16 --base-dir ./sessions slow.log
 
-Play all those sessions against host1:
+Play all those sessions on host1, save results in ./results:
 
-  mk-log-player --play /tmp/mysql_log_session_* h=host1 --base-dir results/
+  mk-log-player --play ./sessions --base-dir ./results h=host1
 
 Use L<mk-query-digest> to summarize the results:
 
-  mk-query-digest /tmp/
+  mk-query-digest ./results/*
 
 =head1 DESCRIPTION
 
@@ -3122,12 +3122,47 @@ and it plays (executes) queries in session files on a MySQL server.  Only
 session files can be played; slow logs cannot be played directly without
 being split.
 
-A session is a group of queries from the slow log that all
-share a common attribute.  Usually this attribute is Thead_id.  This common
-attribute is specified with the L<"--split"> option.  Multiple sessions are
-saved into a single sesssion file.  See L<"--session-files">,
-L<"--max-sessions">, L<"--base-file-name"> and L<"--base-dir">.  These
-session files are then played with L<"--play">.
+A session is a group of queries from the slow log that all share a common
+attribute, usually Thead_id.  The common attribute is specified with
+L<"--split">.  Multiple sessions are saved into a single sesssion file.
+See L<"--session-files">, L<"--max-sessions">, L<"--base-file-name"> and
+L<"--base-dir">.  These session files are played with L<"--play">.
+
+mk-log-player will L<"--play"> session files in parallel using N number of
+L<"--threads">.  (They're not technically threads, but we call them that
+anyway.)  Each thread will play all the sessions in its given session files.
+The sessions are played as fast as possible--there are no delays--because the
+goal is to stress-test and load-test the server.  So be careful using this
+script on a production server!
+
+Each L<"--play"> thread writes its results to a separate file.  These result
+files are in slow log format so they can be aggregated and summarized with
+L<mk-query-digest>.  See L<"OUTPUT">.
+
+=head1 OUTPUT
+
+Both L<"--split"> and L<"--play"> have two outputs: status messages printed to
+STDOUT to let you know what the script is doing, and session or result files
+written to separate files saved in L<"--base-dir">.  You can suppress all
+output to STDOUT for each with L<"--quiet">, or increase output with
+L<"--verbose">.
+
+The session files written by L<"--split"> are simple text files containing
+queries grouped into sessions.  For example:
+
+  -- START SESSION 10
+
+  use foo
+
+  SELECT col FROM foo_tbl
+
+The format of these session files is important: each query must be a single
+line separated by a single blank line.  And the "-- START SESSION" comment
+tells mk-log-player where individual sessions begin and end so that L<"--play">
+can correctly fake Thread_id in its result files.
+
+The result files written by L<"--play"> are in slow log format with a minimal
+header: the only attributes printed are Thread_id, Query_time and Schema.
 
 =head1 OPTIONS
 
@@ -3244,17 +3279,21 @@ Play only SELECT and USE queries; ignore all others.
 
 type: string; group: Play
 
-Play (execute) session files created by --split.
+Play (execute) session files created by L<"--split">.
 
 The argument to play must be a commaxn-separated list of session files
-created by L<"--split"> or a directory. If the argument is a directory,
+created by L<"--split"> or a directory.  If the argument is a directory,
 ALL files in that directory will be played.
 
 =item --print
 
 group: Play
 
-Print queries instead of playing them.
+Print queries instead of playing them; requires L<"--play">.
+
+You must also specify L<"--play"> with L<"--print">.  Although the queries
+will not be executed, L<"--play"> is required to specify which session files to
+read.
 
 =item --session-files
 
@@ -3352,18 +3391,17 @@ of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
 needed.  The first URL gets the latest released version of the tool, and the
 second gets the latest trunk code from Subversion.
 
-
-=head1 SYSTEM REQUIREMENTS
-
-You need Perl and some core packages that ought to be
-installed in any reasonably new version of Perl.
-
 =head1 ENVIRONMENT
 
 The environment variable C<MKDEBUG> enables verbose debugging output in all of
 the Maatkit tools:
 
    MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl and some core packages that ought to be installed in any
+reasonably new version of Perl.
 
 =head1 BUGS
 
