@@ -1,5 +1,7 @@
 Changelog for mk-slave-find:
 
+   * Added --recursion-method option (issue 181).
+
 2009-06-30: version 1.0.7
 
    * Updates to shared code.
