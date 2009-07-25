@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * The script crashed immediately on Windows (issue 531).
+   * The rusage report crashed on Windows (issue 531).
    * Added memcached parsing; --type memcached (issue 525).
    * Some boolean attributes didn't print correctly in the report.
    * Added --[no]zero-bool option to suppress 0% bool vals.

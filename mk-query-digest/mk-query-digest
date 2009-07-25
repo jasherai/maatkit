@@ -419,7 +419,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3945
+# OptionParser package 4245
 # ###########################################################################
 package OptionParser;
 
@@ -450,6 +450,7 @@ sub new {
    }
    my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
    $program_name ||= $PROGRAM_NAME;
+   my $home = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '.';
 
    my $self = {
       description    => $args{description},
@@ -472,8 +473,8 @@ sub new {
       default_files  => [
          "/etc/maatkit/maatkit.conf",
          "/etc/maatkit/$program_name.conf",
-         "$ENV{HOME}/.maatkit.conf",
-         "$ENV{HOME}/.$program_name.conf",
+         "$home/.maatkit.conf",
+         "$home/.$program_name.conf",
       ],
    };
    return bless $self, $class;
@@ -3739,8 +3740,15 @@ sub header {
 
    my ( $rss, $vsz, $user, $system ) = ( 0, 0, 0, 0 );
    eval {
-      my $mem = `ps -o rss,vsz $PID`;
-      ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
+      if ( $OSNAME ne 'MSWin32' ) {
+         my $mem = `ps -o rss,vsz $PID`;
+         ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
+      }
+      else {
+         my $mem = qx(tasklist /fi "PID eq $PID");
+         ($vsz) = $mem =~ m/([\d,]+)\s\w$/;
+         $vsz =~ s/,//g; # tasklist only returns virtual memory usage
+      }
    };
    ( $user, $system ) = times();
 
@@ -5327,7 +5335,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedProtocolParser package 4146
+# MemcachedProtocolParser package 4234
 # ###########################################################################
 package MemcachedProtocolParser;
 
@@ -5640,11 +5648,6 @@ sub timestamp_diff {
    else { # Assume only one day boundary has been crossed, no DST, etc
       return sprintf '%.6f', ( 86_400 - $ssecs ) + $esecs;
    }
-}
-
-sub fingerprint {
-   my ( $val ) = @_;
-   $val =~ s/[0-9A-Fa-f]{16,}|\d+/?/g;
 }
 
 1;
