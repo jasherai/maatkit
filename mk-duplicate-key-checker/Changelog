@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+   * The script crashed immediately on Windows (issue 531).
+
 2009-06-30: version 1.2.5
 
    * --ask-pass did not work (issue 453).

@@ -1,5 +1,7 @@
 Changelog for mk-audit:
 
+   * The script crashed immediately on Windows (issue 531).
+
 2009-06-02: version 0.9.8
 
    * Sorted options alphabetically in the POD.

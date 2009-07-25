@@ -1,5 +1,6 @@
 Changelog for mk-find:
 
+   * The script crashed immediately on Windows (issue 531).
    * Added tests --column-name, --view, --procedure, --function, --trigger
      and --trigger-table.
    * Converted script to runnable module (issue 315).

@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * The script crashed immediately on Windows (issue 531).
    * Added --recursion-method option (issue 181).
    * Could not sync table to different db or table on different host (issue 40).
    * Script needlessly checked for triggers on servers <5.0.2 (issue 294).

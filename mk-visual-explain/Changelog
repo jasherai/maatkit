@@ -1,5 +1,7 @@
 Changelog for mk-visual-explain:
 
+   * The script crashed immediately on Windows (issue 531).
+
 2009-06-30: version 1.0.16
 
    * --ask-pass did not work (issue 453).

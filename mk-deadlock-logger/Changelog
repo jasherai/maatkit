@@ -1,5 +1,7 @@
 Changelog for mk-deadlock-logger:
 
+   * The script crashed immediately on Windows (issue 531).
+
 2009-06-02: version 1.0.15
 
    * Sorted options alphabetically in the POD.

@@ -1,5 +1,7 @@
 Changelog for mk-slave-move:
 
+   * The script crashed immediately on Windows (issue 531).
+
 2009-05-03: version 0.9.7
 
    * Removed the --setvars long option.  Use --set-vars instead.
