@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 34;
+use Test::More tests => 35;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -197,6 +197,16 @@ ok(
 ok(
    -d '/tmp/default/default/mysql',
    'Dumped default set, too (issue 527)'
+);
+
+# #############################################################################
+# Issue 534: mk-parallel-restore --threads is being ignored
+# #############################################################################
+$output = `$cmd --help --threads 32 2>&1`;
+like(
+   $output,
+   qr/--threads\s+32/,
+   '--threads overrides /proc/cpuinfo (issue 534)'
 );
 
 # #############################################################################

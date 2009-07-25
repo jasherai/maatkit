@@ -1,5 +1,6 @@
 Changelog for mk-parallel-dump:
 
+   * --threads was ignored if /proc/cpuinfo could be read (issue 534).
    * --default-set with --sets did not work properly (issue 527).
    * Script died on broken tables (issue 170).
 
