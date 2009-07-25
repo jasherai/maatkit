@@ -47,26 +47,39 @@ sub _d {
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
+# Returns the number of CPUs.  If no sys info is given, then it's gotten
+# from /proc/cpuinfo, sysctl or whatever method will work.  If sys info
+# is given, then we try to parse the number of CPUs from it.
 sub get_number_of_cpus {
+   my ( $sys_info ) = @_;
    my $n_cpus; 
 
    # Try to read the number of CPUs in /proc/cpuinfo.
    # This only works on GNU/Linux.
    my $cpuinfo;
-   if ( !open $cpuinfo, "<", "/proc/cpuinfo" ) {
-      MKDEBUG && _d('Cannot read /proc/cpuinfo:', $OS_ERROR);
-   }
-   else { 
+   if ( $sys_info || (open $cpuinfo, "<", "/proc/cpuinfo") ) {
       local $INPUT_RECORD_SEPARATOR = undef;
-      my $contents = <$cpuinfo>;
-      close $cpuinfo;
+      my $contents = $sys_info || <$cpuinfo>;
+      MKDEBUG && _d('sys info:', $contents);
+      close $cpuinfo if $cpuinfo;
       $n_cpus = scalar( map { $_ } $contents =~ m/(processor)/g );
+      MKDEBUG && _d('Got', $n_cpus, 'from /proc/cpuinf');
    }
 
-   # Alternatives to /proc/cpuinfo.
-   $n_cpus ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
+   # Alternatives to /proc/cpuinfo:
 
-   return $n_cpus || 2; # default if all else fails
+   # FreeBSD and Mac OS X
+   if ( $sys_info || ($OSNAME =~ m/freebsd/i) || ($OSNAME =~ m/darwin/i) ) { 
+      my $contents = $sys_info || `sysctl hw.ncpu`;
+      MKDEBUG && _d('sys info:', $contents);
+      ($n_cpus) = $contents =~ m/(\d)/ if $contents;
+      MKDEBUG && _d('Got', $n_cpus, 'from sysctl hw.ncpu');
+   } 
+
+   # Windows   
+   $n_cpus ||= $ENV{NUMBER_OF_PROCESSORS};
+
+   return $n_cpus || 1; # There has to be at least 1 CPU.
 }
 
 1;
