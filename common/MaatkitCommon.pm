@@ -64,6 +64,7 @@ sub get_number_of_cpus {
       close $cpuinfo if $cpuinfo;
       $n_cpus = scalar( map { $_ } $contents =~ m/(processor)/g );
       MKDEBUG && _d('Got', $n_cpus, 'from /proc/cpuinf');
+      return $n_cpus if $n_cpus;
    }
 
    # Alternatives to /proc/cpuinfo:
@@ -74,6 +75,7 @@ sub get_number_of_cpus {
       MKDEBUG && _d('sys info:', $contents);
       ($n_cpus) = $contents =~ m/(\d)/ if $contents;
       MKDEBUG && _d('Got', $n_cpus, 'from sysctl hw.ncpu');
+      return $n_cpus if $n_cpus;
    } 
 
    # Windows   
