@@ -1,30 +1,3 @@
 Changelog for mk-log-player:
 
-   * Standardized options.
-   * Sorted options alphabetically in the POD.
-   * Could not play queries with blank lines (issue 418).
-   * Removed the --askpass long option.  Use --ask-pass instead.
-   * Removed the --verbosity long option.  Use --verbose instead.
-   * Removed the -s short option.  Use --split instead.
-   * Removed the -c short option.  Use --concurrency instead.
-   * Removed the -F short option.  Use --maxfiles instead.
-   * Removed the -p short option.  Use --play instead.
-   * Removed the -S short option.  Use --maxsessions instead.
-   * Removed the -M short option.  Use --maxsessionfiles instead.
-   * Removed the -D short option.  Use --maxdirs instead.
-   * Added the following options for issue 248:
-   *    --charset (-A)
-   *    --defaults-file (-F)
-   *    --host (-h)
-   *    --password (-p)
-   *    --port (-P)
-   *    --socket (-S)
-   *    --user (-u)
-   * Added the --help and --verbose options for issue 318.
-   * Added the --config option for issue 231.
-   * Queries per second was not calculated correctly (issue 356).
-   * Added --[no]warn-errors option.
-   * Wrapped all db calls in eval to catch and warn of errors.
-   * Changed total time from wall to sum of individual queries.
-   * Added more info to split summary.
-   * Updates to shared code.
+   * Initial release.

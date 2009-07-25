@@ -1985,154 +1985,30 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 3972
+# MaatkitCommon package 4240 $Revision$
 # ###########################################################################
+package MaatkitCommon;
 
-package Transformers;
+# These are common subs used in Maatkit scripts.
 
 use strict;
 use warnings FATAL => 'all';
-use English qw(-no_match_vars);
-use Time::Local qw(timelocal);
-use Digest::MD5 qw(md5_hex);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use English qw(-no_match_vars);
 
 require Exporter;
 our @ISA         = qw(Exporter);
 our %EXPORT_TAGS = ();
-our @EXPORT      = ();
+our @EXPORT      = qw();
 our @EXPORT_OK   = qw(
-   micro_t
-   percentage_of
-   secs_to_time
-   shorten
-   ts
-   parse_timestamp
-   unix_timestamp
-   make_checksum
+   _d
+   get_number_of_cpus
 );
 
-sub micro_t {
-   my ( $t, %args ) = @_;
-   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
-   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
-   my $f;
+use constant MKDEBUG => $ENV{MKDEBUG};
 
-   $t = 0 if $t < 0;
-
-   $t = sprintf('%.17f', $t) if $t =~ /e/;
-
-   $t =~ s/\.(\d{1,6})\d*/\.$1/;
-
-   if ($t > 0 && $t <= 0.000999) {
-      $f = ($t * 1000000) . 'us';
-   }
-   elsif ($t >= 0.001000 && $t <= 0.999999) {
-      $f = sprintf("%.${p_ms}f", $t * 1000);
-      $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
-   }
-   elsif ($t >= 1) {
-      $f = sprintf("%.${p_s}f", $t);
-      $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
-   }
-   else {
-      $f = 0;  # $t should = 0 at this point
-   }
-
-   return $f;
-}
-
-sub percentage_of {
-   my ( $is, $of, %args ) = @_;
-   my $p   = $args{p} || 0; # float precision
-   my $fmt = $p ? "%.${p}f" : "%d";
-   return sprintf $fmt, ($is * 100) / ($of ||= 1);
-}
-
-sub secs_to_time {
-   my ( $secs, $fmt ) = @_;
-   $secs ||= 0;
-   return '00:00' unless $secs;
-
-   $fmt ||= $secs >= 86_400 ? 'd'
-          : $secs >= 3_600  ? 'h'
-          :                   'm';
-
-   return
-      $fmt eq 'd' ? sprintf(
-         "%d+%02d:%02d:%02d",
-         int($secs / 86_400),
-         int(($secs % 86_400) / 3_600),
-         int(($secs % 3_600) / 60),
-         $secs % 60)
-      : $fmt eq 'h' ? sprintf(
-         "%02d:%02d:%02d",
-         int(($secs % 86_400) / 3_600),
-         int(($secs % 3_600) / 60),
-         $secs % 60)
-      : sprintf(
-         "%02d:%02d",
-         int(($secs % 3_600) / 60),
-         $secs % 60);
-}
-
-sub shorten {
-   my ( $num, %args ) = @_;
-   my $p = defined $args{p} ? $args{p} : 2;     # float precision
-   my $d = defined $args{d} ? $args{d} : 1_024; # divisor
-   my $n = 0;
-   my @units = ('', qw(k M G T P E Z Y));
-   while ( $num >= $d && $n < @units - 1 ) {
-      $num /= $d;
-      ++$n;
-   }
-   return sprintf(
-      $num =~ m/\./ || $n
-         ? "%.${p}f%s"
-         : '%d',
-      $num, $units[$n]);
-}
-
-sub ts {
-   my ( $time ) = @_;
-   my ( $sec, $min, $hour, $mday, $mon, $year )
-      = localtime($time);
-   $mon  += 1;
-   $year += 1900;
-   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
-      $year, $mon, $mday, $hour, $min, $sec);
-}
-
-sub parse_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s, $f)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?$/ )
-   {
-      return sprintf "%d-%02d-%02d %02d:%02d:"
-                     . (defined $f ? '%02.6f' : '%02d'),
-                     $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
-   }
-   return $val;
-}
-
-sub unix_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-     = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?$/ )
-   {
-      return timelocal($s, $i, $h, $d, $m - 1, $y);
-   }
-   return $val;
-}
-
-sub make_checksum {
-   my ( $val ) = @_;
-   my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d($checksum, 'checksum for', $val);
-   return $checksum;
-}
-
+# Eventually _d() will be exported by default.  We can't do this until
+# we remove it from all other modules else we'll get a "redefined" error.
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -2141,577 +2017,32 @@ sub _d {
    print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
-1;
+sub get_number_of_cpus {
+   my $n_cpus; 
 
-# ###########################################################################
-# End Transformers package
-# ###########################################################################
-
-# ###########################################################################
-# EventAggregator package 4131
-# ###########################################################################
-package EventAggregator;
-
-use strict;
-use warnings FATAL => 'all';
-use English qw(-no_match_vars);
-
-use constant MKDEBUG      => $ENV{MKDEBUG};
-use constant BUCK_SIZE    => 1.05;
-use constant BASE_LOG     => log(BUCK_SIZE);
-use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
-use constant NUM_BUCK     => 1000;
-use constant MIN_BUCK     => .000001;
-
-our @buckets  = map { 0 } (0..NUM_BUCK-1);
-
-my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
-
-sub new {
-   my ( $class, %args ) = @_;
-   foreach my $arg ( qw(groupby worst) ) {
-      die "I need a $arg argument" unless $args{$arg};
+   # Try to read the number of CPUs in /proc/cpuinfo.
+   # This only works on GNU/Linux.
+   my $cpuinfo;
+   if ( !open $cpuinfo, "<", "/proc/cpuinfo" ) {
+      MKDEBUG && _d('Cannot read /proc/cpuinfo:', $OS_ERROR);
    }
-   my $attributes = $args{attributes} || {};
-   my $self = {
-      groupby        => $args{groupby},
-      detect_attribs => scalar keys %$attributes == 0 ? 1 : 0,
-      all_attribs    => [ keys %$attributes ],
-      ignore_attribs => {
-         map  { $_ => $args{attributes}->{$_} }
-         grep { $_ ne $args{groupby} }
-         @{$args{ignore_attributes}}
-      },
-      attributes     => {
-         map  { $_ => $args{attributes}->{$_} }
-         grep { $_ ne $args{groupby} }
-         keys %$attributes
-      },
-      alt_attribs    => {
-         map  { $_ => make_alt_attrib(@{$args{attributes}->{$_}}) }
-         grep { $_ ne $args{groupby} }
-         keys %$attributes
-      },
-      worst        => $args{worst},
-      unroll_limit => $args{unroll_limit} || 1000,
-      attrib_limit => $args{attrib_limit},
-      result_classes => {},
-      result_globals => {},
-      result_samples => {},
-      n_events       => 0,
-      unrolled_loops => undef,
-      type_for       => { %{$args{type_for} || {}} },
-   };
-   return bless $self, $class;
-}
-
-sub reset_aggregated_data {
-   my ( $self ) = @_;
-   foreach my $class ( values %{$self->{result_classes}} ) {
-      foreach my $attrib ( values %$class ) {
-         delete @{$attrib}{keys %$attrib};
-      }
-   }
-   foreach my $class ( values %{$self->{result_globals}} ) {
-      delete @{$class}{keys %$class};
-   }
-   delete @{$self->{result_samples}}{keys %{$self->{result_samples}}};
-   $self->{n_events} = 0;
-}
-
-sub aggregate {
-   my ( $self, $event ) = @_;
-
-   my $group_by = $event->{$self->{groupby}};
-   return unless defined $group_by;
-
-   $self->{n_events}++;
-   MKDEBUG && _d('event', $self->{n_events});
-
-   return $self->{unrolled_loops}->($self, $event, $group_by)
-      if $self->{unrolled_loops};
-
-   if ( $self->{n_events} <= $self->{unroll_limit} ) {
-
-      $self->add_new_attributes($event) if $self->{detect_attribs};
-
-      ATTRIB:
-      foreach my $attrib ( keys %{$self->{attributes}} ) {
-
-         if ( !exists $event->{$attrib} ) {
-            MKDEBUG && _d("attrib doesn't exist in event:", $attrib);
-            my $alt_attrib = $self->{alt_attribs}->{$attrib}->($event);
-            MKDEBUG && _d('alt attrib:', $alt_attrib);
-            next ATTRIB unless $alt_attrib;
-         }
-
-         GROUPBY:
-         foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
-            my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
-            my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
-            my $samples       = $self->{result_samples};
-            my $handler = $self->{handlers}->{ $attrib };
-            if ( !$handler ) {
-               $handler = $self->make_handler(
-                  $attrib,
-                  $event,
-                  wor => $self->{worst} eq $attrib,
-                  alt => $self->{attributes}->{$attrib},
-               );
-               $self->{handlers}->{$attrib} = $handler;
-            }
-            next GROUPBY unless $handler;
-            $samples->{$val} ||= $event; # Initialize to the first event.
-            $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
-         }
-      }
-   }
-   else {
-      $self->_make_unrolled_loops($event);
-      $self->{unrolled_loops}->($self, $event, $group_by);
+   else { 
+      local $INPUT_RECORD_SEPARATOR = undef;
+      my $contents = <$cpuinfo>;
+      close $cpuinfo;
+      $n_cpus = scalar( map { $_ } $contents =~ m/(processor)/g );
    }
 
-   return;
-}
+   # Alternatives to /proc/cpuinfo.
+   $n_cpus ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
 
-sub _make_unrolled_loops {
-   my ( $self, $event ) = @_;
-
-   my $group_by = $event->{$self->{groupby}};
-
-   my @attrs   = grep { $self->{handlers}->{$_} } keys %{$self->{attributes}};
-   my $globs   = $self->{result_globals}; # Global stats for each
-   my $samples = $self->{result_samples};
-
-   my @lines = (
-      'my ( $self, $event, $group_by ) = @_;',
-      'my ($val, $class, $global, $idx);',
-      (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
-      'my $temp = $self->{result_classes}->{ $group_by }
-         ||= { map { $_ => { } } @attrs };',
-      '$samples->{$group_by} ||= $event;', # Always start with the first.
-   );
-   foreach my $i ( 0 .. $#attrs ) {
-      push @lines, (
-         '$class  = $temp->{"'  . $attrs[$i] . '"};',
-         '$global = $globs->{"' . $attrs[$i] . '"};',
-         $self->{unrolled_for}->{$attrs[$i]},
-      );
-   }
-   if ( ref $group_by ) {
-      push @lines, '}'; # Close the loop opened above
-   }
-   @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
-   unshift @lines, 'sub {';
-   push @lines, '}';
-
-   my $code = join("\n", @lines);
-   MKDEBUG && _d('Unrolled subroutine:', @lines);
-   my $sub = eval $code;
-   die $EVAL_ERROR if $EVAL_ERROR;
-   $self->{unrolled_loops} = $sub;
-
-   return;
-}
-
-sub results {
-   my ( $self ) = @_;
-   return {
-      classes => $self->{result_classes},
-      globals => $self->{result_globals},
-      samples => $self->{result_samples},
-   };
-}
-
-sub attributes {
-   my ( $self ) = @_;
-   return $self->{type_for};
-}
-
-sub type_for {
-   my ( $self, $attrib ) = @_;
-   return $self->{type_for}->{$attrib};
-}
-
-sub make_handler {
-   my ( $self, $attrib, $event, %args ) = @_;
-   die "I need an attrib" unless defined $attrib;
-   my ($val) = grep { defined $_ } map { $event->{$_} } @{ $args{alt} };
-   my $is_array = 0;
-   if (ref $val eq 'ARRAY') {
-      $is_array = 1;
-      $val      = $val->[0];
-   }
-   return unless defined $val; # Can't decide type if it's undef.
-
-   my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
-   my $type = $self->type_for($attrib)         ? $self->type_for($attrib)
-            : $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
-            : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
-            :                                    'string';
-   MKDEBUG && _d('Type for', $attrib, 'is', $type,
-      '(sample:', $val, '), is array:', $is_array);
-   $self->{type_for}->{$attrib} = $type;
-
-   %args = ( # Set up defaults
-      min => 1,
-      max => 1,
-      sum => $type =~ m/num|bool/    ? 1 : 0,
-      cnt => 1,
-      unq => $type =~ m/bool|string/ ? 1 : 0,
-      all => $type eq 'num'          ? 1 : 0,
-      glo => 1,
-      trf => ($type eq 'bool') ? q{(($val || '') eq 'Yes') ? 1 : 0} : undef,
-      wor => 0,
-      alt => [],
-      %args,
-   );
-
-   my @lines = ("# type: $type"); # Lines of code for the subroutine
-   if ( $args{trf} ) {
-      push @lines, q{$val = } . $args{trf} . ';';
-   }
-
-   foreach my $place ( qw($class $global) ) {
-      my @tmp;
-      if ( $args{min} ) {
-         my $op   = $type eq 'num' ? '<' : 'lt';
-         push @tmp, (
-            'PLACE->{min} = $val if !defined PLACE->{min} || $val '
-               . $op . ' PLACE->{min};',
-         );
-      }
-      if ( $args{max} ) {
-         my $op = ($type eq 'num') ? '>' : 'gt';
-         push @tmp, (
-            'PLACE->{max} = $val if !defined PLACE->{max} || $val '
-               . $op . ' PLACE->{max};',
-         );
-      }
-      if ( $args{sum} ) {
-         push @tmp, 'PLACE->{sum} += $val;';
-      }
-      if ( $args{cnt} ) {
-         push @tmp, '++PLACE->{cnt};';
-      }
-      if ( $args{all} ) {
-         push @tmp, (
-            'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
-            '++PLACE->{all}->[ EventAggregator::bucket_idx($val) ];',
-         );
-      }
-      push @lines, map { s/PLACE/$place/g; $_ } @tmp;
-   }
-
-   if ( $args{unq} ) {
-      push @lines, '++$class->{unq}->{$val};';
-   }
-   if ( $args{wor} ) {
-      my $op = $type eq 'num' ? '>=' : 'ge';
-      push @lines, (
-         'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-         '   $samples->{$group_by} = $event;',
-         '}',
-      );
-   }
-
-   my @limit;
-   if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
-      push @limit, (
-         "if ( \$val > $self->{attrib_limit} ) {",
-         '   $val = $class->{last} ||= 0;',
-         '}',
-         '$class->{last} = $val;',
-      );
-   }
-
-   my @unrolled = (
-      "\$val = \$event->{'$attrib'};",
-      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
-         grep { $_ ne $attrib } @{$args{alt}}),
-      'defined $val && do {',
-      ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
-      '};',
-      ($is_array ? ('}') : ()),
-   );
-   $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
-
-   unshift @lines, (
-      'sub {',
-      'my ( $event, $class, $global, $samples, $group_by ) = @_;',
-      'my ($val, $idx);', # NOTE: define all variables here
-      "\$val = \$event->{'$attrib'};",
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
-         grep { $_ ne $attrib } @{$args{alt}}),
-      'return unless defined $val;',
-      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
-      @limit,
-      ($is_array ? ('}') : ()),
-   );
-   push @lines, '}';
-   my $code = join("\n", @lines);
-   $self->{code_for}->{$attrib} = $code;
-
-   MKDEBUG && _d('Metric handler for', $attrib, ':', @lines);
-   my $sub = eval join("\n", @lines);
-   die if $EVAL_ERROR;
-   return $sub;
-}
-
-sub bucket_idx {
-   my ( $val ) = @_;
-   return 0 if $val < MIN_BUCK;
-   my $idx = int(BASE_OFFSET + log($val)/BASE_LOG);
-   return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
-}
-
-sub bucket_value {
-   my ( $bucket ) = @_;
-   return 0 if $bucket == 0;
-   die "Invalid bucket: $bucket" if $bucket < 0 || $bucket > (NUM_BUCK-1);
-   return (BUCK_SIZE**($bucket-1)) * MIN_BUCK;
-}
-
-{
-   my @buck_tens;
-   sub buckets_of {
-      return @buck_tens if @buck_tens;
-
-      my $start_bucket  = 0;
-      my @base10_starts = (0);
-      map { push @base10_starts, (10**$_)*MIN_BUCK } (1..7);
-
-      for my $base10_bucket ( 0..($#base10_starts-1) ) {
-         my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
-         MKDEBUG && _d('Base 10 bucket', $base10_bucket, 'maps to',
-            'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
-         for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
-            $buck_tens[$base1_05_bucket] = $base10_bucket;
-         }
-         $start_bucket = $next_bucket;
-      }
-
-      map { $buck_tens[$_] = 7 } ($start_bucket..(NUM_BUCK-1));
-
-      return @buck_tens;
-   }
-}
-
-sub calculate_statistical_metrics {
-   my ( $self, $vals, $args ) = @_;
-   my $statistical_metrics = {
-      pct_95    => 0,
-      stddev    => 0,
-      median    => 0,
-      cutoff    => undef,
-   };
-
-   return $statistical_metrics
-      unless defined $vals && @$vals && $args->{cnt};
-
-   my $n_vals = $args->{cnt};
-   if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
-      my $v      = $args->{max} || 0;
-      my $bucket = int(6 + ( log($v > 0 ? $v : MIN_BUCK) / log(10)));
-      $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
-      return {
-         pct_95 => $v,
-         stddev => 0,
-         median => $v,
-         cutoff => $n_vals,
-      };
-   }
-   elsif ( $n_vals == 2 ) {
-      foreach my $v ( $args->{min}, $args->{max} ) {
-         my $bucket = int(6 + ( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)));
-         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
-      }
-      my $v      = $args->{max} || 0;
-      my $mean = (($args->{min} || 0) + $v) / 2;
-      return {
-         pct_95 => $v,
-         stddev => sqrt((($v - $mean) ** 2) *2),
-         median => $mean,
-         cutoff => $n_vals,
-      };
-   }
-
-   my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
-   $statistical_metrics->{cutoff} = $cutoff;
-
-   my $total_left = $n_vals;
-   my $top_vals   = $n_vals - $cutoff; # vals > 95th
-   my $sum_excl   = 0;
-   my $sum        = 0;
-   my $sumsq      = 0;
-   my $mid        = int($n_vals / 2);
-   my $median     = 0;
-   my $prev       = NUM_BUCK-1; # Used for getting median when $cutoff is odd
-   my $bucket_95  = 0; # top bucket in 95th
-
-   MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals, 'mid:', $mid);
-
-   BUCKET:
-   for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
-      my $val = $vals->[$bucket];
-      next BUCKET unless $val; 
-
-      $total_left -= $val;
-      $sum_excl   += $val;
-      $bucket_95   = $bucket if !$bucket_95 && $sum_excl > $top_vals;
-
-      if ( !$median && $total_left <= $mid ) {
-         $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
-                 : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
-      }
-
-      $sum    += $val * $buck_vals[$bucket];
-      $sumsq  += $val * ($buck_vals[$bucket]**2);
-      $prev   =  $bucket;
-   }
-
-   my $var      = $sumsq/$n_vals - ( ($sum/$n_vals) ** 2 );
-   my $stddev   = $var > 0 ? sqrt($var) : 0;
-   my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
-   $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
-
-   MKDEBUG && _d('sum:', $sum, 'sumsq:', $sumsq, 'stddev:', $stddev,
-      'median:', $median, 'prev bucket:', $prev,
-      'total left:', $total_left, 'sum excl', $sum_excl,
-      'bucket 95:', $bucket_95, $buck_vals[$bucket_95]);
-
-   $statistical_metrics->{stddev} = $stddev;
-   $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
-   $statistical_metrics->{median} = $median;
-
-   return $statistical_metrics;
-}
-
-sub metrics {
-   my ( $self, %args ) = @_;
-   foreach my $arg ( qw(attrib where) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   my $stats = $self->results;
-   my $store = $stats->{classes}->{$args{where}}->{$args{attrib}};
-
-   my $global_cnt = $stats->{globals}->{$args{attrib}}->{cnt};
-   my $metrics    = $self->calculate_statistical_metrics($store->{all}, $store);
-
-   return {
-      cnt    => $store->{cnt},
-      pct    => $global_cnt && $store->{cnt} ? $store->{cnt} / $global_cnt : 0,
-      sum    => $store->{sum},
-      min    => $store->{min},
-      max    => $store->{max},
-      avg    => $store->{sum} && $store->{cnt} ? $store->{sum} / $store->{cnt} : 0,
-      median => $metrics->{median},
-      pct_95 => $metrics->{pct_95},
-      stddev => $metrics->{stddev},
-   };
-}
-
-sub top_events {
-   my ( $self, %args ) = @_;
-   my $classes = $self->{result_classes};
-   my @sorted = reverse sort { # Sorted list of $groupby values
-      $classes->{$a}->{$args{attrib}}->{$args{orderby}}
-         <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
-      } grep {
-         defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
-      } keys %$classes;
-   my @chosen;
-   my ($total, $count) = (0, 0);
-   foreach my $groupby ( @sorted ) {
-      if ( 
-         (!$args{total} || $total < $args{total} )
-         && ( !$args{count} || $count < $args{count} )
-      ) {
-         push @chosen, [$groupby, 'top'];
-      }
-
-      elsif ( $args{ol_attrib} && (!$args{ol_freq}
-         || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
-      ) {
-         MKDEBUG && _d('Calculating statistical_metrics');
-         my $stats = $self->calculate_statistical_metrics(
-            $classes->{$groupby}->{$args{ol_attrib}}->{all},
-            $classes->{$groupby}->{$args{ol_attrib}}
-         );
-         if ( $stats->{pct_95} >= $args{ol_limit} ) {
-            push @chosen, [$groupby, 'outlier'];
-         }
-      }
-
-      $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
-      $count++;
-   }
-   return @chosen;
-}
-
-sub add_new_attributes {
-   my ( $self, $event ) = @_;
-   return unless $event;
-
-   map {
-      my $attrib = $_;
-      $self->{attributes}->{$attrib}  = [$attrib];
-      $self->{alt_attribs}->{$attrib} = make_alt_attrib($attrib);
-      push @{$self->{all_attribs}}, $attrib;
-      MKDEBUG && _d('Added new attribute:', $attrib);
-   }
-   grep {
-      $_ ne $self->{groupby}
-      && !exists $self->{attributes}->{$_}
-      && !exists $self->{ignore_attribs}->{$_}
-   }
-   keys %$event;
-
-   return;
-}
-
-sub get_attributes {
-   my ( $self ) = @_;
-   return @{$self->{all_attribs}};
-}
-
-sub events_processed {
-   my ( $self ) = @_;
-   return $self->{n_events};
-}
-
-sub make_alt_attrib {
-   my ( @attribs ) = @_;
-
-   my $attrib = shift @attribs;  # Primary attribute.
-   return sub {} unless @attribs;  # No alternates.
-
-   my @lines;
-   push @lines, 'sub { my ( $event ) = @_; my $alt_attrib;';
-   push @lines, map  {
-         "\$alt_attrib = '$_' if !defined \$alt_attrib "
-         . "&& exists \$event->{'$_'};"
-      } @attribs;
-   push @lines, 'return $alt_attrib; }';
-   MKDEBUG && _d('alt attrib sub for', $attrib, ':', @lines);
-   my $sub = eval join("\n", @lines);
-   die if $EVAL_ERROR;
-   return $sub;
-}
-
-sub _d {
-   my ($package, undef, $line) = caller 0;
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-        map { defined $_ ? $_ : 'undef' }
-        @_;
-   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+   return $n_cpus || 2; # default if all else fails
 }
 
 1;
 
 # ###########################################################################
-# End EventAggregator package
+# End MaatkitCommon package
 # ###########################################################################
 
 # ###########################################################################
@@ -2776,6 +2107,9 @@ sub main {
       $o->save_error('Invalid --base-dir: '
          . $o->get('base-dir') . ' is not a directory');
    }
+
+   $o->set('threads', MaatkitCommon::get_number_of_cpus())
+      unless $o->got('threads');
 
    $o->usage_or_errors();
 
@@ -3214,6 +2548,14 @@ utf8 layer, and runs SET NAMES after connecting to MySQL.
 type: int; default: 2; group: Play
 
 Number of threads used to play sessions concurrently.
+
+Specifies the number of parallel processes to run.  The default is 2.  On
+GNU/Linux machines, the default is the number of times 'processor' appears in
+F</proc/cpuinfo>.  On Windows, the default is read from the environment.
+In any case, the default is at least 2, even when there's only a single
+processor.
+
+See also L<"--session-files">.
 
 =item --config
 

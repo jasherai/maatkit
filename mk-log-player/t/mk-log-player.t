@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 11;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -101,18 +101,6 @@ SKIP: {
       $r,
       [],
       'No table changes with --only-select',
-   );
-
-   # #########################################################################
-   # Issue 356: mk-log-player doesn't calculate queries per second correctly
-   # #########################################################################
-   $output = `../mk-log-player --play samples/one_big_session.txt --csv --host 127.1 --port 12345 > $tmpdir/res`;
-   my $res = `head -n 2 $tmpdir/res | tail -n 1 | cut -d',' -f 2,6,7`;
-   my ($total_time, $n_queries, $qps) = split(',', $res);
-   is(
-      sprintf('%.6f', $qps),
-      sprintf('%.6f', $total_time / $n_queries),
-      'calculate queries per second correctly (issue 356)'
    );
 
    $sb->wipe_clean($dbh);
