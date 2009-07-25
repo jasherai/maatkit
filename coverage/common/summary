@@ -10,6 +10,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...maatkit/common/Loadavg.pm   69.1   40.0   20.0   85.7    n/a  100.0   60.1
 ...atkit/common/LogParser.pm   92.6   86.8   78.6   88.9    n/a  100.0   88.2
 ...kit/common/LogSplitter.pm   92.2   67.5   70.2   93.8    n/a  100.0   83.7
+...t/common/MaatkitCommon.pm  100.0   71.4   42.1  100.0    n/a  100.0   80.5
 ...kit/common/MasterSlave.pm   85.9   56.2   48.9   93.8    n/a  100.0   73.6
 .../common/MemcachedEvent.pm   77.4   70.0  100.0   76.9    n/a  100.0   76.5
 ...emcachedProtocolParser.pm   80.6   68.4   59.3   73.3    n/a  100.0   75.5
