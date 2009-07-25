@@ -1986,7 +1986,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MaatkitCommon package 4240 $Revision$
+# MaatkitCommon package 4249 $Revision$
 # ###########################################################################
 package MaatkitCommon;
 
@@ -2061,6 +2061,7 @@ use Time::HiRes qw(time usleep);
 use File::Basename qw(dirname);
 use File::Find;
 use File::Spec;
+use List::Util qw(max);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
@@ -2109,7 +2110,7 @@ sub main {
          . $o->get('base-dir') . ' is not a directory');
    }
 
-   $o->set('threads', MaatkitCommon::get_number_of_cpus())
+   $o->set('threads', max(2, MaatkitCommon::get_number_of_cpus()))
       unless $o->got('threads');
 
    $o->usage_or_errors();

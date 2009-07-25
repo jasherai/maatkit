@@ -2676,7 +2676,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MaatkitCommon package 4240 $Revision$
+# MaatkitCommon package 4249 $Revision$
 # ###########################################################################
 package MaatkitCommon;
 
@@ -2782,7 +2782,7 @@ sub main {
 
    $dp->prop('setvars', $o->get('set-vars'));
 
-   $o->set('threads', MaatkitCommon::get_number_of_cpus())
+   $o->set('threads', max(2, MaatkitCommon::get_number_of_cpus()))
       unless $o->got('threads');
 
    # ########################################################################
