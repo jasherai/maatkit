@@ -5,9 +5,10 @@ mk-duplicate-key-checker
 mk-fifo-split
 mk-find
 mk-heartbeat
-mk-query-digest
+mk-log-player
 mk-parallel-dump
 mk-parallel-restore
+mk-query-digest
 mk-query-profiler
 mk-show-grants
 mk-slave-delay
@@ -17,4 +18,5 @@ mk-slave-prefetch
 mk-slave-restart
 mk-table-checksum
 mk-table-sync
+mk-upgrade
 mk-visual-explain
