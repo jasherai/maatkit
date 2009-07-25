@@ -1434,6 +1434,67 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# MaatkitCommon package 4240 $Revision$
+# ###########################################################################
+package MaatkitCommon;
+
+# These are common subs used in Maatkit scripts.
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+
+require Exporter;
+our @ISA         = qw(Exporter);
+our %EXPORT_TAGS = ();
+our @EXPORT      = qw();
+our @EXPORT_OK   = qw(
+   _d
+   get_number_of_cpus
+);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+# Eventually _d() will be exported by default.  We can't do this until
+# we remove it from all other modules else we'll get a "redefined" error.
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+sub get_number_of_cpus {
+   my $n_cpus; 
+
+   # Try to read the number of CPUs in /proc/cpuinfo.
+   # This only works on GNU/Linux.
+   my $cpuinfo;
+   if ( !open $cpuinfo, "<", "/proc/cpuinfo" ) {
+      MKDEBUG && _d('Cannot read /proc/cpuinfo:', $OS_ERROR);
+   }
+   else { 
+      local $INPUT_RECORD_SEPARATOR = undef;
+      my $contents = <$cpuinfo>;
+      close $cpuinfo;
+      $n_cpus = scalar( map { $_ } $contents =~ m/(processor)/g );
+   }
+
+   # Alternatives to /proc/cpuinfo.
+   $n_cpus ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
+
+   return $n_cpus || 2; # default if all else fails
+}
+
+1;
+
+# ###########################################################################
+# End MaatkitCommon package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -1478,22 +1539,8 @@ sub main {
 
    $dp->prop('setvars', $o->get('set-vars'));
 
-   eval {
-      # Try to read --threads from the number of CPUs in /proc/cpuinfo.
-      # This only works on GNU/Linux.
-      open my $file, "<", "/proc/cpuinfo"
-         or die $OS_ERROR;
-      local $INPUT_RECORD_SEPARATOR = undef;
-      my $contents = <$file>;
-      close $file;
-      my $threads = scalar( map { $_ } $contents =~ m/(processor)/g );
-
-      # Alternatives to /proc/cpuinfo.
-      $threads ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
-      $threads = max(2, $threads || 0);
-
-      $o->set('threads', $threads);
-   };
+   $o->set('threads', MaatkitCommon::get_number_of_cpus())
+      unless $o->got('threads');
 
    # ########################################################################
    # Process options.

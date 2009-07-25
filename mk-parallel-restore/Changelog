@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * --threads was ignored if /proc/cpuinfo could be read (issue 534).
+
 2009-06-30: version 1.0.15
 
    * Tool died trying to restore already fully restored tables (issue 406).

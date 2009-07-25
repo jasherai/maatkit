@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 31;
+use Test::More tests => 32;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -279,6 +279,16 @@ like(
    $output,
    qr/1 tables,\s+3 files,\s+1 successes,\s+0 failures/,
    'Restoring table that already exists (issue 406)'
+);
+
+# #############################################################################
+# Issue 534: mk-parallel-restore --threads is being ignored
+# #############################################################################
+$output = `$cmd --help --threads 32 2>&1`;
+like(
+   $output,
+   qr/--threads\s+32/,
+   '--threads overrides /proc/cpuinfo (issue 534)'
 );
 
 # #############################################################################
