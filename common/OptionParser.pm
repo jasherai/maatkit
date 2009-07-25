@@ -46,6 +46,7 @@ sub new {
    }
    my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
    $program_name ||= $PROGRAM_NAME;
+   my $home = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '.';
 
    my $self = {
       description    => $args{description},
@@ -68,8 +69,8 @@ sub new {
       default_files  => [
          "/etc/maatkit/maatkit.conf",
          "/etc/maatkit/$program_name.conf",
-         "$ENV{HOME}/.maatkit.conf",
-         "$ENV{HOME}/.$program_name.conf",
+         "$home/.maatkit.conf",
+         "$home/.$program_name.conf",
       ],
    };
    return bless $self, $class;
