@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 20;
+use Test::More tests => 22;
 
 require "../MemcachedProtocolParser.pm";
 require "../TcpdumpParser.pm";
@@ -306,6 +306,41 @@ run_test({
          res        => 'DELETED',
          ts         => '2009-07-09 22:00:29.066476',
          val        => '',
+      },
+   ],
+});
+
+# #############################################################################
+# Issue 537: MySQLProtocolParser and MemcachedProtocolParser do not handle
+# multiple servers.
+# #############################################################################
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump011.txt',
+   result => [
+      {  Query_time => '0.000067',
+         cmd        => 'get',
+         key        => 'my_key',
+         val        => 'Some value',
+         bytes      => 10,
+         exptime    => 0,
+         flags      => 0,
+         host       => '127.0.0.8',
+         pos_in_log => '0',
+         res        => 'VALUE',
+         ts         => '2009-07-04 22:12:06.174390'
+      },
+      {  ts            => '2009-07-04 21:33:39.229179',
+         host          => '127.0.0.9',
+         cmd           => 'set',
+         key           => 'my_key',
+         val           => 'Some value',
+         flags         => '0',
+         exptime       => '0',
+         bytes         => '10',
+         res           => 'STORED',
+         Query_time    => sprintf('%.6f', .229299 - .229179),
+         pos_in_log    => 638,
       },
    ],
 });

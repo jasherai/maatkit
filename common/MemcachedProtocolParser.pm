@@ -34,8 +34,14 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # not specified.
 sub new {
    my ( $class, %args ) = @_;
+
+   my ( $server_port )
+      = $args{server} ? $args{server} =~ m/:(\w+)/ : ('11211');
+   $server_port ||= '11211';  # In case $args{server} doesn't have a port.
+
    my $self = {
       server      => $args{server},
+      server_port => $server_port,
       sessions    => {},
       o           => $args{o},
    };
@@ -47,13 +53,31 @@ sub new {
 sub parse_packet {
    my ( $self, $packet, $misc ) = @_;
 
+   my $src_host = "$packet->{src_host}:$packet->{src_port}";
+   my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
+
+   if ( my $server = $self->{server} ) {  # Watch only the given server.
+      if ( $src_host ne $server && $dst_host ne $server ) {
+         MKDEBUG && _d('Packet is not to or from', $server);
+         return;
+      }
+   }
+
    # Auto-detect the server by looking for port 11211
-   my $from  = "$packet->{src_host}:$packet->{src_port}";
-   my $to    = "$packet->{dst_host}:$packet->{dst_port}";
-   $self->{server} ||= $from =~ m/:(?:11211)$/ ? $from
-                     : $to   =~ m/:(?:11211)$/ ? $to
-                     :                           undef;
-   my $client = $from eq $self->{server} ? $to : $from;
+   my $packet_from;
+   my $client;
+   if ( $src_host =~ m/:$self->{server_port}$/ ) {
+      $packet_from = 'server';
+      $client      = $dst_host;
+   }
+   elsif ( $dst_host =~ m/:$self->{server_port}$/ ) {
+      $packet_from = 'client';
+      $client      = $src_host;
+   }
+   else {
+      warn 'Packet is not to or from memcached server: ', Dumper($packet);
+      return;
+   }
    MKDEBUG && _d('Client:', $client);
 
    # Get the client's session info or create a new session if the
@@ -83,14 +107,15 @@ sub parse_packet {
    # Finally, parse the packet and maybe create an event.
    $packet->{data} = pack('H*', $packet->{data});
    my $event;
-   if ( $from eq $self->{server} ) {
+   if ( $packet_from eq 'server' ) {
       $event = $self->_packet_from_server($packet, $session, $misc);
    }
-   elsif ( $from eq $client ) {
+   elsif ( $packet_from eq 'client' ) {
       $event = $self->_packet_from_client($packet, $session, $misc);
    }
    else {
-      MKDEBUG && _d('Packet origin unknown');
+      # Should not get here.
+      die 'Packet origin unknown';
    }
 
    MKDEBUG && _d('Done with packet; event:', Dumper($event));
