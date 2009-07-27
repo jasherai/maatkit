@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 29;
+use Test::More tests => 33;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -611,20 +611,83 @@ run_test({
    ],
 });
 
-# TODO: this is not easy to test.
-# Check that we don't die on false-positive FF error packets.
-# This can happen often if we catch a big server response mid-stream.
-# We need to ignore everything and just wait until the client
-# sends a command.
-# $protocol = new MySQLProtocolParser(
-#   server => '10.55.200.15:3306',
-#);
-#run_test({
-#   file   => 'samples/tcpdump018.txt',
-#   desc   => 'False-positive FF error packet',
-#   result => [
-#   ],
-#});
+# #############################################################################
+# Issue 537: MySQLProtocolParser and MemcachedProtocolParser do not handle
+# multiple servers.
+# #############################################################################
+$protocol = new MySQLProtocolParser();
+run_test({
+   file   => 'samples/tcpdump018.txt',
+   desc   => 'Multiple servers',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000206',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'select * from foo',
+         bytes => 17,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '42275',
+         pos_in_log => 0,
+         ts => '090727 08:28:41.723651',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000203',
+         Rows_affected => 0,
+         Thread_id => '4294967297',
+         Warning_count => 0,
+         arg => 'select * from bar',
+         bytes => 17,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '34233',
+         pos_in_log => 987,
+         ts => '090727 08:29:34.232748',
+         user => undef
+      },
+   ],
+});
+
+# Test that --watch-server causes just the given server to be watched.
+$protocol = new MySQLProtocolParser(server=>'10.0.0.1:3306');
+run_test({
+   file   => 'samples/tcpdump018.txt',
+   desc   => 'Multiple servers but watch only one',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000206',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'select * from foo',
+         bytes => 17,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '42275',
+         pos_in_log => 0,
+         ts => '090727 08:28:41.723651',
+         user => undef
+      },
+   ]
+});
 
 # #############################################################################
 # Done.

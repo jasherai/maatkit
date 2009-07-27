@@ -155,13 +155,20 @@ my %flag_for = (
 # MySQL v4.0 and older and v4.1 and newer.  Currently, we only handle v4.1.
 sub new {
    my ( $class, %args ) = @_;
+
+   my ( $server_port )
+      = $args{server} ? $args{server} =~ m/:(\w+)/ : ('3306|mysql');
+   $server_port ||= '3306|mysql';  # In case $args{server} doesn't have a port.
+
    my $self = {
       server         => $args{server},
-      version        => '41',
+      server_port    => $server_port,
+      version        => '41',    # MySQL proto version; not used yet
       sessions       => {},
       o              => $args{o},
-      fake_thread_id => 2**32,  # see _make_event()
+      fake_thread_id => 2**32,   # see _make_event()
    };
+   MKDEBUG && $self->{server} && _d('Watching only server', $self->{server});
    return bless $self, $class;
 }
 
@@ -170,15 +177,32 @@ sub new {
 sub parse_packet {
    my ( $self, $packet, $misc ) = @_;
 
+   my $src_host = "$packet->{src_host}:$packet->{src_port}";
+   my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
+
+   if ( my $server = $self->{server} ) {  # Watch only the given server.
+      if ( $src_host ne $server && $dst_host ne $server ) {
+         MKDEBUG && _d('Packet is not to or from', $server);
+         return;
+      }
+   }
+
    # Auto-detect the server by looking for port 3306 or port "mysql" (sometimes
-   # tcpdump will substitute the port by a lookup in /etc/protocols or
-   # something).
-   my $from  = "$packet->{src_host}:$packet->{src_port}";
-   my $to    = "$packet->{dst_host}:$packet->{dst_port}";
-   $self->{server} ||= $from =~ m/:(?:3306|mysql)$/ ? $from
-                     : $to   =~ m/:(?:3306|mysql)$/ ? $to
-                     :                                undef;
-   my $client = $from eq $self->{server} ? $to : $from;
+   # tcpdump will substitute the port by a lookup in /etc/protocols).
+   my $packet_from;
+   my $client;
+   if ( $src_host =~ m/:$self->{server_port}$/ ) {
+      $packet_from = 'server';
+      $client      = $dst_host;
+   }
+   elsif ( $dst_host =~ m/:$self->{server_port}$/ ) {
+      $packet_from = 'client';
+      $client      = $src_host;
+   }
+   else {
+      warn 'Packet is not to or from MySQL server: ', Dumper($packet);
+      return;
+   }
    MKDEBUG && _d('Client:', $client);
 
    # Get the client's session info or create a new session if the
@@ -226,14 +250,15 @@ sub parse_packet {
    # Finally, parse the packet and maybe create an event.
    # The returned event may be empty if no event was ready to be created.
    my $event;
-   if ( $from eq $self->{server} ) {
+   if ( $packet_from eq 'server' ) {
       $event = $self->_packet_from_server($packet, $session, $misc);
    }
-   elsif ( $from eq $client ) {
+   elsif ( $packet_from eq 'client' ) {
       $event = $self->_packet_from_client($packet, $session, $misc);
    }
    else {
-      MKDEBUG && _d('Packet origin unknown');
+      # Should not get here.
+      die 'Packet origin unknown';
    }
 
    MKDEBUG && _d('Done parsing packet; client state:', $session->{state});
