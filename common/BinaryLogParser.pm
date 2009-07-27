@@ -35,77 +35,157 @@ sub new {
    return bless {}, $class;
 }
 
-my $binlog_line_1 = qr{^# at (\d+)}m;
+my $binlog_line_1 = qr/at (\d+)$/m;
 my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/m;
-my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)}m;
+my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
 
 # This method accepts an open filehandle and a callback function.  It reads
 # events from the filehandle and calls the callback with each event.
 sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $event;
-   my $num_events = 0;
-   my $term  = $self->{term} || ";\n"; # Corresponds to DELIMITER
-   my $tpat  = quotemeta $term;
-   local $RS = $term;
-   my $line  = <$fh>;
+   my $oktorun_here = 1;
+   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
+   my $num_events   = 0;
 
-   LINE: {
-      return unless $line;
+   local $INPUT_RECORD_SEPARATOR = ";\n#";
+   my $pos_in_log = tell($fh);
+   my $stmt;
+   my ($delim, $delim_len) = (undef, 0);
 
-      # Catch changes in DELIMITER
-      if ( $line =~ m/^DELIMITER/m ) {
-         my($del)      = $line =~ m/^DELIMITER ([^\n]+)/m;
-         $self->{term} = $del;
-         local $RS     = $del;
-         $line         = <$fh>; # Throw away DELIMITER line
-         MKDEBUG && _d('New record separator:', $del);
-         redo LINE;
-      }
+   EVENT:
+   while ( $$oktorun && defined($stmt = <$fh>) ) {
+      my @properties = ('pos_in_log', $pos_in_log);
+      my ($ts, $sid, $end, $type, $rest);
+      $pos_in_log = tell($fh);
+      $stmt =~ s/;\n#?\Z//;
 
-      # Throw away the delimiter
-      $line =~ s/$tpat\Z//;
+      my ( $got_offset, $got_hdr );
+      my $pos = 0;
+      my $len = length($stmt);
+      my $found_arg = 0;
+      LINE:
+      while ( $stmt =~ m/^(.*)$/mg ) { # /g requires scalar match.
+         $pos     = pos($stmt);  # Be careful not to mess this up!
+         my $line = $1;          # Necessary for /g and pos() to work.
+         $line    =~ s/$delim// if $delim;
+         MKDEBUG && _d($line);
 
-      # Match the beginning of an event in the binary log.
-      if ( my ( $offset ) = $line =~ m/$binlog_line_1/m ) {
-         $self->{last_line} = undef;
-         $event = {
-            offset => $offset,
-         };
-         my ( $ts, $sid, $end, $type, $rest ) = $line =~ m/$binlog_line_2/m;
-         @{$event}{qw(ts server_id end type)} = ($ts, $sid, $end, $type);
-         (my $arg = $line) =~ s/\n*^#.*\n//gm; # Remove comment lines
-         $event->{arg} = $arg;
-         if ( $type eq 'Xid' ) {
-            my ($xid) = $rest =~ m/(\d+)/;
-            $event->{xid} = $xid;
+         if ( $line =~ m/^\/\*.+\*\/;/ ) {
+            MKDEBUG && _d('Comment line');
+            next LINE;
          }
-         elsif ( $type eq 'Query' ) {
-            @{$event}{qw(id time code)} = $rest =~ m/$binlog_line_2_rest/;
+ 
+         if ( $line =~ m/^DELIMITER (\S*)/m ) {
+            my $del = $1;
+            if ( $del ) {
+               $delim_len = length $del;
+               $delim     = quotemeta $del;
+               MKDEBUG && _d('delimiter:', $delim);
+            }
+            else {
+               # Because of the line $stmt =~ s/;\n#?\Z//; above, setting
+               # the delimiter back to normal like "DELIMITER ;" appear as
+               # "DELIMITER ".
+               MKDEBUG && _d('Delimiter reset to ;');
+               $delim     = undef;
+               $delim_len = 0;
+            }
+            next LINE;
+         }
+
+         next LINE if $line =~ m/End of log file/;
+
+         # Match the beginning of an event in the binary log.
+         if ( !$got_offset && (my ( $offset ) = $line =~ m/$binlog_line_1/m) ) {
+            MKDEBUG && _d('Got the at offset line');
+            push @properties, 'offset', $offset;
+            $got_offset++;
+         }
+
+         # Match the 2nd line of binary log header, after "# at OFFSET".
+         elsif ( !$got_hdr && $line =~ m/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)/ ) {
+            ($ts, $sid, $end, $type, $rest) = $line =~ m/$binlog_line_2/m;
+            MKDEBUG && _d('Got the header line; type:', $type, 'rest:', $rest);
+            push @properties, 'cmd', 'Query', 'ts', $ts, 'server_id', $sid,
+               'end_log_pos', $end;
+            $got_hdr++;
+         }
+
+         # Handle meta-data lines.
+         elsif ( $line =~ m/^(?:#|use |SET)/i ) {
+
+            # Include the current default database given by 'use <db>;'  Again
+            # as per the code in sql/log.cc this is case-sensitive.
+            if ( my ( $db ) = $line =~ m/^use ([^;]+)/ ) {
+               MKDEBUG && _d("Got a default database:", $db);
+               push @properties, 'db', $db;
+            }
+
+            # Some things you might see in the log output, as printed by
+            # sql/log.cc (this time the SET is uppercaes, and again it is
+            # case-sensitive).
+            # SET timestamp=foo;
+            # SET timestamp=foo,insert_id=123;
+            # SET insert_id=123;
+            elsif ( my ($setting) = $line =~ m/^SET\s+([^;]*)/ ) {
+               MKDEBUG && _d("Got some setting:", $setting);
+               push @properties, map { s/\s+//; lc } split(/,|\s*=\s*/, $setting);
+            }
+
          }
          else {
-            die "Unknown event type $type"
-               unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+            # This isn't a meta-data line.  It's the first line of the
+            # whole query. Grab from here to the end of the string and
+            # put that into the 'arg' for the event.  Then we are done.
+            # Note that if this line really IS the query but we skip in
+            # the 'if' above because it looks like meta-data, later
+            # we'll remedy that.
+            MKDEBUG && _d("Got the query/arg line at pos", $pos);
+            $found_arg++;
+            if ( $got_offset && $got_hdr ) {
+               if ( $type eq 'Xid' ) {
+                  my ($xid) = $rest =~ m/(\d+)/;
+                  push @properties, 'Xid', $xid;
+               }
+               elsif ( $type eq 'Query' ) {
+                  my ($i, $t, $c) = $rest =~ m/$binlog_line_2_rest/m;
+                  push @properties, 'Thread_id', $i, 'Query_time', $t,
+                                    'error_code', $c;
+               }
+               else {
+                  die "Unknown event type $type"
+                     unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+               }
+            }
+            else {
+               MKDEBUG && _d("It's not a query/arg, it's just some SQL fluff");
+               push @properties, 'cmd', 'Query', 'ts', undef;
+            }
+
+            my $delim_len =  $pos == length($stmt) ? $delim_len : 0;
+
+            my $arg = substr($stmt, $pos - length($line) - $delim_len);
+            $arg =~ s/$delim// if $delim;
+            push @properties, 'arg', $arg, 'bytes', length($arg);
+            last LINE;
          }
+      } # LINE
+
+      if ( $found_arg ) {
+         # Don't dump $event; want to see full dump of all properties, and after
+         # it's been cast into a hash, duplicated keys will be gone.
+         MKDEBUG && _d('Properties of event:', Dumper(\@properties));
+         my $event = { @properties };
+         foreach my $callback ( @callbacks ) {
+            last unless $event = $callback->($event);
+         }
+         ++$num_events;
       }
       else {
-         $event = {
-            arg => $line,
-         };
+         MKDEBUG && _d('Event had no arg');
       }
-   }
 
-   # If it was EOF, discard the terminator so statefulness doesn't
-   # interfere with the next log file.
-   if ( !defined $line ) {
-      delete $self->{term};
-   }
-
-   MKDEBUG && _d('Properties of event:', Dumper($event));
-   foreach my $callback ( @callbacks ) {
-      last unless $event = $callback->($event);
-   }
-   ++$num_events;
+   } # EVENT
 
    return $num_events;
 }
