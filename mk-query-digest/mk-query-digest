@@ -2044,7 +2044,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4229
+# MySQLProtocolParser package 4267
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2166,25 +2166,50 @@ my %flag_for = (
 
 sub new {
    my ( $class, %args ) = @_;
+
+   my ( $server_port )
+      = $args{server} ? $args{server} =~ m/:(\w+)/ : ('3306|mysql');
+   $server_port ||= '3306|mysql';  # In case $args{server} doesn't have a port.
+
    my $self = {
       server         => $args{server},
-      version        => '41',
+      server_port    => $server_port,
+      version        => '41',    # MySQL proto version; not used yet
       sessions       => {},
       o              => $args{o},
-      fake_thread_id => 2**32,  # see _make_event()
+      fake_thread_id => 2**32,   # see _make_event()
    };
+   MKDEBUG && $self->{server} && _d('Watching only server', $self->{server});
    return bless $self, $class;
 }
 
 sub parse_packet {
    my ( $self, $packet, $misc ) = @_;
 
-   my $from  = "$packet->{src_host}:$packet->{src_port}";
-   my $to    = "$packet->{dst_host}:$packet->{dst_port}";
-   $self->{server} ||= $from =~ m/:(?:3306|mysql)$/ ? $from
-                     : $to   =~ m/:(?:3306|mysql)$/ ? $to
-                     :                                undef;
-   my $client = $from eq $self->{server} ? $to : $from;
+   my $src_host = "$packet->{src_host}:$packet->{src_port}";
+   my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
+
+   if ( my $server = $self->{server} ) {  # Watch only the given server.
+      if ( $src_host ne $server && $dst_host ne $server ) {
+         MKDEBUG && _d('Packet is not to or from', $server);
+         return;
+      }
+   }
+
+   my $packet_from;
+   my $client;
+   if ( $src_host =~ m/:$self->{server_port}$/ ) {
+      $packet_from = 'server';
+      $client      = $dst_host;
+   }
+   elsif ( $dst_host =~ m/:$self->{server_port}$/ ) {
+      $packet_from = 'client';
+      $client      = $src_host;
+   }
+   else {
+      warn 'Packet is not to or from MySQL server: ', Dumper($packet);
+      return;
+   }
    MKDEBUG && _d('Client:', $client);
 
    if ( !exists $self->{sessions}->{$client} ) {
@@ -2217,14 +2242,14 @@ sub parse_packet {
    remove_mysql_header($packet);
 
    my $event;
-   if ( $from eq $self->{server} ) {
+   if ( $packet_from eq 'server' ) {
       $event = $self->_packet_from_server($packet, $session, $misc);
    }
-   elsif ( $from eq $client ) {
+   elsif ( $packet_from eq 'client' ) {
       $event = $self->_packet_from_client($packet, $session, $misc);
    }
    else {
-      MKDEBUG && _d('Packet origin unknown');
+      die 'Packet origin unknown';
    }
 
    MKDEBUG && _d('Done parsing packet; client state:', $session->{state});
@@ -3740,15 +3765,8 @@ sub header {
 
    my ( $rss, $vsz, $user, $system ) = ( 0, 0, 0, 0 );
    eval {
-      if ( $OSNAME ne 'MSWin32' ) {
-         my $mem = `ps -o rss,vsz $PID`;
-         ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
-      }
-      else {
-         my $mem = qx(tasklist /fi "PID eq $PID");
-         ($vsz) = $mem =~ m/([\d,]+)\s\w$/;
-         $vsz =~ s/,//g; # tasklist only returns virtual memory usage
-      }
+      my $mem = `ps -o rss,vsz $PID`;
+      ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
    };
    ( $user, $system ) = times();
 
@@ -5335,7 +5353,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedProtocolParser package 4234
+# MemcachedProtocolParser package 4268
 # ###########################################################################
 package MemcachedProtocolParser;
 
@@ -5352,8 +5370,14 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
+
+   my ( $server_port )
+      = $args{server} ? $args{server} =~ m/:(\w+)/ : ('11211');
+   $server_port ||= '11211';  # In case $args{server} doesn't have a port.
+
    my $self = {
       server      => $args{server},
+      server_port => $server_port,
       sessions    => {},
       o           => $args{o},
    };
@@ -5363,12 +5387,30 @@ sub new {
 sub parse_packet {
    my ( $self, $packet, $misc ) = @_;
 
-   my $from  = "$packet->{src_host}:$packet->{src_port}";
-   my $to    = "$packet->{dst_host}:$packet->{dst_port}";
-   $self->{server} ||= $from =~ m/:(?:11211)$/ ? $from
-                     : $to   =~ m/:(?:11211)$/ ? $to
-                     :                           undef;
-   my $client = $from eq $self->{server} ? $to : $from;
+   my $src_host = "$packet->{src_host}:$packet->{src_port}";
+   my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
+
+   if ( my $server = $self->{server} ) {  # Watch only the given server.
+      if ( $src_host ne $server && $dst_host ne $server ) {
+         MKDEBUG && _d('Packet is not to or from', $server);
+         return;
+      }
+   }
+
+   my $packet_from;
+   my $client;
+   if ( $src_host =~ m/:$self->{server_port}$/ ) {
+      $packet_from = 'server';
+      $client      = $dst_host;
+   }
+   elsif ( $dst_host =~ m/:$self->{server_port}$/ ) {
+      $packet_from = 'client';
+      $client      = $src_host;
+   }
+   else {
+      warn 'Packet is not to or from memcached server: ', Dumper($packet);
+      return;
+   }
    MKDEBUG && _d('Client:', $client);
 
    if ( !exists $self->{sessions}->{$client} ) {
@@ -5390,14 +5432,14 @@ sub parse_packet {
 
    $packet->{data} = pack('H*', $packet->{data});
    my $event;
-   if ( $from eq $self->{server} ) {
+   if ( $packet_from eq 'server' ) {
       $event = $self->_packet_from_server($packet, $session, $misc);
    }
-   elsif ( $from eq $client ) {
+   elsif ( $packet_from eq 'client' ) {
       $event = $self->_packet_from_client($packet, $session, $misc);
    }
    else {
-      MKDEBUG && _d('Packet origin unknown');
+      die 'Packet origin unknown';
    }
 
    MKDEBUG && _d('Done with packet; event:', Dumper($event));
@@ -7848,13 +7890,12 @@ Show version and exit.
 
 type: string
 
-Which IP address and port is the server when parsing tcpdump output. This option
-tells mk-query-digest whether a given TCP packet is from client to server, or
-server to client.  If you don't specify it, mk-query-digest tries to guess the
-host and port of the server by looking for port 3306 or port "mysql".  If you're
-watching a server with a non-standard port, this won't work, and you'll need to
-specify the IP address and port to watch.  If mk-query-digest doesn't know what
-to watch, nothing works right.
+This option tells mk-query-digest which server IP address and port (like
+"10.0.0.1:3306") to watch when parsing tcpdump (for L<"--type"> tcpdump and
+memcached); all others are ignored.  If you don't specify it,
+mk-query-digest watches all servers by looking for any IP address using port
+3306 or "mysql".  If you're watching a server with a non-standard port, this
+won't work, so you must specify the IP address and port to watch.
 
 =item --[no]zero-admin
 
