@@ -5841,6 +5841,172 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# BinaryLogParser package 4273
+# ###########################################################################
+package BinaryLogParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   return bless {}, $class;
+}
+
+my $binlog_line_1 = qr/at (\d+)$/m;
+my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/m;
+my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
+
+sub parse_event {
+   my ( $self, $fh, $misc, @callbacks ) = @_;
+   my $oktorun_here = 1;
+   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
+   my $num_events   = 0;
+
+   local $INPUT_RECORD_SEPARATOR = ";\n#";
+   my $pos_in_log = tell($fh);
+   my $stmt;
+   my ($delim, $delim_len) = (undef, 0);
+
+   EVENT:
+   while ( $$oktorun && defined($stmt = <$fh>) ) {
+      my @properties = ('pos_in_log', $pos_in_log);
+      my ($ts, $sid, $end, $type, $rest);
+      $pos_in_log = tell($fh);
+      $stmt =~ s/;\n#?\Z//;
+
+      my ( $got_offset, $got_hdr );
+      my $pos = 0;
+      my $len = length($stmt);
+      my $found_arg = 0;
+      LINE:
+      while ( $stmt =~ m/^(.*)$/mg ) { # /g requires scalar match.
+         $pos     = pos($stmt);  # Be careful not to mess this up!
+         my $line = $1;          # Necessary for /g and pos() to work.
+         $line    =~ s/$delim// if $delim;
+         MKDEBUG && _d($line);
+
+         if ( $line =~ m/^\/\*.+\*\/;/ ) {
+            MKDEBUG && _d('Comment line');
+            next LINE;
+         }
+ 
+         if ( $line =~ m/^DELIMITER (\S*)/m ) {
+            my $del = $1;
+            if ( $del ) {
+               $delim_len = length $del;
+               $delim     = quotemeta $del;
+               MKDEBUG && _d('delimiter:', $delim);
+            }
+            else {
+               MKDEBUG && _d('Delimiter reset to ;');
+               $delim     = undef;
+               $delim_len = 0;
+            }
+            next LINE;
+         }
+
+         next LINE if $line =~ m/End of log file/;
+
+         if ( !$got_offset && (my ( $offset ) = $line =~ m/$binlog_line_1/m) ) {
+            MKDEBUG && _d('Got the at offset line');
+            push @properties, 'offset', $offset;
+            $got_offset++;
+         }
+
+         elsif ( !$got_hdr && $line =~ m/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)/ ) {
+            ($ts, $sid, $end, $type, $rest) = $line =~ m/$binlog_line_2/m;
+            MKDEBUG && _d('Got the header line; type:', $type, 'rest:', $rest);
+            push @properties, 'cmd', 'Query', 'ts', $ts, 'server_id', $sid,
+               'end_log_pos', $end;
+            $got_hdr++;
+         }
+
+         elsif ( $line =~ m/^(?:#|use |SET)/i ) {
+
+            if ( my ( $db ) = $line =~ m/^use ([^;]+)/ ) {
+               MKDEBUG && _d("Got a default database:", $db);
+               push @properties, 'db', $db;
+            }
+
+            elsif ( my ($setting) = $line =~ m/^SET\s+([^;]*)/ ) {
+               MKDEBUG && _d("Got some setting:", $setting);
+               push @properties, map { s/\s+//; lc } split(/,|\s*=\s*/, $setting);
+            }
+
+         }
+         else {
+            MKDEBUG && _d("Got the query/arg line at pos", $pos);
+            $found_arg++;
+            if ( $got_offset && $got_hdr ) {
+               if ( $type eq 'Xid' ) {
+                  my ($xid) = $rest =~ m/(\d+)/;
+                  push @properties, 'Xid', $xid;
+               }
+               elsif ( $type eq 'Query' ) {
+                  my ($i, $t, $c) = $rest =~ m/$binlog_line_2_rest/m;
+                  push @properties, 'Thread_id', $i, 'Query_time', $t,
+                                    'error_code', $c;
+               }
+               else {
+                  die "Unknown event type $type"
+                     unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+               }
+            }
+            else {
+               MKDEBUG && _d("It's not a query/arg, it's just some SQL fluff");
+               push @properties, 'cmd', 'Query', 'ts', undef;
+            }
+
+            my $delim_len =  $pos == length($stmt) ? $delim_len : 0;
+
+            my $arg = substr($stmt, $pos - length($line) - $delim_len);
+            $arg =~ s/$delim// if $delim;
+            push @properties, 'arg', $arg, 'bytes', length($arg);
+            last LINE;
+         }
+      } # LINE
+
+      if ( $found_arg ) {
+         MKDEBUG && _d('Properties of event:', Dumper(\@properties));
+         my $event = { @properties };
+         foreach my $callback ( @callbacks ) {
+            last unless $event = $callback->($event);
+         }
+         ++$num_events;
+      }
+      else {
+         MKDEBUG && _d('Event had no arg');
+      }
+
+   } # EVENT
+
+   return $num_events;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End BinaryLogParser package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -6361,6 +6527,7 @@ sub main {
       # Set up the parser and miscellaneous options to it.
       my $misc   = { oktorun => \$oktorun };
       my $parser = $o->get('type') eq 'slowlog'   ? new SlowLogParser()
+                 : $o->get('type') eq 'binlog'    ? new BinaryLogParser()
                  : $o->get('type') eq 'tcpdump'   ? new TcpdumpParser()
                  : $o->get('type') eq 'memcached' ? new TcpdumpParser()
                  : die("Unknown type " . $o->get('type'));
@@ -7197,6 +7364,19 @@ This option deals with bugs in slow-logging functionality that causes large
 values for attributes.  If the attribute's value is bigger than this, the
 last-seen value for that class of query is used instead.
 
+=item aux-dsn
+
+type: DSN
+
+Auxiliary DSN used for special options.
+
+The following options may require a DSN even when only parsing a slow log file:
+
+  * L<"--since">
+  * L<"--until">
+
+See each option for why it might require a DSN.
+
 =item --check-attributes-limit
 
 type: int; default: 1000
@@ -7465,7 +7645,7 @@ Show help and exit.
 
 =item --ignore-attributes
 
-type: array; default: arg,cmd,insert_id,ip,port,Thread_id,timestamp,exptime,flags,key,res,val,server_id,offset,end,xid
+type: array; default: arg,cmd,insert_id,ip,port,Thread_id,timestamp,exptime,flags,key,res,val,server_id,offset,end_log_pos,Xid
 
 Do not aggregate these attributes when auto-detecting L<"--select">.
 
@@ -7797,6 +7977,29 @@ such list in the statement will be shortened.
 If it shortens something beyond recognition, you can find the original statement
 in the log, at the offset shown in the report header (see L<"OUTPUT">).
 
+=item --since
+
+type: string
+
+Parse only queries newer than this value.
+
+This option allows you to ignore queries older than a certain value and parse
+only those queries which are more recent than the value.  The value can be
+several types:
+
+  * A simple time value N with optional suffix: N[shmd], where
+       s=seconds, h=hours, m=minutes, d=days (default s if no suffix given);
+       this is like saying "since N[shmd] ago"
+  * A date with optional seconds: YYYY-MM-DD [HH:MM::SS]
+  * Any time expression evaluated by MySQL: C<CURRENT_DATE - INTERVAL 7 DAY>
+
+If you give a MySQL time expression, then you must also specifiy a DSN
+so that mk-query-digest can connect to MySQL to evalue to expression.  If you
+specify L<"--excute">, L<"--explain">, L<"--processlist">, L<"--review">
+or L<"--review-history">, then one of these DSNs will be used automatically.
+Otherwise, you must specify an L<"--aux-dsn"> or mk-query-digest will die
+saying that it cannot evaluate the MySQL time expression.
+
 =item --tcpdump-errors
 
 type: string
@@ -7836,6 +8039,10 @@ type: string
 The type of input to parse (default slowlog).  The permitted types are
 
 =over
+
+=item binlog
+
+Parse a binary log file.
 
 =item slowlog
 

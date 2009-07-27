@@ -30,6 +30,21 @@ sub no_diff {
 my $run_with = '../mk-query-digest --report-format=query_report --limit 10 ../../common/t/samples/';
 my $run_notop = '../mk-query-digest --report-format=query_report ../../common/t/samples/';
 
+# #############################################################################
+# Issue 154: Add --since and --until options to mk-query-digest
+# #############################################################################
+# Work in progress...
+#ok(
+#   no_diff($run_with.'slow033.txt --since 2009-07-28', 'samples/empty_report.txt'),
+#   '--since YYYY-MM-DD'
+#);
+
+#ok(
+#   no_diff($run_with.'slow003.txt --until 2009-07-28', 'samples/empty_report.txt'),
+#   '--until YYYY-MM-DD'
+#);
+# #############################################################################
+
 ok(
    no_diff($run_with.'empty', 'samples/empty_report.txt'),
    'Analysis for empty log'

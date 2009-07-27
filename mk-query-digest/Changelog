@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Added binary log parsing; --type binlog (issue 476).
    * The script crashed immediately on Windows (issue 531).
    * The rusage report crashed on Windows (issue 531).
    * Added memcached parsing; --type memcached (issue 525).
