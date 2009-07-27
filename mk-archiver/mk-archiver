@@ -2729,8 +2729,10 @@ sub main {
 
    if ( $o->get('dry-run') ) {
       if ( !$quiet ) {
-         print join("\n", ($archive_file || ''),
-               $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
+         print join("\n", grep { $_ } ($archive_file || ''),
+                  $first_sql, $next_sql,
+                  ($o->get('no-delete') ? '' : $del_sql), $ins_sql)
+            , "\n";
       }
       return 0;
    }

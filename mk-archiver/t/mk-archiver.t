@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 111;
+use Test::More tests => 112;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -440,6 +440,17 @@ like(
 );
 
 `rm -rf /tmp/mk-archiver.pid`;
+
+# #############################################################################
+# Issue 524: mk-archiver --no-delete --dry-run prints out DELETE statement
+# #############################################################################
+$sb->load_file('master', 'samples/issue_131.sql');
+$output = `perl ../mk-archiver --where 1=1 --dry-run --no-delete --source h=127.1,P=12345,D=test,t=issue_131_src --dest t=issue_131_dst 2>&1`;
+unlike(
+   $output,
+   qr/DELETE/,
+   'No DELETE with --no-delete --dry-run (issue 524)'
+);
 
 # #############################################################################
 # Done.
