@@ -60,9 +60,15 @@ sub get_tables {
    MKDEBUG && _d('Getting tables for', $query);
 
    # Handle CREATE, ALTER, TRUNCATE and DROP TABLE.
-   if ( $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i ) {
-      MKDEBUG && _d('Special table type:', $1);  # Using $1, watch out!
+   my ( $ddl_stmt ) = $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i;
+   if ( $ddl_stmt ) {
+      MKDEBUG && _d('Special table type:', $ddl_stmt);
       $query =~ s/IF NOT EXISTS//i;
+      if ( $query =~ m/$ddl_stmt DATABASE\b/i ) {
+         # Handles CREATE DATABASE, not to be confused with CREATE TABLE.
+         MKDEBUG && _d('Query alters a database, not a table');
+         return ();
+      }
       my ($tbl) = $query =~ m/TABLE\s+($tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches table:', $tbl);
       return ($tbl);

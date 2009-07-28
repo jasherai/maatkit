@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 104;
+use Test::More tests => 105;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -552,6 +552,14 @@ is_deeply(
    ],
    [qw(db.tbl)],
    'get_tables: TRUNCATE TABLE'
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'create database foo')
+   ],
+   [],
+   'get_tables: CREATE DATABASE (no tables)'
 );
 
 ok($qp->has_derived_table(
