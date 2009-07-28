@@ -956,15 +956,27 @@ sub uncompress_packet {
    # in the original, uncompressed packet. If this is zero
    # then the data is not compressed."
 
-   my $data            = \$packet->{data};
-   my $comp_hdr        = substr($$data, 0, 14, '');
-   my $comp_data_len   = to_num(substr($comp_hdr, 0, 6));
-   my $pkt_num         = to_num(substr($comp_hdr, 6, 2));
-   my $uncomp_data_len = to_num(substr($comp_hdr, 8, 6));
-   MKDEBUG && _d('Compression header data:', $comp_hdr,
-      'compressed data len (bytes)', $comp_data_len,
-      'number', $pkt_num,
-      'uncompressed data len (bytes)', $uncomp_data_len);
+   my $data;
+   my $comp_hdr;
+   my $comp_data_len;
+   my $pkt_num;
+   my $uncomp_data_len;
+   eval {
+      $data            = \$packet->{data};
+      $comp_hdr        = substr($$data, 0, 14, '');
+      $comp_data_len   = to_num(substr($comp_hdr, 0, 6));
+      $pkt_num         = to_num(substr($comp_hdr, 6, 2));
+      $uncomp_data_len = to_num(substr($comp_hdr, 8, 6));
+      MKDEBUG && _d('Compression header data:', $comp_hdr,
+         'compressed data len (bytes)', $comp_data_len,
+         'number', $pkt_num,
+         'uncompressed data len (bytes)', $uncomp_data_len);
+   };
+   if ( $EVAL_ERROR ) {
+      $session->{EVAL_ERROR} = $EVAL_ERROR;
+      $self->fail_session($session, 'failed to parse compression header');
+      return 0;
+   }
 
    if ( $uncomp_data_len ) {
       eval {
@@ -972,7 +984,8 @@ sub uncompress_packet {
          $packet->{data} = $$data;
       };
       if ( $EVAL_ERROR ) {
-         $self->fail_session($session, 'failed to uncompress packet');
+         $session->{EVAL_ERROR} = $EVAL_ERROR;
+         $self->fail_session($session, 'failed to uncompress data');
          die "Cannot uncompress packet.  Check that IO::Uncompress::Inflate "
             . "is installed.\nError: $EVAL_ERROR";
       }
