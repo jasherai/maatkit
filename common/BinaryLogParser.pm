@@ -75,8 +75,8 @@ sub parse_event {
             next LINE;
          }
  
-         if ( $line =~ m/^DELIMITER (\S*)/m ) {
-            my $del = $1;
+         if ( $line =~ m/^DELIMITER/m ) {
+            my ( $del ) = $line =~ m/^DELIMITER (\S*)$/m;
             if ( $del ) {
                $delim_len = length $del;
                $delim     = quotemeta $del;
@@ -162,10 +162,43 @@ sub parse_event {
                push @properties, 'cmd', 'Query', 'ts', undef;
             }
 
-            my $delim_len =  $pos == length($stmt) ? $delim_len : 0;
-
+            # Removing delimiters alters the length of $stmt, so we account
+            # for this in our substr() offset.  If $pos is equal to the length
+            # of $stmt, then this $line is the whole $arg (i.e. one line
+            # query).  In this case, we go back the $delim_len that was
+            # removed from this $line.  Otherwise, there are more lines to
+            # this arg so a delimiter has not yet been removed (it remains
+            # somewhere in $arg, at least at the end).  Therefore, we do not
+            # go back any extra.
+            my $delim_len = ($pos == length($stmt) ? $delim_len : 0);
             my $arg = substr($stmt, $pos - length($line) - $delim_len);
-            $arg =~ s/$delim// if $delim;
+
+            $arg =~ s/$delim// if $delim; # Remove the delimiter.
+
+            # Sometimes DELIMITER appears at the end of an arg, so we have
+            # to catch it again.  Queries in this arg before this new
+            # DELIMITER should have the old delim, which is why we still
+            # remove it in the previous line.
+            if ( $arg =~ m/^DELIMITER/m ) {
+               my ( $del ) = $arg =~ m/^DELIMITER (\S*)$/m;
+               if ( $del ) {
+                  $delim_len = length $del;
+                  $delim     = quotemeta $del;
+                  MKDEBUG && _d('delimiter:', $delim);
+               }
+               else {
+                  MKDEBUG && _d('Delimiter reset to ;');
+                  $del       = ';';
+                  $delim     = undef;
+                  $delim_len = 0;
+               }
+
+               $arg =~ s/^DELIMITER.*$//m;  # Remove DELIMITER from arg.
+            }
+
+            $arg =~ s/;$//gm;  # Ensure ending ; are gone.
+            $arg =~ s/\s+$//;  # Remove trailing spaces and newlines.
+
             push @properties, 'arg', $arg, 'bytes', length($arg);
             last LINE;
          }

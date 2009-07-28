@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 2;
+use Test::More tests => 4;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -190,14 +190,88 @@ run_test({
     ts => '071207 12:02:53'
   },
   {
-    arg => 'ROLLBACK /* added by mysqlbinlog */;
+    arg => 'ROLLBACK /* added by mysqlbinlog */
 /*!50003 SET COMPLETION_TYPE=@OLD_COMPLETION_TYPE*/',
-    bytes => 88,
+    bytes => 87,
     cmd => 'Query',
     pos_in_log => 3066,
     ts => undef
   }
 ]
+});
+
+run_test({
+   file => 'samples/binlog002.txt',
+   result => [
+  {
+    arg => 'ROLLBACK',
+    bytes => 8,
+    cmd => 'Query',
+    end_log_pos => '98',
+    offset => '4',
+    pos_in_log => 146,
+    server_id => '12345',
+    ts => '090722  7:21:41'
+  },
+  {
+    '@@session.character_set_client' => '8',
+    '@@session.collation_connection' => '8',
+    '@@session.collation_server' => '8',
+    '@@session.foreign_key_checks' => '1',
+    '@@session.sql_auto_is_null' => '1',
+    '@@session.sql_mode' => '0',
+    '@@session.unique_checks' => '1',
+    Query_time => '0',
+    Thread_id => '3',
+    arg => 'create database d',
+    bytes => 17,
+    cmd => 'Query',
+    end_log_pos => '175',
+    error_code => '0',
+    offset => '98',
+    pos_in_log => 381,
+    server_id => '12345',
+    timestamp => '1248268919',
+    ts => '090722  7:21:59'
+  },
+  {
+    Query_time => '0',
+    Thread_id => '3',
+    arg => 'create table foo (i int)',
+    bytes => 24,
+    cmd => 'Query',
+    db => 'd',
+    end_log_pos => '259',
+    error_code => '0',
+    offset => '175',
+    pos_in_log => 795,
+    server_id => '12345',
+    timestamp => '1248268936',
+    ts => '090722  7:22:16'
+  },
+  {
+    Query_time => '0',
+    Thread_id => '3',
+    arg => 'insert foo values (1),(2)',
+    bytes => 25,
+    cmd => 'Query',
+    end_log_pos => '344',
+    error_code => '0',
+    offset => '259',
+    pos_in_log => 973,
+    server_id => '12345',
+    timestamp => '1248268944',
+    ts => '090722  7:22:24'
+  },
+  {
+    arg => 'ROLLBACK /* added by mysqlbinlog */
+/*!50003 SET COMPLETION_TYPE=@OLD_COMPLETION_TYPE*/',
+    bytes => 87,
+    cmd => 'Query',
+    pos_in_log => 1152,
+    ts => undef
+  }
+   ]
 });
 
 # #############################################################################
