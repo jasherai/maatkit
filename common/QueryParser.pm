@@ -48,6 +48,10 @@ our $has_derived = qr{
       \s*\(\s*SELECT
    }xi;
 
+# http://dev.mysql.com/doc/refman/5.1/en/sql-syntax-data-definition.html
+# We treat TRUNCATE as a dds but really it's a data manipulation statement.
+our $data_def_stmts = qr/(?:CREATE|ALTER|TRUNCATE|DROP|RENAME)/i;
+
 sub new {
    my ( $class ) = @_;
    bless {}, $class;
@@ -60,7 +64,7 @@ sub get_tables {
    MKDEBUG && _d('Getting tables for', $query);
 
    # Handle CREATE, ALTER, TRUNCATE and DROP TABLE.
-   my ( $ddl_stmt ) = $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i;
+   my ( $ddl_stmt ) = $query =~ /^\s*($data_def_stmts)\b/i;
    if ( $ddl_stmt ) {
       MKDEBUG && _d('Special table type:', $ddl_stmt);
       $query =~ s/IF NOT EXISTS//i;
