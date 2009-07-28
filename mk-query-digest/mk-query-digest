@@ -1433,7 +1433,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 3383
+# QueryRewriter package 4281
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1570,6 +1570,20 @@ sub distill {
       && return "ADMIN";
    $query =~ m/\A\s*use\s+/
       && return "USE";
+
+   eval $QueryParser::data_def_stmts;
+   eval $QueryParser::tbl_ident;
+   my ( $dds ) = $query =~ /^\s*($QueryParser::data_def_stmts)\b/i;
+   if ( $dds ) {
+      my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
+      $obj = uc $obj if $obj;
+      MKDEBUG && _d('Data def statment:', $dds, $obj);
+      my ($db_or_tbl)
+         = $query =~ m/(?:TABLE|DATABASE)\s+($QueryParser::tbl_ident)(\s+.*)?/i;
+      MKDEBUG && _d('Matches db or table:', $db_or_tbl);
+      $obj .= ($db_or_tbl ? " $db_or_tbl" : '');
+      return uc($dds) . ($obj ? " $obj" : '');
+   }
 
    my @verbs = $query =~ m/\b($verbs)\b/gio;
    @verbs    = do {
@@ -4286,7 +4300,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4278
+# QueryParser package 4280
 # ###########################################################################
 package QueryParser;
 
@@ -4308,6 +4322,8 @@ our $has_derived = qr{
       \s*\(\s*SELECT
    }xi;
 
+our $data_def_stmts = qr/(?:CREATE|ALTER|TRUNCATE|DROP|RENAME)/i;
+
 sub new {
    my ( $class ) = @_;
    bless {}, $class;
@@ -4318,7 +4334,7 @@ sub get_tables {
    return unless $query;
    MKDEBUG && _d('Getting tables for', $query);
 
-   my ( $ddl_stmt ) = $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i;
+   my ( $ddl_stmt ) = $query =~ /^\s*($data_def_stmts)\b/i;
    if ( $ddl_stmt ) {
       MKDEBUG && _d('Special table type:', $ddl_stmt);
       $query =~ s/IF NOT EXISTS//i;
