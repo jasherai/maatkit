@@ -4286,7 +4286,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4217
+# QueryParser package 4278
 # ###########################################################################
 package QueryParser;
 
@@ -4318,9 +4318,14 @@ sub get_tables {
    return unless $query;
    MKDEBUG && _d('Getting tables for', $query);
 
-   if ( $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i ) {
-      MKDEBUG && _d('Special table type:', $1);  # Using $1, watch out!
+   my ( $ddl_stmt ) = $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i;
+   if ( $ddl_stmt ) {
+      MKDEBUG && _d('Special table type:', $ddl_stmt);
       $query =~ s/IF NOT EXISTS//i;
+      if ( $query =~ m/$ddl_stmt DATABASE\b/i ) {
+         MKDEBUG && _d('Query alters a database, not a table');
+         return ();
+      }
       my ($tbl) = $query =~ m/TABLE\s+($tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches table:', $tbl);
       return ($tbl);
@@ -5841,7 +5846,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 4273
+# BinaryLogParser package 4277
 # ###########################################################################
 package BinaryLogParser;
 
@@ -5899,8 +5904,8 @@ sub parse_event {
             next LINE;
          }
  
-         if ( $line =~ m/^DELIMITER (\S*)/m ) {
-            my $del = $1;
+         if ( $line =~ m/^DELIMITER/m ) {
+            my ( $del ) = $line =~ m/^DELIMITER (\S*)$/m;
             if ( $del ) {
                $delim_len = length $del;
                $delim     = quotemeta $del;
@@ -5966,10 +5971,31 @@ sub parse_event {
                push @properties, 'cmd', 'Query', 'ts', undef;
             }
 
-            my $delim_len =  $pos == length($stmt) ? $delim_len : 0;
-
+            my $delim_len = ($pos == length($stmt) ? $delim_len : 0);
             my $arg = substr($stmt, $pos - length($line) - $delim_len);
-            $arg =~ s/$delim// if $delim;
+
+            $arg =~ s/$delim// if $delim; # Remove the delimiter.
+
+            if ( $arg =~ m/^DELIMITER/m ) {
+               my ( $del ) = $arg =~ m/^DELIMITER (\S*)$/m;
+               if ( $del ) {
+                  $delim_len = length $del;
+                  $delim     = quotemeta $del;
+                  MKDEBUG && _d('delimiter:', $delim);
+               }
+               else {
+                  MKDEBUG && _d('Delimiter reset to ;');
+                  $del       = ';';
+                  $delim     = undef;
+                  $delim_len = 0;
+               }
+
+               $arg =~ s/^DELIMITER.*$//m;  # Remove DELIMITER from arg.
+            }
+
+            $arg =~ s/;$//gm;  # Ensure ending ; are gone.
+            $arg =~ s/\s+$//;  # Remove trailing spaces and newlines.
+
             push @properties, 'arg', $arg, 'bytes', length($arg);
             last LINE;
          }
@@ -6781,11 +6807,9 @@ sub main {
                   my $samp_query = $sample->{arg} || '';
                   $profile{sample} = $qr->distill($samp_query);
                   $profile{id}     = make_checksum($item);
-
                   # Shorten it if necessary (issue 216 and 292).
-                  if ( $o->get('shorten') ) {
-                     $samp_query = $qr->shorten($samp_query, $o->get('shorten'));
-                  }
+                  $samp_query = $qr->shorten($samp_query, $o->get('shorten'))
+                     if $o->get('shorten');
 
                   # Print out tables for the query, and if it's a SELECT
                   # statement, print out its EXPLAIN...
@@ -6844,7 +6868,7 @@ sub main {
                foreach my $item ( reverse sort { $a->{r} <=> $b->{r} } @profiles) {
                   printf "# %4d 0x%16s %10.4f %4.1f%% %7d %10.6f %s\n",
                      $item->{rank}, $item->{id}, $item->{r},
-                     $item->{r} / $total_r * 100,
+                     $item->{r} / ($total_r || 1) * 100,
                      $item->{cnt}, $item->{r} / $item->{cnt}, $item->{sample};
                }
             }

@@ -1364,7 +1364,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4217
+# QueryParser package 4278
 # ###########################################################################
 package QueryParser;
 
@@ -1396,9 +1396,14 @@ sub get_tables {
    return unless $query;
    MKDEBUG && _d('Getting tables for', $query);
 
-   if ( $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i ) {
-      MKDEBUG && _d('Special table type:', $1);  # Using $1, watch out!
+   my ( $ddl_stmt ) = $query =~ /^\s*(CREATE|ALTER|TRUNCATE|DROP)\b/i;
+   if ( $ddl_stmt ) {
+      MKDEBUG && _d('Special table type:', $ddl_stmt);
       $query =~ s/IF NOT EXISTS//i;
+      if ( $query =~ m/$ddl_stmt DATABASE\b/i ) {
+         MKDEBUG && _d('Query alters a database, not a table');
+         return ();
+      }
       my ($tbl) = $query =~ m/TABLE\s+($tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches table:', $tbl);
       return ($tbl);
