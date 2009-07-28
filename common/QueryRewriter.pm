@@ -195,6 +195,25 @@ sub distill {
    $query =~ m/\A\s*use\s+/
       && return "USE";
 
+   # More special cases for data defintion statements.
+   # The two evals are a hack to keep Perl from warning that
+   # "QueryParser::data_def_stmts" used only once: possible typo at...".
+   # Some day we'll group all our common regex together in a packet and
+   # export/import them properly.
+   eval $QueryParser::data_def_stmts;
+   eval $QueryParser::tbl_ident;
+   my ( $dds ) = $query =~ /^\s*($QueryParser::data_def_stmts)\b/i;
+   if ( $dds ) {
+      my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
+      $obj = uc $obj if $obj;
+      MKDEBUG && _d('Data def statment:', $dds, $obj);
+      my ($db_or_tbl)
+         = $query =~ m/(?:TABLE|DATABASE)\s+($QueryParser::tbl_ident)(\s+.*)?/i;
+      MKDEBUG && _d('Matches db or table:', $db_or_tbl);
+      $obj .= ($db_or_tbl ? " $db_or_tbl" : '');
+      return uc($dds) . ($obj ? " $obj" : '');
+   }
+
    # First, get the query type -- just extract all the verbs and collapse them
    # together.
    my @verbs = $query =~ m/\b($verbs)\b/gio;

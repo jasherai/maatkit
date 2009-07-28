@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 111;
+use Test::More tests => 120;
 
 require "../QueryRewriter.pm";
 require '../QueryParser.pm';
@@ -784,6 +784,52 @@ is(
    $qr->shorten("select * from a where b in(1, '5 string', \"6 string\")", 1),
    "select * from a where b in(1 /*... omitted 2 items ...*/ )",
    "shorten IN() list numbers and strings",
+);
+
+is(
+   $qr->distill('create database foo'),
+   'CREATE DATABASE foo',
+   'distills create database'
+);
+is(
+   $qr->distill('create table foo'),
+   'CREATE TABLE foo',
+   'distills create table'
+);
+is(
+   $qr->distill('alter database foo'),
+   'ALTER DATABASE foo',
+   'distills alter database'
+);
+is(
+   $qr->distill('alter table foo'),
+   'ALTER TABLE foo',
+   'distills alter table'
+);
+is(
+   $qr->distill('drop database foo'),
+   'DROP DATABASE foo',
+   'distills drop database'
+);
+is(
+   $qr->distill('drop table foo'),
+   'DROP TABLE foo',
+   'distills drop table'
+);
+is(
+   $qr->distill('rename database foo'),
+   'RENAME DATABASE foo',
+   'distills rename database'
+);
+is(
+   $qr->distill('rename table foo'),
+   'RENAME TABLE foo',
+   'distills rename table'
+);
+is(
+   $qr->distill('truncate table foo'),
+   'TRUNCATE TABLE foo',
+   'distills truncate table'
 );
 
 # #############################################################################
