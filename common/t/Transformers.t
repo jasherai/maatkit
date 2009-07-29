@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 34;
+use Test::More tests => 36;
 
 BEGIN {
    # The timestamps for unix_timestamp are East Coast (EST), so GMT-4.
@@ -93,10 +93,21 @@ is(
    'any_unix_timestamp MySQL timestamp'
 );
 is(
+   any_unix_timestamp('071015'),
+   unix_timestamp('2007-10-15 00:00:00'),
+   'any_unix_timestamp MySQL timestamp without hh:mm:ss'
+);
+is(
    any_unix_timestamp('2007-10-15 01:43:52'),
    1192427032,
-   'any_unix_timestamp proper timestamp with hh:mm:ss'
+   'any_unix_timestamp proper timestamp'
 );
+is(
+   any_unix_timestamp('2007-10-15'),     # Same as above minus
+   1192427032 - (1*3600) - (43*60) - 52, # 1:43:52
+   'any_unix_timestamp proper timestamp without hh:mm:ss'
+);
+
 require '../DSNParser.pm';
 require '../Sandbox.pm';
 my $dp = new DSNParser();

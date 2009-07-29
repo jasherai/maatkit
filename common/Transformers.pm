@@ -193,12 +193,14 @@ sub any_unix_timestamp {
       MKDEBUG && _d('ts is now - N[shmd]:', $n);
       return time - $n;
    }
-   elsif ( $val =~ m/^$mysql_ts$/ ) {
+   elsif ( my ($ymd, $hms) = $val =~ m/(\d{6})(?:\s+(\d+:\d+:\d+))?/ ) {
       MKDEBUG && d('ts is MySQL slow log timestamp');
+      $val .= ' 00:00:00' unless $hms;
       return unix_timestamp(parse_timestamp($val));
    }
-   elsif ( $val =~ /^$proper_ts$/ ) {
+   elsif ( ($ymd, $hms) = $val =~ m/(\d{4}-\d\d-\d\d)(?:[T ](\d+:\d+:\d+))?/ ) {
       MKDEBUG && _d('ts is properly formatted timestamp');
+      $val .= ' 00:00:00' unless $hms;
       return unix_timestamp($val);
    }
    else {
