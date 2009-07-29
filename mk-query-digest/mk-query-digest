@@ -1270,7 +1270,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 3972
+# Transformers package 4299
 # ###########################################################################
 
 package Transformers;
@@ -1295,8 +1295,13 @@ our @EXPORT_OK   = qw(
    ts
    parse_timestamp
    unix_timestamp
+   any_unix_timestamp
    make_checksum
 );
+
+our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
+our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?/;
+our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
 
 sub micro_t {
    my ( $t, %args ) = @_;
@@ -1392,7 +1397,7 @@ sub ts {
 sub parse_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s, $f)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?$/ )
+         = $val =~ m/^$mysql_ts$/ )
    {
       return sprintf "%d-%02d-%02d %02d:%02d:"
                      . (defined $f ? '%02.6f' : '%02d'),
@@ -1404,11 +1409,42 @@ sub parse_timestamp {
 sub unix_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
-     = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?$/ )
+     = $val =~ m/^$proper_ts$/ )
    {
       return timelocal($s, $i, $h, $d, $m - 1, $y);
    }
    return $val;
+}
+
+sub any_unix_timestamp {
+   my ( $val, $callback ) = @_;
+
+   if ( my ($n, $suffix) = $val =~ m/^$n_ts$/ ) {
+      $n = $suffix eq 's' ? $n            # Seconds
+         : $suffix eq 'm' ? $n * 60       # Minutes
+         : $suffix eq 'h' ? $n * 3600     # Hours
+         : $suffix eq 'd' ? $n * 86400    # Days
+         :                  $n;           # default: Seconds
+      MKDEBUG && _d('ts is now - N[shmd]:', $n);
+      return time - $n;
+   }
+   elsif ( my ($ymd, $hms) = $val =~ m/^(\d{6})(?:\s+(\d+:\d+:\d+))?/ ) {
+      MKDEBUG && _d('ts is MySQL slow log timestamp');
+      $val .= ' 00:00:00' unless $hms;
+      return unix_timestamp(parse_timestamp($val));
+   }
+   elsif ( ($ymd, $hms) = $val =~ m/^(\d{4}-\d\d-\d\d)(?:[T ](\d+:\d+:\d+))?/) {
+      MKDEBUG && _d('ts is properly formatted timestamp');
+      $val .= ' 00:00:00' unless $hms;
+      return unix_timestamp($val);
+   }
+   else {
+      MKDEBUG && _d('ts is MySQL expression');
+      return $callback->($val) if $callback && ref $callback eq 'CODE';
+   }
+
+   MKDEBUG && _d('Unknown ts type:', $val);
+   return;
 }
 
 sub make_checksum {
@@ -6081,7 +6117,8 @@ use Data::Dumper;
 $Data::Dumper::Indent = 1;
 $OUTPUT_AUTOFLUSH     = 1;
 
-Transformers->import(qw(shorten micro_t percentage_of ts make_checksum));
+Transformers->import(qw(shorten micro_t percentage_of ts make_checksum
+   any_unix_timestamp));
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -6101,6 +6138,7 @@ my $qv_dbh2; # For QueryReview and --review-history
 my $ex_dbh;  # For --execute
 my $ep_dbh;  # For --explain
 my $ps_dbh;  # For Processlist
+my $aux_dbh; # For --aux-dsn (--since/--until "MySQL expression")
 my %ea;      # EventAggregators
 
 sub main {
@@ -6328,6 +6366,71 @@ sub main {
    # Make subs which map attrib aliases to their primary attrib.
    foreach my $alt_attrib ( @{$o->get('attribute-aliases')} ) {
       push @callbacks, make_alt_attrib($alt_attrib);
+   }
+
+   # Filter for --since and --until.
+   my $past_since;
+   my $at_until;
+   # If --since or --until is a MySQL expression, then any_unix_timestamp()
+   # will need this callback to execute the expression.  We don't know what
+   # type of time value the user gave, so we'll create the callback in any case.
+   if ( my $aux_dsn = $o->get('aux-dsn') ) {
+      $aux_dbh = $dp->get_dbh($dp->get_cxn_params($aux_dsn), {AutoCommit => 1});
+   }
+   $aux_dbh ||= $qv_dbh || $qv_dbh2 || $ex_dbh || $ps_dbh || $ep_dbh;
+   MKDEBUG && _d('aux dbh:', $aux_dbh);
+   my $time_callback = sub {
+      my ( $exp ) = @_;
+      return unless $aux_dbh;
+      my $sql = "SELECT UNIX_TIMESTAMP($exp)";
+      MKDEBUG && _d($sql);
+      return $aux_dbh->selectall_arrayref($sql)->[0]->[0];
+   };
+   if ( $o->get('since') ) {
+      my $since = any_unix_timestamp($o->get('since'), $time_callback);
+      die "Invalid --since value" unless $since;
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         if ( $past_since ) {
+            MKDEBUG && _d('Already past --since');
+            return $event;
+         }
+         if ( $event->{ts} ) {
+            my $ts = any_unix_timestamp($event->{ts}, $time_callback);
+            if ( ($ts || 0) >= $since ) {
+               MKDEBUG && _d('Event is at or past --since');
+               $past_since = 1;
+               return $event;
+            }
+            else {
+               MKDEBUG && _d('Event is before --since');
+            }
+         }
+         return;
+      };
+   }
+   if ( $o->get('until') ) {
+      my $until = any_unix_timestamp($o->get('until'), $time_callback);
+      die "Invalid --until value" unless $until;
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         if ( $at_until ) {
+            MKDEBUG && _d('Already past --until');
+            return;
+         }
+         if ( $event->{ts} ) {
+            my $ts = any_unix_timestamp($event->{ts}, $time_callback);
+            if ( ($ts || 0) >= $until ) {
+               MKDEBUG && _d('Event at or after --until');
+               $at_until = 1;
+               return;
+            }
+            else {
+               MKDEBUG && _d('Event is before --until');
+            }
+         }
+         return $event;
+      };
    }
 
    if ( grep { $_ eq 'tables' } @$groupby ) {
@@ -6607,6 +6710,10 @@ sub main {
             else {
                open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
                MKDEBUG && _d('Reading', $file);
+
+               # Reset these var in case we read two logs out of order by time.
+               $past_since = 0;
+               $at_until   = 0;
             }
          }
          # TODO: non-blocking I/O so we can respond to CTRL-C.  See
@@ -7417,7 +7524,7 @@ This option deals with bugs in slow-logging functionality that causes large
 values for attributes.  If the attribute's value is bigger than this, the
 last-seen value for that class of query is used instead.
 
-=item aux-dsn
+=item --aux-dsn
 
 type: DSN
 
@@ -8034,24 +8141,38 @@ in the log, at the offset shown in the report header (see L<"OUTPUT">).
 
 type: string
 
-Parse only queries newer than this value.
+Parse only queries newer than this value (parse queries since this date).
 
 This option allows you to ignore queries older than a certain value and parse
 only those queries which are more recent than the value.  The value can be
 several types:
 
-  * A simple time value N with optional suffix: N[shmd], where
+  * Simple time value N with optional suffix: N[shmd], where
        s=seconds, h=hours, m=minutes, d=days (default s if no suffix given);
        this is like saying "since N[shmd] ago"
-  * A date with optional seconds: YYYY-MM-DD [HH:MM::SS]
+  * Full date with optional hours:minutes:seconds: YYYY-MM-DD [HH:MM::SS]
+  * Short, MySQL-style date: YYMMDD [HH:MM:SS]
   * Any time expression evaluated by MySQL: C<CURRENT_DATE - INTERVAL 7 DAY>
 
 If you give a MySQL time expression, then you must also specifiy a DSN
 so that mk-query-digest can connect to MySQL to evalue to expression.  If you
-specify L<"--excute">, L<"--explain">, L<"--processlist">, L<"--review">
+specify L<"--execute">, L<"--explain">, L<"--processlist">, L<"--review">
 or L<"--review-history">, then one of these DSNs will be used automatically.
 Otherwise, you must specify an L<"--aux-dsn"> or mk-query-digest will die
 saying that it cannot evaluate the MySQL time expression.
+
+The MySQL time expression is warpped inside a query like
+"SELECT UNIX_TIMESTAMP(<expression>)", so be sure that the expression is
+valid inside this query.  For example, do not use UNIX_TIMESTAMP() because
+UNIX_TIMESTAMP(UNIX_TIMESTAMP()) returns 0.
+
+Events are assumed to be in chronological--older events at the begining of
+the log and newer events at the end of the log.  L<"--since"> is strict: it
+ignores all queries until one is found that is new enough.  Therefore, if
+the query events are not consistently timestamped, some may be ignored which
+are actually new enough.
+
+See also L<"--until">.
 
 =item --tcpdump-errors
 
@@ -8141,6 +8262,20 @@ instead of MySQL packets.  For example:
 memcached uses port 11211 by default.
 
 =back
+
+=item --until
+
+type: string
+
+Parse only queries older than this value (parse queries until this date).
+
+This option allows you to ignore queries newer than a certain value and parse
+only those queries which are older than the value.  The value can be one of
+the same types listed for L<"--since">.
+
+Unlike L<"--since">, L<"--until"> is not strict: all queries are parsed until
+one has a timestamp that is equal to or greater than L<"--until">.  Then
+all subsequent queries are ignored.
 
 =item --version
 

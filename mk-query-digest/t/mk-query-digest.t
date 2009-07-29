@@ -3,9 +3,18 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 78;
+use Test::More tests => 82;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
+
+require '../../common/DSNParser.pm';
+require '../../common/Sandbox.pm';
+use Data::Dumper;
+$Data::Dumper::Indent=1;
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh1 = $sb->get_dbh_for('master');
+my $dbh2 = $sb->get_dbh_for('slave1');
 
 # #############################################################################
 # First, some basic input-output diffs to make sure that
@@ -33,16 +42,35 @@ my $run_notop = '../mk-query-digest --report-format=query_report ../../common/t/
 # #############################################################################
 # Issue 154: Add --since and --until options to mk-query-digest
 # #############################################################################
-# Work in progress...
-#ok(
-#   no_diff($run_with.'slow033.txt --since 2009-07-28', 'samples/empty_report.txt'),
-#   '--since YYYY-MM-DD'
-#);
+ok(
+   no_diff($run_with.'slow033.txt --since 2009-07-28', 'samples/slow033-since-yyyy-mm-dd.txt'),
+   '--since 2009-07-28'
+);
 
-#ok(
-#   no_diff($run_with.'slow003.txt --until 2009-07-28', 'samples/empty_report.txt'),
-#   '--until YYYY-MM-DD'
-#);
+ok(
+   no_diff($run_with.'slow033.txt --since 090727', 'samples/slow033-since-yymmdd.txt'),
+   '--since 090727'
+);
+
+# This test will fail come July 2014.
+ok(
+   no_diff($run_with.'slow033.txt --since 1825d', 'samples/slow033-since-Nd.txt'),
+   '--since 1825d (5 years ago)'
+);
+
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $dbh1;
+
+   # The same result file, slow033-since-Nd.txt, is used a second time here.
+   # It's the result when all queries pass --since.
+   ok(
+      no_diff($run_with.'slow033.txt --aux-dsn h=127.1,P=12345 --since "\'2009-07-08\' - INTERVAL 7 DAY"', 'samples/slow033-since-Nd.txt'),
+      '--since "SELECT "\'2009-07-08\' - INTERVAL 7 DAY"',
+   );
+};
+
+# Still a work in progress...
+
 # #############################################################################
 
 ok(
@@ -261,14 +289,6 @@ like($output, qr/--order-by\s+Query_time:sum,Query_time:sum/,
 # #############################################################################
 # Tests for query reviewing and other stuff that requires a DB server.
 # #############################################################################
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
-use Data::Dumper;
-$Data::Dumper::Indent=1;
-my $dp  = new DSNParser();
-my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh1 = $sb->get_dbh_for('master');
-my $dbh2 = $sb->get_dbh_for('slave1');
 my $cmd;
 SKIP: {
    skip 'Cannot connect to sandbox master', 22 if !$dbh1;
