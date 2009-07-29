@@ -41,8 +41,13 @@ our @EXPORT_OK   = qw(
    ts
    parse_timestamp
    unix_timestamp
+   any_unix_timestamp
    make_checksum
 );
+
+our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
+our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?/;
+our $n_ts      = qr/(\d)([shmd]?)/;
 
 sub micro_t {
    my ( $t, %args ) = @_;
@@ -146,7 +151,7 @@ sub ts {
 sub parse_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s, $f)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?$/ )
+         = $val =~ m/^$mysql_ts$/ )
    {
       return sprintf "%d-%02d-%02d %02d:%02d:"
                      . (defined $f ? '%02.6f' : '%02d'),
@@ -160,11 +165,49 @@ sub parse_timestamp {
 sub unix_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
-     = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?$/ )
+     = $val =~ m/^$proper_ts$/ )
    {
       return timelocal($s, $i, $h, $d, $m - 1, $y);
    }
    return $val;
+}
+
+# Turns several different types of timestamps into a unix timestamp.
+# Each type is auto-detected.  Supported types are:
+#   * N[shdm]                Now - N[shdm]
+#   * 071015 21:43:52        MySQL slow log timestamp
+#   * 2009-07-01 [3:43:01]   Proper timestamp with options HH:MM:SS
+#   * NOW()                  A MySQL time express
+# For the last type, the callback arg is required.  It is passed the
+# given value/expression and is expected to return a single value
+# (the result of the expression).
+sub any_unix_timestamp {
+   my ( $val, $callback ) = @_;
+
+   if ( my ($n, $suffix) = $val =~ m/^$n_ts$/ ) {
+      $n = $suffix eq 's' ? $n            # Seconds
+         : $suffix eq 'm' ? $n * 60       # Minutes
+         : $suffix eq 'h' ? $n * 3600     # Hours
+         : $suffix eq 'd' ? $n * 86400    # Days
+         :                  $n;           # default: Seconds
+      MKDEBUG && _d('ts is now - N[shmd]:', $n);
+      return time - $n;
+   }
+   elsif ( $val =~ m/^$mysql_ts$/ ) {
+      MKDEBUG && d('ts is MySQL slow log timestamp');
+      return unix_timestamp(parse_timestamp($val));
+   }
+   elsif ( $val =~ /^$proper_ts$/ ) {
+      MKDEBUG && _d('ts is properly formatted timestamp');
+      return unix_timestamp($val);
+   }
+   else {
+      MKDEBUG && _d('ts is MySQL expression');
+      return $callback->($val) if $callback && ref $callback eq 'CODE';
+   }
+
+   MKDEBUG && _d('Unknown ts type:', $val);
+   return;
 }
 
 # Returns the rightmost 64 bits of an MD5 checksum of the value.

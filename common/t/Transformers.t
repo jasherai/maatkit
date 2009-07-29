@@ -3,14 +3,14 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 27;
+use Test::More tests => 34;
 
 BEGIN {
    # The timestamps for unix_timestamp are East Coast (EST), so GMT-4.
    $ENV{TZ}='EST5EDT';
    require '../Transformers.pm';
    Transformers->import( qw(parse_timestamp micro_t shorten secs_to_time
-   percentage_of unix_timestamp make_checksum) );
+   percentage_of unix_timestamp make_checksum any_unix_timestamp) );
 };
 
 # #############################################################################
@@ -68,6 +68,61 @@ is(unix_timestamp('2009-05-14 12:51:10.001817'), 1242319870, 'unix_timestamp wit
 # make_checksum() tests.
 # #############################################################################
 is(make_checksum('hello world'), '93CB22BB8F5ACDC3', 'make_checksum');
+
+# #############################################################################
+# any_unix_timestamp() tests.
+# #############################################################################
+is(
+   any_unix_timestamp('5'),
+   time - 5,
+   'any_unix_timestamp simple N'
+);
+is(
+   any_unix_timestamp('7s'),
+   time - 7,
+   'any_unix_timestamp simple Ns'
+);
+is(
+   any_unix_timestamp('7d'),
+   time - (7 * 86400),
+   'any_unix_timestamp simple 7d'
+);
+is(
+   any_unix_timestamp('071015  1:43:52'),
+   unix_timestamp('2007-10-15 01:43:52'),
+   'any_unix_timestamp MySQL timestamp'
+);
+is(
+   any_unix_timestamp('2007-10-15 01:43:52'),
+   1192427032,
+   'any_unix_timestamp proper timestamp with hh:mm:ss'
+);
+require '../DSNParser.pm';
+require '../Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $dbh;
+   my $now = $dbh->selectall_arrayref('SELECT NOW()')->[0]->[0];
+   my $callback = sub {
+      my ( $sql ) = @_;
+      return $dbh->selectall_arrayref($sql)->[0]->[0];
+   };
+   is(
+      any_unix_timestamp('SELECT 42', $callback),
+      '42',
+      'any_unix_timestamp MySQL expression'
+   );
+
+   $dbh->disconnect();
+};
+
+is(
+   any_unix_timestamp('SELECT 42'),
+   undef,
+   'any_unix_timestamp MySQL expression but no callback given'
+);
 
 # #############################################################################
 # Done.
