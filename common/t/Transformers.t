@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 36;
+use Test::More tests => 37;
 
 BEGIN {
    # The timestamps for unix_timestamp are East Coast (EST), so GMT-4.
@@ -134,6 +134,13 @@ is(
    undef,
    'any_unix_timestamp MySQL expression but no callback given'
 );
+
+is(
+   any_unix_timestamp("SELECT '2009-07-27 11:30:00'"),
+   undef,
+   'any_unix_timestamp MySQL expression that looks like another type'
+);
+
 
 # #############################################################################
 # Done.
