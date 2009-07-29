@@ -47,7 +47,8 @@ our @EXPORT_OK   = qw(
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
 our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?/;
-our $n_ts      = qr/(\d)([shmd]?)/;
+our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
+                                         # like a MySQL YYMMDD without hh:mm:ss.
 
 sub micro_t {
    my ( $t, %args ) = @_;
@@ -194,7 +195,7 @@ sub any_unix_timestamp {
       return time - $n;
    }
    elsif ( my ($ymd, $hms) = $val =~ m/(\d{6})(?:\s+(\d+:\d+:\d+))?/ ) {
-      MKDEBUG && d('ts is MySQL slow log timestamp');
+      MKDEBUG && _d('ts is MySQL slow log timestamp');
       $val .= ' 00:00:00' unless $hms;
       return unix_timestamp(parse_timestamp($val));
    }
