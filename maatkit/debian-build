@@ -16,10 +16,10 @@ else
 fi
 
 # Bring Debian changelog up to date
-if [ `whoami` = 'baron' ]; then
+# if [ `whoami` = 'baron' ]; then
    export DEBEMAIL='baron.schwartz@gmail.com'
    export DEBFULLNAME='Baron Schwartz'
-fi
+#fi
 if ! head -n 1 debian/changelog | grep -q "($VERSION-1)"; then
     debchange -D unstable -v $VERSION-1 "New upstream release."
     svn ci -m 'Changelog' debian/changelog
