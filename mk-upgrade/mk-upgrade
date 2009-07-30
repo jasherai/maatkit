@@ -3772,7 +3772,7 @@ sub main {
    my $qparser = new QueryParser();
    my $qexec   = new QueryExecutor();
    my $qranker = new QueryRanker();
-
+   my $q       = new Quoter();
 
    # ########################################################################
    # Set up an array of callbacks to transform, filter and process events.
@@ -3822,13 +3822,6 @@ sub main {
       $results{ $query }->{reasons} ||= ();
 
       eval {
-         if ( $db && (!$current_db || $db ne $current_db) ) {
-            MKDEBUG && _d('USE', $db);
-            $host1_dbh->do("USE $db");
-            $host2_dbh->do("USE $db");  
-            $current_db = $db;
-            $event->{db} = $db;
-         }
 
          # On some systems, MySQL doesn't always clear the warnings list
          # after a good query.  This causes good queries to show warnings
@@ -3843,6 +3836,30 @@ sub main {
          }
          else {
             MKDEBUG && _d('Cannot get tables so no post-exec query');
+         }
+
+         if ( !$event->{db} ) {
+            # Try to get a db from one of the query's tables.  It doesn't
+            # matter which db we use because it's only used to create a
+            # a temp table.
+            TABLE:
+            foreach my $table ( @tables ) {
+               my ( $db2, $tbl ) = $q->split_unquote($table);
+               if ( $db2 ) {
+                  MKDEBUG && _d('Will use db', $db2, 'for tmp table');
+                  $event->{db} = $db2;
+                  $db = $db2;
+                  last TABLE;
+               }
+            }
+         }
+
+         if ( $db && (!$current_db || $db ne $current_db) ) {
+            MKDEBUG && _d('USE', $db);
+            $host1_dbh->do("USE $db");
+            $host2_dbh->do("USE $db");  
+            $current_db = $db;
+            $event->{db} = $db;
          }
 
          my $results = $qexec->exec(
@@ -3866,7 +3883,6 @@ sub main {
    if ( $o->get('compare-results') ) {
       my $du = new MySQLDump();
       my $tp = new TableParser();
-      my $q  = new Quoter();
 
       push @callbacks, sub {
          my ( $event ) = @_;
