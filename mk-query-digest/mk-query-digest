@@ -8159,7 +8159,7 @@ so that mk-query-digest can connect to MySQL to evalue to expression.  If you
 specify L<"--execute">, L<"--explain">, L<"--processlist">, L<"--review">
 or L<"--review-history">, then one of these DSNs will be used automatically.
 Otherwise, you must specify an L<"--aux-dsn"> or mk-query-digest will die
-saying that it cannot evaluate the MySQL time expression.
+saying that the value is invalid.
 
 The MySQL time expression is warpped inside a query like
 "SELECT UNIX_TIMESTAMP(<expression>)", so be sure that the expression is
