@@ -54,6 +54,7 @@ sub load_file {
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
    close $fh;
+   chomp $contents;
    return $contents;
 }
 
