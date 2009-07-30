@@ -8148,8 +8148,8 @@ only those queries which are more recent than the value.  The value can be
 several types:
 
   * Simple time value N with optional suffix: N[shmd], where
-       s=seconds, h=hours, m=minutes, d=days (default s if no suffix given);
-       this is like saying "since N[shmd] ago"
+    s=seconds, h=hours, m=minutes, d=days (default s if no suffix
+    given); this is like saying "since N[shmd] ago"
   * Full date with optional hours:minutes:seconds: YYYY-MM-DD [HH:MM::SS]
   * Short, MySQL-style date: YYMMDD [HH:MM:SS]
   * Any time expression evaluated by MySQL: C<CURRENT_DATE - INTERVAL 7 DAY>
