@@ -249,7 +249,7 @@ sub _packet_from_client {
       my @vals = $line1 =~ m/(\S+)/g;
       $cmd = lc shift @vals;
       MKDEBUG && _d('$cmd is a ', $cmd);
-      if ( $cmd eq 'set' ) {
+      if ( $cmd eq 'set' || $cmd eq 'add' ) {
          ($key, $flags, $exptime, $bytes) = @vals;
          $session->{bytes} = $bytes;
       }
@@ -261,6 +261,9 @@ sub _packet_from_client {
       }
       elsif ( $cmd eq 'incr' || $cmd eq 'decr' ) {
          ($key) = @vals;
+      }
+      else {
+         MKDEBUG && _d("Don't know how to handle", $cmd, "command");
       }
       @{$session}{qw(cmd key flags exptime)}
          = ($cmd, $key, $flags, $exptime);
