@@ -2455,6 +2455,23 @@ Use L<mk-query-digest> to summarize the results:
 
   mk-query-digest ./results/*
 
+=head1 RISKS
+
+In L<"--split"> mode, mk-log-player can create up to millions of session
+files depending on the number of sessions in the given log file.  Splitting
+and merging these session files may significantly load both server CPU and
+disk resources.  The original log file is not modified.
+
+In L<"--play"> mode, mk-log-player can execute any SQL statement, including
+DROP statements, unless L<"--only-select"> is given.  Then, it will only
+execute statements that begin with SELECT or USE.
+
+L<"--play"> is meant to load a server as much as possible.  Therefore, it
+should not be used on production servers.
+
+There are no known, critical bugs.  For a list of known bugs see
+http://code.google.com/p/maatkit/issues/list?&q=tool=mk_log_player%20type=Defect
+
 =head1 DESCRIPTION
 
 mk-log-player does two things: it splits MySQL slow logs into session files
