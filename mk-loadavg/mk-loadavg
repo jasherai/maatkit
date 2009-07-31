@@ -2848,6 +2848,15 @@ mk-loadavg - Watch MySQL load and take action when it gets too high.
 
   mk-loadavg --metrics num_locked:5 --info status,processlist
 
+=head1 RISKS
+
+mk-loadavg only reads and prints information by default, but the
+L<"--execute-command"> option is not restricted so it should be tested before
+being used in production.
+
+There are no known, critical bugs.  For a list of known bugs see
+http://code.google.com/p/maatkit/issues/list?&q=tool=mk_loadavg%20type=Defect
+
 =head1 DESCRIPTION
 
 mk-loadavg watches MySQL servers and gathers information when the load gets
