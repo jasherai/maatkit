@@ -1003,6 +1003,8 @@ mk-fifo-split creates the L<"--fifo"> file.  It also deletes the L<"--fifo">
 file if it already exists and L<"--force"> is given.  Otherwise, no other files
 are modified.
 
+At the time of this release, there are no known, critical bugs.
+
 See also L<"BUGS">.
 
 =head1 DESCRIPTION

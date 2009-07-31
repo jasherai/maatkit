@@ -2263,6 +2263,8 @@ L<"--execute-command"> option is not restricted so it should be tested before
 being used in production.  Using the L<"--print"> option alone is safe and will
 not cause any changes.
 
+At the time of this release, there are no known, critical bugs.
+
 See also L<"BUGS">.
 
 =head1 DESCRIPTION

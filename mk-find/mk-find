@@ -2570,6 +2570,8 @@ As above, but this time, insert the data back into the database for posterity:
 mk-find only reads and prints information by default, but L<"--exec"> and
 L<"--exec-plus"> can modify data.
 
+At the time of this release, there are no known, critical bugs.
+
 See also L<"BUGS">.
 
 =head1 DESCRIPTION

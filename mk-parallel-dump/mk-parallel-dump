@@ -3800,11 +3800,15 @@ mk-parallel-dump - Dump sets of MySQL tables in parallel.
 
 =head1 RISKS
 
-Do not rely on mk-parallel-dump for your backups unless you have tested it.
-You have been warned.
+mk-parallel-dump is not a backup program!  It is only for fast data exports.
+Do not rely on mk-parallel-dump for your backups.  You have been warned.
 
-mk-parallel-dump only reads information from MySQL but it writes backup
-files to L<"--base-dir">.
+mk-parallel-dump only reads information from MySQL but it writes files to
+L<"--base-dir">.
+
+At the time of this release, there is a bug which causes mk-parallel-dump to
+crash, a bug which prevents certain tables from being dumped, and a bug which
+may cause mk-parallel-dump to wait forever for child processes to finish.
 
 See also L<"BUGS">.
 

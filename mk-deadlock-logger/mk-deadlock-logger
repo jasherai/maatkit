@@ -1939,6 +1939,8 @@ Daemonize and check for deadlocks on SOURCE_DSN every 30 seconds for 4 hours:
 mk-deadlock-logger only writes to the L<"--dest"> if given.  Otherwise it
 only reads information.
 
+At the time of this release, there are no known, critical bugs.
+
 See also L<"BUGS">.
 
 =head1 DESCRIPTION

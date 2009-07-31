@@ -1876,6 +1876,8 @@ Save foreign key errors on host1 to db.foreign_key_errors table on host2:
 mk-fk-error-logger only writes to L<"--dest"> if given.  Otherwise it only
 reads information.
 
+At the time of this release, there are no known, critical bugs.
+
 See also L<"BUGS">.
 
 =head1 DESCRIPTION

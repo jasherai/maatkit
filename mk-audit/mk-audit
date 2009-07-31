@@ -3897,6 +3897,8 @@ mk-audit only reads information so there is little to no risk.  At worst,
 it may cause slight server load if there are thousands of databases and tables
 to audit.
 
+At the time of this release, there are bugs which cause mk-audit to crash.
+
 See also L<"BUGS">.
 
 =head1 DESCRIPTION

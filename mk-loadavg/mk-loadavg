@@ -2854,6 +2854,8 @@ mk-loadavg only reads and prints information by default, but the
 L<"--execute-command"> option is not restricted so it should be tested before
 being used in production.
 
+At the time of this release, there are no known, critical bugs.
+
 See also L<"BUGS">.
 
 =head1 DESCRIPTION

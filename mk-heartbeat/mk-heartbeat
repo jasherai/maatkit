@@ -2420,6 +2420,8 @@ mk-heartbeat - Monitor MySQL replication delay.
 mk-heartbeat only writes to L<"--table"> when ran in L<"--update"> mode.
 It will L<"--create-table"> if told to.  Otherwise it only reads information.
 
+At the time of this release, there are no known, critical bugs.
+
 See also L<"BUGS">.
 
 =head1 DESCRIPTION

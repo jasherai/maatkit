@@ -2469,6 +2469,8 @@ execute statements that begin with SELECT or USE.
 L<"--play"> is meant to load a server as much as possible.  Therefore, it
 should not be used on production servers.
 
+At the time of this release, there are no known, critical bugs.
+
 See also L<"BUGS">.
 
 =head1 DESCRIPTION
