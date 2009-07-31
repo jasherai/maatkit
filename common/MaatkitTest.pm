@@ -50,11 +50,11 @@ sub output {
 }
 
 sub load_file {
-   my ( $file ) = @_;
+   my ( $file, %args ) = @_;
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
    close $fh;
-   chomp $contents;
+   chomp $contents if $args{chomp_contents};
    return $contents;
 }
 
