@@ -2367,14 +2367,14 @@ mk-slave-prefetch - Pipeline relay logs on a MySQL slave to pre-warm caches.
 =head1 RISKS
 
 mk-slave-prefetch converts non-SELECT statements to SELECT in order to execute
-them on the slave when running in L<"--execute"> mode.  Statements that cannot
+them on the slave when running in C<--execute> mode.  Statements that cannot
 be converted to SELECT are ignored, but in the case of a bug this might fail
 and cause problems.  It would be a very good idea to connect as a read-only
 user.  Here is an example of how to grant the necessary privileges:
 
    GRANT SELECT, REPLICATION CLIENT, REPLICATION SLAVE ON *.*
       TO 'prefetch'@'%' IDENTIFIED BY 'sp33dmeup!';
-      
+
 If only L<"--print"> is given, then mk-slave-prefetch will only read and print
 information.
 
@@ -2446,7 +2446,7 @@ User-contributed benchmarks are welcome.
 
 =head1 OPTIONS
 
-Specify at least one of L<"--print">, L<"--execute"> or L<"--stop">.
+Specify at least one of L<"--print">, L<"--[no]execute"> or L<"--stop">.
 
 =over
 

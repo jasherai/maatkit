@@ -19,6 +19,7 @@ if ( !@progs ) {
 my @standard_order = (
    'NAME',
    'SYNOPSIS',
+   'RISKS',
    'DESCRIPTION',
    'OPTIONS',
    'DOWNLOADING',
@@ -32,6 +33,7 @@ my @standard_order = (
 my %standard_hdr = (
    NAME                  => 1,
    SYNOPSIS              => 1,
+   RISKS                 => 1,
    DESCRIPTION           => 1,
    OPTIONS               => 1,
    DOWNLOADING           => 1,

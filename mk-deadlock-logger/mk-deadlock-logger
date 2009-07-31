@@ -1934,7 +1934,7 @@ Daemonize and check for deadlocks on SOURCE_DSN every 30 seconds for 4 hours:
 
    mk-deadlock-logger SOURCE_DSN --dest D=test,t=deadlocks --daemonize --run-time 4h --interval 30s
 
-=RISKS
+=head1 RISKS
 
 mk-deadlock-logger only writes to the L<"--dest"> if given.  Otherwise it
 only reads information.

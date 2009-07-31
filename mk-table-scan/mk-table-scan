@@ -2274,10 +2274,6 @@ mk-table-scan - Select rows from tables and indexes.
 
    mk-table-scan
 
-=head1 DESCRIPTION
-
-mk-table-scan selects rows from tables and indexes.
-
 =head1 RISKS
 
 mk-table-scan only reads information.
@@ -2285,6 +2281,10 @@ mk-table-scan only reads information.
 At the time of this release, there are no known, critical bugs.
 
 See also L<"BUGS">.
+
+=head1 DESCRIPTION
+
+mk-table-scan selects rows from tables and indexes.
 
 =head1 OPTIONS
 

@@ -1738,10 +1738,6 @@ mk-table-access
 
   mk-table-access FILE
 
-=head1 DESCRIPTION
-
-mk-table-access.
-
 =head1 RISKS
 
 mk-table-access only reads information.
@@ -1749,6 +1745,10 @@ mk-table-access only reads information.
 At the time of this release, there are no known, critical bugs.
 
 See also L<"BUGS">.
+
+=head1 DESCRIPTION
+
+mk-table-access.
 
 =head1 OPTIONS
 
@@ -1776,7 +1776,7 @@ Show help and exit.
 type: time
 
 How long to run before exiting.  The default is to run forever (you can
-interrupt with CTRL-C).  See also L<"--iterations">.
+interrupt with CTRL-C).
 
 =item --version
 

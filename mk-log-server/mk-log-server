@@ -985,6 +985,10 @@ mk-log-server - Serve MySQL binary logs.
 
    mk-log-server [BINLOG FILE ...]
 
+=head1 RISKS
+
+mk-log-server reads information.
+
 =head1 DESCRIPTION
 
 mk-log-server serves binary logs.
