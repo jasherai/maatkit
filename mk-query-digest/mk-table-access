@@ -1732,7 +1732,7 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-table-access
+mk-table-access - Parse slow query logs and print tables accessed by queries.
 
 =head1 SYNOPSIS
 
@@ -1748,7 +1748,7 @@ See also L<"BUGS">.
 
 =head1 DESCRIPTION
 
-mk-table-access.
+TODO
 
 =head1 OPTIONS
 
