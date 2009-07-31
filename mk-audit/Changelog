@@ -1,5 +1,6 @@
 Changelog for mk-audit:
 
+   * Added RISKS section to POD (issue 538).
    * The script crashed immediately on Windows (issue 531).
 
 2009-06-02: version 0.9.8

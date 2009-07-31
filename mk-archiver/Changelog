@@ -1,5 +1,6 @@
 Changelog for mk-archiver:
 
+   * Added RISKS section to POD (issue 538).
    * --dry-run did not respect --no-delete (issue 524).
    * The script crashed immediately on Windows (issue 531).
 
