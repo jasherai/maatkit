@@ -3891,6 +3891,15 @@ mk-audit - Analyze, summarize and report on MySQL config, schema and operation
 
    mk-audit
 
+=head1 RISKS
+
+mk-audit only reads information so there is little to no risk.  At worst,
+it may cause slight server load if there are thousands of databases and tables
+to audit.
+
+There are no known, critical bugs.  For a list of known bugs see
+http://code.google.com/p/maatkit/issues/list?&q=tool=mk_audit%20type=Defect
+
 =head1 DESCRIPTION
 
 mk-audit summarizes the information a consultant may find useful when analyzing
