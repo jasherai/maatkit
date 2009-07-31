@@ -1871,6 +1871,14 @@ Save foreign key errors on host1 to db.foreign_key_errors table on host2:
 
   mk-fk-error-logger h=host1 --dest h=host1,D=db,t=foreign_key_errors
 
+=head1 RISKS
+
+mk-fk-error-logger only writes to L<"--dest"> if given.  Otherwise it only
+reads information.
+
+There are no known, critical bugs.  For a list of known bugs see
+http://code.google.com/p/maatkit/issues/list?&q=tool=mk_fk_error_logger%20type=Defect
+
 =head1 DESCRIPTION
 
 mk-fk-error-logger prints or saves the foreign key errors text from
