@@ -1934,6 +1934,14 @@ Daemonize and check for deadlocks on SOURCE_DSN every 30 seconds for 4 hours:
 
    mk-deadlock-logger SOURCE_DSN --dest D=test,t=deadlocks --daemonize --run-time 4h --interval 30s
 
+=RISKS
+
+mk-deadlock-logger only writes to the L<"--dest"> if given.  Otherwise it
+only reads information.
+
+There are no known, critical bugs.  For a list of known bugs see
+http://code.google.com/p/maatkit/issues/list?&q=tool=mk_deadlock_logger%20type=Defect
+
 =head1 DESCRIPTION
 
 mk-deadlock-logger extracts deadlock data from a MySQL server.  Currently only
