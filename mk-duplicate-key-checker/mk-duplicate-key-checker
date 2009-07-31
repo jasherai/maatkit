@@ -3056,8 +3056,7 @@ mk-duplicate-key-checker - Find duplicate keys and foreign keys on MySQL tables.
 
 mk-duplicate-key-checker only reads information so there is little to no risk.
 
-There are no known, critical bugs.  For a list of known bugs see
-http://code.google.com/p/maatkit/issues/list?&q=tool=mk_duplicate_key_checker%20type=Defect
+See also L<"BUGS">.
 
 =head1 DESCRIPTION
 
@@ -3287,6 +3286,9 @@ the Maatkit tools:
 You need the following Perl modules: DBI and DBD::mysql.
 
 =head1 BUGS
+
+For a list of known bugs see:
+L<http://code.google.com/p/maatkit/issues/list?&q=tool=mk_duplicate_key_checker%20type=Defect>.
 
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to

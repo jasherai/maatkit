@@ -3897,8 +3897,7 @@ mk-audit only reads information so there is little to no risk.  At worst,
 it may cause slight server load if there are thousands of databases and tables
 to audit.
 
-There are no known, critical bugs.  For a list of known bugs see
-http://code.google.com/p/maatkit/issues/list?&q=tool=mk_audit%20type=Defect
+See also L<"BUGS">.
 
 =head1 DESCRIPTION
 
@@ -4032,6 +4031,9 @@ You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
 
 =head1 BUGS
+
+For a list of known bugs see:
+L<http://code.google.com/p/maatkit/issues/list?&q=tool=mk_audit%20type=Defect>.
 
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to

@@ -2570,8 +2570,7 @@ As above, but this time, insert the data back into the database for posterity:
 mk-find only reads and prints information by default, but L<"--exec"> and
 L<"--exec-plus"> can modify data.
 
-There are no known, critical bugs.  For a list of known bugs see
-http://code.google.com/p/maatkit/issues/list?&q=tool=mk_find%20type=Defect
+See also L<"BUGS">.
 
 =head1 DESCRIPTION
 
@@ -3089,6 +3088,9 @@ the Maatkit tools:
 You need the following Perl modules: DBI and DBD::mysql.
 
 =head1 BUGS
+
+For a list of known bugs see:
+L<http://code.google.com/p/maatkit/issues/list?&q=tool=mk_find%20type=Defect>.
 
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to

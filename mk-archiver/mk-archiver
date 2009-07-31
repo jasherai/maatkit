@@ -3297,8 +3297,7 @@ being used in production.  mk-archiver is meant to have a low impact on
 server resources, but in can impact performance if certain options like
 L<"--limit">, L<"--retries"> and L<"--txn-size"> are not set well.
 
-There are no known, critical bugs.  For a list of known bugs see
-http://code.google.com/p/maatkit/issues/list?&q=tool=mk_archiver%20type=Defect
+See also L<"BUGS">.
 
 =head1 DESCRIPTION
 
@@ -4239,6 +4238,9 @@ You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
 
 =head1 BUGS
+
+For a list of known bugs see:
+L<http://code.google.com/p/maatkit/issues/list?&q=tool=mk_archiver%20type=Defect>.
 
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to

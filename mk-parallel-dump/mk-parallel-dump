@@ -3798,8 +3798,15 @@ mk-parallel-dump - Dump sets of MySQL tables in parallel.
   mk-parallel-dump --tab --base-dir /path/to/backups/
   mk-parallel-dump --sets order,profile,session --set-table meta.backupset
 
+=head1 RISKS
+
 Do not rely on mk-parallel-dump for your backups unless you have tested it.
 You have been warned.
+
+mk-parallel-dump only reads information from MySQL but it writes backup
+files to L<"--base-dir">.
+
+See also L<"BUGS">.
 
 =head1 DESCRIPTION
 
@@ -4479,6 +4486,9 @@ Microsoft Windows if you have spaces or funny characters in your database or
 table names.
 
 =head1 BUGS
+
+Known bugs:
+L<http://code.google.com/p/maatkit/issues/list?&q=tool=mk_parallel_dump%20type=Defect>.
 
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
