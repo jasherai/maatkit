@@ -2256,6 +2256,16 @@ Print all login processes:
 
   mk-kill --match-state login --print --no-only-oldest
 
+=head1 RISKS
+
+mk-kill can kill queries if the L<"--kill"> option is given.  The
+L<"--execute-command"> option is not restricted so it should be tested before
+being used in production.  Using the L<"--print"> option alone is safe and will
+not cause any changes.
+
+There are no known, critical bugs.  For a list of known bugs see
+http://code.google.com/p/maatkit/issues/list?&q=tool=mk_kill%20type=Defect
+
 =head1 DESCRIPTION
 
 mk-kill captures queries from SHOW PROCESSLIST, filters them, and then either
