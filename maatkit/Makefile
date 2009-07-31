@@ -1,7 +1,7 @@
 dist:
 	./package.pl
 
-all: dist debian
+all: dist debian rpm
 
 .PHONY: debian
 debian: dist
