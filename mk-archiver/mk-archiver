@@ -3289,6 +3289,17 @@ mk-archiver - Archive rows from a MySQL table into another table or a file.
  mk-archiver --source h=oltp_server,D=test,t=tbl --dest h=olap_server \
     --file '/var/log/archive/%Y-%m-%d-%D.%t' --limit 1000 --commit-each
 
+=head1 RISKS
+
+mk-achiver deletes data unless the L<"--dry-run"> option is used.  L<"--plugin">
+modules are not restricted so they should be well coded and well tested before
+being used in production.  mk-archiver is meant to have a low impact on
+server resources, but in can impact performance if certain options like
+L<"--limit">, L<"--retries"> and L<"--txn-size"> are not set well.
+
+There are no known, critical bugs.  For a list of known bugs see
+http://code.google.com/p/maatkit/issues/list?&q=tool=mk_archiver%20type=Defect
+
 =head1 DESCRIPTION
 
 mk-archiver is the tool I use to archive tables as described in
