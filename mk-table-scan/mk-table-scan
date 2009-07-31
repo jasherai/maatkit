@@ -133,7 +133,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 3475
+# TableParser package 4161
 # ###########################################################################
 package TableParser;
 
@@ -151,7 +151,7 @@ sub new {
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
-
+   return unless $ddl;
    if ( ref $ddl eq 'ARRAY' ) {
       if ( lc $ddl->[0] eq 'table' ) {
          $ddl = $ddl->[1];
@@ -412,7 +412,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 3312
+# MySQLDump package 4160
 # ###########################################################################
 package MySQLDump;
 
@@ -459,6 +459,7 @@ sub dump {
 
    if ( $what eq 'table' ) {
       my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      return unless $ddl;
       if ( $ddl->[0] eq 'table' ) {
          return $before
             . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
@@ -542,7 +543,12 @@ sub get_create_table {
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
-      my $href = $dbh->selectrow_hashref($sql);
+      my $href;
+      eval { $href = $dbh->selectrow_hashref($sql); };
+      if ( $EVAL_ERROR ) {
+         warn "Failed to $sql.  The table may be damaged.\nError: $EVAL_ERROR";
+         return;
+      }
       $self->_use_db($dbh, $quoter, $curr_db);
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
@@ -713,7 +719,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 3186
+# MySQLFind package 4162
 # ###########################################################################
 package MySQLFind;
 
@@ -777,6 +783,8 @@ sub find_tables {
       = $self->_filter('tables', sub { $_[0]->{name} },
          $self->_fetch_tbl_list($dbh, %args));
 
+   my %broken_table;
+
    if ( $self->{need_engine} ) {
       foreach my $tbl ( @tables ) {
          next if $tbl->{engine};
@@ -784,12 +792,20 @@ sub find_tables {
          my $struct = $self->{parser}->parse(
             $self->{dumper}->get_create_table(
                $dbh, $self->{quoter}, $args{database}, $tbl_name));
+         $broken_table{$tbl_name} = 1 unless $struct;
          $tbl->{engine} = $struct->{engine};
       }
       @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
    }
 
-   map { $_->{name} =~ s/^[^.]*\.// } @tables;
+   for my $i ( 0..$#tables ) {
+      $tables[$i]->{name} =~ s/^[^.]*\.//;
+      
+      if ( $broken_table{$tables[$i]->{name}} ) {
+         MKDEBUG && _d('Removing broken table:', $tables[$i]->{name});
+         delete $tables[$i];
+      }
+   }
 
    foreach my $crit ( @{$self->{tables}->{status}} ) {
       my ($key, $test) = %$crit;
