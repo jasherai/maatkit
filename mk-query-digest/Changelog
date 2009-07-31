@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2009-07-31: version 0.9.8
+
    * Added RISKS section to POD (issue 538).
    * Added --since, --until and --aux-dsn (issue 154).
    * Added binary log parsing; --type binlog (issue 476).

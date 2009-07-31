@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+2009-07-31: version 1.2.6
+
    * Added RISKS section to POD (issue 538).
    * The script crashed immediately on Windows (issue 531).
 

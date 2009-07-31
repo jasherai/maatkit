@@ -1,5 +1,7 @@
 Changelog for mk-find:
 
+2009-07-31: version 0.9.18
+
    * Added RISKS section to POD (issue 538).
    * The script crashed immediately on Windows (issue 531).
    * Added tests --column-name, --view, --procedure, --function, --trigger
