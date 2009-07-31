@@ -997,6 +997,15 @@ Read hugefile.txt in chunks of a million lines without physically splitting it:
  mk-fifo-split --lines 1000000 hugefile.txt
  while [ -e /tmp/mk-fifo-split ]; do cat /tmp/mk-fifo-split; done
 
+=head1 RISKS
+
+mk-fifo-split creates the L<"--fifo"> file.  It also deletes the L<"--fifo">
+file if it already exists and L<"--force"> is given.  Otherwise, no other files
+are modified.
+
+There are no known, critical bugs.  For a list of known bugs see
+http://code.google.com/p/maatkit/issues/list?&q=tool=mk_fifo_split%20type=Defect
+
 =head1 DESCRIPTION
 
 mk-fifo-split lets you read from a file as though it contains only some of the
