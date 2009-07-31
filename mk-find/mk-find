@@ -2565,6 +2565,14 @@ As above, but this time, insert the data back into the database for posterity:
 
   mk-find --noquote --exec "INSERT INTO sysdata.tblsize(db, tbl, size) VALUES('%D', '%N', %T)"
 
+=head1 RISKS
+
+mk-find only reads and prints information by default, but L<"--exec"> and
+L<"--exec-plus"> can modify data.
+
+There are no known, critical bugs.  For a list of known bugs see
+http://code.google.com/p/maatkit/issues/list?&q=tool=mk_find%20type=Defect
+
 =head1 DESCRIPTION
 
 mk-find looks for MySQL tables that pass the tests you specify, and executes
