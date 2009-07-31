@@ -2415,6 +2415,14 @@ mk-heartbeat - Monitor MySQL replication delay.
  mk-heartbeat -D test --monitor -h slave-server
  mk-heartbeat -D test --monitor -h slave-server --dbi-driver Pg
 
+=head1 RISKS
+
+mk-heartbeat only writes to L<"--table"> when ran in L<"--update"> mode.
+It will L<"--create-table"> if told to.  Otherwise it only reads information.
+
+There are no known, critical bugs.  For a list of known bugs see
+http://code.google.com/p/maatkit/issues/list?&q=tool=mk_heartbeat%20type=Defect
+
 =head1 DESCRIPTION
 
 mk-heartbeat is a two-part MySQL and PostgreSQL replication delay monitoring
