@@ -2066,15 +2066,21 @@ mk-slave-move - Move a MySQL slave around in the replication hierarchy.
  mk-slave-move slave --slave-of-sibling sibling
  mk-slave-move slave --slave-of-uncle uncle
 
+=head1 RISKS
+
+Some of the features are incomplete, including some safety checks such as not
+moving slaves that have temporary tables open.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 This tool knows how to disconnect and reconnect slaves to each other, compare
 replication positions, and so on.  This makes it able to move a slave around the
 replication hierarchy safely and correctly.  It doesn't do anything you can't do
 by hand, but it is tedious and error-prone to do this by hand.
-
-Some of the features are incomplete, including some safety checks such as not
-moving slaves that have temporary tables open.
 
 The slave host can be specified using one of two methods.  The first method is
 to use at least one of the standard connection-related command line options:

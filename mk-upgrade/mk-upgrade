@@ -4160,6 +4160,20 @@ Use mk-query-digest to parse tcpdump and compare queries:
 
   mk-query-digest --type tcpdump --report '' --print tcpdump.txt | mk-upgrade h=host1 h=host2
 
+=head1 RISKS
+
+mk-upgrade is a new script in active development and testing.
+
+mk-upgrade executes SELECT queries on the given hosts, but in the case of a
+bug this may fail causing non-SELECT queries to be executed.  mk-upgrade
+executes every query in the given log four times so it may take a long time
+to complete.
+
+At the time of this release, there is a bug which causes mk-upgrade to falsely
+report that a query cannot be executed.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 mk-upgrade compares and ranks how the results of SQL statements differ when

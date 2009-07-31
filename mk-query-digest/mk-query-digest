@@ -7213,6 +7213,21 @@ from replaying them to analyze their performance:
  mk-query-digest --processlist h=host1 --execute h=another_server \
    --filter '$event->{fingerprint} =~ m/^select/'
 
+=head1 RISKS
+
+By default mk-query-digest only reads information.  The L<"--execute"> option,
+however, can cause mk-query-digest to modify and delete data.  mk-query-digest
+will write to the L<"--review"> and L<"--review-history"> tables if those
+options are used.  Parsing huge log files may cause significant CPU and memory
+usage.
+
+At the time of this release, there are bugs which cause mk-query-digest to
+crash, bugs which cause L<"--report"> output to be incorrect, a bug which
+causes incorrect L<"--review"> information, and a bug with L<"--processlist">
+and delayed replication threads.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 This tool was formerly known as mk-log-parser.

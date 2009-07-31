@@ -1902,6 +1902,16 @@ To hold slavehost one minute behind its master for ten minutes:
 
    mk-slave-delay --delay 1m --interval 15s --run-time 10m slavehost
 
+=head1 RISKS
+
+mk-slave-delay starts and stops the replication SQL thread.  Monitoring
+systems may think the slave is having trouble when it's just being held back
+intentionally.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 C<mk-slave-delay> watches a slave and starts and stops its replication SQL
@@ -1923,10 +1933,6 @@ are given, it is possible that this could cause it to ask for a password while
 daemonized.  In this case, it exits.  Therefore, if you think your slave might
 encounter this condition, you should be sure to either specify
 L<"--use-master"> explicitly when daemonizing, or don't specify L<"--ask-pass">.
-
-Note that since C<mk-slave-delay> starts and stops the SQL thread, monitoring
-systems may think the slave is having trouble when it's just being held back
-intentionally.
 
 The slave host can be specified using one of two methods.  The first method is
 to use at least one of the standard connection-related command line options:

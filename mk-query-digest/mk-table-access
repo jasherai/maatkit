@@ -1742,6 +1742,14 @@ mk-table-access
 
 mk-table-access.
 
+=head1 RISKS
+
+mk-table-access only reads information.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 OPTIONS
 
 =over

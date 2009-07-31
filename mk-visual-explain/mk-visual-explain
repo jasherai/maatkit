@@ -1985,6 +1985,14 @@ mk-visual-explain - Format EXPLAIN output as a tree.
  mk-visual-explain -c <file_containing_query>
  mysql -e "explain select * from mysql.user" | mk-visual-explain
 
+=head1 RISKS
+
+mk-visual-explain only reads information.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 mk-visual-explain reverse-engineers MySQL's EXPLAIN output into a query

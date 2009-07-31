@@ -5042,6 +5042,17 @@ Or,
 
 See L<"SPECIFYING HOSTS"> for more on the syntax of the host arguments.
 
+=head1 RISKS
+
+mk-table-checksum only reads information unless L<"--replicate"> is used.
+It make cause significant server load and lock tables while it is checksumming.
+
+At the time of this release, there are bugs which cause mk-table-checksum to
+crash, a bug which affects the chosen L<"--algorithm">, and a bug which
+causes bad <"--where"> clauses with L<"--since">.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 mk-table-checksum generates table checksums for MySQL tables, typically

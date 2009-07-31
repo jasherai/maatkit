@@ -2521,6 +2521,15 @@ mk-slave-restart - Watch and restart MySQL replication after errors.
 
  mk-slave-restart --verbose
 
+=head1 RISKS
+
+Indiscriminate use of this tool can easily screw up a server you might have
+had a chance to truly fix.  You have been warned.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 mk-slave-restart watches one or more MySQL replication slaves and tries to skip
@@ -2534,9 +2543,6 @@ the first edition of High Performance MySQL.  Apparently this tool does the
 same thing.  Make no mistake, though: this is not a way to "fix replication."
 In fact I would not even encourage its use on a regular basis; I use it only
 when I have an error I know I just need to skip past.
-
-Indiscriminate use of this tool can easily screw up a server you might have
-had a chance to truly fix.  You have been warned.
 
 =head1 OUTPUT
 

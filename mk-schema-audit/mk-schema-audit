@@ -3009,6 +3009,14 @@ mk-schema-audit - Analyze schema and find inefficiencies.
 
    mk-schema-audit
 
+=head1 RISKS
+
+mk-schema only only reads information.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 mk-schema audit audits schemas.

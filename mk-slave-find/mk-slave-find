@@ -1973,6 +1973,14 @@ mk-slave-find - Find and print replication hierarchy tree of MySQL slaves.
 
    mk-slave-find --host master-host
 
+=head1 RISKS
+
+mk-slave-find only reads information.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 mk-slave-find connects to a MySQL replication master and finds its slaves.

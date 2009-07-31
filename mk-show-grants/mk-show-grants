@@ -1467,6 +1467,15 @@ replicate, compare and version-control them.
    mk-show-grants
    mk-show-grants --separate --revoke | diff othergrants.sql -
 
+=head1 RISKS
+
+mk-show-grants will C<FLUSH PRIVILEGES> if L<"--flush"> is given.  Otherwise
+it only reads information.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 mk-show-grants extracts, orders, and then prints grants for MySQL user

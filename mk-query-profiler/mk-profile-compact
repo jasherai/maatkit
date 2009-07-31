@@ -1036,6 +1036,14 @@ To view summaries from two runs side by side:
 
    mk-profile-compact --mode SUMMARY results-1.txt results-2.txt
 
+=head1 RISKS
+
+mk-profile-compact only reads information.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 mk-profile-compact slices and aligns the output from mk-query-profiler

@@ -1040,6 +1040,14 @@ mk-checksum-filter - Filter checksums from mk-table-checksum.
    mk-table-checksum host1 host2 | mk-checksum-filter
    mk-checksum-filter db1-checksums.txt db2-checksums.txt --ignore-databases
 
+=head1 RISKS
+
+mk-checksum-filter only reads information.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 This program takes the unsorted, verbose output from L<mk-table-checksum> and

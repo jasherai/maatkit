@@ -2364,6 +2364,26 @@ mk-slave-prefetch - Pipeline relay logs on a MySQL slave to pre-warm caches.
  mk-slave-prefetch --statistics > /path/to/saved/statistics
  mk-slave-prefetch /path/to/saved/statistics
 
+=head1 RISKS
+
+mk-slave-prefetch converts non-SELECT statements to SELECT in order to execute
+them on the slave when running in L<"--execute"> mode.  Statements that cannot
+be converted to SELECT are ignored, but in the case of a bug this might fail
+and cause problems.  It would be a very good idea to connect as a read-only
+user.  Here is an example of how to grant the necessary privileges:
+
+   GRANT SELECT, REPLICATION CLIENT, REPLICATION SLAVE ON *.*
+      TO 'prefetch'@'%' IDENTIFIED BY 'sp33dmeup!';
+      
+If only L<"--print"> is given, then mk-slave-prefetch will only read and print
+information.
+
+At the time of this release, there is a bug which prevents mk-slave-prefetch
+from respecting MySQL's relay-log option, and a bug which prevents it from
+finding a database to use.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 mk-slave-prefetch reads the slave's relay log slightly ahead of where the
@@ -2373,13 +2393,6 @@ slave's single-threaded SQL execution.  It will help take advantage of
 multiple CPUs and disks by pre-reading the data from disk, so the data is
 already in the cache when the slave SQL thread executes the un-modified
 version of the statement.
-
-Statements that can't be converted into C<SELECT> are ignored.  However, there
-is always a chance of bugs.  It would be a very good idea to connect as a
-read-only user.  Here is an example of how to grant the necessary privileges:
-
-   GRANT SELECT, REPLICATION CLIENT, REPLICATION SLAVE ON *.*
-   TO 'prefetch'@'%' IDENTIFIED BY 'sp33dmeup!';
 
 C<mk-slave-prefetch> learns how long it takes statements to execute, and doesn't
 try to execute those that take a very long time.  You can ask it to print what

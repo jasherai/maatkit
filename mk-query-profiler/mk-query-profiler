@@ -1939,6 +1939,15 @@ Or it can run shell commands from a file and measure the result:
 
 Read L<"HOW TO INTERPRET"> to learn what it all means.
 
+=head1 RISKS
+
+mk-query-profiler will flush tables if L<"--flush"> is given.  Otherwise it
+only reads information.
+
+At the time of this release, there are no known, critical bugs.
+
+See also L<"BUGS">.
+
 =head1 DESCRIPTION
 
 mk-query-profiler reads a file containing one or more SQL statements or shell

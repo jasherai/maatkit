@@ -2403,8 +2403,20 @@ mk-parallel-restore - Load files into MySQL in parallel.
   mk-parallel-restore /path/to/files
   mk-parallel-restore --tab /path/to/files
 
-Do not rely on mk-parallel-restore for your backups unless you have tested it.
-You have been warned.
+=head1 RISKS
+
+mk-parallel-restore is not a backup program!  It is only for fast data imports.
+Do not rely on mk-parallel-restore for your backups.  You have been warned.
+
+mk-parallel-restore writes and modifies data unless the L<"--dry-run"> option
+is used.  Restore operations may be replicated unless C<--no-bin-log> is
+given, so be careful when restoring on a master.  See L<"--[no]bin-log">.
+
+At the time of this release, there is a bug which may cause an error on slaves,
+a bug which prevents mk-parallel-restore from creating tables with foreign key
+constraints, and an unverified infinite loop when using L<"--[no]resume">.
+
+See also L<"BUGS">.
 
 =head1 DESCRIPTION
 

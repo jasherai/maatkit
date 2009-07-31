@@ -6142,12 +6142,7 @@ mk-table-sync - Synchronize MySQL tables efficiently.
 
 =head1 SYNOPSIS
 
-B<WARNING>: back up your data before you use this tool.
-
-It is a good idea to B<back up your data> and run C<mk-table-sync> with
-L<"--dry-run"> to see what will happen.  If you want to see which rows
-are different, without changing any data, use L<"--print"> instead of
-L<"--execute">.
+B<WARNING>: back up your data before you use this tool.  See L<"RISKS">.
 
 To sync db.tbl1 from host1 to host2:
 
@@ -6180,6 +6175,24 @@ through replication and change server1's data:
 
    # Don't do this in a master-master setup!
    mk-table-sync --execute h=server1,D=db1,t=tbl1 h=server2
+
+=head1 RISKS
+
+B<WARNING>: back up your data before you use this tool.
+
+It is a good idea to B<back up your data> and run C<mk-table-sync> with
+L<"--dry-run"> to see what will happen.  If you want to see which rows
+are different, without changing any data, use L<"--print"> instead of
+L<"--execute">.
+
+Be careful when using mk-table-sync in any master-master setup.  Loss of
+data can occur if the script is not used correctly.
+
+At the time of this release, there are bugs which cause mk-table-sync to crash,
+a bug replicating DELETE statements, a bug when using MySQL's replicate-do-db
+option, a bug with L<"--lock"> level 3, and an unverified infinite loop.
+
+See also L<"BUGS">.
 
 =head1 DESCRIPTION
 
