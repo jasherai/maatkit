@@ -9,8 +9,8 @@ Total                          95.0   78.6  100.0   90.0    n/a  100.0   91.7
 Run:          TableNibbler.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:21:12 2009
-Finish:       Wed Jun 10 17:21:12 2009
+Start:        Fri Jul 31 18:53:35 2009
+Finish:       Fri Jul 31 18:53:36 2009
 
 /home/daniel/dev/maatkit/common/TableNibbler.pm
 
@@ -36,23 +36,23 @@ line  err   stmt   bran   cond    sub    pod   time   code
 19                                                    # ###########################################################################
 20                                                    package TableNibbler;
 21                                                    
-22             1                    1            13   use strict;
-               1                                  3   
-               1                                  9   
-23             1                    1            10   use warnings FATAL => 'all';
-               1                                  3   
-               1                                  8   
+22             1                    1             8   use strict;
+               1                                  2   
+               1                                  6   
+23             1                    1             6   use warnings FATAL => 'all';
+               1                                  2   
+               1                                  5   
 24                                                    
 25             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
-               1                                  5   
+               1                                  6   
 26                                                    
 27             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
-               1                                 11   
+               1                                  7   
 28                                                    
 29                                                    sub new {
-30             1                    1            17      bless {}, shift;
+30             1                    1            14      bless {}, shift;
 31                                                    }
 32                                                    
 33                                                    # Arguments are as follows:
@@ -80,49 +80,49 @@ line  err   stmt   bran   cond    sub    pod   time   code
 55                                                    # $row = $first->fetchrow_arrayref();
 56                                                    # $row = $next->fetchrow_arrayref(@{$row}[@slice]);
 57                                                    sub generate_asc_stmt {
-58            15                   15           375      my ( $self, %args ) = @_;
+58            15                   15           297      my ( $self, %args ) = @_;
 59                                                    
-60            15                                 68      my $tbl  = $args{tbl};
-61            15    100                          68      my @cols = $args{cols} ? @{$args{cols}} : @{$tbl->{cols}};
-              12                                 98   
-               3                                 23   
-62            15                                 56      my $q    = $args{quoter};
+60            15                                 60      my $tbl  = $args{tbl};
+61            15    100                          65      my @cols = $args{cols} ? @{$args{cols}} : @{$tbl->{cols}};
+              12                                 88   
+               3                                 22   
+62            15                                 57      my $q    = $args{quoter};
 63                                                    
-64            15                                 41      my @asc_cols;
-65            15                                 37      my @asc_slice;
+64            15                                 34      my @asc_cols;
+65            15                                 36      my @asc_slice;
 66                                                    
 67                                                       # ##########################################################################
 68                                                       # Detect indexes and columns needed.
 69                                                       # ##########################################################################
-70            15                                124      my $index = $args{parser}->find_best_index($tbl, $args{index});
-71            14    100                          60      die "Cannot find an ascendable index in table" unless $index;
+70            15                                 83      my $index = $args{parser}->find_best_index($tbl, $args{index});
+71            14    100                          48      die "Cannot find an ascendable index in table" unless $index;
 72                                                    
 73                                                       # These are the columns we'll ascend.
-74            13                                 34      @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
-              13                                 87   
-75            13                                 30      MKDEBUG && _d('Will ascend index', $index);
+74            13                                 33      @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
+              13                                 80   
+75            13                                 32      MKDEBUG && _d('Will ascend index', $index);
 76            13                                 28      MKDEBUG && _d('Will ascend columns', join(', ', @asc_cols));
-77            13    100                          56      if ( $args{ascfirst} ) {
-78             1                                  4         @asc_cols = $asc_cols[0];
-79             1                                  3         MKDEBUG && _d('Ascending only first column');
+77            13    100                          57      if ( $args{ascfirst} ) {
+78             1                                  3         @asc_cols = $asc_cols[0];
+79             1                                  4         MKDEBUG && _d('Ascending only first column');
 80                                                       }
 81                                                    
 82                                                       # We found the columns by name, now find their positions for use as
 83                                                       # array slices, and make sure they are included in the SELECT list.
-84            13                                 37      my %col_posn = do { my $i = 0; map { $_ => $i++ } @cols };
-              13                                 40   
-              13                                 39   
-             109                                474   
-85            13                                 70      foreach my $col ( @asc_cols ) {
-86            27    100                         111         if ( !exists $col_posn{$col} ) {
-87             1                                  3            push @cols, $col;
-88             1                                  5            $col_posn{$col} = $#cols;
+84            13                                 44      my %col_posn = do { my $i = 0; map { $_ => $i++ } @cols };
+              13                                 37   
+              13                                 38   
+             109                                439   
+85            13                                 68      foreach my $col ( @asc_cols ) {
+86            27    100                         105         if ( !exists $col_posn{$col} ) {
+87             1                                  4            push @cols, $col;
+88             1                                  4            $col_posn{$col} = $#cols;
 89                                                          }
-90            27                                109         push @asc_slice, $col_posn{$col};
+90            27                                105         push @asc_slice, $col_posn{$col};
 91                                                       }
-92            13                                 30      MKDEBUG && _d('Will ascend, in ordinal position:', join(', ', @asc_slice));
+92            13                                 28      MKDEBUG && _d('Will ascend, in ordinal position:', join(', ', @asc_slice));
 93                                                    
-94            13                                100      my $asc_stmt = {
+94            13                                 92      my $asc_stmt = {
 95                                                          cols  => \@cols,
 96                                                          index => $index,
 97                                                          where => '',
@@ -136,26 +136,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 105                                                      # asc_stmt.  If asconly is given, the row's lower end should not include
 106                                                      # the row.
 107                                                      # ##########################################################################
-108   ***     13     50                          54      if ( @asc_slice ) {
-109           13                                 31         my $cmp_where;
-110           13                                 51         foreach my $cmp ( qw(< <= >= >) ) {
+108   ***     13     50                          68      if ( @asc_slice ) {
+109           13                                 27         my $cmp_where;
+110           13                                 48         foreach my $cmp ( qw(< <= >= >) ) {
 111                                                            # Generate all 4 types, then choose the right one.
-112           52                                322            $cmp_where = $self->generate_cmp_where(
+112           52                                308            $cmp_where = $self->generate_cmp_where(
 113                                                               type        => $cmp,
 114                                                               slice       => \@asc_slice,
 115                                                               cols        => \@cols,
 116                                                               quoter      => $q,
 117                                                               is_nullable => $tbl->{is_nullable},
 118                                                            );
-119           52                                379            $asc_stmt->{boundaries}->{$cmp} = $cmp_where->{where};
+119           52                                349            $asc_stmt->{boundaries}->{$cmp} = $cmp_where->{where};
 120                                                         }
-121           13    100                          64         my $cmp = $args{asconly} ? '>' : '>=';
-122           13                                 67         $asc_stmt->{where} = $asc_stmt->{boundaries}->{$cmp};
-123           13                                 52         $asc_stmt->{slice} = $cmp_where->{slice};
-124           13                                 65         $asc_stmt->{scols} = $cmp_where->{scols};
+121           13    100                          58         my $cmp = $args{asconly} ? '>' : '>=';
+122           13                                 56         $asc_stmt->{where} = $asc_stmt->{boundaries}->{$cmp};
+123           13                                 54         $asc_stmt->{slice} = $cmp_where->{slice};
+124           13                                 58         $asc_stmt->{scols} = $cmp_where->{scols};
 125                                                      }
 126                                                   
-127           13                                293      return $asc_stmt;
+127           13                                258      return $asc_stmt;
 128                                                   }
 129                                                   
 130                                                   # Generates a multi-column version of a WHERE statement.  It can generate >,
@@ -166,78 +166,78 @@ line  err   stmt   bran   cond    sub    pod   time   code
 135                                                   # Ascending-only and nullable require variations on this.  The general
 136                                                   # pattern is (>), (= >), (= = >), (= = = >=).
 137                                                   sub generate_cmp_where {
-138           56                   56           401      my ( $self, %args ) = @_;
-139           56                                239      foreach my $arg ( qw(type slice cols quoter is_nullable) ) {
-140   ***    280     50                        1208         die "I need a $arg arg" unless defined $args{$arg};
+138           56                   56           374      my ( $self, %args ) = @_;
+139           56                                237      foreach my $arg ( qw(type slice cols quoter is_nullable) ) {
+140   ***    280     50                        1204         die "I need a $arg arg" unless defined $args{$arg};
 141                                                      }
 142                                                   
-143           56                                157      my @slice       = @{$args{slice}};
-              56                                233   
-144           56                                153      my @cols        = @{$args{cols}};
-              56                                357   
-145           56                                199      my $q           = $args{quoter};
-146           56                                165      my $is_nullable = $args{is_nullable};
-147           56                                166      my $type        = $args{type};
+143           56                                155      my @slice       = @{$args{slice}};
+              56                                226   
+144           56                                139      my @cols        = @{$args{cols}};
+              56                                352   
+145           56                                186      my $q           = $args{quoter};
+146           56                                159      my $is_nullable = $args{is_nullable};
+147           56                                159      my $type        = $args{type};
 148                                                   
-149           56                                223      (my $cmp = $type) =~ s/=//;
+149           56                                207      (my $cmp = $type) =~ s/=//;
 150                                                   
-151           56                                131      my @r_slice;    # Resulting slice columns, by ordinal
-152           56                                122      my @r_scols;    # Ditto, by name
+151           56                                117      my @r_slice;    # Resulting slice columns, by ordinal
+152           56                                123      my @r_scols;    # Ditto, by name
 153                                                   
-154           56                                121      my @clauses;
-155           56                                291      foreach my $i ( 0 .. $#slice ) {
-156          116                                288         my @clause;
+154           56                                128      my @clauses;
+155           56                                257      foreach my $i ( 0 .. $#slice ) {
+156          116                                264         my @clause;
 157                                                   
 158                                                         # Most of the clauses should be strict equality.
-159          116                                449         foreach my $j ( 0 .. $i - 1 ) {
-160           88                                254            my $ord = $slice[$j];
-161           88                                250            my $col = $cols[$ord];
-162           88                                325            my $quo = $q->quote($col);
-163           88    100                         349            if ( $is_nullable->{$col} ) {
-164            8                                 37               push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
-165            8                                 27               push @r_slice, $ord, $ord;
-166            8                                 37               push @r_scols, $col, $col;
+159          116                                429         foreach my $j ( 0 .. $i - 1 ) {
+160           88                                257            my $ord = $slice[$j];
+161           88                                246            my $col = $cols[$ord];
+162           88                                324            my $quo = $q->quote($col);
+163           88    100                         441            if ( $is_nullable->{$col} ) {
+164            8                                 34               push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+165            8                                 25               push @r_slice, $ord, $ord;
+166            8                                 36               push @r_scols, $col, $col;
 167                                                            }
 168                                                            else {
-169           80                                283               push @clause, "$quo = ?";
-170           80                                220               push @r_slice, $ord;
-171           80                                298               push @r_scols, $col;
+169           80                                261               push @clause, "$quo = ?";
+170           80                                222               push @r_slice, $ord;
+171           80                                303               push @r_scols, $col;
 172                                                            }
 173                                                         }
 174                                                   
 175                                                         # The last clause in each parenthesized group should be > or <, unless
 176                                                         # it's the very last of the whole WHERE clause and we are doing "or
 177                                                         # equal," when it should be >= or <=.
-178          116                                362         my $ord = $slice[$i];
-179          116                                324         my $col = $cols[$ord];
-180          116                                448         my $quo = $q->quote($col);
-181          116                                407         my $end = $i == $#slice; # Last clause of the whole group.
-182          116    100                         452         if ( $is_nullable->{$col} ) {
-183           16    100    100                  149            if ( $type =~ m/=/ && $end ) {
+178          116                                349         my $ord = $slice[$i];
+179          116                                339         my $col = $cols[$ord];
+180          116                                425         my $quo = $q->quote($col);
+181          116                                410         my $end = $i == $#slice; # Last clause of the whole group.
+182          116    100                         428         if ( $is_nullable->{$col} ) {
+183           16    100    100                  121            if ( $type =~ m/=/ && $end ) {
                     100                               
-184            4                                 19               push @clause, "(? IS NULL OR $quo $type ?)";
+184            4                                 21               push @clause, "(? IS NULL OR $quo $type ?)";
 185                                                            }
 186                                                            elsif ( $type =~ m/>/ ) {
-187            6                                 34               push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo $cmp ?))";
+187            6                                 31               push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo $cmp ?))";
 188                                                            }
 189                                                            else { # If $type =~ m/</ ) {
-190            6                                 36               push @clause, "((? IS NOT NULL AND $quo IS NULL) OR ($quo $cmp ?))";
+190            6                                 33               push @clause, "((? IS NOT NULL AND $quo IS NULL) OR ($quo $cmp ?))";
 191                                                            }
-192           16                                 54            push @r_slice, $ord, $ord;
-193           16                                 55            push @r_scols, $col, $col;
+192           16                                 48            push @r_slice, $ord, $ord;
+193           16                                 54            push @r_scols, $col, $col;
 194                                                         }
 195                                                         else {
-196          100                                309            push @r_slice, $ord;
-197          100                                291            push @r_scols, $col;
-198          100    100    100                  823            push @clause, ($type =~ m/=/ && $end ? "$quo $type ?" : "$quo $cmp ?");
+196          100                                301            push @r_slice, $ord;
+197          100                                321            push @r_scols, $col;
+198          100    100    100                  797            push @clause, ($type =~ m/=/ && $end ? "$quo $type ?" : "$quo $cmp ?");
 199                                                         }
 200                                                   
 201                                                         # Add the clause to the larger WHERE clause.
-202          116                                613         push @clauses, '(' . join(' AND ', @clause) . ')';
+202          116                                618         push @clauses, '(' . join(' AND ', @clause) . ')';
 203                                                      }
-204           56                                250      my $result = '(' . join(' OR ', @clauses) . ')';
+204           56                                240      my $result = '(' . join(' OR ', @clauses) . ')';
 205                                                      return {
-206           56                                527         slice => \@r_slice,
+206           56                                490         slice => \@r_slice,
 207                                                         scols => \@r_scols,
 208                                                         where => $result,
 209                                                      };
@@ -251,50 +251,50 @@ line  err   stmt   bran   cond    sub    pod   time   code
 217                                                   # These are the same as the arguments to generate_asc_stmt().  Return value is
 218                                                   # similar too.
 219                                                   sub generate_del_stmt {
-220            4                    4            31      my ( $self, %args ) = @_;
+220            4                    4            27      my ( $self, %args ) = @_;
 221                                                   
-222            4                                 17      my $tbl  = $args{tbl};
-223            4    100                          21      my @cols = $args{cols} ? @{$args{cols}} : ();
-               1                                  4   
-224            4                                 14      my $q    = $args{quoter};
+222            4                                 15      my $tbl  = $args{tbl};
+223            4    100                          19      my @cols = $args{cols} ? @{$args{cols}} : ();
+               1                                  5   
+224            4                                 12      my $q    = $args{quoter};
 225                                                   
-226            4                                 12      my @del_cols;
-227            4                                 10      my @del_slice;
+226            4                                  8      my @del_cols;
+227            4                                  9      my @del_slice;
 228                                                   
 229                                                      # ##########################################################################
 230                                                      # Detect the best or preferred index to use for the WHERE clause needed to
 231                                                      # delete the rows.
 232                                                      # ##########################################################################
-233            4                                 28      my $index = $args{parser}->find_best_index($tbl, $args{index});
-234   ***      4     50                          15      die "Cannot find an ascendable index in table" unless $index;
+233            4                                 23      my $index = $args{parser}->find_best_index($tbl, $args{index});
+234   ***      4     50                          16      die "Cannot find an ascendable index in table" unless $index;
 235                                                   
 236                                                      # These are the columns needed for the DELETE statement's WHERE clause.
-237   ***      4     50                          15      if ( $index ) {
-238            4                                 12         @del_cols = @{$tbl->{keys}->{$index}->{cols}};
-               4                                 28   
+237   ***      4     50                          13      if ( $index ) {
+238            4                                 11         @del_cols = @{$tbl->{keys}->{$index}->{cols}};
+               4                                 25   
 239                                                      }
 240                                                      else {
 241   ***      0                                  0         @del_cols = @{$tbl->{cols}};
       ***      0                                  0   
 242                                                      }
-243            4                                 11      MKDEBUG && _d('Columns needed for DELETE:', join(', ', @del_cols));
+243            4                                  9      MKDEBUG && _d('Columns needed for DELETE:', join(', ', @del_cols));
 244                                                   
 245                                                      # We found the columns by name, now find their positions for use as
 246                                                      # array slices, and make sure they are included in the SELECT list.
 247            4                                 11      my %col_posn = do { my $i = 0; map { $_ => $i++ } @cols };
-               4                                 12   
-               4                                 16   
-               1                                  7   
-248            4                                 12      foreach my $col ( @del_cols ) {
-249   ***      8     50                          34         if ( !exists $col_posn{$col} ) {
-250            8                                 34            push @cols, $col;
-251            8                                 35            $col_posn{$col} = $#cols;
+               4                                 10   
+               4                                 24   
+               1                                  6   
+248            4                                 15      foreach my $col ( @del_cols ) {
+249   ***      8     50                          31         if ( !exists $col_posn{$col} ) {
+250            8                                 25            push @cols, $col;
+251            8                                 33            $col_posn{$col} = $#cols;
 252                                                         }
-253            8                                 34         push @del_slice, $col_posn{$col};
+253            8                                 31         push @del_slice, $col_posn{$col};
 254                                                      }
 255            4                                  9      MKDEBUG && _d('Ordinals needed for DELETE:', join(', ', @del_slice));
 256                                                   
-257            4                                 32      my $del_stmt = {
+257            4                                 28      my $del_stmt = {
 258                                                         cols  => \@cols,
 259                                                         index => $index,
 260                                                         where => '',
@@ -305,30 +305,30 @@ line  err   stmt   bran   cond    sub    pod   time   code
 265                                                      # ##########################################################################
 266                                                      # Figure out how to target a single row with a WHERE clause.
 267                                                      # ##########################################################################
-268            4                                 17      my @clauses;
-269            4                                 20      foreach my $i ( 0 .. $#del_slice ) {
-270            8                                 26         my $ord = $del_slice[$i];
-271            8                                 25         my $col = $cols[$ord];
-272            8                                 32         my $quo = $q->quote($col);
-273            8    100                          41         if ( $tbl->{is_nullable}->{$col} ) {
-274            1                                  8            push @clauses, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
-275            1                                  2            push @{$del_stmt->{slice}}, $ord, $ord;
-               1                                  6   
-276            1                                  3            push @{$del_stmt->{scols}}, $col, $col;
+268            4                                 11      my @clauses;
+269            4                                 17      foreach my $i ( 0 .. $#del_slice ) {
+270            8                                 25         my $ord = $del_slice[$i];
+271            8                                 23         my $col = $cols[$ord];
+272            8                                 30         my $quo = $q->quote($col);
+273            8    100                          36         if ( $tbl->{is_nullable}->{$col} ) {
+274            1                                  6            push @clauses, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+275            1                                  3            push @{$del_stmt->{slice}}, $ord, $ord;
+               1                                  5   
+276            1                                  5            push @{$del_stmt->{scols}}, $col, $col;
                1                                  6   
 277                                                         }
 278                                                         else {
-279            7                                 25            push @clauses, "$quo = ?";
-280            7                                 18            push @{$del_stmt->{slice}}, $ord;
-               7                                 44   
-281            7                                 18            push @{$del_stmt->{scols}}, $col;
-               7                                 34   
+279            7                                 23            push @clauses, "$quo = ?";
+280            7                                 20            push @{$del_stmt->{slice}}, $ord;
+               7                                 25   
+281            7                                 19            push @{$del_stmt->{scols}}, $col;
+               7                                 32   
 282                                                         }
 283                                                      }
 284                                                   
 285            4                                 25      $del_stmt->{where} = '(' . join(' AND ', @clauses) . ')';
 286                                                   
-287            4                                 63      return $del_stmt;
+287            4                                 56      return $del_stmt;
 288                                                   }
 289                                                   
 290                                                   # Design an INSERT statement.  This actually does very little; it just maps
@@ -353,26 +353,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 309                                                   # (one for each column), but the insert statement will slice this array
 310                                                   # to get only the elements/columns it needs.
 311                                                   sub generate_ins_stmt {
-312            2                    2            35      my ( $self, %args ) = @_;
+312            2                    2            32      my ( $self, %args ) = @_;
 313            2                                  8      foreach my $arg ( qw(ins_tbl sel_cols) ) {
-314   ***      4     50                          20         die "I need a $arg argument" unless $args{$arg};
+314   ***      4     50                          19         die "I need a $arg argument" unless $args{$arg};
 315                                                      }
 316            2                                  7      my $ins_tbl  = $args{ins_tbl};
-317            2                                  5      my @sel_cols = @{$args{sel_cols}};
-               2                                 13   
+317            2                                  6      my @sel_cols = @{$args{sel_cols}};
+               2                                 12   
 318                                                   
-319   ***      2     50                           8      die "You didn't specify any SELECT columns" unless @sel_cols;
+319   ***      2     50                           9      die "You didn't specify any SELECT columns" unless @sel_cols;
 320                                                   
-321            2                                  6      my @ins_cols;
-322            2                                  5      my @ins_slice;
-323            2                                 10      for my $i ( 0..$#sel_cols ) {
-324           10    100                          50         next unless $ins_tbl->{is_col}->{$sel_cols[$i]};
-325            3                                  9         push @ins_cols, $sel_cols[$i];
+321            2                                  4      my @ins_cols;
+322            2                                 17      my @ins_slice;
+323            2                                 12      for my $i ( 0..$#sel_cols ) {
+324           10    100                          52         next unless $ins_tbl->{is_col}->{$sel_cols[$i]};
+325            3                                 10         push @ins_cols, $sel_cols[$i];
 326            3                                 12         push @ins_slice, $i;
 327                                                      }
 328                                                   
 329                                                      return {
-330            2                                 27         cols  => \@ins_cols,
+330            2                                 25         cols  => \@ins_cols,
 331                                                         slice => \@ins_slice,
 332                                                      };
 333                                                   }

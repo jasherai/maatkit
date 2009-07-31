@@ -9,8 +9,8 @@ Total                          60.0    0.0    n/a   75.0    n/a  100.0   54.5
 Run:          VersionParser.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:21:44 2009
-Finish:       Wed Jun 10 17:21:44 2009
+Start:        Fri Jul 31 18:54:10 2009
+Finish:       Fri Jul 31 18:54:10 2009
 
 /home/daniel/dev/maatkit/common/VersionParser.pm
 
@@ -37,19 +37,19 @@ line  err   stmt   bran   cond    sub    pod   time   code
 20                                                    package VersionParser;
 21                                                    
 22             1                    1             6   use strict;
-               1                                  2   
-               1                                  6   
-23             1                    1             5   use warnings FATAL => 'all';
                1                                  3   
                1                                  6   
-24                                                    
-25             1                    1             6   use English qw(-no_match_vars);
+23             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  7   
+24                                                    
+25             1                    1             5   use English qw(-no_match_vars);
+               1                                  7   
+               1                                  7   
 26                                                    
-27             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
-               1                                 11   
+27             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  2   
+               1                                 13   
 28                                                    
 29                                                    sub new {
 30             1                    1             5      my ( $class ) = @_;
@@ -58,9 +58,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 33                                                    
 34                                                    sub parse {
 35             1                    1             4      my ( $self, $str ) = @_;
-36             1                                 17      my $result = sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+36             1                                 42      my $result = sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
 37             1                                  3      MKDEBUG && _d($str, 'parses to', $result);
-38             1                                  6      return $result;
+38             1                                  7      return $result;
 39                                                    }
 40                                                    
 41                                                    # Compares versions like 5.0.27 and 4.1.15-standard-log.  Caches version number

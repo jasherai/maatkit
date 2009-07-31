@@ -9,8 +9,8 @@ Total                          90.9   67.9   50.0   92.9    n/a  100.0   85.0
 Run:          EventTimeline.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:19:47 2009
-Finish:       Wed Jun 10 17:19:47 2009
+Start:        Fri Jul 31 18:51:50 2009
+Finish:       Fri Jul 31 18:51:50 2009
 
 /home/daniel/dev/maatkit/common/EventTimeline.pm
 
@@ -41,29 +41,29 @@ line  err   stmt   bran   cond    sub    pod   time   code
 24                                                    # This package's function is to take hashrefs and aggregate them together by a
 25                                                    # specified attribute, but only if they are adjacent to each other.
 26                                                    
-27             1                    1            10   use strict;
+27             1                    1             7   use strict;
                1                                  3   
-               1                                  7   
-28             1                    1             7   use warnings FATAL => 'all';
+               1                                  5   
+28             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  6   
-29             1                    1             6   use English qw(-no_match_vars);
-               1                                  3   
+29             1                    1             5   use English qw(-no_match_vars);
+               1                                  2   
                1                                  6   
 30                                                    Transformers->import(qw(parse_timestamp secs_to_time unix_timestamp));
 31                                                    
-32             1                    1             9   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
-               1                                 30   
-33             1                    1             6   use constant KEY     => 0;
-               1                                  3   
-               1                                  4   
-34             1                    1             6   use constant CNT     => 1;
+32             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
+               1                                  7   
+33             1                    1             5   use constant KEY     => 0;
+               1                                  3   
                1                                  4   
+34             1                    1             5   use constant CNT     => 1;
+               1                                  3   
+               1                                 13   
 35             1                    1             6   use constant ATT     => 2;
-               1                                  2   
-               1                                 12   
+               1                                  6   
+               1                                  4   
 36                                                    
 37                                                    # The best way to see how to use this is to look at the .t file.
 38                                                    #
@@ -73,19 +73,19 @@ line  err   stmt   bran   cond    sub    pod   time   code
 42                                                    #              Aggregation keeps the min, max and sum if it's a numeric
 43                                                    #              attribute.
 44                                                    sub new {
-45             1                    1            23      my ( $class, %args ) = @_;
+45             1                    1            20      my ( $class, %args ) = @_;
 46             1                                  4      foreach my $arg ( qw(groupby attributes) ) {
-47    ***      2     50                          17         die "I need a $arg argument" unless $args{$arg};
+47    ***      2     50                          11         die "I need a $arg argument" unless $args{$arg};
 48                                                       }
 49                                                    
 50             1                                  3      my %is_groupby = map { $_ => 1 } @{$args{groupby}};
-               1                                  6   
                1                                  5   
+               1                                  4   
 51                                                    
 52             2                                 17      return bless {
 53                                                          groupby    => $args{groupby},
 54             1                                  4         attributes => [ grep { !$is_groupby{$_} } @{$args{attributes}} ],
-               1                                  4   
+               1                                  3   
 55                                                          results    => [],
 56                                                       }, $class;
 57                                                    }
@@ -93,26 +93,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 59                                                    # Reset the aggregated data, but not anything the code has learned about
 60                                                    # incoming data.
 61                                                    sub reset_aggregated_data {
-62             1                    1             5      my ( $self ) = @_;
-63             1                                  5      $self->{results} = [];
+62             1                    1             4      my ( $self ) = @_;
+63             1                                  8      $self->{results} = [];
 64                                                    }
 65                                                    
 66                                                    # Aggregate an event hashref's properties.
 67                                                    sub aggregate {
-68             4                    4            32      my ( $self, $event ) = @_;
-69             4                                 14      my $handler = $self->{handler};
-70             4    100                          17      if ( !$handler ) {
+68             4                    4            28      my ( $self, $event ) = @_;
+69             4                                 13      my $handler = $self->{handler};
+70             4    100                          15      if ( !$handler ) {
 71             1                                  4         $handler = $self->make_handler($event);
-72             1                                  5         $self->{handler} = $handler;
+72             1                                  4         $self->{handler} = $handler;
 73                                                       }
-74    ***      4     50                          14      return unless $handler;
-75             4                                 17      $handler->($event);
+74    ***      4     50                          16      return unless $handler;
+75             4                                 14      $handler->($event);
 76                                                    }
 77                                                    
 78                                                    # Return the aggregated results.
 79                                                    sub results {
-80             3                    3            17      my ( $self ) = @_;
-81             3                                 30      return $self->{results};
+80             3                    3            14      my ( $self ) = @_;
+81             3                                 21      return $self->{results};
 82                                                    }
 83                                                    
 84                                                    # Make subroutines that do things with events.
@@ -123,25 +123,25 @@ line  err   stmt   bran   cond    sub    pod   time   code
 89                                                    # a subroutine with this signature:
 90                                                    #    my ( $event ) = @_;
 91                                                    sub make_handler {
-92             1                    1             4      my ( $self, $event ) = @_;
+92             1                    1             3      my ( $self, $event ) = @_;
 93                                                    
 94                                                       # Ripped off from Regexp::Common::number.
-95             1                                  8      my $float_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)}i;
+95             1                                  5      my $float_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)}i;
 96             1                                  3      my @lines; # lines of code for the subroutine
 97                                                    
-98             1                                  3      foreach my $attrib ( @{$self->{attributes}} ) {
-               1                                  4   
-99             2                                  9         my ($val) = $event->{$attrib};
-100   ***      2     50                           9         next unless defined $val; # Can't decide type if it's undef.
+98             1                                  2      foreach my $attrib ( @{$self->{attributes}} ) {
+               1                                  5   
+99             2                                  8         my ($val) = $event->{$attrib};
+100   ***      2     50                           8         next unless defined $val; # Can't decide type if it's undef.
 101                                                   
-102   ***      2     50                          70         my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
+102   ***      2     50                          63         my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
                     100                               
 103                                                                  : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
 104                                                                  :                                    'string';
 105            2                                  5         MKDEBUG && _d('Type for', $attrib, 'is', $type, '(sample:', $val, ')');
-106            2                                  9         $self->{type_for}->{$attrib} = $type;
+106            2                                  7         $self->{type_for}->{$attrib} = $type;
 107                                                   
-108            2                                 22         push @lines, (
+108            2                                 14         push @lines, (
 109                                                            "\$val = \$event->{$attrib};",
 110                                                            'defined $val && do {',
 111                                                            "# type: $type",
@@ -152,20 +152,20 @@ line  err   stmt   bran   cond    sub    pod   time   code
 116   ***      0                                  0            push @lines, q{$val = $val eq 'Yes' ? 1 : 0;};
 117   ***      0                                  0            $type = 'num';
 118                                                         }
-119            2    100                           9         my $op   = $type eq 'num' ? '<' : 'lt';
+119            2    100                           7         my $op   = $type eq 'num' ? '<' : 'lt';
 120            2                                  9         push @lines, (
 121                                                            '$store->{min} = $val if !defined $store->{min} || $val '
 122                                                               . $op . ' $store->{min};',
 123                                                         );
-124            2    100                           9         $op = ($type eq 'num') ? '>' : 'gt';
-125            2                                 19         push @lines, (
+124            2    100                          10         $op = ($type eq 'num') ? '>' : 'gt';
+125            2                                  8         push @lines, (
 126                                                            '$store->{max} = $val if !defined $store->{max} || $val '
 127                                                               . $op . ' $store->{max};',
 128                                                         );
 129            2    100                           8         if ( $type eq 'num' ) {
-130            1                                  4            push @lines, '$store->{sum} += $val;';
+130            1                                  3            push @lines, '$store->{sum} += $val;';
 131                                                         }
-132            2                                  8         push @lines, '};';
+132            2                                  9         push @lines, '};';
 133                                                      }
 134                                                   
 135                                                      # Build a subroutine with the code.
@@ -176,13 +176,13 @@ line  err   stmt   bran   cond    sub    pod   time   code
 140                                                         '$last = $results->[-1];',
 141                                                         'if ( !$last || '
 142                                                            . join(' || ',
-143            1                                  7               map { "\$last->[KEY]->[$_] ne (\$event->{$self->{groupby}->[$_]} || 0)" }
+143            1                                 11               map { "\$last->[KEY]->[$_] ne (\$event->{$self->{groupby}->[$_]} || 0)" }
 144            1                                 10                   (0 .. @{$self->{groupby}} -1))
 145                                                            . ' ) {',
 146                                                         '  $last = [['
 147                                                            . join(', ',
 148            1                                  5               map { "(\$event->{$self->{groupby}->[$_]} || 0)" }
-149            1                                  6                   (0 .. @{$self->{groupby}} -1))
+149            1                                  5                   (0 .. @{$self->{groupby}} -1))
 150                                                            . '], 0, {} ];',
 151                                                         '  push @$results, $last;',
 152                                                         '}',
@@ -191,39 +191,39 @@ line  err   stmt   bran   cond    sub    pod   time   code
 155            1                                  3      push @lines, '}';
 156            1                                  4      my $results = $self->{results}; # Referred to by the eval
 157            1                                 10      my $code = join("\n", @lines);
-158            1                                  4      $self->{code} = $code;
+158            1                                  3      $self->{code} = $code;
 159                                                   
-160            1                                  3      MKDEBUG && _d('Timeline handler:', $code);
-161            1                                  3      my $sub = eval $code;
-162   ***      1     50                           4      die if $EVAL_ERROR;
-163            1                                 14      return $sub;
+160            1                                  2      MKDEBUG && _d('Timeline handler:', $code);
+161            1                                  2      my $sub = eval $code;
+162   ***      1     50                           5      die if $EVAL_ERROR;
+163            1                                 11      return $sub;
 164                                                   }
 165                                                   
 166                                                   sub report {
 167            1                    1             5      my ( $self, $results, $callback ) = @_;
-168            1                                  8      $callback->("# " . ('#' x 72) . "\n");
-169            1                                  7      $callback->("# " . join(',', @{$self->{groupby}}) . " report\n");
+168            1                                  7      $callback->("# " . ('#' x 72) . "\n");
+169            1                                  6      $callback->("# " . join(',', @{$self->{groupby}}) . " report\n");
                1                                  7   
-170            1                                  9      $callback->("# " . ('#' x 72) . "\n");
-171            1                                  8      foreach my $res ( @$results ) {
-172            3                                 20         my $t;
-173            3                                  7         my @vals;
-174   ***      3     50     33                   33         if ( ($t = $res->[ATT]->{ts}) && $t->{min} ) {
-175            3                                 13            my $min = parse_timestamp($t->{min});
-176            3                                 13            push @vals, $min;
+170            1                                  8      $callback->("# " . ('#' x 72) . "\n");
+171            1                                  7      foreach my $res ( @$results ) {
+172            3                                 17         my $t;
+173            3                                  8         my @vals;
+174   ***      3     50     33                   29         if ( ($t = $res->[ATT]->{ts}) && $t->{min} ) {
+175            3                                 14            my $min = parse_timestamp($t->{min});
+176            3                                 12            push @vals, $min;
 177   ***      3    100     66                   30            if ( $t->{max} && $t->{max} gt $t->{min} ) {
-178            1                                  5               my $max  = parse_timestamp($t->{max});
-179            1                                  7               my $diff = secs_to_time(unix_timestamp($max) - unix_timestamp($min));
-180            1                                  6               push @vals, $diff;
+178            1                                  4               my $max  = parse_timestamp($t->{max});
+179            1                                  5               my $diff = secs_to_time(unix_timestamp($max) - unix_timestamp($min));
+180            1                                  5               push @vals, $diff;
 181                                                            }
 182                                                            else {
-183            2                                  8               push @vals, '0:00';
+183            2                                  6               push @vals, '0:00';
 184                                                            }
 185                                                         }
 186                                                         else {
 187   ***      0                                  0            push @vals, ('', '');
 188                                                         }
-189            3                                 23         $callback->(sprintf("# %19s %7s %3d %s\n", @vals, $res->[CNT], $res->[KEY]->[0]));
+189            3                                 28         $callback->(sprintf("# %19s %7s %3d %s\n", @vals, $res->[CNT], $res->[KEY]->[0]));
 190                                                      }
 191                                                   }
 192                                                   

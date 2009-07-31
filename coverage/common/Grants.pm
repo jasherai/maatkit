@@ -9,8 +9,8 @@ Total                          76.9   50.0    n/a   85.7    n/a  100.0   75.7
 Run:          Grants.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:19:49 2009
-Finish:       Wed Jun 10 17:19:49 2009
+Start:        Fri Jul 31 18:51:51 2009
+Finish:       Fri Jul 31 18:51:51 2009
 
 /home/daniel/dev/maatkit/common/Grants.pm
 
@@ -38,16 +38,16 @@ line  err   stmt   bran   cond    sub    pod   time   code
 21                                                    
 22             1                    1             5   use strict;
                1                                  2   
-               1                                114   
-23             1                    1            23   use warnings FATAL => 'all';
-               1                                  2   
-               1                                  7   
-24             1                    1             5   use English qw(-no_match_vars);
+               1                                111   
+23             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  6   
+24             1                    1             6   use English qw(-no_match_vars);
+               1                                  2   
+               1                                  5   
 25                                                    
 26             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  2   
+               1                                  3   
                1                                 11   
 27                                                    
 28                                                    my %check_for_priv = (
@@ -62,18 +62,18 @@ line  err   stmt   bran   cond    sub    pod   time   code
 37                                                    );
 38                                                          
 39                                                    sub new {
-40             1                    1             6      my ( $class, %args ) = @_;
+40             1                    1             5      my ( $class, %args ) = @_;
 41             1                                  3      my $self = {};
-42             1                                 13      return bless $self, $class;
+42             1                                 14      return bless $self, $class;
 43                                                    }
 44                                                    
 45                                                    sub have_priv {
-46             3                    3            23      my ( $self, $dbh, $priv ) = @_;
-47             3                                 12      $priv = uc $priv;
+46             3                    3            29      my ( $self, $dbh, $priv ) = @_;
+47             3                                 18      $priv = uc $priv;
 48             3    100                          20      if ( !exists $check_for_priv{$priv} ) {
-49             1                                  5         die "There is no check for privilege $priv";
+49             1                                  2         die "There is no check for privilege $priv";
 50                                                       }
-51             2                                 16      return $check_for_priv{$priv}->($dbh);
+51             2                                 17      return $check_for_priv{$priv}->($dbh);
 52                                                    }
 53                                                    
 54                                                    sub _d {

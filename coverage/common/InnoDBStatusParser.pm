@@ -9,8 +9,8 @@ Total                          67.3   37.5   33.3   81.8    n/a  100.0   61.2
 Run:          InnoDBStatusParser.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Tue Jul  7 22:34:43 2009
-Finish:       Tue Jul  7 22:34:43 2009
+Start:        Fri Jul 31 18:51:53 2009
+Finish:       Fri Jul 31 18:51:53 2009
 
 /home/daniel/dev/maatkit/common/InnoDBStatusParser.pm
 
@@ -32,26 +32,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # InnoDBStatusParser package $Revision: 4093 $
+18                                                    # InnoDBStatusParser package $Revision: 4174 $
 19                                                    # ###########################################################################
 20                                                    package InnoDBStatusParser;
 21                                                    
 22                                                    # This package was taken from innotop.
 23                                                    
 24             1                    1             8   use strict;
-               1                                  2   
+               1                                  3   
                1                                  6   
-25             1                    1             6   use warnings FATAL => 'all';
+25             1                    1             5   use warnings FATAL => 'all';
                1                                  2   
-               1                                 13   
+               1                                 12   
 26                                                    
 27             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
-               1                                  7   
+               1                                  8   
 28                                                    
-29             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
-               1                                 10   
+29             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  2   
+               1                                 15   
 30                                                    
 31                                                    # TODO see 3 tablespace extents now reserved for B-tree split operations
 32                                                    # example in note on case 1028
@@ -916,15 +916,15 @@ line  err   stmt   bran   cond    sub    pod   time   code
 891                                                   );
 892                                                   
 893                                                   sub new {
-894            1                    1            23      my ( $class, %args ) = @_;
-895            1                                 33      return bless {}, $class;
+894            1                    1            22      my ( $class, %args ) = @_;
+895            1                                 35      return bless {}, $class;
 896                                                   }
 897                                                   
 898                                                   sub parse {
-899            1                    1            12      my ( $self, $text ) = @_;
+899            1                    1            14      my ( $self, $text ) = @_;
 900                                                   
 901                                                      # This will end up holding a series of "tables."
-902            1                                 14      my %result = (
+902            1                                 12      my %result = (
 903                                                         status                => [{}], # Non-repeating data
 904                                                         deadlock_transactions => [],   # The transactions only
 905                                                         deadlock_locks        => [],   # Both held and waited-for
@@ -937,7 +937,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 912            1                                  4      my $status = $result{status}[0];
 913                                                   
 914                                                      # Split it into sections and stash for parsing.
-915            1                                  3      my %innodb_sections;
+915            1                                  2      my %innodb_sections;
 916            1                                321      my @matches = $text
 917                                                         =~ m#\n(---+)\n([A-Z /]+)\n\1\n(.*?)(?=\n(---+)\n[A-Z /]+\n\4\n|$)#gs;
 918            1                                 13      while ( my ($start, $name, $section_text, $end) = splice(@matches, 0, 4) ) {
@@ -945,24 +945,24 @@ line  err   stmt   bran   cond    sub    pod   time   code
 920                                                      }
 921                                                   
 922                                                      # Get top-level info about the status which isn't included in any subsection.
-923            1                                  6      $self->apply_rules($status, $text, 'top_level');
+923            1                                  4      $self->apply_rules($status, $text, 'top_level');
 924                                                   
 925                                                      # Parse non-nested data in each subsection.
-926            1                                  6      foreach my $section ( keys %innodb_sections ) {
-927            7                                 24         my $section_text = $innodb_sections{$section};
+926            1                                  5      foreach my $section ( keys %innodb_sections ) {
+927            7                                 23         my $section_text = $innodb_sections{$section};
 928   ***      7     50                          26         next unless defined $section_text; # No point in trying to parse further.
-929            7                                 27         $self->apply_rules($status, $section_text, $section);
+929            7                                 26         $self->apply_rules($status, $section_text, $section);
 930                                                      }
 931                                                   
 932                                                      # Now get every other table.
-933   ***      1     50                           8      if ( $innodb_sections{'LATEST DETECTED DEADLOCK'} ) {
+933   ***      1     50                           6      if ( $innodb_sections{'LATEST DETECTED DEADLOCK'} ) {
 934   ***      0                                  0         @result{qw(deadlock_transactions deadlock_locks)}
 935                                                            = $self->parse_deadlocks($innodb_sections{'LATEST DETECTED DEADLOCK'});
 936                                                      }
-937   ***      1     50                           5      if ( $innodb_sections{'INSERT BUFFER AND ADAPTIVE HASH INDEX'} ) {
+937   ***      1     50                           4      if ( $innodb_sections{'INSERT BUFFER AND ADAPTIVE HASH INDEX'} ) {
 938   ***      0                                  0         $result{insert_buffer_pages} = [
 939                                                            map {
-940            1                                  9               my %page;
+940            1                                  7               my %page;
 941   ***      0                                  0               @page{qw(page buffer_count)}
 942                                                                  = $_ =~ m/Ibuf count for page $d is $d$/;
 943   ***      0                                  0               \%page;
@@ -971,34 +971,34 @@ line  err   stmt   bran   cond    sub    pod   time   code
 946                                                         ];
 947                                                      }
 948   ***      1     50                           5      if ( $innodb_sections{'TRANSACTIONS'} ) {
-949            1                                  7         $result{transactions} = [
-950            1                                 27            map { $self->parse_txn($_) }
+949            1                                  4         $result{transactions} = [
+950            1                                 26            map { $self->parse_txn($_) }
 951                                                               $innodb_sections{'TRANSACTIONS'}
 952                                                               =~ m/(---TRANSACTION \d.*?)(?=\n---TRANSACTION|$)/gs
 953                                                         ];
 954   ***      0                                  0         $result{transaction_locks} = [
 955                                                            map {
-956            1                                  8               my $lock = {};
+956            1                                  6               my $lock = {};
 957   ***      0                                  0               $self->apply_rules($lock, $_, 'lock');
 958   ***      0                                  0               $lock;
 959                                                            }
 960                                                            $innodb_sections{'TRANSACTIONS'} =~ m/(^(?:RECORD|TABLE) LOCKS?.*$)/gm
 961                                                         ];
 962                                                      }
-963   ***      1     50                           8      if ( $innodb_sections{'FILE I/O'} ) {
-964            4                                 14         $result{io_threads} = [
+963   ***      1     50                           7      if ( $innodb_sections{'FILE I/O'} ) {
+964            4                                 12         $result{io_threads} = [
 965                                                            map {
-966            1                                 11               my $thread = {};
+966            1                                  9               my $thread = {};
 967            4                                 16               $self->apply_rules($thread, $_, 'io_thread');
-968            4                                 15               $thread;
+968            4                                 14               $thread;
 969                                                            }
 970                                                            $innodb_sections{'FILE I/O'} =~ m{^(I/O thread \d+ .*)$}gm
 971                                                         ];
 972                                                      }
-973   ***      1     50                           6      if ( $innodb_sections{SEMAPHORES} ) {
+973   ***      1     50                           5      if ( $innodb_sections{SEMAPHORES} ) {
 974   ***      0                                  0         $result{mutex_waits} = [
 975                                                            map {
-976            1                                  9               my $cell = {};
+976            1                                  5               my $cell = {};
 977   ***      0                                  0               $self->apply_rules($cell, $_, 'mutex_wait');
 978   ***      0                                  0               $cell;
 979                                                            }
@@ -1006,23 +1006,23 @@ line  err   stmt   bran   cond    sub    pod   time   code
 981                                                         ];
 982                                                      }
 983                                                   
-984            1                                145      return \%result;
+984            1                                123      return \%result;
 985                                                   }
 986                                                   
 987                                                   sub apply_rules {
-988           13                   13            60      my ($self, $hashref, $text, $rulename) = @_;
-989   ***     13     50                          61      my $rules = $parse_rules_for{$rulename}
+988           13                   13            58      my ($self, $hashref, $text, $rulename) = @_;
+989   ***     13     50                          57      my $rules = $parse_rules_for{$rulename}
 990                                                         or die "There are no parse rules for '$rulename'";
-991           13                                 52      foreach my $rule ( @{$rules->{rules}} ) {
-              13                                 55   
-992           67                                473         @{$hashref}{ @{$rule->[$COLS]} } = $text =~ m/$rule->[$PATTERN]/m;
-              67                                394   
-              67                                226   
+991           13                                 32      foreach my $rule ( @{$rules->{rules}} ) {
+              13                                 51   
+992           67                                455         @{$hashref}{ @{$rule->[$COLS]} } = $text =~ m/$rule->[$PATTERN]/m;
+              67                                386   
+              67                                217   
 993                                                         # MKDEBUG && _d(@{$rule->[$COLS]}, $rule->[$PATTERN]);
 994                                                         # MKDEBUG && _d(@{$hashref}{ @{$rule->[$COLS]} });
 995                                                      }
 996                                                      # Apply section-specific rules
-997           13                                 60      $rules->{customcode}->($hashref, $text);
+997           13                                 57      $rules->{customcode}->($hashref, $text);
 998                                                   }
 999                                                   
 1000                                                  sub parse_deadlocks {
@@ -1059,26 +1059,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1031                                                  }
 1032                                                  
 1033                                                  sub parse_txn {
-1034           1                    1             5      my ($self, $text) = @_;
+1034           1                    1             4      my ($self, $text) = @_;
 1035                                                  
-1036           1                                  5      my $txn = {};
-1037           1                                  5      $self->apply_rules($txn, $text, 'transaction');
+1036           1                                  3      my $txn = {};
+1037           1                                  4      $self->apply_rules($txn, $text, 'transaction');
 1038                                                  
 1039                                                     # Parsing the line that begins 'MySQL thread id' is complicated.  The only
 1040                                                     # thing always in the line is the thread and query id.  See function
 1041                                                     # innobase_mysql_print_thd() in InnoDB source file sql/ha_innodb.cc.
-1042           1                                  7      my ( $thread_line ) = $text =~ m/^(MySQL thread id .*)$/m;
-1043           1                                  4      my ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status );
+1042           1                                  6      my ( $thread_line ) = $text =~ m/^(MySQL thread id .*)$/m;
+1043           1                                  5      my ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status );
 1044                                                  
-1045  ***      1     50                           5      if ( $thread_line ) {
+1045  ***      1     50                           4      if ( $thread_line ) {
 1046                                                        # These parts can always be gotten.
-1047           1                                 23         ( $mysql_thread_id, $query_id )
+1047           1                                 20         ( $mysql_thread_id, $query_id )
 1048                                                           = $thread_line =~ m/^MySQL thread id $d, query id $d/m;
 1049                                                  
 1050                                                        # If it's a master/slave thread, "Has (read|sent) all" may be the thread's
 1051                                                        # proc_info.  In these cases, there won't be any host/ip/user info
 1052           1                                  4         ( $query_status ) = $thread_line =~ m/(Has (?:read|sent) all .*$)/m;
-1053  ***      1     50                           9         if ( defined($query_status) ) {
+1053  ***      1     50                           8         if ( defined($query_status) ) {
       ***            50                               
 1054  ***      0                                  0            $user = 'system user';
 1055                                                        }
@@ -1087,17 +1087,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1058                                                        elsif ( $thread_line =~ m/query id \d+ / ) {
 1059                                                           # The IP address is the only non-word thing left, so it's the most
 1060                                                           # useful marker for where I have to start guessing.
-1061           1                                 31            ( $hostname, $ip ) = $thread_line =~ m/query id \d+(?: ([A-Za-z]\S+))? $i/m;
+1061           1                                 28            ( $hostname, $ip ) = $thread_line =~ m/query id \d+(?: ([A-Za-z]\S+))? $i/m;
 1062  ***      1     50                           5            if ( defined $ip ) {
 1063  ***      0                                  0               ( $user, $query_status ) = $thread_line =~ m/$ip $w(?: (.*))?$/;
 1064                                                           }
 1065                                                           else { # OK, there wasn't an IP address.
 1066                                                              # There might not be ANYTHING except the query status.
 1067           1                                  7               ( $query_status ) = $thread_line =~ m/query id \d+ (.*)$/;
-1068  ***      1     50     33                   14               if ( $query_status !~ m/^\w+ing/ && !exists($is_proc_info{$query_status}) ) {
+1068  ***      1     50     33                   13               if ( $query_status !~ m/^\w+ing/ && !exists($is_proc_info{$query_status}) ) {
 1069                                                                 # The remaining tokens are, in order: hostname, user, query_status.
 1070                                                                 # It's basically impossible to know which is which.
-1071           1                                 29                  ( $hostname, $user, $query_status ) = $thread_line
+1071           1                                 27                  ( $hostname, $user, $query_status ) = $thread_line
 1072                                                                    =~ m/query id \d+(?: ([A-Za-z]\S+))?(?: $w(?: (.*))?)?$/m;
 1073                                                              }
 1074                                                              else {
@@ -1107,11 +1107,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1078                                                        }
 1079                                                     }
 1080                                                  
-1081           1                                  6      @{$txn}{qw(mysql_thread_id query_id hostname ip user query_status)}
-               1                                  8   
+1081           1                                  5      @{$txn}{qw(mysql_thread_id query_id hostname ip user query_status)}
+               1                                  7   
 1082                                                        = ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status);
 1083                                                  
-1084           1                                  8      return $txn;
+1084           1                                  6      return $txn;
 1085                                                  }
 1086                                                  
 1087                                                  sub _d {

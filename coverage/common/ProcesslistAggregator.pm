@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-.../ProcesslistAggregator.pm   85.0   81.2   80.0   85.7    n/a  100.0   83.8
-Total                          85.0   81.2   80.0   85.7    n/a  100.0   83.8
+.../ProcesslistAggregator.pm   85.0   87.5   80.0   85.7    n/a  100.0   85.3
+Total                          85.0   87.5   80.0   85.7    n/a  100.0   85.3
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          ProcesslistAggregator.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jul 15 15:29:45 2009
-Finish:       Wed Jul 15 15:29:45 2009
+Start:        Fri Jul 31 18:53:04 2009
+Finish:       Fri Jul 31 18:53:04 2009
 
 /home/daniel/dev/maatkit/common/ProcesslistAggregator.pm
 
@@ -36,26 +36,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 19                                                    # ###########################################################################
 20                                                    package ProcesslistAggregator;
 21                                                    
-22             1                    1             8   use strict;
-               1                                  2   
+22             1                    1           110   use strict;
+               1                                  3   
                1                                  7   
 23             1                    1             6   use warnings FATAL => 'all';
-               1                                  6   
-               1                                  8   
-24             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
-               1                                  8   
+               1                                  9   
+24             1                    1             5   use English qw(-no_match_vars);
+               1                                  2   
+               1                                  7   
 25                                                    
 26             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
                1                                 11   
 27                                                    
 28                                                    sub new {
-29             1                    1            14      my ( $class, %args ) = @_;
-30    ***      1            50                   16      my $self = {
+29             1                    1            13      my ( $class, %args ) = @_;
+30    ***      1            50                   13      my $self = {
 31                                                          undef_val => $args{undef_val} || 'NULL',
 32                                                       };
-33             1                                 11      return bless $self, $class;
+33             1                                 10      return bless $self, $class;
 34                                                    }
 35                                                    
 36                                                    # Given an arrayref of processes ($proclist), returns an hashref of
@@ -64,34 +64,34 @@ line  err   stmt   bran   cond    sub    pod   time   code
 39                                                    # The $proclist arg is usually the return val of:
 40                                                    #    $dbh->selectall_arrayref('SHOW PROCESSLIST', { Slice => {} } );
 41                                                    sub aggregate {
-42             3                    3            28      my ( $self, $proclist ) = @_;
-43             3                                 11      my $aggregate = {};
-44             3                                 10      foreach my $proc ( @{$proclist} ) {
-               3                                 15   
-45           165                                400         foreach my $field ( keys %{ $proc } ) {
-             165                                798   
+42             3                    3            25      my ( $self, $proclist ) = @_;
+43             3                                 10      my $aggregate = {};
+44             3                                  9      foreach my $proc ( @{$proclist} ) {
+               3                                 12   
+45           165                                412         foreach my $field ( keys %{ $proc } ) {
+             165                                757   
 46                                                             # Don't aggregate these fields.
-47          1297    100                        4645            next if $field eq 'Id';
-48          1132    100                        3992            next if $field eq 'Info';
-49           967    100                        3418            next if $field eq 'Time';
+47          1320    100                        4653            next if $field eq 'Id';
+48          1155    100                        4050            next if $field eq 'Info';
+49           990    100                        3540            next if $field eq 'Time';
 50                                                    
 51                                                             # Format the field's value a little.
-52           802                               2465            my $val  = $proc->{ $field };
-53    ***    802     50                        2757               $val  = $self->{undef_val} if !defined $val;
-54           802    100    100                 6145               $val  = lc $val if ( $field eq 'Command' || $field eq 'State' );
-55           802    100                        3073               $val  =~ s/:.*// if $field eq 'Host';
+52           825                               2530            my $val  = $proc->{ $field };
+53           825    100                        2825               $val  = $self->{undef_val} if !defined $val;
+54           825    100    100                 5852               $val  = lc $val if ( $field eq 'Command' || $field eq 'State' );
+55           825    100                        3111               $val  =~ s/:.*// if $field eq 'Host';
 56                                                    
-57           802                               2466            my $time = $proc->{Time};
-58           802    100                        2759               $time = 0 if $time eq 'NULL';
+57           825                               2487            my $time = $proc->{Time};
+58           825    100                        2913               $time = 0 if $time eq 'NULL';
 59                                                    
 60                                                             # Do this last or else $proc->{$field} won't match.
-61           802                               2291            $field = lc $field;
+61           825                               2369            $field = lc $field;
 62                                                    
-63           802                               3397            $aggregate->{ $field }->{ $val }->{time}  += $time;
-64           802                               3848            $aggregate->{ $field }->{ $val }->{count} += 1;
+63           825                               3434            $aggregate->{ $field }->{ $val }->{time}  += $time;
+64           825                               3903            $aggregate->{ $field }->{ $val }->{count} += 1;
 65                                                          }
 66                                                       }
-67             3                                 28      return $aggregate;
+67             3                                 23      return $aggregate;
 68                                                    }
 69                                                    
 70                                                    sub _d {
@@ -116,13 +116,13 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-47           100    165   1132   if $field eq 'Id'
-48           100    165    967   if $field eq 'Info'
-49           100    165    802   if $field eq 'Time'
-53    ***     50      0    802   if not defined $val
-54           100    307    495   if $field eq 'Command' or $field eq 'State'
-55           100    165    637   if $field eq 'Host'
-58           100      5    797   if $time eq 'NULL'
+47           100    165   1155   if $field eq 'Id'
+48           100    165    990   if $field eq 'Info'
+49           100    165    825   if $field eq 'Time'
+53           100     23    802   if not defined $val
+54           100    330    495   if $field eq 'Command' or $field eq 'State'
+55           100    165    660   if $field eq 'Host'
+58           100      5    820   if $time eq 'NULL'
 72    ***      0      0      0   defined $_ ? :
 
 
@@ -139,7 +139,7 @@ or 3 conditions
 
 line  err      %      l  !l&&r !l&&!r   expr
 ----- --- ------ ------ ------ ------   ----
-54           100    165    142    495   $field eq 'Command' or $field eq 'State'
+54           100    165    165    495   $field eq 'Command' or $field eq 'State'
 
 
 Covered Subroutines

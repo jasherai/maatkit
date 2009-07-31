@@ -9,8 +9,8 @@ Total                         100.0  100.0  100.0  100.0    n/a  100.0  100.0
 Run:          Quoter.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:20:53 2009
-Finish:       Wed Jun 10 17:20:53 2009
+Start:        Fri Jul 31 18:53:19 2009
+Finish:       Fri Jul 31 18:53:19 2009
 
 /home/daniel/dev/maatkit/common/Quoter.pm
 
@@ -34,62 +34,62 @@ line  err   stmt   bran   cond    sub    pod   time   code
 17                                                    # ###########################################################################
 18                                                    # Quoter package $Revision: 3186 $
 19                                                    # ###########################################################################
-20             1                    1             6   use strict;
-               1                                  2   
-               1                                115   
-21             1                    1             5   use warnings FATAL => 'all';
+20             1                    1             5   use strict;
                1                                  3   
+               1                                105   
+21             1                    1             6   use warnings FATAL => 'all';
+               1                                  2   
                1                                  6   
 22                                                    
 23                                                    package Quoter;
 24                                                    
 25             1                    1             5   use English qw(-no_match_vars);
-               1                                  2   
+               1                                  3   
                1                                  6   
 26                                                    
 27             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
-               1                                 10   
+               1                                  2   
+               1                                 12   
 28                                                    
 29                                                    sub new {
 30             1                    1             4      my ( $class ) = @_;
-31             1                                 13      bless {}, $class;
+31             1                                 12      bless {}, $class;
 32                                                    }
 33                                                    
 34                                                    sub quote {
-35             5                    5            25      my ( $self, @vals ) = @_;
-36             5                                 18      foreach my $val ( @vals ) {
-37             7                                 35         $val =~ s/`/``/g;
+35             5                    5            23      my ( $self, @vals ) = @_;
+36             5                                 17      foreach my $val ( @vals ) {
+37             7                                 33         $val =~ s/`/``/g;
 38                                                       }
-39             5                                 16      return join('.', map { '`' . $_ . '`' } @vals);
-               7                                 50   
+39             5                                 17      return join('.', map { '`' . $_ . '`' } @vals);
+               7                                 45   
 40                                                    }
 41                                                    
 42                                                    sub quote_val {
-43             8                    8            38      my ( $self, @vals ) = @_;
+43             8                    8            34      my ( $self, @vals ) = @_;
 44                                                       return join(', ',
 45                                                          map {
-46             8    100                          26            if ( defined $_ ) {
+46             8    100                          27            if ( defined $_ ) {
               10                                 33   
-47             9                                 44               $_ =~ s/(['\\])/\\$1/g;
-48             9    100    100                  122               $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
+47             9                                 38               $_ =~ s/(['\\])/\\$1/g;
+48             9    100    100                  115               $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
 49                                                             }
 50                                                             else {
-51             1                                 24               'NULL';
+51             1                                  7               'NULL';
 52                                                             }
 53                                                          } @vals
 54                                                       );
 55                                                    }
 56                                                    
 57                                                    sub split_unquote {
-58             4                    4            19      my ( $self, $db_tbl, $default_db ) = @_;
-59             4                                 17      $db_tbl =~ s/`//g;
-60             4                                 21      my ( $db, $tbl ) = split(/[.]/, $db_tbl);
-61             4    100                          19      if ( !$tbl ) {
-62             2                                  4         $tbl = $db;
-63             2                                  6         $db  = $default_db;
+58             4                    4            18      my ( $self, $db_tbl, $default_db ) = @_;
+59             4                                 16      $db_tbl =~ s/`//g;
+60             4                                 19      my ( $db, $tbl ) = split(/[.]/, $db_tbl);
+61             4    100                          16      if ( !$tbl ) {
+62             2                                  6         $tbl = $db;
+63             2                                  4         $db  = $default_db;
 64                                                       }
-65             4                                 31      return ($db, $tbl);
+65             4                                 29      return ($db, $tbl);
 66                                                    }
 67                                                    
 68                                                    1;

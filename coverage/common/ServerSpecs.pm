@@ -9,8 +9,8 @@ Total                          80.4   51.8   62.5   94.1    n/a  100.0   71.1
 Run:          ServerSpecs.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:21:01 2009
-Finish:       Wed Jun 10 17:21:02 2009
+Start:        Fri Jul 31 18:53:26 2009
+Finish:       Fri Jul 31 18:53:26 2009
 
 /home/daniel/dev/maatkit/common/ServerSpecs.pm
 
@@ -38,61 +38,61 @@ line  err   stmt   bran   cond    sub    pod   time   code
 21                                                    # ServerSpecs - Gather info on server hardware and configuration
 22                                                    package ServerSpecs;
 23                                                    
-24             1                    1            14   use strict;
-               1                                  3   
-               1                                 10   
-25             1                    1            10   use warnings FATAL => 'all';
-               1                                  4   
-               1                                 10   
+24             1                    1             9   use strict;
+               1                                  2   
+               1                                  6   
+25             1                    1             6   use warnings FATAL => 'all';
+               1                                  2   
+               1                                  7   
 26                                                    
 27             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
-               1                                 10   
+               1                                  6   
 28                                                    
 29             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  3   
-               1                                 11   
+               1                                 10   
 30                                                    
 31                                                    sub server_specs {
-32             1                    1            12      my %server;
+32             1                    1            11      my %server;
 33                                                    
 34             1                                  2      @{ $server{problems} } = ();
-               1                                  6   
+               1                                  4   
 35                                                    
 36             1                                  6      $server{os}->{name} = $OSNAME;
 37                                                       # TODO: ought to go into some common library of utility funcs...
-38    ***      1     50                        2698      $server{os}->{regsize} = `file /bin/ls` =~ m/64-bit/ ? '64' : '32';
+38    ***      1     50                        2766      $server{os}->{regsize} = `file /bin/ls` =~ m/64-bit/ ? '64' : '32';
 39                                                    
-40             1                                 19      $server{os}->{version} = _os_version();
+40             1                                 20      $server{os}->{version} = _os_version();
 41                                                    
-42    ***      1     50                          18      if ( -f '/lib/libc.so.6' ) {
-43             1                               1660         my $stuff = `/lib/libc.so.6`;
-44             1                                 46         ($server{sw}->{libc}->{ver}) = $stuff =~ m/GNU C.*release version (.+), /;
-45    ***      1      0                          17         $server{sw}->{libc}->{threading}
+42    ***      1     50                          17      if ( -f '/lib/libc.so.6' ) {
+43             1                               1414         my $stuff = `/lib/libc.so.6`;
+44             1                                 44         ($server{sw}->{libc}->{ver}) = $stuff =~ m/GNU C.*release version (.+), /;
+45    ***      1      0                          19         $server{sw}->{libc}->{threading}
       ***            50                               
 46                                                             = $stuff =~ m/Native POSIX/    ? 'NPTL'
 47                                                             : $stuff =~ m/linuxthreads-\d/ ? 'Linuxthreads'
 48                                                             :                                'Unknown';
-49             1                                 14         ($server{sw}->{libc}->{compiled_by}) = $stuff =~ m/Compiled by (.*)/;
-50             1                                  6         $server{sw}->{libc}->{GNU_LIBPTHREAD_VERSION} = do {
-51             1                              85152            my $ver = `getconf GNU_LIBPTHREAD_VERSION`;
-52             1                                 16            chomp $ver;
-53             1                                 22            $ver;
+49             1                                 16         ($server{sw}->{libc}->{compiled_by}) = $stuff =~ m/Compiled by (.*)/;
+50             1                                  7         $server{sw}->{libc}->{GNU_LIBPTHREAD_VERSION} = do {
+51             1                               1921            my $ver = `getconf GNU_LIBPTHREAD_VERSION`;
+52             1                                 13            chomp $ver;
+53             1                                 17            $ver;
 54                                                          };
 55                                                       }
 56                                                    
-57    ***      1     50                          36      if ( -f '/proc/cpuinfo' ) {
-58             1                               2863         my $info = `cat /proc/cpuinfo`;
-59             1                                 45         my $cores = scalar( map { $_ } $info =~ m/(^processor)/gm );
-               2                                 12   
-60             1                                 20         $server{cpu}->{cores} = $cores;
-61             1                               7947         $server{cpu}->{count}
+57    ***      1     50                          34      if ( -f '/proc/cpuinfo' ) {
+58             1                               2404         my $info = `cat /proc/cpuinfo`;
+59             1                                 44         my $cores = scalar( map { $_ } $info =~ m/(^processor)/gm );
+               2                                 11   
+60             1                                 19         $server{cpu}->{cores} = $cores;
+61             1                               6850         $server{cpu}->{count}
 62                                                             = `grep 'physical id' /proc/cpuinfo | sort | uniq | wc -l`;
 63             1                                 51         ($server{cpu}->{speed})
 64                                                             = join(' ', 'MHz:', $info =~ m/cpu MHz.*: (\d+)/g);
-65             1                                 15         ($server{cpu}->{cache}) = $info =~ m/cache size.*: (.+)/;
-66             1                                 18         ($server{cpu}->{model}) = $info =~ m/model name.*: (.+)/;
-67    ***      1     50                          28         $server{cpu}->{regsize} = $info =~ m/flags.*\blm\b/ ? '64' : '32';
+65             1                                 18         ($server{cpu}->{cache}) = $info =~ m/cache size.*: (.+)/;
+66             1                                 12         ($server{cpu}->{model}) = $info =~ m/model name.*: (.+)/;
+67    ***      1     50                          32         $server{cpu}->{regsize} = $info =~ m/flags.*\blm\b/ ? '64' : '32';
 68                                                       }
 69                                                       else {
 70                                                          # MSWin32, maybe?
@@ -102,77 +102,77 @@ line  err   stmt   bran   cond    sub    pod   time   code
 74                                                       # This requires root access. If it can't run (non-root), there simply
 75                                                       # won't be any memory slot info reported.
 76             1                                 17      @{$server{memory}->{slots}} = _memory_slots();
-               1                                 22   
+               1                                 20   
 77                                                    
-78    ***      1     50                       16812      if ( chomp(my $mem = `free -b`) ) {
-79             1                                 84         my @words = $mem =~ m/(\w+)/g;
-80             1                                 16         my @keys;
-81             1                                 14         while ( my $key = shift @words ) {
-82             7    100                          43            last if $key eq 'Mem';
-83             6                                 58            push @keys, $key;
+78    ***      1     50                        2297      if ( chomp(my $mem = `free -b`) ) {
+79             1                                 47         my @words = $mem =~ m/(\w+)/g;
+80             1                                  7         my @keys;
+81             1                                  8         while ( my $key = shift @words ) {
+82             7    100                          27            last if $key eq 'Mem';
+83             6                                 31            push @keys, $key;
 84                                                          }
-85             1                                 11         foreach my $key ( @keys ) {
-86             6                                 53            $server{memory}->{$key} = shorten(shift @words);
+85             1                                  9         foreach my $key ( @keys ) {
+86             6                                 34            $server{memory}->{$key} = shorten(shift @words);
 87                                                          }
 88                                                       }
 89                                                    
-90    ***      1     50                        5357      if ( chomp(my $df = `df -hT` ) ) {
-91             8                                 93         $df = "\n\t" . join("\n\t",
-92             1                                 40            grep { $_ !~ m/^(varrun|varlock|udev|devshm|lrm)/ }
+90    ***      1     50                        2839      if ( chomp(my $df = `df -hT` ) ) {
+91             8                                 47         $df = "\n\t" . join("\n\t",
+92             1                                 25            grep { $_ !~ m/^(varrun|varlock|udev|devshm|lrm)/ }
 93                                                             split(/\n/, $df));
-94             1                                 28         $server{storage}->{df} = $df;
+94             1                                 19         $server{storage}->{df} = $df;
 95                                                       }
 96                                                    
 97                                                       # LVM
-98             1                               3816      chomp(my $vgs_cmd = `which vgs`);
-99    ***      1     50                          48      if ( -f $vgs_cmd ) {
-100            1                               7957         chomp(my $vgs_output = `$vgs_cmd`);
-101            1                                 41         $vgs_output =~ s/^\s*/\t/g;
-102            1                                 32         $server{storage}->{vgs} = $vgs_output;
+98             1                               1860      chomp(my $vgs_cmd = `which vgs`);
+99    ***      1     50                          30      if ( -f $vgs_cmd ) {
+100            1                               4012         chomp(my $vgs_output = `$vgs_cmd`);
+101            1                                 26         $vgs_output =~ s/^\s*/\t/g;
+102            1                                 17         $server{storage}->{vgs} = $vgs_output;
 103                                                      }
 104                                                      else {
 105   ***      0                                  0         $server{storage}->{vgs} = 'No LVM2';
 106                                                      }
 107                                                   
-108            1                                 34      get_raid_info(\%server);
+108            1                                 21      get_raid_info(\%server);
 109                                                   
-110            1                               4805      chomp($server{os}->{swappiness} = `cat /proc/sys/vm/swappiness`);
-111   ***      1     50                          41      push @{ $server{problems} },
+110            1                               2567      chomp($server{os}->{swappiness} = `cat /proc/sys/vm/swappiness`);
+111   ***      1     50                          22      push @{ $server{problems} },
       ***      0                                  0   
 112                                                         "*** Server swappiness != 60; is currently: $server{os}->{swappiness}"
 113                                                         if $server{os}->{swappiness} != 60;
 114                                                   
-115            1                                 40      check_proc_sys_net_ipv4_values(\%server);
+115            1                                 24      check_proc_sys_net_ipv4_values(\%server);
 116                                                   
-117            1                                 39      return \%server;
+117            1                                 23      return \%server;
 118                                                   }
 119                                                   
 120                                                   sub get_raid_info
 121                                                   {
 122            1                    1             8      my ( $server ) = @_;
 123                                                   
-124            1                                 13      $server->{storage}->{raid} = {};
-125   ***      1     50                       12953      if ( chomp(my $dmesg = `dmesg | grep '^scsi[0-9]'`) ) {
-126   ***      1     50                          53         if (my ($raid) = $dmesg =~ m/: (.*MegaRaid)/mi) {
-127            1                                 27            $server->{storage}->{raid}{$raid} = _get_raid_info_megarc();
+124            1                                 11      $server->{storage}->{raid} = {};
+125   ***      1     50                        6978      if ( chomp(my $dmesg = `dmesg | grep '^scsi[0-9]'`) ) {
+126   ***      1     50                          33         if (my ($raid) = $dmesg =~ m/: (.*MegaRaid)/mi) {
+127            1                                 18            $server->{storage}->{raid}{$raid} = _get_raid_info_megarc();
 128                                                         }
-129   ***      1     50                          28         if (my ($raid) = $dmesg =~ m/: (aacraid)/m) {
-130            1                                 24            $server->{storage}->{raid}{$raid} = _get_raid_info_arcconf();
+129   ***      1     50                          18         if (my ($raid) = $dmesg =~ m/: (aacraid)/m) {
+130            1                                 15            $server->{storage}->{raid}{$raid} = _get_raid_info_arcconf();
 131                                                         }
-132   ***      1     50                          33         if (my ($raid) = $dmesg =~ m/: (3ware [0-9]+ Storage Controller)/m) {
-133            1                                 10            $server->{storage}->{raid}{$raid} = _get_raid_info_tw_cli();
+132   ***      1     50                          20         if (my ($raid) = $dmesg =~ m/: (3ware [0-9]+ Storage Controller)/m) {
+133            1                                  8            $server->{storage}->{raid}{$raid} = _get_raid_info_tw_cli();
 134                                                         }
 135                                                      }
 136                                                   }
 137                                                   
 138                                                   sub _get_raid_info_megarc
 139                                                   {
-140            1                    1             6      my $result = '';
+140            1                    1             5      my $result = '';
 141                                                      # TODO: MegaCli may exist on a 64-bit machine, we should choose the correct
 142                                                      # one based on 64-bitness of the OS.
-143            1                              11353      my $megarc = `which megarc && megarc -AllAdpInfo -aALL`;
-144   ***      1     50                          33      if ( $megarc ) {
-145   ***      1     50                          62         if ( $megarc =~ /No MegaRAID Found/i ) {
+143            1                               6038      my $megarc = `which megarc && megarc -AllAdpInfo -aALL`;
+144   ***      1     50                          20      if ( $megarc ) {
+145   ***      1     50                          35         if ( $megarc =~ /No MegaRAID Found/i ) {
 146   ***      0      0                           0            if ( -f '/opt/MegaRAID/MegaCli/MegaCli' ) {
       ***             0                               
 147   ***      0                                  0               $megarc  = `/opt/MegaRAID/MegaCli/MegaCli -AdpAllInfo -aALL`;
@@ -187,76 +187,76 @@ line  err   stmt   bran   cond    sub    pod   time   code
 156                                                            }
 157                                                         }
 158                                                         else {
-159            1                               7946            $megarc .= `megarc -AdpBbuCmd -GetBbuStatus -aALL`;
+159            1                               4389            $megarc .= `megarc -AdpBbuCmd -GetBbuStatus -aALL`;
 160                                                         }
 161                                                      }
 162                                                   
-163   ***      1     50                          28      if ( $megarc ) {
-164   ***      1     50                          67         $result .= ($megarc =~ /^(Product Name.*\n)/m ? $1 : '');
-165   ***      1     50                          35         $result .= ($megarc =~ /^(BBU.*\n)/m ? $1 : '');
-166   ***      1     50                          22         $result .= ($megarc =~ /^(Battery Warning.*\n)/m ? $1 : '');
-167   ***      1     50                          31         $result .= ($megarc =~ /^(Alarm.*\n)/m ? $1 : '');
-168   ***      1     50                          53         $result .= ($megarc =~ /(Device Present.*?\n)\s+Supported/ms ? $1 : '');
-169   ***      1     50                          42         $result .= ($megarc =~ /(Battery state.*?\n)isSOHGood/ms ? $1 : '');
-170            1                                 48         $result =~ s/^/   /mg;
+163   ***      1     50                          18      if ( $megarc ) {
+164   ***      1     50                          42         $result .= ($megarc =~ /^(Product Name.*\n)/m ? $1 : '');
+165   ***      1     50                          19         $result .= ($megarc =~ /^(BBU.*\n)/m ? $1 : '');
+166   ***      1     50                          17         $result .= ($megarc =~ /^(Battery Warning.*\n)/m ? $1 : '');
+167   ***      1     50                          18         $result .= ($megarc =~ /^(Alarm.*\n)/m ? $1 : '');
+168   ***      1     50                          21         $result .= ($megarc =~ /(Device Present.*?\n)\s+Supported/ms ? $1 : '');
+169   ***      1     50                          25         $result .= ($megarc =~ /(Battery state.*?\n)isSOHGood/ms ? $1 : '');
+170            1                                 24         $result =~ s/^/   /mg;
 171                                                      }
 172                                                      else {
 173   ***      0                                  0         $result .= "\n*** MegaRAID present but unable to check its status";
 174                                                      }
 175                                                   
-176            1                                 39      return $result;
+176            1                                 26      return $result;
 177                                                   }
 178                                                   
 179                                                   sub _get_raid_info_arcconf
 180                                                   {
-181            1                    1             5      my $result = '';
-182            1                                  5      my $arcconf;
-183   ***      1     50                          36      if (-x '/usr/StorMan/arcconf') {
+181            1                    1             4      my $result = '';
+182            1                                  2      my $arcconf;
+183   ***      1     50                          15      if (-x '/usr/StorMan/arcconf') {
 184   ***      0                                  0         $arcconf = `/usr/StorMan/arcconf GETCONFIG 1`;
 185                                                      }
 186                                                      else {
-187            1                              11449         $arcconf = `which arcconf && arcconf GETCONFIG 1`;
+187            1                               5920         $arcconf = `which arcconf && arcconf GETCONFIG 1`;
 188                                                      }
-189   ***      1     50                          28      if ( $arcconf ) {
-190   ***      1     50                          87         $result .= ($arcconf =~ /^(\s*Controller Model.*\n)/m ? $1 : '');
-191   ***      1     50                          41         $result .= ($arcconf =~ /^(\s*Controller Status.*\n)/m ? $1 : '');
-192   ***      1     50                          36         $result .= ($arcconf =~ /^(\s*Installed memory.*\n)/m ? $1 : '');
-193   ***      1     50                          45         $result .= ($arcconf =~ /^(\s*Temperature.*\n)/m ? $1 : '');
-194   ***      1     50                          42         $result .= ($arcconf =~ /^(\s*Defunct disk drive count.*\n)/m ? $1 : '');
-195   ***      1     50                         102         $result .= ($arcconf =~ /^(\s*Logical devices\/Failed \(error\)\/Degraded.*\n)/m ? $1 : '');
-196   ***      1     50                         112         $result .= ($arcconf =~ /^(\s*Write-cache mode.*\n)/m ? $1 : '');
-197   ***      1     50                         100         $result .= ($arcconf =~ /^(\s*Write-cache setting.*\n)/m ? $1 : '');
-198   ***      1     50                          84         $result .= ($arcconf =~ /^(\s*Controller Battery Information.*?\n\n)/ms ? $1 : '');
+189   ***      1     50                          15      if ( $arcconf ) {
+190   ***      1     50                         292         $result .= ($arcconf =~ /^(\s*Controller Model.*\n)/m ? $1 : '');
+191   ***      1     50                          21         $result .= ($arcconf =~ /^(\s*Controller Status.*\n)/m ? $1 : '');
+192   ***      1     50                          25         $result .= ($arcconf =~ /^(\s*Installed memory.*\n)/m ? $1 : '');
+193   ***      1     50                          22         $result .= ($arcconf =~ /^(\s*Temperature.*\n)/m ? $1 : '');
+194   ***      1     50                          29         $result .= ($arcconf =~ /^(\s*Defunct disk drive count.*\n)/m ? $1 : '');
+195   ***      1     50                          52         $result .= ($arcconf =~ /^(\s*Logical devices\/Failed \(error\)\/Degraded.*\n)/m ? $1 : '');
+196   ***      1     50                          58         $result .= ($arcconf =~ /^(\s*Write-cache mode.*\n)/m ? $1 : '');
+197   ***      1     50                          51         $result .= ($arcconf =~ /^(\s*Write-cache setting.*\n)/m ? $1 : '');
+198   ***      1     50                          38         $result .= ($arcconf =~ /^(\s*Controller Battery Information.*?\n\n)/ms ? $1 : '');
 199                                                      }
 200                                                      else {
 201   ***      0                                  0         $result .= "\n*** aacraid present but unable to check its status";
 202                                                      }
 203                                                   
-204            1                                 38      return $result;
+204            1                                 22      return $result;
 205                                                   }
 206                                                   
 207                                                   sub _get_raid_info_tw_cli
 208                                                   {
-209            1                    1             5      my $result = '';
-210            1                              11187      my $tw_cli = `which tw_cli && tw_cli /c0 show all`;
-211   ***      1     50                          27      if ( $tw_cli ) {
-212   ***      1     50                          60         $result .= ($tw_cli =~ /^\/c0\s*(Model.*\n)/m ? $1 : '');
-213   ***      1     50                          27         $result .= ($tw_cli =~ /^\/c0\s*(Memory Installed.*\n)/m ? $1 : '');
-214   ***      1     50                          26         $result .= ($tw_cli =~ /\n(\n.*)/ms ? $1 : '');
-215            1                                 34         $result =~ s/^/   /mg;
+209            1                    1             3      my $result = '';
+210            1                               6007      my $tw_cli = `which tw_cli && tw_cli /c0 show all`;
+211   ***      1     50                          21      if ( $tw_cli ) {
+212   ***      1     50                          36         $result .= ($tw_cli =~ /^\/c0\s*(Model.*\n)/m ? $1 : '');
+213   ***      1     50                          19         $result .= ($tw_cli =~ /^\/c0\s*(Memory Installed.*\n)/m ? $1 : '');
+214   ***      1     50                          19         $result .= ($tw_cli =~ /\n(\n.*)/ms ? $1 : '');
+215            1                                 19         $result =~ s/^/   /mg;
 216                                                      }
 217                                                      else {
 218   ***      0                                  0         $result .= "\n*** 3ware Storage Controller present but unable to check its status";
 219                                                      }
 220                                                   
-221            1                                 46      return $result;
+221            1                                 30      return $result;
 222                                                   }
 223                                                   
 224                                                   sub check_proc_sys_net_ipv4_values
 225                                                   {
-226            1                    1            10      my ( $server, $sysctl_conf ) = @_;
+226            1                    1             9      my ( $server, $sysctl_conf ) = @_;
 227                                                   
-228            1                                102      my %ipv4_defaults = qw(
+228            1                                 69      my %ipv4_defaults = qw(
 229                                                         ip_forward                        0
 230                                                         ip_default_ttl                    64
 231                                                         ip_no_pmtu_disc                   0
@@ -304,36 +304,36 @@ line  err   stmt   bran   cond    sub    pod   time   code
 273                                                         icmp_ignore_bogus_error_responses 0
 274                                                      );
 275                                                   
-276   ***      1            50                    9      $sysctl_conf ||= '/etc/sysctl.conf';
-277            1                                 14      load_ipv4_defaults(\%ipv4_defaults, $sysctl_conf);
+276   ***      1            50                    6      $sysctl_conf ||= '/etc/sysctl.conf';
+277            1                                  7      load_ipv4_defaults(\%ipv4_defaults, $sysctl_conf);
 278                                                   
-279            1                                  9      $server->{os}->{non_default_ipv4_vals} = '';
-280   ***      1     50                        6386      if ( chomp(my $ipv4_files = `ls -1p /proc/sys/net/ipv4/`) ) {
-281            1                                 68         foreach my $ipv4_file ( split "\n", $ipv4_files ) {
-282           81    100                         655            next if !exists $ipv4_defaults{$ipv4_file};
-283           43                             197486            chomp(my $val = `cat /proc/sys/net/ipv4/$ipv4_file`);
-284           43                                782            $val =~ s/\s+/_/g;
-285           43    100                         819            if ( $ipv4_defaults{$ipv4_file} ne $val ) {
-286            6                                 55               push @{ $server->{problems} },
-               6                                227   
+279            1                                  6      $server->{os}->{non_default_ipv4_vals} = '';
+280   ***      1     50                        3384      if ( chomp(my $ipv4_files = `ls -1p /proc/sys/net/ipv4/`) ) {
+281            1                                 42         foreach my $ipv4_file ( split "\n", $ipv4_files ) {
+282           81    100                         414            next if !exists $ipv4_defaults{$ipv4_file};
+283           43                             104351            chomp(my $val = `cat /proc/sys/net/ipv4/$ipv4_file`);
+284           43                                516            $val =~ s/\s+/_/g;
+285           43    100                         502            if ( $ipv4_defaults{$ipv4_file} ne $val ) {
+286            6                                 35               push @{ $server->{problems} },
+               6                                134   
 287                                                                  "Not default value /proc/sys/net/ipv4/$ipv4_file\:\n" .
 288                                                                  "\t\tset=$val\n\t\tdefault=$ipv4_defaults{$ipv4_file}";
 289                                                            }
 290                                                         }
 291                                                      }
 292                                                   
-293            1                                111      return;
+293            1                                 71      return;
 294                                                   }
 295                                                   
 296                                                   # Load default values for /proc/sys/net/ipv4/ settings from sysctl.conf file
 297                                                   sub load_ipv4_defaults {
-298            1                    1             7      my ( $ipv4_defaults, $sysctl_conf ) = @_;
+298            1                    1             5      my ( $ipv4_defaults, $sysctl_conf ) = @_;
 299                                                    
-300            1                                 17      my %conf_ipv4_defaults = parse_sysctl_conf($sysctl_conf);
+300            1                                  6      my %conf_ipv4_defaults = parse_sysctl_conf($sysctl_conf);
 301                                                   
 302                                                      # Yes we could do this with hash slices, but I want to see which
 303                                                      # sysctl vars are overriden from the conf file
-304            1                                 42      foreach my $var ( keys %conf_ipv4_defaults ) {
+304            1                                 23      foreach my $var ( keys %conf_ipv4_defaults ) {
 305   ***      0                                  0         if ( MKDEBUG && exists $ipv4_defaults->{$var} ) {
 306                                                            _d('sysctl override', $var, ': conf=', $conf_ipv4_defaults{$var},
 307                                                               'overrides default', $ipv4_defaults->{$var});
@@ -341,54 +341,54 @@ line  err   stmt   bran   cond    sub    pod   time   code
 309   ***      0                                  0         $ipv4_defaults->{$var} = $conf_ipv4_defaults{$var};
 310                                                      }
 311                                                   
-312            1                                  6      return;
+312            1                                  4      return;
 313                                                   }
 314                                                   
 315                                                   sub parse_sysctl_conf {
-316            2                    2            31      my ( $sysctl_conf ) = @_;
-317            2                                  8      my %sysctl;
+316            2                    2            19      my ( $sysctl_conf ) = @_;
+317            2                                  6      my %sysctl;
 318                                                   
-319   ***      2     50                          72      if ( !-f $sysctl_conf ) {
+319   ***      2     50                          30      if ( !-f $sysctl_conf ) {
 320   ***      0                                  0         MKDEBUG && _d('sysctl file', $sysctl_conf, 'does not exist');
 321   ***      0                                  0         return;
 322                                                      }
 323                                                   
-324   ***      2     50                         217      if ( open my $SYSCTL, '<', $sysctl_conf ) {
-325            2                                 10         MKDEBUG && _d('Parsing', $sysctl_conf);
-326            2                                306         while ( my $line = <$SYSCTL> ) {
-327          104    100                         977            next if $line  =~ /^#/; # skip comments
-328           31    100                         349            next unless $line =~ /\s*net.ipv4.(\w+)\s*=\s*(\w+)/;
-329            4                                 46            my ( $var, $val ) = ( $1, $2 );
-330            4                                 16            MKDEBUG && _d('sysctl:', $var, '=', $val);
-331   ***      4     50    100                  131            if ( exists $sysctl{$var} && MKDEBUG ) {
+324   ***      2     50                         134      if ( open my $SYSCTL, '<', $sysctl_conf ) {
+325            2                                  7         MKDEBUG && _d('Parsing', $sysctl_conf);
+326            2                                 42         while ( my $line = <$SYSCTL> ) {
+327          104    100                         539            next if $line  =~ /^#/; # skip comments
+328           31    100                         188            next unless $line =~ /\s*net.ipv4.(\w+)\s*=\s*(\w+)/;
+329            4                                 25            my ( $var, $val ) = ( $1, $2 );
+330            4                                 11            MKDEBUG && _d('sysctl:', $var, '=', $val);
+331   ***      4     50    100                   76            if ( exists $sysctl{$var} && MKDEBUG ) {
 332   ***      0                                  0               _d('Duplicate sysctl var:', $var,
 333                                                                  '; was', $sysctl{$var}, ', is now', $val);
 334                                                            }
-335            4                                 51            $sysctl{$var} = $val;
+335            4                                 30            $sysctl{$var} = $val;
 336                                                         }
 337                                                      }
 338                                                      else {
 339   ***      0                                  0         warn "Cannot read $sysctl_conf: $OS_ERROR";
 340                                                      }
 341                                                   
-342            2                                 24      return %sysctl;
+342            2                                 13      return %sysctl;
 343                                                   }
 344                                                   
 345                                                   sub _can_run {
-346            4                    4            54      my ( $cmd ) = @_;
+346            4                    4            41      my ( $cmd ) = @_;
 347                                                      # Throw away all output; we're only interested in the return value.
-348            4                              19302      my $retval = system("$cmd 2>/dev/null > /dev/null");
-349            4                                 51      $retval = $retval >> 8;
-350            4                                 16      MKDEBUG && _d('Running', $cmd, 'returned', $retval);
-351            4    100                         207      return !$retval ? 1 : 0;
+348            4                              10924      my $retval = system("$cmd 2>/dev/null > /dev/null");
+349            4                                 35      $retval = $retval >> 8;
+350            4                                 13      MKDEBUG && _d('Running', $cmd, 'returned', $retval);
+351            4    100                         134      return !$retval ? 1 : 0;
 352                                                   }
 353                                                   
 354                                                   sub _os_version {
-355            1                    1             7      my $version = 'unknown version';
+355            1                    1             6      my $version = 'unknown version';
 356                                                   
-357   ***      1     50                           8      if ( _can_run('cat /etc/*release') ) {
+357   ***      1     50                           6      if ( _can_run('cat /etc/*release') ) {
       ***             0                               
-358            1                               5218         chomp(my $rel = `cat /etc/*release`);
+358            1                               3404         chomp(my $rel = `cat /etc/*release`);
 359   ***      1     50                          48         if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
 360            1                                  6            $version = $desc;
 361                                                         }
@@ -408,9 +408,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 375                                                   }
 376                                                   
 377                                                   sub _memory_slots {
-378            2                    2            31      my @memory_slots = ();
+378            2                    2            21      my @memory_slots = ();
 379                                                   
-380   ***      2     50                          21      if ( _can_run('dmidecode') ) {
+380   ***      2     50                          15      if ( _can_run('dmidecode') ) {
 381   ***      0                                  0         my $dmi = `dmidecode`;
 382   ***      0                                  0         chomp $dmi;
 383   ***      0                                  0         my @mem_info = $dmi =~ m/^(Memory Device\n.*?)\n\n/gsm;
@@ -426,32 +426,32 @@ line  err   stmt   bran   cond    sub    pod   time   code
 391                                                         _d('No memory slots info because dmidecode cannot be ran');
 392                                                      }
 393                                                   
-394            2                                 50      return @memory_slots;
+394            2                                 35      return @memory_slots;
 395                                                   }
 396                                                   
 397                                                   # TODO: remove this sub and use Transformers instead, somehow, maybe.
 398                                                   sub shorten
 399                                                   {
-400            6                    6            44      my ( $number, $kb, $d ) = @_;
-401            6                                 26      my $n = 0;
-402            6                                 20      my $short;
+400            6                    6            22      my ( $number, $kb, $d ) = @_;
+401            6                                 19      my $n = 0;
+402            6                                 12      my $short;
 403                                                   
-404   ***      6            50                   40      $kb ||= 1;
-405   ***      6            50                   35      $d  ||= 2;
+404   ***      6            50                   23      $kb ||= 1;
+405   ***      6            50                   23      $d  ||= 2;
 406                                                   
-407   ***      6     50                          32      if ( $kb ) {
-408            6                                 51         while ( $number > 1_023 ) { $number /= 1_024; $n++; }
-              12                                 56   
-              12                                 84   
+407   ***      6     50                          20      if ( $kb ) {
+408            6                                 30         while ( $number > 1_023 ) { $number /= 1_024; $n++; }
+              12                                 35   
+              12                                 48   
 409                                                      }
 410                                                      else {
 411   ***      0                                  0         while ($number > 999) { $number /= 1000; $n++; }
       ***      0                                  0   
       ***      0                                  0   
 412                                                      }
-413            6                                131      $short = sprintf "%.${d}f%s", $number, ('','k','M','G','T')[$n];
-414            6    100                          91      return $1 if $short =~ /^(.+)\.(00)$/o; # 12.00 -> 12 but not 12.00k -> 12k
-415            5                                 80      return $short;
+413            6                                 81      $short = sprintf "%.${d}f%s", $number, ('','k','M','G','T')[$n];
+414            6    100                          54      return $1 if $short =~ /^(.+)\.(00)$/o; # 12.00 -> 12 but not 12.00k -> 12k
+415            5                                 44      return $short;
 416                                                   }
 417                                                   
 418                                                   sub _d {

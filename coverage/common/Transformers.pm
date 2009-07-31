@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...it/common/Transformers.pm   82.4   88.1   90.0   86.7    n/a  100.0   85.4
-Total                          82.4   88.1   90.0   86.7    n/a  100.0   85.4
+...it/common/Transformers.pm   85.4   88.7   87.0   87.5    n/a  100.0   86.8
+Total                          85.4   88.7   87.0   87.5    n/a  100.0   86.8
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          Transformers.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:21:42 2009
-Finish:       Wed Jun 10 17:21:42 2009
+Start:        Fri Jul 31 18:54:09 2009
+Finish:       Fri Jul 31 18:54:09 2009
 
 /home/daniel/dev/maatkit/common/Transformers.pm
 
@@ -32,7 +32,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # Transformers package $Revision: 3407 $
+18                                                    # Transformers package $Revision: 4299 $
 19                                                    # ###########################################################################
 20                                                    
 21                                                    # Transformers - Common transformation and beautification subroutines
@@ -41,22 +41,22 @@ line  err   stmt   bran   cond    sub    pod   time   code
 24             1                    1             5   use strict;
                1                                  2   
                1                                  5   
-25             1                    1             5   use warnings FATAL => 'all';
-               1                                  3   
-               1                                  5   
-26             1                    1             6   use English qw(-no_match_vars);
+25             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
-               1                                  9   
-27             1                    1            10   use Time::Local qw(timelocal);
+               1                                  7   
+26             1                    1             5   use English qw(-no_match_vars);
+               1                                  2   
+               1                                 17   
+27             1                    1            11   use Time::Local qw(timelocal);
                1                                  3   
-               1                                 25   
-28             1                    1            10   use Digest::MD5 qw(md5_hex);
+               1                                 18   
+28             1                    1             6   use Digest::MD5 qw(md5_hex);
                1                                  3   
-               1                                115   
+               1                                  6   
 29                                                    
-30             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  2   
-               1                                  8   
+30             1                    1            86   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  3   
+               1                                  7   
 31                                                    
 32                                                    require Exporter;
 33                                                    our @ISA         = qw(Exporter);
@@ -70,160 +70,211 @@ line  err   stmt   bran   cond    sub    pod   time   code
 41                                                       ts
 42                                                       parse_timestamp
 43                                                       unix_timestamp
-44                                                       make_checksum
-45                                                    );
-46                                                    
-47                                                    sub micro_t {
-48            10                   10            49      my ( $t, %args ) = @_;
-49            10    100                          51      my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
-50            10    100                          42      my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
-51            10                                 24      my $f;
+44                                                       any_unix_timestamp
+45                                                       make_checksum
+46                                                    );
+47                                                    
+48                                                    our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
+49                                                    our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?/;
+50                                                    our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
+51                                                                                             # like a MySQL YYMMDD without hh:mm:ss.
 52                                                    
-53            10    100                          50      $t = 0 if $t < 0;
-54                                                    
-55                                                       # "Remove" scientific notation so the regex below does not make
-56                                                       # 6.123456e+18 into 6.123456.
-57    ***     10     50                          40      $t = sprintf('%.17f', $t) if $t =~ /e/;
+53                                                    sub micro_t {
+54            10                   10            54      my ( $t, %args ) = @_;
+55            10    100                          45      my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
+56            10    100                          35      my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
+57            10                                 22      my $f;
 58                                                    
-59                                                       # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
-60                                                       # because sprintf() rounds.
-61            10                                 93      $t =~ s/\.(\d{1,6})\d*/\.$1/;
-62                                                    
-63            10    100    100                  137      if ($t > 0 && $t <= 0.000999) {
+59            10    100                          53      $t = 0 if $t < 0;
+60                                                    
+61                                                       # "Remove" scientific notation so the regex below does not make
+62                                                       # 6.123456e+18 into 6.123456.
+63    ***     10     50                          38      $t = sprintf('%.17f', $t) if $t =~ /e/;
+64                                                    
+65                                                       # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
+66                                                       # because sprintf() rounds.
+67            10                                 87      $t =~ s/\.(\d{1,6})\d*/\.$1/;
+68                                                    
+69            10    100    100                  139      if ($t > 0 && $t <= 0.000999) {
                     100    100                        
                     100                               
-64             1                                 15         $f = ($t * 1000000) . 'us';
-65                                                       }
-66                                                       elsif ($t >= 0.001000 && $t <= 0.999999) {
-67             4                                 46         $f = sprintf("%.${p_ms}f", $t * 1000);
-68             4                                 22         $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
-69                                                       }
-70                                                       elsif ($t >= 1) {
-71             3                                 18         $f = sprintf("%.${p_s}f", $t);
-72             3                                 16         $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
-73                                                       }
-74                                                       else {
-75             2                                  6         $f = 0;  # $t should = 0 at this point
-76                                                       }
-77                                                    
-78            10                                 63      return $f;
-79                                                    }
-80                                                    
-81                                                    # Returns what percentage $is of $of.
-82                                                    sub percentage_of {
-83             2                    2            12      my ( $is, $of, %args ) = @_;
-84             2           100                   15      my $p   = $args{p} || 0; # float precision
-85             2    100                           8      my $fmt = $p ? "%.${p}f" : "%d";
-86    ***      2            50                   50      return sprintf $fmt, ($is * 100) / ($of ||= 1);
-87                                                    }
-88                                                    
-89                                                    sub secs_to_time {
-90             4                    4            15      my ( $secs, $fmt ) = @_;
-91             4           100                   17      $secs ||= 0;
-92             4    100                          17      return '00:00' unless $secs;
-93                                                    
-94                                                       # Decide what format to use, if not given
-95    ***      3    100     50                   22      $fmt ||= $secs >= 86_400 ? 'd'
+70             1                                 15         $f = ($t * 1000000) . 'us';
+71                                                       }
+72                                                       elsif ($t >= 0.001000 && $t <= 0.999999) {
+73             4                                 42         $f = sprintf("%.${p_ms}f", $t * 1000);
+74             4                                 21         $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
+75                                                       }
+76                                                       elsif ($t >= 1) {
+77             3                                 17         $f = sprintf("%.${p_s}f", $t);
+78             3                                 17         $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
+79                                                       }
+80                                                       else {
+81             2                                  6         $f = 0;  # $t should = 0 at this point
+82                                                       }
+83                                                    
+84            10                                 58      return $f;
+85                                                    }
+86                                                    
+87                                                    # Returns what percentage $is of $of.
+88                                                    sub percentage_of {
+89             2                    2            11      my ( $is, $of, %args ) = @_;
+90             2           100                   15      my $p   = $args{p} || 0; # float precision
+91             2    100                           8      my $fmt = $p ? "%.${p}f" : "%d";
+92    ***      2            50                   23      return sprintf $fmt, ($is * 100) / ($of ||= 1);
+93                                                    }
+94                                                    
+95                                                    sub secs_to_time {
+96             4                    4            16      my ( $secs, $fmt ) = @_;
+97             4           100                   13      $secs ||= 0;
+98             4    100                          33      return '00:00' unless $secs;
+99                                                    
+100                                                      # Decide what format to use, if not given
+101   ***      3    100     50                   19      $fmt ||= $secs >= 86_400 ? 'd'
                     100                               
-96                                                              : $secs >= 3_600  ? 'h'
-97                                                              :                   'm';
-98                                                    
-99                                                       return
-100            3    100                          49         $fmt eq 'd' ? sprintf(
+102                                                             : $secs >= 3_600  ? 'h'
+103                                                             :                   'm';
+104                                                   
+105                                                      return
+106            3    100                          38         $fmt eq 'd' ? sprintf(
                     100                               
-101                                                            "%d+%02d:%02d:%02d",
-102                                                            int($secs / 86_400),
-103                                                            int(($secs % 86_400) / 3_600),
-104                                                            int(($secs % 3_600) / 60),
-105                                                            $secs % 60)
-106                                                         : $fmt eq 'h' ? sprintf(
-107                                                            "%02d:%02d:%02d",
-108                                                            int(($secs % 86_400) / 3_600),
-109                                                            int(($secs % 3_600) / 60),
-110                                                            $secs % 60)
-111                                                         : sprintf(
-112                                                            "%02d:%02d",
-113                                                            int(($secs % 3_600) / 60),
-114                                                            $secs % 60);
-115                                                   }
-116                                                   
-117                                                   sub shorten {
-118            5                    5            30      my ( $num, %args ) = @_;
-119            5    100                          24      my $p = defined $args{p} ? $args{p} : 2;     # float precision
-120            5    100                          20      my $d = defined $args{d} ? $args{d} : 1_024; # divisor
-121            5                                 13      my $n = 0;
-122            5                                 30      my @units = ('', qw(k M G T P E Z Y));
-123            5           100                   54      while ( $num >= $d && $n < @units - 1 ) {
-124           16                                 46         $num /= $d;
-125           16                                113         ++$n;
-126                                                      }
-127            5    100    100                  119      return sprintf(
-128                                                         $num =~ m/\./ || $n
-129                                                            ? "%.${p}f%s"
-130                                                            : '%d',
-131                                                         $num, $units[$n]);
-132                                                   }
-133                                                   
-134                                                   sub ts {
-135   ***      0                    0             0      my ( $time ) = @_;
-136   ***      0                                  0      my ( $sec, $min, $hour, $mday, $mon, $year )
-137                                                         = localtime($time);
-138   ***      0                                  0      $mon  += 1;
-139   ***      0                                  0      $year += 1900;
-140   ***      0                                  0      return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
-141                                                         $year, $mon, $mday, $hour, $min, $sec);
-142                                                   }
-143                                                   
-144                                                   # Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.  Also
-145                                                   # handles a timestamp with fractions after it.
-146                                                   sub parse_timestamp {
-147            2                    2             9      my ( $val ) = @_;
-148   ***      2     50                          31      if ( my($y, $m, $d, $h, $i, $s, $f)
-149                                                            = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?$/ )
-150                                                      {
-151            2    100                          37         return sprintf "%d-%02d-%02d %02d:%02d:"
+107                                                            "%d+%02d:%02d:%02d",
+108                                                            int($secs / 86_400),
+109                                                            int(($secs % 86_400) / 3_600),
+110                                                            int(($secs % 3_600) / 60),
+111                                                            $secs % 60)
+112                                                         : $fmt eq 'h' ? sprintf(
+113                                                            "%02d:%02d:%02d",
+114                                                            int(($secs % 86_400) / 3_600),
+115                                                            int(($secs % 3_600) / 60),
+116                                                            $secs % 60)
+117                                                         : sprintf(
+118                                                            "%02d:%02d",
+119                                                            int(($secs % 3_600) / 60),
+120                                                            $secs % 60);
+121                                                   }
+122                                                   
+123                                                   sub shorten {
+124            6                    6            30      my ( $num, %args ) = @_;
+125            6    100                          29      my $p = defined $args{p} ? $args{p} : 2;     # float precision
+126            6    100                          19      my $d = defined $args{d} ? $args{d} : 1_024; # divisor
+127            6                                 18      my $n = 0;
+128            6                                 31      my @units = ('', qw(k M G T P E Z Y));
+129            6           100                   59      while ( $num >= $d && $n < @units - 1 ) {
+130           17                                 47         $num /= $d;
+131           17                                122         ++$n;
+132                                                      }
+133            6    100    100                  113      return sprintf(
+134                                                         $num =~ m/\./ || $n
+135                                                            ? "%.${p}f%s"
+136                                                            : '%d',
+137                                                         $num, $units[$n]);
+138                                                   }
+139                                                   
+140                                                   sub ts {
+141   ***      0                    0             0      my ( $time ) = @_;
+142   ***      0                                  0      my ( $sec, $min, $hour, $mday, $mon, $year )
+143                                                         = localtime($time);
+144   ***      0                                  0      $mon  += 1;
+145   ***      0                                  0      $year += 1900;
+146   ***      0                                  0      return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+147                                                         $year, $mon, $mday, $hour, $min, $sec);
+148                                                   }
+149                                                   
+150                                                   # Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.  Also
+151                                                   # handles a timestamp with fractions after it.
+152                                                   sub parse_timestamp {
+153            4                    4            15      my ( $val ) = @_;
+154   ***      4     50                          92      if ( my($y, $m, $d, $h, $i, $s, $f)
+155                                                            = $val =~ m/^$mysql_ts$/ )
+156                                                      {
+157            4    100                          56         return sprintf "%d-%02d-%02d %02d:%02d:"
                     100                               
-152                                                                        . (defined $f ? '%02.6f' : '%02d'),
-153                                                                        $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
-154                                                      }
-155   ***      0                                  0      return $val;
-156                                                   }
-157                                                   
-158                                                   # Turns a properly formatted timestamp like 2007-10-15 01:43:52
-159                                                   # into an int (seconds since epoch)
-160                                                   sub unix_timestamp {
-161            1                    1             4      my ( $val ) = @_;
-162   ***      1     50                          12      if ( my($y, $m, $d, $h, $i, $s)
-163                                                            = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
-164                                                      {
-165            1                                  8         return timelocal($s, $i, $h, $d, $m - 1, $y);
-166                                                      }
-167   ***      0                                  0      return $val;
-168                                                   }
-169                                                   
-170                                                   # Returns the rightmost 64 bits of an MD5 checksum of the value.
-171                                                   sub make_checksum {
-172            1                    1             5      my ( $val ) = @_;
-173            1                                 26      my $checksum = uc substr(md5_hex($val), -16);
-174            1                                 14      MKDEBUG && _d($checksum, 'checksum for', $val);
-175            1                                  5      return $checksum;
-176                                                   }
-177                                                   
-178                                                   sub _d {
-179   ***      0                    0                    my ($package, undef, $line) = caller 0;
-180   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-      ***      0                                      
-      ***      0                                      
-181   ***      0                                              map { defined $_ ? $_ : 'undef' }
-182                                                           @_;
-183   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-184                                                   }
-185                                                   
-186                                                   1;
+158                                                                        . (defined $f ? '%02.6f' : '%02d'),
+159                                                                        $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
+160                                                      }
+161   ***      0                                  0      return $val;
+162                                                   }
+163                                                   
+164                                                   # Turns a properly formatted timestamp like 2007-10-15 01:43:52
+165                                                   # into an int (seconds since epoch).  Optional microseconds are ignored.
+166                                                   sub unix_timestamp {
+167            8                    8           353      my ( $val ) = @_;
+168   ***      8     50                         118      if ( my($y, $m, $d, $h, $i, $s)
+169                                                        = $val =~ m/^$proper_ts$/ )
+170                                                      {
+171            8                                 46         return timelocal($s, $i, $h, $d, $m - 1, $y);
+172                                                      }
+173   ***      0                                  0      return $val;
+174                                                   }
+175                                                   
+176                                                   # Turns several different types of timestamps into a unix timestamp.
+177                                                   # Each type is auto-detected.  Supported types are:
+178                                                   #   * N[shdm]                Now - N[shdm]
+179                                                   #   * 071015 21:43:52        MySQL slow log timestamp
+180                                                   #   * 2009-07-01 [3:43:01]   Proper timestamp with options HH:MM:SS
+181                                                   #   * NOW()                  A MySQL time express
+182                                                   # For the last type, the callback arg is required.  It is passed the
+183                                                   # given value/expression and is expected to return a single value
+184                                                   # (the result of the expression).
+185                                                   sub any_unix_timestamp {
+186           10                   10           257      my ( $val, $callback ) = @_;
 187                                                   
-188                                                   # ###########################################################################
-189                                                   # End Transformers package
-190                                                   # ###########################################################################
+188           10    100                         161      if ( my ($n, $suffix) = $val =~ m/^$n_ts$/ ) {
+                    100                               
+                    100                               
+189            3    100                          29         $n = $suffix eq 's' ? $n            # Seconds
+      ***            50                               
+      ***            50                               
+                    100                               
+190                                                            : $suffix eq 'm' ? $n * 60       # Minutes
+191                                                            : $suffix eq 'h' ? $n * 3600     # Hours
+192                                                            : $suffix eq 'd' ? $n * 86400    # Days
+193                                                            :                  $n;           # default: Seconds
+194            3                                  7         MKDEBUG && _d('ts is now - N[shmd]:', $n);
+195            3                                 26         return time - $n;
+196                                                      }
+197                                                      elsif ( my ($ymd, $hms) = $val =~ m/^(\d{6})(?:\s+(\d+:\d+:\d+))?/ ) {
+198            2                                  5         MKDEBUG && _d('ts is MySQL slow log timestamp');
+199            2    100                           9         $val .= ' 00:00:00' unless $hms;
+200            2                                  7         return unix_timestamp(parse_timestamp($val));
+201                                                      }
+202                                                      elsif ( ($ymd, $hms) = $val =~ m/^(\d{4}-\d\d-\d\d)(?:[T ](\d+:\d+:\d+))?/) {
+203            2                                  5         MKDEBUG && _d('ts is properly formatted timestamp');
+204            2    100                           8         $val .= ' 00:00:00' unless $hms;
+205            2                                  8         return unix_timestamp($val);
+206                                                      }
+207                                                      else {
+208            3                                  8         MKDEBUG && _d('ts is MySQL expression');
+209   ***      3    100     66                   27         return $callback->($val) if $callback && ref $callback eq 'CODE';
+210                                                      }
+211                                                   
+212            2                                  5      MKDEBUG && _d('Unknown ts type:', $val);
+213            2                                 10      return;
+214                                                   }
+215                                                   
+216                                                   # Returns the rightmost 64 bits of an MD5 checksum of the value.
+217                                                   sub make_checksum {
+218            1                    1             4      my ( $val ) = @_;
+219            1                                 22      my $checksum = uc substr(md5_hex($val), -16);
+220            1                                  3      MKDEBUG && _d($checksum, 'checksum for', $val);
+221            1                                  5      return $checksum;
+222                                                   }
+223                                                   
+224                                                   sub _d {
+225   ***      0                    0                    my ($package, undef, $line) = caller 0;
+226   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+      ***      0                                      
+      ***      0                                      
+227   ***      0                                              map { defined $_ ? $_ : 'undef' }
+228                                                           @_;
+229   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+230                                                   }
+231                                                   
+232                                                   1;
+233                                                   
+234                                                   # ###########################################################################
+235                                                   # End Transformers package
+236                                                   # ###########################################################################
 
 
 Branches
@@ -231,27 +282,37 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-49           100      2      8   defined $args{'p_ms'} ? :
-50           100      1      9   defined $args{'p_s'} ? :
-53           100      1      9   if $t < 0
-57    ***     50      0     10   if $t =~ /e/
-63           100      1      9   if ($t > 0 and $t <= 0.000999) { }
+55           100      2      8   defined $args{'p_ms'} ? :
+56           100      1      9   defined $args{'p_s'} ? :
+59           100      1      9   if $t < 0
+63    ***     50      0     10   if $t =~ /e/
+69           100      1      9   if ($t > 0 and $t <= 0.000999) { }
              100      4      5   elsif ($t >= 0.001 and $t <= 0.999999) { }
              100      3      2   elsif ($t >= 1) { }
-85           100      1      1   $p ? :
-92           100      1      3   unless $secs
-95           100      1      1   $secs >= 3600 ? :
+91           100      1      1   $p ? :
+98           100      1      3   unless $secs
+101          100      1      1   $secs >= 3600 ? :
              100      1      2   $secs >= 86400 ? :
-100          100      1      1   $fmt eq 'h' ? :
+106          100      1      1   $fmt eq 'h' ? :
              100      1      2   $fmt eq 'd' ? :
-119          100      2      3   defined $args{'p'} ? :
-120          100      2      3   defined $args{'d'} ? :
-127          100      4      1   $num =~ /\./ || $n ? :
-148   ***     50      2      0   if (my($y, $m, $d, $h, $i, $s, $f) = $val =~ /^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?$/)
-151          100      1      1   defined $f ? :
-             100      1      1   defined $f ? :
-162   ***     50      1      0   if (my($y, $m, $d, $h, $i, $s) = $val =~ /^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/)
-180   ***      0      0      0   defined $_ ? :
+125          100      3      3   defined $args{'p'} ? :
+126          100      3      3   defined $args{'d'} ? :
+133          100      5      1   $num =~ /\./ || $n ? :
+154   ***     50      4      0   if (my($y, $m, $d, $h, $i, $s, $f) = $val =~ /^$mysql_ts$/)
+157          100      1      3   defined $f ? :
+             100      1      3   defined $f ? :
+168   ***     50      8      0   if (my($y, $m, $d, $h, $i, $s) = $val =~ /^$proper_ts$/)
+188          100      3      7   if (my($n, $suffix) = $val =~ /^$n_ts$/) { }
+             100      2      5   elsif (my($ymd, $hms) = $val =~ /^(\d{6})(?:\s+(\d+:\d+:\d+))?/) { }
+             100      2      3   elsif (($ymd, $hms) = $val =~ /^(\d{4}-\d\d-\d\d)(?:[T ](\d+:\d+:\d+))?/) { }
+189          100      1      1   $suffix eq 'd' ? :
+      ***     50      0      2   $suffix eq 'h' ? :
+      ***     50      0      2   $suffix eq 'm' ? :
+             100      1      2   $suffix eq 's' ? :
+199          100      1      1   unless $hms
+204          100      1      1   unless $hms
+209          100      1      2   if $callback and ref $callback eq 'CODE'
+226   ***      0      0      0   defined $_ ? :
 
 
 Conditions
@@ -261,51 +322,53 @@ and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-63           100      2      7      1   $t > 0 and $t <= 0.000999
+69           100      2      7      1   $t > 0 and $t <= 0.000999
              100      2      3      4   $t >= 0.001 and $t <= 0.999999
-123          100      4      1     16   $num >= $d and $n < @units - 1
+129          100      5      1     17   $num >= $d and $n < @units - 1
+209   ***     66      2      0      1   $callback and ref $callback eq 'CODE'
 
 or 2 conditions
 
 line  err      %      l     !l   expr
 ----- --- ------ ------ ------   ----
-84           100      1      1   $args{'p'} || 0
-86    ***     50      2      0   $of ||= 1
-91           100      3      1   $secs ||= 0
-95    ***     50      0      3   $fmt ||= $secs >= 86400 ? 'd' : ($secs >= 3600 ? 'h' : 'm')
+90           100      1      1   $args{'p'} || 0
+92    ***     50      2      0   $of ||= 1
+97           100      3      1   $secs ||= 0
+101   ***     50      0      3   $fmt ||= $secs >= 86400 ? 'd' : ($secs >= 3600 ? 'h' : 'm')
 
 or 3 conditions
 
 line  err      %      l  !l&&r !l&&!r   expr
 ----- --- ------ ------ ------ ------   ----
-127          100      3      1      1   $num =~ /\./ || $n
+133          100      4      1      1   $num =~ /\./ || $n
 
 
 Covered Subroutines
 -------------------
 
-Subroutine      Count Location                                           
---------------- ----- ---------------------------------------------------
-BEGIN               1 /home/daniel/dev/maatkit/common/Transformers.pm:24 
-BEGIN               1 /home/daniel/dev/maatkit/common/Transformers.pm:25 
-BEGIN               1 /home/daniel/dev/maatkit/common/Transformers.pm:26 
-BEGIN               1 /home/daniel/dev/maatkit/common/Transformers.pm:27 
-BEGIN               1 /home/daniel/dev/maatkit/common/Transformers.pm:28 
-BEGIN               1 /home/daniel/dev/maatkit/common/Transformers.pm:30 
-make_checksum       1 /home/daniel/dev/maatkit/common/Transformers.pm:172
-micro_t            10 /home/daniel/dev/maatkit/common/Transformers.pm:48 
-parse_timestamp     2 /home/daniel/dev/maatkit/common/Transformers.pm:147
-percentage_of       2 /home/daniel/dev/maatkit/common/Transformers.pm:83 
-secs_to_time        4 /home/daniel/dev/maatkit/common/Transformers.pm:90 
-shorten             5 /home/daniel/dev/maatkit/common/Transformers.pm:118
-unix_timestamp      1 /home/daniel/dev/maatkit/common/Transformers.pm:161
+Subroutine         Count Location                                           
+------------------ ----- ---------------------------------------------------
+BEGIN                  1 /home/daniel/dev/maatkit/common/Transformers.pm:24 
+BEGIN                  1 /home/daniel/dev/maatkit/common/Transformers.pm:25 
+BEGIN                  1 /home/daniel/dev/maatkit/common/Transformers.pm:26 
+BEGIN                  1 /home/daniel/dev/maatkit/common/Transformers.pm:27 
+BEGIN                  1 /home/daniel/dev/maatkit/common/Transformers.pm:28 
+BEGIN                  1 /home/daniel/dev/maatkit/common/Transformers.pm:30 
+any_unix_timestamp    10 /home/daniel/dev/maatkit/common/Transformers.pm:186
+make_checksum          1 /home/daniel/dev/maatkit/common/Transformers.pm:218
+micro_t               10 /home/daniel/dev/maatkit/common/Transformers.pm:54 
+parse_timestamp        4 /home/daniel/dev/maatkit/common/Transformers.pm:153
+percentage_of          2 /home/daniel/dev/maatkit/common/Transformers.pm:89 
+secs_to_time           4 /home/daniel/dev/maatkit/common/Transformers.pm:96 
+shorten                6 /home/daniel/dev/maatkit/common/Transformers.pm:124
+unix_timestamp         8 /home/daniel/dev/maatkit/common/Transformers.pm:167
 
 Uncovered Subroutines
 ---------------------
 
-Subroutine      Count Location                                           
---------------- ----- ---------------------------------------------------
-_d                  0 /home/daniel/dev/maatkit/common/Transformers.pm:179
-ts                  0 /home/daniel/dev/maatkit/common/Transformers.pm:135
+Subroutine         Count Location                                           
+------------------ ----- ---------------------------------------------------
+_d                     0 /home/daniel/dev/maatkit/common/Transformers.pm:225
+ts                     0 /home/daniel/dev/maatkit/common/Transformers.pm:141
 
 

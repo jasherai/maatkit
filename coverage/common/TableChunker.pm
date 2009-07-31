@@ -9,8 +9,8 @@ Total                          90.4   77.4   77.8   86.4    n/a  100.0   86.2
 Run:          TableChunker.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:21:09 2009
-Finish:       Wed Jun 10 17:21:10 2009
+Start:        Fri Jul 31 18:53:33 2009
+Finish:       Fri Jul 31 18:53:34 2009
 
 /home/daniel/dev/maatkit/common/TableChunker.pm
 
@@ -34,38 +34,38 @@ line  err   stmt   bran   cond    sub    pod   time   code
 17                                                    # ###########################################################################
 18                                                    # TableChunker package $Revision: 3186 $
 19                                                    # ###########################################################################
-20             1                    1            22   use strict;
-               1                                  5   
-               1                                 13   
-21             1                    1             6   use warnings FATAL => 'all';
+20             1                    1             9   use strict;
                1                                  3   
+               1                                  6   
+21             1                    1             5   use warnings FATAL => 'all';
                1                                  7   
+               1                                  6   
 22                                                    
 23                                                    package TableChunker;
 24                                                    
-25             1                    1             5   use English qw(-no_match_vars);
+25             1                    1             6   use English qw(-no_match_vars);
+               1                                  2   
+               1                                  5   
+26             1                    1            12   use POSIX qw(ceil);
                1                                  3   
-               1                                  7   
-26             1                    1            14   use POSIX qw(ceil);
+               1                                  8   
+27             1                    1             7   use List::Util qw(min max);
                1                                  3   
-               1                                  6   
-27             1                    1            10   use List::Util qw(min max);
-               1                                  3   
-               1                                 14   
+               1                                 11   
 28             1                    1             7   use Data::Dumper;
-               1                                  6   
-               1                                  9   
+               1                                  2   
+               1                                 10   
 29                                                    $Data::Dumper::Quotekeys = 0;
 30                                                    $Data::Dumper::Indent    = 0;
 31                                                    
-32             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  2   
-               1                                 10   
+32             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  3   
+               1                                 13   
 33                                                    
 34                                                    sub new {
 35             1                    1            16      my ( $class, %args ) = @_;
 36    ***      1     50                           6      die "I need a quoter" unless $args{quoter};
-37             1                                 12      bless { %args }, $class;
+37             1                                 13      bless { %args }, $class;
 38                                                    }
 39                                                    
 40                                                    my $EPOCH      = '1970-01-01';
@@ -83,68 +83,68 @@ line  err   stmt   bran   cond    sub    pod   time   code
 52                                                    #   whether the table can be chunked exactly, if requested (zero otherwise)
 53                                                    #   arrayref of columns that support chunking
 54                                                    sub find_chunk_columns {
-55             5                    5           118      my ( $self, $table, $opts ) = @_;
-56             5           100                   28      $opts ||= {};
+55             5                    5            85      my ( $self, $table, $opts ) = @_;
+56             5           100                   22      $opts ||= {};
 57                                                    
-58             5                                 17      my %prefer;
-59    ***      5    100     66                   33      if ( $opts->{possible_keys} && @{$opts->{possible_keys}} ) {
-               1                                  8   
+58             5                                 12      my %prefer;
+59    ***      5    100     66                   29      if ( $opts->{possible_keys} && @{$opts->{possible_keys}} ) {
+               1                                  9   
 60             1                                  3         my $i = 1;
-61             1                                  4         %prefer = map { $_ => $i++ } @{$opts->{possible_keys}};
+61             1                                  3         %prefer = map { $_ => $i++ } @{$opts->{possible_keys}};
                1                                  6   
-               1                                  5   
+               1                                  4   
 62                                                          MKDEBUG && _d('Preferred indexes for chunking:',
-63             1                                  3            join(', ', @{$opts->{possible_keys}}));
+63             1                                  2            join(', ', @{$opts->{possible_keys}}));
 64                                                       }
 65                                                    
 66                                                       # See if there's an index that will support chunking.
-67             5                                 14      my @possible_keys;
-68             5                                 35      KEY:
-69             5                                 16      foreach my $key ( values %{ $table->{keys} } ) {
+67             5                                 16      my @possible_keys;
+68             5                                 31      KEY:
+69             5                                 11      foreach my $key ( values %{ $table->{keys} } ) {
 70                                                    
 71                                                          # Accept only BTREE indexes.
-72    ***     19     50                          90         next unless $key->{type} eq 'BTREE';
+72    ***     19     50                          77         next unless $key->{type} eq 'BTREE';
 73                                                    
 74                                                          # Reject indexes with prefixed columns.
-75            19           100                   40         defined $_ && next KEY for @{ $key->{col_prefixes} };
-              19                                 51   
-              19                                141   
+75            19           100                   39         defined $_ && next KEY for @{ $key->{col_prefixes} };
+              19                                 46   
+              19                                118   
 76                                                    
 77                                                          # If exact, accept only unique, single-column indexes.
-78            18    100                          78         if ( $opts->{exact} ) {
-79    ***      4    100     66                   26            next unless $key->{is_unique} && @{$key->{cols}} == 1;
-               1                                  7   
+78            18    100                          73         if ( $opts->{exact} ) {
+79    ***      4    100     66                   25            next unless $key->{is_unique} && @{$key->{cols}} == 1;
+               1                                  8   
 80                                                          }
 81                                                    
-82            15                                 54         push @possible_keys, $key;
+82            15                                 50         push @possible_keys, $key;
 83                                                       }
 84                                                    
 85                                                       # Sort keys by preferred-ness.
-86            13           100                  155      @possible_keys = sort {
+86            13           100                  150      @possible_keys = sort {
                            100                        
-87             5                                 13         ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
+87             5                                 12         ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
 88                                                       } @possible_keys;
 89                                                    
 90                                                       MKDEBUG && _d('Possible keys in order:',
 91             5                                 17         join(', ', map { $_->{name} } @possible_keys));
 92                                                    
 93                                                       # Build list of candidate chunk columns.   
-94             5                                 17      my $can_chunk_exact = 0;
-95             5                                 19      my @candidate_cols;
-96             5                                 23      foreach my $key ( @possible_keys ) { 
-97            15                                 65         my $col = $key->{cols}->[0];
+94             5                                 16      my $can_chunk_exact = 0;
+95             5                                 13      my @candidate_cols;
+96             5                                 19      foreach my $key ( @possible_keys ) { 
+97            15                                 57         my $col = $key->{cols}->[0];
 98                                                    
 99                                                          # Accept only integer or real number type columns.
-100   ***     15    100     66                  129         next unless ( $int_types{$table->{type_for}->{$col}}
+100   ***     15    100     66                  123         next unless ( $int_types{$table->{type_for}->{$col}}
 101                                                                       || $real_types{$table->{type_for}->{$col}} );
 102                                                   
 103                                                         # Save the candidate column and its index.
-104           12                                108         push @candidate_cols, { column => $col, index => $key->{name} };
+104           12                                 79         push @candidate_cols, { column => $col, index => $key->{name} };
 105                                                      }
 106                                                   
-107            5    100    100                   37      $can_chunk_exact = 1 if ( $opts->{exact} && scalar @candidate_cols );
+107            5    100    100                   33      $can_chunk_exact = 1 if ( $opts->{exact} && scalar @candidate_cols );
 108                                                   
-109            5                                 12      if ( MKDEBUG ) {
+109            5                                 11      if ( MKDEBUG ) {
 110                                                         my $chunk_type = $opts->{exact} ? 'Exact' : 'Inexact';
 111                                                         _d($chunk_type, 'chunkable:',
 112                                                            join(', ', map { "$_->{column} on $_->{index}" } @candidate_cols));
@@ -152,35 +152,35 @@ line  err   stmt   bran   cond    sub    pod   time   code
 114                                                   
 115                                                      # Order the candidates by their original column order.
 116                                                      # Put the PK's first column first, if it's a candidate.
-117            5                                 16      my @result;
+117            5                                 10      my @result;
 118            5    100                          23      if ( !%prefer ) {
-119            4                                 14         MKDEBUG && _d('Ordering columns by order in tbl, PK first');
-120   ***      4     50                          25         if ( $table->{keys}->{PRIMARY} ) {
-121            4                                 24            my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
-122            4                                 15            @result = grep { $_->{column} eq $pk_first_col } @candidate_cols;
-               9                                 46   
-123            4                                 15            @candidate_cols = grep { $_->{column} ne $pk_first_col } @candidate_cols;
-               9                                 44   
+119            4                                 13         MKDEBUG && _d('Ordering columns by order in tbl, PK first');
+120   ***      4     50                          20         if ( $table->{keys}->{PRIMARY} ) {
+121            4                                 21            my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
+122            4                                 12            @result = grep { $_->{column} eq $pk_first_col } @candidate_cols;
+               9                                 39   
+123            4                                 12            @candidate_cols = grep { $_->{column} ne $pk_first_col } @candidate_cols;
+               9                                 39   
 124                                                         }
-125            4                                 14         my $i = 0;
-126            4                                 13         my %col_pos = map { $_ => $i++ } @{$table->{cols}};
-              42                                201   
-               4                                 20   
-127            4                                 21         push @result, sort { $col_pos{$a->{column}} <=> $col_pos{$b->{column}} }
-               2                                 10   
+125            4                                 12         my $i = 0;
+126            4                                 10         my %col_pos = map { $_ => $i++ } @{$table->{cols}};
+              42                                171   
+               4                                 21   
+127            4                                 18         push @result, sort { $col_pos{$a->{column}} <=> $col_pos{$b->{column}} }
+               2                                  9   
 128                                                                          @candidate_cols;
 129                                                      }
 130                                                      else {
 131            1                                  4         @result = @candidate_cols;
 132                                                      }
 133                                                   
-134            5                                 19      if ( MKDEBUG ) {
+134            5                                 17      if ( MKDEBUG ) {
 135                                                         _d('Chunkable columns:',
 136                                                            join(', ', map { "$_->{column} on $_->{index}" } @result));
 137                                                         _d('Can chunk exactly:', $can_chunk_exact);
 138                                                      }
 139                                                   
-140            5                                 80      return ($can_chunk_exact, \@result);
+140            5                                 65      return ($can_chunk_exact, \@result);
 141                                                   }
 142                                                   
 143                                                   # table:         output from TableParser::parse
@@ -196,31 +196,31 @@ line  err   stmt   bran   cond    sub    pod   time   code
 153                                                   # double-quotes, so it'll be easy to enclose them in single-quotes when used as
 154                                                   # command-line arguments.
 155                                                   sub calculate_chunks {
-156           16                   16          1019      my ( $self, %args ) = @_;
-157           16                                 96      foreach my $arg ( qw(table col min max rows_in_range size dbh) ) {
-158   ***    112     50                         513         die "Required argument $arg not given or undefined"
+156           16                   16           966      my ( $self, %args ) = @_;
+157           16                                 86      foreach my $arg ( qw(table col min max rows_in_range size dbh) ) {
+158   ***    112     50                         484         die "Required argument $arg not given or undefined"
 159                                                            unless defined $args{$arg};
 160                                                      }
 161                                                      MKDEBUG && _d('Arguments:',
 162                                                         join(', ',
-163           16                                 38            map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') } keys %args));
+163           16                                 36            map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') } keys %args));
 164                                                   
-165           16                                 47      my @chunks;
-166           16                                 53      my ($range_func, $start_point, $end_point);
-167           16                                 88      my $col_type = $args{table}->{type_for}->{$args{col}};
-168           16                                 38      MKDEBUG && _d('Chunking on', $args{col}, '(',$col_type,')');
+165           16                                 39      my @chunks;
+166           16                                 50      my ($range_func, $start_point, $end_point);
+167           16                                 96      my $col_type = $args{table}->{type_for}->{$args{col}};
+168           16                                 32      MKDEBUG && _d('Chunking on', $args{col}, '(',$col_type,')');
 169                                                   
 170                                                      # Determine chunk size in "distance between endpoints" that will give
 171                                                      # approximately the right number of rows between the endpoints.  Also
 172                                                      # find the start/end points as a number that Perl can do + and < on.
 173                                                   
-174           16    100                         161      if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+174           16    100                         157      if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
       ***            50                               
                     100                               
                     100                               
       ***            50                               
 175           10                                 35         $start_point = $args{min};
-176           10                                 29         $end_point   = $args{max};
+176           10                                 32         $end_point   = $args{max};
 177           10                                 28         $range_func  = 'range_num';
 178                                                      }
 179                                                      elsif ( $col_type eq 'timestamp' ) {
@@ -230,23 +230,23 @@ line  err   stmt   bran   cond    sub    pod   time   code
 183   ***      0                                  0         $range_func  = 'range_timestamp';
 184                                                      }
 185                                                      elsif ( $col_type eq 'date' ) {
-186            3                                 19         my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
-187            3                                  8         MKDEBUG && _d($sql);
-188            3                                  9         ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
-189            3                               6152         $range_func  = 'range_date';
+186            3                                 17         my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
+187            3                                  7         MKDEBUG && _d($sql);
+188            3                                  7         ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
+189            3                                642         $range_func  = 'range_date';
 190                                                      }
 191                                                      elsif ( $col_type eq 'time' ) {
 192            1                                  7         my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
-193            1                                  2         MKDEBUG && _d($sql);
+193            1                                  3         MKDEBUG && _d($sql);
 194            1                                  2         ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
-195            1                                187         $range_func  = 'range_time';
+195            1                                179         $range_func  = 'range_time';
 196                                                      }
 197                                                      elsif ( $col_type eq 'datetime' ) {
 198                                                         # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
 199                                                         # to maintain just one kind of code, so I do it all with DATE_ADD().
-200            2                                 12         $start_point = $self->timestampdiff($args{dbh}, $args{min});
+200            2                                 11         $start_point = $self->timestampdiff($args{dbh}, $args{min});
 201            2                                 11         $end_point   = $self->timestampdiff($args{dbh}, $args{max});
-202            2                                  8         $range_func  = 'range_datetime';
+202            2                                  7         $range_func  = 'range_datetime';
 203                                                      }
 204                                                      else {
 205   ***      0                                  0         die "I don't know how to chunk $col_type\n";
@@ -255,28 +255,28 @@ line  err   stmt   bran   cond    sub    pod   time   code
 208                                                      # The endpoints could easily be undef, because of things like dates that
 209                                                      # are '0000-00-00'.  The only thing to do is make them zeroes and
 210                                                      # they'll be done in a single chunk then.
-211           16    100                          71      if ( !defined $start_point ) {
-212            1                                  2         MKDEBUG && _d('Start point is undefined');
-213            1                                  3         $start_point = 0;
+211           16    100                          67      if ( !defined $start_point ) {
+212            1                                  3         MKDEBUG && _d('Start point is undefined');
+213            1                                  4         $start_point = 0;
 214                                                      }
-215   ***     16     50     33                  175      if ( !defined $end_point || $end_point < $start_point ) {
+215   ***     16     50     33                  166      if ( !defined $end_point || $end_point < $start_point ) {
 216   ***      0                                  0         MKDEBUG && _d('End point is undefined or before start point');
 217   ***      0                                  0         $end_point = 0;
 218                                                      }
-219           16                                 37      MKDEBUG && _d('Start and end of chunk range:',$start_point,',', $end_point);
+219           16                                 33      MKDEBUG && _d('Start and end of chunk range:',$start_point,',', $end_point);
 220                                                   
 221                                                      # Calculate the chunk size, in terms of "distance between endpoints."  If
 222                                                      # possible and requested, forbid chunks from being any bigger than
 223                                                      # specified.
-224           16                                107      my $interval = $args{size} * ($end_point - $start_point) / $args{rows_in_range};
-225           16    100                          74      if ( $int_types{$col_type} ) {
-226           11                                 80         $interval = ceil($interval);
+224           16                                102      my $interval = $args{size} * ($end_point - $start_point) / $args{rows_in_range};
+225           16    100                          70      if ( $int_types{$col_type} ) {
+226           11                                 71         $interval = ceil($interval);
 227                                                      }
-228           16           100                   56      $interval ||= $args{size};
+228           16           100                   61      $interval ||= $args{size};
 229   ***     16     50                          63      if ( $args{exact} ) {
 230   ***      0                                  0         $interval = $args{size};
 231                                                      }
-232           16                                 39      MKDEBUG && _d('Chunk interval:', $interval, 'units');
+232           16                                 35      MKDEBUG && _d('Chunk interval:', $interval, 'units');
 233                                                   
 234                                                      # Generate a list of chunk boundaries.  The first and last chunks are
 235                                                      # inclusive, and will catch any rows before or after the end of the
@@ -286,45 +286,45 @@ line  err   stmt   bran   cond    sub    pod   time   code
 239                                                      # >= 30 AND < 60
 240                                                      # >= 60 AND < 90
 241                                                      # >= 90
-242           16                                 69      my $col = "`$args{col}`";
-243           16    100                          61      if ( $start_point < $end_point ) {
+242           16                                 65      my $col = "`$args{col}`";
+243           16    100                          57      if ( $start_point < $end_point ) {
 244           15                                 42         my ( $beg, $end );
-245           15                                 43         my $iter = 0;
+245           15                                 39         my $iter = 0;
 246                                                         for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
-247           42                                234            ( $beg, $end ) = $self->$range_func($args{dbh}, $i, $interval, $end_point);
+247           42                                223            ( $beg, $end ) = $self->$range_func($args{dbh}, $i, $interval, $end_point);
 248                                                   
 249                                                            # The first chunk.
-250           41    100                        3206            if ( $iter++ == 0 ) {
-251           14                                 93               push @chunks, "$col < " . $self->quote($end);
+250           41    100                        2845            if ( $iter++ == 0 ) {
+251           14                                 87               push @chunks, "$col < " . $self->quote($end);
 252                                                            }
 253                                                            else {
 254                                                               # The normal case is a chunk in the middle of the range somewhere.
-255           27                                136               push @chunks, "$col >= " . $self->quote($beg) . " AND $col < " . $self->quote($end);
+255           27                                128               push @chunks, "$col >= " . $self->quote($beg) . " AND $col < " . $self->quote($end);
 256                                                            }
-257           15                                 48         }
+257           15                                 39         }
 258                                                   
 259                                                         # Remove the last chunk and replace it with one that matches everything
 260                                                         # from the beginning of the last chunk to infinity.  If the chunk column
 261                                                         # is nullable, do NULL separately.
-262           14                                 75         my $nullable = $args{table}->{is_nullable}->{$args{col}};
-263           14                                 40         pop @chunks;
+262           14                                 66         my $nullable = $args{table}->{is_nullable}->{$args{col}};
+263           14                                 37         pop @chunks;
 264           14    100                          55         if ( @chunks ) {
-265           13                                 68            push @chunks, "$col >= " . $self->quote($beg);
+265           13                                 58            push @chunks, "$col >= " . $self->quote($beg);
 266                                                         }
 267                                                         else {
 268   ***      1     50                           5            push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
 269                                                         }
-270           14    100                          60         if ( $nullable ) {
-271            1                                  5            push @chunks, "$col IS NULL";
+270           14    100                          61         if ( $nullable ) {
+271            1                                  4            push @chunks, "$col IS NULL";
 272                                                         }
 273                                                   
 274                                                      }
 275                                                      else {
 276                                                         # There are no chunks; just do the whole table in one chunk.
-277            1                                  4         push @chunks, '1=1';
+277            1                                  3         push @chunks, '1=1';
 278                                                      }
 279                                                   
-280           15                                136      return @chunks;
+280           15                                132      return @chunks;
 281                                                   }
 282                                                   
 283                                                   sub get_first_chunkable_column {
@@ -338,46 +338,46 @@ line  err   stmt   bran   cond    sub    pod   time   code
 291                                                   # mebibytes, gibibytes, or kibibytes respectively.  If it's just a number, treat
 292                                                   # it as a number of rows and return right away.
 293                                                   sub size_to_rows {
-294            3                    3            75      my ( $self, $dbh, $db, $tbl, $size, $dumper ) = @_;
+294            3                    3            61      my ( $self, $dbh, $db, $tbl, $size, $dumper ) = @_;
 295                                                     
-296            3                                 24      my ( $num, $suffix ) = $size =~ m/^(\d+)([MGk])?$/;
-297            3    100                          18      if ( $suffix ) { # Convert to bytes.
+296            3                                 25      my ( $num, $suffix ) = $size =~ m/^(\d+)([MGk])?$/;
+297            3    100                          13      if ( $suffix ) { # Convert to bytes.
                     100                               
-298   ***      1      0                           8         $size = $suffix eq 'k' ? $num * 1_024
+298   ***      1      0                           7         $size = $suffix eq 'k' ? $num * 1_024
       ***            50                               
 299                                                               : $suffix eq 'M' ? $num * 1_024 * 1_024
 300                                                               :                  $num * 1_024 * 1_024 * 1_024;
 301                                                      }
 302                                                      elsif ( $num ) {
-303            1                                  8         return $num;
+303            1                                  7         return $num;
 304                                                      }
 305                                                      else {
 306            1                                  2         die "Invalid size spec $size; must be an integer with optional suffix kMG";
 307                                                      }
 308                                                   
-309            1                                  8      my @status = $dumper->get_table_status($dbh, $self->{quoter}, $db);
+309            1                                  7      my @status = $dumper->get_table_status($dbh, $self->{quoter}, $db);
 310            1                                  6      my ($status) = grep { $_->{name} eq $tbl } @status;
               23                                 82   
-311            1                                  6      my $avg_row_length = $status->{avg_row_length};
-312   ***      1     50                          18      return $avg_row_length ? ceil($size / $avg_row_length) : undef;
+311            1                                  5      my $avg_row_length = $status->{avg_row_length};
+312   ***      1     50                          16      return $avg_row_length ? ceil($size / $avg_row_length) : undef;
 313                                                   }
 314                                                   
 315                                                   # Determine the range of values for the chunk_col column on this table.
 316                                                   # The $where could come from many places; it is not trustworthy.
 317                                                   sub get_range_statistics {
 318            2                    2            93      my ( $self, $dbh, $db, $tbl, $col, $where ) = @_;
-319            2                                 10      my $q = $self->{quoter};
+319            2                                  8      my $q = $self->{quoter};
 320            2    100                          11      my $sql = "SELECT MIN(" . $q->quote($col) . "), MAX(" . $q->quote($col)
 321                                                         . ") FROM " . $q->quote($db, $tbl)
 322                                                         . ($where ? " WHERE $where" : '');
-323            2                                  6      MKDEBUG && _d($sql);
-324            2                                  6      my ( $min, $max );
-325            2                                  6      eval {
-326            2                                  6         ( $min, $max ) = $dbh->selectrow_array($sql);
+323            2                                  4      MKDEBUG && _d($sql);
+324            2                                  7      my ( $min, $max );
+325            2                                  8      eval {
+326            2                                  4         ( $min, $max ) = $dbh->selectrow_array($sql);
 327                                                      };
-328            2    100                         203      if ( $EVAL_ERROR ) {
+328            2    100                         218      if ( $EVAL_ERROR ) {
 329            1                                  4         chomp $EVAL_ERROR;
-330   ***      1     50                           6         if ( $EVAL_ERROR =~ m/in your SQL syntax/ ) {
+330   ***      1     50                           5         if ( $EVAL_ERROR =~ m/in your SQL syntax/ ) {
 331            1                                  3            die "$EVAL_ERROR (WHERE clause: $where)";
 332                                                         }
 333                                                         else {
@@ -398,65 +398,65 @@ line  err   stmt   bran   cond    sub    pod   time   code
 348                                                   # Quotes values only when needed, and uses double-quotes instead of
 349                                                   # single-quotes (see comments earlier).
 350                                                   sub quote {
-351           81                   81           316      my ( $self, $val ) = @_;
-352           81    100                         768      return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
+351           81                   81           301      my ( $self, $val ) = @_;
+352           81    100                         882      return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
 353                                                   }
 354                                                   
 355                                                   # Takes a query prototype and fills in placeholders.  The 'where' arg should be
 356                                                   # an arrayref of WHERE clauses that will be joined with AND.
 357                                                   sub inject_chunks {
-358            4                    4            64      my ( $self, %args ) = @_;
-359            4                                 24      foreach my $arg ( qw(database table chunks chunk_num query) ) {
-360   ***     20     50                          92         die "$arg is required" unless defined $args{$arg};
+358            4                    4            59      my ( $self, %args ) = @_;
+359            4                                 21      foreach my $arg ( qw(database table chunks chunk_num query) ) {
+360   ***     20     50                          87         die "$arg is required" unless defined $args{$arg};
 361                                                      }
-362            4                                  9      MKDEBUG && _d('Injecting chunk', $args{chunk_num});
-363            4                                 25      my $comment = sprintf("/*%s.%s:%d/%d*/",
+362            4                                 11      MKDEBUG && _d('Injecting chunk', $args{chunk_num});
+363            4                                 23      my $comment = sprintf("/*%s.%s:%d/%d*/",
 364                                                         $args{database}, $args{table},
 365            4                                 20         $args{chunk_num} + 1, scalar @{$args{chunks}});
-366            4                                 22      $args{query} =~ s!/\*PROGRESS_COMMENT\*/!$comment!;
-367            4                                 23      my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
+366            4                                 23      $args{query} =~ s!/\*PROGRESS_COMMENT\*/!$comment!;
+367            4                                 22      my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
 368   ***      4    100     66                   26      if ( $args{where} && grep { $_ } @{$args{where}} ) {
-               5                                 26   
-               4                                 21   
+               5                                 24   
+               4                                 19   
 369            4                                 20         $where .= " AND ("
-370            3                                 11            . join(" AND ", map { "($_)" } grep { $_ } @{$args{where}} )
+370            3                                 10            . join(" AND ", map { "($_)" } grep { $_ } @{$args{where}} )
                5                                 16   
                3                                 10   
 371                                                            . ")";
 372                                                      }
-373            4                                 57      my $db_tbl     = $self->{quoter}->quote(@args{qw(database table)});
-374            4    100                          22      my $index_hint = defined $args{index_hint}
+373            4                                 28      my $db_tbl     = $self->{quoter}->quote(@args{qw(database table)});
+374            4    100                          19      my $index_hint = defined $args{index_hint}
 375                                                                       ? "USE INDEX (`$args{index_hint}`)"
 376                                                                       : '';
-377            4                                  9      MKDEBUG && _d('Parameters:',
+377            4                                 10      MKDEBUG && _d('Parameters:',
 378                                                         Dumper({WHERE => $where, DB_TBL => $db_tbl, INDEX_HINT => $index_hint}));
-379            4                                 29      $args{query} =~ s!/\*WHERE\*/! $where!;
+379            4                                 28      $args{query} =~ s!/\*WHERE\*/! $where!;
 380            4                                 15      $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
-381            4                                 17      $args{query} =~ s!/\*INDEX_HINT\*/! $index_hint!;
-382            4                                 26      $args{query} =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
-383            4                                103      return $args{query};
+381            4                                 18      $args{query} =~ s!/\*INDEX_HINT\*/! $index_hint!;
+382            4                                 25      $args{query} =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
+383            4                                 34      return $args{query};
 384                                                   }
 385                                                   
 386                                                   # ###########################################################################
 387                                                   # Range functions.
 388                                                   # ###########################################################################
 389                                                   sub range_num {
-390           22                   22           117      my ( $self, $dbh, $start, $interval, $max ) = @_;
-391           22                                129      my $end = min($max, $start + $interval);
+390           22                   22           104      my ( $self, $dbh, $start, $interval, $max ) = @_;
+391           22                                116      my $end = min($max, $start + $interval);
 392                                                   
 393                                                   
 394                                                      # "Remove" scientific notation so the regex below does not make
 395                                                      # 6.123456e+18 into 6.12345.
-396           22    100                         132      $start = sprintf('%.17f', $start) if $start =~ /e/;
-397           22    100                         167      $end   = sprintf('%.17f', $end)   if $end   =~ /e/;
+396           22    100                         131      $start = sprintf('%.17f', $start) if $start =~ /e/;
+397           22    100                         164      $end   = sprintf('%.17f', $end)   if $end   =~ /e/;
 398                                                   
 399                                                      # Trim decimal places, if needed.  This helps avoid issues with float
 400                                                      # precision differing on different platforms.
-401           22                                108      $start =~ s/\.(\d{5}).*$/.$1/;
-402           22                                107      $end   =~ s/\.(\d{5}).*$/.$1/;
+401           22                                102      $start =~ s/\.(\d{5}).*$/.$1/;
+402           22                                110      $end   =~ s/\.(\d{5}).*$/.$1/;
 403                                                   
-404           22    100                         109      if ( $end > $start ) {
-405           21                                111         return ( $start, $end );
+404           22    100                          89      if ( $end > $start ) {
+405           21                                113         return ( $start, $end );
 406                                                      }
 407                                                      else {
 408            1                                  3         die "Chunk size is too small: $end !> $start\n";
@@ -464,25 +464,25 @@ line  err   stmt   bran   cond    sub    pod   time   code
 410                                                   }
 411                                                   
 412                                                   sub range_time {
-413            3                    3            17      my ( $self, $dbh, $start, $interval, $max ) = @_;
-414            3                                 25      my $sql = "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))";
-415            3                                  8      MKDEBUG && _d($sql);
-416            3                                  7      return $dbh->selectrow_array($sql);
+413            3                    3            14      my ( $self, $dbh, $start, $interval, $max ) = @_;
+414            3                                 28      my $sql = "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))";
+415            3                                  6      MKDEBUG && _d($sql);
+416            3                                  8      return $dbh->selectrow_array($sql);
 417                                                   }
 418                                                   
 419                                                   sub range_date {
-420           11                   11            61      my ( $self, $dbh, $start, $interval, $max ) = @_;
-421           11                                 95      my $sql = "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))";
-422           11                                 24      MKDEBUG && _d($sql);
-423           11                                 28      return $dbh->selectrow_array($sql);
+420           11                   11            59      my ( $self, $dbh, $start, $interval, $max ) = @_;
+421           11                                 86      my $sql = "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))";
+422           11                                 26      MKDEBUG && _d($sql);
+423           11                                 25      return $dbh->selectrow_array($sql);
 424                                                   }
 425                                                   
 426                                                   sub range_datetime {
-427            6                    6            33      my ( $self, $dbh, $start, $interval, $max ) = @_;
-428            6                                 63      my $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND), "
+427            6                    6            31      my ( $self, $dbh, $start, $interval, $max ) = @_;
+428            6                                 64      my $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND), "
 429                                                          . "DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)";
-430            6                                 13      MKDEBUG && _d($sql);
-431            6                                 13      return $dbh->selectrow_array($sql);
+430            6                                 12      MKDEBUG && _d($sql);
+431            6                                 14      return $dbh->selectrow_array($sql);
 432                                                   }
 433                                                   
 434                                                   sub range_timestamp {
@@ -500,21 +500,21 @@ line  err   stmt   bran   cond    sub    pod   time   code
 446                                                   # 2037-06-25 11:29:04.  I know of no workaround.  TO_DAYS('0000-....') is NULL,
 447                                                   # so we treat it as 0.
 448                                                   sub timestampdiff {
-449            4                    4            18      my ( $self, $dbh, $time ) = @_;
-450            4                                 26      my $sql = "SELECT (COALESCE(TO_DAYS('$time'), 0) * 86400 + TIME_TO_SEC('$time')) "
+449            4                    4            17      my ( $self, $dbh, $time ) = @_;
+450            4                                 27      my $sql = "SELECT (COALESCE(TO_DAYS('$time'), 0) * 86400 + TIME_TO_SEC('$time')) "
 451                                                         . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
 452            4                                  8      MKDEBUG && _d($sql);
 453            4                                  8      my ( $diff ) = $dbh->selectrow_array($sql);
-454            4                                748      $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
-455            4                                 10      MKDEBUG && _d($sql);
+454            4                                686      $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
+455            4                                  9      MKDEBUG && _d($sql);
 456            4                                  9      my ( $check ) = $dbh->selectrow_array($sql);
-457   ***      4     50                         551      die <<"   EOF"
+457   ***      4     50                         528      die <<"   EOF"
 458                                                      Incorrect datetime math: given $time, calculated $diff but checked to $check.
 459                                                      This is probably because you are using a version of MySQL that overflows on
 460                                                      large interval values to DATE_ADD().  If not, please report this as a bug.
 461                                                      EOF
 462                                                         unless $check eq $time;
-463            4                                 20      return $diff;
+463            4                                 18      return $diff;
 464                                                   }
 465                                                   
 466                                                   sub _d {

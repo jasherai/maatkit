@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...kit/common/Processlist.pm   88.3   87.5   53.8   82.4    n/a  100.0   75.3
-Total                          88.3   87.5   53.8   82.4    n/a  100.0   75.3
+...kit/common/Processlist.pm   88.8   88.5   55.9   82.4    n/a  100.0   76.4
+Total                          88.8   88.5   55.9   82.4    n/a  100.0   76.4
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          Processlist.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Wed Jun 10 17:20:44 2009
-Finish:       Wed Jun 10 17:20:44 2009
+Start:        Fri Jul 31 18:53:06 2009
+Finish:       Fri Jul 31 18:53:06 2009
 
 /home/daniel/dev/maatkit/common/Processlist.pm
 
@@ -32,25 +32,25 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # Processlist package $Revision: 3571 $
+18                                                    # Processlist package $Revision: 4207 $
 19                                                    # ###########################################################################
 20                                                    package Processlist;
 21                                                    
-22             1                    1             9   use strict;
+22             1                    1             8   use strict;
                1                                  2   
-               1                                  8   
+               1                                  7   
 23             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
-               1                                 12   
-24             1                    1             6   use English qw(-no_match_vars);
+               1                                  9   
+24             1                    1             5   use English qw(-no_match_vars);
                1                                  2   
-               1                                 17   
+               1                                  8   
 25                                                    
 26             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
-               1                                 15   
+               1                                 11   
 27                                                    use constant {
-28             1                                 11      ID      => 0,
+28             1                                 12      ID      => 0,
 29                                                       USER    => 1,
 30                                                       HOST    => 2,
 31                                                       DB      => 3,
@@ -165,48 +165,48 @@ line  err   stmt   bran   cond    sub    pod   time   code
 139                                                   #    will show up in the processlist -- make that a property too.
 140                                                   # 4) It should put cmd => Query, cmd => Admin, or whatever
 141                                                   sub parse_event {
-142            9                    9           252      my ( $self, $code, $misc, @callbacks ) = @_;
-143            9                                 27      my $num_events = 0;
+142            9                    9           317      my ( $self, $code, $misc, @callbacks ) = @_;
+143            9                                 26      my $num_events = 0;
 144                                                   
-145            9                                 26      my @curr = sort { $a->[ID] <=> $b->[ID] } @{$code->()};
+145            9                                 24      my @curr = sort { $a->[ID] <=> $b->[ID] } @{$code->()};
       ***      0                                  0   
-               9                                 32   
-146   ***      9            50                  142      my @prev = @{$misc->{prev} ||= []};
-               9                                 53   
-147            9                                 24      my @new; # Will become next invocation's @prev
-148            9                                 26      my ($curr, $prev); # Rows from each source
+               9                                 30   
+146   ***      9            50                  123      my @prev = @{$misc->{prev} ||= []};
+               9                                 51   
+147            9                                 22      my @new; # Will become next invocation's @prev
+148            9                                 25      my ($curr, $prev); # Rows from each source
 149                                                   
-150   ***      9            33                   27      do {
+150   ***      9            33                   21      do {
       ***                   66                        
       ***                   66                        
-151           10    100    100                   84         if ( !$curr && @curr ) {
-152            8                                 18            MKDEBUG && _d('Fetching row from curr');
-153            8                                 30            $curr = shift @curr;
+151           10    100    100                   81         if ( !$curr && @curr ) {
+152            8                                 17            MKDEBUG && _d('Fetching row from curr');
+153            8                                 24            $curr = shift @curr;
 154                                                         }
-155   ***     10    100     66                   75         if ( !$prev && @prev ) {
+155   ***     10    100     66                   73         if ( !$prev && @prev ) {
 156            4                                  9            MKDEBUG && _d('Fetching row from prev');
-157            4                                 14            $prev = shift @prev;
+157            4                                 13            $prev = shift @prev;
 158                                                         }
-159   ***     10    100     66                   71         if ( $curr || $prev ) {
+159   ***     10    100     66                   65         if ( $curr || $prev ) {
 160                                                            # In each of the if/elses, something must be undef'ed to prevent
 161                                                            # infinite looping.
-162   ***      9    100     66                  160            if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
+162   ***      9    100     66                  153            if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
                     100    100                        
       ***                   66                        
       ***                   66                        
       ***                   66                        
-163            3                                  9               MKDEBUG && _d('$curr and $prev are the same cxn');
+163            3                                  8               MKDEBUG && _d('$curr and $prev are the same cxn');
 164                                                               # Or, if its start time seems to be after the start time of
 165                                                               # the previously seen one, it's also a new query.
-166   ***      3     50                          20               my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
-167            3                                  8               my $is_new = 0;
-168   ***      3     50                          16               if ( $prev->[INFO] ) {
-169   ***      3    100     66                   83                  if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
+166   ***      3     50                          18               my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
+167            3                                  6               my $is_new = 0;
+168   ***      3     50                          13               if ( $prev->[INFO] ) {
+169   ***      3    100     66                   71                  if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
       ***            50     33                        
       ***           100     33                        
       ***                   66                        
 170                                                                     # This is a different query or a new query
-171            1                                  3                     MKDEBUG && _d('$curr has a new query');
+171            1                                  2                     MKDEBUG && _d('$curr has a new query');
 172            1                                  3                     $is_new = 1;
 173                                                                  }
 174                                                                  elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
@@ -217,21 +217,21 @@ line  err   stmt   bran   cond    sub    pod   time   code
 179                                                                     && $misc->{time} - $curr->[TIME] - $prev->[START]
 180                                                                        - $prev->[ETIME] - $misc->{etime} > $fudge
 181                                                                  ) {
-182            1                                  3                     MKDEBUG && _d('$curr has same query that restarted');
+182            1                                  2                     MKDEBUG && _d('$curr has same query that restarted');
 183            1                                  3                     $is_new = 1;
 184                                                                  }
 185            3    100                          12                  if ( $is_new ) {
-186            2                                 13                     fire_event( $prev, $misc->{time}, @callbacks );
+186            2                                  9                     fire_event( $prev, $misc->{time}, @callbacks );
 187                                                                  }
 188                                                               }
-189            3    100                          33               if ( $curr->[INFO] ) {
-190   ***      2    100     66                   18                  if ( $prev->[INFO] && !$is_new ) {
+189            3    100                          32               if ( $curr->[INFO] ) {
+190   ***      2    100     66                   17                  if ( $prev->[INFO] && !$is_new ) {
 191            1                                  3                     MKDEBUG && _d('Pushing old history item back onto $prev');
-192            1                                  7                     push @new, [ @$prev ];
+192            1                                 19                     push @new, [ @$prev ];
 193                                                                  }
 194                                                                  else {
-195            1                                  3                     MKDEBUG && _d('Pushing new history item onto $prev');
-196            1                                 10                     push @new,
+195            1                                  2                     MKDEBUG && _d('Pushing new history item onto $prev');
+196            1                                  9                     push @new,
 197                                                                        [ @$curr, int($misc->{time} - $curr->[TIME]),
 198                                                                           $misc->{etime}, $misc->{time} ];
 199                                                                  }
@@ -241,28 +241,28 @@ line  err   stmt   bran   cond    sub    pod   time   code
 203                                                            # The row in the prev doesn't exist in the curr.  Fire an event.
 204                                                            elsif ( !$curr
 205                                                                  || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
-206            1                                  2               MKDEBUG && _d('$curr is not in $prev');
+206            1                                  3               MKDEBUG && _d('$curr is not in $prev');
 207            1                                  5               fire_event( $prev, $misc->{time}, @callbacks );
-208            1                                 26               $prev = undef;
+208            1                                 22               $prev = undef;
 209                                                            }
 210                                                            # The row in curr isn't in prev; start a new event.
 211                                                            else { # This else must be entered, to prevent infinite loops.
-212            5                                 11               MKDEBUG && _d('$prev is not in $curr');
-213   ***      5    100     66                   44               if ( $curr->[INFO] && defined $curr->[TIME] ) {
-214            3                                  7                  MKDEBUG && _d('Pushing new history item onto $prev');
-215            3                                 28                  push @new,
+212            5                                 10               MKDEBUG && _d('$prev is not in $curr');
+213   ***      5    100     66                   37               if ( $curr->[INFO] && defined $curr->[TIME] ) {
+214            3                                  6                  MKDEBUG && _d('Pushing new history item onto $prev');
+215            3                                 26                  push @new,
 216                                                                     [ @$curr, int($misc->{time} - $curr->[TIME]),
 217                                                                        $misc->{etime}, $misc->{time} ];
 218                                                               }
-219            5                                 91               $curr = undef; # No infinite loops.
+219            5                                 96               $curr = undef; # No infinite loops.
 220                                                            }
 221                                                         }
 222                                                      } while ( @curr || @prev || $curr || $prev );
 223                                                   
-224            9                                 34      @{$misc->{prev}} = @new;
-               9                                 42   
+224            9                                 25      @{$misc->{prev}} = @new;
+               9                                 40   
 225                                                   
-226            9                                 35      return $num_events;
+226            9                                 33      return $num_events;
 227                                                   }
 228                                                   
 229                                                   # The exec time of the query is the max of the time from the processlist, or the
@@ -270,12 +270,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 231                                                   # back-to-back queries executed as the same one and we weren't able to tell them
 232                                                   # apart, their time will add up, which is kind of what we want.
 233                                                   sub fire_event {
-234            3                    3            14      my ( $row, $time, @callbacks ) = @_;
-235            3                                 12      my $Query_time = $row->[TIME];
-236            3    100                          19      if ( $row->[TIME] < $time - $row->[FSEEN] ) {
+234            3                    3            15      my ( $row, $time, @callbacks ) = @_;
+235            3                                 10      my $Query_time = $row->[TIME];
+236            3    100                          18      if ( $row->[TIME] < $time - $row->[FSEEN] ) {
 237            1                                  4         $Query_time = $time - $row->[FSEEN];
 238                                                      }
-239            3                                 51      my $event = {
+239            3                                 44      my $event = {
 240                                                         id         => $row->[ID],
 241                                                         db         => $row->[DB],
 242                                                         user       => $row->[USER],
@@ -286,121 +286,148 @@ line  err   stmt   bran   cond    sub    pod   time   code
 247                                                         Query_time => $Query_time,
 248                                                         Lock_time  => 0,               # TODO
 249                                                      };
-250            3                                 11      foreach my $callback ( @callbacks ) {
-251   ***      3     50                          14         last unless $event = $callback->($event);
+250            3                                 10      foreach my $callback ( @callbacks ) {
+251   ***      3     50                          11         last unless $event = $callback->($event);
 252                                                      }
 253                                                   }
 254                                                   
 255                                                   # Accepts a PROCESSLIST and a specification of filters to use against it.
-256                                                   # Returns queries that match the filters. TODO: document
-257                                                   sub find {
-258            2                    2           238      my ( $self, $proclist, %find_spec ) = @_;
-259            2                                  8      my @matches;
-260                                                      QUERY:
-261            2                                 10      foreach my $query ( @$proclist ) {
-262           10                                 24         my $matched = 0;
-263   ***     10    100     50                  105         if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
-      ***                   66                        
-264            4    100                          25            if ( $query->{Time} < $find_spec{busy_time} ) {
-265                                                               # TODO: This won't work with idle_time
-266            1                                  3               MKDEBUG && _d("Query isn't running long enough");
-267            1                                  4               next QUERY;
-268                                                            }
-269            3                                  9            $matched++;
-270                                                         }
-271                                                         PROPERTY:
-272            9                                 33         foreach my $property ( qw(Id User Host db State Command Info) ) {
-273           47                                138            my $filter = "_find_match_$property";
-274           47    100    100                  321            if ( defined $find_spec{ignore}->{$property}
-275                                                               && $self->$filter($query, $find_spec{ignore}->{$property})
-276                                                            ) {
-277            4                                  8               MKDEBUG && _d("Query matches 'ignore' filter on $property, skipping");
-278            4                                 16               next QUERY;
-279                                                            }
-280           43    100                         204            if ( defined $find_spec{match}->{$property} ) {
-281            6    100                          30               if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
-282            3                                  7                  MKDEBUG && _d("Query doesn't match 'match' filter on $property, skipping");
-283            3                                 12                  next QUERY;
-284                                                               }
-285            3                                 12               $matched++;
-286                                                            }
-287                                                         }
-288            2    100                          10         if ( $matched ) {
-289            1                                  2            MKDEBUG && _d("Query passed all defined filters, adding");
-290            1                                  4            push @matches, $query;
-291                                                         }
-292                                                      }
-293   ***      2    100     66                   16      if ( @matches && $find_spec{only_oldest} ) {
-294            1                                  6         my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
+256                                                   # Returns queries that match the filters.  The standard process properties
+257                                                   # are: Id, User, Host, db, Command, Time, State, Info.  These are used for
+258                                                   # ignore and match.
+259                                                   #
+260                                                   # Possible find_spec are:
+261                                                   #   * only_oldest  Match the oldest running query
+262                                                   #   * busy_time    Match queries that have been Command=Query for longer than
+263                                                   #                  this time
+264                                                   #   * idle_time    Match queries that have been Command=Sleep for longer than
+265                                                   #                  this time
+266                                                   #   * ignore       A hashref of properties => regex patterns to ignore
+267                                                   #   * match        A hashref of properties => regex patterns to match
+268                                                   #
+269                                                   sub find {
+270            3                    3           222      my ( $self, $proclist, %find_spec ) = @_;
+271            3                                 10      my @matches;
+272                                                      QUERY:
+273            3                                 12      foreach my $query ( @$proclist ) {
+274          123                                309         my $matched = 0;
+275                                                   
+276                                                         # Match special busy_time.
+277   ***    123    100     50                  609         if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
+                           100                        
+278            4    100                          23            if ( $query->{Time} < $find_spec{busy_time} ) {
+279            1                                 10               MKDEBUG && _d("Query isn't running long enough");
+280            1                                  3               next QUERY;
+281                                                            }
+282            3                                  7            $matched++;
+283                                                         }
+284                                                   
+285                                                         # Match special idle_time.
+286   ***    122    100     50                 1076         if ( $find_spec{idle_time} && ($query->{Command} || '') eq 'Sleep' ) {
+                           100                        
+287           23    100                         108            if ( $query->{Time} < $find_spec{idle_time} ) {
+288           22                                 46               MKDEBUG && _d("Query isn't idle long enough");
+289           22                                 63               next QUERY;
+290                                                            }
+291            1                                  4            $matched++;
+292                                                         }
+293                                                   
+294                                                         PROPERTY:
+295          100                                348         foreach my $property ( qw(Id User Host db State Command Info) ) {
+296          684                               1982            my $filter = "_find_match_$property";
+297          684    100    100                 3503            if ( defined $find_spec{ignore}->{$property}
+298                                                                 && $self->$filter($query, $find_spec{ignore}->{$property}) ) {
+299            4                                  9               MKDEBUG && _d('Query matches ignore', $property, 'filter:',
+300                                                                  $find_spec{ignore}->{$property}, '=~', $query->{$property});
+301            4                                 14               next QUERY;
+302                                                            }
+303          680    100                        3015            if ( defined $find_spec{match}->{$property} ) {
+304            6    100                          31               if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
+305            3                                  6                  MKDEBUG && _d('Query does not match', $property, 'filter:',
+306                                                                     $find_spec{match}->{$property}, '!~', $query->{$property});
+307            3                                 12                  next QUERY;
+308                                                               }
+309            3                                 11               $matched++;
+310                                                            }
+311                                                         }
+312           93    100                         361         if ( $matched ) {
+313            2                                  5            MKDEBUG && _d("Query passed all defined filters, adding");
+314            2                                 14            push @matches, $query;
+315                                                         }
+316                                                      } # QUERY
+317                                                   
+318   ***      3    100     66                   29      if ( @matches && $find_spec{only_oldest} ) {
+319            2                                 16         my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
       ***      0                                  0   
-295            1                                  6         @matches = $oldest;
-296                                                      }
-297            2                                 16      return @matches;
-298                                                   }
-299                                                   
-300                                                   sub _find_match_Id {
-301            8                    8            29      my ( $self, $query, $property ) = @_;
-302   ***      8            33                  136      return defined $property && defined $query->{Id} && $query->{Id} == $property;
-      ***                   66                        
-303                                                   }
-304                                                   
-305                                                   sub _find_match_User {
-306            8                    8            31      my ( $self, $query, $property ) = @_;
-307   ***      8            33                  137      return defined $property && defined $query->{User}
-      ***                   66                        
-308                                                         && $query->{User} =~ m/$property/;
-309                                                   }
-310                                                   
-311                                                   sub _find_match_Host {
-312   ***      0                    0             0      my ( $self, $query, $property ) = @_;
-313   ***      0             0                    0      return defined $property && defined $query->{Host}
-      ***                    0                        
-314                                                         && $query->{Host} =~ m/$property/;
-315                                                   }
-316                                                   
-317                                                   sub _find_match_db {
-318   ***      0                    0             0      my ( $self, $query, $property ) = @_;
-319   ***      0             0                    0      return defined $property && defined $query->{db}
-      ***                    0                        
-320                                                         && $query->{db} =~ m/$property/;
-321                                                   }
+320            2                                  9         @matches = $oldest;
+321                                                      }
 322                                                   
-323                                                   sub _find_match_State {
-324            7                    7            24      my ( $self, $query, $property ) = @_;
-325   ***      7            33                  120      return defined $property && defined $query->{State}
+323            3                                 32      return @matches;
+324                                                   }
+325                                                   
+326                                                   sub _find_match_Id {
+327            8                    8            29      my ( $self, $query, $property ) = @_;
+328   ***      8            33                  141      return defined $property && defined $query->{Id} && $query->{Id} == $property;
       ***                   66                        
-326                                                         && $query->{State} =~ m/$property/;
-327                                                   }
-328                                                   
-329                                                   sub _find_match_Command {
-330           10                   10            36      my ( $self, $query, $property ) = @_;
-331   ***     10            33                  158      return defined $property && defined $query->{Command}
+329                                                   }
+330                                                   
+331                                                   sub _find_match_User {
+332            8                    8            33      my ( $self, $query, $property ) = @_;
+333   ***      8            33                  135      return defined $property && defined $query->{User}
       ***                   66                        
-332                                                         && $query->{Command} =~ m/$property/;
-333                                                   }
-334                                                   
-335                                                   sub _find_match_Info {
-336            2                    2             8      my ( $self, $query, $property ) = @_;
-337   ***      2            33                   42      return defined $property && defined $query->{Info}
-      ***                   66                        
-338                                                         && $query->{Info} =~ m/$property/;
-339                                                   }
-340                                                   
-341                                                   sub _d {
-342   ***      0                    0                    my ($package, undef, $line) = caller 0;
-343   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-      ***      0                                      
-      ***      0                                      
-344   ***      0                                              map { defined $_ ? $_ : 'undef' }
-345                                                           @_;
-346   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+334                                                         && $query->{User} =~ m/$property/;
+335                                                   }
+336                                                   
+337                                                   sub _find_match_Host {
+338   ***      0                    0             0      my ( $self, $query, $property ) = @_;
+339   ***      0             0                    0      return defined $property && defined $query->{Host}
+      ***                    0                        
+340                                                         && $query->{Host} =~ m/$property/;
+341                                                   }
+342                                                   
+343                                                   sub _find_match_db {
+344   ***      0                    0             0      my ( $self, $query, $property ) = @_;
+345   ***      0             0                    0      return defined $property && defined $query->{db}
+      ***                    0                        
+346                                                         && $query->{db} =~ m/$property/;
 347                                                   }
 348                                                   
-349                                                   1;
-350                                                   
-351                                                   # ###########################################################################
-352                                                   # End Processlist package
-353                                                   # ###########################################################################
+349                                                   sub _find_match_State {
+350            7                    7            27      my ( $self, $query, $property ) = @_;
+351   ***      7            33                  120      return defined $property && defined $query->{State}
+      ***                   66                        
+352                                                         && $query->{State} =~ m/$property/;
+353                                                   }
+354                                                   
+355                                                   sub _find_match_Command {
+356           10                   10            36      my ( $self, $query, $property ) = @_;
+357   ***     10            33                  176      return defined $property && defined $query->{Command}
+      ***                   66                        
+358                                                         && $query->{Command} =~ m/$property/;
+359                                                   }
+360                                                   
+361                                                   sub _find_match_Info {
+362            2                    2            11      my ( $self, $query, $property ) = @_;
+363   ***      2            33                   52      return defined $property && defined $query->{Info}
+      ***                   66                        
+364                                                         && $query->{Info} =~ m/$property/;
+365                                                   }
+366                                                   
+367                                                   sub _d {
+368   ***      0                    0                    my ($package, undef, $line) = caller 0;
+369   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+      ***      0                                      
+      ***      0                                      
+370   ***      0                                              map { defined $_ ? $_ : 'undef' }
+371                                                           @_;
+372   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+373                                                   }
+374                                                   
+375                                                   1;
+376                                                   
+377                                                   # ###########################################################################
+378                                                   # End Processlist package
+379                                                   # ###########################################################################
 
 
 Branches
@@ -424,14 +451,16 @@ line  err      %   true  false   branch
 213          100      3      2   if ($$curr[7] and defined $$curr[5])
 236          100      1      2   if ($$row[5] < $time - $$row[10])
 251   ***     50      0      3   unless $event = &$callback($event)
-263          100      4      6   if ($find_spec{'busy_time'} and ($$query{'Command'} || '') eq 'Query')
-264          100      1      3   if ($$query{'Time'} < $find_spec{'busy_time'})
-274          100      4     43   if (defined $find_spec{'ignore'}{$property} and $self->$filter($query, $find_spec{'ignore'}{$property}))
-280          100      6     37   if (defined $find_spec{'match'}{$property})
-281          100      3      3   if (not $self->$filter($query, $find_spec{'match'}{$property}))
-288          100      1      1   if ($matched)
-293          100      1      1   if (@matches and $find_spec{'only_oldest'})
-343   ***      0      0      0   defined $_ ? :
+277          100      4    119   if ($find_spec{'busy_time'} and ($$query{'Command'} || '') eq 'Query')
+278          100      1      3   if ($$query{'Time'} < $find_spec{'busy_time'})
+286          100     23     99   if ($find_spec{'idle_time'} and ($$query{'Command'} || '') eq 'Sleep')
+287          100     22      1   if ($$query{'Time'} < $find_spec{'idle_time'})
+297          100      4    680   if (defined $find_spec{'ignore'}{$property} and $self->$filter($query, $find_spec{'ignore'}{$property}))
+303          100      6    674   if (defined $find_spec{'match'}{$property})
+304          100      3      3   if (not $self->$filter($query, $find_spec{'match'}{$property}))
+312          100      2     91   if ($matched)
+318          100      2      1   if (@matches and $find_spec{'only_oldest'})
+369   ***      0      0      0   defined $_ ? :
 
 
 Conditions
@@ -452,22 +481,23 @@ line  err      %     !l  l&&!r   l&&r   expr
       ***     66      0      1      1   $$curr[7] and defined $$curr[5] and $$misc{'time'} - $$curr[5] - $$prev[8] - $$prev[9] - $$misc{'etime'} > $fudge
 190   ***     66      0      1      1   $$prev[7] and not $is_new
 213   ***     66      2      0      3   $$curr[7] and defined $$curr[5]
-263   ***     66      0      6      4   $find_spec{'busy_time'} and ($$query{'Command'} || '') eq 'Query'
-274          100     18     25      4   defined $find_spec{'ignore'}{$property} and $self->$filter($query, $find_spec{'ignore'}{$property})
-293   ***     66      1      0      1   @matches and $find_spec{'only_oldest'}
-302   ***     33      0      0      8   defined $property && defined $$query{'Id'}
+277          100    113      6      4   $find_spec{'busy_time'} and ($$query{'Command'} || '') eq 'Query'
+286          100      9     90     23   $find_spec{'idle_time'} and ($$query{'Command'} || '') eq 'Sleep'
+297          100    655     25      4   defined $find_spec{'ignore'}{$property} and $self->$filter($query, $find_spec{'ignore'}{$property})
+318   ***     66      1      0      2   @matches and $find_spec{'only_oldest'}
+328   ***     33      0      0      8   defined $property && defined $$query{'Id'}
       ***     66      0      7      1   defined $property && defined $$query{'Id'} && $$query{'Id'} == $property
-307   ***     33      0      0      8   defined $property && defined $$query{'User'}
+333   ***     33      0      0      8   defined $property && defined $$query{'User'}
       ***     66      0      7      1   defined $property && defined $$query{'User'} && $$query{'User'} =~ /$property/
-313   ***      0      0      0      0   defined $property && defined $$query{'Host'}
+339   ***      0      0      0      0   defined $property && defined $$query{'Host'}
       ***      0      0      0      0   defined $property && defined $$query{'Host'} && $$query{'Host'} =~ /$property/
-319   ***      0      0      0      0   defined $property && defined $$query{'db'}
+345   ***      0      0      0      0   defined $property && defined $$query{'db'}
       ***      0      0      0      0   defined $property && defined $$query{'db'} && $$query{'db'} =~ /$property/
-325   ***     33      0      0      7   defined $property && defined $$query{'State'}
+351   ***     33      0      0      7   defined $property && defined $$query{'State'}
       ***     66      0      6      1   defined $property && defined $$query{'State'} && $$query{'State'} =~ /$property/
-331   ***     33      0      0     10   defined $property && defined $$query{'Command'}
+357   ***     33      0      0     10   defined $property && defined $$query{'Command'}
       ***     66      0      7      3   defined $property && defined $$query{'Command'} && $$query{'Command'} =~ /$property/
-337   ***     33      0      0      2   defined $property && defined $$query{'Info'}
+363   ***     33      0      0      2   defined $property && defined $$query{'Info'}
       ***     66      0      1      1   defined $property && defined $$query{'Info'} && $$query{'Info'} =~ /$property/
 
 or 2 conditions
@@ -475,7 +505,8 @@ or 2 conditions
 line  err      %      l     !l   expr
 ----- --- ------ ------ ------   ----
 146   ***     50      9      0   $$misc{'prev'} ||= []
-263   ***     50     10      0   $$query{'Command'} || ''
+277   ***     50     10      0   $$query{'Command'} || ''
+286   ***     50    113      0   $$query{'Command'} || ''
 
 or 3 conditions
 
@@ -499,12 +530,12 @@ BEGIN                   1 /home/daniel/dev/maatkit/common/Processlist.pm:23
 BEGIN                   1 /home/daniel/dev/maatkit/common/Processlist.pm:24 
 BEGIN                   1 /home/daniel/dev/maatkit/common/Processlist.pm:26 
 BEGIN                   1 /home/daniel/dev/maatkit/common/Processlist.pm:39 
-_find_match_Command    10 /home/daniel/dev/maatkit/common/Processlist.pm:330
-_find_match_Id          8 /home/daniel/dev/maatkit/common/Processlist.pm:301
-_find_match_Info        2 /home/daniel/dev/maatkit/common/Processlist.pm:336
-_find_match_State       7 /home/daniel/dev/maatkit/common/Processlist.pm:324
-_find_match_User        8 /home/daniel/dev/maatkit/common/Processlist.pm:306
-find                    2 /home/daniel/dev/maatkit/common/Processlist.pm:258
+_find_match_Command    10 /home/daniel/dev/maatkit/common/Processlist.pm:356
+_find_match_Id          8 /home/daniel/dev/maatkit/common/Processlist.pm:327
+_find_match_Info        2 /home/daniel/dev/maatkit/common/Processlist.pm:362
+_find_match_State       7 /home/daniel/dev/maatkit/common/Processlist.pm:350
+_find_match_User        8 /home/daniel/dev/maatkit/common/Processlist.pm:332
+find                    3 /home/daniel/dev/maatkit/common/Processlist.pm:270
 fire_event              3 /home/daniel/dev/maatkit/common/Processlist.pm:234
 new                     3 /home/daniel/dev/maatkit/common/Processlist.pm:42 
 parse_event             9 /home/daniel/dev/maatkit/common/Processlist.pm:142
@@ -514,8 +545,8 @@ Uncovered Subroutines
 
 Subroutine          Count Location                                          
 ------------------- ----- --------------------------------------------------
-_d                      0 /home/daniel/dev/maatkit/common/Processlist.pm:342
-_find_match_Host        0 /home/daniel/dev/maatkit/common/Processlist.pm:312
-_find_match_db          0 /home/daniel/dev/maatkit/common/Processlist.pm:318
+_d                      0 /home/daniel/dev/maatkit/common/Processlist.pm:368
+_find_match_Host        0 /home/daniel/dev/maatkit/common/Processlist.pm:338
+_find_match_db          0 /home/daniel/dev/maatkit/common/Processlist.pm:344
 
 
