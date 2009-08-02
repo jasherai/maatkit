@@ -3842,6 +3842,10 @@ Do not rely on mk-parallel-dump for your backups.  You have been warned.
 mk-parallel-dump only reads information from MySQL but it writes files to
 L<"--base-dir">.
 
+If you use mk-parallel-dump to run C<mysqldump>, any --password (-p) used for
+C<mysqldump> will be visible to other users in C<ps>.  Use C<~/.my.cnf> instead
+to provide the password for C<mysqldump>.
+
 At the time of this release, there is a bug which causes mk-parallel-dump to
 crash, a bug which prevents certain tables from being dumped, and a bug which
 may cause mk-parallel-dump to wait forever for child processes to finish.
