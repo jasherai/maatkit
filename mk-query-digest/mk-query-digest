@@ -7004,7 +7004,7 @@ sub main {
                      "     Item\n",
                      "# ==== ================== ================ ======= ======",
                      "==== ====\n";
-               foreach my $item ( reverse sort { $a->{r} <=> $b->{r} } @profiles) {
+               foreach my $item (sort { $a->{rank} <=> $b->{rank} } @profiles) {
                   printf "# %4d 0x%16s %10.4f %4.1f%% %7d %10.6f %s\n",
                      $item->{rank}, $item->{id}, $item->{r},
                      $item->{r} / ($total_r || 1) * 100,

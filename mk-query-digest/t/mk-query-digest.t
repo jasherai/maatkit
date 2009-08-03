@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 87;
+use Test::More tests => 89;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -15,6 +15,11 @@ my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave1');
+
+if ( $dbh1 ) {
+   $sb->create_dbs($dbh1, ['test']);
+   $sb->load_file('master', 'samples/query_review.sql');
+}
 
 # #############################################################################
 # First, some basic input-output diffs to make sure that
@@ -281,9 +286,6 @@ SKIP: {
       'Removes its PID file'
    );
 
-   $sb->create_dbs($dbh1, ['test']);
-   $sb->load_file('master', 'samples/query_review.sql');
-
    # Test --explain.  Because the file says 'use sakila' only the first one will
    # succeed.
    SKIP: {
@@ -297,6 +299,8 @@ SKIP: {
          'Analysis for slow001 with --explain',
       );
    };
+
+   $sb->load_file('master', 'samples/query_review.sql');
 
    # Test --create-review and --create-review-history-table
    $output = 'foo'; # clear previous test results
@@ -532,7 +536,6 @@ SKIP: {
        'switching --execute works');
 
    diag(`rm -rf /tmp/read_only.txt`);
-   $sb->wipe_clean($dbh1);
 };
 
 # Test --continue-on-error.
@@ -748,6 +751,29 @@ SKIP: {
 };
 
 # #############################################################################
+# Issue 256: Test that --report, --group-by, --order-by and --review all work
+# properly together.
+# #############################################################################
+
+ok(
+   no_diff($run_with.'slow034.txt --order-by Lock_time:sum --report-format=query_report,profile', 'samples/slow034-order-by-Locktime-sum.txt'),
+   'Analysis for slow034 --order-by Lock_time:sum'
+);
+
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $dbh1;
+   $sb->load_file('master', 'samples/query_review.sql');
+   my $output = `${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review --report '' --create-review-table`;
+   my $res = $dbh1->selectall_arrayref('SELECT * FROM test.query_review');
+   is(
+      $res->[0]->[1],
+      'select col from foo_tbl',
+      "--review works with --report ''"
+   );
+};
+
+# #############################################################################
 # Done.
 # #############################################################################
+$sb->wipe_clean($dbh1) if $dbh1;
 exit;
