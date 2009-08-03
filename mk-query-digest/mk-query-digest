@@ -6170,8 +6170,8 @@ sub main {
    if ( !$o->get('help') ) {
       if ( $review_dsn
            && (!defined $review_dsn->{D} || !defined $review_dsn->{t}) ) {
-         $o->save_error('The --review DSN requires a D (database) and t"
-            . " (table) part specifying the query review table');
+         $o->save_error('The --review DSN requires a D (database) and t'
+            . ' (table) part specifying the query review table');
       }
       if ( $o->get('mirror')
            && (!$o->get('execute') || !$o->get('processlist')) ) {
