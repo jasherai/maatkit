@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 88;
+use Test::More tests => 89;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -768,6 +768,11 @@ SKIP: {
       $res->[0]->[1],
       'select col from foo_tbl',
       "--review works with --no-report"
+   );
+   is(
+      $output,
+      '',
+      'No output with --review and --no-report'
    );
 };
 
