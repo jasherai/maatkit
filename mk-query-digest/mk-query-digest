@@ -6861,7 +6861,7 @@ sub main {
             my $samp_query = $sample->{arg} || '';
 
             # ###############################################################
-            # Save the profile for this item.  (It's printed later, maybe.)
+            # Save the profile for this item.  It's printed later, maybe.
             # ###############################################################
             my %profile = (
                rank   => $rank,
@@ -6895,7 +6895,7 @@ sub main {
                if ( $o->get('review-history') ) {
                   foreach my $attrib ( @select ) {
                      $history{$attrib} = $ea->metrics(
-                        attrib => $orderby_attrib,
+                        attrib => $attrib,
                         where  => $item,
                      );
                   }
