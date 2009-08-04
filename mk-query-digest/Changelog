@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Changed the --report option to only control if report is printed.
+
 2009-07-31: version 0.9.8
 
    * Added RISKS section to POD (issue 538).

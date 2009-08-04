@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 89;
+use Test::More tests => 88;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -56,19 +56,19 @@ ok(
 );
 
 ok(
-   no_diff($run_with.'slow001.txt --group-by tables --report tables',
+   no_diff($run_with.'slow001.txt --group-by tables',
       'samples/slow001_tablesreport.txt'),
    'Analysis for slow001 with --group-by tables'
 );
 
 ok(
-   no_diff($run_with.'slow001.txt --report distill',
+   no_diff($run_with.'slow001.txt --group-by distill',
       'samples/slow001_distillreport.txt'),
    'Analysis for slow001 with distill'
 );
 
 ok(
-   no_diff($run_with.'slow002.txt --timeline distill',
+   no_diff($run_with.'slow002.txt --group-by distill --timeline --no-report',
       'samples/slow002_distilltimeline.txt'),
    'Timeline for slow002 with distill'
 );
@@ -120,9 +120,9 @@ ok(
    no_diff(
       $run_with
          . 'slow010.txt --embedded-attributes \' -- .*\',\'(\w+): ([^\,]+)\' '
-         . '--report file',
+         . '--group-by file',
       'samples/slow010_reportbyfile.txt'),
-   'Analysis for slow010'
+   'Analysis for slow010 --group-by some --embedded-attributes'
 );
 
 ok(
@@ -136,13 +136,13 @@ ok(
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --group-by user --report user',
+   no_diff($run_with.'slow013.txt --group-by user',
       'samples/slow013_report_user.txt'),
    'Analysis for slow013 with --group-by user'
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --limit 1 --report-format header,query_report --order-by Query_time:sum,Query_time:sum --group-by fingerprint,user --report fingerprint,user',
+   no_diff($run_with.'slow013.txt --limit 1 --report-format header,query_report  --group-by fingerprint,user',
       'samples/slow013_report_fingerprint_user.txt'),
    'Analysis for slow013 with --group-by fingerprint,user'
 );
@@ -154,7 +154,7 @@ ok(
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --group-by user --report user --outliers Query_time:.0000001:1',
+   no_diff($run_with.'slow013.txt --group-by user --outliers Query_time:.0000001:1',
       'samples/slow013_report_outliers.txt'),
    'Analysis for slow013 with --outliers'
 );
@@ -251,10 +251,9 @@ $output = `../mk-query-digest --review h=127.1,P=12345,D=test`;
 like($output, qr/--review DSN requires a D/, 'Dies if no t part in --review DSN');
 
 # #############################################################################
-# Test that --report cascades to --group-by which cascades to --order-by.
+# Test that --group-by cascades to --order-by.
 # #############################################################################
-$output = `../mk-query-digest --report foo,bar --group-by bar --help`;
-like($output, qr/--group-by\s+bar,foo/, '--report cascades to --group-by');
+$output = `../mk-query-digest --group-by foo,bar --help`;
 like($output, qr/--order-by\s+Query_time:sum,Query_time:sum/,
    '--group-by cascades to --order-by');
 
@@ -584,7 +583,7 @@ ok(
 # #############################################################################
 ok(
    no_diff('../mk-query-digest ../../common/t/samples/slow006.txt '
-      . '--report "" --group-by fingerprint --print --sample 2',
+      . '--no-report --print --sample 2',
       'samples/slow006-first2.txt'),
    'Print only first N unique occurrences with explicit --group-by',
 );
@@ -594,16 +593,16 @@ ok(
 # #############################################################################
 ok(
    no_diff('../mk-query-digest ../../common/t/samples/slow006.txt '
-      . '--report "" --print --sample 2',
+      . '--no-report --print --sample 2',
       'samples/slow006-first2.txt'),
-   'Print only first N unique occurrences without --group-by',
+   'Print only first N unique occurrences, --no-report',
 );
 
-$output = `../mk-query-digest --report '' --help 2>&1`;
+$output = `../mk-query-digest --no-report --help 2>&1`;
 like(
    $output,
    qr/--group-by\s+fingerprint/,
-   "--group-by default still fingerprint with --report ''"
+   "Default --group-by with --no-report"
 );
 
 
@@ -642,9 +641,9 @@ ok(
 );
 
 ok(
-   no_diff($run_with.'memc_tcpdump003.txt --type memcached --report key_print',
+   no_diff($run_with.'memc_tcpdump003.txt --type memcached --group-by key_print',
    'samples/memc_tcpdump003_report_key_print.txt'),
-   'Analysis for memc_tcpdump003.txt --report key_print'
+   'Analysis for memc_tcpdump003.txt --group-by key_print'
 );
 
 ok(
@@ -763,12 +762,12 @@ ok(
 SKIP: {
    skip 'Cannot connect to sandbox master', 1 unless $dbh1;
    $sb->load_file('master', 'samples/query_review.sql');
-   my $output = `${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review --report '' --create-review-table`;
+   my $output = `${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review --no-report --create-review-table`;
    my $res = $dbh1->selectall_arrayref('SELECT * FROM test.query_review');
    is(
       $res->[0]->[1],
       'select col from foo_tbl',
-      "--review works with --report ''"
+      "--review works with --no-report"
    );
 };
 
