@@ -7633,14 +7633,6 @@ default structure shown in the documentation for that option.
 Fork to the background and detach from the shell.  POSIX
 operating systems only.
 
-=item --dry-run
-
-Explain what work would be done, but don't do anything.
-
-If you just want to see what mk-query-digest would do without actually doing
-any work, then give this option in addition to whatever other options you
-are considering using.
-
 =item --embedded-attributes
 
 type: array
