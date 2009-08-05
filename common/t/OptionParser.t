@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 139;
+use Test::More tests => 140;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1833,6 +1833,42 @@ like(
    $EVAL_ERROR,
    qr/Unrecognized attribute for --verbose: culumative/,
    'Die on unrecognized attribute'
+);
+
+
+# #############################################################################
+# Issue 460: mk-archiver does not inherit DSN as documented
+# #############################################################################
+
+# The problem is actually in how OptionParser handles copying DSN vals.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dp           => $dp,
+);
+$o->_parse_specs(
+   { spec  => 'source=d',   desc  => 'source',   },
+   { spec  => 'dest=d',     desc  => 'dest',     },
+   'DSN values in --dest default to values from --source if COPY is yes.',
+);
+@ARGV = (
+   '--source', 'h=127.1,P=12345,D=test,u=bob,p=foo',
+   '--dest', 'P=12346',
+);
+$o->get_opts();
+my $dest_dsn = $o->get('dest');
+is_deeply(
+   $dest_dsn,
+   {
+      A => undef,
+      D => 'test',
+      F => undef,
+      P => '12346',
+      S => undef,
+      h => '127.1',
+      p => 'foo',
+      u => 'bob',
+   },
+   'Copies DSN values correctly (issue 460)'
 );
 
 # #############################################################################

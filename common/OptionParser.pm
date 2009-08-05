@@ -631,8 +631,7 @@ sub _validate_type {
       my $default = {};
       if ( $from_key ) {
          MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
-         $default = $self->{dp}->parse(
-            $self->{dp}->as_string($self->{opts}->{$from_key}->{value}) );
+         $default = $self->{opts}->{$from_key}->{value};
       }
       $opt->{value} = $self->{dp}->parse($val, $default);
    }
