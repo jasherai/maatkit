@@ -93,6 +93,8 @@ INSERT INTO tbl VALUES ('a', 'b')\G
 # Lock time      0    10ms    10ms    10ms    10ms    10ms       0    10ms
 # Rows sent      0       1       1       1       1       1       0       1
 # Rows exam      0       1       1       1       1       1       0       1
+# Databases              1     db1
+# Time range 2009-08-05 11:00:27 to 2009-08-05 11:00:27
 # bytes         12      31      31      31      31      31       0      31
 # Merge pas      0       0       0       0       0       0       0       0
 # Lock_time distribution
@@ -105,8 +107,8 @@ INSERT INTO tbl VALUES ('a', 'b')\G
 #    1s
 #  10s+
 # Tables
-#    SHOW TABLE STATUS LIKE 'tbl'\G
-#    SHOW CREATE TABLE `tbl`\G
+#    SHOW TABLE STATUS FROM `db1` LIKE 'tbl'\G
+#    SHOW CREATE TABLE `db1`.`tbl`\G
 # EXPLAIN
 SELECT id FROM tbl WHERE id = 1\G
 
@@ -117,6 +119,8 @@ SELECT id FROM tbl WHERE id = 1\G
 # Lock time      0     1us     1us     1us     1us     1us       0     1us
 # Rows sent     96     900     900     900     900     900       0     900
 # Rows exam      0   9.77k   9.77k   9.77k   9.77k   9.77k       0   9.77k
+# Databases              1     db1
+# Time range 2009-08-05 11:00:27 to 2009-08-05 11:00:27
 # bytes         15      39      39      39      39      39       0      39
 # Merge pas    100       1       1       1       1       1       0       1
 # 100% (1)    Disk_filesort
@@ -132,8 +136,8 @@ SELECT id FROM tbl WHERE id = 1\G
 #    1s
 #  10s+
 # Tables
-#    SHOW TABLE STATUS LIKE 'blah'\G
-#    SHOW CREATE TABLE `blah`\G
+#    SHOW TABLE STATUS FROM `db1` LIKE 'blah'\G
+#    SHOW CREATE TABLE `db1`.`blah`\G
 # EXPLAIN
 SELECT COUNT(*) FROM blah WHERE col > 2\G
 

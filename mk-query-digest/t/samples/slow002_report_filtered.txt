@@ -9,6 +9,8 @@
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
+# Databases              1     db1
+# Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
 # bytes        100      60      60      60      60      60       0      60
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0

@@ -10,6 +10,7 @@
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
 # Databases              1     db1
+# Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
 # bytes         25     129     129     129     129     129       0     129
 # Merge pas      0       0       0       0       0       0       0       0
 # 100% (1)    Full_scan
@@ -44,6 +45,8 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
+# Databases              1     db1
+# Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
 # bytes         20     103     103     103     103     103       0     103
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
@@ -80,6 +83,8 @@ select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   va
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
+# Databases              1     db1
+# Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
 # bytes         16      82      41      41      41      41       0      41
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
@@ -115,6 +120,8 @@ select     biz = '91848182522' from foo.bar \G
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
+# Databases              1     db1
+# Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
 # bytes         11      60      60      60      60      60       0      60
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
@@ -151,6 +158,8 @@ select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
+# Databases              1     db1
+# Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
 # bytes         11      57      57      57      57      57       0      57
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
@@ -183,6 +192,8 @@ VALUES ('211', '18')\G
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
+# Databases              1     db1
+# Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
 # bytes         13      66      66      66      66      66       0      66
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0

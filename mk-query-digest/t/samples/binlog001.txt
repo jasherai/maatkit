@@ -16,6 +16,7 @@
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         16       1
 # Exec time     16  20704s  20704s  20704s  20704s  20704s       0  20704s
+# Databases              1   test1
 # Time range 2007-12-07 12:02:08 to 2007-12-07 12:02:08
 # bytes         26     363     363     363     363     363       0     363
 # error cod      0       0       0       0       0       0       0       0
@@ -81,6 +82,7 @@ select  e.tblo = o.tblo,
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         16       1
 # Exec time     16  20664s  20664s  20664s  20664s  20664s       0  20664s
+# Databases              1   test1
 # Time range 2007-12-07 12:02:50 to 2007-12-07 12:02:50
 # bytes         12     170     170     170     170     170       0     170
 # error cod      0       0       0       0       0       0       0       0
@@ -139,6 +141,7 @@ BEGIN\G
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         16       1
 # Exec time     16  20661s  20661s  20661s  20661s  20661s       0  20661s
+# Databases              1   test1
 # Time range 2007-12-07 12:02:53 to 2007-12-07 12:02:53
 # bytes         16     228     228     228     228     228       0     228
 # error cod      0       0       0       0       0       0       0       0
@@ -169,6 +172,7 @@ select  last2metric1 = last1metric1, last2time = last1time,
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         16       1
 # Exec time     16  20661s  20661s  20661s  20661s  20661s       0  20661s
+# Databases              1   test1
 # Time range 2007-12-07 12:02:53 to 2007-12-07 12:02:53
 # bytes         24     341     341     341     341     341       0     341
 # error cod      0       0       0       0       0       0       0       0
