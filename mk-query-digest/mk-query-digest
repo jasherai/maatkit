@@ -6766,20 +6766,21 @@ sub main {
       }
 
       # ######################################################################
-      # Do something with the aggregated query results for each class
-      # (i.e. each groupby), probably --report them, or maybe just save
-      # them for --review.
+      # Done parsing events, now do something with the aggregated query
+      # results for each class (i.e. each groupby), probably --report them,
+      # or maybe just save them for --review.
       # ######################################################################
-      my $qrf          = new QueryReportFormatter();
-      my @select       = ( $ea[0]->get_attributes() );
+      my $qrf    = new QueryReportFormatter();
+      my @select = ( $ea[0]->get_attributes() );
+      MKDEBUG && _d('attribs for reports:', @select);
 
       # First, and only once, print the global report analysis header.
       if ( $o->get('report') && $o->get('report-format')->{header} ) {
+         print $qrf->header() if $o->get('report-format')->{rusage};
+
          # It doesn't matter which ea we use here because they will all have
          # the same attributes; they only differ in how they were grouped.
          my $ea = $ea[0];
-         MKDEBUG && _d('attribs for reports:', @select);
-         print $qrf->header() if $o->get('report-format')->{rusage};
          if ( !$ea->events_processed() ) {
             print "# No events processed.\n";
          }
@@ -6795,7 +6796,9 @@ sub main {
          }
       }
 
-      # Now do a query report or timeline or whatever for each groupby/class.
+      # #####################################################################
+      # Do the reports for each groupby/class.
+      # #####################################################################
       for my $i ( 0..$#groupby ) {
          my $groupby = $groupby[$i];
          my $ea      = $ea[$i];
@@ -6853,6 +6856,9 @@ sub main {
             print '# ', ( '#' x 72 ), "\n";
          }
 
+         # ##################################################################
+         # Do the reports for each query in this groupby/class.
+         # ##################################################################
          ITEM:
          foreach my $rank ( 1 .. @worst ) {
             my $item       = $worst[$rank - 1]->[0];
@@ -6903,7 +6909,7 @@ sub main {
             }
 
             # ###############################################################
-            # Print the standard per-query report.
+            # Print the standard query analysis report.
             # ###############################################################
             if ( $o->get('report')
                  && $o->get('report-format')->{query_report} ) {
@@ -6980,7 +6986,7 @@ sub main {
                   }
                   print $item, "\n"; 
                }
-            } # Print standard query report
+            } # Print standard query analysis report
 
             # ###############################################################
             # Update --review and --review-history.
@@ -6997,7 +7003,7 @@ sub main {
                      $item, $sample->{arg} || '', %history);
                }
             }
-         } # Each worst item
+         } # Each worst ITEM
 
          # ##################################################################
          # Print per-class reports.
