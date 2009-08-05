@@ -184,7 +184,7 @@ ok(
    no_diff($run_with.'slow019.txt --nozero-admin', 'samples/slow019_report_noza.txt'),
    '--nozero-admin works'
 );
-exit;
+
 # This was fixed at some point by checking the fingerprint to see if the
 # query needed to be converted to a SELECT.
 ok(
@@ -563,6 +563,7 @@ like(
    qr/Type for db is string /,
    'Type for empty Schema: is string (issue 232)',
 );
+
 unlike(
    $output,
    qr/Argument "" isn't numeric in numeric gt/,

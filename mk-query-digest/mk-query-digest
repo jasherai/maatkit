@@ -7200,7 +7200,7 @@ sub make_inherit_attribs {
       (map {
          # If event has attrib, then update prev with new value,
          # else set event attrib to previous value.
-         "\$event->{'$_'} ? \$prev->{'$_'} = \$event->{'$_'} : \$event->{'$_'} = \$prev->{'$_'};"
+         "defined \$event->{'$_'} ? \$prev->{'$_'} = \$event->{'$_'} : \$event->{'$_'} = \$prev->{'$_'};"
        } @$attribs),
       'return $event; }';
    MKDEBUG && _d('inherit attribs sub:', @lines);
