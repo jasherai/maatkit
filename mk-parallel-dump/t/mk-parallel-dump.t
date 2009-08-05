@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 35;
+use Test::More tests => 36;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -207,6 +207,21 @@ like(
    $output,
    qr/--threads\s+32/,
    '--threads overrides /proc/cpuinfo (issue 534)'
+);
+
+# #############################################################################
+# Issue 446: mk-parallel-dump cannot make filenames for tables with spaces
+# in their names
+# #############################################################################
+diag(`rm -rf /tmp/default`);
+$dbh->do('USE test');
+$dbh->do('CREATE TABLE `issue 446` (i int)');
+$dbh->do('INSERT INTO test.`issue 446` VALUES (1),(2),(3)');
+
+`$cmd --base-dir /tmp/ --ignore-databases sakila --databases test --tables 'issue 446' 2>&1`;
+ok(
+   -f '/tmp/default/test/issue 446.000000.sql.gz',
+   'Dumped table with space in name (issue 446)'
 );
 
 # #############################################################################
