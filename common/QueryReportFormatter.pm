@@ -134,9 +134,8 @@ sub global_report {
             @values = map { defined $_ ? $func->($_) : '' } @values;
          }
          elsif ( $attrib_type eq 'string' ) {
-            push @values,
-               format_string_list($store),
-               (map { '' } 0..9); # just for good measure
+            MKDEBUG && _d('Ignoring string attrib', $attrib);
+            next;
          }
          elsif ( $attrib_type eq 'bool' ) {
             if ( $store->{sum} > 0 || !$opts{no_zero_bool} ) {
