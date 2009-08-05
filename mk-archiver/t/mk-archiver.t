@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 112;
+use Test::More tests => 113;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -451,6 +451,36 @@ unlike(
    qr/DELETE/,
    'No DELETE with --no-delete --dry-run (issue 524)'
 );
+
+# #############################################################################
+# Issue 460: mk-archiver does not inherit DSN as documented 
+# #############################################################################
+my $dbh2  = $sb->get_dbh_for('slave1');
+SKIP: {
+   skip 'Cannot connect to sandbox slave1', 1 unless $dbh2;
+
+   # This test will achive rows from dbh:test.table_1 to dbh2:test.table_2.
+
+   # Change passwords so defaults files won't work.
+   $dbh->do('SET PASSWORD FOR msandbox = PASSWORD("foo")');
+   $dbh2->do('SET PASSWORD FOR msandbox = PASSWORD("foo")');
+
+   $dbh2->do('TRUNCATE TABLE test.table_2');
+
+   $output = `MKDEBUG=1 perl ../mk-archiver --where 1=1 --source h=127.1,P=12345,D=test,t=table_1,p=foo --dest P=12346,t=table_2 --statistics 2>&1`;
+   my $r = $dbh2->selectall_arrayref('SELECT * FROM test.table_2');
+   is(
+      scalar @$r,
+      4,
+      '--dest inherited from --source'
+   );
+
+   # Set the passwords back.
+   $dbh->do("SET PASSWORD FOR msandbox = PASSWORD('msandbox')");
+   $dbh2->do("SET PASSWORD FOR msandbox = PASSWORD('msandbox')");
+
+   $sb->wipe_clean($dbh2);
+};
 
 # #############################################################################
 # Done.

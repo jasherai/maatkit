@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+   * --dest did not inherit password from --source (issue 460).
+
 2009-07-31: version 1.0.18
 
    * Added RISKS section to POD (issue 538).
