@@ -37,6 +37,7 @@ mytopuser
 # Rows exam      0       0       0       0       0       0       0       0
 # Hosts                  1
 # Databases              1     abc
+# Time range 2008-11-27 08:51:21 to 2008-11-27 08:51:21
 # bytes         48      38       6      16   12.67   15.25    4.48   15.25
 # Query_time distribution
 #   1us

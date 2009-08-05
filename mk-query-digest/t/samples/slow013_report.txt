@@ -34,6 +34,7 @@ SHOW STATUS\G
 # Users                  1 foo_app
 # Hosts                  1
 # Databases              1     abc
+# Time range 2008-11-27 08:51:21 to 2008-11-27 08:51:21
 # bytes         41      32      16      16      16      16       0      16
 # Query_time distribution
 #   1us
@@ -57,6 +58,7 @@ SET autocommit=0\G
 # Users                  1 foo_app
 # Hosts                  1
 # Databases              1     abc
+# Time range 2008-11-27 08:51:21 to 2008-11-27 08:51:21
 # bytes          7       6       6       6       6       6       0       6
 # Query_time distribution
 #   1us

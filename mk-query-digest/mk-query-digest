@@ -6130,9 +6130,6 @@ my $dp = new DSNParser (
 my $q  = new Quoter();
 my $qp = new QueryParser();
 my $qr = new QueryRewriter(QueryParser=>$qp);
-my $qv;      # QueryReview
-my $qv_dbh;  # For QueryReview
-my $qv_dbh2; # For QueryReview and --review-history
 my $ex_dbh;  # For --execute
 my $ep_dbh;  # For --explain
 my $ps_dbh;  # For Processlist
@@ -6197,6 +6194,9 @@ sub main {
    # ########################################################################
    # Set up for --review and --review-history.
    # ########################################################################
+   my $qv;      # QueryReview
+   my $qv_dbh;  # For QueryReview
+   my $qv_dbh2; # For QueryReview and --review-history
    if ( $review_dsn ) {
       my $tp  = new TableParser();
       my $du  = new MySQLDump();
@@ -6358,6 +6358,7 @@ sub main {
       die "Invalid --since value" unless $since;
       push @callbacks, sub {
          my ( $event ) = @_;
+         MKDEBUG && _d('callback: --since');
          if ( $past_since ) {
             MKDEBUG && _d('Already past --since');
             return $event;
@@ -6381,6 +6382,7 @@ sub main {
       die "Invalid --until value" unless $until;
       push @callbacks, sub {
          my ( $event ) = @_;
+         MKDEBUG && _d('callback: --until');
          if ( $at_until ) {
             MKDEBUG && _d('Already past --until');
             return;
@@ -6403,6 +6405,7 @@ sub main {
    if ( grep { $_ eq 'fingerprint' } @groupby ) {
       push @callbacks, sub {
          my ( $event ) = @_;
+         MKDEBUG && _d('callback: fingerprint');
          # Skip events which do not have the groupby attribute.
          my $groupby_val = $event->{arg};
          return unless $groupby_val;
@@ -6416,9 +6419,18 @@ sub main {
       push @callbacks, make_alt_attrib($alt_attrib);
    }
 
+   # Carry attribs forward for --inherit-attributes.
+   my $prev_vals = {};
+   my $inherit_attrib_sub = make_inherit_attribs(
+      $o->get('inherit-attributes'),
+      $prev_vals
+   );
+   push @callbacks, $inherit_attrib_sub if $inherit_attrib_sub;
+
    if ( grep { $_ eq 'tables' } @groupby ) {
       push @callbacks, sub {
          my ( $event ) = @_;
+         MKDEBUG && _d('callback: tables');
          my $group_by_val = $event->{arg};
          return 0 unless defined $group_by_val;
          $event->{tables} = [
@@ -6439,6 +6451,7 @@ sub main {
    if ( grep { $_ eq 'distill' } @groupby ) {
       push @callbacks, sub {
          my ( $event ) = @_;
+         MKDEBUG && _d('callback: distill');
          my $group_by_val = $event->{arg};
          return 0 unless defined $group_by_val;
          $event->{distill} = $qr->distill($group_by_val);
@@ -6467,6 +6480,7 @@ sub main {
    if ( $o->get('zero-admin') ) {
       push @callbacks, sub {
          my ( $event ) = @_;
+         MKDEBUG && _d('callback: zero admin');
          if ( $event->{arg} && $event->{arg} =~ m/^# administrator/ ) {
             $event->{Rows_sent}     = 0;
             $event->{Rows_read}     = 0;
@@ -6483,6 +6497,7 @@ sub main {
          my %seen;
          push @callbacks, sub {
             my ($event) = @_;
+            MKDEBUG && _d('callback: sample');
             if ( ++$seen{$event->{$group_by_val}} <= $num_samples ) {
                MKDEBUG && _d("--sample permits event",
                   $event->{$group_by_val});
@@ -6498,6 +6513,7 @@ sub main {
       my $w = new SlowLogWriter();
       push @callbacks, sub {
          my ( $event ) = @_;
+         MKDEBUG && _d('callback: print');
          $w->write(*STDOUT, $event);
          return $event;
       };
@@ -6512,6 +6528,7 @@ sub main {
       my $curdb;
       push @callbacks, sub {
          my ( $event ) = @_;
+         MKDEBUG && _d('callback: execute');
          my $db = $event->{db};
          eval {
             if ( $db && (!$curdb || $db ne $curdb) ) {
@@ -7156,6 +7173,7 @@ sub make_alt_attrib {
    my @lines;
    push @lines,
       'sub { my ( $event ) = @_; ',
+      'MKDEBUG && _d("callback: alt attrib");',
       "if ( exists \$event->{'$attrib'} ) { ",
       (map { "delete \$event->{'$_'}; "; } @alts),
       'return $event; }',     
@@ -7168,6 +7186,24 @@ sub make_alt_attrib {
       } @alts),
       'return $event; }';
    MKDEBUG && _d('attrib alias sub for', $attrib, ':', @lines);
+   my $sub = eval join("\n", @lines);
+   die if $EVAL_ERROR;
+   return $sub;
+}
+
+sub make_inherit_attribs {
+   my ( $attribs, $prev ) = @_;
+   my @lines;
+   push @lines,
+      'sub { my ( $event ) = @_; ',
+      'MKDEBUG && _d("callback: inherit attribs");',
+      (map {
+         # If event has attrib, then update prev with new value,
+         # else set event attrib to previous value.
+         "\$event->{'$_'} ? \$prev->{'$_'} = \$event->{'$_'} : \$event->{'$_'} = \$prev->{'$_'};"
+       } @$attribs),
+      'return $event; }';
+   MKDEBUG && _d('inherit attribs sub:', @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
    return $sub;
@@ -7677,7 +7713,7 @@ type: DSN
 
 Execute queries on this DSN.
 
-Adds a callback into the chain, after filters but before L<"--report">.  Events
+Adds a callback into the chain, after filters but before the reports.  Events
 are executed on this DSN.  If they are successful, the time they take to execute
 overwrites the event's Query_time attribute.  If unsuccessful, the callback
 returns false and terminates the chain.
@@ -7869,6 +7905,21 @@ aggregates every attribute that it finds in the slow log.  Some attributes,
 however, should not be aggregated.  This option allows you to specify a list
 of attributes to ignore.  This only works when no explicit L<"--select"> is
 given.
+
+=item --inherit-attributes
+
+type: array; default: db,ts
+
+If missing, inherit these attributes from the last event that had them.
+
+This option sets which attributes are inherited or carried forward to events
+which do not have them.  For example, if one event has the db attribute equal
+to "foo", but the next event doesn't have the db attribute, then it inherits
+"foo" for its db attribute.
+
+Inheritance is usually desirable, but in some cases it might confuse things.
+If a query inherits a database that it doesn't actually use, then this could
+confuse L<"--execute">.
 
 =item --interval
 

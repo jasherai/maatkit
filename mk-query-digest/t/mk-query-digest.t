@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 89;
+use Test::More tests => 91;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -44,12 +44,6 @@ sub no_diff {
 my $run_with = '../mk-query-digest --report-format=query_report --limit 10 ../../common/t/samples/';
 my $run_notop = '../mk-query-digest --report-format=query_report ../../common/t/samples/';
 
-
-# #############################################################################
-# Issue 479: Make mk-query-digest carry Schema and ts attributes along the
-# pipeline
-# #############################################################################
-# Work in progres...
 
 ok(
    no_diff($run_with.'empty', 'samples/empty_report.txt'),
@@ -190,7 +184,7 @@ ok(
    no_diff($run_with.'slow019.txt --nozero-admin', 'samples/slow019_report_noza.txt'),
    '--nozero-admin works'
 );
-
+exit;
 # This was fixed at some point by checking the fingerprint to see if the
 # query needed to be converted to a SELECT.
 ok(
@@ -781,6 +775,21 @@ SKIP: {
       'No output with --review and --no-report'
    );
 };
+
+# #############################################################################
+# Issue 479: Make mk-query-digest carry Schema and ts attributes along the
+# pipeline
+# #############################################################################
+ok(
+   no_diff($run_with.'slow034.txt --no-report --print', 'samples/slow034-inheritance.txt'),
+   'Analysis for slow034 with inheritance'
+);
+
+# Make sure we can turn off some default inheritance, 'ts' in this test.
+ok(
+   no_diff($run_with.'slow034.txt --no-report --print --inherit-attributes db', 'samples/slow034-no-ts-inheritance.txt'),
+   'Analysis for slow034 without default ts inheritance'
+);
 
 # #############################################################################
 # Done.
