@@ -1,6 +1,7 @@
 Changelog for mk-query-digest:
 
    * Changed the --report option to only control if report is printed.
+   * Removed string attributes from global report header (issue 478).
 
 2009-07-31: version 0.9.8
 
