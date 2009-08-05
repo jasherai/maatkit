@@ -45,6 +45,12 @@ my $run_with = '../mk-query-digest --report-format=query_report --limit 10 ../..
 my $run_notop = '../mk-query-digest --report-format=query_report ../../common/t/samples/';
 
 
+# #############################################################################
+# Issue 479: Make mk-query-digest carry Schema and ts attributes along the
+# pipeline
+# #############################################################################
+# Work in progres...
+
 ok(
    no_diff($run_with.'empty', 'samples/empty_report.txt'),
    'Analysis for empty log'

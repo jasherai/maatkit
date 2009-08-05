@@ -1,10 +1,8 @@
 # Overall: 4 total, 1 unique, 4 QPS, 0.67x concurrency ___________________
 #                    total     min     max     avg     95%  stddev  median
 # Exec time          670ms   265us   450ms   167ms   433ms   179ms   326ms
-# Hosts                  4
 # Time range        2009-04-12 11:00:13.118643 to 2009-04-12 11:00:14.999999
 # bytes                128      32      32      32      32       0      32
-# Errors                 4
 # Rows affe              0       0       0       0       0       0       0
 # Warning c              0       0       0       0       0       0       0
 

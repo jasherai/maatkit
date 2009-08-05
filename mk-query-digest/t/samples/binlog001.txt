@@ -8,7 +8,6 @@
 # @@session              1       1       1       1       1       0       1
 # @@session              1       1       1       1       1       0       1
 # @@session              0       0       0       0       0       0       0
-# @@session              1
 # @@session              1       1       1       1       1       0       1
 # bytes              1.36k       5     363  139.10  329.68  127.46  166.51
 # error cod              0       0       0       0       0       0       0
