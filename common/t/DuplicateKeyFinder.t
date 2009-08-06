@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 32;
+use Test::More tests => 33;
 
 require "../DuplicateKeyFinder.pm";
 require "../Quoter.pm";
@@ -592,6 +592,19 @@ is(
    $dk->shorten_clustered_duplicate('`a`,`b`', '`c`,`a`,`b`'),
    '`c`',
    "shorten_clustered_duplicate('`a`,`b`', '`c`,`a`,`b`'),"
+);
+
+$ddl   = load_file('samples/issue_295-1.sql');
+$dupes = [];
+($keys, $ck) = $tp->get_keys($ddl, $opt);
+$dk->get_duplicate_keys(
+   $keys,
+   clustered_key => $ck,
+   callback => $callback);
+is_deeply(
+   $dupes,
+   [],
+   'Do not remove clustered key acting as primary key'
 );
 
 # #############################################################################

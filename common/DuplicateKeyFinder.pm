@@ -72,12 +72,16 @@ sub get_duplicate_keys {
       # We use column lengths to compare keys.
       $key->{len_cols}  = length $key->{colnames};
 
-      # The PRIMARY KEY is treated specially.  It is effectively never a
+      # The primary key is treated specially.  It is effectively never a
       # duplicate, so it is never removed.  It is compared to all other
-      # keys, and in any case of duplication, the PRIMARY is always kept
-      # and the other key removed.
-      if ( $key->{name} eq 'PRIMARY' ) {
+      # keys, and in any case of duplication, the primary is always kept
+      # and the other key removed.  Usually the primary is the acutal
+      # PRIMARY KEY, but for an InnoDB table without a PRIMARY KEY, the
+      # effective primary key is the clustered key.
+      if ( $key->{name} eq 'PRIMARY'
+           || ($args{clustered_key} && $key->{name} eq $args{clustered_key}) ) {
          $primary_key = $key;
+         MKDEBUG && _d('primary key:', $key->{name});
          next KEY;
       }
 
@@ -144,7 +148,7 @@ sub get_duplicate_keys {
    # Remove clustered duplicates.
    my $clustered_key = $args{clustered_key} ? $keys{$args{clustered_key}}
                      : undef;
-   MKDEBUG && _d('clustered key:', $clustered_key);
+   MKDEBUG && _d('clustered key:', $clustered_key->{name});
    if ( $clustered_key
         && $args{clustered}
         && $args{tbl_info}->{engine}
