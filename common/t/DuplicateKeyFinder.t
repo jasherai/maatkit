@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 29;
+use Test::More tests => 32;
 
 require "../DuplicateKeyFinder.pm";
 require "../Quoter.pm";
@@ -284,6 +284,7 @@ is_deeply(
          'duplicate_of_cols' => '`a`',
          'reason'       => 'Key b ends with a prefix of the clustered index',
          dupe_type      => 'clustered',
+         short_key      => '`b`',
       }
    ],
    'Duplicate keys with cluster option'
@@ -570,6 +571,27 @@ is_deeply(
       }
    ],
    'fk col not in referencing table (issue 331)'
+);
+
+# #############################################################################
+# Issue 295: Enhance rules for clustered keys in mk-duplicate-key-checker
+# #############################################################################
+is(
+   $dk->shorten_clustered_duplicate('`a`', '`b`,`a`'),
+   '`b`',
+   "shorten_clustered_duplicate('`a`', '`b`,`a`')"
+);
+
+is(
+   $dk->shorten_clustered_duplicate('`a`', '`a`'),
+   '`a`',
+   "shorten_clustered_duplicate('`a`', '`a`')"
+);
+
+is(
+   $dk->shorten_clustered_duplicate('`a`,`b`', '`c`,`a`,`b`'),
+   '`c`',
+   "shorten_clustered_duplicate('`a`,`b`', '`c`,`a`,`b`'),"
 );
 
 # #############################################################################

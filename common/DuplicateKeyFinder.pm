@@ -152,11 +152,11 @@ sub get_duplicate_keys {
    {
       MKDEBUG && _d('Removing UNIQUE dupes of clustered key');
       push @dupes,
-         $self->remove_clustered_duplicates($primary_key, \@unique_keys, %args);
+         $self->remove_clustered_duplicates($clustered_key, \@unique_keys, %args);
 
       MKDEBUG && _d('Removing ordinary dupes of clustered key');
       push @dupes,
-         $self->remove_clustered_duplicates($primary_key, \@normal_keys, %args);
+         $self->remove_clustered_duplicates($clustered_key, \@normal_keys, %args);
    }
 
    return \@dupes;
@@ -364,7 +364,7 @@ sub remove_prefix_duplicates {
 }
 
 # Removes and returns clustered duplicate keys from keys.
-# primary is hashref and keys is an arrayref.
+# ck (clustered key) is hashref and keys is an arrayref.
 #
 # For engines with a clustered index, if a key ends with a prefix
 # of the primary key, it's a duplicate. Example:
@@ -376,10 +376,10 @@ sub remove_prefix_duplicates {
 #    * callback          Sub called for each dupe found
 #
 sub remove_clustered_duplicates {
-   my ( $self, $primary_key, $keys, %args ) = @_;
-   die "I need a primary_key argument" unless $primary_key;
-   die "I need a keys argument"        unless $keys;
-   my $pkcols = $primary_key->{colnames};
+   my ( $self, $ck, $keys, %args ) = @_;
+   die "I need a ck argument"   unless $ck;
+   die "I need a keys argument" unless $keys;
+   my $ck_cols = $ck->{colnames};
    my @dupes;
 
    KEY:
@@ -387,16 +387,20 @@ sub remove_clustered_duplicates {
       my $suffix = $keys->[$i]->{colnames};
       SUFFIX:
       while ( $suffix =~ s/`[^`]+`,// ) {
-         my $len = min(length($pkcols), length($suffix));
-         if ( substr($suffix, 0, $len) eq substr($pkcols, 0, $len) ) {
+         my $len = min(length($ck_cols), length($suffix));
+         if ( substr($suffix, 0, $len) eq substr($ck_cols, 0, $len) ) {
             my $dupe = {
                key               => $keys->[$i]->{name},
                cols              => $keys->[$i]->{real_cols},
-               duplicate_of      => $primary_key->{name},
-               duplicate_of_cols => $primary_key->{real_cols},
+               duplicate_of      => $ck->{name},
+               duplicate_of_cols => $ck->{real_cols},
                reason            => "Key $keys->[$i]->{name} ends with a "
                                   . "prefix of the clustered index",
                dupe_type         => 'clustered',
+               short_key         => $self->shorten_clustered_duplicate(
+                                       $ck_cols,
+                                       $keys->[$i]->{real_cols}
+                                    ),
             };
             push @dupes, $dupe;
             delete $keys->[$i];
@@ -411,6 +415,14 @@ sub remove_clustered_duplicates {
    @$keys = grep { defined $_; } @$keys;
 
    return @dupes;
+}
+
+sub shorten_clustered_duplicate {
+   my ( $self, $ck_cols, $dupe_key_cols ) = @_;
+   return $ck_cols if $ck_cols eq $dupe_key_cols;
+   $dupe_key_cols =~ s/$ck_cols$//;
+   $dupe_key_cols =~ s/,+$//;
+   return $dupe_key_cols;
 }
 
 # Given a primary key (can be undef) and an arrayref of unique keys,
