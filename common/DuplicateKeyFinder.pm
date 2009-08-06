@@ -36,11 +36,12 @@ sub new {
 # %args should contain:
 #
 #  *  keys             (req) A hashref from TableParser::get_keys().
+#  *  clustered_key    The clustered key, if any; also from get_keys().
 #  *  tbl_info         { db, tbl, engine, ddl } hashref.
 #  *  callback         An anonymous subroutine, called for each dupe found.
 #  *  ignore_order     Order never matters for any type of index (generally
 #                      order matters except for FULLTEXT).
-#  *  ignore_structure Compare indexes of different types as if they're the same.
+#  *  ignore_structure Compare different index types as if they're the same.
 #  *  clustered        Perform duplication checks against the clustered  key.
 #
 # Returns an arrayref of duplicate key hashrefs.  Each contains
@@ -50,6 +51,8 @@ sub new {
 #  *  duplicate_of      The name of the index it duplicates.
 #  *  duplicate_of_cols The columns of the index it duplicates.
 #  *  reason            A human-readable description of why this is a duplicate.
+#  *  dupe_type         Either exact, prefix, fk, or clustered.
+#
 sub get_duplicate_keys {
    my ( $self, $keys,  %args ) = @_;
    die "I need a keys argument" unless $keys;
@@ -139,10 +142,13 @@ sub get_duplicate_keys {
    # TODO: other structs
 
    # Remove clustered duplicates.
-   if ( $primary_key
+   my $clustered_key = $args{clustered_key} ? $keys{$args{clustered_key}}
+                     : undef;
+   MKDEBUG && _d('clustered key:', $clustered_key);
+   if ( $clustered_key
         && $args{clustered}
         && $args{tbl_info}->{engine}
-        && $args{tbl_info}->{engine} =~ m/^(?:InnoDB|solidDB)$/ )
+        && $args{tbl_info}->{engine} =~ m/InnoDB/i )
    {
       MKDEBUG && _d('Removing UNIQUE dupes of clustered key');
       push @dupes,
@@ -183,14 +189,15 @@ sub get_duplicate_fks {
                cols              => $fks[$j]->{colnames},
                duplicate_of      => $fks[$i]->{name},
                duplicate_of_cols => $fks[$i]->{colnames},
-               reason       =>
+               reason            =>
                     "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{colnames}) "
                   . "REFERENCES $fks[$j]->{parent_tbl} "
                   . "($fks[$j]->{parent_colnames}) "
                   . 'is a duplicate of '
                   . "FOREIGN KEY $fks[$i]->{name} ($fks[$i]->{colnames}) "
                   . "REFERENCES $fks[$i]->{parent_tbl} "
-                  ."($fks[$i]->{parent_colnames})"
+                  ."($fks[$i]->{parent_colnames})",
+               dupe_type         => 'fk',
             };
             push @dupes, $dupe;
             delete $fks[$j];
@@ -323,9 +330,10 @@ sub remove_prefix_duplicates {
                   . $right_keys->[$right_index]->{constraining_key}->{name}
                   . " is a stronger constraint\n"; 
             }
+            my $exact_dupe = $right_len_cols < $left_len_cols ? 0 : 1;
             $reason .= $right_name
-                     . ($right_len_cols<$left_len_cols ? ' is a left-prefix of '
-                                                       : ' is a duplicate of ')
+                     . ($exact_dupe ? ' is a duplicate of '
+                                    : ' is a left-prefix of ')
                      . $left_name;
             my $dupe = {
                key               => $right_name,
@@ -333,6 +341,7 @@ sub remove_prefix_duplicates {
                duplicate_of      => $left_name,
                duplicate_of_cols => $left_keys->[$left_index]->{real_cols},
                reason            => $reason,
+               dupe_type         => $exact_dupe ? 'exact' : 'prefix',
             };
             push @dupes, $dupe;
             delete $right_keys->[$right_index];
@@ -387,6 +396,7 @@ sub remove_clustered_duplicates {
                duplicate_of_cols => $primary_key->{real_cols},
                reason            => "Key $keys->[$i]->{name} ends with a "
                                   . "prefix of the clustered index",
+               dupe_type         => 'clustered',
             };
             push @dupes, $dupe;
             delete $keys->[$i];
