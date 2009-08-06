@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 28;
+use Test::More tests => 29;
 
 use DBI;
 require "../TableParser.pm";
@@ -657,6 +657,20 @@ is(
    $EVAL_ERROR,
    '',
    'No error parsing undef ddl'
+);
+
+
+# #############################################################################
+# Issue 295: Enhance rules for clustered keys in mk-duplicate-key-checker
+# #############################################################################
+
+# Make sure get_keys() gets a clustered index that's not the primary key.
+my $ddl = load_file('samples/non_pk_ck.sql');
+my (undef, $ck) = $tp->get_keys($ddl, {}, {i=>0,j=>1});
+is(
+   $ck,
+   'i_idx',
+   'Get first unique, non-nullable index as clustered key'
 );
 
 # #############################################################################
