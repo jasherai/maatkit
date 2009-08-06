@@ -3218,11 +3218,15 @@ following query:
   SELECT ... WHERE b=1 ORDER BY a;
 
 This query will do a filesort if we remove the index on C<b,a>.  But if we
-shorten the index on C<b,a> to just C<a> and also remove the ORDER BY, the query
+shorten the index on C<b,a> to just C<b> and also remove the ORDER BY, the query
 should return the same results.
 
-Currently, the tool suggests removing these indexes, but it should suggest
-shortening them instead.  This is filed as a feature request (issue 295).
+The tool suggests shortening duplicate clustered keys by dropping the key
+and re-adding it without the primary key prefix.  The shortened clustered
+key may still duplicate another key, but the tool cannot currently detect
+when this happens without being ran a second time to re-check the newly
+shortened clustered keys.  Therefore, if you shorten any duplicate clusterted
+keys, you should run the tool again.
 
 =item --config
 
