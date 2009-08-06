@@ -2271,7 +2271,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DuplicateKeyFinder package 4399
+# DuplicateKeyFinder package 4404
 # ###########################################################################
 package DuplicateKeyFinder;
 
@@ -2305,8 +2305,10 @@ sub get_duplicate_keys {
 
       $key->{len_cols}  = length $key->{colnames};
 
-      if ( $key->{name} eq 'PRIMARY' ) {
+      if ( $key->{name} eq 'PRIMARY'
+           || ($args{clustered_key} && $key->{name} eq $args{clustered_key}) ) {
          $primary_key = $key;
+         MKDEBUG && _d('primary key:', $key->{name});
          next KEY;
       }
 
@@ -2352,7 +2354,7 @@ sub get_duplicate_keys {
 
    my $clustered_key = $args{clustered_key} ? $keys{$args{clustered_key}}
                      : undef;
-   MKDEBUG && _d('clustered key:', $clustered_key);
+   MKDEBUG && _d('clustered key:', $clustered_key->{name});
    if ( $clustered_key
         && $args{clustered}
         && $args{tbl_info}->{engine}
