@@ -98,7 +98,7 @@ sub parse {
    # TODO: passing is_nullable this way is just a quick hack. Ultimately,
    # we probably should decompose this sub further, taking out the block
    # above that parses col props like nullability, auto_inc, type, etc.
-   my $keys = $self->get_keys($ddl, $opts, \%is_nullable);
+   my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
       cols           => \@cols,
@@ -107,6 +107,7 @@ sub parse {
       null_cols      => \@null,
       is_nullable    => \%is_nullable,
       is_autoinc     => \%is_autoinc,
+      clustered_key  => $clustered_key,
       keys           => $keys,
       defs           => \%def_for,
       numeric_cols   => \@nums,
@@ -230,8 +231,10 @@ sub get_engine {
 # $ddl is a SHOW CREATE TABLE returned from MySQLDumper::get_create_table().
 # The general format of a key is
 # [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
-# Returns a hashref of keys and their properties:
-#    key => {
+# Returns a hashref of keys and their properties and the clustered key (if
+# the engine is InnoDB):
+#   {
+#     key => {
 #       type         => BTREE, FULLTEXT or  SPATIAL
 #       name         => column name, like: "foo_key"
 #       colnames     => original col def string, like: "(`a`,`b`)"
@@ -240,13 +243,16 @@ sub get_engine {
 #       is_unique    => 1 if the col is UNIQUE or PRIMARY
 #       is_nullable  => true (> 0) if one or more col can be NULL
 #       is_col       => hashref with key for each col=>1
+#     },
 #   },
-#   key => ...
+#   'PRIMARY',   # clustered key
+#
 # Foreign keys are ignored; use get_fks() instead.
 sub get_keys {
    my ( $self, $ddl, $opts, $is_nullable ) = @_;
-   my $engine = $self->get_engine($ddl);
-   my $keys   = {};
+   my $engine        = $self->get_engine($ddl);
+   my $keys          = {};
+   my $clustered_key = undef;
 
    KEY:
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
@@ -299,9 +305,21 @@ sub get_keys {
          is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
          is_col       => { map { $_ => 1 } @cols },
       };
+
+      # Find clustered key (issue 295).
+      if ( $engine =~ m/InnoDB/i && !$clustered_key ) {
+         my $this_key = $keys->{$name};
+         if ( $this_key->{name} eq 'PRIMARY' ) {
+            $clustered_key = 'PRIMARY';
+         }
+         elsif ( $this_key->{is_unique} && !$this_key->{is_nullable} ) {
+            $clustered_key = $this_key->{name};
+         }
+         MKDEBUG && $clustered_key && _d('This key is the clustered key');
+      }
    }
 
-   return $keys;
+   return $keys, $clustered_key;
 }
 
 # Like get_keys() above but only returns a hash of foreign keys.

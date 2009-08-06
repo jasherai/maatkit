@@ -46,6 +46,7 @@ is_deeply(
       is_autoinc   => { a => 0 },
       null_cols    => [qw(a)],
       is_nullable  => { a => 1 },
+      clustered_key => undef,
       keys         => {},
       defs         => { a => '  `a` int(11) default NULL' },
       numeric_cols => [qw(a)],
@@ -66,6 +67,7 @@ is_deeply(
       is_autoinc     => { 'a' => 0, 'b' => 0 },
       null_cols      => [ 'a', 'b' ],
       is_nullable    => { 'a' => 1, 'b' => 1 },
+      clustered_key  => undef,
       keys           => {
          prefix_idx => {
             is_unique => 0,
@@ -169,6 +171,7 @@ is_deeply(
          special_features     => 1,
          rating               => 1,
       },
+      clustered_key => 'PRIMARY',
       keys => {
          PRIMARY => {
             colnames     => '`film_id`',
@@ -287,6 +290,7 @@ is_deeply(
       is_autoinc   => { a => 0 },
       null_cols    => [qw(a)],
       is_nullable  => { a => 1 },
+      clustered_key => undef,
       keys         => {},
       defs         => { a => '  `a` int(11) default NULL' },
       numeric_cols => [qw(a)],
@@ -319,6 +323,7 @@ is_deeply(
          'pfk-source_instrument_id'  => 0,
          'pfk-related_instrument_id' => 1
       },
+      clustered_key => 'PRIMARY',
       'keys' => {
          'sort_order' => {
             'is_unique'    => 0,
@@ -383,6 +388,7 @@ is_deeply(
       is_autoinc  => { id => 1 },
       null_cols   => [],
       is_nullable => {},
+      clustered_key => undef,
       keys        => {
          PRIMARY => {
             cols         => [qw(id)],
@@ -413,6 +419,7 @@ is_deeply(
       is_autoinc   => { a => 0, b => 0, mixedcol => 0 },
       null_cols    => [qw(a b mixedcol)],
       is_nullable  => { a => 1, b => 1, mixedcol => 1 },
+      clustered_key => undef,
       keys         => {
          mykey => {
             colnames     => '`a`,`b`,`mixedcol`',
@@ -591,6 +598,7 @@ is_deeply(
       is_autoinc   => { country => 0 },
       null_cols    => [qw(country)],
       is_nullable  => { country => 1 },
+      clustered_key => undef,
       keys         => {},
       defs         => { country => "  `country` enum('','Cote D`ivoire') default NULL"},
       numeric_cols => [],
@@ -624,6 +632,7 @@ is_deeply(
       is_autoinc   => { a => 0 },
       null_cols    => [qw(a)],
       is_nullable  => { a => 1 },
+      clustered_key => undef,
       keys         => {},
       defs         => { a => "  `a` int(11) DEFAULT NULL COMMENT 'issue_330 `alex`'" },
       numeric_cols => [qw(a)],
