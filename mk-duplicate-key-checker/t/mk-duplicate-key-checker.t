@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 require '../mk-duplicate-key-checker';
 require '../../common/Sandbox.pm';
@@ -62,6 +62,13 @@ $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', 'samples/issue_331.sql', 'test');
 $output = `$cmd -d issue_331 | diff samples/issue_331.txt -`;
 is($output, '', 'Issue 331 crash on fks');
+
+# #############################################################################
+# Issue 295: Enhance rules for clustered keys in mk-duplicate-key-checker
+# #############################################################################
+$sb->load_file('master', 'samples/issue_295.sql', 'test');
+$output = `$cmd -d issue_295 | diff samples/issue_295.txt -`;
+is($output, '', "Shorten, not remove, clustered dupes");
 
 # #############################################################################
 # Done.
