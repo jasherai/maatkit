@@ -1,0 +1,36 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+require '../common/MaatkitTest.pm';
+
+MaatkitTest->import(qw(load_file));
+
+my %not_instantiated = (
+   ServerSpecs    => 1,
+   Transformers   => 1,
+);
+
+# If you specify one program, it has to be given like ../mk-find/mk-find
+my @progs = @ARGV;
+if ( !@progs ) {
+   @progs = <../mk-*/mk-*>;
+}
+
+foreach my $prog ( @progs ) {
+   my ($program) = $prog =~ m{/([a-z-]+)$};
+   next unless $program;
+
+   my $contents = load_file($prog);
+
+   my %uses   = map  { $_ => 1 } $contents =~ m/new (\w+)/gm;
+   my @unused = grep { !$uses{$_} && !$not_instantiated{$_} } $contents =~ m/^# (\w+) package \d+/gm;
+
+   if ( @unused ) {
+      print "$program has unused modules: @unused\n";
+   }
+}
+
+exit;
