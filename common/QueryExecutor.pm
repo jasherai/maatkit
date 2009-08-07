@@ -123,7 +123,7 @@ sub exec {
 
       # Execute the query on this host. 
       {
-         my ($name, $res) = ('Query_time', { error=>undef, Query_time=>0 });
+         my ($name, $res) = ('Query_time', { error=>undef, Query_time=>-1, });
          my ( $start, $end, $query_time );
          eval {
             $start = time();

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 25;
+use Test::More tests => 27;
 
 require '../QueryExecutor.pm';
 require '../Quoter.pm';
@@ -304,6 +304,29 @@ is(
    '',
    'Does not die if op result is ok'
 );
+
+# #############################################################################
+# Test queries that fail to execute.
+# #############################################################################
+@pre  = ();
+@post = ();
+@results = $qe->exec(
+   query => 'SELECT * FROM test.does_not_exist WHERE will_fail = 1',
+   hosts => $hosts,
+   pre_exec_callbacks  => \@pre,
+   post_exec_callbacks => \@post,
+);
+like(
+   $results[0]->{Query_time}->{error},
+   qr/Table 'test.does_not_exist' doesn't exist/,
+   'Invalid query error'
+);
+is(
+   $results[0]->{Query_time}->{Query_time},
+   -1,
+   'Invalid query Query_time'
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
