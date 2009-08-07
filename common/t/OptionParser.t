@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 140;
+use Test::More tests => 136;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1757,49 +1757,6 @@ ok($o->got('foo'), 'Got --foo again');
 is($o->get('foo'), 'baz', 'Got overridden --foo value');
 ok($o->got('verbose'), 'Got --verbose twice');
 is($o->get('verbose'), 2, 'Got --verbose value twice');
-
-# #############################################################################
-# Issue 404: Does default: yes for an opt like --[no]foo make $o->get('foo')
-# true by default?
-# #############################################################################
-$o = new OptionParser(
-   description  => 'parses command line options.',
-);
-$o->_parse_specs(
-   { spec => 'foo!', desc  => 'foo (default yes)' },
-);
-@ARGV = ();
-$o->get_opts();
-is(
-   $o->get('foo'),
-   1,
-   '--[no]foo default yes == 1'
-);
-
-@ARGV = qw(--foo);
-$o->get_opts();
-is(
-   $o->get('foo'),
-   1,
-   '--[no]foo default yes given --foo == 1'
-);
-
-
-@ARGV = qw(--no-foo);
-$o->get_opts();
-is(
-   $o->get('foo'),
-   0,
-   '--[no]foo default yes given --no-foo == 0'
-);
-
-@ARGV = qw(--nofoo);
-$o->get_opts();
-is(
-   $o->get('foo'),
-   0,
-   '--[no]foo default yes given --nofoo == 0'
-);
 
 # #############################################################################
 # Issue 409: OptionParser modifies second value of

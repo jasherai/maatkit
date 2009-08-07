@@ -291,12 +291,6 @@ sub _parse_specs {
          # These defaults from the POD may be overridden by later calls
          # to set_defaults().
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
-            # This allows "default yes" for negatable opts. See issue 404.
-            if ( $opt->{is_negatable} ) {
-               $def = $def eq 'yes' ? 1
-                    : $def eq 'no'  ? 0
-                    : $def;
-            }
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
          }
