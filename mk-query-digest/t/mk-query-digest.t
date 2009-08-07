@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 91;
+use Test::More tests => 92;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -209,6 +209,12 @@ ok(
    no_diff($run_with . 'slow028.txt',
       'samples/slow028.txt'),
    'No duplicate table names',
+);
+
+# Issue 458, Use of uninitialized value in division (/) 
+ok(
+   no_diff($run_with . 'slow035.txt --report-format header,query_report,profile', 'samples/slow035.txt'),
+   'Pathological all attribs, minimal attribs, all zero values (slow035)',
 );
 
 # #############################################################################
