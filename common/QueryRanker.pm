@@ -41,9 +41,9 @@ my @bucket_threshold = qw(500 100  100   500 50   50    20 1   );
 my @bucket_labels    = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
 my %ranker_for = (
-   Query_time => \&rank_query_times,
-   warnings   => \&rank_warnings,
-   results    => \&rank_result_sets,
+   Query_time       => \&rank_query_times,
+   warnings         => \&rank_warnings,
+   checksum_results => \&rank_result_sets,
 );
 
 sub new {
@@ -56,6 +56,14 @@ sub new {
    return bless $self, $class;
 }
 
+# Ranks operation result differences.  @results is an array of operation
+# results for mulitple hosts returned from QueryExecutor::exec().  The first
+# host is considered the "master" against which all other hosts are compared.
+# No host is actually preferred, but since we only do a 1-to-many comparison,
+# i.e. we do *not* compare all hosts to one another, then choosing that 1 host
+# is arbitrary.
+#
+# Returns a total rank value and a list of reasons for that total rank.
 sub rank_results {
    my ( $self, @results ) = @_;
    return unless @results > 1;
@@ -75,9 +83,9 @@ sub rank_results {
       my $master = $master_results->{$results};
 
       HOST:
-      my $i = 1;  # host1 is master...
+      my $i = 1;  # host1/i=1 is master so...
       foreach my $host_results ( @results ) {
-         $i++; # ...so we start with host2.
+         $i++; # ...we start with host2/i=2
          if ( !exists $host_results->{$results} ) {
             warn "Host$i doesn't have $results results";
             next HOST;
@@ -100,7 +108,7 @@ sub rank_query_times {
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
 
-   @res = $self->compare_query_times($host1, $host2);
+   @res = $self->compare_query_times($host1->{Query_time},$host2->{Query_time});
    $rank += shift @res;
    push @reasons, @res;
 

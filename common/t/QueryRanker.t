@@ -48,17 +48,24 @@ test_compare_query_times(10.0,     10.1,     1, '10s threshold');
 # #############################################################################
 my @results = (
    {
-      Query_time  => 0.001020,
-      warnings    => {
+      Query_time => {
+         Query_time  => 0.001020,
+         error       => undef
+      },
+      warnings   => {
          count => 0,
          codes => {},
       },
    },
    {
-      Query_time => 0.001100,
+      Query_time => {
+         Query_time  => 0.001100,
+         error       => undef,
+      },
       warnings    => {
          count => 0,
          codes => {},
+         error       => undef,
       }
    },
 );
@@ -70,7 +77,10 @@ is_deeply(
 
 @results = (
    {
-      Query_time  => 0.1,
+      Query_time  => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 1,
          codes => {
@@ -80,10 +90,14 @@ is_deeply(
                Message => "Out of range value adjusted for column 'userid' at row 1",
             }
          },
+         error   => undef,
       }
    },
    {
-      Query_time  => 0.1,
+      Query_time  => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 1,
          codes => {
@@ -93,6 +107,7 @@ is_deeply(
                Message => "Out of range value adjusted for column 'userid' at row 1",
             }
          },
+         error => undef,
       },
    },
 );
@@ -106,17 +121,25 @@ is_deeply(
 
 @results = (
    {
-      Query_time  => 0.003020,
+      Query_time  => {
+         Query_time  => 0.003020,
+         error       => undef,
+      },
       warnings    => {
          count => 0,
          codes => {},
+         error => undef,
       }
    },
    {
-      Query_time  => 0.000100,
+      Query_time  => {
+         Query_time  => 0.000100,
+         error       => undef,
+      },
       warnings    => {
          count => 0,
          codes => {},
+         error => undef,
       }
    },
 );
@@ -130,7 +153,10 @@ is_deeply(
 
 @results = (
    {
-      Query_time  => 0.1,
+      Query_time  => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 1,
          codes => {
@@ -140,10 +166,14 @@ is_deeply(
                Message => "Out of range value adjusted for column 'userid' at row 1",
             }
          },
+         error       => undef,
       }
    },
    {
-      Query_time  => 0.1,
+      Query_time  => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 1,
          codes => {
@@ -153,6 +183,7 @@ is_deeply(
                Message => "Out of range value adjusted for column 'userid' at row 1",
             }
          },
+         error       => undef,
       },
    },
 );
@@ -167,7 +198,10 @@ is_deeply(
 
 @results = (
    {
-      Query_time  => 0.1,
+      Query_time  => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 1,
          codes => {
@@ -177,13 +211,18 @@ is_deeply(
                Message => "Out of range value adjusted for column 'userid' at row 1",
             }
          },
+         error       => undef,
       }
    },
    {
-      Query_time    => 0.1,
+      Query_time    => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 0,
          codes => {},
+         error => undef,
       }
    },
 );
@@ -199,14 +238,21 @@ is_deeply(
 
 @results = (
    {
-      Query_time    => 0.1,
+      Query_time    => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 0,
          codes => {},
+         error       => undef,
       }
    },
    {
-      Query_time    => 0.1,
+      Query_time    => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 1,
          codes => {
@@ -216,6 +262,7 @@ is_deeply(
                Message => "Out of range value adjusted for column 'userid' at row 1",
             }
          },
+         error       => undef,
       }
    },
 );
@@ -231,7 +278,10 @@ is_deeply(
 
 @results = (
    {
-      Query_time    => 0.1,
+      Query_time    => {
+         Query_time  => 0.1,
+         error       => undef,,
+      },
       warnings    => {
          count => 2,
          codes => {
@@ -246,10 +296,14 @@ is_deeply(
                Message => "Duplicate entry '1' for key 1",
             },
          },
+         error       => undef,
       }
    },
    {
-      Query_time    => 0.1,
+      Query_time    => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 1,
          codes => {
@@ -259,6 +313,7 @@ is_deeply(
                Message => "Out of range value adjusted for column 'userid' at row 1",
             },
          },
+         error       => undef,
       }
    },
 );
@@ -274,7 +329,10 @@ is_deeply(
 
 @results = (
    {
-      Query_time    => 0.1,
+      Query_time    => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 1,
          codes => {
@@ -284,10 +342,14 @@ is_deeply(
                Message => "Duplicate entry '1' for key 1",
             }
          },
+         error       => undef,
       }
    },
    {
-      Query_time    => 0.1,
+      Query_time    => {
+         Query_time  => 0.1,
+         error       => undef,
+      },
       warnings    => {
          count => 1,
          codes => {
@@ -297,6 +359,7 @@ is_deeply(
                Message => "Out of range value adjusted for column 'userid' at row 1",
             }
          },
+         error       => undef,
       }
    },
 );
@@ -315,8 +378,9 @@ is_deeply(
 # #############################################################################
 @results = (
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '123',
          table_struct   => {
             cols     => [qw(a b)],
@@ -328,8 +392,9 @@ is_deeply(
       }
    },
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '123',
          table_struct   => {
             cols     => [qw(a b)],
@@ -349,8 +414,9 @@ is_deeply(
 
 @results = (
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '123',
          table_struct   => {
             cols     => [qw(a b)],
@@ -362,8 +428,9 @@ is_deeply(
       }
    },
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '124',
          table_struct   => {
             cols     => [qw(a b)],
@@ -385,8 +452,9 @@ is_deeply(
 
 @results = (
    {
-      results => {
-         n_rows         => 11,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 11,
          checksum => '123',
          table_struct   => {
             cols     => [qw(a b)],
@@ -398,8 +466,9 @@ is_deeply(
       }
    },
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '124',
          table_struct   => {
             cols     => [qw(a b)],
@@ -422,8 +491,9 @@ is_deeply(
 
 @results = (
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '124',
          table_struct   => {
             cols     => [qw(a b)],
@@ -435,8 +505,9 @@ is_deeply(
       }
    },
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '124',
          table_struct   => {
             cols     => [qw(a b)],
@@ -458,8 +529,9 @@ is_deeply(
 
 @results = (
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '124',
          table_struct   => {
             cols     => [qw(a b)],
@@ -470,8 +542,9 @@ is_deeply(
       }
    },
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '124',
          table_struct   => {
             cols     => [qw(a b)],
@@ -493,8 +566,9 @@ is_deeply(
 
 @results = (
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '124',
          table_struct   => {
             cols     => [qw(a b)],
@@ -506,8 +580,9 @@ is_deeply(
       }
    },
    {
-      results => {
-         n_rows         => 10,
+      checksum_results => {
+         error    => undef,
+         n_rows   => 10,
          checksum => '124',
          table_struct   => {
             cols     => [qw(a b)],
