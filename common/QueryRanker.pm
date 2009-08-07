@@ -108,9 +108,28 @@ sub rank_query_times {
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
 
-   @res = $self->compare_query_times($host1->{Query_time},$host2->{Query_time});
-   $rank += shift @res;
-   push @reasons, @res;
+   # QueryExecutor always does the Query_time operation.  If it worked,
+   # then Query_time will be >= 0, else it will be = -1 and error will
+   # be set.
+   if ( $host1->{Query_time} == -1 ) {
+      $rank += 100;
+      push @reasons, 'Query failed to execute on host1: '
+            . ($host1->{error} || 'unknown error')
+            . " (rank+100)";
+   }
+   if ( $host2->{Query_time} == -1 ) {
+      $rank += 100;
+      push @reasons, 'Query failed to execute on host2: '
+            . ($host2->{error} || 'unknown error')
+            . " (rank+100)";
+   }
+
+   if ( $host1->{Query_time} >= 0 && $host2->{Query_time} >= 0 ) {
+      @res = $self->compare_query_times(
+         $host1->{Query_time}, $host2->{Query_time});
+      $rank += shift @res;
+      push @reasons, @res;
+   }
 
    return $rank, @reasons;
 }

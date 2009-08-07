@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 31;
+use Test::More tests => 32;
 
 require '../QueryRanker.pm';
 
@@ -371,6 +371,29 @@ is_deeply(
      'Error 1264 on host2 is new (rank+3)',
    ],
    'Same number of different warnings (7)'
+);
+
+@results = (
+   {
+      Query_time    => {
+         Query_time  => -1,
+         error       => 'something terrible happened',
+      },
+   },
+   {
+      Query_time    => {
+         Query_time  => -1,
+         error       => 'query caused an error',
+      },
+   },
+);
+is_deeply(
+   [ $qr->rank_results(@results) ],
+   [ 200,
+     'Query failed to execute on host1: something terrible happened (rank+100)',
+     'Query failed to execute on host2: query caused an error (rank+100)',
+   ],
+   'Query failed to execute for Query_time (200)'
 );
 
 # #############################################################################
