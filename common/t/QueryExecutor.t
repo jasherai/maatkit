@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 19;
+use Test::More tests => 25;
 
 require '../QueryExecutor.pm';
 require '../Quoter.pm';
@@ -34,7 +34,7 @@ $dbh2->do('USE test');
 my $qe = new QueryExecutor();
 isa_ok($qe, 'QueryExecutor');
 
-my $dbhs = [$dbh1, $dbh2];
+my $hosts = [ { dbh=>$dbh1 }, { dbh=>$dbh2 } ];
 my @pre;
 my @post;
 my @results;
@@ -44,25 +44,24 @@ my $output;
 # Test basic functionality and results.
 # #############################################################################
 @post = (
-   sub { $qe->get_query_time(@_); },
    sub { $qe->get_warnings(@_);   },
 );
 @results = $qe->exec(
    query => 'SELECT * FROM test.issue_47',
-   dbhs  => $dbhs,
+   hosts => $hosts,
    pre_exec_callbacks  => \@pre,
    post_exec_callbacks => \@post,
 );
 
 like(
-   $results[0]->{Query_time},
+   $results[0]->{Query_time}->{Query_time},
    qr/[\d\.]+/,
-   "host1 Query_time ($results[0]->{Query_time})",
+   "host1 Query_time ($results[0]->{Query_time}->{Query_time})",
 );
 like(
-   $results[1]->{Query_time},
+   $results[1]->{Query_time}->{Query_time},
    qr/[\d\.]+/,
-   "host2 Query_time ($results[1]->{Query_time})",
+   "host2 Query_time ($results[1]->{Query_time}->{Query_time})",
 );
 is_deeply(
    $results[0]->{warnings}->{codes},
@@ -89,8 +88,8 @@ is(
 # Test warnings.
 # #############################################################################
 @results = $qe->exec(
-   query     => 'INSERT INTO test.issue_47 VALUES (-1)',
-   dbhs  => $dbhs,
+   query => 'INSERT INTO test.issue_47 VALUES (-1)',
+   hosts => $hosts,
    pre_exec_callbacks  => \@pre,
    post_exec_callbacks => \@post,
 );
@@ -112,12 +111,12 @@ $dbh1->do('SET @a = "foo"');
 push @pre, sub {
    my ( %args ) = @_;
    $args{dbh}->do('SET @a = "before"');
-   return;
+   return 'name', {error=>undef};
 };
 @post = ();
 @results = $qe->exec(
    query => 'SELECT * FROM test.issue_47',
-   dbhs  => $dbhs,
+   hosts  => $hosts,
    pre_exec_callbacks  => \@pre,
    post_exec_callbacks => \@post,
 );
@@ -133,11 +132,11 @@ $dbh1->do('SET @a = "foo"');
 push @post, sub {
    my ( %args ) = @_;
    $args{dbh}->do('SET @a = "after"');
-   return;
+   return 'name', {error=>undef};
 };
 @results = $qe->exec(
    query => 'SELECT * FROM test.issue_47',
-   dbhs  => $dbhs,
+   hosts  => $hosts,
    pre_exec_callbacks  => \@pre,
    post_exec_callbacks => \@post,
 );
@@ -152,17 +151,17 @@ $dbh1->do('SET @a = 0');
 @pre = (sub {
    my ( %args ) = @_;
    $args{dbh}->do('SET @a = 1');
-   return;
+   return 'name', {error=>undef};
 });
 @post = (sub {
    my ( %args ) = @_;
    $args{dbh}->do('SET @a = @a + 1');
-   return;
+   return 'name', {error=>undef};
 });
 
 @results = $qe->exec(
    query => 'SELECT * FROM test.issue_47',
-   dbhs  => $dbhs,
+   hosts  => $hosts,
    pre_exec_callbacks  => \@pre,
    post_exec_callbacks => \@post,
 );
@@ -198,50 +197,113 @@ my $tmp_table = 'QueryExecutor';
    return $qe->checksum_results(@_, database=>'test', tmp_table=>$tmp_table, %modules);
 });
 @results = $qe->exec(
-   query     => "CREATE TEMPORARY TABLE test.$tmp_table AS SELECT * FROM test.issue_47",
-   dbhs  => $dbhs,
+   query => "CREATE TEMPORARY TABLE test.$tmp_table AS SELECT * FROM test.issue_47",
+   hosts => $hosts,
    pre_exec_callbacks  => \@pre,
    post_exec_callbacks => \@post,
 );
 is(
-   $results[0]->{results}->{n_rows},
+   $results[0]->{checksum_results}->{n_rows},
    10,
    'results n_rows on host1'
 );
 is(
-   $results[1]->{results}->{n_rows},
+   $results[1]->{checksum_results}->{n_rows},
    11,
    'results n_rows on host1'
 );
 ok(
-    $results[0]->{results}->{checksum},  
+    $results[0]->{checksum_results}->{checksum},  
    'Got table checksum'
 );
 cmp_ok(
-   $results[0]->{results}->{checksum},
+   $results[0]->{checksum_results}->{checksum},
    'ne',
-   $results[1]->{results}->{checksum},
+   $results[1]->{checksum_results}->{checksum},
    'results checksums host1 != host2'
 );
 
 # Make host1 and host2 identical again.
 $dbh1->do('DELETE FROM test.issue_47 WHERE userid = 0');
 @results = $qe->exec(
-   query     => "CREATE TEMPORARY TABLE test.$tmp_table AS SELECT * FROM test.issue_47",
-   dbhs  => $dbhs,
+   query => "CREATE TEMPORARY TABLE test.$tmp_table AS SELECT * FROM test.issue_47",
+   hosts => $hosts,
    pre_exec_callbacks  => \@pre,
    post_exec_callbacks => \@post,
 );
 ok(
-    $results[0]->{results}->{checksum},  
+    $results[0]->{checksum_results}->{checksum},  
    'Got table checksum'
 );
 is(
-   $results[0]->{results}->{checksum},
-   $results[1]->{results}->{checksum},
+   $results[0]->{checksum_results}->{checksum},
+   $results[1]->{checksum_results}->{checksum},
    'results checksums host1 == host2'
 );
 
+# #############################################################################
+# Test that _check_results() enforces good operation results.
+# #############################################################################
+eval {
+   QueryExecutor::_check_results(
+      undef, { error => undef, }, 'host', [ {} ]
+   );
+};
+ok(
+   $EVAL_ERROR,
+   'Dies if op result has no name'
+);
+
+eval {
+   QueryExecutor::_check_results(
+      'name', undef, 'host', [ {} ]
+   );
+};
+ok(
+   $EVAL_ERROR,
+   'Dies if op result has no results'
+);
+
+eval {
+   QueryExecutor::_check_results(
+      'name', { }, 'host', [ {} ]
+   );
+};
+ok(
+   $EVAL_ERROR,
+   'Dies if op result has no error'
+);
+
+eval {
+   QueryExecutor::_check_results(
+      'name', { error => '', }, 'host', [ {} ]
+   );
+};
+ok(
+   $EVAL_ERROR,
+   'Dies if op result error is blank'
+);
+
+eval {
+   QueryExecutor::_check_results(
+      'name', { error=>'foo', errors=>'bar' }, 'host', [ {} ]
+   );
+};
+ok(
+   $EVAL_ERROR,
+   'Dies if op result errors is not arrayref'
+);
+
+eval {
+   QueryExecutor::_check_results(
+      'name', { error=>'foo', errors=>['bar'] }, 'host', [ {} ]
+   );
+};
+is(
+   $EVAL_ERROR,
+   '',
+   'Does not die if op result is ok'
+);
 # #############################################################################
 # Done.
 # #############################################################################
