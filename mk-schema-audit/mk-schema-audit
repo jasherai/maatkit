@@ -134,7 +134,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4161
+# TableParser package 4397
 # ###########################################################################
 package TableParser;
 
@@ -198,7 +198,7 @@ sub parse {
       $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
    }
 
-   my $keys = $self->get_keys($ddl, $opts, \%is_nullable);
+   my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
       cols           => \@cols,
@@ -207,6 +207,7 @@ sub parse {
       null_cols      => \@null,
       is_nullable    => \%is_nullable,
       is_autoinc     => \%is_autoinc,
+      clustered_key  => $clustered_key,
       keys           => $keys,
       defs           => \%def_for,
       numeric_cols   => \@nums,
@@ -313,8 +314,9 @@ sub get_engine {
 
 sub get_keys {
    my ( $self, $ddl, $opts, $is_nullable ) = @_;
-   my $engine = $self->get_engine($ddl);
-   my $keys   = {};
+   my $engine        = $self->get_engine($ddl);
+   my $keys          = {};
+   my $clustered_key = undef;
 
    KEY:
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
@@ -359,9 +361,20 @@ sub get_keys {
          is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
          is_col       => { map { $_ => 1 } @cols },
       };
+
+      if ( $engine =~ m/InnoDB/i && !$clustered_key ) {
+         my $this_key = $keys->{$name};
+         if ( $this_key->{name} eq 'PRIMARY' ) {
+            $clustered_key = 'PRIMARY';
+         }
+         elsif ( $this_key->{is_unique} && !$this_key->{is_nullable} ) {
+            $clustered_key = $this_key->{name};
+         }
+         MKDEBUG && $clustered_key && _d('This key is the clustered key');
+      }
    }
 
-   return $keys;
+   return $keys, $clustered_key;
 }
 
 sub get_fks {
@@ -1278,7 +1291,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 4394
+# OptionParser package 4406
 # ###########################################################################
 package OptionParser;
 
@@ -1512,11 +1525,6 @@ sub _parse_specs {
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
-            if ( $opt->{is_negatable} ) {
-               $def = $def eq 'yes' ? 1
-                    : $def eq 'no'  ? 0
-                    : $def;
-            }
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
          }
@@ -2258,7 +2266,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DuplicateKeyFinder package 3920
+# DuplicateKeyFinder package 4404
 # ###########################################################################
 package DuplicateKeyFinder;
 
@@ -2292,8 +2300,10 @@ sub get_duplicate_keys {
 
       $key->{len_cols}  = length $key->{colnames};
 
-      if ( $key->{name} eq 'PRIMARY' ) {
+      if ( $key->{name} eq 'PRIMARY'
+           || ($args{clustered_key} && $key->{name} eq $args{clustered_key}) ) {
          $primary_key = $key;
+         MKDEBUG && _d('primary key:', $key->{name});
          next KEY;
       }
 
@@ -2337,18 +2347,21 @@ sub get_duplicate_keys {
       $self->remove_prefix_duplicates(\@fulltext_keys, \@fulltext_keys, %args, exact_duplicates => 1);
 
 
-   if ( $primary_key
+   my $clustered_key = $args{clustered_key} ? $keys{$args{clustered_key}}
+                     : undef;
+   MKDEBUG && _d('clustered key:', $clustered_key->{name});
+   if ( $clustered_key
         && $args{clustered}
         && $args{tbl_info}->{engine}
-        && $args{tbl_info}->{engine} =~ m/^(?:InnoDB|solidDB)$/ )
+        && $args{tbl_info}->{engine} =~ m/InnoDB/i )
    {
       MKDEBUG && _d('Removing UNIQUE dupes of clustered key');
       push @dupes,
-         $self->remove_clustered_duplicates($primary_key, \@unique_keys, %args);
+         $self->remove_clustered_duplicates($clustered_key, \@unique_keys, %args);
 
       MKDEBUG && _d('Removing ordinary dupes of clustered key');
       push @dupes,
-         $self->remove_clustered_duplicates($primary_key, \@normal_keys, %args);
+         $self->remove_clustered_duplicates($clustered_key, \@normal_keys, %args);
    }
 
    return \@dupes;
@@ -2378,14 +2391,15 @@ sub get_duplicate_fks {
                cols              => $fks[$j]->{colnames},
                duplicate_of      => $fks[$i]->{name},
                duplicate_of_cols => $fks[$i]->{colnames},
-               reason       =>
+               reason            =>
                     "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{colnames}) "
                   . "REFERENCES $fks[$j]->{parent_tbl} "
                   . "($fks[$j]->{parent_colnames}) "
                   . 'is a duplicate of '
                   . "FOREIGN KEY $fks[$i]->{name} ($fks[$i]->{colnames}) "
                   . "REFERENCES $fks[$i]->{parent_tbl} "
-                  ."($fks[$i]->{parent_colnames})"
+                  ."($fks[$i]->{parent_colnames})",
+               dupe_type         => 'fk',
             };
             push @dupes, $dupe;
             delete $fks[$j];
@@ -2468,9 +2482,10 @@ sub remove_prefix_duplicates {
                   . $right_keys->[$right_index]->{constraining_key}->{name}
                   . " is a stronger constraint\n"; 
             }
+            my $exact_dupe = $right_len_cols < $left_len_cols ? 0 : 1;
             $reason .= $right_name
-                     . ($right_len_cols<$left_len_cols ? ' is a left-prefix of '
-                                                       : ' is a duplicate of ')
+                     . ($exact_dupe ? ' is a duplicate of '
+                                    : ' is a left-prefix of ')
                      . $left_name;
             my $dupe = {
                key               => $right_name,
@@ -2478,6 +2493,7 @@ sub remove_prefix_duplicates {
                duplicate_of      => $left_name,
                duplicate_of_cols => $left_keys->[$left_index]->{real_cols},
                reason            => $reason,
+               dupe_type         => $exact_dupe ? 'exact' : 'prefix',
             };
             push @dupes, $dupe;
             delete $right_keys->[$right_index];
@@ -2499,10 +2515,10 @@ sub remove_prefix_duplicates {
 }
 
 sub remove_clustered_duplicates {
-   my ( $self, $primary_key, $keys, %args ) = @_;
-   die "I need a primary_key argument" unless $primary_key;
-   die "I need a keys argument"        unless $keys;
-   my $pkcols = $primary_key->{colnames};
+   my ( $self, $ck, $keys, %args ) = @_;
+   die "I need a ck argument"   unless $ck;
+   die "I need a keys argument" unless $keys;
+   my $ck_cols = $ck->{colnames};
    my @dupes;
 
    KEY:
@@ -2510,15 +2526,20 @@ sub remove_clustered_duplicates {
       my $suffix = $keys->[$i]->{colnames};
       SUFFIX:
       while ( $suffix =~ s/`[^`]+`,// ) {
-         my $len = min(length($pkcols), length($suffix));
-         if ( substr($suffix, 0, $len) eq substr($pkcols, 0, $len) ) {
+         my $len = min(length($ck_cols), length($suffix));
+         if ( substr($suffix, 0, $len) eq substr($ck_cols, 0, $len) ) {
             my $dupe = {
                key               => $keys->[$i]->{name},
                cols              => $keys->[$i]->{real_cols},
-               duplicate_of      => $primary_key->{name},
-               duplicate_of_cols => $primary_key->{real_cols},
+               duplicate_of      => $ck->{name},
+               duplicate_of_cols => $ck->{real_cols},
                reason            => "Key $keys->[$i]->{name} ends with a "
                                   . "prefix of the clustered index",
+               dupe_type         => 'clustered',
+               short_key         => $self->shorten_clustered_duplicate(
+                                       $ck_cols,
+                                       $keys->[$i]->{real_cols}
+                                    ),
             };
             push @dupes, $dupe;
             delete $keys->[$i];
@@ -2532,6 +2553,14 @@ sub remove_clustered_duplicates {
    @$keys = grep { defined $_; } @$keys;
 
    return @dupes;
+}
+
+sub shorten_clustered_duplicate {
+   my ( $self, $ck_cols, $dupe_key_cols ) = @_;
+   return $ck_cols if $ck_cols eq $dupe_key_cols;
+   $dupe_key_cols =~ s/$ck_cols$//;
+   $dupe_key_cols =~ s/,+$//;
+   return $dupe_key_cols;
 }
 
 sub unconstrain_keys {

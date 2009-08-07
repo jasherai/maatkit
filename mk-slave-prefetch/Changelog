@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+   * --ask-pass did not work.
+
 2009-07-31: version 1.0.10
 
    * Added RISKS section to POD (issue 538).

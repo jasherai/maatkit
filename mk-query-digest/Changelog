@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Changed --[no]zero-bool to --zero-bool.
    * Added --inherit-attirbutes (issue 479).
    * Changed the --report option to only control if report is printed.
    * Removed string attributes from global report header (issue 478).

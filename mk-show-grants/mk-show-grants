@@ -34,7 +34,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 4394
+# OptionParser package 4406
 # ###########################################################################
 package OptionParser;
 
@@ -268,11 +268,6 @@ sub _parse_specs {
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
-            if ( $opt->{is_negatable} ) {
-               $def = $def eq 'yes' ? 1
-                    : $def eq 'no'  ? 0
-                    : $def;
-            }
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
          }
@@ -1280,7 +1275,7 @@ sub main {
    # Connect to the database.
    # ########################################################################
    if ( $o->get('ask-pass') ) {
-      $o->set('pass', OptionParser::prompt_noecho("Enter password: "));
+      $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
 
    my $dsn = $dp->parse_options($o);

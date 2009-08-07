@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 4394
+# OptionParser package 4406
 # ###########################################################################
 package OptionParser;
 
@@ -262,11 +262,6 @@ sub _parse_specs {
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
-            if ( $opt->{is_negatable} ) {
-               $def = $def eq 'yes' ? 1
-                    : $def eq 'no'  ? 0
-                    : $def;
-            }
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
          }
@@ -878,7 +873,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4161
+# TableParser package 4397
 # ###########################################################################
 package TableParser;
 
@@ -942,7 +937,7 @@ sub parse {
       $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
    }
 
-   my $keys = $self->get_keys($ddl, $opts, \%is_nullable);
+   my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
       cols           => \@cols,
@@ -951,6 +946,7 @@ sub parse {
       null_cols      => \@null,
       is_nullable    => \%is_nullable,
       is_autoinc     => \%is_autoinc,
+      clustered_key  => $clustered_key,
       keys           => $keys,
       defs           => \%def_for,
       numeric_cols   => \@nums,
@@ -1057,8 +1053,9 @@ sub get_engine {
 
 sub get_keys {
    my ( $self, $ddl, $opts, $is_nullable ) = @_;
-   my $engine = $self->get_engine($ddl);
-   my $keys   = {};
+   my $engine        = $self->get_engine($ddl);
+   my $keys          = {};
+   my $clustered_key = undef;
 
    KEY:
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
@@ -1103,9 +1100,20 @@ sub get_keys {
          is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
          is_col       => { map { $_ => 1 } @cols },
       };
+
+      if ( $engine =~ m/InnoDB/i && !$clustered_key ) {
+         my $this_key = $keys->{$name};
+         if ( $this_key->{name} eq 'PRIMARY' ) {
+            $clustered_key = 'PRIMARY';
+         }
+         elsif ( $this_key->{is_unique} && !$this_key->{is_nullable} ) {
+            $clustered_key = $this_key->{name};
+         }
+         MKDEBUG && $clustered_key && _d('This key is the clustered key');
+      }
    }
 
-   return $keys;
+   return $keys, $clustered_key;
 }
 
 sub get_fks {
