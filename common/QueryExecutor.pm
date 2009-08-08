@@ -132,7 +132,7 @@ sub exec {
             $query_time = sprintf '%.6f', $end - $start;
          };
          if ( $EVAL_ERROR ) {
-            MKDEBUG && _d('Error executing query on host', $hostno, ':',
+            MKDEBUG && _d('Error executing query on host', $hostno+1, ':',
                $EVAL_ERROR);
             $res->{error} = $EVAL_ERROR;
          }
