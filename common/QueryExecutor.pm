@@ -352,6 +352,9 @@ sub checksum_results {
       MKDEBUG && _d($error);
    }
 
+   # Avoid redundant error reporting.
+   @errors = () if @errors == 1;
+
    my $results = {
       error        => $error,
       errors       => \@errors,
