@@ -76,7 +76,7 @@ sub rank_results {
    foreach my $results ( keys %$master_results ) {
       my $compare = $ranker_for{$results};
       if ( !$compare ) {
-         warn "I don't know how to rank $results results";
+         MKDEBUG && _d('No ranker for', $results);
          next RESULTS;
       }
 
