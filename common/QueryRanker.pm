@@ -251,10 +251,18 @@ sub rank_result_sets {
       push @reasons, "Number of rows do not match (rank+50)";
    }
 
-   @res = $self->compare_table_structs($host1->{table_struct},
-                                       $host2->{table_struct});
-   $rank += shift @res;
-   push @reasons, @res;
+   if ( $host1->{table_struct} && $host2->{table_struct} ) {
+      @res = $self->compare_table_structs(
+         $host1->{table_struct},
+         $host2->{table_struct}
+      );
+      $rank += shift @res;
+      push @reasons, @res;
+   }
+   else {
+      $rank += 10;
+      push @reasons, 'The temporary tables could not be parsed (rank+10)';
+   }
 
    return $rank, @reasons;
 }
