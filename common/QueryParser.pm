@@ -73,6 +73,13 @@ sub get_tables {
          MKDEBUG && _d('Query alters a database, not a table');
          return ();
       }
+      if ( $ddl_stmt =~ m/CREATE/i && $query =~ m/$ddl_stmt\b.+?\bSELECT\b/i ) {
+         # Handle CREATE TABLE ... SELECT.  In this case, the real tables
+         # come from the SELECT, not the CREATE.
+         my ($select) = $query =~ m/\b(SELECT\b.+)/i;
+         MKDEBUG && _d('CREATE TABLE ... SELECT:', $select);
+         return $self->get_tables($select);
+      }
       my ($tbl) = $query =~ m/TABLE\s+($tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches table:', $tbl);
       return ($tbl);

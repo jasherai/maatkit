@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 105;
+use Test::More tests => 106;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -528,6 +528,14 @@ is_deeply(
    ],
    [qw(db.tbl3)],
    'get_tables: CREATE TEMPORARY TABLE IF NOT EXISTS'
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'CREATE TEMPORARY TABLE `foo` AS select * from bar where id = 1')
+   ],
+   [qw(bar)],
+   'get_tables: CREATE TABLE ... SELECT'
 );
 
 is_deeply(
