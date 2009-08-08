@@ -669,7 +669,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4161
+# TableParser package 4397
 # ###########################################################################
 package TableParser;
 
@@ -733,7 +733,7 @@ sub parse {
       $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
    }
 
-   my $keys = $self->get_keys($ddl, $opts, \%is_nullable);
+   my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
       cols           => \@cols,
@@ -742,6 +742,7 @@ sub parse {
       null_cols      => \@null,
       is_nullable    => \%is_nullable,
       is_autoinc     => \%is_autoinc,
+      clustered_key  => $clustered_key,
       keys           => $keys,
       defs           => \%def_for,
       numeric_cols   => \@nums,
@@ -848,8 +849,9 @@ sub get_engine {
 
 sub get_keys {
    my ( $self, $ddl, $opts, $is_nullable ) = @_;
-   my $engine = $self->get_engine($ddl);
-   my $keys   = {};
+   my $engine        = $self->get_engine($ddl);
+   my $keys          = {};
+   my $clustered_key = undef;
 
    KEY:
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
@@ -894,9 +896,20 @@ sub get_keys {
          is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
          is_col       => { map { $_ => 1 } @cols },
       };
+
+      if ( $engine =~ m/InnoDB/i && !$clustered_key ) {
+         my $this_key = $keys->{$name};
+         if ( $this_key->{name} eq 'PRIMARY' ) {
+            $clustered_key = 'PRIMARY';
+         }
+         elsif ( $this_key->{is_unique} && !$this_key->{is_nullable} ) {
+            $clustered_key = $this_key->{name};
+         }
+         MKDEBUG && $clustered_key && _d('This key is the clustered key');
+      }
    }
 
-   return $keys;
+   return $keys, $clustered_key;
 }
 
 sub get_fks {
@@ -1005,7 +1018,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 4394
+# OptionParser package 4406
 # ###########################################################################
 package OptionParser;
 
@@ -1239,11 +1252,6 @@ sub _parse_specs {
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
          if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
-            if ( $opt->{is_negatable} ) {
-               $def = $def eq 'yes' ? 1
-                    : $def eq 'no'  ? 0
-                    : $def;
-            }
             $self->{defaults}->{$long} = defined $def ? $def : 1;
             MKDEBUG && _d($long, 'default:', $def);
          }
@@ -3066,7 +3074,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4280
+# QueryParser package 4418
 # ###########################################################################
 package QueryParser;
 
@@ -3107,6 +3115,11 @@ sub get_tables {
       if ( $query =~ m/$ddl_stmt DATABASE\b/i ) {
          MKDEBUG && _d('Query alters a database, not a table');
          return ();
+      }
+      if ( $ddl_stmt =~ m/CREATE/i && $query =~ m/$ddl_stmt\b.+?\bSELECT\b/i ) {
+         my ($select) = $query =~ m/\b(SELECT\b.+)/i;
+         MKDEBUG && _d('CREATE TABLE ... SELECT:', $select);
+         return $self->get_tables($select);
       }
       my ($tbl) = $query =~ m/TABLE\s+($tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches table:', $tbl);
@@ -3402,7 +3415,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryExecutor package 4184
+# QueryExecutor package 4421
 # ###########################################################################
 package QueryExecutor;
 
@@ -3429,127 +3442,262 @@ sub new {
 
 sub exec {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(query host1_dbh host2_dbh) ) {
+   foreach my $arg ( qw(query hosts pre_exec_callbacks post_exec_callbacks) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   my $query = $args{query};
+   my $hosts = $args{hosts};
+   my $pre   = $args{pre_exec_callbacks};
+   my $post  = $args{post_exec_callbacks};
+   my $dp    = $args{DSNParser};
 
-   if ( $args{pre_exec_query} ) {
-      MKDEBUG && _d('pre-exec query:', $args{pre_exec_query});
-      $self->_exec_query($args{pre_exec_query}, $args{host1_dbh});
-      $self->_exec_query($args{pre_exec_query}, $args{host2_dbh});
-   }
+   MKDEBUG && _d('Executing query:', $query);
 
-   MKDEBUG && _d('query:', $args{query});
-   my $host1_results = $self->_exec_query($args{query}, $args{host1_dbh});
-   my $host2_results = $self->_exec_query($args{query}, $args{host2_dbh});
+   my @results;
+   my $hostno = -1;
+   HOST:
+   foreach my $host ( @$hosts ) {
+      $hostno++;  # Increment this now because we might not reach loop's end.
+      $results[$hostno] = {};
+      my $results       = $results[$hostno];
+      my $dbh           = $host->{dbh};
+      my $dsn           = $host->{dsn};
+      my $host_name     = $dp && $dsn ? $dp->as_string($dsn) : $hostno + 1;
+      my %callback_args = (
+         query     => $query,
+         dbh       => $dbh,
+         host_name => $host_name,
+         results   => $results,
+      );
 
-   if ( $args{post_exec_query} ) {
-      MKDEBUG && _d('post-exec query:', $args{post_exec_query});
-      $self->_exec_query($args{post_exec_query}, $args{host1_dbh});
-      $self->_exec_query($args{post_exec_query}, $args{host2_dbh});
-   }
+      MKDEBUG && _d('Starting execution on host', $host_name);
 
-   return {
-      host1 => $host1_results,
-      host2 => $host2_results,
-   };
+      foreach my $callback ( @$pre ) {
+         my ($name, $res) = $callback->(%callback_args);
+         _check_results($name, $res, $host_name, \@results);
+         $results->{$name} = $res;
+      }
+
+      {
+         my ($name, $res) = ('Query_time', { error=>undef, Query_time=>-1, });
+         my ( $start, $end, $query_time );
+         eval {
+            $start = time();
+            $dbh->do($query);
+            $end   = time();
+            $query_time = sprintf '%.6f', $end - $start;
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d('Error executing query on host', $hostno+1, ':',
+               $EVAL_ERROR);
+            $res->{error} = $EVAL_ERROR;
+         }
+         else {
+            $res->{Query_time} = $query_time;
+         }
+         _check_results($name, $res, $host_name, \@results);
+         $results->{$name} = $res;
+      }
+
+      foreach my $callback ( @$post ) {
+         my ($name, $res) = $callback->(%callback_args);
+         _check_results($name, $res, $host_name, \@results);
+         $results->{$name} = $res;
+      }
+
+      MKDEBUG && _d('Results for host', $host_name, ':', Dumper($results));
+   } # HOST
+
+   return @results;
 }
 
-sub _exec_query {
-   my ( $self, $query, $dbh ) = @_;
-   die "I need a query" unless $query;
-   die "I need a dbh"   unless $dbh;
+sub get_warnings {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh   = $args{dbh};
+   my $error = undef;
+   my $name  = 'warnings';
+   MKDEBUG && _d($name);
 
-   my ( $start, $end, $query_time );
+   my $warnings;
+   my $warning_count;
    eval {
-      $start = time();
-      $dbh->do($query);
-      $end   = time();
-      $query_time = sprintf '%.6f', $end - $start;
+      $warnings      = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
+      $warning_count = $dbh->selectall_arrayref('SELECT @@warning_count',
+         { Slice => {} });
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d($EVAL_ERROR);
-      return $EVAL_ERROR;
+      MKDEBUG && _d('Error getting warnings:', $EVAL_ERROR);
+      $error = $EVAL_ERROR;
    }
-
-   my $warnings = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
-   MKDEBUG && _d('warnings:', Dumper($warnings));
-
-   my $warning_count = $dbh->selectall_arrayref('SELECT @@warning_count',
-      { Slice => {} });
-   MKDEBUG && _d('warning count:', Dumper($warning_count));
 
    my $results = {
-      Query_time    => $query_time,
-      warnings      => $warnings,
-      warning_count => $warning_count->[0]->{'@@warning_count'},
+      error => $error,
+      codes => $warnings,
+      count => $warning_count->[0]->{'@@warning_count'} || 0,
    };
-
-   return $results;
-}   
-
-sub checksum_results {
-   my ( $self, %args ) = @_;
-   foreach my $arg ( qw(query host1_dbh host2_dbh database
-                        Quoter MySQLDump TableParser) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-
-   MKDEBUG && _d('query:', $args{query});
-   my $host1_results = $self->_checksum_results(%args, dbh => $args{host1_dbh});
-   my $host2_results = $self->_checksum_results(%args, dbh => $args{host2_dbh});
-
-   return {
-      host1 => $host1_results,
-      host2 => $host2_results,
-   };
+   return $name, $results;
 }
 
-
-sub _checksum_results {
+sub clear_warnings {
    my ( $self, %args ) = @_;
-   my $query = $args{query};
-   my $db    = $args{database};
-   my $dbh   = $args{dbh};
-   my $du    = $args{MySQLDump};
-   my $tp    = $args{TableParser};
-   my $q     = $args{Quoter};
+   foreach my $arg ( qw(dbh query QueryParser) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh     = $args{dbh};
+   my $query   = $args{query};
+   my $qparser = $args{QueryParser};
+   my $error   = undef;
+   my $name    = 'clear_warnings';
+   MKDEBUG && _d($name);
 
-   my $tmp_tbl    = 'mk_upgrade';
+   my @tables = $qparser->get_tables($query);
+   if ( @tables ) {
+      MKDEBUG && _d('tables:', @tables);
+      my $sql = "SELECT * FROM $tables[0] LIMIT 0";
+      MKDEBUG && _d($sql);
+      eval {
+         $dbh->do($sql);
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d('Error clearning warnings:', $EVAL_ERROR);
+         $error = $EVAL_ERROR;
+      }
+   }
+   else {
+      $error = "Cannot clear warnings because the tables for this query cannot "
+         . "be parsed.";
+   }
+
+   return $name, { error=>$error };
+}
+
+sub pre_checksum_results {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(dbh database tmp_table Quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh     = $args{dbh};
+   my $db      = $args{database};
+   my $tmp_tbl = $args{tmp_table};
+   my $q       = $args{Quoter};
+   my $error   = undef;
+   my $name    = 'pre_checksum_results';
+   MKDEBUG && _d($name);
+
    my $tmp_db_tbl = $q->quote($db, $tmp_tbl);
-
    eval {
       $dbh->do("DROP TABLE IF EXISTS $tmp_db_tbl");
       $dbh->do("SET storage_engine=MyISAM");
-      my $sql = "CREATE TEMPORARY TABLE $tmp_db_tbl AS $query";
-      $dbh->do($sql)
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d($EVAL_ERROR);
-      return $EVAL_ERROR;
+      MKDEBUG && _d('Error dropping table', $tmp_db_tbl, ':', $EVAL_ERROR);
+      $error = $EVAL_ERROR;
    }
+   return $name, { error=>$error };
+}
 
-   my $n_rows = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $tmp_db_tbl");
-   my $tbl_checksum = $dbh->selectall_arrayref("CHECKSUM TABLE $tmp_db_tbl");
+sub checksum_results {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(dbh database tmp_table MySQLDump TableParser Quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh     = $args{dbh};
+   my $db      = $args{database};
+   my $tmp_tbl = $args{tmp_table};
+   my $du      = $args{MySQLDump};
+   my $tp      = $args{TableParser};
+   my $q       = $args{Quoter};
+   my $error   = undef;
+   my @errors  = ();
+   my $name    = 'checksum_results';
+   MKDEBUG && _d($name);
 
+   my $tmp_db_tbl = $q->quote($db, $tmp_tbl);
+   my $tbl_checksum;
+   my $n_rows;
    my $tbl_struct;
-   my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
-   if ( $ddl->[0] eq 'table' ) {
-      eval { $tbl_struct = $tp->parse($ddl) };
+   eval {
+      $n_rows = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $tmp_db_tbl")->[0]->[0];
+      $tbl_checksum = $dbh->selectall_arrayref("CHECKSUM TABLE $tmp_db_tbl")->[0]->[1];
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d('Error counting rows or checksumming', $tmp_db_tbl, ':',
+         $EVAL_ERROR);
+      $error = $EVAL_ERROR;
+      push @errors, $error;
+   }
+   else {
+      eval {
+         my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
+         MKDEBUG && _d('tmp table ddl:', Dumper($ddl));
+         if ( $ddl->[0] eq 'table' ) {
+            $tbl_struct = $tp->parse($ddl)
+         }
+      };
       if ( $EVAL_ERROR ) {
-         MKDEBUG && _d('Failed to parse', $tmp_db_tbl, ':', $EVAL_ERROR);
+         MKDEBUG && _d('Failed to parse', $tmp_db_tbl, ':', $EVAL_ERROR); 
+         $error = $EVAL_ERROR;
+         push @errors, $error;
       }
    }
 
-   my $results = {
-      table_checksum => $tbl_checksum->[0]->[1],
-      n_rows         => $n_rows->[0]->[0],
-      table_struct   => $tbl_struct,
-   };
-   MKDEBUG && _d('checksum results:', Dumper($results));
+   my $sql = "DROP TABLE IF EXISTS $tmp_db_tbl";
+   MKDEBUG && _d($sql);
+   eval { $dbh->do($sql); };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d('Error dropping tmp table:', $EVAL_ERROR);
+      $error = $EVAL_ERROR;
+      push @errors, $error;
+   }
 
-   return $results;
-}   
+   if ( !defined $n_rows ) { # 0 rows returned is ok.
+      $error = "SELECT COUNT(*) for getting the number of rows didn't return a value";
+      push @errors, $error;
+      MKDEBUG && _d($error);
+   }
+   if ( !$tbl_checksum ) {
+      $error = "CHECKSUM TABLE didn't return a value";
+      push @errors, $error;
+      MKDEBUG && _d($error);
+   }
+
+   @errors = () if @errors == 1;
+
+   my $results = {
+      error        => $error,
+      errors       => \@errors,
+      checksum     => $tbl_checksum || 0,
+      n_rows       => $n_rows || 0,
+      table_struct => $tbl_struct,
+   };
+   return $name, $results;
+}
+
+sub _check_results {
+   my ( $name, $res, $host_name, $all_res ) = @_;
+   _die_bad_op('Operation did not return a name!', @_)
+      unless $name;
+   _die_bad_op('Operation did not return any results!', @_)
+      unless $res || (scalar keys %$res);
+   _die_bad_op("Operation results do no have an 'error' key")
+      unless exists $res->{error};
+   _die_bad_op("Operation error is blank string!")
+      if defined $res->{error} && !$res->{error};
+   _die_bad_op("Operation errors is not an arrayref!")
+      if $res->{errors} && ref $res->{errors} ne 'ARRAY';
+   return;
+}
+
+sub _die_bad_op {
+   my ( $msg, $name, $res, $host_name, $all_res ) = @_;
+   die "$msg\n"
+      . "Host name: " . ($host_name ? $host_name : 'UNKNOWN') . "\n"
+      . "Current results: " . Dumper($res)
+      . "Prior results: "   . Dumper($all_res)
+}
 
 sub _d {
    my ($package, undef, $line) = caller 0;
@@ -3566,7 +3714,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRanker package 4186
+# QueryRanker package 4422
 # ###########################################################################
 package QueryRanker;
 
@@ -3582,6 +3730,12 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 my @bucket_threshold = qw(500 100  100   500 50   50    20 1   );
 my @bucket_labels    = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
+my %ranker_for = (
+   Query_time       => \&rank_query_times,
+   warnings         => \&rank_warnings,
+   checksum_results => \&rank_result_sets,
+);
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw() ) {
@@ -3592,31 +3746,90 @@ sub new {
    return bless $self, $class;
 }
 
-sub rank_execution {
-   my ( $self, $results ) = @_;
-   die "I need a results argument" unless $results;
-   
+sub rank_results {
+   my ( $self, @results ) = @_;
+   return unless @results > 1;
+
+   my $rank           = 0;
+   my @reasons        = ();
+   my $master_results = shift @results;
+
+   RESULTS:
+   foreach my $results ( keys %$master_results ) {
+      my $compare = $ranker_for{$results};
+      if ( !$compare ) {
+         MKDEBUG && _d('No ranker for', $results);
+         next RESULTS;
+      }
+
+      my $master = $master_results->{$results};
+
+      HOST:
+      my $i = 1;  # host1/i=1 is master so...
+      foreach my $host_results ( @results ) {
+         $i++; # ...we start with host2/i=2
+         if ( !exists $host_results->{$results} ) {
+            warn "Host$i doesn't have $results results";
+            next HOST;
+         }
+
+         my $host = $host_results->{$results};
+
+         my @res = $compare->($self, $master, $host);
+         $rank += shift @res;
+         push @reasons, @res;
+      } 
+   }
+
+   return $rank, @reasons;
+}
+
+sub rank_query_times {
+   my ( $self, $host1, $host2 ) = @_;
    my $rank    = 0;   # total rank
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
-   my $host1   = $results->{host1};
-   my $host2   = $results->{host2};
 
-   @res = $self->compare_query_times($host1->{Query_time},$host2->{Query_time});
-   $rank += shift @res;
-   push @reasons, @res;
+   if ( $host1->{Query_time} == -1 ) {
+      $rank += 100;
+      push @reasons, 'Query failed to execute on host1: '
+            . ($host1->{error} || 'unknown error')
+            . " (rank+100)";
+   }
+   if ( $host2->{Query_time} == -1 ) {
+      $rank += 100;
+      push @reasons, 'Query failed to execute on host2: '
+            . ($host2->{error} || 'unknown error')
+            . " (rank+100)";
+   }
 
-   if ( $host1->{warning_count} > 0 || $host2->{warning_count} > 0 ) {
+   if ( $host1->{Query_time} >= 0 && $host2->{Query_time} >= 0 ) {
+      @res = $self->compare_query_times(
+         $host1->{Query_time}, $host2->{Query_time});
+      $rank += shift @res;
+      push @reasons, @res;
+   }
+
+   return $rank, @reasons;
+}
+
+sub rank_warnings {
+   my ( $self, $host1, $host2 ) = @_;
+   my $rank    = 0;   # total rank
+   my @reasons = ();  # all reasons
+   my @res     = ();  # ($rank, @reasons) for each comparison
+
+   if ( $host1->{count} > 0 || $host2->{count} > 0 ) {
       $rank += 1;
       push @reasons, "Query has warnings (rank+1)";
    }
 
-   if ( my $diff = abs($host1->{warning_count} - $host2->{warning_count}) ) {
+   if ( my $diff = abs($host1->{count} - $host2->{count}) ) {
       $rank += $diff;
       push @reasons, "Warning counts differ by $diff (rank+$diff)";
    }
 
-   @res = $self->compare_warnings($host1->{warnings}, $host2->{warnings});
+   @res = $self->compare_warnings($host1->{codes}, $host2->{codes});
    $rank += shift @res;
    push @reasons, @res;
 
@@ -3689,17 +3902,13 @@ sub compare_warnings {
    return $rank_inc, @reasons;
 }
 
-sub rank_results {
-   my ( $self, $results ) = @_;
-   die "I need a results argument" unless $results;
-
+sub rank_result_sets {
+   my ( $self, $host1, $host2 ) = @_;
    my $rank    = 0;   # total rank
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
-   my $host1   = $results->{host1};
-   my $host2   = $results->{host2};
 
-   if ( $host1->{table_checksum} ne $host2->{table_checksum} ) {
+   if ( $host1->{checksum} ne $host2->{checksum} ) {
       $rank += 50;
       push @reasons, "Table checksums do not match (rank+50)";
    }
@@ -3709,10 +3918,18 @@ sub rank_results {
       push @reasons, "Number of rows do not match (rank+50)";
    }
 
-   @res = $self->compare_table_structs($host1->{table_struct},
-                                       $host2->{table_struct});
-   $rank += shift @res;
-   push @reasons, @res;
+   if ( $host1->{table_struct} && $host2->{table_struct} ) {
+      @res = $self->compare_table_structs(
+         $host1->{table_struct},
+         $host2->{table_struct}
+      );
+      $rank += shift @res;
+      push @reasons, @res;
+   }
+   else {
+      $rank += 10;
+      push @reasons, 'The temporary tables could not be parsed (rank+10)';
+   }
 
    return $rank, @reasons;
 }
@@ -3813,7 +4030,7 @@ sub _d {
 package mk_upgrade;
 
 use English qw(-no_match_vars);
-use Time::HiRes qw(time);
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
@@ -3859,8 +4076,18 @@ sub main {
    # ########################################################################
    my $host1_dsn = $dp->parse(shift @ARGV);
    my $host1_dbh = get_cxn($dp, $o, $host1_dsn);
-   my $host2_dbh = get_cxn($dp, $o, $dp->parse(shift @ARGV, $host1_dsn));
-
+   my $host2_dsn = $dp->parse(shift @ARGV, $host1_dsn);
+   my $host2_dbh = get_cxn($dp, $o, $host2_dsn);
+   my $hosts     = [
+      {
+         dbh => $host1_dbh,
+         dsn => $host1_dsn,
+      },
+      {
+         dbh => $host2_dbh,
+         dsn => $host2_dsn,
+      },
+   ];
 
    # ########################################################################
    # Make some common modules.
@@ -3869,7 +4096,6 @@ sub main {
    my $qparser = new QueryParser();
    my $qexec   = new QueryExecutor();
    my $qranker = new QueryRanker();
-   my $q       = new Quoter();
 
    # ########################################################################
    # Set up an array of callbacks to transform, filter and process events.
@@ -3906,149 +4132,147 @@ sub main {
    # Now we should have only the queries that we want, and they should
    # have all appropriate transformations.  The real work begins here.
 
-   # Execute and time the query on each host.
    my $current_db;
    push @callbacks, sub {
       my ( $event ) = @_;
-      my $db    = $event->{db}; 
-      my $query = $event->{arg};
-
-      # Set rank=0 so that any potential rank+=N ops won't die because
-      # rank is undef.
-      $results{ $query }->{rank}    ||= 0;
-      $results{ $query }->{reasons} ||= ();
-
-      eval {
-
-         # On some systems, MySQL doesn't always clear the warnings list
-         # after a good query.  This causes good queries to show warnings
-         # from previous bad queries.  A work-around/hack is to
-         # SELECT * FROM table LIMIT 0 which seems to always clear warnings.
-         my $post_exec_query;
-         my @tables = $qparser->get_tables($query);
-         if ( @tables ) {
-            MKDEBUG && _d('tables:', @tables);
-            $post_exec_query = "SELECT * FROM $tables[0] LIMIT 0";
-            MKDEBUG && _d('post-exec query:', $post_exec_query);
-         }
-         else {
-            MKDEBUG && _d('Cannot get tables so no post-exec query');
-         }
-
-         if ( !$event->{db} ) {
-            # Try to get a db from one of the query's tables.  It doesn't
-            # matter which db we use because it's only used to create a
-            # a temp table.
-            TABLE:
-            foreach my $table ( @tables ) {
-               my ( $db2, $tbl ) = $q->split_unquote($table);
-               if ( $db2 ) {
-                  MKDEBUG && _d('Will use db', $db2, 'for tmp table');
-                  $event->{db} = $db2;
-                  $db = $db2;
-                  last TABLE;
-               }
-            }
-         }
-
-         if ( $db && (!$current_db || $db ne $current_db) ) {
-            MKDEBUG && _d('USE', $db);
+      my $db = $event->{db}; 
+      if ( $db && (!$current_db || $db ne $current_db) ) {
+         eval {
             $host1_dbh->do("USE $db");
             $host2_dbh->do("USE $db");  
-            $current_db = $db;
-            $event->{db} = $db;
+         };
+         if ( $EVAL_ERROR ) {
+            warn "Failed to USE $db: $EVAL_ERROR";
          }
-
-         my $results = $qexec->exec(
-            query           => $query,
-            post_exec_query => $post_exec_query,
-            host1_dbh => $host1_dbh,
-            host2_dbh => $host2_dbh,
-         );
-         # Results are compared and reported later.
-         $results{ $query }->{execution} = $results;
-      };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d($EVAL_ERROR);
-         # Normally results are hashrefs, but strings signal no results
-         # due to the error given in the string.
-         $results{ $query }->{execution} = $EVAL_ERROR;
+         else {
+            $current_db  = $db;
+            MKDEBUG && _d('USE', $db);
+         }
       }
       return $event;
    };
 
-   if ( $o->get('compare-results') ) {
-      my $du = new MySQLDump();
-      my $tp = new TableParser();
+   # Create pre- and post-QueryExecutor::exec() callbacks for each comparison.
+   # These subs return to QueryExecutor::exec(), not mk-upgrade.  exec()
+   # returns a list of each host's results to mk-upgrade.
+   my $tmp_tbl_db = $o->get('tmp-table-database');
+   my $tmp_tbl_wrap;
+   my @pre_qe_callbacks;
+   my @post_qe_callbacks;
 
+   if ( $o->get('compare-warnings') ) {
+      push @post_qe_callbacks, sub { return $qexec->get_warnings(@_); };
+      push @post_qe_callbacks, sub { return $qexec->clear_warnings(@_, QueryParser => $qparser); };
+   }
+
+   if ( $o->get('compare-results') ) {
+      my $tmp_tbl = 'mk_upgrade';
+      my $du      = new MySQLDump();
+      my $tp      = new TableParser();
+      my $q       = new Quoter();
+
+      # One thing exec() won't do is prepend "CREATE TEMPORARY TABLE ... AS"
+      # to the query.  We must do this.  This is a mk-upgrade callback sub.
       push @callbacks, sub {
          my ( $event ) = @_;
-         my $db    = $event->{db}; 
          my $query = $event->{arg};
-
-         eval {
-            my $results = $qexec->checksum_results(
-               query       => $query,
-               database    => $event->{db},
-               host1_dbh   => $host1_dbh,
-               host2_dbh   => $host2_dbh,
-               MySQLDump   => $du,
-               TableParser => $tp,
-               Quoter      => $q,
-            );
-            # Results are compared and reported later.
-            $results{ $query }->{results} = $results;
-         };
-         if ( $EVAL_ERROR ) {
-            MKDEBUG && _d($EVAL_ERROR);
-            $results{ $query }->{results} = $EVAL_ERROR;
-         }
+         return unless $query;
+         my $tmp_db_tbl = $q->quote($tmp_tbl_db || $current_db, $tmp_tbl);
+         $tmp_tbl_wrap = "CREATE TEMPORARY TABLE $tmp_db_tbl AS ";
+         $event->{arg} = "$tmp_tbl_wrap$query";
          return $event;
+      };
+
+      # This drops the tmp table and sets the default engine to MyISAM.
+      # NOTE: This return to QueryExecutor::exec(), not mk-upgrade.
+      push @pre_qe_callbacks, sub {
+         return $qexec->pre_checksum_results(
+            @_,
+            database  => $tmp_tbl_db || $current_db,
+            tmp_table => $tmp_tbl,
+            Quoter    => $q,
+         );
+      };
+
+      # NOTE: This return to QueryExecutor::exec(), not mk-upgrade.
+      push @post_qe_callbacks, sub {
+         return $qexec->checksum_results(
+            @_,
+            database    => $tmp_tbl_db || $current_db,
+            tmp_table   => $tmp_tbl,
+            Quoter      => $q,
+            TableParser => $tp,
+            MySQLDump   => $du,
+         );
       };
    }
 
-   # Rank the queries' execution times and warnings.
+   # This is the main mk-upgrade callback which calls QueryExecutor::exec().
+   # This callback gets the results and passes them to the next callback
+   # which will rank them.
    push @callbacks, sub {
       my ( $event ) = @_;
       my $query = $event->{arg};
-      if ( ref $results{ $query }->{execution}->{host1}
-           && ref $results{ $query }->{execution}->{host2} ) {
-         my @results = $qranker->rank_execution($results{$query}->{execution}); 
-         MKDEBUG && _d('Rank execution:', @results);
-         $results{ $query }->{rank} += shift @results;
-         push @{$results{ $query }->{reasons}}, @results;
-      }
-      else {
-         MKDEBUG && _d('No execution results for event');
-         $results{ $query }->{rank} += 100;
-         push @{$results{ $query }->{reasons}},
-            "Query cannot be executed (rank+100)";
+      eval {
+         my @results = $qexec->exec(
+            query                => $query,
+            hosts                => $hosts,
+            DSNParser            => $dp,
+            pre_exec_callbacks   => \@pre_qe_callbacks,
+            post_exec_callbacks  => \@post_qe_callbacks,
+         );
+
+         $event->{results} = \@results;
+      };
+      if ( $EVAL_ERROR ) {
+         # This shouldn't happen because QueryExecutor operations are supposed
+         # to eval everything they do and capture all their own errors.
+         MKDEBUG && _d($EVAL_ERROR, Dumper($event));
+         print "The query executor failed to execute this query:\n"
+            . "$query\n"
+            . "Error: $EVAL_ERROR";
          return;
       }
+
       return $event;
    };
 
-   # Rank the queries' result checksums, row counts, etc.
    if ( $o->get('compare-results') ) {
       push @callbacks, sub {
          my ( $event ) = @_;
          my $query = $event->{arg};
-         if ( ref $results{ $query }->{results}->{host1}
-              && ref $results{ $query }->{results}->{host2} ) {
-            my @results = $qranker->rank_results($results{$query}->{results}); 
-            MKDEBUG && _d('Rank results:', @results);
-            $results{ $query }->{rank} += shift @results;
-            push @{$results{ $query }->{reasons}}, @results;
-         }
-         else {
-            MKDEBUG && _d('No result results');
-            $results{ $query }->{rank} += 100;
-            push @{$results{ $query }->{reasons}},
-               "Query cannot be executed (rank+100)";
-         }
+         $query =~ s/^$tmp_tbl_wrap//;
+         $event->{arg} = $query;
          return $event;
       };
    }
+
+   # Rank and save the query's results from the previous callback.
+   # After all queries have been executed and ranked, they will be
+   # sorted and reported by rank.  For now we save the whole event,
+   # but later when we do aggregation this will cost too much memory.
+   my @events;
+   push @callbacks, sub {
+      my ( $event ) = @_;
+      my $results = $event->{results};
+      die "Got an event without results" unless $results;
+
+      eval {
+         my ($rank, @reasons) = $qranker->rank_results(@$results); 
+         $event->{rank}    = $rank;
+         $event->{reasons} = \@reasons;
+         push @events, $event;
+      };
+      if ( $EVAL_ERROR ) {
+         # This really should not happen.
+         MKDEBUG && _d($EVAL_ERROR, Dumper($event));
+         print "An unexpected error occurred while ranking the "
+            . "query's results: $EVAL_ERROR";
+         return;
+      }
+
+      return $event;
+   };
 
    # ########################################################################
    # Daemonize now that everything is setup and ready to work.
@@ -4059,7 +4283,6 @@ sub main {
       $daemon->daemonize();
       MKDEBUG && _d('I am a daemon now');
    }
-
 
    # ##########################################################################
    # Parse input and process events.
@@ -4101,6 +4324,9 @@ sub main {
          };
          if ( $EVAL_ERROR ) {
             _d($EVAL_ERROR);
+            # Don't ignore failure to open a file, else we'll get
+            # "tell() on closed filehandle" errors.
+            last EVENT if $EVAL_ERROR =~ m/Cannot open/;
             last EVENT unless $o->get('continue-on-error');
          }
          last EVENT unless $events;
@@ -4111,38 +4337,50 @@ sub main {
       $now = time();
    }
 
-
    # ######################################################################
    # Report results.
    # ######################################################################
    QUERY:
-   foreach my $query (
-      sort { $results{$b}->{rank} <=> $results{$a}->{rank} } keys %results )
-   {
+   foreach my $event ( sort { $b->{rank} <=> $a->{rank} } @events ) {
+      my $query         = $event->{arg};
+      my $host1_results = $event->{results}->[0];
+      my $host2_results = $event->{results}->[1];
+
       if ( $o->get('dump-results') ) {
-         print Dumper($results{$query});
+         print Dumper($event->{results});
          next QUERY;
       }
 
-      print "# Rank: $results{$query}->{rank}\n";
+      print "# Rank: $event->{rank}\n";
 
-      my $reasons = $results{$query}->{reasons};
-      print "# Reasons: " . (@$reasons == 0 ? "none\n" : "\n");
-      for my $i ( 0..(scalar @$reasons - 1) ) {
-         print '#   ',$i+1,". $reasons->[$i]\n";
+      my $t1 = $host1_results->{Query_time}->{Query_time};
+      my $t2 = $host1_results->{Query_time}->{Query_time};
+      printf "# Host1_Query_time: %.6f  Host2_Query_time: %.6f\n",
+         ($t1 >= 0 ? $t1 : 0),  # Query_time may be -1 if the query failed to
+         ($t2 >= 0 ? $t2 : 0);  # execute.  Make it 0 though to print pretty.
+
+      if ( $o->get('compare-warnings') ) {
+         printf "# Host1_Warning_count: %d  Host2_Warning_count: %d\n",
+            $host1_results->{warnings}->{count},
+            $host2_results->{warnings}->{count};
       }
-
-      print "# Execution Results:\n";
-      print_execution_results('host1', $results{$query}->{execution}->{host1});
-      print_execution_results('host2', $results{$query}->{execution}->{host2});
 
       if ( $o->get('compare-results') ) {
-         print "# Result Set Results:\n";
-         print_result_results($results{$query}->{results}->{host1},
-            $results{$query}->{results}->{host2});
+         printf "# Host1_Resultset_checksum: %d  Host2_Resultset_checksum: %d\n",
+            $host1_results->{checksum_results}->{checksum},
+            $host2_results->{checksum_results}->{checksum};
+         printf "# Host1_Resultset_rows: %d  Host2_Resultset_rows: %d\n",
+            $host1_results->{checksum_results}->{n_rows},
+            $host2_results->{checksum_results}->{n_rows};
       }
 
-      print "$query\n\n";
+      # Print errors and reasons in a /* comment block */ before the query.
+      print "/*\n";
+      print_errors($event->{results});
+      print_reasons($event->{reasons});
+      print "*/\n";
+
+      print "$query\n";
    }
 
    $host1_dbh->disconnect();
@@ -4154,47 +4392,52 @@ sub main {
 # ############################################################################
 # Subroutines.
 # ############################################################################
-sub print_execution_results {
-   my ( $host, $res ) = @_;
+sub print_errors {
+   my ( $results ) = @_;
+   my $n_errors = 0;
 
-   print "#   $host\n"
-       . "#   " . ('=' x length $host) . "\n";
-   if ( ref $res ) {
-      my $warnings = $res->{warnings};
+   print "ERRORS: ";
+   for my $i ( 1..(scalar @$results) ) {
+      my $hostname = "Host$i";
 
-      print '#   Query time: ', $res->{Query_time}, "\n";
-      print '#   Warning count: ', $res->{warning_count}, "\n";
-      print '#   Warnings: ' . (scalar keys %$warnings == 0 ? "none\n" : "\n");
+      # Each element is a hashref of operation results, and each op
+      # result should have an error key and maybe an errors arrayref.
+      my $ops = $results->[$i - 1]; 
 
-      foreach my $code ( sort { $b <=> $a } keys %$warnings ) {
-         print "#     $code $warnings->{$code}->{Level} "
-            . "$warnings->{$code}->{Message}\n";
+      foreach my $op ( keys %$ops ) {
+         my $op_res = $ops->{$op};
+         my $last_error = $op_res->{error};
+         if ( $last_error ) {
+            chomp $last_error;  # Usually an $EVAL_ERROR that has a \n already.
+            print "\n\n$hostname $op Last_error: $last_error\n";
+            $n_errors++;
+         }
+         if ( $op_res->{errors} && scalar @{$op_res->{errors}} ) {
+            for my $j ( 1..(scalar @{$op_res->{errors}}) ) {
+               my $error = $op_res->{errors}->[$j-1];
+               chomp $error;
+               print "Error_$j: $error\n";
+            }
+         }
       }
    }
-   else { 
-      print "#   Error executing query on $host: $res";
-   }
-
-   print "#\n";  # Spacing between hosts.
+   print '', ($n_errors ? "\n" : "None\n\n");
 
    return;
 }
-
-sub print_result_results {
-   my ( $res1, $res2 ) = @_;
-
-   if ( ref $res1 && ref $res2 ) {
-      print "# Table checksums: $res1->{table_checksum} (host1), "
-         . "$res2->{table_checksum} (host2)\n";
-      print "# Row count: $res1->{n_rows} (host1), "
-         . "$res2->{n_rows} (host2)\n";
+sub print_reasons {
+   my ( $reasons ) = @_;
+   print "REASONS: ";
+   if ( @$reasons ) {
+      print "\n\n";
+      for my $i ( 0..(scalar @$reasons - 1) ) {
+         print $i+1, ". $reasons->[$i]\n";
+      }
+      print "\n";
    }
    else {
-      print "# (None)\n";
+      print "None\n\n";
    }
-
-   print "#\n";  # Spacing between hosts.
-
    return;
 }
 
@@ -4253,23 +4496,9 @@ Compare queries in slow.log on host1 to host2:
 
    mk-upgrade h=host1 h=host2 slow.log
 
-Use mk-query-digest to parse tcpdump and compare queries:
+Use mk-upgrade to parse tcpdump and compare queries:
 
-  mk-query-digest --type tcpdump --report '' --print tcpdump.txt | mk-upgrade h=host1 h=host2
-
-=head1 RISKS
-
-mk-upgrade is a new script in active development and testing.
-
-mk-upgrade executes SELECT queries on the given hosts, but in the case of a
-bug this may fail causing non-SELECT queries to be executed.  mk-upgrade
-executes every query in the given log four times so it may take a long time
-to complete.
-
-At the time of this release, there is a bug which causes mk-upgrade to falsely
-report that a query cannot be executed.
-
-See also L<"BUGS">.
+  mk-upgrade --type tcpdump --report '' --print tcpdump.txt | mk-upgrade h=host1 h=host2
 
 =head1 DESCRIPTION
 
@@ -4278,12 +4507,29 @@ executed on different MySQL servers.  These ranked differences help to test
 upgrade (or downgrade) compatibility.  The higher a query ranks, the greater
 its results differ.
 
-mk-upgrade reads only slow logs.  mk-query-digest can be used to parse and
+mk-upgrade reads only slow logs.  mk-upgrade can be used to parse and
 transform other input sources into a slow log using its C<--print --report ''>
 options.
 
 At present, queries are not fingerprinted or aggregated.  Every query is
 executed, compared and ranked individually.  This will change later.
+
+=head1 OUTPUT
+
+Output is like a slow log: header lines that start with C<#> followed by
+a query.  Like a slow log, the headers have attribute-value pairs like
+C<attribute: value> where each pair is the result of some L<"COMPARISONS">
+option.  Each attribute name begins with the host to which its value applies,
+and each header line corresponds to one part of a comparison.  The first header
+line is special: it's the query's difference rank.  The higher its rank, the
+more its comparisons differ on the hosts.
+
+Here's a simple example:
+
+  # Rank: 5
+  # host1_Query_time: 0.123003  host2_Query_time: 0.231002
+  # host1_warnings_count: 0  host2_warnings_count: 1
+  SELECT id FROM table WHERE id < 10;
 
 =head1 OPTIONS
 
@@ -4302,12 +4548,6 @@ STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
 runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
 binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
-
-=item --[no]compare-results
-
-default: yes
-
-Compare result sets of queries.
 
 =item --config
 
@@ -4335,10 +4575,32 @@ type: string
 
 Discard events for which this Perl code doesn't return true.
 
-This option is a string of Perl code that gets compiled into a subroutine with
-one argument: $event.  This is a hashref.  If the code returns true, the chain
-of callbacks continues; otherwise it ends.  The code is the last statement in
-the subroutine other than C<return $event>.
+This option is a string of Perl code or a file containing Perl code that gets
+compiled into a subroutine with one argument: $event.  This is a hashref.
+If the given value is a readable file, then mk-upgrade reads the entire
+file and uses its contents as the code.  The file should not contain
+a shebang (#!/usr/bin/perl) line.
+
+If the code returns true, the chain of callbacks continues; otherwise it ends.
+The code is the last statement in the subroutine other than C<return $event>. 
+The subroutine template is:
+
+  sub { $event = shift; filter && return $event; }
+
+Therefore, filter must produce syntactically valid code given that template.
+For example, an if-else branch would not be valid:
+
+  --filter 'if () { } else { }'  # WRONG
+
+To accomplish something more complex like this would require a more complex
+filter:
+
+  --filter 'my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0 } $event_ok'  # OK
+
+If the filter code won't compile, mk-upgrade will die with an error.
+If the filter code does compile, an error may still occur at runtime if the
+code tries to do something wrong (like pattern match an undefined value).
+mk-upgrade does not provide any safeguards so code carefully!
 
 An example filter that discards everything but SELECT statements:
 
@@ -4349,6 +4611,9 @@ This is compiled into a subroutine like the following:
   sub { $event = shift; $event->{arg} =~ m/^select/i && return $event; }
 
 It is permissible for the code to have side effects (to alter $event).
+
+You can find an explanation of the structure of $event at
+L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
 
 =item --help
 
@@ -4401,6 +4666,12 @@ short form: -S; type: string
 
 Socket file to use for connection.
 
+=item --tmp-table-database
+
+type: string
+
+Use this database for creating temporary tables.
+
 =item --user
 
 short form: -u; type: string
@@ -4410,6 +4681,35 @@ User for login if not current user.
 =item --version
 
 Show version and exit.
+
+=back
+
+=head2 COMPARISONS
+
+These comparisons determine the differences for various aspects of a query
+when executed on the different hosts.  The more comparisons made, the more
+difference can be detected.  Results for each comparison and each host are
+reported in the query's header (see L<"OUTPUT">).
+
+=over
+
+=item --[no]compare-execution-times
+
+default: yes; group: Comparisons
+
+Compare query execution times.
+
+=item --[no]compare-results
+
+default: yes; group: Comparisons
+
+Compare result sets of queries.
+
+=item --[no]compare-warnings
+
+default: yes; group: Comparisons
+
+Compare warnings and errors.
 
 =back
 
@@ -4441,9 +4741,6 @@ You need Perl and some core packages that ought to be installed in any
 reasonably new version of Perl.
 
 =head1 BUGS
-
-For a list of known bugs see:
-L<http://code.google.com/p/maatkit/issues/list?&q=tool=mk_upgrade%20type=Defect>.
 
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
