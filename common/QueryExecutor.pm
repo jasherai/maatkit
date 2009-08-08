@@ -304,17 +304,18 @@ sub checksum_results {
       # We'll need a db to parse the tmp table's struct.
       my $db = $args{database};
       if ( !$db ) {
-         # No db given so check if tmp has db.
          ($db, undef) = $q->split_unquote($tmp_tbl);
+         MKDEBUG && _d('No db given; got', $db, 'from tmp table', $tmp_tbl);
       }
 
       # Parse the tmp table's struct.
       if ( $db ) {
          eval {
             my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
+            MKDEBUG && _d('tmp table ddl:', Dumper($ddl));
             if ( $ddl->[0] eq 'table' ) {
                $tbl_struct = $tp->parse($ddl)
-            };
+            }
          };
          if ( $EVAL_ERROR ) {
             MKDEBUG && _d('Failed to parse', $tmp_tbl, ':', $EVAL_ERROR); 
