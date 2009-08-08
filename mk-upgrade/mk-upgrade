@@ -4672,6 +4672,10 @@ type: string
 
 Use this database for creating temporary tables.
 
+If given, this database is used for creating temporary tables for the
+results comparison (see L<"--[no]compare-results">).  Otherwise, the current
+database (from the last event that specified its database) is used.
+
 =item --user
 
 short form: -u; type: string
