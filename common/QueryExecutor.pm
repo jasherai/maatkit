@@ -197,7 +197,7 @@ sub get_warnings {
    my $results = {
       error => $error,
       codes => $warnings,
-      count => $warning_count->[0]->{'@@warning_count'},
+      count => $warning_count->[0]->{'@@warning_count'} || 0,
    };
    return $name, $results;
 }
@@ -355,8 +355,8 @@ sub checksum_results {
    my $results = {
       error        => $error,
       errors       => \@errors,
-      checksum     => $tbl_checksum,
-      n_rows       => $n_rows,
+      checksum     => $tbl_checksum || 0,
+      n_rows       => $n_rows || 0,
       table_struct => $tbl_struct,
    };
    return $name, $results;
