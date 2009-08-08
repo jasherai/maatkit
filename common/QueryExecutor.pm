@@ -245,22 +245,24 @@ sub clear_warnings {
 # and sets the default storage engine to MyISAM.
 sub pre_checksum_results {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(dbh tmp_table Quoter) ) {
+   foreach my $arg ( qw(dbh database tmp_table Quoter) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $dbh     = $args{dbh};
+   my $db      = $args{database};
    my $tmp_tbl = $args{tmp_table};
    my $q       = $args{Quoter};
    my $error   = undef;
    my $name    = 'pre_checksum_results';
    MKDEBUG && _d($name);
 
+   my $tmp_db_tbl = $q->quote($db, $tmp_tbl);
    eval {
-      $dbh->do("DROP TABLE IF EXISTS $tmp_tbl");
+      $dbh->do("DROP TABLE IF EXISTS $tmp_db_tbl");
       $dbh->do("SET storage_engine=MyISAM");
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('Error dropping table', $tmp_tbl, ':', $EVAL_ERROR);
+      MKDEBUG && _d('Error dropping table', $tmp_db_tbl, ':', $EVAL_ERROR);
       $error = $EVAL_ERROR;
    }
    return $name, { error=>$error };
@@ -274,10 +276,11 @@ sub pre_checksum_results {
 # last error and errors will have all errors.
 sub checksum_results {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(dbh tmp_table MySQLDump TableParser Quoter) ) {
+   foreach my $arg ( qw(dbh database tmp_table MySQLDump TableParser Quoter) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $dbh     = $args{dbh};
+   my $db      = $args{database};
    my $tmp_tbl = $args{tmp_table};
    my $du      = $args{MySQLDump};
    my $tp      = $args{TableParser};
@@ -287,52 +290,40 @@ sub checksum_results {
    my $name    = 'checksum_results';
    MKDEBUG && _d($name);
 
+   my $tmp_db_tbl = $q->quote($db, $tmp_tbl);
    my $tbl_checksum;
    my $n_rows;
    my $tbl_struct;
    eval {
-      $n_rows = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $tmp_tbl")->[0]->[0];
-      $tbl_checksum = $dbh->selectall_arrayref("CHECKSUM TABLE $tmp_tbl")->[0]->[1];
+      $n_rows = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $tmp_db_tbl")->[0]->[0];
+      $tbl_checksum = $dbh->selectall_arrayref("CHECKSUM TABLE $tmp_db_tbl")->[0]->[1];
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('Error counting rows or checksumming', $tmp_tbl, ':',
+      MKDEBUG && _d('Error counting rows or checksumming', $tmp_db_tbl, ':',
          $EVAL_ERROR);
       $error = $EVAL_ERROR;
       push @errors, $error;
    }
    else {
-      # We'll need a db to parse the tmp table's struct.
-      my $db = $args{database};
-      if ( !$db ) {
-         ($db, undef) = $q->split_unquote($tmp_tbl);
-         MKDEBUG && _d('No db given; got', $db, 'from tmp table', $tmp_tbl);
-      }
-
       # Parse the tmp table's struct.
-      if ( $db ) {
-         eval {
-            my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
-            MKDEBUG && _d('tmp table ddl:', Dumper($ddl));
-            if ( $ddl->[0] eq 'table' ) {
-               $tbl_struct = $tp->parse($ddl)
-            }
-         };
-         if ( $EVAL_ERROR ) {
-            MKDEBUG && _d('Failed to parse', $tmp_tbl, ':', $EVAL_ERROR); 
-            $error = $EVAL_ERROR;
-            push @errors, $error;
+      eval {
+         my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
+         MKDEBUG && _d('tmp table ddl:', Dumper($ddl));
+         if ( $ddl->[0] eq 'table' ) {
+            $tbl_struct = $tp->parse($ddl)
          }
-      }
-      else {
-         $error = "Cannot parse $tmp_tbl struct because its database is unknown";
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d('Failed to parse', $tmp_db_tbl, ':', $EVAL_ERROR); 
+         $error = $EVAL_ERROR;
          push @errors, $error;
-         MKDEBUG && _d($error);
       }
    }
 
    # Event if CHECKSUM TABLE or parsing the tmp table fails, let's try
    # to drop the tmp table so we don't waste space.
-   my $sql = "DROP TABLE IF EXISTS $tmp_tbl";
+   my $sql = "DROP TABLE IF EXISTS $tmp_db_tbl";
+   MKDEBUG && _d($sql);
    eval { $dbh->do($sql); };
    if ( $EVAL_ERROR ) {
       MKDEBUG && _d('Error dropping tmp table:', $EVAL_ERROR);
@@ -364,7 +355,7 @@ sub checksum_results {
       table_struct => $tbl_struct,
    };
    return $name, $results;
-}   
+}
 
 sub _check_results {
    my ( $name, $res, $host_name, $all_res ) = @_;
