@@ -3,5 +3,5 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...logger/mk-fk-error-logger   43.9   28.4   32.1   56.2    n/a  100.0   39.0
 ...v/maatkit/mk-kill/mk-kill   50.0   33.5   31.5   62.5    n/a  100.0   44.1
 ...kit/mk-loadavg/mk-loadavg   44.0   27.5   31.7   58.1    n/a  100.0   39.3
-...kit/mk-upgrade/mk-upgrade   38.2   20.9   22.9   54.0    n/a  100.0   33.1
+...kit/mk-upgrade/mk-upgrade   43.6   26.7   24.8   58.3    n/a  100.0   38.4
 ...explain/mk-visual-explain   41.8   32.7   28.0   54.0    n/a  100.0   38.6
