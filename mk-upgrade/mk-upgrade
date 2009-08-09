@@ -4070,6 +4070,8 @@ sub main {
       }
    }
 
+   $o->set('all-errors', 0) unless $o->get('errors');
+
    $o->usage_or_errors();
 
    # ########################################################################
@@ -4376,10 +4378,14 @@ sub main {
       }
 
       # Print errors and reasons in a /* comment block */ before the query.
-      print "/*\n";
-      print_errors($event->{results});
-      print_reasons($event->{reasons});
-      print "*/\n";
+      if ( $o->get('reasons') || $o->get('errors') ) {
+         print "/*\n";
+         print_errors($event->{results}, $o->get('all-errors'))
+            if $o->get('errors');
+         print_reasons($event->{reasons})
+            if $o->get('reasons');
+         print "*/\n";
+      }
 
       print "$query\n";
    }
@@ -4394,7 +4400,7 @@ sub main {
 # Subroutines.
 # ############################################################################
 sub print_errors {
-   my ( $results ) = @_;
+   my ( $results, $all ) = @_;
    my $n_errors = 0;
 
    print "ERRORS: ";
@@ -4413,7 +4419,7 @@ sub print_errors {
             print "\n\n$hostname $op Last_error: $last_error\n";
             $n_errors++;
          }
-         if ( $op_res->{errors} && scalar @{$op_res->{errors}} ) {
+         if ( $all && $op_res->{errors} && scalar @{$op_res->{errors}} ) {
             for my $j ( 1..(scalar @{$op_res->{errors}}) ) {
                my $error = $op_res->{errors}->[$j-1];
                chomp $error;
@@ -4537,6 +4543,13 @@ Here's a simple example:
 
 =over
 
+=item --all-errors
+
+Print all errors for all comparisons.
+
+Normally only the last error for each comparion is printed, but some
+comparisons will save multiple errors.
+
 =item --ask-pass
 
 Prompt for a password when connecting to MySQL.
@@ -4570,6 +4583,16 @@ operating systems only.
 =item --dump-results
 
 Don't print a human-readable report, just dump the raw results.
+
+=item --[no]errors
+
+default: yes
+
+Print last error for each operation (if any).
+
+The last error for each query and each comparison is printed in a /* comment
+block */ before the query.  C<--no-errors> will disable L<"--all-errors">.
+See also L<"--all-errors"> and L<"--[no]reasons">.
 
 =item --filter
 
@@ -4655,6 +4678,15 @@ short form: -P; type: int
 
 Port number to use for connection.
 
+=item --[no]reasons
+
+default: yes
+
+Print reasons for each query explaining its rank.
+
+The rank reasons are printed in a /* comment block */ before the query.
+See also L<"--[no]errors">.
+
 =item --run-time
 
 type: time
@@ -4699,17 +4731,11 @@ reported in the query's header (see L<"OUTPUT">).
 
 =over
 
-=item --[no]compare-execution-times
-
-default: yes; group: Comparisons
-
-Compare query execution times.
-
 =item --[no]compare-results
 
 default: yes; group: Comparisons
 
-Compare result sets of queries.
+Compare result set checksum, number of rows, and number and types of columns.
 
 =item --[no]compare-warnings
 

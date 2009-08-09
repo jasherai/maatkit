@@ -17,15 +17,6 @@ Host2 checksum_results Last_error: CHECKSUM TABLE didn't return a value
 
 Host2 Query_time Last_error: DBD::mysql::db do failed: Unknown column 'bad_col' in 'where clause' [for Statement "CREATE TEMPORARY TABLE `test`.`mk_upgrade` AS select * from test.issue_11 where bad_col=1"] at ../mk-upgrade line 0, <$fh> chunk 2.
 
-REASONS: 
-
-1. Query has warnings (rank+1)
-2. The temporary tables could not be parsed (rank+10)
-3. Query failed to execute on host1: DBD::mysql::db do failed: Unknown column 'bad_col' in 'where clause' [for Statement "CREATE TEMPORARY TABLE `test`.`mk_upgrade` AS select * from test.issue_11 where bad_col=1"] at ../mk-upgrade line 0, <$fh> chunk 2.
- (rank+100)
-4. Query failed to execute on host2: DBD::mysql::db do failed: Unknown column 'bad_col' in 'where clause' [for Statement "CREATE TEMPORARY TABLE `test`.`mk_upgrade` AS select * from test.issue_11 where bad_col=1"] at ../mk-upgrade line 0, <$fh> chunk 2.
- (rank+100)
-
 */
 select * from test.issue_11 where bad_col=1
 # Rank: 0
@@ -35,8 +26,6 @@ select * from test.issue_11 where bad_col=1
 # Host1_Resultset_rows: 4  Host2_Resultset_rows: 4
 /*
 ERRORS: None
-
-REASONS: None
 
 */
 select * from test.issue_11

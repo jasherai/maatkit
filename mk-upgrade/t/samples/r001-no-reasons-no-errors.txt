@@ -1,0 +1,12 @@
+# Rank: 211
+# Host1_Query_time: 0.000000  Host2_Query_time: 0.000000
+# Host1_Warning_count: 1  Host2_Warning_count: 1
+# Host1_Resultset_checksum: 0  Host2_Resultset_checksum: 0
+# Host1_Resultset_rows: 0  Host2_Resultset_rows: 0
+select * from test.issue_11 where bad_col=1
+# Rank: 0
+# Host1_Query_time: 0.000000  Host2_Query_time: 0.000000
+# Host1_Warning_count: 0  Host2_Warning_count: 0
+# Host1_Resultset_checksum: 846244206  Host2_Resultset_checksum: 846244206
+# Host1_Resultset_rows: 4  Host2_Resultset_rows: 4
+select * from test.issue_11

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 10;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -34,12 +34,38 @@ sub output {
    return $EVAL_ERROR ? $EVAL_ERROR : $output;
 }
 
+# Returns true (1) if there's no difference between the
+# cmd's output and the expected output.
+sub test_no_diff {
+   my ( $expected_output, @cmd_args ) = @_;
+   my $tmp_file = '/tmp/mk-upgrade-test.txt';
+   open my $fh, '>', $tmp_file or die "Can't open $tmp_file: $OS_ERROR";
+   my $output = normalize(output(@cmd_args));
+   print $fh $output;
+   close $fh;
+   # Uncomment this line to update the $expected_output files when there is a
+   # fix.
+   # `cat $tmp_file > $expected_output`;
+   my $retval = system("diff $tmp_file $expected_output");
+   `rm -rf $tmp_file`;
+   $retval = $retval >> 8; 
+   return !$retval;
+}
+
 sub load_file {
    my ($file) = @_;
    open my $fh, "<", $file or die $!;
    my $contents = do { local $/ = undef; <$fh> };
    close $fh;
    return $contents;
+}
+
+sub normalize {
+   my ( $output ) = @_;
+   # Zero out vals that change.
+   $output =~ s/Query_time: (\S+)/Query_time: 0.000000/g;
+   $output =~ s/line (\d+)/line 0/g;
+   return $output;
 }
 
 # #############################################################################
@@ -57,23 +83,52 @@ like(
 # #############################################################################
 like(
    output('h=127.1,P=12345', 'h=127.1', 'samples/q001.txt'),
-   qr/Execution Results/,
+   qr/Host2_Query_time/,
    'host2 inherits from host1'
 );
 
 # #############################################################################
 # Test some output.
 # #############################################################################
-$output = output(@hosts, '--no-compare-results', 'samples/q001.txt');
-
-# Zero out vals that change.
-$output =~ s/Query time: (\S+)/Query time: 0/g;
-$output =~ s/line (\d+)/line 0/g;
-
-is(
-   $output,
-   load_file('samples/r001.txt'),
+ok(
+   test_no_diff('samples/r001.txt', @hosts, 'samples/q001.txt'),
    'Basic output'
+);
+
+ok(
+   test_no_diff('samples/r001-all-errors.txt', @hosts,
+      '--all-errors', 'samples/q001.txt'),
+   'Basic output --all-errors'
+);
+
+ok(
+   test_no_diff('samples/r001-no-errors.txt', @hosts,
+      '--no-errors', 'samples/q001.txt'),
+   'Basic output --no-errors'
+);
+
+ok(
+   test_no_diff('samples/r001-no-reasons.txt', @hosts,
+      '--no-reasons', 'samples/q001.txt'),
+   'Basic output --no-reasons'
+);
+
+ok(
+   test_no_diff('samples/r001-no-reasons-no-errors.txt', @hosts,
+      '--no-reasons', '--no-errors', 'samples/q001.txt'),
+   'Basic output --no-reasons --no-errors'
+);
+
+ok(
+   test_no_diff('samples/r001-no-compare-warnings.txt', @hosts,
+      '--no-compare-warnings','samples/q001.txt'),
+   'Basic output --no-compare-warnings'
+);
+
+ok(
+   test_no_diff('samples/r001-no-compare-results.txt', @hosts,
+      '--no-compare-results','samples/q001.txt'),
+   'Basic output --no-compare-results'
 );
 
 # TODO: DSNParser clobbers SQL_MODE so we can't set ONLY_FULL_GROUP_BY.
@@ -84,21 +139,6 @@ is(
 # #############################################################################
 
 # How to reproduce?
-
-# #############################################################################
-# Test result comparison.
-# #############################################################################
-$output = output(@hosts, 'samples/q001.txt');
-
-# Zero out vals that change.
-$output =~ s/Query time: (\S+)/Query time: 0/g;
-$output =~ s/line (\d+)/line 0/g;
-
-is(
-   $output,
-   load_file('samples/r001-with-results.txt'),
-   'Basic output with results'
-);
 
 # #############################################################################
 # Done.
