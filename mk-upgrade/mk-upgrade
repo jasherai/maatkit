@@ -4056,9 +4056,10 @@ sub main {
       strict      => 0,
       dp          => $dp,
       prompt      => '[OPTION...] HOST-1-DSN HOST-2-DSN FILE',
-      description => q{compares two hosts by executing queries in the given }
-                   . q{file (or STDIN if no file given) and examining the }
-                   . q{results, errors, warnings, etc. produced on each.},
+      description => q{compares query execution on two hosts by executing }
+                   . q{queries in the given file (or STDIN if no file given) }
+                   . q{and examining the results, errors, warnings, etc. }
+                   . q{produced on each.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -4488,7 +4489,7 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-upgrade - Compare SQL statements on different MySQL servers.
+mk-upgrade - Execute SQL statements against two MySQL servers and compare the results.
 
 =head1 SYNOPSIS
 
@@ -4496,33 +4497,34 @@ Compare queries in slow.log on host1 to host2:
 
    mk-upgrade h=host1 h=host2 slow.log
 
-Use mk-upgrade to parse tcpdump and compare queries:
+Use mk-query-digest to parse tcpdump and compare queries:
 
-  mk-upgrade --type tcpdump --report '' --print tcpdump.txt | mk-upgrade h=host1 h=host2
+  mk-query-digest --type tcpdump --report '' --print tcpdump.txt \
+    | mk-upgrade h=host1 h=host2
 
 =head1 DESCRIPTION
 
-mk-upgrade compares and ranks how the results of SQL statements differ when
-executed on different MySQL servers.  These ranked differences help to test
-upgrade (or downgrade) compatibility.  The higher a query ranks, the greater
-its results differ.
+mk-upgrade measures differences in execution plans on two MySQL servers and
+ranks the results.  This helps to test for bugs, changes in results, and
+performance regressions before an upgrade or configuration change.  The higher a
+query ranks, the greater its results differ.
 
-mk-upgrade reads only slow logs.  mk-upgrade can be used to parse and
+mk-upgrade reads logs in slow-log format.  You can use mk-query-digest to
 transform other input sources into a slow log using its C<--print --report ''>
 options.
 
-At present, queries are not fingerprinted or aggregated.  Every query is
-executed, compared and ranked individually.  This will change later.
+Queries are not yet fingerprinted or aggregated.  Every query is
+executed, compared and ranked individually.
 
 =head1 OUTPUT
 
-Output is like a slow log: header lines that start with C<#> followed by
-a query.  Like a slow log, the headers have attribute-value pairs like
-C<attribute: value> where each pair is the result of some L<"COMPARISONS">
-option.  Each attribute name begins with the host to which its value applies,
+Output is like a slow log: header lines that start with C<#> followed by a
+query.  Like a slow log, the headers have attribute-value pairs such as
+C<attribute: value>, where each pair is the result of some L<"COMPARISONS">
+option.  Each attribute name begins with the server to which its value applies,
 and each header line corresponds to one part of a comparison.  The first header
 line is special: it's the query's difference rank.  The higher its rank, the
-more its comparisons differ on the hosts.
+greater the difference in execution between the servers.
 
 Here's a simple example:
 
@@ -4558,7 +4560,7 @@ first option on the command line.
 
 =item --continue-on-error
 
-Continue parsing even if there is an error.
+Continue working even if there is an error.
 
 =item --daemonize
 
