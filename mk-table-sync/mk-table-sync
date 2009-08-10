@@ -5581,6 +5581,11 @@ sub main {
          die "You should specify only one DSN with --replicate\n";
       }
 
+      # Filters for --databases and --tables.  We have to do these manually
+      # since we don't use MySQLFind for --replicate.
+      my $databases = $o->get('databases');
+      my $tables    = $o->get('tables');
+
       # Connect to the master and treat it as the source, then find
       # differences on the slave and sync them.
       if ( $o->get('sync-to-master') ) {
@@ -5609,9 +5614,14 @@ sub main {
          }
 
          # Now check the slave for differences and sync them if necessary.
-         my @diffs = $checksum
-            ->find_replication_differences($dsns[1]->{dbh}, $o->get('replicate'));
-         @diffs = grep { !$skip_table{$_->{db}}->{$_->{tbl}} } @diffs;
+         my @diffs =  filter_diffs(
+            \%skip_table,
+            $databases,
+            $tables,
+            $checksum->find_replication_differences(
+               $dsns[1]->{dbh}, $o->get('replicate'))
+         );
+
          if ( $o->get('verbose') ) {
             print "# Syncing ", $dp->as_string($dsns[1]), "\n";
             printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
@@ -5631,8 +5641,6 @@ sub main {
 
             lock_server(%src_and_dst, %common_modules);
             foreach my $diff ( @diffs ) {
-               next unless tbl_permitted($diff->{db}, $diff->{tbl}, o=>$o);
-
                $exit_status = sync_a_table(
                   %src_and_dst,
                   src_db     => $diff->{db},
@@ -5648,7 +5656,7 @@ sub main {
             }
             unlock_server(%src_and_dst, %common_modules);
          }
-      }
+      } # sync-to-master
 
       # The DSN is the master.  Connect to each slave and find differences, then
       # sync them.
@@ -5673,7 +5681,12 @@ sub main {
                      # Save a reference to the DBH to close gracefully later.
                      $dsn->{dbh} ||= $dbh;
                      push @dsns, $dsn;
-                     @diffs = grep { !$skip_table{$_->{db}}->{$_->{tbl}} } @diffs;
+                     @diffs = filter_diffs(
+                        \%skip_table,
+                        $databases,
+                        $tables,
+                        @diffs
+                     );
                      return unless @diffs;
                      if ( $o->get('verbose') ) {
                         print "# Syncing ", $dp->as_string($dsn), "\n";
@@ -5697,8 +5710,6 @@ sub main {
                      }
                      lock_server(%src_and_dst, %common_modules);
                      foreach my $diff ( @diffs ) {
-                        next unless tbl_permitted($diff->{db}, $diff->{tbl}, o=>$o);
-
                         $exit_status = sync_a_table(
                            %src_and_dst,
                            src_db     => $diff->{db},
@@ -5718,9 +5729,9 @@ sub main {
                method => $o->get('recursion-method'),
             },
          );
-      }
+      } # DSN is master
 
-   }
+   } # replicate
    else {
       $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
 
@@ -6086,7 +6097,8 @@ sub check_tables_for_triggers {
             if ( $triggers) {
                $dbh->disconnect();
                die "Cannot write to table with triggers: "
-                  . "$db_tbl->{db}.$db_tbl->{tbl}.\n"
+                  . "$db_tbl->{db}.$db_tbl->{tbl} on "
+                  . $dp->as_string($dsn) . "\n"
                   . "Use --with-triggers to allow writing to "
                   . "tables with triggers.\n";
             }
@@ -6102,25 +6114,13 @@ sub check_tables_for_triggers {
    return;
 }
 
-sub tbl_permitted {
-   my ( $db, $tbl, %args ) = @_;
-   foreach my $arg ( qw(o) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   my $o = $args{o};
-
-   # Any tbl is permitted if --tables wasn't given.
-   return 1 if !$o->got('tables'); 
-   
-   # Exact match: --tables has qualified db.tbl names.
-   return 1 if $o->get('tables')->{"$db.$tbl"};
-
-   # Try to match tbl for any db.
-   return 1 if $o->get('tables')->{$tbl};
-
-   # Else, table is not permitted.
-   MKDEBUG && _d('Table not permitted by --tables:', $db, $tbl);
-   return 0;
+sub filter_diffs {
+   my ( $skip_table, $databases, $tables, @diffs ) = @_;
+   return grep {
+      !$skip_table->{$_->{db}}->{$_->{tbl}}
+      && (!$databases || $databases->{$_->{db}})
+      && (!$tables || ($tables->{$_->{tbl}} || $tables->{"$_->{db}.$_->{tbl}"}))
+   } @diffs;
 }
 
 sub _d {

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 50;
+use Test::More tests => 53;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -397,6 +397,41 @@ SKIP: {
       'Original db.tbl matches different db.tbl (issue 40)'
    );
 };
+
+
+# #############################################################################
+#  Issue 367: mk-table-sync incorrectly advises --ignore-triggers
+# #############################################################################
+$sb->load_file('master', 'samples/issue_367.sql');
+
+# Make slave db1.t1 and db2.t1 differ from master.
+$slave_dbh->do('INSERT INTO db1.t1 VALUES (9)');
+$slave_dbh->do('DELETE FROM db2.t1 WHERE i > 4');
+
+# Replicate checksum of db2.t1.
+$output = `../../mk-table-checksum/mk-table-checksum h=127.1,P=12345 --replicate db1.checksum --create-replicate-table --databases db1,db2 2>&1`;
+like(
+   $output,
+   qr/db2\s+t1\s+0\s+127\.1\s+MyISAM\s+5/,
+   'Replicated checksums (issue 367)'
+);
+
+# Sync db2, which has no triggers, between master and slave using
+# --replicate which has entries for both db1 and db2.  db1 has a
+# trigger but since we also specify --databases db2, then db1 should
+# be ignored.
+$output = `../mk-table-sync h=127.1,P=12345  --databases db2 --replicate db1.checksum --execute 2>&1`;
+unlike(
+   $output,
+   qr/Cannot write to table with triggers/,
+   "Doesn't warn about trigger on db1 (issue 367)"
+);
+my $r = $slave_dbh->selectrow_array('SELECT * FROM db2.t1 WHERE i = 5');
+is(
+   $r,
+   '5',
+   'Syncs db2, ignores db1 with trigger (issue 367)'
+);
 
 # #############################################################################
 # Done

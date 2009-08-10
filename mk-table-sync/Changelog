@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * --databases was not honored when using --replicate (issue 367).
+
 2009-07-31: version 1.0.17
 
    * Added RISKS section to POD (issue 538).
