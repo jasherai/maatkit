@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -177,6 +177,35 @@ ok(
 );
 
 # #############################################################################
+# Issue 544: memcached parse error: Use of uninitialized value in pattern match 
+# #############################################################################
+
+# This issue is caused by having extra info in the tcpdump output.
+run_test(
+   'samples/memc_tcpdump013.txt',
+   'verbose tcpdump output with ascii dump',
+   [
+      {  ts          => '2009-08-03 19:56:37.683157',
+         ack         => '1391934401',
+         seq         => '1393769400',
+         src_host    => '75.126.27.210',
+         src_port    => '42819',
+         dst_host    => '75.126.27.210',
+         dst_port    => '11211',
+         complete    => 1,
+         pos_in_log  => 0,
+         ip_hlen     => 5,
+         tcp_hlen    => 5,
+         dgram_len   => 66,
+         data_len    => 26,
+         data        => join('', qw(
+            6765 7420 323a 6f70 7469 6f6e 733a 616c 6c6f 7074 696f 6e73 0d0a
+         )),
+      },
+   ],
+);
+
+# #############################################################################
 # Done.
 # #############################################################################
 my $output = '';
@@ -190,4 +219,4 @@ like(
    qr/Complete test coverage/,
    '_d() works'
 );
-exit;
+

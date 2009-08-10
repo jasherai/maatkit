@@ -109,11 +109,12 @@ sub _parse_packet {
    my ( $self, $packet ) = @_;
    die "I need a packet" unless $packet;
 
-   my ( $ts, $source, $dest )  = $packet =~ m/\A(\S+ \S+) IP (\S+) > (\S+):/;
+   my ( $ts, $source, $dest )  = $packet =~ m/\A(\S+ \S+) IP .*?(\S+) > (\S+):/;
    my ( $src_host, $src_port ) = $source =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
    my ( $dst_host, $dst_port ) = $dest   =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
 
-   (my $data = join('', $packet =~ m/\s+0x[0-9a-f]+:\s+(.*)/g)) =~ s/\s+//g; 
+   my $hex = qr/[0-9a-f]/;
+   (my $data = join('', $packet =~ m/\s+0x$hex+:\s((?:\s$hex{2,4})+)/go)) =~ s/\s+//g; 
 
    # Find length information in the IPv4 header.  Typically 5 32-bit
    # words.  See http://en.wikipedia.org/wiki/IPv4#Header
