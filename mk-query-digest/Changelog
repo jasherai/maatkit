@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * --processlist didn't set first_seen and last_seen for --review (issue 360).
+   * --daemonize caused --processlist to fail with "server has gone away".
    * Could not parse vebose tcpdump output with ASCII dump (issue 544).
    * Changed --[no]zero-bool to --zero-bool.
    * Added --inherit-attirbutes (issue 479).

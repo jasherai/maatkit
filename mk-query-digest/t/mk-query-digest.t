@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 92;
+use Test::More tests => 94;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -544,17 +544,17 @@ SKIP: {
 };
 
 # Test --continue-on-error.
+$output = `../mk-query-digest --no-continue-on-error --type tcpdump samples/bad_tcpdump.txt 2>&1`;
+unlike(
+   $output,
+   qr/Query 1/,
+   'Does not continue on error with --no-continue-on-error'
+);
 $output = `../mk-query-digest --type tcpdump samples/bad_tcpdump.txt 2>&1`;
 like(
    $output,
-   qr/substr outside of string/,
-   'Does not continue on error without --continue-on-error'
-);
-$output = `../mk-query-digest --continue-on-error --type tcpdump samples/bad_tcpdump.txt 2>&1`;
-like(
-   $output,
    qr/paris in the the spring/,
-   'Continues on error with --continue-on-error'
+   'Continues on error by default'
 );
 
 # #############################################################################
@@ -797,6 +797,27 @@ ok(
    no_diff($run_with.'slow034.txt --no-report --print --inherit-attributes db', 'samples/slow034-no-ts-inheritance.txt'),
    'Analysis for slow034 without default ts inheritance'
 );
+
+# #############################################################################
+# Issue 360: mk-query-digest first_seen and last_seen not automatically
+# populated
+# #############################################################################
+SKIP: {
+   skip 'Cannot connect to sandbox master', 2 unless $dbh1;
+   $dbh1->do('DROP TABLE IF EXISTS test.query_review');
+   `../mk-query-digest --processlist h=127.1,P=12345 --interval 0.01 --create-review-table --review h=127.1,P=12345,D=test,t=query_review --daemonize --log /tmp/mk-query-digest.log --pid /tmp/mk-query-digest.pid --run-time 2`;
+   `/tmp/12345/use < ../../mk-archiver/t/before.sql`;
+   `rm -rf /tmp/mk-query-digest.log`;
+   my @ts = $dbh1->selectrow_array('SELECT first_seen, last_seen FROM test.query_review LIMIT 1');
+   ok(
+      $ts[0] ne '0000-00-00 00:00:00',
+      'first_seen from --processlist is not 0000-00-00 00:00:00'
+   );
+   ok(
+      $ts[1] ne '0000-00-00 00:00:00',
+      'last_seen from --processlist is not 0000-00-00 00:00:00'
+   );
+};
 
 # #############################################################################
 # Done.

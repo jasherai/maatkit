@@ -1735,7 +1735,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 4207
+# Processlist package 4445
 # ###########################################################################
 package Processlist;
 
@@ -1857,7 +1857,7 @@ sub fire_event {
       host       => $row->[HOST],
       arg        => $row->[INFO],
       bytes      => length($row->[INFO]),
-      ts         => $row->[START] + $row->[TIME], # Query END time
+      ts         => Transformers::ts($row->[START] + $row->[TIME]), # Query END time
       Query_time => $Query_time,
       Lock_time  => 0,               # TODO
    };
@@ -6210,6 +6210,7 @@ sub main {
    if ( $o->get('explain') ) {
       $ep_dbh = $dp->get_dbh(
          $dp->get_cxn_params($o->get('explain')), {AutoCommit => 1});
+      $ep_dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
    }
 
    # ########################################################################
@@ -6223,6 +6224,7 @@ sub main {
       my $du  = new MySQLDump();
       $qv_dbh = $dp->get_dbh(
          $dp->get_cxn_params($review_dsn), {AutoCommit => 1});
+      $qv_dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
       my @db_tbl = @{$review_dsn}{qw(D t)};
       my $db_tbl = $q->quote(@db_tbl);
 
@@ -6255,6 +6257,7 @@ sub main {
       if ( $o->get('review-history') ) {
          $qv_dbh2 = $dp->get_dbh(
             $dp->get_cxn_params($o->get('review-history')), {AutoCommit => 1});
+         $qv_dbh2->{InactiveDestroy}  = 1;  # Don't die on fork().
          my @hdb_tbl = @{$o->get('review-history')}{qw(D t)};
          my $hdb_tbl = $q->quote(@hdb_tbl);
 
@@ -6364,6 +6367,7 @@ sub main {
    # type of time value the user gave, so we'll create the callback in any case.
    if ( my $aux_dsn = $o->get('aux-dsn') ) {
       $aux_dbh = $dp->get_dbh($dp->get_cxn_params($aux_dsn), {AutoCommit => 1});
+      $aux_dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
    }
    $aux_dbh ||= $qv_dbh || $qv_dbh2 || $ex_dbh || $ps_dbh || $ep_dbh;
    MKDEBUG && _d('aux dbh:', $aux_dbh);
@@ -7156,6 +7160,7 @@ sub find_role {
       MKDEBUG && _d('Getting a dbh from', $current, $comment);
       $dbh = $dp->get_dbh(
          $dp->get_cxn_params($o->get($current)), {AutoCommit => 1});
+      $dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
    }
    if ( $o->get('mirror') ) {
       my ( $is_read_only ) = $dbh->selectrow_array('SELECT @@global.read_only');
@@ -7166,6 +7171,7 @@ sub find_role {
          MKDEBUG && _d("read_only wrong", $comment, "getting a dbh from", $current);
          $dbh = $dp->get_dbh(
             $dp->get_cxn_params($o->get($current)), {AutoCommit => 1});
+         $dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
       }
    }
    return ($current, $dbh);
