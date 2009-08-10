@@ -245,7 +245,15 @@ sub parse_packet {
    # MySQL packets, but we only look at the first.  The 2nd and subsequent
    # packets are usually parts of a resultset returned by the server, but
    # we're not interested in resultsets.
-   remove_mysql_header($packet);
+   eval {
+      remove_mysql_header($packet);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d('remove_mysql_header() failed; failing session');
+      $session->{EVAL_ERROR} = $EVAL_ERROR;
+      $self->fail_session($session, 'remove_mysql_header() failed');
+      return;
+   }
 
    # Finally, parse the packet and maybe create an event.
    # The returned event may be empty if no event was ready to be created.
