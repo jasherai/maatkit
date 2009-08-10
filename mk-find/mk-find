@@ -2590,10 +2590,6 @@ name to STDOUT.
 mk-find is simpler than GNU find.  It doesn't allow you to specify
 complicated expressions on the command line.
 
-mk-find only looks for and processes tables.  If you need it to do
-other things, like triggers or columns, file a bug report and I'll add the
-features.
-
 mk-find uses SHOW TABLES when possible, and SHOW TABLE STATUS when needed.
 
 =head1 OPTION TYPES
