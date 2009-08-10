@@ -8,6 +8,7 @@ use Test::More tests => 19;
 require '../Processlist.pm';
 require '../MaatkitTest.pm';
 require '../TextResultSetParser.pm';
+require '../Transformers.pm';
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -140,7 +141,7 @@ is_deeply(
          host       => 'localhost',
          arg        => 'query1_1',
          bytes      => 8,
-         ts         => 1000,
+         ts         => '1969-12-31T17:16:40',
          Query_time => 2,
          Lock_time  => 0,
          id         => 1,
@@ -180,7 +181,7 @@ is_deeply(
          host       => 'localhost',
          arg        => 'query2_1',
          bytes      => 8,
-         ts         => 1001,
+         ts         => '1969-12-31T17:16:41',
          Query_time => 1,
          Lock_time  => 0,
          id         => 2,
@@ -287,7 +288,7 @@ is_deeply(
          host       => 'localhost',
          arg        => 'query2_2',
          bytes      => 8,
-         ts         => 1003,
+         ts         => '1969-12-31T17:16:43',
          Query_time => 5.5,
          Lock_time  => 0,
          id         => 2,

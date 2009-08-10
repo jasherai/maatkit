@@ -243,7 +243,7 @@ sub fire_event {
       host       => $row->[HOST],
       arg        => $row->[INFO],
       bytes      => length($row->[INFO]),
-      ts         => $row->[START] + $row->[TIME], # Query END time
+      ts         => Transformers::ts($row->[START] + $row->[TIME]), # Query END time
       Query_time => $Query_time,
       Lock_time  => 0,               # TODO
    };
