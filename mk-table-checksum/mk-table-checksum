@@ -3492,9 +3492,8 @@ $OUTPUT_AUTOFLUSH = 1;
 # Global variables.
 my $exit_status = 0;
 my $checksum_table_data;
-my ( $strat, $crc_wid, $crc_type, $func, $opt_slice );
 my ( $fetch_sth, $update_sth, $savesince_sth );
-my $md5sum_fmt;
+my ( $crc_wid, $md5sum_fmt );
 my $already_checksummed;
 # %tables_to_checksum has the following structure:
 #    database => [
@@ -3718,15 +3717,6 @@ sub main {
    # will use CRC32.
    # ########################################################################
    if ( $checksum_table_data ) {
-      my $strat_ref = determine_checksum_strat(
-         dbh => $main_dbh,
-         %common_modules,
-      );
-      ( $strat, $crc_wid, $crc_type, $func, $opt_slice )
-         = @$strat_ref{ qw(strat crc_wid crc_type func opt_slice) };
-
-      MKDEBUG && _d("Checksum strat:", Dumper($strat_ref));
-
       # Verify that CONCAT_WS is compatible across all servers. On older
       # versions of MySQL it skips both empty strings and NULL; on newer
       # just NULL.
@@ -3739,10 +3729,7 @@ sub main {
    }
    else {
       $crc_wid = 16; # Wider than the widest CRC32.
-   }
-
-   # Used for --checksum
-   $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
+   } 
 
    # ########################################################################
    # If resuming a previous run, figure out what the previous run finished.
@@ -3930,32 +3917,7 @@ sub checksum_tables {
    my $tbls  = $args{tbls};
    my $q     = $args{q};
 
-   # Design and print header unless we are resuming in which case
-   # we should have already re-printed the partial output of the
-   # resume file in parse_resume_file().
    my ($hdr, $explain);
-   if ( $o->get('tab') ) {
-      $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
-      $explain = "%s\t%s\t%s\n";
-   }
-   else {
-      my $max_tbl  = max(5, map { length($_->{table}) } @$tbls);
-      my $max_db   = max(8, length($db));
-      my $max_host = max(4, map { length($_->{h}) } @$hosts);
-      $hdr         = "%-${max_db}s %-${max_tbl}s %5s "
-                   . "%-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
-      $explain     = "%-${max_db}s %-${max_tbl}s %s\n";
-   }
-   my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE
-                     COUNT CHECKSUM TIME WAIT STAT LAG);
-   unless ( $o->get('quiet')
-            || $o->get('explain')
-            || $o->get('checksum')
-            || $o->get('resume') )
-   {
-      printf($hdr, @hdr_args)
-         or die "Cannot print: $OS_ERROR";
-   }
 
    # TODO: are we still inside an eval{} here, or is an error a fatal now?
    # NOTE: remember, you can't 'next TABLE' inside the eval{}.
@@ -3966,6 +3928,57 @@ sub checksum_tables {
          my $do_table = 1;
          MKDEBUG && _d("Doing", $db, '.', $table->{table});
          MKDEBUG && _d("Table:", Dumper($table));
+
+         # Determine the checksum strategy for every table because it
+         # might change given various --arg-table opts for each table.
+         my $strat_ref;
+         my ( $strat, $crc_type, $func, $opt_slice );
+         if ( $checksum_table_data && $do_table ) {
+            $strat_ref = determine_checksum_strat(
+               dbh => $dbh,
+               tc  => $tc,
+               o   => $final_o,
+            );
+            ( $strat, $crc_wid, $crc_type, $func, $opt_slice )
+               = @$strat_ref{ qw(strat crc_wid crc_type func opt_slice) };
+            MKDEBUG && _d("Checksum strat:", Dumper($strat_ref));
+         }
+         else {
+            # --schema doesn't use a checksum strategy, but do_tbl()
+            # requires a start arg.
+            $strat = '--schema';
+         }
+         $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
+
+         # Design and print header unless we are resuming in which case
+         # we should have already re-printed the partial output of the
+         # resume file in parse_resume_file().  This only has to be done
+         # once and done here because we need $crc_wid which is determined
+         # by the checksum strat above.
+         if ( !$hdr ) {
+            if ( $o->get('tab') ) {
+               $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
+               $explain = "%s\t%s\t%s\n";
+            }
+            else {
+               my $max_tbl  = max(5, map { length($_->{table}) } @$tbls);
+               my $max_db   = max(8, length($db));
+               my $max_host = max(4, map { length($_->{h}) } @$hosts);
+               $hdr         = "%-${max_db}s %-${max_tbl}s %5s "
+                            . "%-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+               $explain     = "%-${max_db}s %-${max_tbl}s %s\n";
+            }
+            my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE
+                              COUNT CHECKSUM TIME WAIT STAT LAG);
+            unless ( $o->get('quiet')
+                     || $o->get('explain')
+                     || $o->get('checksum')
+                     || $o->get('resume') )
+            {
+               printf($hdr, @hdr_args)
+                  or die "Cannot print: $OS_ERROR";
+            }
+         }
 
          # Clean out the replication table entry for this table.
          if ( (my $replicate_table = $final_o->get('replicate'))
@@ -4061,6 +4074,7 @@ sub checksum_tables {
             hdr     => $hdr,
             explain => $explain,
             final_o => $final_o,
+            strat   => $strat,
          );
 
          # Save the --since value if
@@ -4745,7 +4759,7 @@ sub do_tbl_replicate {
 
 sub do_tbl {
    my ( $chunk_num, $is_master, %args ) = @_;
-   foreach my $arg ( qw(du final_o ms q tc dbh host tbl hdr explain) ) {
+   foreach my $arg ( qw(du final_o ms q tc dbh host tbl hdr explain strat) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $du      = $args{du};
@@ -4758,10 +4772,12 @@ sub do_tbl {
    my $tbl     = $args{tbl};
    my $explain = $args{explain};
    my $hdr     = $args{hdr};
+   my $strat   = $args{strat};
 
    MKDEBUG && _d('Checksumming chunk', $chunk_num,
       'of table', $tbl->{database}, '.', $tbl->{table},
-      'on', $host->{h}, ':', $host->{P});
+      'on', $host->{h}, ':', $host->{P},
+      'using algorithm', $strat);
 
    my $dbh = $host->{dbh};
    # TODO: catch error here, like when host doesn't have the db

@@ -528,18 +528,22 @@ is($res->[0]->[1], 'issue_94', '--wait does not prevent update to --replicate tb
 # test.argtable should still exist from a previous test.  We'll re-use it.
 $master_dbh->do('ALTER TABLE test.argtable ADD COLUMN (modulo INT, offset INT, `chunk-size` INT)');
 $master_dbh->do("TRUNCATE TABLE test.argtable");
+
+# Two different args for two different tables.  Because issue_122 uses
+# --chunk-size, it will use the BIT_XOR algo.  And issue_94 uses no opts
+# so it will use the CHECKSUM algo.
 $master_dbh->do("INSERT INTO test.argtable (db, tbl, since, modulo, offset, `chunk-size`) VALUES ('test', 'issue_122', NULL, 2, 1, 2)");
+$master_dbh->do("INSERT INTO test.argtable (db, tbl, since, modulo, offset, `chunk-size`) VALUES ('test', 'issue_94', NULL, NULL, NULL, NULL)");
 
 $master_dbh->do("INSERT INTO test.issue_122 VALUES (3,'c'),(4,'d'),(5,'e'),(6,'f'),(7,'g'),(8,'h'),(9,'i'),(10,'j')");
 
-`perl ../mk-table-checksum h=127.1,P=12345 -d test -t issue_122 --arg-table test.argtable > /tmp/mk-table-sync-issue-467-output.txt`;
+`perl ../mk-table-checksum h=127.1,P=12345 -d test -t issue_122,issue_94 --arg-table test.argtable > /tmp/mk-table-sync-issue-467-output.txt`;
 $output = `diff samples/issue_467.txt /tmp/mk-table-sync-issue-467-output.txt`;
 is(
    $output,
    '',
    'chunk-size, modulo and offset in argtable (issue 467)'
 );
-
 diag(`rm -rf /tmp/mk-table-sync-issue-467-output.txt`);
 
 # #############################################################################
