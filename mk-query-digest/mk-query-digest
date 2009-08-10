@@ -2089,7 +2089,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4283
+# MySQLProtocolParser package 4442
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2284,7 +2284,15 @@ sub parse_packet {
       return unless $self->uncompress_packet($packet, $session);
    }
 
-   remove_mysql_header($packet);
+   eval {
+      remove_mysql_header($packet);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d('remove_mysql_header() failed; failing session');
+      $session->{EVAL_ERROR} = $EVAL_ERROR;
+      $self->fail_session($session, 'remove_mysql_header() failed');
+      return;
+   }
 
    my $event;
    if ( $packet_from eq 'server' ) {
