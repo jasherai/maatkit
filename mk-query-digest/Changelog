@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Could not parse vebose tcpdump output with ASCII dump (issue 544).
    * Changed --[no]zero-bool to --zero-bool.
    * Added --inherit-attirbutes (issue 479).
    * Changed the --report option to only control if report is printed.

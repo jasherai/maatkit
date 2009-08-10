@@ -1372,7 +1372,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4280
+# QueryParser package 4418
 # ###########################################################################
 package QueryParser;
 
@@ -1413,6 +1413,11 @@ sub get_tables {
       if ( $query =~ m/$ddl_stmt DATABASE\b/i ) {
          MKDEBUG && _d('Query alters a database, not a table');
          return ();
+      }
+      if ( $ddl_stmt =~ m/CREATE/i && $query =~ m/$ddl_stmt\b.+?\bSELECT\b/i ) {
+         my ($select) = $query =~ m/\b(SELECT\b.+)/i;
+         MKDEBUG && _d('CREATE TABLE ... SELECT:', $select);
+         return $self->get_tables($select);
       }
       my ($tbl) = $query =~ m/TABLE\s+($tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches table:', $tbl);

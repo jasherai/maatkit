@@ -1977,7 +1977,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 4195
+# TcpdumpParser package 4439
 # ###########################################################################
 package TcpdumpParser;
 
@@ -2035,11 +2035,12 @@ sub _parse_packet {
    my ( $self, $packet ) = @_;
    die "I need a packet" unless $packet;
 
-   my ( $ts, $source, $dest )  = $packet =~ m/\A(\S+ \S+) IP (\S+) > (\S+):/;
+   my ( $ts, $source, $dest )  = $packet =~ m/\A(\S+ \S+) IP .*?(\S+) > (\S+):/;
    my ( $src_host, $src_port ) = $source =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
    my ( $dst_host, $dst_port ) = $dest   =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
 
-   (my $data = join('', $packet =~ m/\s+0x[0-9a-f]+:\s+(.*)/g)) =~ s/\s+//g; 
+   my $hex = qr/[0-9a-f]/;
+   (my $data = join('', $packet =~ m/\s+0x$hex+:\s((?:\s$hex{2,4})+)/go)) =~ s/\s+//g; 
 
    my $ip_hlen = hex(substr($data, 1, 1)); # Num of 32-bit words in header.
    my $ip_plen = hex(substr($data, 4, 4)); # Num of BYTES in IPv4 datagram.
@@ -4342,7 +4343,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4280
+# QueryParser package 4418
 # ###########################################################################
 package QueryParser;
 
@@ -4383,6 +4384,11 @@ sub get_tables {
       if ( $query =~ m/$ddl_stmt DATABASE\b/i ) {
          MKDEBUG && _d('Query alters a database, not a table');
          return ();
+      }
+      if ( $ddl_stmt =~ m/CREATE/i && $query =~ m/$ddl_stmt\b.+?\bSELECT\b/i ) {
+         my ($select) = $query =~ m/\b(SELECT\b.+)/i;
+         MKDEBUG && _d('CREATE TABLE ... SELECT:', $select);
+         return $self->get_tables($select);
       }
       my ($tbl) = $query =~ m/TABLE\s+($tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches table:', $tbl);
