@@ -3802,12 +3802,12 @@ sub main {
       $n++;
 
       # Connect to instance.
-      my $mi          = new MySQLInstance( $mysqld_ps->{cmd} );
-      my $dsn         = $mi->get_DSN($o);
-      my $default_dsn = $dp->parse_options($o);
+      my $mi           = new MySQLInstance( $mysqld_ps->{cmd} );
+      my $dsn          = $mi->get_DSN($o);
+      my $dsn_defaults = $dp->parse_options($o);
       my $dbh;
       eval {
-         $dbh = $dp->get_dbh($dp->get_cxn_params($dsn, $default_dsn));
+         $dbh = $dp->get_dbh($dp->get_cxn_params($dsn, $dsn_defaults));
       };
       if ( $EVAL_ERROR ) {
          print "Cannot connect to ", $dp->as_string($dsn), ": $EVAL_ERROR\n";
