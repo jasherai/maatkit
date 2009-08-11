@@ -86,6 +86,7 @@ sub get_crc_type {
       }
    };
    $sth->finish;
+   MKDEBUG && _d('crc_type:', $type, 'length:', $length);
    return ($type, $length);
 }
 
@@ -116,7 +117,7 @@ sub best_algorithm {
 
    # BIT_XOR isn't available till 4.1.1 either
    if ( !$vp->version_ge($dbh, '4.1.1') ) {
-      MKDEBUG && _d('Cannot use BIT_XOR algorithm');
+      MKDEBUG && _d('Cannot use BIT_XOR algorithm because MySQL < 4.1.1');
       @choices = grep { $_ ne 'BIT_XOR' } @choices;
    }
 
@@ -167,6 +168,7 @@ sub choose_hash_func {
    } while ( @funcs && !$result );
 
    die $error unless $result;
+   MKDEBUG && _d('Chosen hash func:', $result);
    return $result;
 }
 
