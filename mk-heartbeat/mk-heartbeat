@@ -630,7 +630,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 4406
+# OptionParser package 4452
 # ###########################################################################
 package OptionParser;
 
@@ -1133,7 +1133,7 @@ sub _validate_type {
    return unless $opt && $opt->{type};
    my $val = $opt->{value};
 
-   if ( $val && $opt->{type} eq 'm' ) {
+   if ( $val && $opt->{type} eq 'm' ) {  # type time
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
       my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
       if ( !$suffix ) {
@@ -1154,17 +1154,18 @@ sub _validate_type {
          $self->save_error("Invalid time suffix for --$opt->{long}");
       }
    }
-   elsif ( $val && $opt->{type} eq 'd' ) {
+   elsif ( $val && $opt->{type} eq 'd' ) {  # type DSN
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a DSN');
+      my $prev = {};
       my $from_key = $self->{defaults_to}->{ $opt->{long} };
-      my $default = {};
       if ( $from_key ) {
          MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
-         $default = $self->{opts}->{$from_key}->{value};
+         $prev = $self->{opts}->{$from_key}->{value};
       }
-      $opt->{value} = $self->{dp}->parse($val, $default);
+      my $defaults = $self->{dp}->parse_options($self);
+      $opt->{value} = $self->{dp}->parse($val, $prev, $defaults);
    }
-   elsif ( $val && $opt->{type} eq 'z' ) {
+   elsif ( $val && $opt->{type} eq 'z' ) {  # type size
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
       my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
       my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
