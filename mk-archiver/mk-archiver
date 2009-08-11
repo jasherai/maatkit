@@ -3625,6 +3625,12 @@ Adds the HIGH_PRIORITY modifier to SELECT statements.
 
 See L<http://dev.mysql.com/doc/en/select.html> for details.
 
+=item --host
+
+short form: -h; type: string
+
+Connect to host.
+
 =item --ignore
 
 Use IGNORE for INSERT statements.
@@ -3717,6 +3723,12 @@ Runs OPTIMIZE TABLE after finishing.  See L<"--analyze"> for the option syntax
 and L<http://dev.mysql.com/doc/en/optimize-table.html> for details on OPTIMIZE
 TABLE.
 
+=item --password
+
+short form: -p; type: string
+
+Password to use when connecting.
+
 =item --pid
 
 type: string
@@ -3725,6 +3737,12 @@ Create the given PID file when daemonized.  The file contains the process ID of
 the daemonized instance.  The PID file is removed when the daemonized instance
 exits.  The program checks for the existence of the PID file when starting; if
 it exists and the process with the matching PID exists, the program exits.
+
+=item --port
+
+short form: -P; type: int
+
+Port number to use for connection.
 
 =item --primary-key-only
 
@@ -3877,6 +3895,12 @@ flushed, before sleeping.  See L<"--txn-size"> to control that.
 If L<"--commit-each"> is specified, committing and flushing happens before
 sleeping.
 
+=item --socket
+
+short form: -S; type: string
+
+Socket file to use for connection.
+
 =item --source
 
 type: DSN
@@ -4017,6 +4041,12 @@ autocommit, dropped performance to 38 seconds per thousand rows.
 
 If you are not archiving from or to a transactional storage engine, you may
 want to disable transactions so mk-archiver doesn't try to commit.
+
+=item --user
+
+short form: -u; type: string
+
+User for login if not current user.
 
 =item --version
 
