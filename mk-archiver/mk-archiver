@@ -2366,7 +2366,6 @@ my $dp = new DSNParser(
    { key => 'm', copy => 0, desc => 'Plugin module name' },
    { key => 'b', copy => 0, desc => 'Disable binlog with SET SQL_LOG_BIN=0' },
 );
-$dp->prop('required', { t => 1 });
 my $vp = new VersionParser;
 my $q  = new Quoter;
 
@@ -2429,6 +2428,9 @@ sub main {
    }
 
    if ( !$o->got('help') ) {
+      $o->save_error("--source DSN requires a 't' (table) part")
+         unless $src->{t};
+
       if ( $dst ) {
          # Ensure --source and --dest don't point to the same place
          my $same = 1;

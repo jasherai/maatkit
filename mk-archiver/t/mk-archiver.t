@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 113;
+use Test::More tests => 114;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -24,6 +24,13 @@ my $rows;
 $sb->load_file('master', 'before.sql');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 4, 'Test data loaded ok');
+
+$output = `perl ../mk-archiver --source h=127.1,D=sakila,t=film  --where "film_id < 100" --purge --dry-run --port 12345 | diff samples/issue-248.txt -`;
+is(
+   $output,
+   '',
+   'DSNs inherit from standard connection options (issue 248)'
+);
 
 # Test --for-update
 $output = `perl ../mk-archiver --where 1=1 --dry-run --source D=test,t=table_1,F=$opt_file --for-update --purge 2>&1`;
