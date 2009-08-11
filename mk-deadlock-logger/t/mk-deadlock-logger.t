@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 20;
+use Test::More tests => 21;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -186,14 +186,14 @@ like(
 $output = `../mk-deadlock-logger h=127.1 --dest t=deadlocks 2>&1`;
 like(
    $output,
-   qr/Destination DSN requires database/,
+   qr/requires a 'D'/, 
    'Dest DSN requires D',
 );
 
 $output = `../mk-deadlock-logger --dest D=test 2>&1`;
 like(
    $output,
-   qr/Destination DSN requires table/,
+   qr/requires a 't'/,
    'Dest DSN requires t'
 );
 
@@ -213,6 +213,18 @@ like(
    $output,
    qr/CREATE TABLE test.make_deadlock/,
    'Create --clear-deadlocks table (debug)'
+);
+
+# #############################################################################
+# Issue 248: Add --user, --pass, --host, etc to all tools
+# #############################################################################
+
+# Test that source DSN inherits from --user, etc.
+$output = `../mk-deadlock-logger h=127.1,D=test --clear-deadlocks test.make_deadlock --port 12345 2>&1`;
+unlike(
+   $output,
+   qr/failed/,
+   'Source DSN inherits from standard connection options (issue 248)'
 );
 
 # #############################################################################

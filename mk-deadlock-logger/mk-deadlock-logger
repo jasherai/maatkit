@@ -1577,14 +1577,13 @@ sub main {
 
    $o->set('collapse', $o->get('print')) unless $o->got('collapse'); 
  
-   $source_dsn = $dp->parse_options($o);
-   MKDEBUG && _d('Got source host from opts:', $source_dsn ? 'yes' : 'no');
-   if ( @ARGV ) {
-      MKDEBUG && _d('Source host DSN:', $ARGV[0]);
-      $source_dsn = $dp->parse(shift @ARGV);
-   }
+   my $dsn_defaults = $dp->parse_options($o);
+   $source_dsn = @ARGV ? $dp->parse(shift @ARGV,$dsn_defaults) : $dsn_defaults;
+   $dest_dsn   = $o->get('dest');
 
-   $dest_dsn = $o->get('dest');
+   # The source dsn is not an option so --dest cannot use OptionParser
+   # to inherit values from it.  Thus, we do it manually.  --dest will
+   # inherit from --user, --port, etc.
    if ( $source_dsn && $dest_dsn ) {
       # If dest DSN only has D and t, this will copy h, P, S, etc.
       # from the source DSN.
@@ -1596,10 +1595,10 @@ sub main {
          $o->save_error('Missing or invalid source host');
       }
       if ( $dest_dsn && !$dest_dsn->{D} ) {
-         $o->save_error('Destination DSN requires database (D)');
+         $o->save_error("--dest requires a 'D' (database) part");
       }
       if ( $dest_dsn && !$dest_dsn->{t} ) {
-         $o->save_error('Destination DSN requires table (t)');
+         $o->save_error("--dest requires a 't' (table) part");
       }
    }
 
