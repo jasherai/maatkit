@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 136;
+use Test::More tests => 138;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1826,6 +1826,67 @@ is_deeply(
       u => 'bob',
    },
    'Copies DSN values correctly (issue 460)'
+);
+
+# #############################################################################
+# Issue 248: Add --user, --pass, --host, etc to all tools
+# #############################################################################
+
+# See the 5 cases (i.-v.) at http://groups.google.com/group/maatkit-discuss/browse_thread/thread/f4bf1e659c60f03e
+
+# case ii.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dp           => $dp,
+);
+$o->get_specs('../../mk-archiver/mk-archiver');
+@ARGV = (
+   '--source',    'h=127.1,S=/tmp/mysql.socket',
+   '--port',      '12345',
+   '--user',      'bob',
+   '--password',  'foo',
+   '--socket',    '/tmp/bad.socket',  # should *not* override DSN
+   '--where',     '1=1',   # required
+);
+$o->get_opts();
+my $src_dsn = $o->get('source');
+is_deeply(
+   $src_dsn,
+   {
+      A => undef,
+      D => undef,
+      F => undef,
+      P => '12345',
+      S => '/tmp/mysql.socket',
+      h => '127.1',
+      p => 'foo',
+      u => 'bob',
+   },
+   'DSN opt gets missing vals from --host, --port, etc. (issue 248)',
+);
+
+# Like case ii. but make sure --dest copies u from --source, not --user.
+@ARGV = (
+   '--source',    'h=127.1,u=bob',
+   '--dest',      'h=127.1',
+   '--user',      'wrong_user',
+   '--where',     '1=1',   # required
+);
+$o->get_opts();
+$dest_dsn = $o->get('dest');
+is_deeply(
+   $dest_dsn,
+   {
+      A => undef,
+      D => undef,
+      F => undef,
+      P => undef,
+      S => undef,
+      h => '127.1',
+      p => undef,
+      u => 'bob',
+   },
+   'Vals from "defaults to" DSN take precedence over defaults (issue 248)'
 );
 
 # #############################################################################
