@@ -3719,7 +3719,9 @@ sub main {
    $o->get_specs();
    $o->get_opts();
 
-   # TODO: implement --host
+   # --host doesn't work because MySQLInstance insists on doing all the work.
+   # That is, we can't tell it "just use this --host".  mk-audit is due for
+   # retirment so this limitation will remain.
    die "Sorry, --host is not implemented yet" if $o->got('host');
 
    $dp->prop('set-vars', $o->get('set-vars'));
@@ -3800,13 +3802,12 @@ sub main {
       $n++;
 
       # Connect to instance.
-      my $mi    = new MySQLInstance( $mysqld_ps->{cmd} );
-      my $dsn   = $mi->get_DSN($o);
-      $dsn->{u} = $o->get('user')     if $o->get('user');
-      $dsn->{p} = $o->get('password') if $o->get('password');
+      my $mi          = new MySQLInstance( $mysqld_ps->{cmd} );
+      my $dsn         = $mi->get_DSN($o);
+      my $default_dsn = $dp->parse_options($o);
       my $dbh;
       eval {
-         $dbh = $dp->get_dbh($dp->get_cxn_params($dsn));
+         $dbh = $dp->get_dbh($dp->get_cxn_params($dsn, $default_dsn));
       };
       if ( $EVAL_ERROR ) {
          print "Cannot connect to ", $dp->as_string($dsn), ": $EVAL_ERROR\n";
