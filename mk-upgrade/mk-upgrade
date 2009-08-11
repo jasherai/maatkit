@@ -4078,10 +4078,11 @@ sub main {
    # ########################################################################
    # Parse the host DSNs and make sure that we can connect to each.
    # ########################################################################
-   my $host1_dsn = $dp->parse(shift @ARGV);
-   my $host1_dbh = get_cxn($dp, $o, $host1_dsn);
-   my $host2_dsn = $dp->parse(shift @ARGV, $host1_dsn);
-   my $host2_dbh = get_cxn($dp, $o, $host2_dsn);
+   my $dsn_defaults = $dp->parse_options($o);
+   my $host1_dsn    = $dp->parse(shift @ARGV, $dsn_defaults);
+   my $host1_dbh    = get_cxn($dp, $o, $host1_dsn);
+   my $host2_dsn    = $dp->parse(shift @ARGV, $host1_dsn, $dsn_defaults);
+   my $host2_dbh    = get_cxn($dp, $o, $host2_dsn);
    my $hosts     = [
       {
          dbh => $host1_dbh,

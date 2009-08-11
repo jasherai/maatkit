@@ -79,12 +79,18 @@ like(
 );
 
 # #############################################################################
-# Test that host2 inherits from hos1.
+# Test that connection opts inherit.
 # #############################################################################
 like(
    output('h=127.1,P=12345', 'h=127.1', 'samples/q001.txt'),
    qr/Host2_Query_time/,
    'host2 inherits from host1'
+);
+
+like(
+   output('h=127.1', 'h=127.1', '--port', '12345', 'samples/q001.txt'),
+   qr/Host2_Query_time/,
+   'DSNs inherit standard connection options'
 );
 
 # #############################################################################
