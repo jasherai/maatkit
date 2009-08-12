@@ -7327,7 +7327,7 @@ options are used.  Parsing huge log files may cause significant CPU and memory
 usage.
 
 At the time of this release, there are bugs which cause mk-query-digest to
-crash, bugs which cause L<"--report"> output to be incorrect, a bug which
+crash, bugs which cause L<"--[no]report"> output to be incorrect, a bug which
 causes incorrect L<"--review"> information, and a bug with L<"--processlist">
 and delayed replication threads.
 
@@ -7371,7 +7371,7 @@ the various commands, misses and errors: Memc_CMD where CMD is a memcached
 command (get, set, delete, etc.), Memc_error and Memc_miss.
 
 These attributes are no different from slow log attributes, so you can use them
-with L<"--report">, L<"--group-by">, in a L<"--filter">, etc.
+with L<"--[no]report">, L<"--group-by">, in a L<"--filter">, etc.
 
 These attributes and more are documented at
 L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
@@ -7626,6 +7626,10 @@ is yes.
 
 =over
 
+=item --ask-pass
+
+Prompt for a password when connecting to MySQL.
+
 =item --attribute-aliases
 
 type: array; default: db|Schema
@@ -7664,6 +7668,16 @@ The following options may require a DSN even when only parsing a slow log file:
   * L<"--until">
 
 See each option for why it might require a DSN.
+
+=item --charset
+
+short form: -A; type: string
+
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
+runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
+binmode on STDOUT without the utf8 layer, and runs SET NAMES after
+connecting to MySQL.
 
 =item --check-attributes-limit
 
@@ -7711,6 +7725,12 @@ default structure shown in the documentation for that option.
 
 Fork to the background and detach from the shell.  POSIX
 operating systems only.
+
+=item --defaults-file
+
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute pathname.
 
 =item --embedded-attributes
 
@@ -7766,8 +7786,9 @@ type: array; default: 5,10
 Explain items when there are more or fewer than expected.
 
 Defines the number of items expected to be seen in the report given by
-L<"--report">, as controlled by L<"--limit"> and L<"--outliers">.  If there are
-more or fewer items in the report, each one will explain why it was included.
+L<"--[no]report">, as controlled by L<"--limit"> and L<"--outliers">.  If
+there  are more or fewer items in the report, each one will explain why it was
+included.
 
 =item --explain
 
@@ -7775,7 +7796,7 @@ type: DSN
 
 Run EXPLAIN for the sample query with this DSN and print results.
 
-This works only when L<"--report"> includes fingerprint.  It causes
+This works only when L<"--group-by"> includes fingerprint.  It causes
 mk-query-digest to run EXPLAIN and include the output into the report.  For
 safety, queries that appear to have a subquery that EXPLAIN will execute won't
 be EXPLAINed.  Those are typically "derived table" queries of the form
@@ -7863,8 +7884,8 @@ check both.
 
 =item --fingerprints
 
-Add query fingerprints to the L<"--report">.  This is mostly useful
-for debugging purposes.
+Add query fingerprints to the standard query analysis report.  This is mostly
+useful for debugging purposes.
 
 =item --[no]for-explain
 
@@ -7932,6 +7953,12 @@ L<"ATTRIBUTES">).
 
 Show help and exit.
 
+=item --host
+
+short form: -h; type: string
+
+Connect to host.
+
 =item --ignore-attributes
 
 type: array; default: arg,cmd,insert_id,ip,port,Thread_id,timestamp,exptime,flags,key,res,val,server_id,offset,end_log_pos,Xid
@@ -7985,8 +8012,8 @@ report the top percentage or the number specified by that integer, whichever
 comes first.
 
 The value is actually a comma-separated array of values, one for each item in
-L<"--report">.  If you don't specify a value for any of those items, the default
-is the top 95%.
+L<"--group-by">.  If you don't specify a value for any of those items, the
+default is the top 95%.
 
 See also L<"--outliers">.
 
@@ -8045,7 +8072,13 @@ seconds and which are seen at least 5 times, use the following argument:
 
   --outliers Query_time:60:5
 
-You can specify an --outliers option for each value in L<"--report">.
+You can specify an --outliers option for each value in L<"--group-by">.
+
+=item --password
+
+short form: -p; type: string
+
+Password to use when connecting.
 
 =item --pid
 
@@ -8056,6 +8089,12 @@ ID of the daemonized instance.  The PID file is removed when the
 daemonized instance exits.  The program checks for the existence of the
 PID file when starting; if it exists and the process with the matching PID
 exists, the program exits.
+
+=item --port
+
+short form: -P; type: int
+
+Port number to use for connection.
 
 =item --print
 
@@ -8104,9 +8143,10 @@ type: DSN
 Store a sample of each class of query in this DSN.
 
 The argument specifies a table to store all unique query fingerprints in.  The
-table must have at least the following columns, but you can add any more columns
-you wish.  The following CREATE TABLE definition is also used for
-L<"--create-review-table">.  MAGIC_create_review:
+table must have at least the following columns.  You can add more columns for
+your own special purposes, but they won't be used by mk-query-digest.  The
+following CREATE TABLE definition is also used for L<"--create-review-table">.
+MAGIC_create_review:
 
   CREATE TABLE query_review (
      checksum     BIGINT UNSIGNED NOT NULL PRIMARY KEY,
@@ -8136,10 +8176,9 @@ Note that the C<fingerprint> column is the true primary key for a class of
 queries.  The C<checksum> is just a cryptographic hash of this value, which
 provides a shorter value that is very likely to also be unique.
 
-After the tool generates the fingerprint report for L<"--report">, it uses the
-aggregated values from the report to fill the review table.  When you're done,
-your table should contain a row for each fingerprint.  This option depends on
-C<--report fingerprint>.  It will not work otherwise.
+After parsing and aggregating events, your table should contain a row for each
+fingerprint.  This option depends on C<--group-by fingerprint> (which is the
+default).  It will not work otherwise.
 
 =item --review-history
 
@@ -8151,7 +8190,7 @@ Each time you review queries with L<"--review">, mk-query-digest will save
 information into this table so you can see how classes of queries have changed
 over time.
 
-This DSN inherits unspecified values from --review.  It should mention a
+This DSN inherits unspecified values from L<"--review">.  It should mention a
 table in which to store statistics about each class of queries.  mk-query-digest
 verifies the existence of the table, and your privileges to insert, delete and
 update on that table.
@@ -8236,11 +8275,11 @@ Filter out all but the first N occurrences of each query.  The queries are
 filtered on the first value in L<"--group-by">, so by default, this will filter
 by query fingerprint.  For example, C<--sample 2> will permit two sample queries
 for each fingerprint.  Useful in conjunction with L<"--print"> to print out the
-queries.  You probably want to set L<"--report"> to the empty string to avoid
-the overhead of aggregating and reporting, if you're just using this to print
-out samples of queries.  A complete example:
+queries.  You probably want to set C<--no-report> to avoid the overhead of
+aggregating and reporting if you're just using this to print out samples of
+queries.  A complete example:
 
-  mk-query-digest --sample 2 --report '' --group-by fingerprint --print slow.log
+  mk-query-digest --sample 2 --no-report --print slow.log
 
 =item --select
 
@@ -8262,6 +8301,13 @@ Attributes specified in the L<"--review-history"> table will always be selected
 even if you do not specify L<"--select">.
 
 See also L<"--ignore-attributes"> and L<"ATTRIBUTES">.
+
+=item --set-vars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.  Immediately after connecting to MySQL, this
+string will be appended to SET and executed.
 
 =item --shorten
 
@@ -8316,6 +8362,12 @@ the query events are not consistently timestamped, some may be ignored which
 are actually new enough.
 
 See also L<"--until">.
+
+=item --since
+
+short form: -S; type: string
+
+Socket file to use for connection.
 
 =item --tcpdump-errors
 
@@ -8425,6 +8477,12 @@ the same types listed for L<"--since">.
 Unlike L<"--since">, L<"--until"> is not strict: all queries are parsed until
 one has a timestamp that is equal to or greater than L<"--until">.  Then
 all subsequent queries are ignored.
+
+=item --user
+
+short form: -u; type: string
+
+User for login if not current user.
 
 =item --version
 
