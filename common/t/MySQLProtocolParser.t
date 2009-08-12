@@ -79,6 +79,7 @@ run_test({
          host          => '127.0.0.1',
          ip            => '127.0.0.1',
          port          => '42167',
+         Client        => '127.0.0.1:42167',
          arg           => 'select "hello world" as greeting',
          Query_time    => sprintf('%.6f', .805123 - .804849),
          pos_in_log    => 0,
@@ -104,6 +105,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '57890',
+         Client     => '127.0.0.1:57890',
          arg        => 'administrator command: Connect',
          Query_time => '0.011152',
          Thread_id  => 8,
@@ -125,6 +127,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '57890',
+         Client     => '127.0.0.1:57890',
          pos_in_log => 2449,
          ts         => '090412 11:00:13.118643',
          user       => 'msandbox',
@@ -143,6 +146,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '57890',
+         Client     => '127.0.0.1:57890',
          pos_in_log => 3298,
          ts         => '090412 11:00:13.119079',
          user       => 'msandbox',
@@ -161,6 +165,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '57890',
+         Client     => '127.0.0.1:57890',
          pos_in_log => '4186',
          ts         => '090412 11:00:13.119487',
          user       => 'msandbox',
@@ -184,6 +189,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '44488',
+         Client     => '127.0.0.1:44488',
          arg        => 'administrator command: Connect',
          Query_time => '0.010753',
          Thread_id  => 9,
@@ -210,6 +216,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '60439',
+         Client     => '127.0.0.1:60439',
          arg        => 'select 5 from foo',
          Query_time => '0.000251',
          Thread_id  => 4294967296,
@@ -241,6 +248,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '55300',
+         Client     => '127.0.0.1:55300',
          pos_in_log => '0',
          ts         => '090412 16:46:02.978340',
          user       => undef,
@@ -259,6 +267,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '55300',
+         Client     => '127.0.0.1:55300',
          pos_in_log => '1033',
          ts         => '090412 16:46:20.245088',
          user       => undef,
@@ -280,6 +289,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '48259',
+         Client     => '127.0.0.1:48259',
          arg        => 'select * from t',
          Query_time => '0.000205',
          Thread_id  => 4294967296,
@@ -306,6 +316,7 @@ run_test({
          host       => '127.0.0.1',
          ip         => '127.0.0.1',
          port       => '38381',
+         Client     => '127.0.0.1:38381',
          arg        => 'insert into t values(current_date)',
          Query_time => '0.000020',
          Thread_id  => 4294967296,
@@ -436,6 +447,7 @@ run_test({
          host          => '127.0.0.1',
          ip            => '127.0.0.1',
          port          => '42167',
+         Client     => '127.0.0.1:42167',
          arg           => 'select "hello world" as greeting',
          Query_time    => sprintf('%.6f', .805123 - .804849),
          pos_in_log    => 0,
@@ -475,6 +487,7 @@ run_test({
          host => '10.54.212.171',
          ip => '10.54.212.171',
          port => '49663',
+         Client => '10.54.212.171:49663',
          pos_in_log => 1834,
          ts => '090603 10:52:24.578817',
          user => 'luck'
@@ -505,6 +518,7 @@ run_test({
          host               => '10.54.212.171',
          ip                 => '10.54.212.171',
          port               => '49663',
+         Client             => '10.54.212.171:49663',
          pos_in_log         => 0,
          ts                 => '090603 10:52:24.587685',
          user               => undef,
@@ -537,7 +551,8 @@ run_test({
          port => '44489',
          pos_in_log => 664,
          ts => '090612 08:39:05.316805',
-         user => 'msandbox'
+         user => 'msandbox',
+         Client => '127.0.0.1:44489',
       },
       {
          Error_no => 'none',
@@ -556,7 +571,8 @@ run_test({
          port => '44489',
          pos_in_log => 1637,
          ts => '090612 08:39:08.428913',
-         user => 'msandbox'
+         user => 'msandbox',
+         Client => '127.0.0.1:44489',
       },
       {
          Error_no => 'none',
@@ -575,7 +591,8 @@ run_test({
          port => '44489',
          pos_in_log => 15782,
          ts => '090612 08:39:09.145334',
-         user => 'msandbox'
+         user => 'msandbox',
+         Client => '127.0.0.1:44489',
       },
    ],
 });
@@ -606,7 +623,8 @@ run_test({
          port => '64987',
          pos_in_log => 468,
          ts => '090609 16:53:17.112346',
-         user => 'ppppadri'
+         user => 'ppppadri',
+         Client => '10.55.200.31:64987',
       },
    ],
 });
@@ -637,7 +655,8 @@ run_test({
          port => '42275',
          pos_in_log => 0,
          ts => '090727 08:28:41.723651',
-         user => undef
+         user => undef,
+         Client => '127.0.0.1:42275',
       },
       {
          Error_no => 'none',
@@ -656,7 +675,8 @@ run_test({
          port => '34233',
          pos_in_log => 987,
          ts => '090727 08:29:34.232748',
-         user => undef
+         user => undef,
+         Client => '127.0.0.1:34233',
       },
    ],
 });
@@ -684,7 +704,8 @@ run_test({
          port => '42275',
          pos_in_log => 0,
          ts => '090727 08:28:41.723651',
-         user => undef
+         user => undef,
+         Client => '127.0.0.1:42275',
       },
    ]
 });

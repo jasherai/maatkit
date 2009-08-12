@@ -54,11 +54,35 @@ sub run_test {
    is($buffer, $original, "Correct output for $filename");
 }
 
+sub no_diff {
+   my ( $event, $expected_output ) = @_;
+   my $tmp_file = '/tmp/SlowLogWriter-output.txt';
+   open my $fh, '>', $tmp_file or die "Cannot open $tmp_file: $OS_ERROR";
+   $w->write($fh, $event);
+   close $fh;
+   my $retval = system("diff $tmp_file $expected_output");
+   `rm -rf $tmp_file`;
+   $retval = $retval >> 8;
+   return !$retval;
+}
+
 # Check that I can write a slow log in the default slow log format.
 run_test('samples/slow001.txt');
 
 # Test writing a Percona-patched slow log with Thread_id and hi-res Query_time.
 run_test('samples/slow032.txt', 'samples/slow032-rewritten.txt');
+
+ok(
+   no_diff(
+      {
+         Query_time => '1',
+         arg        => 'select * from foo',
+         Client     => '127.0.0.1:12345',
+      },
+      'samples/slowlogwriter001.txt',
+   ),
+   'Writes Client attrib from tcpdump',
+);
 
 # #############################################################################
 # Done.

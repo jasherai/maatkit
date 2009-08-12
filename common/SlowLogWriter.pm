@@ -40,6 +40,9 @@ sub write {
       printf $fh "# User\@Host: %s[%s] \@ %s []\n",
          $event->{user}, $event->{user}, $event->{host};
    }
+   if ( $event->{Client} ) {
+      printf $fh "# Client: $event->{Client}\n";
+   }
    if ( $event->{Thread_id} ) {
       printf $fh "# Thread_id: $event->{Thread_id}\n";
    }
