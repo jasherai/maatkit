@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 94;
+use Test::More tests => 95;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -816,6 +816,19 @@ SKIP: {
    ok(
       $ts[1] ne '0000-00-00 00:00:00',
       'last_seen from --processlist is not 0000-00-00 00:00:00'
+   );
+};
+
+# #############################################################################
+# Issue 248: Add --user, --pass, --host, etc to all tools
+# #############################################################################
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $dbh1;
+   $output = `../mk-query-digest --processlist 127.1 --run-time 1 --port 12345`;
+   like(
+      $output,
+      qr/Rank\s+Query ID/,
+      'DSN opts inherit from --host, --port, etc. (issue 248)'
    );
 };
 
