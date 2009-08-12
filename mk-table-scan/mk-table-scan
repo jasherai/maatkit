@@ -2174,7 +2174,8 @@ sub main {
 
    my $dp = new DSNParser();
    $dp->prop('setvars', $o->get('set-vars'));
-   my $dbh = $dp->get_dbh( $dp->get_cxn_params({$o->opts()}), { AutoCommit => 1 } );
+   my $dsn = $dp->parse_options($o);
+   my $dbh = $dp->get_dbh( $dp->get_cxn_params($dsn), { AutoCommit => 1 } );
 
    my $q  = new Quoter();
    my $tp = new TableParser();
