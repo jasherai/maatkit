@@ -4510,20 +4510,32 @@ Use mk-query-digest to parse tcpdump and compare queries:
   mk-query-digest --type tcpdump --no-report --print tcpdump.txt \
     | mk-upgrade h=host1 h=host2
 
+See L<mk-query-digest> for more information on how to gather and process TCP
+traffic from a MySQL server.
+
 =head1 RISKS
 
-mk-upgrade is a new script in active development and testing.  It should only
-be used on test servers.
+The following section is included to inform users about the potential risks,
+whether known or unknown, of using this tool.  The two main categories of risks
+are those created by the nature of the tool (e.g. read-only tools vs. read-write
+tools) and those created by bugs.
 
-mk-upgrade executes SELECT queries on the given hosts, but in the case of a
-bug this may fail causing non-SELECT queries to be executed.  mk-upgrade
-executes every query in the given log four times so it may take a long time
-to complete.
+mk-upgrade is in active development.  It should only be used on test servers.
 
-At the time of this release, there is a bug which causes mk-upgrade to falsely
-report that a query cannot be executed.
+mk-upgrade executes queries on the given servers.  It filters out everything
+except SELECT queries for safety.  If there were to be a bug in the filter,
+other queries might be executed.  The queries it executes might cause extra load
+on the server.
 
-See also L<"BUGS">.
+At the time of this release, we know of no bugs that could cause serious harm to
+users.
+
+The authoritative source for updated information is always the online issue
+tracking system.  Issues that affect this tool will be marked as such.  You can
+see a list of such issues at the following URL:
+L<http://www.maatkit.org/bugs/mk-query-digest>.
+
+See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
