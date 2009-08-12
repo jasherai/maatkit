@@ -85,7 +85,9 @@ SKIP: {
 
    $sb->load_file('master', 'samples/log.sql');
 
-   $output = `../mk-log-player --play $tmpdir/ h=127.1,P=12345`;
+   # Using --port implicitly tests that the DSN inherits
+   # values from --port, etc. (issue 248).
+   $output = `../mk-log-player --play $tmpdir/ h=127.1 --port 12345`;
 
    my $r = $dbh->selectall_arrayref('select * from mk_log_player_1.tbl1 where a = 100 OR a = 555;');
    is_deeply(

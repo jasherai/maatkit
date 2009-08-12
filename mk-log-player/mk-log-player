@@ -2110,11 +2110,10 @@ sub main {
    # If not --split then the remaining arg should be a DSN for --play.
    my $dsn;
    if ( !$o->get('split') && !$o->get('print') ) {
-      $dsn = $dp->parse_options($o);
-      MKDEBUG && _d('Got host from opts:', $dsn ? 'yes' : 'no');
+      my $dsn_defaults = $dp->parse_options($o);
+      $dsn = @ARGV ? $dp->parse(shift @ARGV, $dsn_defaults) : $dsn_defaults;
       if ( !$dsn ) {
-         @ARGV ? $dsn = $dp->parse(shift @ARGV)
-               : $o->save_error('Missing or invalid host');
+         $o->save_error('Missing or invalid host');
       }
    }
 
@@ -2232,7 +2231,7 @@ sub main {
    my $parent_dbh;
    if ( !$o->get('print') ) {
       if ( $o->get('ask-pass') ) {
-         $o->set('p', OptionParser::prompt_noecho("Enter password: "));
+         $o->set('password', OptionParser::prompt_noecho("Enter password: "));
       }
       $parent_dbh = get_cxn($dsn);
       $parent_dbh->{InactiveDestroy} = 1; # Don't die on fork().
