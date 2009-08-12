@@ -2450,11 +2450,11 @@ as well.  It is reported to work well with Slony-1 replication.
 
 =head1 OPTIONS
 
-Specify at least one of --stop, --update, --monitor, or --check.
+Specify at least one of L<"--stop">, L<"--update">, L<"--monitor">, or L<"--check">.
 
---update, --monitor, and --check are mutually exclusive.
+L<"--update">, L<"--monitor">, and L<"--check"> are mutually exclusive.
 
---daemonize and --check are mutually exclusive.
+L<"--daemonize"> and L<"--check"> are mutually exclusive.
 
 =over
 
