@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -64,6 +64,15 @@ like(
    $output,
    qr/slave running /,
    'slave host given by cmd line opts'
+);
+
+# And check issue 248: that the slave host will inhert from --port, etc.
+$output = `../mk-slave-delay --run-time 1s --interval 1s 127.1 --port 12346`;
+sleep 1;
+like(
+   $output,
+   qr/slave running /,
+   'slave host inherits --port, etc. (issue 248)'
 );
 
 # #############################################################################

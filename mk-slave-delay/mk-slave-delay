@@ -1663,25 +1663,15 @@ sub main {
 
    $dp->prop('set-vars', $o->get('set-vars'));
 
-   my $slave_dsn = $dp->parse_options($o);
-   MKDEBUG && _d('Got slave host from opts:', $slave_dsn ? 'yes' : 'no');
-   my $master_dsn; 
-   if ( @ARGV ) {
-      if ( $slave_dsn ) {  # ARGV has master DSN
-         MKDEBUG && _d('Master host DSN:', $ARGV[0]);
-         $master_dsn = $dp->parse(shift(@ARGV), $slave_dsn) if @ARGV;
-      }
-      else {  # ARGV has slave DSN and maybe master DSN
-         MKDEBUG && _d('Slave host DSN:', $ARGV[0]);
-         $slave_dsn  = $dp->parse(shift @ARGV);
-         MKDEBUG && _d('Master host DSN:', $ARGV[0]);
-         $master_dsn = $dp->parse(shift(@ARGV), $slave_dsn) if @ARGV;
-      }
-   }
+   my $dsn_defaults = $dp->parse_options($o);
+   my $slave_dsn  = @ARGV ? $dp->parse(shift @ARGV, $dsn_defaults)
+                          : $dsn_defaults;
+   my $master_dsn = $dp->parse(shift @ARGV, $slave_dsn, $dsn_defaults) if @ARGV;
 
-   # TODO: this can go into the POD.
-   if ( !$o->got('help') && !$slave_dsn ) {
-      $o->save_error("Missing or invalid slave host");
+   if ( !$o->got('help') ) {
+      if ( !$slave_dsn ) {
+         $o->save_error("Missing or invalid slave host");
+      }
    }
 
    # TODO: this can go into the POD.
@@ -1965,18 +1955,9 @@ daemonized.  In this case, it exits.  Therefore, if you think your slave might
 encounter this condition, you should be sure to either specify
 L<"--use-master"> explicitly when daemonizing, or don't specify L<"--ask-pass">.
 
-The slave host can be specified using one of two methods.  The first method is
-to use at least one of the standard connection-related command line options:
-L<"--defaults-file">, L<"--password">, L<"--host">, L<"--port">, L<"--socket">
-or L<"--user">.  These options only apply to the slave host.  To connect to a
-slave host using this method while also specifying an optional master host on
-the command line requires that the master host be specified using the next
-method, a DSN.
-
-The second method to specifiy the slave host, or an optional master host, is
-a DSN.  A DSN is a special syntax that can be either just a hostname (like
-C<server.domain.com> or C<1.2.3.4>), or a C<key=value,key=value> string.
-Keys are a single letter:
+The SLAVE-HOST and optional MASTER-HOST are both DSNs.  A DSN is a special
+syntax that can be either just a hostname (like C<server.domain.com> or
+C<1.2.3.4>), or a C<key=value,key=value> string.  Keys are a single letter:
 
    KEY MEANING
    === =======
@@ -1987,10 +1968,10 @@ Keys are a single letter:
    p   Password to use when connecting
    F   Only read default options from the given file
 
-If you omit any values in a MASTER-HOST DSN, they are filled in with defaults
-from SLAVE-HOST, so you don't need to specify them in both places.
-C<mk-slave-delay> reads all normal MySQL option files, such as ~/.my.cnf, so
-you may not need to specify username, password and other common options at all.
+Missing MASTER-HOST values are filled in with values from SLAVE-HOST, so you
+don't need to specify them in both places.  C<mk-slave-delay> reads all normal
+MySQL option files, such as ~/.my.cnf, so you may not need to specify username,
+password and other common options at all.
 
 C<mk-slave-delay> tries to exit gracefully by trapping signals such as Ctrl-C.
 You cannot bypass L<"--[no]continue"> with a trappable signal.
