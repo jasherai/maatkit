@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 100;
+use Test::More tests => 101;
 use List::Util qw(sum);
 
 require '../../common/DSNParser.pm';
@@ -42,6 +42,14 @@ else {
    # same as sha1(sha1(1))
    is ( $crc, '9c1c01dc3ac1445a500251fc34a15d3e75a849df', 'SHA1 is okay' );
 }
+
+# Test DSN value inheritance
+$output = `../mk-table-checksum h=127.1 h=127.2,P=12346 --port 12345 --explain-hosts`;
+like(
+   $output,
+   qr/^Server 127.1:\s+P=12345,h=127.1\s+Server 127.2:\s+P=12346,h=127.2/,
+   'DSNs inherit values from --port, etc. (issue 248)'
+);
 
 # Test that it works with locking
 $output = `$cmd --lock --slave-lag --function sha1 --checksum --algorithm ACCUM 2>&1`;

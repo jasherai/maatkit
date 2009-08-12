@@ -3516,7 +3516,6 @@ sub main {
    # Get configuration information.
    # ########################################################################
    my $dp = new DSNParser();
-   $dp->prop('required', { h => 1 } );
 
    # Because of --arg-table, $final_o is the OptionParser obj used to get
    # most options (see my $final_o below).
@@ -3558,14 +3557,11 @@ sub main {
       $o->save_error("No hosts specified.");
    }
 
-   
-
    my @hosts; 
    {
-      # TODO: ultimately, DSNParser::parser needs to be updated.
-      my %opts = $o->opt_values();
+      my $dsn_defaults = $dp->parse_options($o);
       foreach my $arg ( unique(@ARGV) ) {
-         push @hosts, $dp->parse($arg, $hosts[0], \%opts);
+         push @hosts, $dp->parse($arg, $hosts[0], $dsn_defaults);
       }
    }
 
