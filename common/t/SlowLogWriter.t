@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 require "../MaatkitTest.pm";
 require "../SlowLogParser.pm";
@@ -77,7 +77,8 @@ ok(
       {
          Query_time => '1',
          arg        => 'select * from foo',
-         Client     => '127.0.0.1:12345',
+         ip         => '127.0.0.1',
+         port       => '12345',
       },
       'samples/slowlogwriter001.txt',
    ),

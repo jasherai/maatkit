@@ -625,7 +625,6 @@ sub _make_event {
       bytes      => length( $event->{arg} ),
       ts         => tcp_timestamp( $event->{ts} ),
       host       => $host,
-      Client     => "$host:$port",
       ip         => $host,
       port       => $port,
       db         => $session->{db},
