@@ -2895,14 +2895,15 @@ sub main {
    # ##########################################################################
 
    # Connect to the database
-   if ( !defined $o->get('p') && $o->get('askpass') ) {
-      $o->get('p') = OptionParser::prompt_noecho("Enter password: ");
+   if ( $o->get('ask-pass') ) {
+      $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
 
    my $vp = new VersionParser();
    my $dp = new DSNParser;
    $dp->prop('setvars', $o->get('set-vars'));
-   $dbh = $dp->get_dbh( $dp->get_cxn_params({$o->opts()}), { AutoCommit => 1 } );
+   my $dsn = $dp->parse_options($o);
+   $dbh = $dp->get_dbh( $dp->get_cxn_params($dsn), { AutoCommit => 1 } );
 
    my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
 
@@ -3115,7 +3116,7 @@ Compare indexes with different structs (BTREE, HASH, etc).
 By default this is disabled, because a BTREE index that covers the same columns
 as a FULLTEXT index is not really a duplicate, for example.
 
-=item --askpass
+=item --ask-pass
 
 Prompt for a password when connecting to MySQL.
 
