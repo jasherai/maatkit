@@ -3,11 +3,14 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 33;
+use Test::More tests => 35;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
 require "../TcpdumpParser.pm";
+require '../MaatkitTest.pm';
+
+MaatkitTest->import('load_file');
 
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -688,6 +691,45 @@ run_test({
       },
    ]
 });
+
+
+# #############################################################################
+# Issue 558: Make mk-query-digest handle big/fragmented packets
+# #############################################################################
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+{
+   my $file = 'samples/tcpdump019.txt';
+   my @e;
+   my $num_events = 0;
+
+   my @callbacks;
+   push @callbacks, sub {
+      my ( $packet ) = @_;
+      return $protocol->parse_packet($packet, undef);
+   };
+   push @callbacks, sub {
+      push @e, @_;
+   };
+
+   open my $fh, "<", $file
+      or BAIL_OUT("Cannot open $file: $OS_ERROR");
+   $num_events++ while $tcpdump->parse_event($fh, undef, @callbacks);
+   close $fh;
+
+   like(
+      $e[0]->{arg},
+      qr/--THE END--'\)$/,
+      'Handles big, fragmented MySQL packets (issue 558)'
+   );
+
+   my $arg = load_file('samples/tcpdump019-arg.txt');
+   chomp $arg;
+   is(
+      $e[0]->{arg},
+      $arg,
+      'Re-assembled data is correct (issue 558)'
+   );
+}
 
 # #############################################################################
 # Done.

@@ -215,6 +215,7 @@ sub parse_packet {
          state       => undef,
          compress    => undef,
          raw_packets => [],
+         buff        => '',
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -241,18 +242,30 @@ sub parse_packet {
       return unless $self->uncompress_packet($packet, $session);
    }
 
-   # Remove the first MySQL header.  A single TCP packet can contain many
-   # MySQL packets, but we only look at the first.  The 2nd and subsequent
-   # packets are usually parts of a resultset returned by the server, but
-   # we're not interested in resultsets.
-   eval {
-      remove_mysql_header($packet);
-   };
-   if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('remove_mysql_header() failed; failing session');
-      $session->{EVAL_ERROR} = $EVAL_ERROR;
-      $self->fail_session($session, 'remove_mysql_header() failed');
-      return;
+   if ( $session->{buff} && $packet_from eq 'client' ) {
+      # Previous packets were not complete so append this data
+      # to what we've been buffering.  Afterwards, do *not* attempt
+      # to remove_mysql_header() because it was already done (for
+      # the first packet).
+      $packet->{data}        = $session->{buff} . $packet->{data};
+      $session->{buff_left} -= $packet->{data_len};
+      MKDEBUG && _d('Appending data to buff; expecting',
+         $session->{buff_left}, 'more bytes');
+   }
+   else { 
+      # Remove the first MySQL header.  A single TCP packet can contain many
+      # MySQL packets, but we only look at the first.  The 2nd and subsequent
+      # packets are usually parts of a resultset returned by the server, but
+      # we're not interested in resultsets.
+      eval {
+         remove_mysql_header($packet);
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d('remove_mysql_header() failed; failing session');
+         $session->{EVAL_ERROR} = $EVAL_ERROR;
+         $self->fail_session($session, 'remove_mysql_header() failed');
+         return;
+      }
    }
 
    # Finally, parse the packet and maybe create an event.
@@ -262,7 +275,27 @@ sub parse_packet {
       $event = $self->_packet_from_server($packet, $session, $misc);
    }
    elsif ( $packet_from eq 'client' ) {
+      if ( $session->{buff} && $session->{buff_left} <= 0 ) {
+         # We didn't remove_mysql_header(), so mysql_data_len isn't set.
+         # So set it to the real, complete data len (from the first
+         # packet's MySQL header).
+         $packet->{mysql_data_len} = $session->{mysql_data_len};
+         MKDEBUG && _d('Data is complete');
+      }
+      elsif ( $packet->{mysql_data_len} > $packet->{data_len} ) {
+         # There is more MySQL data than this packet contains.
+         # Save the data and wait for more packets.
+         $session->{mysql_data_len} = $packet->{mysql_data_len};
+         $session->{buff}           = $packet->{data};
+         $session->{buff_left}
+            = $packet->{mysql_data_len} - $packet->{data_len};
+         MKDEBUG && _d('Data not complete; expecting',
+            $session->{buff_left}, 'more bytes');
+         return;
+      }
       $event = $self->_packet_from_client($packet, $session, $misc);
+
+      $session->{buff} = '';
    }
    else {
       # Should not get here.
@@ -856,7 +889,9 @@ sub parse_com_packet {
    my ( $data, $len ) = @_;
    die "I need data"  unless $data;
    die "I need a len" unless $len;
-   MKDEBUG && _d('COM data:', $data, 'len:', $len);
+   MKDEBUG && _d('COM data:',
+      (substr($data, 0, 100).(length $data > 100 ? '...' : '')),
+      'len:', $len);
    my $code = substr($data, 0, 2);
    my $com  = $com_for{$code};
    if ( !$com ) {
