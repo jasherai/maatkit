@@ -2378,13 +2378,14 @@ sub get_cxn {
    # DSNParser will interpret D has the default database for the connection,
    # but in this script D means the database into which all files are loaded.
    # Therefore, we must get the opt values and manually remove D.
-   my %params = $o->opt_values();
-   delete $params{D};
+   my $dsn   = $dp->parse_options($o);
+   $dsn->{D} = undef;
+   my $dbh   = $dp->get_dbh($dp->get_cxn_params($dsn));
 
-   my $dbh = $dp->get_dbh($dp->get_cxn_params(\%params));
    if ( my $charset = $o->get('charset') ) {
       $dbh->do("/*!40101 SET character_set_database=$charset */");
    }
+
    return $dbh;
 }
 
