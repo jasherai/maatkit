@@ -8363,7 +8363,7 @@ are actually new enough.
 
 See also L<"--until">.
 
-=item --since
+=item --socket
 
 short form: -S; type: string
 
