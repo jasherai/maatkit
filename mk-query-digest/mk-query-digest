@@ -2090,7 +2090,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4461
+# MySQLProtocolParser package 4485
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2266,6 +2266,7 @@ sub parse_packet {
          state       => undef,
          compress    => undef,
          raw_packets => [],
+         buff        => '',
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -2285,14 +2286,22 @@ sub parse_packet {
       return unless $self->uncompress_packet($packet, $session);
    }
 
-   eval {
-      remove_mysql_header($packet);
-   };
-   if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('remove_mysql_header() failed; failing session');
-      $session->{EVAL_ERROR} = $EVAL_ERROR;
-      $self->fail_session($session, 'remove_mysql_header() failed');
-      return;
+   if ( $session->{buff} && $packet_from eq 'client' ) {
+      $packet->{data}        = $session->{buff} . $packet->{data};
+      $session->{buff_left} -= $packet->{data_len};
+      MKDEBUG && _d('Appending data to buff; expecting',
+         $session->{buff_left}, 'more bytes');
+   }
+   else { 
+      eval {
+         remove_mysql_header($packet);
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d('remove_mysql_header() failed; failing session');
+         $session->{EVAL_ERROR} = $EVAL_ERROR;
+         $self->fail_session($session, 'remove_mysql_header() failed');
+         return;
+      }
    }
 
    my $event;
@@ -2300,7 +2309,22 @@ sub parse_packet {
       $event = $self->_packet_from_server($packet, $session, $misc);
    }
    elsif ( $packet_from eq 'client' ) {
+      if ( $session->{buff} && $session->{buff_left} <= 0 ) {
+         $packet->{mysql_data_len} = $session->{mysql_data_len};
+         MKDEBUG && _d('Data is complete');
+      }
+      elsif ( $packet->{mysql_data_len} > $packet->{data_len} ) {
+         $session->{mysql_data_len} = $packet->{mysql_data_len};
+         $session->{buff}           = $packet->{data};
+         $session->{buff_left}
+            = $packet->{mysql_data_len} - $packet->{data_len};
+         MKDEBUG && _d('Data not complete; expecting',
+            $session->{buff_left}, 'more bytes');
+         return;
+      }
       $event = $self->_packet_from_client($packet, $session, $misc);
+
+      $session->{buff} = '';
    }
    else {
       die 'Packet origin unknown';
@@ -2780,7 +2804,9 @@ sub parse_com_packet {
    my ( $data, $len ) = @_;
    die "I need data"  unless $data;
    die "I need a len" unless $len;
-   MKDEBUG && _d('COM data:', $data, 'len:', $len);
+   MKDEBUG && _d('COM data:',
+      (substr($data, 0, 100).(length $data > 100 ? '...' : '')),
+      'len:', $len);
    my $code = substr($data, 0, 2);
    my $com  = $com_for{$code};
    if ( !$com ) {
@@ -6508,7 +6534,7 @@ sub main {
          $filter = do { local $/ = undef; <$fh> };
          close $fh;
       }
-      my $code   = "sub{ my(\$event) = shift; $filter && return \$event; };";
+      my $code   = "sub { MKDEBUG && _d('callback: filter');  my(\$event) = shift; $filter && return \$event; };";
       MKDEBUG && _d('--filter code:', $code);
       my $sub = eval $code
          or die "Error compiling --filter code: $code\n$EVAL_ERROR";
