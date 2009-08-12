@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 72;
+use Test::More tests => 73;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -1511,6 +1511,56 @@ ok(
 ok(
    !exists $ea->{result_classes}->{'SELECT * FROM bar'}->{InnoDB_IO_r_bytes},
    'New event class has new attrib; default unroll_limit=50 (issue 514)'
+);
+
+# #############################################################################
+# Check that broken Query_time are fixed (issue 234).
+# #############################################################################
+$events = [
+   {  cmd           => 'Query',
+      user          => 'root',
+      host          => 'localhost',
+      ip            => '',
+      arg           => "SELECT id FROM users WHERE name='foo'",
+      Query_time    => '17.796870.000036',
+      Lock_time     => '0.000000',
+      Rows_sent     => 1,
+      Rows_examined => 1,
+      pos_in_log    => 0,
+   },
+];
+
+$ea = new EventAggregator(
+   groupby      => 'arg',
+   worst        => 'Query_time',
+);
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea->aggregate($event);
+}
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+is_deeply(
+   $ea->results->{samples},
+   {
+      'SELECT id FROM users WHERE name=\'foo\'' => {
+         Lock_time => '0.000000',
+         Query_time => '17.796870',
+         Rows_examined => 1,
+         Rows_sent => 1,
+         arg => 'SELECT id FROM users WHERE name=\'foo\'',
+         cmd => 'Query',
+         fingerprint => 'select id from users where name=?',
+         host => 'localhost',
+         ip => '',
+         pos_in_log => 0,
+         user => 'root'
+      },
+   },
+   'Broken Query_time (issue 234)'
 );
 
 # #############################################################################

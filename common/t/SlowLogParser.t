@@ -930,26 +930,28 @@ run_test({
    ],
 });
 
+# This is fixed in EventAggregator so that we can parse
+# Client: IP:port because an IP looks like a broken Query_time.
 # Check that issue 234 doesn't kill us (broken Query_time).
-run_test({
-   file => 'samples/slow017.txt',
-   result => [
-      {  ts            => '081116 15:07:11',
-         cmd           => 'Query',
-         user          => 'user',
-         host          => 'host',
-         ip            => '10.1.65.120',
-         db            => 'mydb',
-         arg           => 'SELECT * FROM mytbl',
-         Query_time    => '18446744073708.796870',
-         Lock_time     => '0.000036',
-         Rows_sent     => 1,
-         Rows_examined => 127,
-         pos_in_log    => 0,
-         bytes         => 19,
-      },
-   ],
-});
+#run_test({
+#   file => 'samples/slow017.txt',
+#   result => [
+#      {  ts            => '081116 15:07:11',
+#         cmd           => 'Query',
+#         user          => 'user',
+#         host          => 'host',
+#         ip            => '10.1.65.120',
+#         db            => 'mydb',
+#         arg           => 'SELECT * FROM mytbl',
+#         Query_time    => '18446744073708.796870',
+#         Lock_time     => '0.000036',
+#         Rows_sent     => 1,
+#         Rows_examined => 127,
+#         pos_in_log    => 0,
+#         bytes         => 19,
+#      },
+#   ],
+#});
 
 # samples/slow018.txt is a test for mk-query-digest.
 
@@ -1241,6 +1243,26 @@ ok(
    @e,
    'Runs without oktorun arg'
 );
+
+# #############################################################################
+# Parse "Client: IP:port".
+# #############################################################################
+run_test({
+   file => 'samples/slow036.txt',
+   result => [
+      {  Lock_time     => '0.000000',
+         Query_time    => '0.000000',
+         Rows_examined => '0',
+         Rows_sent     => '0',
+         arg           => 'select * from foo',
+         bytes         => length('select * from foo'),
+         cmd           => 'Query',
+         pos_in_log    => '0',
+         ts            => '071218 11:48:27',
+         Client        => '127.0.0.1:12345',
+      }
+   ],
+});
 
 # #############################################################################
 # Done.

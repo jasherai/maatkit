@@ -175,14 +175,11 @@ sub parse_event {
             # Maybe it's the timing line of a slow query log, or another line
             # such as that... they typically look like this:
             # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
-            # If issue 234 bites us, we may see something like
-            # Query_time: 18446744073708.796870.000036 so we trim after the
-            # second decimal place for numbers.
             elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
                MKDEBUG && _d("Got some line with properties");
                # I tried using split, but coping with the above bug makes it
                # slower than a complex regex match.
-               my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
+               my @temp = $line =~ m/(\w+):\s+(\S+|\Z)/g;
                push @properties, @temp;
             }
 

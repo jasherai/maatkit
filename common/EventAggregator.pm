@@ -97,7 +97,7 @@ sub new {
       result_samples => {},
       n_events       => 0,
       unrolled_loops => undef,
-      type_for       => { %{$args{type_for} || {}} },
+      type_for       => { %{$args{type_for} || { Query_time => 'num' }} },
    };
    return bless $self, $class;
 }
@@ -387,6 +387,15 @@ sub make_handler {
       );
    }
 
+   # Handle broken Query_time like 123.124345.8382 (issue 234).
+   my @broken_query_time;
+   if ( $attrib eq 'Query_time' ) {
+      push @broken_query_time, (
+         '$val =~ s/^(\d+(?:\.\d+)?).*/$1/;',
+         '$event->{\''.$attrib.'\'} = $val;',
+      );
+   }
+
    # Make sure the value is constrained to legal limits.  If it's out of bounds,
    # just use the last-seen value for it.
    my @limit;
@@ -406,7 +415,7 @@ sub make_handler {
       (map { "\$val = \$event->{'$_'} unless defined \$val;" }
          grep { $_ ne $attrib } @{$args{alt}}),
       'defined $val && do {',
-      ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
+      ( map { s/^/   /gm; $_ } (@broken_query_time, @limit, @lines) ), # Indent for debugging
       '};',
       ($is_array ? ('}') : ()),
    );
@@ -422,6 +431,7 @@ sub make_handler {
          grep { $_ ne $attrib } @{$args{alt}}),
       'return unless defined $val;',
       ($is_array ? ('foreach my $val ( @$val ) {') : ()),
+      @broken_query_time,
       @limit,
       ($is_array ? ('}') : ()),
    );
