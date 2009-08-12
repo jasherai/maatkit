@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 53;
+use Test::More tests => 54;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -32,6 +32,16 @@ sub run {
 # Pre-create a second host while the other test are running
 # so we won't have to wait for it to load when we need it.
 diag(`../../sandbox/make_sandbox 12347 >/dev/null &`);
+
+# Test DSN value inheritance.
+$output = `../mk-table-sync h=127.1 h=127.2,P=12346 --port 12345 --explain-hosts`;
+is(
+   $output,
+"# DSN: P=12345,h=127.1
+# DSN: P=12346,h=127.2
+",
+   'DSNs inherit values from --port, etc. (issue 248)'
+);
 
 # #############################################################################
 # Test basic master-slave syncing
@@ -276,8 +286,8 @@ like($output, qr/Are you trying to sync/, 'Throws error on D=');
 $output = `perl ../mk-table-sync --explain-hosts localhost,D=foo,t=bar t=baz`;
 is($output,
 <<EOF
-# DSN: A=utf8,D=foo,h=localhost,t=bar
-# DSN: A=utf8,D=foo,h=localhost,t=baz
+# DSN: D=foo,h=localhost,t=bar
+# DSN: D=foo,h=localhost,t=baz
 EOF
 , '--explain-hosts');
 

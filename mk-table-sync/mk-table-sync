@@ -5365,12 +5365,18 @@ sub main {
       $o->set('verbose', 1);
    }
 
+   # There's a conflict of interests: we added 't' and 'D' parts to dp,
+   # and there are -t and -D options (--tables, --databases), so parse_options()
+   # is going to return a DSN with the default values from -t and -D,
+   # but these are not actually be default dsn vals, they're filters.
+   # So we have to remove them from $dsn_defaults.
+   my $dsn_defaults = $dp->parse_options($o);
+   $dsn_defaults->{D} = undef;
+   $dsn_defaults->{t} = undef;
+
    my @dsns;
    while ( my $arg = shift(@ARGV) ) {
-      if ( $o->get('utf8') ) {
-         $arg .= ',A=utf8';
-      }
-      my $dsn = $dp->parse($arg, $dsns[0]);
+      my $dsn = $dp->parse($arg, $dsns[0], $dsn_defaults);
       die "You specified a t part, but not a D part in $arg"
          if ($dsn->{t} && !$dsn->{D});
       if ( $dsn->{D} && !$dsn->{t} ) {
@@ -6446,6 +6452,16 @@ shorter time on the server, but if the tables are large, it could take a long
 time anyway, and eat all your memory.  For most non-trivial data sizes, you
 want to leave this disabled.
 
+=item --charset
+
+short form: -A; type: string
+
+Default character set.  If the value is utf8, sets Perl's binmode on
+STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
+runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
+binmode on STDOUT without the utf8 layer, and runs SET NAMES after
+connecting to MySQL.
+
 =item --chunk-size
 
 type: string; default: 1000
@@ -6487,6 +6503,12 @@ database on the same or different server.  This is not yet possible.
 L<"--databases"> will not do it, and you can't do it with the D part of the DSN
 either because in the absence of a table name it assumes the whole server
 should be synced and the D part controls only the connection's default database.
+
+=item --defaults-file
+
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute pathname.
 
 =item --dry-run
 
@@ -6545,6 +6567,12 @@ information and benchmarks.
 =item --help
 
 Show help and exit.
+
+=item --host
+
+short form: -h; type: string
+
+Connect to host.
 
 =item --ignore-columns
 
@@ -6633,6 +6661,12 @@ omit the USE INDEX hint.
 The Nibble algorithm always uses a FORCE/USE INDEX hint.  The GroupBy and Stream
 algorithms never use an index hint.
 
+=item --password
+
+short form: -p; type: string
+
+Password to use when connecting.
+
 =item --pid
 
 type: string
@@ -6642,6 +6676,12 @@ ID of the daemonized instance.  The PID file is removed when the
 daemonized instance exits.  The program checks for the existence of the
 PID file when starting; if it exists and the process with the matching PID
 exists, the program exits.
+
+=item --port
+
+short form: -P; type: int
+
+Port number to use for connection.
 
 =item --print
 
@@ -6734,6 +6774,12 @@ scenario.  By default mk-table-sync will complain if you try to change data on
 a slave.  Specify C<--no-slave-check> to disable this check.  Use it at your own
 risk.
 
+=item --socket
+
+short form: -S; type: string
+
+Socket file to use for connection.
+
 =item --sync-to-master
 
 Treat the DSN as a slave and sync it to its master.
@@ -6801,20 +6847,11 @@ Enable unique key checks (C<SET UNIQUE_CHECKS=1>).
 
 Specifying C<--no-unique-checks> will C<SET UNIQUE_CHECKS=0>.
 
-=item --[no]utf8
+=item --user
 
-default: yes
+short form: -u; type: string
 
-Enable UTF-8 options in Perl and MySQL.
-
-This option is deprecated.  Pass the C<A> option in a DSN instead.  For
-backwards compatibility, this option adds C<A=utf8> to all DSNs.
-
-Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
-Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
-DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
-value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
-connecting to MySQL.
+User for login if not current user.
 
 =item --verbose
 
