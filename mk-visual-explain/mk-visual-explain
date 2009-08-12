@@ -1933,8 +1933,8 @@ sub main {
          $o->set('password', OptionParser::prompt_noecho("Enter password: "));
       }
 
-      my $dbh = $dp->get_dbh(
-         $dp->get_cxn_params({$o->opt_values()}), { AutoCommit => 1 } );
+      my $dsn = $dp->parse_options($o);
+      my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 } );
 
       $text =~ s{^.*?select}{EXPLAIN /*!50115 PARTITIONS*/ SELECT}is;
       $rows =  $dbh->selectall_arrayref($text, { Slice => {} } );
