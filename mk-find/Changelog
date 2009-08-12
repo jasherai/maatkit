@@ -1,5 +1,7 @@
 Changelog for mk-find:
 
+   * No tables were printed if no tests were given (issue 549).
+
 2009-07-31: version 0.9.18
 
    * Added RISKS section to POD (issue 538).

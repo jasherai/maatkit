@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 16;
+use Test::More tests => 17;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -17,6 +17,13 @@ my $cmd = "perl ../mk-find -F $cnf ";
 
 my $output = `$cmd mysql --tblregex column`;
 like($output, qr/`mysql`.`columns_priv`/, 'Found mysql.columns_priv');
+
+$output = `$cmd mysql`;
+like(
+   $output,
+   qr/`mysql`.`columns_priv`/,
+   'Prints tables without any tests'
+);
 
 # These tests are going to be senstive to your sakila db.  Hopefully,
 # it matches mine which I tend to load fresh and not modify.  For example,

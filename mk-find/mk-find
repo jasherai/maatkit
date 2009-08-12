@@ -2243,13 +2243,12 @@ sub main {
    }
 
    $dp->prop('setvars', $o->get('set-vars'));
-   $dbh = $dp->get_dbh(
-      $dp->get_cxn_params($dp->parse_options($o)), { AutoCommit => 1 } );
+   my $dsn = $dp->parse_options($o);
+   $dbh    = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 } );
    if ( $o->get('exec-dsn') ) {
-      $exec_dbh = $dp->get_dbh(
-         $dp->get_cxn_params($dp->parse($o->get('exec-dsn'), {$o->opt_values()})),
-         { AutoCommit => 1 },
-      );
+      my $exec_dsn = $dp->parse($o->get('exec-dsn'), $dsn);
+      $exec_dbh    = $dp->get_dbh($dp->get_cxn_params($exec_dsn),
+         { AutoCommit => 1 });
    }
    else {
       $exec_dbh = $dbh;
@@ -2269,7 +2268,7 @@ sub main {
       $basetime ||=
          $dbh->selectcol_arrayref(
             "SELECT " . ($o->get('day-start') ? 'CURRENT_DATE'
-                                               : 'CURRENT_TIMESTAMP')
+                                              : 'CURRENT_TIMESTAMP')
          )->[0];
 
       my ($val) = $o->get($option) =~ m/(\d+)/;
@@ -2407,7 +2406,7 @@ sub main {
             ($o->get('or') ? any($table, @tests) : all($table, @tests));
          }
          else {
-            undef; 
+            $table;  # No tests == all tables (issue 549).
          }
       } @tables;
    
