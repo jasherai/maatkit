@@ -2174,7 +2174,7 @@ sub main {
    # Connect and go to work.
    # ########################################################################
    if ( $o->get('ask-pass') ) {
-      $o->set('p', OptionParser::prompt_noecho("Enter password: "));
+      $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
    my $dsn = $dp->parse_options($o);
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1, });
