@@ -32,16 +32,19 @@ sub output {
 # #############################################################################
 sub test_get_fk_error {
    my ( $file, $expected_ts, $expected_fke_file ) = @_;
-   my ($ts, $fke) = mk_fk_error_logger::get_fk_error(load_file($file));
+   my $contents = load_file($file);
+   chomp $contents;
+   my ($ts, $fke) = mk_fk_error_logger::get_fk_error($contents);
    is(
       $ts,
       $expected_ts,
       "$file timestamp"
    );
-   my $foo = load_file($expected_fke_file);
+   my $expected_fke = load_file($expected_fke_file);
+   chomp $expected_fke;
    is(
       $fke,
-      load_file($expected_fke_file),
+      $expected_fke,
       "$file foreign key error text"
    );
    return;
