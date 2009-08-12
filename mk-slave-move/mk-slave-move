@@ -1927,14 +1927,6 @@ sub _d {
 # ###########################################################################
 package mk_slave_move;
 
-# TODO: need an option to specify the grandparent, in case the master is dead.
-# TODO: need an option to find the newest slave of a given set of siblings, or
-#       of a given master.
-# TODO: an option to set servers read_only
-# TODO: an option to kill all other connections
-# TODO: an option to kill connections that have open transactions.
-# TODO: check for open temp tables before moving slaves.
-
 use English qw(-no_match_vars);
 use List::Util qw(min max);
 
@@ -1958,12 +1950,12 @@ sub main {
 
    $dp->prop('set-vars', $o->get('set-vars'));
 
-   my $slave_dsn = $dp->parse_options($o);
-   MKDEBUG && _d('Got slave host from opts:', $slave_dsn ? 'yes' : 'no');
+   my $dsn_defaults = $dp->parse_options($o);
+   my $slave_dsn    = $dp->parse(shift @ARGV, $dsn_defaults);
    my @dsns;
-   push @dsns, $slave_dsn if $slave_dsn;
-   while ( my $arg = shift(@ARGV) ) {
-      my $dsn = $dp->parse($arg, $dsns[0]);
+   push @dsns, $slave_dsn;
+   while ( my $arg = shift(@ARGV)  ) {
+      my $dsn = $dp->parse($arg, $slave_dsn, $dsn_defaults);
       push @dsns, $dsn;
    }
 
@@ -2077,15 +2069,9 @@ replication positions, and so on.  This makes it able to move a slave around the
 replication hierarchy safely and correctly.  It doesn't do anything you can't do
 by hand, but it is tedious and error-prone to do this by hand.
 
-The slave host can be specified using one of two methods.  The first method is
-to use at least one of the standard connection-related command line options:
-L<"--defaults-file">, L<"--password">, L<"--host">, L<"--port">, L<"--socket">
-or L<"--user">.  These options only apply to the slave host.
-
-The second method to specifiy the slave host, or the sibling or uncle host, is
-a DSN.  A DSN is a special syntax that can be either just a hostname (like
-C<server.domain.com> or C<1.2.3.4>), or a C<key=value,key=value> string.
-Keys are a single letter:
+The hosts are given by a DSN.  A DSN is a special syntax that can be either
+just a hostname (like C<server.domain.com> or C<1.2.3.4>), or a
+C<key=value,key=value> string.  Keys are a single letter:
 
    KEY MEANING
    === =======
@@ -2108,8 +2094,8 @@ the Perl process itself.
 
 =head1 OPTIONS
 
-Specify one and only one of --sibling-of-master, --slave-of-sibling,
---slave-of-uncle, or --detach.
+Specify one and only one of L<"--sibling-of-master">, L<"--slave-of-sibling">,
+L<"--slave-of-uncle">, or L<"--detach">.
 
 =over
 

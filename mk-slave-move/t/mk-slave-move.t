@@ -55,7 +55,7 @@ ok(
 );
 
 # Move slave2 back to being slave of slave1.
-mk_slave_move::main(qw(--slave-of-sibling --host 127.1 --port 12347), 'h=127.1,P=12346');
+mk_slave_move::main(qw(--slave-of-sibling h=127.1 --port 12347), 'h=127.1,P=12346');
 $row = $slave_2_dbh->selectall_arrayref('SHOW SLAVE STATUS', {Slice => {}});
 ok(
    $row->[0]->{Master_Port} eq '12346',
