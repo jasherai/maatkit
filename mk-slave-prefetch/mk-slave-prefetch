@@ -2243,9 +2243,8 @@ sub main {
    if ( $o->get('ask-pass') ) {
       $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
-   my %opts = $o->opt_values();
-   my $dbh = $dp->get_dbh(
-      $dp->get_cxn_params(\%opts), { AutoCommit => 1 });
+   my $dsn = $dp->parse_options($o);
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
    $dbh->{FetchHashKeyName} = 'NAME_lc';
    $dbh->{InactiveDestroy}  = 1;
    $dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
