@@ -2899,7 +2899,8 @@ sub main {
    }
    my $dp = new DSNParser;
    $dp->prop('setvars', $o->get('set-vars'));
-   my $dbh = $dp->get_dbh($dp->get_cxn_params({$o->opt_values()}), {AutoCommit=>1});
+   my $dsn = $dp->parse_options($o);
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit=>1});
 
    my $vp = new VersionParser();
    my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
