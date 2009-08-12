@@ -1845,14 +1845,12 @@ sub main {
    $dp->prop('set-vars', $o->get('set-vars'));
 
    if ( $o->get('ask-pass') ) {
-      my $pass = OptionParser::prompt_noecho("Enter password: ");
-      $o->set('pass', $pass);
+      $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
-   my $master_dsn = $dp->parse_options($o);
-   MKDEBUG && _d('Got master host from opts:', $master_dsn ? 'yes' : 'no');
-   if ( !$master_dsn && @ARGV ) {
-      $master_dsn = $dp->parse(shift @ARGV);
-   }
+
+   my $dsn_defaults = $dp->parse_options($o);
+   my $master_dsn   = @ARGV ? $dp->parse(shift @ARGV, $dsn_defaults)
+                            : $dsn_defaults;
    if ( !$master_dsn ) { 
       $o->save_error("Missing or invalid master host");
    }
