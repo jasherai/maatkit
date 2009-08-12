@@ -1200,7 +1200,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 3980
+# SlowLogParser package 4462
 # ###########################################################################
 package SlowLogParser;
 
@@ -1302,7 +1302,7 @@ sub parse_event {
 
             elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
                MKDEBUG && _d("Got some line with properties");
-               my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
+               my @temp = $line =~ m/(\w+):\s+(\S+|\Z)/g;
                push @properties, @temp;
             }
 
