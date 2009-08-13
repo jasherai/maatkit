@@ -3558,8 +3558,8 @@ sub main {
    }
 
    my @hosts; 
+   my $dsn_defaults = $dp->parse_options($o);
    {
-      my $dsn_defaults = $dp->parse_options($o);
       foreach my $arg ( unique(@ARGV) ) {
          push @hosts, $dp->parse($arg, $hosts[0], $dsn_defaults);
       }
@@ -3631,10 +3631,8 @@ sub main {
 
    my $lag_dbh;
    {
-      # TODO: same as above.
-      my %opts = $o->opt_values();
       if ( $o->get('check-slave-lag') ) {
-         my $dsn = $dp->parse($o->get('check-slave-lag'), $hosts[0], \%opts);
+         my $dsn = $dp->parse($o->get('check-slave-lag'), $hosts[0], $dsn_defaults);
          $lag_dbh = get_cxn($dsn, %common_modules);
       }
    }
