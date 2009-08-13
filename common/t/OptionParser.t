@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 138;
+use Test::More tests => 137;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -222,30 +222,6 @@ is_deeply(
       }
    },
    'Parse opt specs'
-);
-
-# opt_values() should return a hash like the original
-# %opts hash, which had only opt=>val. Some subs in other
-# modules, like DSNParser::get_cxn_params(), expect this
-# kind of hash.
-%opts = $o->opt_values();
-is_deeply(
-   \%opts,
-   {
-      'D'          => undef,
-      'p'          => undef,
-      'price'      => undef,
-      'hash-req'   => undef,
-      'hash-opt'   => undef,
-      'array-req'  => undef,
-      'array-opt'  => undef,
-      'host'       => undef,
-      'chunk-size' => undef,
-      'time'       => undef,
-      'help'       => undef,
-      'other'      => undef,
-   },
-   'opt_values()'
 );
 
 %opts = $o->short_opts();

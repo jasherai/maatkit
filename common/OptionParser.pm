@@ -380,20 +380,6 @@ sub opts {
    return %opts;
 }
 
-# Return a simplified option=>value hash like the original
-# %opts hash frequently used scripts. Some subs in other
-# modules, like DSNParser::get_cxn_params(), expect this
-# kind of hash.
-sub opt_values {
-   my ( $self ) = @_;
-   my %opts = map {
-      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
-              : $_;
-      $opt => $self->{opts}->{$_}->{value}
-   } keys %{$self->{opts}};
-   return %opts;
-}
-
 # Returns a copy of the internal short_opts hash.
 sub short_opts {
    my ( $self ) = @_;
