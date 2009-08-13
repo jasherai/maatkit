@@ -163,7 +163,7 @@ sub get_sql {
 
 sub prepare {
    my ( $self, $dbh ) = @_;
-   my $sql = 'SET @crc := ""';
+   my $sql = 'SET @crc := "", @cnt := 0';
    MKDEBUG && _d($sql);
    $dbh->do($sql);
    return;
