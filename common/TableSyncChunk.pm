@@ -163,7 +163,10 @@ sub get_sql {
 
 sub prepare {
    my ( $self, $dbh ) = @_;
-   $dbh->do(q{SET @crc := ''});
+   my $sql = 'SET @crc := ""';
+   MKDEBUG && _d($sql);
+   $dbh->do($sql);
+   return;
 }
 
 sub same_row {
