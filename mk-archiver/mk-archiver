@@ -2582,11 +2582,10 @@ sub main {
    if ( $o->get('plugin') ) {
       eval "require " . $o->get('plugin');
       die $EVAL_ERROR if $EVAL_ERROR;
-      my %opts = $o->opt_values();
       $plugin = $o->get('plugin')->new(
          src  => $src,
          dst  => $dst,
-         opts => \%opts,
+         opts => $o,
       );
    }
 
@@ -3766,9 +3765,10 @@ Specify the Perl module name of a general-purpose plugin.  It is currently used
 only for statistics (see L<"--statistics">) and must have C<new()> and a
 C<statistics()> method.
 
-The C<new( src => $src, dst => $dst, opts => \%opts )> method gets the source
+The C<new( src => $src, dst => $dst, opts => $o )> method gets the source
 and destination DSNs, and their database connections, just like the
-connection-specific plugins do.  It also gets a hashref of command-line options.
+connection-specific plugins do.  It also gets an OptionParser object (C<$o>) for
+accessing command-line options (example: C<$o->get('purge');>).
 
 The C<statistics(\%stats, $time)> method gets a hashref of the statistics
 collected by the archiving job, and the time the whole job started.

@@ -25,12 +25,17 @@ $sb->load_file('master', 'before.sql');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 4, 'Test data loaded ok');
 
-$output = `perl ../mk-archiver --source h=127.1,D=sakila,t=film  --where "film_id < 100" --purge --dry-run --port 12345 | diff samples/issue-248.txt -`;
-is(
-   $output,
-   '',
-   'DSNs inherit from standard connection options (issue 248)'
-);
+SKIP: {
+   skip 'Sandbox master does not have the sakila database', 1
+      unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
+
+   $output = `perl ../mk-archiver --source h=127.1,D=sakila,t=film  --where "film_id < 100" --purge --dry-run --port 12345 | diff samples/issue-248.txt -`;
+   is(
+      $output,
+      '',
+      'DSNs inherit from standard connection options (issue 248)'
+   );
+};
 
 # Test --for-update
 $output = `perl ../mk-archiver --where 1=1 --dry-run --source D=test,t=table_1,F=$opt_file --for-update --purge 2>&1`;
