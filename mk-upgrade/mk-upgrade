@@ -1018,7 +1018,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 4452
+# OptionParser package 4489
 # ###########################################################################
 package OptionParser;
 
@@ -1326,16 +1326,6 @@ sub _get_participants {
 sub opts {
    my ( $self ) = @_;
    my %opts = %{$self->{opts}};
-   return %opts;
-}
-
-sub opt_values {
-   my ( $self ) = @_;
-   my %opts = map {
-      my $opt = $self->{opts}->{$_}->{short} ? $self->{opts}->{$_}->{short}
-              : $_;
-      $opt => $self->{opts}->{$_}->{value}
-   } keys %{$self->{opts}};
    return %opts;
 }
 
