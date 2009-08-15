@@ -11,18 +11,26 @@
  * fnv_64 in the mysql command is case-sensitive!  (Of course, when you actually
  * call the function, it is case-insensitive just like any other SQL function).
  *
- * g++ -fPIC -Wall -I/usr/include/mysql -shared -o fnv_udf.so fnv_udf.cc
+ * gcc -fPIC -Wall -I/usr/include/mysql -shared -o fnv_udf.so fnv_udf.cc
  * cp fnv_udf.so /lib * OR: * cp fnv_udf.so /usr/lib
  * mysql mysql -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so'"
  *
+ * For MySQL version 4.1 or older you must add the following flag to the gcc
+ * command above: -DNO_DECIMAL_RESULT
+ * Otherwise you will get an error like:
+ *   fnv_udf.cc:167: `DECIMAL_RESULT' undeclared (first use this function)
+ * (See http://code.google.com/p/maatkit/issues/detail?id=89)
+ * 
  * If you get the error "ERROR 1126 (HY000): Can't open shared library
  * 'fnv_udf.so' (errno: 22 fnv_udf.so: cannot open shared object file: No such
  * file or directory)" then you may need to copy the .so file to another
  * location in your system.  Look at your environment's $LD_LIBRARY_PATH
  * variable for clues.  If none is set, you may need to set this variable to
- * something like /lib.  If you get the error "ERROR 1126 (HY000): Can't open
- * shared library 'libfnv_udf.so' (errno: 22 /lib/libfnv_udf.so: undefined
- * symbol: __gxx_personality_v0)" then you may need to use g++ instead of gcc.
+ * something like /lib.
+ *
+ * If you get the error "ERROR 1126 (HY000): Can't open shared library
+ * 'libfnv_udf.so' (errno: 22 /lib/libfnv_udf.so: undefined symbol: 
+ * __gxx_personality_v0)" then you may need to use g++ instead of gcc.
  *
  * Try both /lib and /usr/lib before changing LD_LIBRARY_PATH.
  *
@@ -164,7 +172,10 @@ fnv_64(UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error ) {
       if ( args->args[i] != NULL ) {
          switch ( args->arg_type[i] ) {
          case STRING_RESULT:
+         #ifdef NO_DECIMAL_RESULT
+         #else
          case DECIMAL_RESULT:
+         #endif
             result
                = hash64((const void*) args->args[i], args->lengths[i], result);
             break;
