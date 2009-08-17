@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 95;
+use Test::More tests => 97;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -831,6 +831,29 @@ SKIP: {
       'DSN opts inherit from --host, --port, etc. (issue 248)'
    );
 };
+
+# #############################################################################
+# Issue 361: Add a --runfor (or something) option to mk-query-digest
+# #############################################################################
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $dbh1;
+   `../mk-query-digest --processlist 127.1 --run-time 3 --port 12345 --log /tmp/mk-query-digest.log --pid /tmp/mk-query-digest.pid --daemonize 1>/dev/null 2>/dev/null`;
+   chomp(my $pid = `cat /tmp/mk-query-digest.pid`);
+   sleep 2;
+   my $output = `ps ax | grep $pid | grep processlist | grep -v grep`;
+   ok(
+      $output,
+      'Still running for --run-time (issue 361)'
+   );
+
+   sleep 1;
+   $output = `ps ax | grep $pid | grep processlist | grep -v grep`;
+   ok(
+      !$output,
+      'No longer running for --run-time (issue 361)'
+   );
+};
+
 
 # #############################################################################
 # Done.
