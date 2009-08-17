@@ -6,6 +6,6 @@
 # Column types:
 #	  `a` int(11) default NULL
 #	  `b` int(11) default NULL
-# To remove this duplicate key, execute:
-ALTER TABLE `test`.`dupe_key` DROP KEY `a`;
+# To remove this duplicate index, execute:
+ALTER TABLE `test`.`dupe_key` DROP INDEX `a`;
 

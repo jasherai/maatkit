@@ -8,9 +8,9 @@
 #	  `b` int(11) default NULL
 
 # ########################################################################
-# Summary of keys                                                         
+# Summary of indexes                                                      
 # ########################################################################
 
-# Size Duplicate Keys   0
-# Total Duplicate Keys  1
-# Total Keys            2
+# Size Duplicate Indexes   0
+# Total Duplicate Indexes  1
+# Total Indexes            2

@@ -6,13 +6,13 @@
 # Column types:
 #	  `b` int(11) NOT NULL
 #	  `a` int(11) NOT NULL
-# To shorten this duplicate clustered key, execute:
-ALTER TABLE `issue_295`.`t` DROP KEY `b_a`, ADD KEY (`b`);
+# To shorten this duplicate clustered index, execute:
+ALTER TABLE `issue_295`.`t` DROP INDEX `b_a`, ADD INDEX (`b`);
 
 # ########################################################################
-# Summary of keys                                                         
+# Summary of indexes                                                      
 # ########################################################################
 
-# Size Duplicate Keys   8
-# Total Duplicate Keys  1
-# Total Keys            2
+# Size Duplicate Indexes   8
+# Total Duplicate Indexes  1
+# Total Indexes            2

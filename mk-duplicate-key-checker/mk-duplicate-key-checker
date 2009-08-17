@@ -2856,7 +2856,7 @@ my $max_width = 74;
 my $hdr_width = $max_width - 2;  # for '# '
 my $hdr_fmt   = "# %-${hdr_width}s\n";
 
-my %summary = ( 'Total Keys' => 0 );
+my %summary = ( 'Total Indexes' => 0 );
 my %seen_tbl;
 
 my $q  = new Quoter();
@@ -2983,7 +2983,7 @@ sub main {
 
          # Always count Total Keys so print_key_summary won't die
          # because %summary is empty.
-         $summary{'Total Keys'} += (scalar keys %$keys) + (scalar keys %$fks)
+         $summary{'Total Indexes'} += (scalar keys %$keys) + (scalar keys %$fks)
       }
    }
 
@@ -3048,21 +3048,25 @@ sub print_duplicate_key {
 
    if ( $o->get('sql') ) {
       if ( $dupe->{dupe_type} ne 'clustered' ) {
-         print "# To remove this duplicate key, execute:\n"
-            . 'ALTER TABLE '.$q->quote($db, $tbl)." DROP KEY `$dupe->{key}`;\n";
+         print "# To remove this duplicate "
+            . ($args{is_fk} ? 'foreign key' : 'index')
+            . ", execute:\n"
+            . 'ALTER TABLE ' . $q->quote($db, $tbl)
+            . ($args{is_fk} ? ' DROP FOREIGN KEY ' : ' DROP INDEX ')
+            . "`$dupe->{key}`;\n";
       }
       else {
          # Suggest shortening clustered dupes instead of
          # removing them (issue 295).
-         print "# To shorten this duplicate clustered key, execute:\n"
-            . 'ALTER TABLE '.$q->quote($db, $tbl)." DROP KEY `$dupe->{key}`, "
-            . "ADD KEY ($dupe->{short_key});\n";
+         print "# To shorten this duplicate clustered index, execute:\n"
+            . 'ALTER TABLE '.$q->quote($db, $tbl)." DROP INDEX `$dupe->{key}`, "
+            . "ADD INDEX ($dupe->{short_key});\n";
       }
    }
    print "\n";
 
    if ( $o->get('summary') ) {
-      $summary{'Total Duplicate Keys'} += 1;
+      $summary{'Total Duplicate Indexes'} += 1;
       my ($size, $chosen_key) = $ks->get_key_size(
          name        => $dupe->{key},
          cols        => [ split(',', $dupe->{cols}) ],
@@ -3072,19 +3076,19 @@ sub print_duplicate_key {
       );
       if ( $args{is_fk} ) {
          # Foreign keys have no size because they're just constraints.
-         print "# MySQL uses the $chosen_key key for this "
+         print "# MySQL uses the $chosen_key index for this "
             . "foreign key constraint\n\n";
       }
       else {
          $size ||= 0;
 
          # Create Size Duplicate Keys summary even if there's no valid keys.
-         $summary{'Size Duplicate Keys'} += $size;
+         $summary{'Size Duplicate Indexes'} += $size;
 
          if ( $size ) {
             if ( $chosen_key && $chosen_key ne $dupe->{key} ) {
                # This shouldn't happen. But in case it does, we should know.
-               print "# MySQL chose the $chosen_key key despite FORCE INDEX\n\n";
+               print "# MySQL chose the $chosen_key index despite FORCE INDEX\n\n";
             }
          }
       }
@@ -3095,7 +3099,7 @@ sub print_duplicate_key {
 sub print_key_summary {
    my ( %summary ) = @_;
    printf $hdr_fmt, ('#' x $hdr_width);
-   printf $hdr_fmt, 'Summary of keys';
+   printf $hdr_fmt, 'Summary of indexes';
    printf $hdr_fmt, ('#' x $hdr_width);
    print "\n";
    my $max_item = max(map { length($_) } keys %summary);
@@ -3129,7 +3133,7 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-duplicate-key-checker - Find duplicate keys and foreign keys on MySQL tables.
+mk-duplicate-key-checker - Find duplicate indexes and foreign keys on MySQL tables.
 
 =head1 SYNOPSIS
 

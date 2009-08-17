@@ -5,13 +5,13 @@
 # A is a duplicate of PRIMARY
 # Column types:
 #	  `a` int(11) NOT NULL default '0'
-# To remove this duplicate key, execute:
-ALTER TABLE `test`.`UPPER_TEST` DROP KEY `A`;
+# To remove this duplicate index, execute:
+ALTER TABLE `test`.`UPPER_TEST` DROP INDEX `A`;
 
 # ########################################################################
-# Summary of keys                                                         
+# Summary of indexes                                                      
 # ########################################################################
 
-# Size Duplicate Keys   0
-# Total Duplicate Keys  1
-# Total Keys            2
+# Size Duplicate Indexes   0
+# Total Duplicate Indexes  1
+# Total Indexes            2
