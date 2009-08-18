@@ -1,0 +1,52 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+my $file = shift @ARGV || '-';
+my $fh;
+if ( $file eq '-' ) {
+   $fh = *STDIN;
+}
+else {
+   open $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+}
+
+my @line_patterns;
+my %last_match;
+
+while ( my $line = <$fh> ) {
+   chomp $line;
+   MKDEBUG && print "read: $line\n";
+   my $matched = 0;
+   foreach my $pat ( @line_patterns ) {
+      MKDEBUG && print "trying to match: $pat\n";
+      if ( my @vals = $line =~ m/$pat/ ) {
+         MKDEBUG && print "matches\n";
+         $matched = 1;
+         my @last_vals = @{ $last_match{$pat} };
+         my @offset_vals;
+         for my $i ( 0..$#vals ) {
+            $offset_vals[$i] = $vals[$i] - $last_vals[$i];
+         }
+         $last_match{$pat} = \@vals;
+         print "$pat: @offset_vals\n";
+         last;
+      }
+   }
+   if ( !$matched ) {
+      my $new_pat = $line;
+      $new_pat    =~ s/\d+/(\\d+)/g;
+      my @vals    = $line =~ m/$new_pat/;
+      MKDEBUG && print "new pattern: $new_pat: @vals\n";
+      push @line_patterns, $new_pat;
+      $last_match{$new_pat} = \@vals;
+   }
+}
+
+
+close $fh or warn "Cannot close $file: $OS_ERROR";
+exit;
