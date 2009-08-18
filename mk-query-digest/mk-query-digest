@@ -7842,7 +7842,7 @@ The subroutine template is:
 
 Filters given on the command line are wrapped inside parentheses like like
 C<( filter )>.  For complex, multi-line filters, you must put the code inside
-a file so it will not but wrapped inside parentheses.  Either way, the filter
+a file so it will not be wrapped inside parentheses.  Either way, the filter
 must produce syntactically valid code given the template.  For example, an
 if-else branch given on the command line would not be valid:
 
