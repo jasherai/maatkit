@@ -7848,7 +7848,7 @@ if-else branch given on the command line would not be valid:
 
   --filter 'if () { } else { }'  # WRONG
 
-Since it's given the command line, the if-else branch would be wrapped inside
+Since it's given on the command line, the if-else branch would be wrapped inside
 parentheses which is not syntactically valid.  So to accomplish something more
 complex like this would require putting the code in a file, for example
 filter.txt:
