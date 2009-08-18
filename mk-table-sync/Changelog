@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * The script did not work with MySQL replicate-do-db (issue 533).
    * Removed --[no]utf8.  Pass the C<A> option in a DSN instead.
    * Added standard connection options like --host, --port, etc.(issue 248).
    * --databases was not honored when using --replicate (issue 367).

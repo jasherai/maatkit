@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 54;
+use Test::More tests => 56;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -444,12 +444,66 @@ is(
 );
 
 # #############################################################################
+# Issue 533: mk-table-sync does not work with replicate-do-db
+# #############################################################################
+
+# It's not really master1, we just use its port 12348.
+diag(`../../sandbox/make_slave 12348`);
+my $dbh3 = $sb->get_dbh_for('master1');
+SKIP: {
+   skip 'Cannot connect to second sandbox slave', 2
+      unless $dbh3;
+
+   # This slave is new so it doesn't have the dbs and tbls
+   # created above.  We create some so that the current db
+   # will change they get checked.  It should stop at something
+   # other than onlythisdb.
+   $sb->wipe_clean($master_dbh);
+   diag(`/tmp/12345/use -e 'CREATE DATABASE test'`);
+   diag(`/tmp/12345/use < samples/issue_560.sql`);
+   diag(`/tmp/12345/use < samples/issue_533.sql`);
+
+   # Stop the slave, add replicate-do-db to its config, and restart it.
+   $dbh3->disconnect();
+   diag(`/tmp/12348/stop`);
+   diag(`echo "replicate-do-db = onlythisdb" >> /tmp/12348/my.sandbox.cnf`);
+   diag(`/tmp/12348/start`);
+   $dbh3 = $sb->get_dbh_for('master1');
+
+   # Make master and slave differ.  Because we USE test, this DELETE on
+   # the master won't replicate to the slave now that replicate-do-db
+   # is set.
+   $master_dbh->do('USE test');
+   $master_dbh->do('DELETE FROM onlythisdb.t WHERE i = 2');
+   my $r = $dbh3->selectall_arrayref('SELECT * FROM onlythisdb.t');
+   is_deeply(
+      $r,
+      [[1],[2],[3]],
+      'do-replicate-db is out of sync before sync'
+   );
+
+   diag(`../mk-table-sync h=127.1,P=12348 --sync-to-master --execute --with-triggers --ignore-tables buddy_list 2>&1`);
+
+   $r = $dbh3->selectall_arrayref('SELECT * FROM onlythisdb.t');
+   is_deeply(
+      $r,
+      [[1],[3]],
+      'do-replicate-db is in sync after sync'
+   );
+};
+
+# #############################################################################
 # Done
 # #############################################################################
 if ( $dbh2 ) {
    $dbh2->disconnect();
    diag(`/tmp/12347/stop`);
    diag(`rm -rf /tmp/12347/`);
+}
+if ( $dbh3 ) {
+   $dbh3->disconnect();
+   diag(`/tmp/12348/stop`);
+   diag(`rm -rf /tmp/12348/`);
 }
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);

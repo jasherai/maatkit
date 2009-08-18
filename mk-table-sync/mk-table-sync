@@ -3780,6 +3780,10 @@ sub sync_table {
             $change_dbh->do($_);
          } @_;
       };
+
+      # Set default database in case replicate-do-db is being used (issue 533).
+      $args{src_dbh}->do("USE `$args{src_db}`");
+      $args{dst_dbh}->do("USE `$args{dst_db}`");
    }
 
    my $ch = new ChangeHandler(
