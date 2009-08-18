@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * The script crashed on empty input to --type tcpdump|memcached (issue 564).
    * --filter did not always compile correctly (issue 565).
    * Added standard connection options like --host, --port, etc.(issue 248).
    * --processlist didn't set first_seen and last_seen for --review (issue 360).

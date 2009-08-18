@@ -1968,7 +1968,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 4439
+# TcpdumpParser package 4502
 # ###########################################################################
 package TcpdumpParser;
 
@@ -2003,6 +2003,8 @@ sub parse_event {
 
    my $pos_in_log = tell($fh);
    while ( $$oktorun && defined(my $raw_packet = <$fh>) ) {
+      next if $raw_packet =~ m/^$/;  # issue 564
+
       $raw_packet =~ s/\n20\Z//;
       $raw_packet = "20$raw_packet" unless $raw_packet =~ m/\A20/;
 
