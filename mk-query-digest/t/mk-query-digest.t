@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 97;
+use Test::More tests => 98;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -740,7 +740,7 @@ ok(
 );
 
 SKIP: {
-   skip 'Cannot connect to sandbox master', 1 unless $dbh1;
+   skip 'Cannot connect to sandbox master', 2 unless $dbh1;
 
 
    # The result file is correct: it's the one that has all quries from
@@ -767,7 +767,7 @@ ok(
 );
 
 SKIP: {
-   skip 'Cannot connect to sandbox master', 1 unless $dbh1;
+   skip 'Cannot connect to sandbox master', 2 unless $dbh1;
    $sb->load_file('master', 'samples/query_review.sql');
    my $output = `${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review --no-report --create-review-table`;
    my $res = $dbh1->selectall_arrayref('SELECT * FROM test.query_review');
@@ -836,7 +836,7 @@ SKIP: {
 # Issue 361: Add a --runfor (or something) option to mk-query-digest
 # #############################################################################
 SKIP: {
-   skip 'Cannot connect to sandbox master', 1 unless $dbh1;
+   skip 'Cannot connect to sandbox master', 2 unless $dbh1;
    `../mk-query-digest --processlist 127.1 --run-time 3 --port 12345 --log /tmp/mk-query-digest.log --pid /tmp/mk-query-digest.pid --daemonize 1>/dev/null 2>/dev/null`;
    chomp(my $pid = `cat /tmp/mk-query-digest.pid`);
    sleep 2;
@@ -854,6 +854,15 @@ SKIP: {
    );
 };
 
+# #############################################################################
+# Issue 565: mk-query-digest isn't compiling filter correctly
+# #############################################################################
+$output = `../mk-query-digest --type tcpdump --filter '\$event->{No_index_used} || \$event->{No_good_index_used}' --group-by tables  ../../common/t/samples/tcpdump014.txt 2>&1`;
+unlike(
+   $output,
+   qr/Can't use string/,
+   '--filter compiles correctly (issue 565)'
+);
 
 # #############################################################################
 # Done.

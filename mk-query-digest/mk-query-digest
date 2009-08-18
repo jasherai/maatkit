@@ -6524,6 +6524,9 @@ sub main {
          $filter = do { local $/ = undef; <$fh> };
          close $fh;
       }
+      else {
+         $filter = "( $filter )";  # issue 565
+      }
       my $code   = "sub { MKDEBUG && _d('callback: filter');  my(\$event) = shift; $filter && return \$event; };";
       MKDEBUG && _d('--filter code:', $code);
       my $sub = eval $code
@@ -7837,15 +7840,22 @@ The subroutine template is:
 
   sub { $event = shift; filter && return $event; }
 
-Therefore, filter must produce syntactically valid code given that template.
-For example, an if-else branch would not be valid:
+Filters given on the command line are wrapped inside parentheses like like
+C<( filter )>.  For complex, multi-line filters, you must put the code inside
+a file so it will not but wrapped inside parentheses.  Either way, the filter
+must produce syntactically valid code given the template.  For example, an
+if-else branch given on the command line would not be valid:
 
   --filter 'if () { } else { }'  # WRONG
 
-To accomplish something more complex like this would require a more complex
-filter:
+Since it's given the command line, the if-else branch would be wrapped inside
+parentheses which is not syntactically valid.  So to accomplish something more
+complex like this would require putting the code in a file, for example
+filter.txt:
 
-  --filter 'my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0 } $event_ok'  # OK
+  my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0; } $event_ok
+
+Then specify C<--filter filter.txt> to read the code from filter.txt.
 
 If the filter code won't compile, mk-query-digest will die with an error.
 If the filter code does compile, an error may still occur at runtime if the
@@ -7858,7 +7868,7 @@ An example filter that discards everything but SELECT statements:
 
 This is compiled into a subroutine like the following:
 
-  sub { $event = shift; $event->{arg} =~ m/^select/i && return $event; }
+  sub { $event = shift; ( $event->{arg} =~ m/^select/i ) && return $event; }
 
 It is permissible for the code to have side effects (to alter $event).
 
