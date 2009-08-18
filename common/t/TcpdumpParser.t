@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 7;
 
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -202,6 +202,16 @@ run_test(
             6765 7420 323a 6f70 7469 6f6e 733a 616c 6c6f 7074 696f 6e73 0d0a
          )),
       },
+   ],
+);
+
+# #############################################################################
+# Issue 564: mk-query-digest --type tcpdump|memcached crashes on empty input
+# #############################################################################
+run_test(
+   'samples/tcpdump020.txt',
+   'Empty input (issue 564)',
+   [
    ],
 );
 

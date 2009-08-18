@@ -83,6 +83,8 @@ sub parse_event {
 
    my $pos_in_log = tell($fh);
    while ( $$oktorun && defined(my $raw_packet = <$fh>) ) {
+      next if $raw_packet =~ m/^$/;  # issue 564
+
       # Remove the separator from the packet, and restore it to the front if
       # necessary.
       $raw_packet =~ s/\n20\Z//;
