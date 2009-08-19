@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 32;
+use Test::More tests => 33;
 
 require '../QueryRanker.pm';
 
@@ -16,7 +16,7 @@ isa_ok($qr, 'QueryRanker');
 sub test_compare_query_times {
    my ( $t1, $t2, $expected_rank, $comment ) = @_;
    # We don't look at the reason here, just the rank.
-   my @res = $qr->compare_query_times($t1, $t2);
+   my @res = QueryRanker::compare_query_times($t1, $t2);
    my $got_rank = shift @res;
    is(
       $got_rank,
@@ -623,6 +623,39 @@ is_deeply(
    ],
    'host2 missing a column (5)'
 );
+
+# #############################################################################
+# Test that a custome ranker callback is used for an unknown result.
+# #############################################################################
+my $foo_ranker = sub {
+   my ( $host1, $host2 ) = @_;
+   my $foo = $host1->{msg} . $host2->{msg};
+   return 1, $foo;
+};
+
+$qr = new QueryRanker(
+   ranker_for => {
+      foo => $foo_ranker,
+   },
+);
+
+@results = (
+   {
+      foo => { msg   => 'it ',   error => undef,   },
+   },
+   {
+      foo => { msg   => 'works', error => undef,   },
+   },
+);
+
+is_deeply(
+   [ $qr->rank_results(@results) ],
+   [ 1,
+     "it works",
+   ],
+   'Custom ranker callback'
+);
+
 # #############################################################################
 # Done.
 # #############################################################################

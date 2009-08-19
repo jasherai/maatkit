@@ -40,60 +40,69 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 my @bucket_threshold = qw(500 100  100   500 50   50    20 1   );
 my @bucket_labels    = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
+# Built-in ranker subs for various results from QueryExecutor.
 my %ranker_for = (
    Query_time       => \&rank_query_times,
    warnings         => \&rank_warnings,
    checksum_results => \&rank_result_sets,
 );
 
+# Optional arguments:
+#   * ranker_for   Hashref of result=>callback subs for ranking results.
+#                  These are preferred to the built-in ranker subs in this
+#                  package in case you need to override a built-in.
+#
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw() ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
+      %args,
    };
    return bless $self, $class;
 }
 
 # Ranks operation result differences.  @results is an array of operation
-# results for mulitple hosts returned from QueryExecutor::exec().  The first
-# host is considered the "master" against which all other hosts are compared.
-# No host is actually preferred, but since we only do a 1-to-many comparison,
-# i.e. we do *not* compare all hosts to one another, then choosing that 1 host
-# is arbitrary.
+# results for mulitple hosts returned from QueryExecutor::exec().  We only
+# compare the first host's results to all other hosts.  Usually, the first
+# host is a production server and subsequent hosts are test servers.  The
+# code, however, doesn't really care about the nature of the hosts--it's
+# host agnostic.
 #
 # Returns a total rank value and a list of reasons for that total rank.
+#
+# Ranker subs are either built-in (i.e. provided in this package) or given
+# with the optional ranker_for arg to new().  Given rankers are preferred.
+# A ranker sub is expected to return a list: a rank value and any reasons
+# for that rank value.
 sub rank_results {
    my ( $self, @results ) = @_;
    return unless @results > 1;
 
-   my $rank           = 0;
-   my @reasons        = ();
-   my $master_results = shift @results;
+   my $rank    = 0;
+   my @reasons = ();
+   my $host1   = $results[0];
 
    RESULTS:
-   foreach my $results ( keys %$master_results ) {
-      my $compare = $ranker_for{$results};
+   foreach my $results ( keys %$host1 ) {
+      my $compare = $self->{ranker_for}->{$results} || $ranker_for{$results};
       if ( !$compare ) {
          MKDEBUG && _d('No ranker for', $results);
          next RESULTS;
       }
 
-      my $master = $master_results->{$results};
+      my $host1_results = $host1->{$results};
 
       HOST:
-      my $i = 1;  # host1/i=1 is master so...
-      foreach my $host_results ( @results ) {
-         $i++; # ...we start with host2/i=2
-         if ( !exists $host_results->{$results} ) {
-            warn "Host$i doesn't have $results results";
+      for my $i ( 1..$#results ) {
+         my $hostN = $results[$i];
+         if ( !exists $hostN->{$results} ) {
+            warn "Host", $i+1, " doesn't have $results results";
             next HOST;
          }
 
-         my $host = $host_results->{$results};
-
-         my @res = $compare->($self, $master, $host);
+         my @res = $compare->($host1_results, $hostN->{$results});
          $rank += shift @res;
          push @reasons, @res;
       } 
@@ -103,7 +112,7 @@ sub rank_results {
 }
 
 sub rank_query_times {
-   my ( $self, $host1, $host2 ) = @_;
+   my ( $host1, $host2 ) = @_;
    my $rank    = 0;   # total rank
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
@@ -125,7 +134,7 @@ sub rank_query_times {
    }
 
    if ( $host1->{Query_time} >= 0 && $host2->{Query_time} >= 0 ) {
-      @res = $self->compare_query_times(
+      @res = compare_query_times(
          $host1->{Query_time}, $host2->{Query_time});
       $rank += shift @res;
       push @reasons, @res;
@@ -135,7 +144,7 @@ sub rank_query_times {
 }
 
 sub rank_warnings {
-   my ( $self, $host1, $host2 ) = @_;
+   my ( $host1, $host2 ) = @_;
    my $rank    = 0;   # total rank
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
@@ -153,7 +162,7 @@ sub rank_warnings {
       push @reasons, "Warning counts differ by $diff (rank+$diff)";
    }
 
-   @res = $self->compare_warnings($host1->{codes}, $host2->{codes});
+   @res = compare_warnings($host1->{codes}, $host2->{codes});
    $rank += shift @res;
    push @reasons, @res;
 
@@ -163,7 +172,7 @@ sub rank_warnings {
 # Compares query times and returns a rank increase value if the
 # times differ significantly or 0 if they don't.
 sub compare_query_times {
-   my ( $self, $t1, $t2 ) = @_;
+   my ( $t1, $t2 ) = @_;
    die "I need a t1 argument" unless defined $t1;
    die "I need a t2 argument" unless defined $t2;
 
@@ -195,7 +204,7 @@ sub compare_query_times {
 # number of warnings with the same code but different level and 3 times
 # the number of new warnings.
 sub compare_warnings {
-   my ( $self, $warnings1, $warnings2 ) = @_;
+   my ( $warnings1, $warnings2 ) = @_;
    die "I need a warnings1 argument" unless defined $warnings1;
    die "I need a warnings2 argument" unless defined $warnings2;
 
@@ -236,7 +245,7 @@ sub compare_warnings {
 }
 
 sub rank_result_sets {
-   my ( $self, $host1, $host2 ) = @_;
+   my ( $host1, $host2 ) = @_;
    my $rank    = 0;   # total rank
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
@@ -252,7 +261,7 @@ sub rank_result_sets {
    }
 
    if ( $host1->{table_struct} && $host2->{table_struct} ) {
-      @res = $self->compare_table_structs(
+      @res = compare_table_structs(
          $host1->{table_struct},
          $host2->{table_struct}
       );
@@ -268,7 +277,7 @@ sub rank_result_sets {
 }
 
 sub compare_table_structs {
-   my ( $self, $s1, $s2 ) = @_;
+   my ( $s1, $s2 ) = @_;
    die "I need a s1 argument" unless defined $s1;
    die "I need a s2 argument" unless defined $s2;
 

@@ -368,6 +368,55 @@ sub checksum_results {
    return $name, $results;
 }
 
+
+# callaghan_get_sth() implements part of an idea discussed by Mark Callaghan,
+# Baron Schwartz and Daniel Nichter.  See:
+# http://groups.google.com/group/maatkit-discuss/browse_thread/thread/5d0f208f4e76ec0f 
+# http://groups.google.com/group/maatkit-discuss/browse_thread/thread/49f4564111c78a2f
+
+# The big picture is to execute the query, simultaneously write its rows to
+# an outfile and compare them with TalbeSyncStream.  If no differences are
+# found, all is well.  If a difference is found, we stop comparing, write all
+# rows to an outfile and later callaghn_diff() will handle the rest.
+# For now, however, we just get a statement handle for the executed query
+# because QueryExecutor does hosts one-by-one but we need two sths at once.
+# See mk_upgrade::callaghan_rank_sths for how these sths are ranked/compared.
+sub callaghan_get_sth {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(query dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $query = $args{query};
+   my $dbh   = $args{dbh};
+   my $error = undef;
+   my $name  = 'callaghan_get_sth';
+   MKDEBUG && _d($name);
+
+   my $sth;
+   eval {
+      $sth = $dbh->prepare($query);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d('Error on prepare:', $EVAL_ERROR);
+      $error = $EVAL_ERROR;
+   }
+   else {
+      eval {
+         $sth->execute();
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d('Error on execute:', $EVAL_ERROR);
+         $error = $EVAL_ERROR;
+      }
+   }
+
+   my $results = {
+      error => $error,
+      sth   => $sth,
+   };
+   return $name, $results;
+}
+
 sub _check_results {
    my ( $name, $res, $host_name, $all_res ) = @_;
    __die('Operation did not return a name!', @_)

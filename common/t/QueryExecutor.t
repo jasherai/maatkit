@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 27;
+use Test::More tests => 28;
 
 require '../QueryExecutor.pm';
 require '../Quoter.pm';
@@ -329,6 +329,33 @@ is(
    $results[0]->{Query_time}->{Query_time},
    -1,
    'Invalid query Query_time'
+);
+
+# #############################################################################
+# Test that callaghan_get_sth() actually gets us a sth.
+# #############################################################################
+@callbacks = (
+   sub { $qe->callaghan_get_sth(@_); },
+);
+@results = $qe->exec(
+   query     => 'SELECT * FROM test.issue_47',
+   hosts     => $hosts,
+   callbacks => \@callbacks,
+);
+is_deeply(
+   $results[0]->{callaghan_get_sth}->{sth}->fetchall_arrayref(),
+   [
+      ['1'],
+      ['20'],
+      ['300'],
+      ['1000'],
+      ['55555'],
+      ['2220293'],
+      ['65553510'],
+      ['9223372036854775807'],
+      ['18446744073709551615']
+   ],
+   'callaghan_get_sth()'
 );
 
 # #############################################################################
