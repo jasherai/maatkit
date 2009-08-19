@@ -60,7 +60,7 @@ sub crc32 {
 sub get_crc_wid {
    my ( $self, $dbh, $func ) = @_;
    my $crc_wid = 16;
-   if ( uc $func ne 'FNV_64' ) {
+   if ( uc $func ne 'FNV_64' && uc $func ne 'FNV1A_64' ) {
       eval {
          my ($val) = $dbh->selectrow_array("SELECT $func('a')");
          $crc_wid = max(16, length($val));
@@ -147,7 +147,7 @@ sub is_hash_algorithm {
 # Picks a hash function, in order of speed.
 sub choose_hash_func {
    my ( $self, %args ) = @_;
-   my @funcs = qw(CRC32 FNV_64 MD5 SHA1);
+   my @funcs = qw(CRC32 FNV1A_64 FNV_64 MD5 SHA1);
    if ( $args{func} ) {
       unshift @funcs, $args{func};
    }
@@ -184,7 +184,7 @@ sub optimize_xor {
    my ( $dbh, $func ) = @args{qw(dbh func)};
 
    die "$func never needs the BIT_XOR optimization"
-      if $func =~ m/^(?:FNV_64|CRC32)$/i;
+      if $func =~ m/^(?:FNV1A_64|FNV_64|CRC32)$/i;
 
    my $opt_slice = 0;
    my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
@@ -304,7 +304,7 @@ sub make_row_checksum {
       @{$table->{cols}};
 
    my $query;
-   if ( uc $func ne 'FNV_64' ) {
+   if ( uc $func ne 'FNV_64' && uc $func ne 'FNV1A_64' ) {
       # Add a bitmap of which nullable columns are NULL.
       my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
       if ( @nulls ) {
@@ -319,9 +319,10 @@ sub make_row_checksum {
              : "$func($cols[0])";
    }
    else {
-      # As a special case, FNV_64 doesn't need its arguments concatenated, and
-      # doesn't need a bitmap of NULLs.
-      $query = 'FNV_64(' . join(', ', @cols) . ')';
+      # As a special case, FNV1A_64/FNV_64 doesn't need its arguments
+      # concatenated, and doesn't need a bitmap of NULLs.
+      my $fnv_func = uc $func;
+      $query = "$fnv_func(" . join(', ', @cols) . ')';
    }
 
    return $query;
