@@ -249,6 +249,12 @@ sub parse_packet {
       # the first packet).
       $packet->{data}        = $session->{buff} . $packet->{data};
       $session->{buff_left} -= $packet->{data_len};
+
+      # We didn't remove_mysql_header(), so mysql_data_len isn't set.
+      # So set it to the real, complete data len (from the first
+      # packet's MySQL header).
+      $packet->{mysql_data_len} = $session->{mysql_data_len};
+
       MKDEBUG && _d('Appending data to buff; expecting',
          $session->{buff_left}, 'more bytes');
    }
@@ -276,10 +282,6 @@ sub parse_packet {
    }
    elsif ( $packet_from eq 'client' ) {
       if ( $session->{buff} && $session->{buff_left} <= 0 ) {
-         # We didn't remove_mysql_header(), so mysql_data_len isn't set.
-         # So set it to the real, complete data len (from the first
-         # packet's MySQL header).
-         $packet->{mysql_data_len} = $session->{mysql_data_len};
          MKDEBUG && _d('Data is complete');
       }
       elsif ( $packet->{mysql_data_len} > $packet->{data_len} ) {
