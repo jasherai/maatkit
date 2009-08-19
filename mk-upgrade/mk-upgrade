@@ -2325,7 +2325,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 3980
+# SlowLogParser package 4462
 # ###########################################################################
 package SlowLogParser;
 
@@ -2427,7 +2427,7 @@ sub parse_event {
 
             elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
                MKDEBUG && _d("Got some line with properties");
-               my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
+               my @temp = $line =~ m/(\w+):\s+(\S+|\Z)/g;
                push @properties, @temp;
             }
 
@@ -2498,7 +2498,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 4131
+# EventAggregator package 4462
 # ###########################################################################
 package EventAggregator;
 
@@ -2550,7 +2550,7 @@ sub new {
       result_samples => {},
       n_events       => 0,
       unrolled_loops => undef,
-      type_for       => { %{$args{type_for} || {}} },
+      type_for       => { %{$args{type_for} || { Query_time => 'num' }} },
    };
    return bless $self, $class;
 }
@@ -2765,6 +2765,14 @@ sub make_handler {
       );
    }
 
+   my @broken_query_time;
+   if ( $attrib eq 'Query_time' ) {
+      push @broken_query_time, (
+         '$val =~ s/^(\d+(?:\.\d+)?).*/$1/;',
+         '$event->{\''.$attrib.'\'} = $val;',
+      );
+   }
+
    my @limit;
    if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
@@ -2781,7 +2789,7 @@ sub make_handler {
       (map { "\$val = \$event->{'$_'} unless defined \$val;" }
          grep { $_ ne $attrib } @{$args{alt}}),
       'defined $val && do {',
-      ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
+      ( map { s/^/   /gm; $_ } (@broken_query_time, @limit, @lines) ), # Indent for debugging
       '};',
       ($is_array ? ('}') : ()),
    );
@@ -2796,6 +2804,7 @@ sub make_handler {
          grep { $_ ne $attrib } @{$args{alt}}),
       'return unless defined $val;',
       ($is_array ? ('foreach my $val ( @$val ) {') : ()),
+      @broken_query_time,
       @limit,
       ($is_array ? ('}') : ()),
    );
@@ -3406,7 +3415,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryExecutor package 4421
+# QueryExecutor package 4511
 # ###########################################################################
 package QueryExecutor;
 
@@ -3433,14 +3442,13 @@ sub new {
 
 sub exec {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(query hosts pre_exec_callbacks post_exec_callbacks) ) {
+   foreach my $arg ( qw(query hosts callbacks) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $query = $args{query};
-   my $hosts = $args{hosts};
-   my $pre   = $args{pre_exec_callbacks};
-   my $post  = $args{post_exec_callbacks};
-   my $dp    = $args{DSNParser};
+   my $query      = $args{query};
+   my $callbacks  = $args{callbacks};
+   my $hosts      = $args{hosts};
+   my $dp         = $args{DSNParser};
 
    MKDEBUG && _d('Executing query:', $query);
 
@@ -3457,49 +3465,64 @@ sub exec {
       my %callback_args = (
          query     => $query,
          dbh       => $dbh,
+         dsn       => $dsn,
          host_name => $host_name,
          results   => $results,
       );
 
       MKDEBUG && _d('Starting execution on host', $host_name);
-
-      foreach my $callback ( @$pre ) {
-         my ($name, $res) = $callback->(%callback_args);
-         _check_results($name, $res, $host_name, \@results);
-         $results->{$name} = $res;
-      }
-
-      {
-         my ($name, $res) = ('Query_time', { error=>undef, Query_time=>-1, });
-         my ( $start, $end, $query_time );
+      foreach my $callback ( @$callbacks ) {
+         my ($name, $res);
          eval {
-            $start = time();
-            $dbh->do($query);
-            $end   = time();
-            $query_time = sprintf '%.6f', $end - $start;
+            ($name, $res) = $callback->(%callback_args);
          };
          if ( $EVAL_ERROR ) {
-            MKDEBUG && _d('Error executing query on host', $hostno+1, ':',
-               $EVAL_ERROR);
-            $res->{error} = $EVAL_ERROR;
-         }
-         else {
-            $res->{Query_time} = $query_time;
-         }
+            __die(
+               "A callback sub had an unhandled error: $EVAL_ERROR",
+               $name,
+               $res,
+               $host_name,
+               \@results
+            );
+         };
          _check_results($name, $res, $host_name, \@results);
          $results->{$name} = $res;
       }
-
-      foreach my $callback ( @$post ) {
-         my ($name, $res) = $callback->(%callback_args);
-         _check_results($name, $res, $host_name, \@results);
-         $results->{$name} = $res;
-      }
-
       MKDEBUG && _d('Results for host', $host_name, ':', Dumper($results));
    } # HOST
 
    return @results;
+}
+
+sub Query_time {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(query dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $query = $args{query};
+   my $dbh   = $args{dbh};
+   my $error = undef;
+   my $name  = 'Query_time';
+   my $res   = { error => undef, Query_time => -1, };
+   MKDEBUG && _d($name);
+
+   my ( $start, $end, $query_time );
+   eval {
+      $start = time();
+      $dbh->do($query);
+      $end   = time();
+      $query_time = sprintf '%.6f', $end - $start;
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d('Error executing query on host', $args{host_name}, ':',
+         $EVAL_ERROR);
+      $res->{error} = $EVAL_ERROR;
+   }
+   else {
+      $res->{Query_time} = $query_time;
+   }
+
+   return $name, $res;
 }
 
 sub get_warnings {
@@ -3669,20 +3692,20 @@ sub checksum_results {
 
 sub _check_results {
    my ( $name, $res, $host_name, $all_res ) = @_;
-   _die_bad_op('Operation did not return a name!', @_)
+   __die('Operation did not return a name!', @_)
       unless $name;
-   _die_bad_op('Operation did not return any results!', @_)
+   __die('Operation did not return any results!', @_)
       unless $res || (scalar keys %$res);
-   _die_bad_op("Operation results do no have an 'error' key")
+   __die("Operation results do no have an 'error' key")
       unless exists $res->{error};
-   _die_bad_op("Operation error is blank string!")
+   __die("Operation error is blank string!")
       if defined $res->{error} && !$res->{error};
-   _die_bad_op("Operation errors is not an arrayref!")
+   __die("Operation errors is not an arrayref!")
       if $res->{errors} && ref $res->{errors} ne 'ARRAY';
    return;
 }
 
-sub _die_bad_op {
+sub __die {
    my ( $msg, $name, $res, $host_name, $all_res ) = @_;
    die "$msg\n"
       . "Host name: " . ($host_name ? $host_name : 'UNKNOWN') . "\n"
@@ -4059,6 +4082,11 @@ sub main {
       if ( @ARGV < 2 ) {
          $o->save_error('Specify at least two host DSNs');
       }
+      if ( my $compare_method = $o->get('compare-results-method') ) {
+         my %valid_method = qw(checksum 1 callaghan 1);
+         $o->save_error("Invalid --compare-results-method: $compare_method")
+            unless $valid_method{lc $compare_method};
+      }
    }
 
    $o->set('all-errors', 0) unless $o->get('errors');
@@ -4091,6 +4119,64 @@ sub main {
    my $qparser = new QueryParser();
    my $qexec   = new QueryExecutor();
    my $qranker = new QueryRanker();
+   my $du      = new MySQLDump();
+   my $tp      = new TableParser();
+   my $q       = new Quoter();
+
+   # ########################################################################
+   # Create QueryExecutor::exec() callbacks for each operation.
+   # These subs return to QueryExecutor::exec(), not mk-upgrade.
+   # exec() returns a list of each host's results to mk-upgrade.
+   # ########################################################################
+   my $compare_method
+      = $o->get('compare-results') ? lc($o->get('compare-results-method') || '')
+      : '';
+   MKDEBUG && _d('compare method:', $compare_method);
+   my @qe_callbacks;
+   my $tmp_tbl    = 'mk_upgrade';  
+   my $tmp_tbl_db = $o->get('tmp-table-database');
+   my $tmp_tbl_wrap;
+   my $current_db;
+
+   # Pre-query execution operations.
+   if ( $compare_method eq 'checksum' ) {
+      # This drops the tmp table and sets the default engine to MyISAM.
+      push @qe_callbacks, sub {
+         return $qexec->pre_checksum_results(
+            @_,
+            database  => $tmp_tbl_db || $current_db,
+            tmp_table => $tmp_tbl,
+            Quoter    => $q,
+         );
+      };
+   }
+
+   # The actual query execution.
+   if ( $compare_method eq 'callaghan' ) {
+   }
+   else {
+      push @qe_callbacks, sub { $qexec->Query_time(@_); };
+   }
+
+   # Post-query execution operations.
+   if ( $o->get('compare-warnings') ) {
+      # Do this first after execution so we don't taint the warnings.
+      push @qe_callbacks, sub { return $qexec->get_warnings(@_); };
+      push @qe_callbacks, sub { return $qexec->clear_warnings(@_, QueryParser => $qparser); };
+   }
+
+   if ( $compare_method eq 'checksum' ) {
+      push @qe_callbacks, sub {
+         return $qexec->checksum_results(
+            @_,
+            database    => $tmp_tbl_db || $current_db,
+            tmp_table   => $tmp_tbl,
+            Quoter      => $q,
+            TableParser => $tp,
+            MySQLDump   => $du,
+         );
+      };
+   }
 
    # ########################################################################
    # Set up an array of callbacks to transform, filter and process events.
@@ -4106,28 +4192,42 @@ sub main {
    # TODO: this will become QueryFilter.
    push @callbacks, sub {
       my ( $event ) = @_;
-      return unless $event->{cmd} eq 'Query';
-      return unless $event->{arg};
-      if ( $event->{arg} =~ m/(?:^SELECT|(?:\*\/\s*SELECT))/i ) {
-         return $event; # Query passes.
+      if ( $event->{cmd} ne 'Query' ) {
+         MKDEBUG && _d('Skipping non-Query cmd');
+         return;
       }
-      MKDEBUG && _d('Not a SELECT query');
-      return;  # Query fails.
+      if ( !$event->{arg} ) {
+         MKDEBUG && _d('Skipping empty arg');
+         return;
+      }
+      if ( $event->{arg} !~ m/(?:^SELECT|(?:\*\/\s*SELECT))/i ) {
+         MKDEBUG && _d('Skipping non-SELECT query');
+         return;
+      }
+      return $event;
    };
 
    # User-defined filter.
    if ( $o->get('filter') ) {
       my $filter = $o->get('filter');
-      my $code   = "sub { my (\$event) = shift; $filter && return \$event; };";
+      if ( -f $filter && -r $filter ) {
+         MKDEBUG && _d('Reading file', $filter, 'for --filter code');
+         open my $fh, "<", $filter or die "Cannot open $filter: $OS_ERROR";
+         $filter = do { local $/ = undef; <$fh> };
+         close $fh;
+      }
+      else {
+         $filter = "( $filter )";  # issue 565
+      }
+      my $code   = "sub { MKDEBUG && _d('callback: filter');  my(\$event) = shift; $filter && return \$event; };";
       MKDEBUG && _d('--filter code:', $code);
-      my $sub = eval $code or die;
+      my $sub = eval $code
+         or die "Error compiling --filter code: $code\n$EVAL_ERROR";
       push @callbacks, $sub;
    }
 
-   # Now we should have only the queries that we want, and they should
-   # have all appropriate transformations.  The real work begins here.
-
-   my $current_db;
+   # Keep the default database update-to-date.  This helps when queries
+   # don't use db-qualified tables.
    push @callbacks, sub {
       my ( $event ) = @_;
       my $db = $event->{db}; 
@@ -4147,58 +4247,19 @@ sub main {
       return $event;
    };
 
-   # Create pre- and post-QueryExecutor::exec() callbacks for each comparison.
-   # These subs return to QueryExecutor::exec(), not mk-upgrade.  exec()
-   # returns a list of each host's results to mk-upgrade.
-   my $tmp_tbl_db = $o->get('tmp-table-database');
-   my $tmp_tbl_wrap;
-   my @pre_qe_callbacks;
-   my @post_qe_callbacks;
-
-   if ( $o->get('compare-warnings') ) {
-      push @post_qe_callbacks, sub { return $qexec->get_warnings(@_); };
-      push @post_qe_callbacks, sub { return $qexec->clear_warnings(@_, QueryParser => $qparser); };
-   }
-
-   if ( $o->get('compare-results') ) {
-      my $tmp_tbl = 'mk_upgrade';
-      my $du      = new MySQLDump();
-      my $tp      = new TableParser();
-      my $q       = new Quoter();
-
-      # One thing exec() won't do is prepend "CREATE TEMPORARY TABLE ... AS"
-      # to the query.  We must do this.  This is a mk-upgrade callback sub.
+   if ( $compare_method eq 'checksum'  ) {
+      # exec() does not wrap the query in "CREATE TEMPORARY TABLE ... AS".
+      # We must do this.  This is an mk-upgrade callback sub.  Later, we'll
+      # unwrap it in another mk-upgrade callback.
       push @callbacks, sub {
          my ( $event ) = @_;
+         MKDEBUG && _d('callback: wrap query in CREATE TEMPORARY TABLE AS');
          my $query = $event->{arg};
          return unless $query;
          my $tmp_db_tbl = $q->quote($tmp_tbl_db || $current_db, $tmp_tbl);
          $tmp_tbl_wrap = "CREATE TEMPORARY TABLE $tmp_db_tbl AS ";
          $event->{arg} = "$tmp_tbl_wrap$query";
          return $event;
-      };
-
-      # This drops the tmp table and sets the default engine to MyISAM.
-      # NOTE: This return to QueryExecutor::exec(), not mk-upgrade.
-      push @pre_qe_callbacks, sub {
-         return $qexec->pre_checksum_results(
-            @_,
-            database  => $tmp_tbl_db || $current_db,
-            tmp_table => $tmp_tbl,
-            Quoter    => $q,
-         );
-      };
-
-      # NOTE: This return to QueryExecutor::exec(), not mk-upgrade.
-      push @post_qe_callbacks, sub {
-         return $qexec->checksum_results(
-            @_,
-            database    => $tmp_tbl_db || $current_db,
-            tmp_table   => $tmp_tbl,
-            Quoter      => $q,
-            TableParser => $tp,
-            MySQLDump   => $du,
-         );
       };
    }
 
@@ -4210,13 +4271,11 @@ sub main {
       my $query = $event->{arg};
       eval {
          my @results = $qexec->exec(
-            query                => $query,
-            hosts                => $hosts,
-            DSNParser            => $dp,
-            pre_exec_callbacks   => \@pre_qe_callbacks,
-            post_exec_callbacks  => \@post_qe_callbacks,
+            query      => $query,
+            hosts      => $hosts,
+            DSNParser  => $dp,
+            callbacks  => \@qe_callbacks,
          );
-
          $event->{results} = \@results;
       };
       if ( $EVAL_ERROR ) {
@@ -4228,14 +4287,17 @@ sub main {
             . "Error: $EVAL_ERROR";
          return;
       }
-
       return $event;
    };
 
-   if ( $o->get('compare-results') ) {
+   if ( $compare_method eq 'checksum'  ) {
+      # Unwrap the query from inside CREATE TEMPORARY TABLE AS.  This is an
+      # mk-upgrade callback because it's not something QueryExecutor does.
       push @callbacks, sub {
          my ( $event ) = @_;
+         MKDEBUG && _d('callback: unwrap query in CREATE TEMPORARY TABLE AS');
          my $query = $event->{arg};
+         return unless $query;
          $query =~ s/^$tmp_tbl_wrap//;
          $event->{arg} = $query;
          return $event;
@@ -4621,7 +4683,7 @@ Discard events for which this Perl code doesn't return true.
 
 This option is a string of Perl code or a file containing Perl code that gets
 compiled into a subroutine with one argument: $event.  This is a hashref.
-If the given value is a readable file, then mk-upgrade reads the entire
+If the given value is a readable file, then mk-query-digest reads the entire
 file and uses its contents as the code.  The file should not contain
 a shebang (#!/usr/bin/perl) line.
 
@@ -4631,20 +4693,27 @@ The subroutine template is:
 
   sub { $event = shift; filter && return $event; }
 
-Therefore, filter must produce syntactically valid code given that template.
-For example, an if-else branch would not be valid:
+Filters given on the command line are wrapped inside parentheses like like
+C<( filter )>.  For complex, multi-line filters, you must put the code inside
+a file so it will not be wrapped inside parentheses.  Either way, the filter
+must produce syntactically valid code given the template.  For example, an
+if-else branch given on the command line would not be valid:
 
   --filter 'if () { } else { }'  # WRONG
 
-To accomplish something more complex like this would require a more complex
-filter:
+Since it's given on the command line, the if-else branch would be wrapped inside
+parentheses which is not syntactically valid.  So to accomplish something more
+complex like this would require putting the code in a file, for example
+filter.txt:
 
-  --filter 'my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0 } $event_ok'  # OK
+  my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0; } $event_ok
 
-If the filter code won't compile, mk-upgrade will die with an error.
+Then specify C<--filter filter.txt> to read the code from filter.txt.
+
+If the filter code won't compile, mk-query-digest will die with an error.
 If the filter code does compile, an error may still occur at runtime if the
 code tries to do something wrong (like pattern match an undefined value).
-mk-upgrade does not provide any safeguards so code carefully!
+mk-query-digest does not provide any safeguards so code carefully!
 
 An example filter that discards everything but SELECT statements:
 
@@ -4652,7 +4721,7 @@ An example filter that discards everything but SELECT statements:
 
 This is compiled into a subroutine like the following:
 
-  sub { $event = shift; $event->{arg} =~ m/^select/i && return $event; }
+  sub { $event = shift; ( $event->{arg} =~ m/^select/i ) && return $event; }
 
 It is permissible for the code to have side effects (to alter $event).
 
@@ -4754,7 +4823,31 @@ reported in the query's header (see L<"OUTPUT">).
 
 default: yes; group: Comparisons
 
-Compare result set checksum, number of rows, and number and types of columns.
+Compare result sets to find differences in rows, columns, etc.
+
+What differences can be found depends on the L<"--compare-results-method"> used.
+
+=item --compare-results-method
+
+type: string; default: CHECKSUM
+
+Method to use for L<"--[no]compare-results">.  This option has no effect
+if C<--no-compare-results> is given.
+
+Available compare methods (case-insensitive):
+
+=over
+
+=item CHECKSUM
+
+Do C<CREATE TEMPORARY TABLE `mk_upgrade` AS query> then
+C<CHECKSUM TABLE `mk_upgrade`>.
+
+=item Callaghan
+
+TODO 
+
+=back
 
 =item --[no]compare-warnings
 
