@@ -301,7 +301,9 @@ sub parse_packet {
       }
       $event = $self->_packet_from_client($packet, $session, $misc);
 
-      $session->{buff} = '';
+      $session->{buff}           = '';
+      $session->{buff_left}      = 0;
+      $session->{mysql_data_len} = 0;
    }
    else {
       # Should not get here.
