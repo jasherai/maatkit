@@ -4386,7 +4386,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4418
+# QueryParser package 4520
 # ###########################################################################
 package QueryParser;
 
@@ -4449,6 +4449,12 @@ sub get_tables {
       MKDEBUG && _d('Match tables:', $tbls);
       foreach my $tbl ( split(',', $tbls) ) {
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
+
+         if ( $tbl !~ m/[a-zA-Z]/ ) {
+            MKDEBUG && _d('Skipping suspicious table name:', $tbl);
+            next;
+         }
+
          push @tables, $tbl;
       }
    }
