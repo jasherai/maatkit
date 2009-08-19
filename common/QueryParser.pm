@@ -99,6 +99,15 @@ sub get_tables {
       foreach my $tbl ( split(',', $tbls) ) {
          # Remove implicit or explicit (AS) alias.
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
+
+         # Sanity check for cases like when a column is named `from`
+         # and the regex matches junk.  Instead of complex regex to
+         # match around these rarities, this simple check will save us.
+         if ( $tbl !~ m/[a-zA-Z]/ ) {
+            MKDEBUG && _d('Skipping suspicious table name:', $tbl);
+            next;
+         }
+
          push @tables, $tbl;
       }
    }

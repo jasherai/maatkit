@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 106;
+use Test::More tests => 107;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -568,6 +568,14 @@ is_deeply(
    ],
    [],
    'get_tables: CREATE DATABASE (no tables)'
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'INSERT INTO `foo` (`s`,`from`,`t`,`p`) VALVUES ("not","me","foo",1)')
+   ],
+   [qw(`foo`)],
+   'Throws out suspicious table names'
 );
 
 ok($qp->has_derived_table(
