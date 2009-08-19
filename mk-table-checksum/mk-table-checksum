@@ -5651,7 +5651,7 @@ the same values on different MySQL versions and hardware.
 
 type: string
 
-Hash function for checksums (FNV_64, MURMUR_HASH, SHA1, MD5, CRC32, etc).
+Hash function for checksums (FNV1A_64, MURMUR_HASH, SHA1, MD5, CRC32, etc).
 
 You can use this option to choose the cryptographic hash function used for
 L<"--algorithm">=ACCUM or L<"--algorithm">=BIT_XOR.  The default is to use
@@ -5659,13 +5659,13 @@ C<CRC32>, but C<MD5> and C<SHA1> also work, and you can use your own function,
 such as a compiled UDF, if you wish.  Whatever function you specify is run in
 SQL, not in Perl, so it must be available to MySQL.
 
-The C<FNV_64> UDF mentioned in the benchmarks is much faster than C<MD5>.  The
+The C<FNV1A_64> UDF mentioned in the benchmarks is much faster than C<MD5>.  The
 C++ source code is distributed with Maatkit.  It is very simple to compile and
 install; look at the header in the source code for instructions.  If it is
 installed, it is preferred over C<MD5>.  You can also use the MURMUR_HASH
 function if you compile and install that as a UDF; the source is also
 distributed with Maatkit, and it is faster and has better distribution
-than FNV_64.
+than FNV1A_64.
 
 =item --help
 
