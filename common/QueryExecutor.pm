@@ -40,13 +40,11 @@ sub new {
    return bless $self, $class;
 }
 
-# Executes a query on the given hosts, calling pre- and post-execution
-# callbacks for each host.  The idea is to collect results from various
-# operations pertaining to the same query when ran on multiple hosts.  For
-# example, the most basic operation called Query_time--which is always
-# performed so there is always at least one op=>result returned for each
-# host--is timing how long the query takes to execute.  Other operations
-# do things like check for warnings after execution.
+# Executes a query on the given hosts, calling an array of callbacks for
+# each host.  The idea is to collect results from various operations pertaining
+# to the same query when ran on multiple hosts.  For example, the most basic
+# operation called Query_time times how long the query takes to execute.  Other
+# operations do things like check for warnings after execution.
 #
 # Each operation is performed via a callback and is expected to return a
 # key=>value pair where the key is the name of the operation and the value
@@ -56,7 +54,7 @@ sub new {
 # possibly also an errors key that is an arrayref of strings with more
 # specific errors if lots of things failed.
 #
-# All callbacks are passed the query, the current host's dbh and name,
+# All callbacks are passed the query, the current host's dbh, dsn and name,
 # and the results from preceding operations.  Each callback is expected to
 # handle its own errors, so do not die inside a callback!
 #
@@ -68,30 +66,31 @@ sub new {
 # In fact, operations are checked and if something looks amiss, the module
 # will complain and die loudly.
 #
-# Some common callbacks/operations are provided in this package:
-# get_warnings(), clear_warnings(), checksum_results().
+# Obviously, one callback should actually execute the query.  The Query_time
+# sub is provided for you which does this, or you can use your own sub.
+# Other common callbacks/operations provided in this package:
+#   get_warnings(), clear_warnings(), checksum_results().
 #
 # Required arguments:
 #   * query                The query to execute
-#   * pre_exec_callbacks   Arrayref of pre-exec query callback subs
-#   * post_exec_callbacks  Arrayref of post-exec query callback subs
+#   * callbacks            Arrayref of callback subs
 #   * hosts                Arrayref of hosts, each of which is a hashref like:
 #       {
 #         dbh              (req) Already connected DBH
 #         dsn              DSN for more verbose debug messages
 #       }
+# Optional arguments:
 #   * DSNParser            DSNParser obj in case any host dsns are given
 #
 sub exec {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(query hosts pre_exec_callbacks post_exec_callbacks) ) {
+   foreach my $arg ( qw(query hosts callbacks) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $query = $args{query};
-   my $hosts = $args{hosts};
-   my $pre   = $args{pre_exec_callbacks};
-   my $post  = $args{post_exec_callbacks};
-   my $dp    = $args{DSNParser};
+   my $query      = $args{query};
+   my $callbacks  = $args{callbacks};
+   my $hosts      = $args{hosts};
+   my $dp         = $args{DSNParser};
 
    MKDEBUG && _d('Executing query:', $query);
 
@@ -108,53 +107,65 @@ sub exec {
       my %callback_args = (
          query     => $query,
          dbh       => $dbh,
+         dsn       => $dsn,
          host_name => $host_name,
          results   => $results,
       );
 
       MKDEBUG && _d('Starting execution on host', $host_name);
-
-      # Call pre-exec callbacks.
-      foreach my $callback ( @$pre ) {
-         my ($name, $res) = $callback->(%callback_args);
-         _check_results($name, $res, $host_name, \@results);
-         $results->{$name} = $res;
-      }
-
-      # Execute the query on this host. 
-      {
-         my ($name, $res) = ('Query_time', { error=>undef, Query_time=>-1, });
-         my ( $start, $end, $query_time );
+      foreach my $callback ( @$callbacks ) {
+         my ($name, $res);
          eval {
-            $start = time();
-            $dbh->do($query);
-            $end   = time();
-            $query_time = sprintf '%.6f', $end - $start;
+            ($name, $res) = $callback->(%callback_args);
          };
          if ( $EVAL_ERROR ) {
-            MKDEBUG && _d('Error executing query on host', $hostno+1, ':',
-               $EVAL_ERROR);
-            $res->{error} = $EVAL_ERROR;
-         }
-         else {
-            $res->{Query_time} = $query_time;
-         }
-         # Leave nothing to chance: check even ourselves.
+            # This shouldn't happen, but in case of a bad callback...
+            __die(
+               "A callback sub had an unhandled error: $EVAL_ERROR",
+               $name,
+               $res,
+               $host_name,
+               \@results
+            );
+         };
          _check_results($name, $res, $host_name, \@results);
          $results->{$name} = $res;
       }
-
-      # Call post-exec callbacks.
-      foreach my $callback ( @$post ) {
-         my ($name, $res) = $callback->(%callback_args);
-         _check_results($name, $res, $host_name, \@results);
-         $results->{$name} = $res;
-      }
-
       MKDEBUG && _d('Results for host', $host_name, ':', Dumper($results));
    } # HOST
 
    return @results;
+}
+
+sub Query_time {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(query dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $query = $args{query};
+   my $dbh   = $args{dbh};
+   my $error = undef;
+   my $name  = 'Query_time';
+   my $res   = { error => undef, Query_time => -1, };
+   MKDEBUG && _d($name);
+
+   my ( $start, $end, $query_time );
+   eval {
+      $start = time();
+      $dbh->do($query);
+      $end   = time();
+      $query_time = sprintf '%.6f', $end - $start;
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d('Error executing query on host', $args{host_name}, ':',
+         $EVAL_ERROR);
+      $res->{error} = $EVAL_ERROR;
+   }
+   else {
+      $res->{Query_time} = $query_time;
+   }
+
+   return $name, $res;
 }
 
 # Returns an array with its name and a hashref with warnings/errors:
@@ -359,20 +370,22 @@ sub checksum_results {
 
 sub _check_results {
    my ( $name, $res, $host_name, $all_res ) = @_;
-   _die_bad_op('Operation did not return a name!', @_)
+   __die('Operation did not return a name!', @_)
       unless $name;
-   _die_bad_op('Operation did not return any results!', @_)
+   __die('Operation did not return any results!', @_)
       unless $res || (scalar keys %$res);
-   _die_bad_op("Operation results do no have an 'error' key")
+   __die("Operation results do no have an 'error' key")
       unless exists $res->{error};
-   _die_bad_op("Operation error is blank string!")
+   __die("Operation error is blank string!")
       if defined $res->{error} && !$res->{error};
-   _die_bad_op("Operation errors is not an arrayref!")
+   __die("Operation errors is not an arrayref!")
       if $res->{errors} && ref $res->{errors} ne 'ARRAY';
    return;
 }
 
-sub _die_bad_op {
+# Die and print helpful info about what was going on
+# at the time of our death.
+sub __die {
    my ( $msg, $name, $res, $host_name, $all_res ) = @_;
    die "$msg\n"
       . "Host name: " . ($host_name ? $host_name : 'UNKNOWN') . "\n"

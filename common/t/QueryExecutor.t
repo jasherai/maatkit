@@ -35,22 +35,21 @@ my $qe = new QueryExecutor();
 isa_ok($qe, 'QueryExecutor');
 
 my $hosts = [ { dbh=>$dbh1 }, { dbh=>$dbh2 } ];
-my @pre;
-my @post;
+my @callbacks;
 my @results;
 my $output;
 
 # #############################################################################
 # Test basic functionality and results.
 # #############################################################################
-@post = (
-   sub { $qe->get_warnings(@_);   },
+@callbacks = (
+   sub { $qe->Query_time(@_);    },
+   sub { $qe->get_warnings(@_);  },
 );
 @results = $qe->exec(
-   query => 'SELECT * FROM test.issue_47',
-   hosts => $hosts,
-   pre_exec_callbacks  => \@pre,
-   post_exec_callbacks => \@post,
+   query     => 'SELECT * FROM test.issue_47',
+   hosts     => $hosts,
+   callbacks => \@callbacks,
 );
 
 like(
@@ -88,10 +87,9 @@ is(
 # Test warnings.
 # #############################################################################
 @results = $qe->exec(
-   query => 'INSERT INTO test.issue_47 VALUES (-1)',
-   hosts => $hosts,
-   pre_exec_callbacks  => \@pre,
-   post_exec_callbacks => \@post,
+   query     => 'INSERT INTO test.issue_47 VALUES (-1)',
+   hosts     => $hosts,
+   callbacks => \@callbacks,
 );
 like(
    $results[0]->{warnings}->{codes}->{1264}->{Message},
@@ -108,17 +106,18 @@ is(
 # Test pre and post-exec queries.
 # #############################################################################
 $dbh1->do('SET @a = "foo"');
-push @pre, sub {
-   my ( %args ) = @_;
-   $args{dbh}->do('SET @a = "before"');
-   return 'name', {error=>undef};
-};
-@post = ();
+@callbacks = (
+   sub {
+      my ( %args ) = @_;
+      $args{dbh}->do('SET @a = "before"');
+      return 'name', {error=>undef};
+   },
+   sub { $qe->Query_time(@_); },
+);
 @results = $qe->exec(
-   query => 'SELECT * FROM test.issue_47',
-   hosts  => $hosts,
-   pre_exec_callbacks  => \@pre,
-   post_exec_callbacks => \@post,
+   query     => 'SELECT * FROM test.issue_47',
+   hosts     => $hosts,
+   callbacks => \@callbacks,
 );
 my $var = $dbh1->selectall_arrayref('SELECT @a');
 is_deeply(
@@ -128,17 +127,18 @@ is_deeply(
 );
 
 $dbh1->do('SET @a = "foo"');
-@pre = ();
-push @post, sub {
-   my ( %args ) = @_;
-   $args{dbh}->do('SET @a = "after"');
-   return 'name', {error=>undef};
-};
+@callbacks = (
+   sub { $qe->Query_time(@_); },
+   sub {
+      my ( %args ) = @_;
+      $args{dbh}->do('SET @a = "after"');
+      return 'name', {error=>undef};
+   },
+);
 @results = $qe->exec(
-   query => 'SELECT * FROM test.issue_47',
-   hosts  => $hosts,
-   pre_exec_callbacks  => \@pre,
-   post_exec_callbacks => \@post,
+   query     => 'SELECT * FROM test.issue_47',
+   hosts     => $hosts,
+   callbacks => \@callbacks,
 );
 $var = $dbh1->selectall_arrayref('SELECT @a');
 is_deeply(
@@ -148,22 +148,23 @@ is_deeply(
 );
 
 $dbh1->do('SET @a = 0');
-@pre = (sub {
-   my ( %args ) = @_;
-   $args{dbh}->do('SET @a = 1');
-   return 'name', {error=>undef};
-});
-@post = (sub {
-   my ( %args ) = @_;
-   $args{dbh}->do('SET @a = @a + 1');
-   return 'name', {error=>undef};
-});
-
+@callbacks = (
+   sub {
+      my ( %args ) = @_;
+      $args{dbh}->do('SET @a = 1');
+      return 'name', {error=>undef};
+   },
+   sub { $qe->Query_time(@_); },
+   sub {
+      my ( %args ) = @_;
+      $args{dbh}->do('SET @a = @a + 1');
+      return 'name', {error=>undef};
+   },
+);
 @results = $qe->exec(
-   query => 'SELECT * FROM test.issue_47',
-   hosts  => $hosts,
-   pre_exec_callbacks  => \@pre,
-   post_exec_callbacks => \@post,
+   query     => 'SELECT * FROM test.issue_47',
+   hosts     => $hosts,
+   callbacks => \@callbacks,
 );
 $var = $dbh1->selectall_arrayref('SELECT @a');
 is_deeply(
@@ -190,17 +191,20 @@ my $tmp_table = 'QueryExecutor';
 # The test that execs "INSERT INTO test.issue_47 VALUES (-1)" makes host2
 # get an extra row because it's slave to host1 so it's effectively ran twice.
 # Therefore, the checksums and the row counts shouldn't match.
-@pre = (sub {
-   return $qe->pre_checksum_results(@_, database=>'test', tmp_table=>$tmp_table, %modules);
-});
-@post = (sub {
-   return $qe->checksum_results(@_, database=>'test', tmp_table=>$tmp_table, %modules);
-});
+@callbacks = (
+   sub {
+      return $qe->pre_checksum_results(@_, database=>'test', tmp_table=>$tmp_table, %modules);
+   },
+   sub { $qe->Query_time(@_); },
+   sub {
+      return $qe->checksum_results(@_, database=>'test', tmp_table=>$tmp_table, %modules);
+   },
+);
 @results = $qe->exec(
-   query => "CREATE TEMPORARY TABLE test.$tmp_table AS SELECT * FROM test.issue_47",
-   hosts => $hosts,
-   pre_exec_callbacks  => \@pre,
-   post_exec_callbacks => \@post,
+   query     =>
+      "CREATE TEMPORARY TABLE test.$tmp_table AS SELECT * FROM test.issue_47",
+   hosts     => $hosts,
+   callbacks => \@callbacks,
 );
 is(
    $results[0]->{checksum_results}->{n_rows},
@@ -226,10 +230,10 @@ cmp_ok(
 # Make host1 and host2 identical again.
 $dbh1->do('DELETE FROM test.issue_47 WHERE userid = 0');
 @results = $qe->exec(
-   query => "CREATE TEMPORARY TABLE test.$tmp_table AS SELECT * FROM test.issue_47",
-   hosts => $hosts,
-   pre_exec_callbacks  => \@pre,
-   post_exec_callbacks => \@post,
+   query     =>
+      "CREATE TEMPORARY TABLE test.$tmp_table AS SELECT * FROM test.issue_47",
+   hosts     => $hosts,
+   callbacks => \@callbacks,
 );
 ok(
     $results[0]->{checksum_results}->{checksum},  
@@ -308,13 +312,13 @@ is(
 # #############################################################################
 # Test queries that fail to execute.
 # #############################################################################
-@pre  = ();
-@post = ();
+@callbacks = (
+   sub { $qe->Query_time(@_); },
+);
 @results = $qe->exec(
-   query => 'SELECT * FROM test.does_not_exist WHERE will_fail = 1',
-   hosts => $hosts,
-   pre_exec_callbacks  => \@pre,
-   post_exec_callbacks => \@post,
+   query     => 'SELECT * FROM test.does_not_exist WHERE will_fail = 1',
+   hosts     => $hosts,
+   callbacks => \@callbacks,
 );
 like(
    $results[0]->{Query_time}->{error},
