@@ -289,8 +289,12 @@ sub parse_packet {
          # Save the data and wait for more packets.
          $session->{mysql_data_len} = $packet->{mysql_data_len};
          $session->{buff}           = $packet->{data};
+         
+         # Do this just once here.  For the next packets, buff_left
+         # will be decremented above.
          $session->{buff_left}
-            = $packet->{mysql_data_len} - $packet->{data_len};
+            ||= $packet->{mysql_data_len} - $packet->{data_len};
+
          MKDEBUG && _d('Data not complete; expecting',
             $session->{buff_left}, 'more bytes');
          return;
