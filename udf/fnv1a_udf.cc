@@ -8,12 +8,13 @@
  * The function never returns NULL, even when you give it NULL arguments.
  *
  * To compile and install, execute the following commands.  The function name
- * fnv_64 in the mysql command is case-sensitive!  (Of course, when you actually
- * call the function, it is case-insensitive just like any other SQL function).
+ * fnv1a_64 in the mysql command is case-sensitive!  (Of course, when you
+ * actually call the function, it is case-insensitive just like any other SQL
+ * function).
  *
  * gcc -fPIC -Wall -I/usr/include/mysql -shared -o fnv1a_udf.so fnv1a_udf.cc
  * cp fnv1a_udf.so /lib * OR: * cp fnv1a_udf.so /usr/lib
- * mysql mysql -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv1a_udf.so'"
+ * mysql mysql -e "CREATE FUNCTION fnv1a_64 RETURNS INTEGER SONAME 'fnv1a_udf.so'"
  *
  * For MySQL version 4.1 or older you must add the following flag to the gcc
  * command above: -DNO_DECIMAL_RESULT
