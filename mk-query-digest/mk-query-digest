@@ -2082,7 +2082,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4485
+# MySQLProtocolParser package 4516
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2281,6 +2281,9 @@ sub parse_packet {
    if ( $session->{buff} && $packet_from eq 'client' ) {
       $packet->{data}        = $session->{buff} . $packet->{data};
       $session->{buff_left} -= $packet->{data_len};
+
+      $packet->{mysql_data_len} = $session->{mysql_data_len};
+
       MKDEBUG && _d('Appending data to buff; expecting',
          $session->{buff_left}, 'more bytes');
    }
@@ -2302,7 +2305,6 @@ sub parse_packet {
    }
    elsif ( $packet_from eq 'client' ) {
       if ( $session->{buff} && $session->{buff_left} <= 0 ) {
-         $packet->{mysql_data_len} = $session->{mysql_data_len};
          MKDEBUG && _d('Data is complete');
       }
       elsif ( $packet->{mysql_data_len} > $packet->{data_len} ) {
