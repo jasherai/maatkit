@@ -412,7 +412,7 @@ sub callaghan_get_sth {
 
    my $results = {
       error => $error,
-      sth   => $sth,
+      sth   => $error ? undef : $sth,  # Only pass sth if no errors.
    };
    return $name, $results;
 }
