@@ -4034,6 +4034,1131 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# TableChunker package 3186
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableChunker;
+
+use English qw(-no_match_vars);
+use POSIX qw(ceil);
+use List::Util qw(min max);
+use Data::Dumper;
+$Data::Dumper::Quotekeys = 0;
+$Data::Dumper::Indent    = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   die "I need a quoter" unless $args{quoter};
+   bless { %args }, $class;
+}
+
+my $EPOCH      = '1970-01-01';
+my %int_types  = map { $_ => 1 }
+   qw( bigint date datetime int mediumint smallint time timestamp tinyint year );
+my %real_types = map { $_ => 1 }
+   qw( decimal double float );
+
+sub find_chunk_columns {
+   my ( $self, $table, $opts ) = @_;
+   $opts ||= {};
+
+   my %prefer;
+   if ( $opts->{possible_keys} && @{$opts->{possible_keys}} ) {
+      my $i = 1;
+      %prefer = map { $_ => $i++ } @{$opts->{possible_keys}};
+      MKDEBUG && _d('Preferred indexes for chunking:',
+         join(', ', @{$opts->{possible_keys}}));
+   }
+
+   my @possible_keys;
+   KEY:
+   foreach my $key ( values %{ $table->{keys} } ) {
+
+      next unless $key->{type} eq 'BTREE';
+
+      defined $_ && next KEY for @{ $key->{col_prefixes} };
+
+      if ( $opts->{exact} ) {
+         next unless $key->{is_unique} && @{$key->{cols}} == 1;
+      }
+
+      push @possible_keys, $key;
+   }
+
+   @possible_keys = sort {
+      ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
+   } @possible_keys;
+
+   MKDEBUG && _d('Possible keys in order:',
+      join(', ', map { $_->{name} } @possible_keys));
+
+   my $can_chunk_exact = 0;
+   my @candidate_cols;
+   foreach my $key ( @possible_keys ) { 
+      my $col = $key->{cols}->[0];
+
+      next unless ( $int_types{$table->{type_for}->{$col}}
+                    || $real_types{$table->{type_for}->{$col}} );
+
+      push @candidate_cols, { column => $col, index => $key->{name} };
+   }
+
+   $can_chunk_exact = 1 if ( $opts->{exact} && scalar @candidate_cols );
+
+   if ( MKDEBUG ) {
+      my $chunk_type = $opts->{exact} ? 'Exact' : 'Inexact';
+      _d($chunk_type, 'chunkable:',
+         join(', ', map { "$_->{column} on $_->{index}" } @candidate_cols));
+   }
+
+   my @result;
+   if ( !%prefer ) {
+      MKDEBUG && _d('Ordering columns by order in tbl, PK first');
+      if ( $table->{keys}->{PRIMARY} ) {
+         my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
+         @result = grep { $_->{column} eq $pk_first_col } @candidate_cols;
+         @candidate_cols = grep { $_->{column} ne $pk_first_col } @candidate_cols;
+      }
+      my $i = 0;
+      my %col_pos = map { $_ => $i++ } @{$table->{cols}};
+      push @result, sort { $col_pos{$a->{column}} <=> $col_pos{$b->{column}} }
+                       @candidate_cols;
+   }
+   else {
+      @result = @candidate_cols;
+   }
+
+   if ( MKDEBUG ) {
+      _d('Chunkable columns:',
+         join(', ', map { "$_->{column} on $_->{index}" } @result));
+      _d('Can chunk exactly:', $can_chunk_exact);
+   }
+
+   return ($can_chunk_exact, \@result);
+}
+
+sub calculate_chunks {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(table col min max rows_in_range size dbh) ) {
+      die "Required argument $arg not given or undefined"
+         unless defined $args{$arg};
+   }
+   MKDEBUG && _d('Arguments:',
+      join(', ',
+         map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') } keys %args));
+
+   my @chunks;
+   my ($range_func, $start_point, $end_point);
+   my $col_type = $args{table}->{type_for}->{$args{col}};
+   MKDEBUG && _d('Chunking on', $args{col}, '(',$col_type,')');
+
+
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      $start_point = $args{min};
+      $end_point   = $args{max};
+      $range_func  = 'range_num';
+   }
+   elsif ( $col_type eq 'timestamp' ) {
+      my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
+      MKDEBUG && _d($sql);
+      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
+      $range_func  = 'range_timestamp';
+   }
+   elsif ( $col_type eq 'date' ) {
+      my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
+      MKDEBUG && _d($sql);
+      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
+      $range_func  = 'range_date';
+   }
+   elsif ( $col_type eq 'time' ) {
+      my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
+      MKDEBUG && _d($sql);
+      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
+      $range_func  = 'range_time';
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      $start_point = $self->timestampdiff($args{dbh}, $args{min});
+      $end_point   = $self->timestampdiff($args{dbh}, $args{max});
+      $range_func  = 'range_datetime';
+   }
+   else {
+      die "I don't know how to chunk $col_type\n";
+   }
+
+   if ( !defined $start_point ) {
+      MKDEBUG && _d('Start point is undefined');
+      $start_point = 0;
+   }
+   if ( !defined $end_point || $end_point < $start_point ) {
+      MKDEBUG && _d('End point is undefined or before start point');
+      $end_point = 0;
+   }
+   MKDEBUG && _d('Start and end of chunk range:',$start_point,',', $end_point);
+
+   my $interval = $args{size} * ($end_point - $start_point) / $args{rows_in_range};
+   if ( $int_types{$col_type} ) {
+      $interval = ceil($interval);
+   }
+   $interval ||= $args{size};
+   if ( $args{exact} ) {
+      $interval = $args{size};
+   }
+   MKDEBUG && _d('Chunk interval:', $interval, 'units');
+
+   my $col = "`$args{col}`";
+   if ( $start_point < $end_point ) {
+      my ( $beg, $end );
+      my $iter = 0;
+      for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
+         ( $beg, $end ) = $self->$range_func($args{dbh}, $i, $interval, $end_point);
+
+         if ( $iter++ == 0 ) {
+            push @chunks, "$col < " . $self->quote($end);
+         }
+         else {
+            push @chunks, "$col >= " . $self->quote($beg) . " AND $col < " . $self->quote($end);
+         }
+      }
+
+      my $nullable = $args{table}->{is_nullable}->{$args{col}};
+      pop @chunks;
+      if ( @chunks ) {
+         push @chunks, "$col >= " . $self->quote($beg);
+      }
+      else {
+         push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
+      }
+      if ( $nullable ) {
+         push @chunks, "$col IS NULL";
+      }
+
+   }
+   else {
+      push @chunks, '1=1';
+   }
+
+   return @chunks;
+}
+
+sub get_first_chunkable_column {
+   my ( $self, $table, $opts ) = @_;
+   my ($exact, $cols) = $self->find_chunk_columns($table, $opts);
+   return ( $cols->[0]->{column}, $cols->[0]->{index} );
+}
+
+sub size_to_rows {
+   my ( $self, $dbh, $db, $tbl, $size, $dumper ) = @_;
+  
+   my ( $num, $suffix ) = $size =~ m/^(\d+)([MGk])?$/;
+   if ( $suffix ) { # Convert to bytes.
+      $size = $suffix eq 'k' ? $num * 1_024
+            : $suffix eq 'M' ? $num * 1_024 * 1_024
+            :                  $num * 1_024 * 1_024 * 1_024;
+   }
+   elsif ( $num ) {
+      return $num;
+   }
+   else {
+      die "Invalid size spec $size; must be an integer with optional suffix kMG";
+   }
+
+   my @status = $dumper->get_table_status($dbh, $self->{quoter}, $db);
+   my ($status) = grep { $_->{name} eq $tbl } @status;
+   my $avg_row_length = $status->{avg_row_length};
+   return $avg_row_length ? ceil($size / $avg_row_length) : undef;
+}
+
+sub get_range_statistics {
+   my ( $self, $dbh, $db, $tbl, $col, $where ) = @_;
+   my $q = $self->{quoter};
+   my $sql = "SELECT MIN(" . $q->quote($col) . "), MAX(" . $q->quote($col)
+      . ") FROM " . $q->quote($db, $tbl)
+      . ($where ? " WHERE $where" : '');
+   MKDEBUG && _d($sql);
+   my ( $min, $max );
+   eval {
+      ( $min, $max ) = $dbh->selectrow_array($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      chomp $EVAL_ERROR;
+      if ( $EVAL_ERROR =~ m/in your SQL syntax/ ) {
+         die "$EVAL_ERROR (WHERE clause: $where)";
+      }
+      else {
+         die $EVAL_ERROR;
+      }
+   }
+   $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
+      . ($where ? " WHERE $where" : '');
+   MKDEBUG && _d($sql);
+   my $expl = $dbh->selectrow_hashref($sql);
+   return (
+      min           => $min,
+      max           => $max,
+      rows_in_range => $expl->{rows},
+   );
+}
+
+sub quote {
+   my ( $self, $val ) = @_;
+   return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
+}
+
+sub inject_chunks {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(database table chunks chunk_num query) ) {
+      die "$arg is required" unless defined $args{$arg};
+   }
+   MKDEBUG && _d('Injecting chunk', $args{chunk_num});
+   my $comment = sprintf("/*%s.%s:%d/%d*/",
+      $args{database}, $args{table},
+      $args{chunk_num} + 1, scalar @{$args{chunks}});
+   $args{query} =~ s!/\*PROGRESS_COMMENT\*/!$comment!;
+   my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
+   if ( $args{where} && grep { $_ } @{$args{where}} ) {
+      $where .= " AND ("
+         . join(" AND ", map { "($_)" } grep { $_ } @{$args{where}} )
+         . ")";
+   }
+   my $db_tbl     = $self->{quoter}->quote(@args{qw(database table)});
+   my $index_hint = defined $args{index_hint}
+                    ? "USE INDEX (`$args{index_hint}`)"
+                    : '';
+   MKDEBUG && _d('Parameters:',
+      Dumper({WHERE => $where, DB_TBL => $db_tbl, INDEX_HINT => $index_hint}));
+   $args{query} =~ s!/\*WHERE\*/! $where!;
+   $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
+   $args{query} =~ s!/\*INDEX_HINT\*/! $index_hint!;
+   $args{query} =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
+   return $args{query};
+}
+
+sub range_num {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   my $end = min($max, $start + $interval);
+
+
+   $start = sprintf('%.17f', $start) if $start =~ /e/;
+   $end   = sprintf('%.17f', $end)   if $end   =~ /e/;
+
+   $start =~ s/\.(\d{5}).*$/.$1/;
+   $end   =~ s/\.(\d{5}).*$/.$1/;
+
+   if ( $end > $start ) {
+      return ( $start, $end );
+   }
+   else {
+      die "Chunk size is too small: $end !> $start\n";
+   }
+}
+
+sub range_time {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   my $sql = "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))";
+   MKDEBUG && _d($sql);
+   return $dbh->selectrow_array($sql);
+}
+
+sub range_date {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   my $sql = "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))";
+   MKDEBUG && _d($sql);
+   return $dbh->selectrow_array($sql);
+}
+
+sub range_datetime {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   my $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND), "
+       . "DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)";
+   MKDEBUG && _d($sql);
+   return $dbh->selectrow_array($sql);
+}
+
+sub range_timestamp {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   my $sql = "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))";
+   MKDEBUG && _d($sql);
+   return $dbh->selectrow_array($sql);
+}
+
+sub timestampdiff {
+   my ( $self, $dbh, $time ) = @_;
+   my $sql = "SELECT (COALESCE(TO_DAYS('$time'), 0) * 86400 + TIME_TO_SEC('$time')) "
+      . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
+   MKDEBUG && _d($sql);
+   my ( $diff ) = $dbh->selectrow_array($sql);
+   $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
+   MKDEBUG && _d($sql);
+   my ( $check ) = $dbh->selectrow_array($sql);
+   die <<"   EOF"
+   Incorrect datetime math: given $time, calculated $diff but checked to $check.
+   This is probably because you are using a version of MySQL that overflows on
+   large interval values to DATE_ADD().  If not, please report this as a bug.
+   EOF
+      unless $check eq $time;
+   return $diff;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableChunker package
+# ###########################################################################
+
+# ###########################################################################
+# TableSyncer package 4170
+# ###########################################################################
+package TableSyncer;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+our %ALGOS = map { lc $_ => $_ } qw(Stream Chunk Nibble GroupBy);
+
+sub new {
+   bless {}, shift;
+}
+
+sub best_algorithm {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(tbl_struct parser nibbler chunker) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $result;
+
+   my ($exact, $cols) = $args{chunker}
+      ->find_chunk_columns($args{tbl_struct}, { exact => 1 });
+   if ( $exact ) {
+      MKDEBUG && _d('Chunker says', $cols->[0], 'supports chunking exactly');
+      $result = 'Chunk';
+   }
+   else {
+      my ($idx) = $args{parser}->find_best_index($args{tbl_struct});
+      if ( $idx ) {
+         MKDEBUG && _d('Parser found best index', $idx, 'so Nibbler will work');
+         $result = 'Nibble';
+      }
+      else {
+         MKDEBUG && _d('No primary or unique non-null key in table');
+         $result = 'GroupBy';
+      }
+   }
+   MKDEBUG && _d('Algorithm:', $result);
+   return $result;
+}
+
+sub sync_table {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(
+      buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
+      misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
+      timeoutok transaction versionparser wait where possible_keys cols
+      nibbler parser master_slave func dumper trim skipslavecheck bufferinmysql) )
+   {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   MKDEBUG && _d('Syncing table with args',
+      join(', ',
+         map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
+         sort keys %args));
+
+   my $sleep = $args{sleep} || 0;
+
+   my $can_replace
+      = grep { $_->{is_unique} } values %{$args{tbl_struct}->{keys}};
+   MKDEBUG && _d('This table\'s replace-ability:', $can_replace);
+   my $use_replace = $args{replace} || $args{replicate};
+
+   my $update_func;
+   my $change_dbh;
+   if ( $args{execute} ) {
+      if ( $args{replicate} ) {
+         $change_dbh = $args{src_dbh};
+         $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
+         if ( !$can_replace ) {
+            die "Can't make changes on the master: no unique index exists";
+         }
+      }
+      else {
+         $change_dbh = $args{dst_dbh};
+         $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
+         my $slave_status = $args{master_slave}->get_slave_status($change_dbh);
+         my (undef, $log_bin) = $change_dbh->selectrow_array(
+            'SHOW VARIABLES LIKE "log_bin"');
+         my ($sql_log_bin) = $change_dbh->selectrow_array(
+            'SELECT @@SQL_LOG_BIN');
+         MKDEBUG && _d('Variables: log_bin=',
+            (defined $log_bin ? $log_bin : 'NULL'),
+            ' @@SQL_LOG_BIN=',
+            (defined $sql_log_bin ? $sql_log_bin : 'NULL'));
+         if ( !$args{skipslavecheck} && $slave_status && $sql_log_bin
+            && ($log_bin || 'OFF') eq 'ON' )
+         {
+            die "Can't make changes on $change_dbh because it's a slave: see "
+               . "the documentation section 'REPLICATION SAFETY' for solutions "
+               . "to this problem.";
+         }
+      }
+      MKDEBUG && _d('Will make changes via', $change_dbh);
+      $update_func = sub {
+         map {
+            MKDEBUG && _d('About to execute:', $_);
+            $change_dbh->do($_);
+         } @_;
+      };
+   }
+
+   my $ch = new ChangeHandler(
+      queue     => $args{buffer} ? 0 : 1,
+      quoter    => $args{quoter},
+      database  => $args{dst_db},
+      table     => $args{dst_tbl},
+      sdatabase => $args{src_db},
+      stable    => $args{src_tbl},
+      replace   => $use_replace,
+      actions   => [
+         ( $update_func ? $update_func            : () ),
+         ( $args{print}
+            ? sub { print(@_, ";\n") or die "Cannot print: $OS_ERROR" }
+            : () ),
+      ],
+   );
+   my $rd = new RowDiff( dbh => $args{misc_dbh} );
+
+   $args{algorithm} ||= $self->best_algorithm(
+      map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
+
+   if ( !$ALGOS{ lc $args{algorithm} } ) {
+      die "No such algorithm $args{algorithm}; try one of "
+         . join(', ', values %ALGOS) . "\n";
+   }
+   $args{algorithm} = $ALGOS{ lc $args{algorithm} };
+
+   if ( $args{test} ) {
+      return ($ch->get_changes(), ALGORITHM => $args{algorithm});
+   }
+
+   my $chunksize = $args{chunker}->size_to_rows(
+         @args{qw(src_dbh src_db src_tbl chunksize dumper)}),
+
+   my $class  = "TableSync$args{algorithm}";
+   my $plugin = $class->new(
+      handler   => $ch,
+      cols      => $args{cols},
+      dbh       => $args{src_dbh},
+      database  => $args{src_db},
+      dumper    => $args{dumper},
+      table     => $args{src_tbl},
+      chunker   => $args{chunker},
+      nibbler   => $args{nibbler},
+      parser    => $args{parser},
+      struct    => $args{tbl_struct},
+      checksum  => $args{checksum},
+      vp        => $args{versionparser},
+      quoter    => $args{quoter},
+      chunksize => $chunksize,
+      where     => $args{where},
+      possible_keys => [],
+      versionparser => $args{versionparser},
+      func          => $args{func},
+      trim          => $args{trim},
+      bufferinmysql => $args{bufferinmysql},
+   );
+
+   $self->lock_and_wait(%args, lock_level => 2);
+
+   my $cycle = 0;
+   while ( !$plugin->done ) {
+
+      MKDEBUG && _d('Beginning sync cycle', $cycle);
+      my $src_sql = $plugin->get_sql(
+         quoter     => $args{quoter},
+         database   => $args{src_db},
+         table      => $args{src_tbl},
+         where      => $args{where},
+         index_hint => $args{index_hint} ? $plugin->{index} : undef,
+      );
+      my $dst_sql = $plugin->get_sql(
+         quoter     => $args{quoter},
+         database   => $args{dst_db},
+         table      => $args{dst_tbl},
+         where      => $args{where},
+         index_hint => $args{index_hint} ? $plugin->{index} : undef,
+      );
+      if ( $args{transaction} ) {
+         if ( $change_dbh && $change_dbh eq $args{src_dbh} ) {
+            $src_sql .= ' FOR UPDATE';
+            $dst_sql .= ' LOCK IN SHARE MODE';
+         }
+         elsif ( $change_dbh ) {
+            $src_sql .= ' LOCK IN SHARE MODE';
+            $dst_sql .= ' FOR UPDATE';
+         }
+         else {
+            $src_sql .= ' LOCK IN SHARE MODE';
+            $dst_sql .= ' LOCK IN SHARE MODE';
+         }
+      }
+      $plugin->prepare($args{src_dbh});
+      $plugin->prepare($args{dst_dbh});
+      MKDEBUG && _d('src:', $src_sql);
+      MKDEBUG && _d('dst:', $dst_sql);
+      my $src_sth = $args{src_dbh}
+         ->prepare( $src_sql, { mysql_use_result => !$args{buffer} } );
+      my $dst_sth = $args{dst_dbh}
+         ->prepare( $dst_sql, { mysql_use_result => !$args{buffer} } );
+
+      my $executed_src = 0;
+      if ( !$cycle || !$plugin->pending_changes() ) {
+         $executed_src
+            = $self->lock_and_wait(%args, src_sth => $src_sth, lock_level => 1);
+      }
+
+      $src_sth->execute() unless $executed_src;
+      $dst_sth->execute();
+
+      $rd->compare_sets(
+         left   => $src_sth,
+         right  => $dst_sth,
+         syncer => $plugin,
+         tbl    => $args{tbl_struct},
+      );
+      MKDEBUG && _d('Finished sync cycle', $cycle);
+      $ch->process_rows(1);
+
+      $cycle++;
+
+      sleep $sleep;
+   }
+
+   $ch->process_rows();
+
+   $self->unlock(%args, lock_level => 2);
+
+   return ($ch->get_changes(), ALGORITHM => $args{algorithm});
+}
+
+sub check_permissions {
+   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
+   my $db_tbl = $quoter->quote($db, $tbl);
+   my $sql = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d('Permissions check:', $sql);
+   my $cols = $dbh->selectall_arrayref($sql, {Slice => {}});
+   my ($hdr_name) = grep { m/privileges/i } keys %{$cols->[0]};
+   my $privs = $cols->[0]->{$hdr_name};
+   die "$privs does not include all needed privileges for $db_tbl"
+      unless $privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/;
+   $sql = "DELETE FROM $db_tbl LIMIT 0"; # FULL COLUMNS doesn't show all privs
+   MKDEBUG && _d('Permissions check:', $sql);
+   $dbh->do($sql);
+}
+
+sub lock_table {
+   my ( $self, $dbh, $where, $db_tbl, $mode ) = @_;
+   my $query = "LOCK TABLES $db_tbl $mode";
+   MKDEBUG && _d($query);
+   $dbh->do($query);
+   MKDEBUG && _d('Acquired table lock on', $where, 'in', $mode, 'mode');
+}
+
+sub unlock {
+   my ( $self, %args ) = @_;
+
+   foreach my $arg ( qw(
+      dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
+      timeoutok transaction wait lock_level) )
+   {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   return unless $args{lock} && $args{lock} <= $args{lock_level};
+
+   foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
+      if ( $args{transaction} ) {
+         MKDEBUG && _d('Committing', $dbh);
+         $dbh->commit;
+      }
+      else {
+         my $sql = 'UNLOCK TABLES';
+         MKDEBUG && _d($dbh, $sql);
+         $dbh->do($sql);
+      }
+   }
+}
+
+sub lock_and_wait {
+   my ( $self, %args ) = @_;
+   my $result = 0;
+
+   foreach my $arg ( qw(
+      dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
+      timeoutok transaction wait lock_level misc_dbh master_slave) )
+   {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   return unless $args{lock} && $args{lock} == $args{lock_level};
+
+   foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
+      if ( $args{transaction} ) {
+         MKDEBUG && _d('Committing', $dbh);
+         $dbh->commit;
+      }
+      else {
+         my $sql = 'UNLOCK TABLES';
+         MKDEBUG && _d($dbh, $sql);
+         $dbh->do($sql);
+      }
+   }
+
+   if ( $args{lock} == 3 ) {
+      my $sql = 'FLUSH TABLES WITH READ LOCK';
+      MKDEBUG && _d($args{src_dbh}, ',', $sql);
+      $args{src_dbh}->do($sql);
+   }
+   else {
+      if ( $args{transaction} ) {
+         if ( $args{src_sth} ) {
+            MKDEBUG && _d('Executing statement on source to lock rows');
+            $args{src_sth}->execute();
+            $result = 1;
+         }
+      }
+      else {
+         $self->lock_table($args{src_dbh}, 'source',
+            $args{quoter}->quote($args{src_db}, $args{src_tbl}),
+            $args{replicate} ? 'WRITE' : 'READ');
+      }
+   }
+
+   eval {
+      if ( $args{wait} ) {
+         $args{master_slave}->wait_for_master(
+            $args{misc_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
+      }
+
+      if ( $args{replicate} ) {
+         MKDEBUG
+            && _d('Not locking destination because syncing via replication');
+      }
+      else {
+         if ( $args{lock} == 3 ) {
+            my $sql = 'FLUSH TABLES WITH READ LOCK';
+            MKDEBUG && _d($args{dst_dbh}, ',', $sql);
+            $args{dst_dbh}->do($sql);
+         }
+         elsif ( !$args{transaction} ) {
+            $self->lock_table($args{dst_dbh}, 'dest',
+               $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
+               $args{execute} ? 'WRITE' : 'READ');
+         }
+      }
+   };
+
+   if ( $EVAL_ERROR ) {
+      if ( $args{src_sth}->{Active} ) {
+         $args{src_sth}->finish();
+      }
+      foreach my $dbh ( @args{qw(src_dbh dst_dbh misc_dbh)} ) {
+         next unless $dbh;
+         MKDEBUG && _d('Caught error, unlocking/committing on', $dbh);
+         $dbh->do('UNLOCK TABLES');
+         $dbh->commit() unless $dbh->{AutoCommit};
+      }
+      die $EVAL_ERROR;
+   }
+
+   return $result;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableSyncer package
+# ###########################################################################
+
+# ###########################################################################
+# TableSyncStream package 3186
+# ###########################################################################
+package TableSyncStream;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(handler cols) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   return bless { %args }, $class;
+}
+
+sub get_sql {
+   my ( $self, %args ) = @_;
+   return "SELECT "
+      . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
+      . join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}})
+      . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
+      . ' WHERE ' . ( $args{where} || '1=1' );
+}
+
+sub same_row {
+   my ( $self, $lr, $rr ) = @_;
+}
+
+sub not_in_right {
+   my ( $self, $lr ) = @_;
+   $self->{handler}->change('INSERT', $lr, $self->key_cols());
+}
+
+sub not_in_left {
+   my ( $self, $rr ) = @_;
+   $self->{handler}->change('DELETE', $rr, $self->key_cols());
+}
+
+sub done_with_rows {
+   my ( $self ) = @_;
+   $self->{done} = 1;
+}
+
+sub done {
+   my ( $self ) = @_;
+   return $self->{done};
+}
+
+sub key_cols {
+   my ( $self ) = @_;
+   return $self->{cols};
+}
+
+sub prepare {
+   my ( $self, $dbh ) = @_;
+}
+
+sub pending_changes {
+   my ( $self ) = @_;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableSyncStream package
+# ###########################################################################
+
+# ###########################################################################
+# TableSyncChunk package 4493
+# ###########################################################################
+package TableSyncChunk;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use List::Util qw(max);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(dbh database table handler chunker quoter struct
+                        checksum cols vp chunksize where possible_keys
+                        dumper trim) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   $args{crc_col} = '__crc';
+   while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
+      $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
+   }
+   MKDEBUG && _d('CRC column will be named', $args{crc_col});
+
+   my @chunks;
+   my ( $col, $idx ) = $args{chunker}->get_first_chunkable_column(
+      $args{struct}, { possible_keys => $args{possible_keys} });
+   $args{index} = $idx;
+   if ( $col ) {
+      my %params = $args{chunker}->get_range_statistics(
+         $args{dbh}, $args{database}, $args{table}, $col,
+         $args{where});
+      if ( !grep { !defined $params{$_} }
+            qw(min max rows_in_range) )
+      {
+         @chunks = $args{chunker}->calculate_chunks(
+            dbh      => $args{dbh},
+            table    => $args{struct},
+            col      => $col,
+            size     => $args{chunksize},
+            %params,
+         );
+      }
+      else {
+         @chunks = '1=1';
+      }
+      $args{chunk_col} = $col;
+   }
+   die "Cannot chunk $args{database}.$args{table}" unless @chunks;
+   $args{chunks}     = \@chunks;
+   $args{chunk_num}  = 0;
+
+   $args{algorithm} = $args{checksum}->best_algorithm(
+      algorithm   => 'BIT_XOR',
+      vp          => $args{vp},
+      dbh         => $args{dbh},
+      where       => 1,
+      chunk       => 1,
+      count       => 1,
+   );
+   $args{func} = $args{checksum}->choose_hash_func(
+      func => $args{func},
+      dbh  => $args{dbh},
+   );
+   $args{crc_wid}    = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
+   ($args{crc_type}) = $args{checksum}->get_crc_type($args{dbh}, $args{func});
+   if ( $args{algorithm} eq 'BIT_XOR' && $args{crc_type} !~ m/int$/ ) {
+      $args{opt_slice}
+         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => $args{func});
+   }
+   $args{chunk_sql} ||= $args{checksum}->make_checksum_query(
+      dbname    => $args{database},
+      tblname   => $args{table},
+      table     => $args{struct},
+      quoter    => $args{quoter},
+      algorithm => $args{algorithm},
+      func      => $args{func},
+      crc_wid   => $args{crc_wid},
+      crc_type  => $args{crc_type},
+      opt_slice => $args{opt_slice},
+      cols      => $args{cols},
+      trim      => $args{trim},
+      buffer    => $args{bufferinmysql},
+   );
+   $args{row_sql} ||= $args{checksum}->make_row_checksum(
+      table     => $args{struct},
+      quoter    => $args{quoter},
+      func      => $args{func},
+      cols      => $args{cols},
+      trim      => $args{trim},
+   );
+
+   $args{state} = 0;
+   $args{handler}->fetch_back($args{dbh});
+   return bless { %args }, $class;
+}
+
+sub get_sql {
+   my ( $self, %args ) = @_;
+   if ( $self->{state} ) {
+      my $index_hint = defined $args{index_hint}
+                       ? " USE INDEX (`$args{index_hint}`) "
+                       : '';
+      return 'SELECT '
+         . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
+         . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
+         . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
+         . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
+         . $index_hint 
+         . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
+         . ($args{where} ? " AND ($args{where})" : '');
+   }
+   else {
+      return $self->{chunker}->inject_chunks(
+         database   => $args{database},
+         table      => $args{table},
+         chunks     => $self->{chunks},
+         chunk_num  => $self->{chunk_num},
+         query      => $self->{chunk_sql},
+         where      => [$args{where}],
+         quoter     => $self->{quoter},
+         index_hint => $args{index_hint},
+      );
+   }
+}
+
+sub prepare {
+   my ( $self, $dbh ) = @_;
+   my $sql = 'SET @crc := "", @cnt := 0';
+   MKDEBUG && _d($sql);
+   $dbh->do($sql);
+   return;
+}
+
+sub same_row {
+   my ( $self, $lr, $rr ) = @_;
+   if ( $self->{state} ) {
+      if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
+         $self->{handler}->change('UPDATE', $lr, $self->key_cols());
+      }
+   }
+   elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
+      MKDEBUG && _d('Rows:', Dumper($lr, $rr));
+      MKDEBUG && _d('Will examine this chunk before moving to next');
+      $self->{state} = 1; # Must examine this chunk row-by-row
+   }
+}
+
+sub not_in_right {
+   my ( $self, $lr ) = @_;
+   die "Called not_in_right in state 0" unless $self->{state};
+   $self->{handler}->change('INSERT', $lr, $self->key_cols());
+}
+
+sub not_in_left {
+   my ( $self, $rr ) = @_;
+   die "Called not_in_left in state 0" unless $self->{state};
+   $self->{handler}->change('DELETE', $rr, $self->key_cols());
+}
+
+sub done_with_rows {
+   my ( $self ) = @_;
+   if ( $self->{state} == 1 ) {
+      $self->{state} = 2;
+      MKDEBUG && _d('Setting state =', $self->{state});
+   }
+   else {
+      $self->{state} = 0;
+      $self->{chunk_num}++;
+      MKDEBUG && _d('Setting state =', $self->{state},
+         'chunk_num =', $self->{chunk_num});
+   }
+}
+
+sub done {
+   my ( $self ) = @_;
+   MKDEBUG && _d('Done with', $self->{chunk_num}, 'of',
+      scalar(@{$self->{chunks}}), 'chunks');
+   MKDEBUG && $self->{state} && _d('Chunk differs; must examine rows');
+   return $self->{state} == 0
+      && $self->{chunk_num} >= scalar(@{$self->{chunks}})
+}
+
+sub pending_changes {
+   my ( $self ) = @_;
+   if ( $self->{state} ) {
+      MKDEBUG && _d('There are pending changes');
+      return 1;
+   }
+   else {
+      MKDEBUG && _d('No pending changes');
+      return 0;
+   }
+}
+
+sub key_cols {
+   my ( $self ) = @_;
+   my @cols;
+   if ( $self->{state} == 0 ) {
+      @cols = qw(chunk_num);
+   }
+   else {
+      @cols = $self->{chunk_col};
+   }
+   MKDEBUG && _d('State', $self->{state},',', 'key cols', join(', ', @cols));
+   return \@cols;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableSyncChunk package
+# ###########################################################################
+
+# ###########################################################################
+# Outfile package 4510
+# ###########################################################################
+package Outfile;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use List::Util qw(min);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {};
+   return bless $self, $class;
+}
+
+sub write {
+   my ( $self, $fh, $rows ) = @_;
+   foreach my $row ( @$rows ) {
+      print $fh escape($row), "\n"
+         or die "Cannot write to outfile: $OS_ERROR\n";
+   }
+   return;
+}
+
+sub escape {
+   my ( $row ) = @_;
+   return join("\t", map {
+      s/([\t\n\\])/\\$1/g if defined $_;  # Escape tabs etc
+      defined $_ ? $_ : '\N';             # NULL = \N
+   } @$row);
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+# ###########################################################################
+# End Outfile package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
