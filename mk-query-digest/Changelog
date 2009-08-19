@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Large MySQL packets were not handled.
+   * The script crashed on queries with MySQL reserved words as column names.
    * The script crashed on empty input to --type tcpdump|memcached (issue 564).
    * --filter did not always compile correctly (issue 565).
    * Added standard connection options like --host, --port, etc.(issue 248).
