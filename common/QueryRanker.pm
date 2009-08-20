@@ -91,6 +91,7 @@ sub rank_results {
          MKDEBUG && _d('No ranker for', $op);
          next RESULTS;
       }
+      MKDEBUG && _d('Ranking', $op, 'results');
 
       my $host1_results = $host1->{$op};
 
