@@ -3074,7 +3074,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4418
+# QueryParser package 4520
 # ###########################################################################
 package QueryParser;
 
@@ -3137,6 +3137,12 @@ sub get_tables {
       MKDEBUG && _d('Match tables:', $tbls);
       foreach my $tbl ( split(',', $tbls) ) {
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
+
+         if ( $tbl !~ m/[a-zA-Z]/ ) {
+            MKDEBUG && _d('Skipping suspicious table name:', $tbl);
+            next;
+         }
+
          push @tables, $tbl;
       }
    }
@@ -3415,7 +3421,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryExecutor package 4511
+# QueryExecutor package 4515
 # ###########################################################################
 package QueryExecutor;
 
@@ -3690,6 +3696,44 @@ sub checksum_results {
    return $name, $results;
 }
 
+
+
+sub callaghan_get_sth {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(query dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $query = $args{query};
+   my $dbh   = $args{dbh};
+   my $error = undef;
+   my $name  = 'callaghan_get_sth';
+   MKDEBUG && _d($name);
+
+   my $sth;
+   eval {
+      $sth = $dbh->prepare($query);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d('Error on prepare:', $EVAL_ERROR);
+      $error = $EVAL_ERROR;
+   }
+   else {
+      eval {
+         $sth->execute();
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d('Error on execute:', $EVAL_ERROR);
+         $error = $EVAL_ERROR;
+      }
+   }
+
+   my $results = {
+      error => $error,
+      sth   => $error ? undef : $sth,  # Only pass sth if no errors.
+   };
+   return $name, $results;
+}
+
 sub _check_results {
    my ( $name, $res, $host_name, $all_res ) = @_;
    __die('Operation did not return a name!', @_)
@@ -3728,7 +3772,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRanker package 4422
+# QueryRanker package 4527
 # ###########################################################################
 package QueryRanker;
 
@@ -3756,40 +3800,38 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
+      %args,
    };
    return bless $self, $class;
 }
 
 sub rank_results {
-   my ( $self, @results ) = @_;
-   return unless @results > 1;
+   my ( $self, $results, %args ) = @_;
+   return unless @$results > 1;
 
-   my $rank           = 0;
-   my @reasons        = ();
-   my $master_results = shift @results;
+   my $rank      = 0;
+   my @reasons   = ();
+   my $host1     = $results->[0];
 
    RESULTS:
-   foreach my $results ( keys %$master_results ) {
-      my $compare = $ranker_for{$results};
+   foreach my $op ( keys %$host1 ) {  # Each key the name of some operation
+      my $compare = $self->{ranker_for}->{$op} || $ranker_for{$op};
       if ( !$compare ) {
-         MKDEBUG && _d('No ranker for', $results);
+         MKDEBUG && _d('No ranker for', $op);
          next RESULTS;
       }
 
-      my $master = $master_results->{$results};
+      my $host1_results = $host1->{$op};
 
       HOST:
-      my $i = 1;  # host1/i=1 is master so...
-      foreach my $host_results ( @results ) {
-         $i++; # ...we start with host2/i=2
-         if ( !exists $host_results->{$results} ) {
-            warn "Host$i doesn't have $results results";
+      for my $i ( 1..(@$results-1) ) {
+         my $hostN = $results->[$i];
+         if ( !exists $hostN->{$op} ) {
+            warn "Host", $i+1, " doesn't have $op results";
             next HOST;
          }
 
-         my $host = $host_results->{$results};
-
-         my @res = $compare->($self, $master, $host);
+         my @res = $compare->($host1_results, $hostN->{$op}, %args);
          $rank += shift @res;
          push @reasons, @res;
       } 
@@ -3799,7 +3841,7 @@ sub rank_results {
 }
 
 sub rank_query_times {
-   my ( $self, $host1, $host2 ) = @_;
+   my ( $host1, $host2 ) = @_;
    my $rank    = 0;   # total rank
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
@@ -3818,7 +3860,7 @@ sub rank_query_times {
    }
 
    if ( $host1->{Query_time} >= 0 && $host2->{Query_time} >= 0 ) {
-      @res = $self->compare_query_times(
+      @res = compare_query_times(
          $host1->{Query_time}, $host2->{Query_time});
       $rank += shift @res;
       push @reasons, @res;
@@ -3828,7 +3870,7 @@ sub rank_query_times {
 }
 
 sub rank_warnings {
-   my ( $self, $host1, $host2 ) = @_;
+   my ( $host1, $host2 ) = @_;
    my $rank    = 0;   # total rank
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
@@ -3843,7 +3885,7 @@ sub rank_warnings {
       push @reasons, "Warning counts differ by $diff (rank+$diff)";
    }
 
-   @res = $self->compare_warnings($host1->{codes}, $host2->{codes});
+   @res = compare_warnings($host1->{codes}, $host2->{codes});
    $rank += shift @res;
    push @reasons, @res;
 
@@ -3851,7 +3893,7 @@ sub rank_warnings {
 }
 
 sub compare_query_times {
-   my ( $self, $t1, $t2 ) = @_;
+   my ( $t1, $t2 ) = @_;
    die "I need a t1 argument" unless defined $t1;
    die "I need a t2 argument" unless defined $t2;
 
@@ -3878,7 +3920,7 @@ sub compare_query_times {
 }
 
 sub compare_warnings {
-   my ( $self, $warnings1, $warnings2 ) = @_;
+   my ( $warnings1, $warnings2 ) = @_;
    die "I need a warnings1 argument" unless defined $warnings1;
    die "I need a warnings2 argument" unless defined $warnings2;
 
@@ -3917,7 +3959,7 @@ sub compare_warnings {
 }
 
 sub rank_result_sets {
-   my ( $self, $host1, $host2 ) = @_;
+   my ( $host1, $host2 ) = @_;
    my $rank    = 0;   # total rank
    my @reasons = ();  # all reasons
    my @res     = ();  # ($rank, @reasons) for each comparison
@@ -3933,7 +3975,7 @@ sub rank_result_sets {
    }
 
    if ( $host1->{table_struct} && $host2->{table_struct} ) {
-      @res = $self->compare_table_structs(
+      @res = compare_table_structs(
          $host1->{table_struct},
          $host2->{table_struct}
       );
@@ -3949,7 +3991,7 @@ sub rank_result_sets {
 }
 
 sub compare_table_structs {
-   my ( $self, $s1, $s2 ) = @_;
+   my ( $s1, $s2 ) = @_;
    die "I need a s1 argument" unless defined $s1;
    die "I need a s2 argument" unless defined $s2;
 
@@ -5159,6 +5201,106 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# MockSyncStream package 4526
+# ###########################################################################
+package MockSyncStream;
+
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(query cols same_callback diff_callback) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   return bless { %args }, $class;
+}
+
+sub get_sql {
+   my ( $self ) = @_;
+   return $self->{query};
+}
+
+sub same_row {
+   my ( $self, $lr, $rr ) = @_;
+   return $self->{same_callback}->($lr, $rr);
+}
+
+sub not_in_right {
+   my ( $self, $lr ) = @_;
+   return $self->{diff_callback}->();
+}
+
+sub not_in_left {
+   my ( $self, $rr ) = @_;
+   return $self->{diff_callback}->();
+}
+
+sub done_with_rows {
+   my ( $self ) = @_;
+   $self->{done} = 1;
+}
+
+sub done {
+   my ( $self ) = @_;
+   return $self->{done};
+}
+
+sub key_cols {
+   my ( $self ) = @_;
+   return $self->{cols};
+}
+
+sub prepare {
+   my ( $self, $dbh ) = @_;
+   return;
+}
+
+sub pending_changes {
+   my ( $self ) = @_;
+   return;
+}
+
+sub get_cols_and_struct {
+   my ( $dbh, $sth ) = @_;
+
+   my @cols  = @{$sth->{NAME}};
+   my @types = map { scalar $dbh->type_info($_)->{TYPE_NAME} } @{$sth->{TYPE}};
+
+   my $struct = {
+      is_numeric    => {},
+   };
+   for my $i ( 0..$#cols ) {
+      my $col  = $cols[$i];
+      my $type = $types[$i];
+      $struct->{is_numeric}->{$col} 
+         = ($type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ? 1 : 0);
+   }
+
+   return \@cols, $struct;
+}
+
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End MockSyncStream package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -5243,10 +5385,19 @@ sub main {
    my $parser  = new SlowLogParser();
    my $qparser = new QueryParser();
    my $qexec   = new QueryExecutor();
-   my $qranker = new QueryRanker();
+   my $qranker = new QueryRanker(
+      ranker_for => {
+         callaghan_get_sth => \&callaghan_rank_sths,
+      }
+   );
    my $du      = new MySQLDump();
    my $tp      = new TableParser();
    my $q       = new Quoter();
+   my %common_modules = (
+      MySQLDump   => $du,
+      TableParser => $tp,
+      Quoter      => $q,
+   );
 
    # ########################################################################
    # Create QueryExecutor::exec() callbacks for each operation.
@@ -5278,6 +5429,7 @@ sub main {
 
    # The actual query execution.
    if ( $compare_method eq 'callaghan' ) {
+      push @qe_callbacks, sub { $qexec->callaghan_get_sth(@_); };
    }
    else {
       push @qe_callbacks, sub { $qexec->Query_time(@_); };
@@ -5440,7 +5592,12 @@ sub main {
       die "Got an event without results" unless $results;
 
       eval {
-         my ($rank, @reasons) = $qranker->rank_results(@$results); 
+         my ($rank, @reasons) = $qranker->rank_results(
+            $results,
+            dbh   => $host1_dbh,
+            event => $event,
+            %common_modules,
+         ); 
          $event->{rank}    = $rank;
          $event->{reasons} = \@reasons;
          push @events, $event;
@@ -5578,6 +5735,42 @@ sub main {
 # ############################################################################
 # Subroutines.
 # ############################################################################
+
+# callaghan_rank_sth() implements part of an idea discussed by Mark Callaghan,
+# Baron Schwartz and Daniel Nichter.  See:
+# http://groups.google.com/group/maatkit-discuss/browse_thread/thread/5d0f208f4e76ec0f 
+# http://groups.google.com/group/maatkit-discuss/browse_thread/thread/49f4564111c78a2f
+
+# This is a QueryRanker callback for the QueryExecutor::callaghan_get_sth
+# operation.  It's not a trivial rank and comparison so we do it here
+# instead of QueryRanker.
+sub callaghan_rank_sths {
+   my ( $host1, $host2, %args ) = @_;
+
+   my $rank = 0;
+   my @reasons;
+
+   if ( $host1->{error} ) {
+      $rank += 100;
+      push @reasons, 'Query failed to execute on host1: '
+         . ($host1->{error} || 'unknown error')
+         . " (rank+100)";
+   }
+   if ( $host2->{error} ) {
+      $rank += 100;
+      push @reasons, 'Query failed to execute on host2: '
+         . ($host2->{error} || 'unknown error')
+         . " (rank+100)";
+   }
+
+   return $rank, @reasons unless $host1->{sth} && $host2->{sth};
+
+   # The sths are ok; start the comparison.
+   my $rd = new RowDiff( dbh => $args{dbh} );
+   # TODO: work in progres...
+   return;
+}
+
 sub print_errors {
    my ( $results, $all ) = @_;
    my $n_errors = 0;
