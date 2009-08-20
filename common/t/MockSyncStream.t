@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 5;
 
 require "../MockSyncStream.pm";
 require "../Quoter.pm";
@@ -85,27 +85,31 @@ SKIP: {
 
    my $sth = $dbh->prepare('SELECT * FROM test.col_types_1');
    $sth->execute();
-   my ($cols, $struct) = MockSyncStream::get_cols_and_struct($dbh, $sth);
-   $sth->finish();
-
    is_deeply(
-      $cols,
-      [
-         'id',
-         'i',
-         'f',
-         'd',
-         'dt',
-         'ts',
-         'c',
-         'v',
-         't',
-      ],
-      'Gets column names from sth'
-   );
-   is_deeply(
-      $struct,
+      MockSyncStream::get_result_set_struct($dbh, $sth),
       {
+         cols => [
+            'id',
+            'i',
+            'f',
+            'd',
+            'dt',
+            'ts',
+            'c',
+            'v',
+            't',
+         ],
+         type_for => {
+            id => 'integer',
+            i  => 'integer',
+            f  => 'float',
+            d  => 'decimal',
+            dt => 'timestamp',
+            ts => 'timestamp',
+            c  => 'char',
+            v  => 'varchar',
+            t  => 'blob',
+         },
          is_numeric => {
             id => 1,
             i  => 1,
@@ -117,10 +121,31 @@ SKIP: {
             v  => 0,
             t  => 0,
          },
+         is_col => {
+            id => 1,
+            i  => 1,
+            f  => 1,
+            d  => 1,
+            dt => 1,
+            ts => 1,
+            c  => 1,
+            v  => 1,
+            t  => 1,
+         },
+         col_posn => {
+            id => 0,
+            i  => 1,
+            f  => 2,
+            d  => 3,
+            dt => 4,
+            ts => 5,
+            c  => 6,
+            v  => 7,
+            t  => 8,
+         },
       },
-      'Gets table struct from sth'
+      'Gets result set struct from sth attribs'
    );
-
 
    $sth = $dbh->prepare('SELECT v, c, t, id, i, f, d FROM test.col_types_1');
    $sth->execute();

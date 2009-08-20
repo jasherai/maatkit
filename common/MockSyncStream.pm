@@ -90,30 +90,29 @@ sub pending_changes {
    return;
 }
 
-# RowDiff::key_cmp() requires $tlb and $key_cols but we're not syncing
-# a table so we can't use TableParser.  The following sub use sth
-# attributes to return the query's columns and column types (in a pseudo,
-# minimal tbl struct sufficient for RowDiff::key_cmp()).  Returns an arrayref
-# of columns and a tbl struct hashref.
-# TODO: extend this to return more info about the cols so we can compare them
-sub get_cols_and_struct {
+# RowDiff::key_cmp() requires $tlb and $key_cols but we're syncing query
+# result sets not tables so we can't use TableParser.  The following sub
+# uses sth attributes to return a pseudo table struct for the query's columns.
+sub get_result_set_struct {
    my ( $dbh, $sth ) = @_;
-
-   my @cols  = @{$sth->{NAME}};
-   my @types = map { scalar $dbh->type_info($_)->{TYPE_NAME} } @{$sth->{TYPE}};
-
+   my @cols   = @{$sth->{NAME}};
+   my @types  = map { $dbh->type_info($_)->{TYPE_NAME} } @{$sth->{TYPE}};
    my $struct = {
-      is_numeric    => {},
-      # collation_for => {},
+      cols => \@cols, 
+      # collation_for => {},  RowDiff::key_cmp() may need this.
    };
+
    for my $i ( 0..$#cols ) {
       my $col  = $cols[$i];
       my $type = $types[$i];
+      $struct->{is_col}->{$col}   = 1;
+      $struct->{col_posn}->{$col} = $i;
+      $struct->{type_for}->{$col} = $type;
       $struct->{is_numeric}->{$col} 
          = ($type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ? 1 : 0);
    }
 
-   return \@cols, $struct;
+   return $struct;
 }
 
 # Transforms a row fetched with DBI::fetchrow_hashref() into a
