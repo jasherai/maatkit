@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 14;
+use Test::More tests => 15;
 
 require '../mk-show-grants';
 require '../../common/Sandbox.pm';
@@ -117,6 +117,26 @@ is(
    'Removed anonymous user (issue 445)'
 );
 
+
+# #############################################################################
+# Issue 551: mk-show-grants does not support listing all grants for a single
+# user (over multiple hosts)
+# #############################################################################
+diag(`/tmp/12345/use -u root -e "GRANT USAGE ON *.* TO 'bob'\@'%'"`);
+diag(`/tmp/12345/use -u root -e "GRANT USAGE ON *.* TO 'bob'\@'localhost'"`);
+diag(`/tmp/12345/use -u root -e "GRANT USAGE ON *.* TO 'bob'\@'192.168.1.1'"`);
+
+clear_output();
+mk_show_grants::main('-F', $cnf, qw(--only bob --no-timestamp));
+ok(
+   0,
+   '(issue 551)'
+);
+print STDERR $output;
+
+diag(`/tmp/12345/use -u root -e "DROP USER 'bob'\@'%'"`);
+diag(`/tmp/12345/use -u root -e "DROP USER 'bob'\@'localhost'"`);
+diag(`/tmp/12345/use -u root -e "DROP USER 'bob'\@'192.168.1.1'"`);
 
 # #############################################################################
 # Done.
