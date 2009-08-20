@@ -5201,7 +5201,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MockSyncStream package 4526
+# MockSyncStream package 4531
 # ###########################################################################
 package MockSyncStream;
 
@@ -5215,7 +5215,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(query cols same_callback diff_callback) ) {
+   foreach my $arg ( qw(query cols same_row not_in_left not_in_right) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    return bless { %args }, $class;
@@ -5228,17 +5228,17 @@ sub get_sql {
 
 sub same_row {
    my ( $self, $lr, $rr ) = @_;
-   return $self->{same_callback}->($lr, $rr);
+   return $self->{same_row}->($lr, $rr);
 }
 
 sub not_in_right {
    my ( $self, $lr ) = @_;
-   return $self->{diff_callback}->();
+   return $self->{not_in_right}->($lr);
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
-   return $self->{diff_callback}->();
+   return $self->{not_in_left}->($rr);
 }
 
 sub done_with_rows {
@@ -5285,6 +5285,12 @@ sub get_cols_and_struct {
    return \@cols, $struct;
 }
 
+sub as_arrayref {
+   my ( $sth, $row ) = @_;
+   my @cols = @{$sth->{NAME}};
+   my @row  = @{$row}{@cols};
+   return \@row;
+}
 
 sub _d {
    my ($package, undef, $line) = caller 0;
@@ -5394,9 +5400,10 @@ sub main {
    my $tp      = new TableParser();
    my $q       = new Quoter();
    my %common_modules = (
-      MySQLDump   => $du,
-      TableParser => $tp,
-      Quoter      => $q,
+      OptionParser => $o,
+      MySQLDump    => $du,
+      TableParser  => $tp,
+      Quoter       => $q,
    );
 
    # ########################################################################
@@ -5594,6 +5601,7 @@ sub main {
       eval {
          my ($rank, @reasons) = $qranker->rank_results(
             $results,
+            # These args are passed through to the ranker subs.
             dbh   => $host1_dbh,
             event => $event,
             %common_modules,
@@ -5746,8 +5754,12 @@ sub main {
 # instead of QueryRanker.
 sub callaghan_rank_sths {
    my ( $host1, $host2, %args ) = @_;
-
-   my $rank = 0;
+   foreach my $arg ( qw(dbh event) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $dbh   = $args{dbh};
+   my $event = $args{event};
+   my $rank  = 0;
    my @reasons;
 
    if ( $host1->{error} ) {
@@ -5763,12 +5775,94 @@ sub callaghan_rank_sths {
          . " (rank+100)";
    }
 
-   return $rank, @reasons unless $host1->{sth} && $host2->{sth};
+   # Return now unless we have two sths.
+   my $left  = $host1->{sth};
+   my $right = $host2->{sth};
+   return $rank, @reasons unless $left && $right;
 
    # The sths are ok; start the comparison.
-   my $rd = new RowDiff( dbh => $args{dbh} );
+   my ($cols, $struct) = MockSyncStream::get_cols_and_struct($dbh, $left);
+   MKDEBUG && _d('query cols:', Dumper($cols));
+   MKDEBUG && _d('query "table" struct:', Dumper($struct));
+
+   # Identical rows are ignored.  Once a difference on either side is found,
+   # we gobble up the remaining rows in that sth and print them to an outfile.
+   # This short circuits RowDiff::compare_sets() which is what we want to do.
+
+   my $no_diff      = 1;  # results are identical; this catches 0 row results
+   my $outfile      = new Outfile();
+   my $same_row     = sub { return; };  # ignore/discard identical rows
+   my $not_in_left  = sub {
+      my ( $rr ) = @_;
+      $no_diff = 0;
+      my $fh   = open_outfile('host2', %args);
+
+      # Write this one row.
+      $outfile->write($fh, [ MockSyncStream::as_arrayref($right, $rr) ]);
+
+      # Get and write all remaining rows.
+      my $remaing_rows = $right->fetchall_arrayref();
+      $outfile->write($fh, $remaing_rows);
+      $right->finish();
+
+      close $fh or warn "Cannot close host2 outfile: $OS_ERROR";
+
+      return;
+   };
+   my $not_in_right = sub {
+      my ( $lr ) = @_;
+      $no_diff = 0;
+      my $fh   = open_outfile('host1', %args);
+
+      # Write this one row.
+      $outfile->write($fh, [ MockSyncStream::as_arrayref($left, $lr) ]);
+
+      # Get and write all remaining rows.
+      my $remaing_rows = $left->fetchall_arrayref();
+      $outfile->write($fh, $remaing_rows);
+      $left->finish();
+
+      close $fh or warn "Cannot close host1 outfile: $OS_ERROR";
+
+      return;
+   };
+
+   my $rd     = new RowDiff( dbh => $args{dbh} );
+   my $syncer = new MockSyncStream(
+      query        => $event->{arg},
+      cols         => $cols,
+      same_row     => $same_row,
+      not_in_left  => $not_in_left,
+      not_in_right => $not_in_right,
+   );
+
+   $rd->compare_sets(
+      left   => $left,
+      right  => $right,
+      syncer => $syncer,
+      tbl    => $struct,
+   );
+
+   if ( $no_diff ) {
+      MKDEBUG && _d('Result sets are identical');
+      return $rank, @reasons;  # rank should be 0 and no reasons
+   }
+
+   # The result sets differ, so now we must begin the difficult
+   # work: finding and determining the nature of those differences.
    # TODO: work in progres...
+
    return;
+}
+
+sub open_outfile {
+   my ( $host, %args ) = @_;
+   my $o = $args{OptionParser};
+   die "I need an OptionParser argument" unless $o;
+   my $outfile = $o->get('base-dir') . "/$host-outfile.txt";
+   MKDEBUG && _d('outfile for', $host, ':', $outfile);
+   open my $fh, '>', $outfile or die "Cannot open $outfile: $OS_ERROR";
+   return $fh;
 }
 
 sub print_errors {
@@ -5952,6 +6046,12 @@ comparisons will save multiple errors.
 =item --ask-pass
 
 Prompt for a password when connecting to MySQL.
+
+=item --base-dir
+
+type: string; default: /tmp
+
+Save result set outfiles in this directory.
 
 =item --charset
 
