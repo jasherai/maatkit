@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 3;
+use Test::More tests => 5;
 
 require "../MockSyncStream.pm";
 require "../Quoter.pm";
@@ -63,6 +63,64 @@ is_deeply(
    ],
    'rows from handler',
 );
+
+# #############################################################################
+# Test online stuff, e.g. get_cols_and_struct().
+# #############################################################################
+require '../DSNParser.pm';
+require '../Sandbox.pm';
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
+
+SKIP: {
+   skip 'Cannot connect to sandbox mater', 1
+      unless $dbh;
+
+   diag(`/tmp/12345/use -e 'CREATE DATABASE test'`);
+   diag(`/tmp/12345/use < samples/col_types.sql`);
+
+   my $sth = $dbh->prepare('SELECT * FROM test.col_types_1');
+   $sth->execute();
+   my ($cols, $struct) = MockSyncStream::get_cols_and_struct($dbh, $sth);
+   $sth->finish();
+
+   is_deeply(
+      $cols,
+      [
+         'id',
+         'i',
+         'f',
+         'd',
+         'dt',
+         'ts',
+         'c',
+         'v',
+         't',
+      ],
+      'Gets column names from sth'
+   );
+   is_deeply(
+      $struct,
+      {
+         is_numeric => {
+            id => 1,
+            i  => 1,
+            f  => 1,
+            d  => 1,
+            dt => 0,
+            ts => 0,
+            c  => 0,
+            v  => 0,
+            t  => 0,
+         },
+      },
+      'Gets table struct from sth'
+   );
+
+   $sb->wipe_clean($dbh);
+   $dbh->disconnect();
+};
 
 # #############################################################################
 # Done.
