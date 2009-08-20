@@ -66,8 +66,9 @@ sub compare_sets {
    do {
       if ( !$lr && !$left_done ) {
          MKDEBUG && _d('Fetching row from left');
-         $lr = $left->fetchrow_hashref();
-         $left_done = ($lr ? 0 : 1);
+         eval { $lr = $left->fetchrow_hashref(); };
+         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+         $left_done = !$lr || $EVAL_ERROR ? 1 : 0;
       }
       elsif ( MKDEBUG ) {
          _d('Left still has rows');
@@ -75,8 +76,9 @@ sub compare_sets {
 
       if ( !$rr && !$right_done ) {
          MKDEBUG && _d('Fetching row from right');
-         $rr = $right->fetchrow_hashref();
-         $right_done = ($rr ? 0 : 1);
+         eval { $rr = $right->fetchrow_hashref(); };
+         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+         $right_done = !$rr || $EVAL_ERROR ? 1 : 0;
       }
       elsif ( MKDEBUG ) {
          _d('Right still has rows');
