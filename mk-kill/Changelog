@@ -1,3 +1,4 @@
 Changelog for mk-kill:
 
+   * Added --heartbeat.
    * Initial release.

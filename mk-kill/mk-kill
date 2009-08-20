@@ -2148,6 +2148,7 @@ sub main {
       ($start == $end || $now < $end)                   # time is exceeded
       && (!$iters_todo || $iters_done++ < $iters_todo ) # or iterations exceeded
    ) {
+      heartbeat('Checking processlist, iteration '.$iters_done);
       my $proclist;
       eval { $proclist = $get_proclist->(); };
       if ( $EVAL_ERROR ) {
@@ -2158,6 +2159,7 @@ sub main {
       my @queries;
       if ( $proclist ) {
          @queries = $pl->find($proclist, %find_spec);
+         heartbeat('Matched ' . scalar @queries . ' queries');
          MATCHING_QUERY:
          foreach my $query ( @queries ) {
             if ( $o->get('print') ) {
@@ -2167,15 +2169,19 @@ sub main {
             }
             if ( $o->get('execute-command') ) {
                exec_cmd($o->get('execute-command'));
+               heartbeat('Executed ' . $o->get('execute-command'));
             }
             if ( $o->get('kill') ) {
                sleep $o->get('wait-before-kill') if $o->get('wait-before-kill');
                $kill_sth->execute($query->{Id});
+               heartbeat("Killed $query->{Id}");
+
             }
          }
       }
       else {
          MKDEBUG && _d('No proclist returned');
+         heartbeat('Processlist returned no queries');
       }
 
       # Don't sleep if we're going to exit after waking up.  If $iters_todo is
@@ -2195,6 +2201,7 @@ sub main {
       $now = time();
    }
 
+   heartbeat('Done checking processlist');
    return 0;
 }
 
@@ -2233,6 +2240,13 @@ sub exec_cmd {
    $retval = $retval >> 8;
    MKDEBUG && _d('child exit status:', $retval);
    exit $retval;
+}
+
+sub heartbeat {
+   my ( $msg ) = @_;
+   print '# ', ts(time), " $msg\n" if $o->get('heartbeat');
+   MKDEBUG && _d($msg);
+   return;
 }
 
 sub _d {
@@ -2374,6 +2388,10 @@ short form: -F; type: string
 
 Only read mysql options from the given file.  You must give an absolute
 pathname.
+
+=item --heartbeat
+
+Print information to STDOUT about what is being done.
 
 =item --help
 
