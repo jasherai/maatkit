@@ -3421,7 +3421,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryExecutor package 4515
+# QueryExecutor package 4536
 # ###########################################################################
 package QueryExecutor;
 
@@ -3703,10 +3703,12 @@ sub callaghan_get_sth {
    foreach my $arg ( qw(query dbh) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $query = $args{query};
-   my $dbh   = $args{dbh};
-   my $error = undef;
-   my $name  = 'callaghan_get_sth';
+   my $query      = $args{query};
+   my $dbh        = $args{dbh};
+   my $error      = undef;
+   my $name       = 'callaghan_get_sth';
+   my $Query_time = { error => undef, Query_time => -1, };
+   my ( $start, $end, $query_time );
    MKDEBUG && _d($name);
 
    my $sth;
@@ -3719,17 +3721,25 @@ sub callaghan_get_sth {
    }
    else {
       eval {
+         $start = time();
          $sth->execute();
+         $end   = time();
+         $query_time = sprintf '%.6f', $end - $start;
       };
       if ( $EVAL_ERROR ) {
          MKDEBUG && _d('Error on execute:', $EVAL_ERROR);
          $error = $EVAL_ERROR;
+         $Query_time->{error} = $error;
+      }
+      else {
+         $Query_time->{Query_time} = $query_time;
       }
    }
 
    my $results = {
-      error => $error,
-      sth   => $error ? undef : $sth,  # Only pass sth if no errors.
+      error      => $error,
+      sth        => $error ? undef : $sth,  # Only pass sth if no errors.
+      Query_time => $Query_time,
    };
    return $name, $results;
 }
@@ -3772,7 +3782,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRanker package 4527
+# QueryRanker package 4535
 # ###########################################################################
 package QueryRanker;
 
@@ -3820,6 +3830,7 @@ sub rank_results {
          MKDEBUG && _d('No ranker for', $op);
          next RESULTS;
       }
+      MKDEBUG && _d('Ranking', $op, 'results');
 
       my $host1_results = $host1->{$op};
 
@@ -5307,6 +5318,151 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# RowDiff package 3249
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package RowDiff;
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   die "I need a dbh" unless $args{dbh};
+   my $self = \%args;
+   return bless $self, $class;
+}
+
+sub compare_sets {
+   my ( $self, %args ) = @_;
+   my ( $left, $right, $syncer, $tbl )
+      = @args{qw(left right syncer tbl)};
+
+   my ($lr, $rr);  # Current row from the left/right sources.
+
+   my ($left_done, $right_done) = (0, 0);
+
+   do {
+      if ( !$lr && !$left_done ) {
+         MKDEBUG && _d('Fetching row from left');
+         $lr = $left->fetchrow_hashref();
+         $left_done = ($lr ? 0 : 1);
+      }
+      elsif ( MKDEBUG ) {
+         _d('Left still has rows');
+      }
+
+      if ( !$rr && !$right_done ) {
+         MKDEBUG && _d('Fetching row from right');
+         $rr = $right->fetchrow_hashref();
+         $right_done = ($rr ? 0 : 1);
+      }
+      elsif ( MKDEBUG ) {
+         _d('Right still has rows');
+      }
+
+      my $cmp;
+      if ( $lr && $rr ) {
+         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
+         MKDEBUG && _d('Key comparison on left and right:', $cmp);
+      }
+      if ( $lr || $rr ) {
+         if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
+            MKDEBUG && _d('Left and right have the same key');
+            $syncer->same_row($lr, $rr);
+            $lr = $rr = undef; # Fetch another row from each side.
+         }
+         elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
+            MKDEBUG && _d('Left is not in right');
+            $syncer->not_in_right($lr);
+            $lr = undef;
+         }
+         else {
+            MKDEBUG && _d('Right is not in left');
+            $syncer->not_in_left($rr);
+            $rr = undef;
+         }
+      }
+   } while ( !($left_done && $right_done) );
+   MKDEBUG && _d('No more rows');
+   $syncer->done_with_rows();
+}
+
+sub key_cmp {
+   my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
+   MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
+   foreach my $col ( @$key_cols ) {
+      my $l = $lr->{$col};
+      my $r = $rr->{$col};
+      if ( !defined $l || !defined $r ) {
+         MKDEBUG && _d($col, 'is not defined in both rows');
+         return defined $l ? 1 : defined $r ? -1 : 0;
+      }
+      else {
+         if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
+            MKDEBUG && _d($col, 'is numeric');
+            my $cmp = $l <=> $r;
+            return $cmp unless $cmp == 0;
+         }
+         elsif ( $l ne $r ) {
+            my $cmp;
+            my $coll = $tbl->{collation_for}->{$col};
+            if ( $coll && ( $coll ne 'latin1_swedish_ci'
+                           || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) ) {
+               MKDEBUG && _d('Comparing', $col, 'via MySQL');
+               $cmp = $self->db_cmp($coll, $l, $r);
+            }
+            else {
+               MKDEBUG && _d('Comparing', $col, 'in lowercase');
+               $cmp = lc $l cmp lc $r;
+            }
+            return $cmp unless $cmp == 0;
+         }
+      }
+   }
+   return 0;
+}
+
+sub db_cmp {
+   my ( $self, $collation, $l, $r ) = @_;
+   if ( !$self->{sth}->{$collation} ) {
+      if ( !$self->{charset_for} ) {
+         MKDEBUG && _d('Fetching collations from MySQL');
+         my @collations = @{$self->{dbh}->selectall_arrayref(
+            'SHOW COLLATION', {Slice => { collation => 1, charset => 1 }})};
+         foreach my $collation ( @collations ) {
+            $self->{charset_for}->{$collation->{collation}}
+               = $collation->{charset};
+         }
+      }
+      my $sql = "SELECT STRCMP(_$self->{charset_for}->{$collation}? COLLATE $collation, "
+         . "_$self->{charset_for}->{$collation}? COLLATE $collation) AS res";
+      MKDEBUG && _d($sql);
+      $self->{sth}->{$collation} = $self->{dbh}->prepare($sql);
+   }
+   my $sth = $self->{sth}->{$collation};
+   $sth->execute($l, $r);
+   return $sth->fetchall_arrayref()->[0]->[0];
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End RowDiff package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -5436,10 +5592,20 @@ sub main {
 
    # The actual query execution.
    if ( $compare_method eq 'callaghan' ) {
-      push @qe_callbacks, sub { $qexec->callaghan_get_sth(@_); };
+      push @qe_callbacks, sub { return $qexec->callaghan_get_sth(@_); };
+      push @qe_callbacks, sub {
+         my ( %args ) = @_;
+         MKDEBUG && _d('Take Query_time results out of callaghan_get_sth results');
+         # Results for the previous operation, callaghan_get_sth(), will
+         # have Query_time results.  Since each callback can only return
+         # on result, we take out the Query_time results and return them.
+         my $Query_time = $args{results}->{callaghan_get_sth}->{Query_time};
+         delete $args{results}->{callaghan_get_sth}->{Query_time};  # Keep clean
+         return 'Query_time', $Query_time;
+      };
    }
    else {
-      push @qe_callbacks, sub { $qexec->Query_time(@_); };
+      push @qe_callbacks, sub { return $qexec->Query_time(@_); };
    }
 
    # Post-query execution operations.
@@ -5514,7 +5680,7 @@ sub main {
    # don't use db-qualified tables.
    push @callbacks, sub {
       my ( $event ) = @_;
-      my $db = $event->{db}; 
+      my $db = $event->{db} || $event->{Schema};
       if ( $db && (!$current_db || $db ne $current_db) ) {
          eval {
             $host1_dbh->do("USE $db");
@@ -5701,7 +5867,7 @@ sub main {
       print "# Rank: $event->{rank}\n";
 
       my $t1 = $host1_results->{Query_time}->{Query_time};
-      my $t2 = $host1_results->{Query_time}->{Query_time};
+      my $t2 = $host2_results->{Query_time}->{Query_time};
       printf "# Host1_Query_time: %.6f  Host2_Query_time: %.6f\n",
          ($t1 >= 0 ? $t1 : 0),  # Query_time may be -1 if the query failed to
          ($t2 >= 0 ? $t2 : 0);  # execute.  Make it 0 though to print pretty.
@@ -5712,7 +5878,7 @@ sub main {
             $host2_results->{warnings}->{count};
       }
 
-      if ( $o->get('compare-results') ) {
+      if ( $compare_method eq 'checksum' ) {
          printf "# Host1_Resultset_checksum: %d  Host2_Resultset_checksum: %d\n",
             $host1_results->{checksum_results}->{checksum},
             $host2_results->{checksum_results}->{checksum};
@@ -5836,6 +6002,7 @@ sub callaghan_rank_sths {
       not_in_right => $not_in_right,
    );
 
+   MKDEBUG && _d('Comparing result sets with MockSyncStream');
    $rd->compare_sets(
       left   => $left,
       right  => $right,
@@ -5850,6 +6017,7 @@ sub callaghan_rank_sths {
 
    # The result sets differ, so now we must begin the difficult
    # work: finding and determining the nature of those differences.
+   MKDEBUG && _d('Result sets are different');
    # TODO: work in progres...
 
    return;
