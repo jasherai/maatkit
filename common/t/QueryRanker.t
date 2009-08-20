@@ -70,7 +70,7 @@ my @results = (
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 0 ],
    'No warnings, no time diff (0)'
 );
@@ -112,7 +112,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 1,
      'Query has warnings (rank+1)'
    ],
@@ -144,7 +144,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 2,
      'Query times differ significantly: host1 in 1ms range, host2 in 100us range (rank+2)',
    ],
@@ -188,7 +188,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 3,
      'Query has warnings (rank+1)',
      'Error 1264 changes level: Error on host1, Warning on host2 (rank+2)',
@@ -227,7 +227,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 5,
      'Query has warnings (rank+1)',
      'Warning counts differ by 1 (rank+1)',
@@ -267,7 +267,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 5,
      'Query has warnings (rank+1)',
      'Warning counts differ by 1 (rank+1)',
@@ -318,7 +318,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 5,
      'Query has warnings (rank+1)',
      'Warning counts differ by 1 (rank+1)',
@@ -364,7 +364,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 7,
      'Query has warnings (rank+1)',
      'Error 1062 on host1 is new (rank+3)',
@@ -388,7 +388,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 200,
      'Query failed to execute on host1: something terrible happened (rank+100)',
      'Query failed to execute on host2: query caused an error (rank+100)',
@@ -430,7 +430,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 0 ],
    'No checksum, row or col diffs (0)'
 );
@@ -466,7 +466,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 50,
      'Table checksums do not match (rank+50)'
    ],
@@ -504,7 +504,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 100,
      'Table checksums do not match (rank+50)',
      'Number of rows do not match (rank+50)',
@@ -543,7 +543,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 3,
      "Types for a column differ: 'int' on host1, 'bigint' on host2 (rank+3)",
    ],
@@ -580,7 +580,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 5,
      "Column b exists on host2 but not on host1 (rank+5)",
    ],
@@ -617,7 +617,7 @@ is_deeply(
    },
 );
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 5,
      "Column b exists on host1 but not on host2 (rank+5)",
    ],
@@ -649,7 +649,7 @@ $qr = new QueryRanker(
 );
 
 is_deeply(
-   [ $qr->rank_results(@results) ],
+   [ $qr->rank_results(\@results) ],
    [ 1,
      "it works",
    ],

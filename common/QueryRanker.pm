@@ -77,32 +77,32 @@ sub new {
 # A ranker sub is expected to return a list: a rank value and any reasons
 # for that rank value.
 sub rank_results {
-   my ( $self, @results ) = @_;
-   return unless @results > 1;
+   my ( $self, $results, %args ) = @_;
+   return unless @$results > 1;
 
-   my $rank    = 0;
-   my @reasons = ();
-   my $host1   = $results[0];
+   my $rank      = 0;
+   my @reasons   = ();
+   my $host1     = $results->[0];
 
    RESULTS:
-   foreach my $results ( keys %$host1 ) {
-      my $compare = $self->{ranker_for}->{$results} || $ranker_for{$results};
+   foreach my $op ( keys %$host1 ) {  # Each key the name of some operation
+      my $compare = $self->{ranker_for}->{$op} || $ranker_for{$op};
       if ( !$compare ) {
-         MKDEBUG && _d('No ranker for', $results);
+         MKDEBUG && _d('No ranker for', $op);
          next RESULTS;
       }
 
-      my $host1_results = $host1->{$results};
+      my $host1_results = $host1->{$op};
 
       HOST:
-      for my $i ( 1..$#results ) {
-         my $hostN = $results[$i];
-         if ( !exists $hostN->{$results} ) {
-            warn "Host", $i+1, " doesn't have $results results";
+      for my $i ( 1..(@$results-1) ) {
+         my $hostN = $results->[$i];
+         if ( !exists $hostN->{$op} ) {
+            warn "Host", $i+1, " doesn't have $op results";
             next HOST;
          }
 
-         my @res = $compare->($host1_results, $hostN->{$results});
+         my @res = $compare->($host1_results, $hostN->{$op}, %args);
          $rank += shift @res;
          push @reasons, @res;
       } 
