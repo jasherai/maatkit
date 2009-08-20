@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 require "../MockSyncStream.pm";
 require "../Quoter.pm";
@@ -121,6 +121,17 @@ SKIP: {
       'Gets table struct from sth'
    );
 
+
+   $sth = $dbh->prepare('SELECT v, c, t, id, i, f, d FROM test.col_types_1');
+   $sth->execute();
+   my $row = $sth->fetchrow_hashref();
+   is_deeply(
+      MockSyncStream::as_arrayref($sth, $row),
+      ['hello world','c','this is text',1,1,3.14,5.08,],
+      'as_arrayref()'
+   );
+
+   $sth->finish();
    $sb->wipe_clean($dbh);
    $dbh->disconnect();
 };

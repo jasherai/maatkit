@@ -116,6 +116,17 @@ sub get_cols_and_struct {
    return \@cols, $struct;
 }
 
+# Transforms a row fetched with DBI::fetchrow_hashref() into a
+# row as if it were fetched with DBI::fetchrow_arrayref().  That is:
+# the hash values (i.e. column values) are returned as an arrayref
+# in the correct column order (because hashes are randomly ordered).
+# This is used in mk-upgrade.
+sub as_arrayref {
+   my ( $sth, $row ) = @_;
+   my @cols = @{$sth->{NAME}};
+   my @row  = @{$row}{@cols};
+   return \@row;
+}
 
 sub _d {
    my ($package, undef, $line) = caller 0;
