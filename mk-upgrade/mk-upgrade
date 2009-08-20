@@ -5212,7 +5212,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MockSyncStream package 4531
+# MockSyncStream package 4539
 # ###########################################################################
 package MockSyncStream;
 
@@ -5277,23 +5277,25 @@ sub pending_changes {
    return;
 }
 
-sub get_cols_and_struct {
+sub get_result_set_struct {
    my ( $dbh, $sth ) = @_;
-
-   my @cols  = @{$sth->{NAME}};
-   my @types = map { scalar $dbh->type_info($_)->{TYPE_NAME} } @{$sth->{TYPE}};
-
+   my @cols   = @{$sth->{NAME}};
+   my @types  = map { $dbh->type_info($_)->{TYPE_NAME} } @{$sth->{TYPE}};
    my $struct = {
-      is_numeric    => {},
+      cols => \@cols, 
    };
+
    for my $i ( 0..$#cols ) {
       my $col  = $cols[$i];
       my $type = $types[$i];
+      $struct->{is_col}->{$col}   = 1;
+      $struct->{col_posn}->{$col} = $i;
+      $struct->{type_for}->{$col} = $type;
       $struct->{is_numeric}->{$col} 
          = ($type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ? 1 : 0);
    }
 
-   return \@cols, $struct;
+   return $struct;
 }
 
 sub as_arrayref {
@@ -5318,7 +5320,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 3249
+# RowDiff package 4538
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -5348,8 +5350,9 @@ sub compare_sets {
    do {
       if ( !$lr && !$left_done ) {
          MKDEBUG && _d('Fetching row from left');
-         $lr = $left->fetchrow_hashref();
-         $left_done = ($lr ? 0 : 1);
+         eval { $lr = $left->fetchrow_hashref(); };
+         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+         $left_done = !$lr || $EVAL_ERROR ? 1 : 0;
       }
       elsif ( MKDEBUG ) {
          _d('Left still has rows');
@@ -5357,8 +5360,9 @@ sub compare_sets {
 
       if ( !$rr && !$right_done ) {
          MKDEBUG && _d('Fetching row from right');
-         $rr = $right->fetchrow_hashref();
-         $right_done = ($rr ? 0 : 1);
+         eval { $rr = $right->fetchrow_hashref(); };
+         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+         $right_done = !$rr || $EVAL_ERROR ? 1 : 0;
       }
       elsif ( MKDEBUG ) {
          _d('Right still has rows');
@@ -5947,9 +5951,8 @@ sub callaghan_rank_sths {
    return $rank, @reasons unless $left && $right;
 
    # The sths are ok; start the comparison.
-   my ($cols, $struct) = MockSyncStream::get_cols_and_struct($dbh, $left);
-   MKDEBUG && _d('query cols:', Dumper($cols));
-   MKDEBUG && _d('query "table" struct:', Dumper($struct));
+   my $struct = MockSyncStream::get_result_set_struct($dbh, $left);
+   MKDEBUG && _d('result set struct:', Dumper($struct));
 
    # Identical rows are ignored.  Once a difference on either side is found,
    # we gobble up the remaining rows in that sth and print them to an outfile.
@@ -5957,46 +5960,37 @@ sub callaghan_rank_sths {
 
    my $no_diff      = 1;  # results are identical; this catches 0 row results
    my $outfile      = new Outfile();
+   my ($host1_outfile, $host2_outfile);
    my $same_row     = sub { return; };  # ignore/discard identical rows
    my $not_in_left  = sub {
       my ( $rr ) = @_;
       $no_diff = 0;
-      my $fh   = open_outfile('host2', %args);
-
-      # Write this one row.
-      $outfile->write($fh, [ MockSyncStream::as_arrayref($right, $rr) ]);
-
-      # Get and write all remaining rows.
-      my $remaing_rows = $right->fetchall_arrayref();
-      $outfile->write($fh, $remaing_rows);
-      $right->finish();
-
-      close $fh or warn "Cannot close host2 outfile: $OS_ERROR";
-
+      $host2_outfile = write_to_outfile(
+         host    => 'host2',
+         sth     => $right,
+         row     => $rr,
+         outfile => $outfile,
+         %args,
+      );
       return;
    };
    my $not_in_right = sub {
       my ( $lr ) = @_;
       $no_diff = 0;
-      my $fh   = open_outfile('host1', %args);
-
-      # Write this one row.
-      $outfile->write($fh, [ MockSyncStream::as_arrayref($left, $lr) ]);
-
-      # Get and write all remaining rows.
-      my $remaing_rows = $left->fetchall_arrayref();
-      $outfile->write($fh, $remaing_rows);
-      $left->finish();
-
-      close $fh or warn "Cannot close host1 outfile: $OS_ERROR";
-
+      $host1_outfile = write_to_outfile(
+         host    => 'host1',
+         sth     => $left,
+         row     => $lr,
+         outfile => $outfile,
+         %args,
+      );
       return;
    };
 
    my $rd     = new RowDiff( dbh => $args{dbh} );
    my $syncer = new MockSyncStream(
       query        => $event->{arg},
-      cols         => $cols,
+      cols         => $struct->{cols},
       same_row     => $same_row,
       not_in_left  => $not_in_left,
       not_in_right => $not_in_right,
@@ -6018,9 +6012,30 @@ sub callaghan_rank_sths {
    # The result sets differ, so now we must begin the difficult
    # work: finding and determining the nature of those differences.
    MKDEBUG && _d('Result sets are different');
-   # TODO: work in progres...
+   # TODO: ...
 
-   return;
+   return $rank, @reasons;
+}
+
+# Writes the current row and all remaining rows to an outfile.
+# Returns the outfile's name.
+sub write_to_outfile {
+   my ( %args ) = @_;
+   foreach my $arg ( qw(host row sth outfile OptionParser) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ( $host, $sth, $row, $outfile ) = @args{qw(host sth row outfile)};
+   my ( $fh, $file ) = open_outfile($host, %args);
+
+   # Write this one row.
+   $outfile->write($fh, [ MockSyncStream::as_arrayref($sth, $row) ]);
+
+   # Get and write all remaining rows.
+   my $remaing_rows = $sth->fetchall_arrayref();
+   $outfile->write($fh, $remaing_rows);
+
+   close $fh or warn "Cannot close $file: $OS_ERROR";
+   return $file;
 }
 
 sub open_outfile {
@@ -6028,9 +6043,9 @@ sub open_outfile {
    my $o = $args{OptionParser};
    die "I need an OptionParser argument" unless $o;
    my $outfile = $o->get('base-dir') . "/$host-outfile.txt";
-   MKDEBUG && _d('outfile for', $host, ':', $outfile);
    open my $fh, '>', $outfile or die "Cannot open $outfile: $OS_ERROR";
-   return $fh;
+   MKDEBUG && _d('outfile for', $host, ':', $outfile);
+   return $fh, $outfile;
 }
 
 sub print_errors {
