@@ -21,10 +21,9 @@ package MockSyncStream;
 
 # This package implements a special, mock version of TableSyncStream.
 # It's used by mk-upgrade to quickly compare result sets for any differences.
-# If any are found, diff_callback is called, otherewise same_callback
-# is called.  mk-upgrade uses diff_callback to stop the comparison and
-# same_callback to write the row to an outfile.  So we don't actually sync
-# anything.  Unlike TableSyncStream, we're not working with a table but an
+# If any are found, mk-upgrade writes all remaining rows to an outfile.
+# This causes RowDiff::compare_sets() to terminate early.  So we don't actually
+# sync anything.  Unlike TableSyncStream, we're not working with a table but an
 # arbitrary query executed on two servers.
 
 use strict;
@@ -36,7 +35,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(query cols same_callback diff_callback) ) {
+   foreach my $arg ( qw(query cols same_row not_in_left not_in_right) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    return bless { %args }, $class;
@@ -49,17 +48,17 @@ sub get_sql {
 
 sub same_row {
    my ( $self, $lr, $rr ) = @_;
-   return $self->{same_callback}->($lr, $rr);
+   return $self->{same_row}->($lr, $rr);
 }
 
 sub not_in_right {
    my ( $self, $lr ) = @_;
-   return $self->{diff_callback}->();
+   return $self->{not_in_right}->($lr);
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
-   return $self->{diff_callback}->();
+   return $self->{not_in_left}->($rr);
 }
 
 sub done_with_rows {

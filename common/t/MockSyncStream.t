@@ -16,16 +16,19 @@ my @rows;
 sub same_row {
    push @rows, 'same';
 }
-
-sub diff_row {
-   push @rows, 'diff';
+sub not_in_left {
+   push @rows, 'not in left';
+}
+sub not_in_right {
+   push @rows, 'not in right';
 }
 
 my $mss = new MockSyncStream(
-   query         => 'SELECT a, b, c FROM foo WHERE id = 1',
-   cols          => [qw(a b c)],
-   same_callback => \&same_row,
-   diff_callback => \&diff_row,
+   query        => 'SELECT a, b, c FROM foo WHERE id = 1',
+   cols         => [qw(a b c)],
+   same_row     => \&same_row,
+   not_in_left  => \&not_in_left,
+   not_in_right => \&not_in_right,
 );
 
 is(
@@ -56,10 +59,10 @@ $rd->compare_sets(
 is_deeply(
    \@rows,
    [
-      'diff',
+      'not in right',
       'same',
       'same',
-      'diff',
+      'not in left',
    ],
    'rows from handler',
 );
