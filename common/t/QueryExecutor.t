@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 28;
+use Test::More tests => 29;
 
 require '../QueryExecutor.pm';
 require '../Quoter.pm';
@@ -356,6 +356,10 @@ is_deeply(
       ['18446744073709551615']
    ],
    'callaghan_get_sth()'
+);
+ok(
+   exists $results[0]->{callaghan_get_sth}->{Query_time},
+   'callaghan_get_sth() has Query_time'
 );
 
 # #############################################################################

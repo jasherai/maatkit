@@ -386,10 +386,12 @@ sub callaghan_get_sth {
    foreach my $arg ( qw(query dbh) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $query = $args{query};
-   my $dbh   = $args{dbh};
-   my $error = undef;
-   my $name  = 'callaghan_get_sth';
+   my $query      = $args{query};
+   my $dbh        = $args{dbh};
+   my $error      = undef;
+   my $name       = 'callaghan_get_sth';
+   my $Query_time = { error => undef, Query_time => -1, };
+   my ( $start, $end, $query_time );
    MKDEBUG && _d($name);
 
    my $sth;
@@ -402,17 +404,25 @@ sub callaghan_get_sth {
    }
    else {
       eval {
+         $start = time();
          $sth->execute();
+         $end   = time();
+         $query_time = sprintf '%.6f', $end - $start;
       };
       if ( $EVAL_ERROR ) {
          MKDEBUG && _d('Error on execute:', $EVAL_ERROR);
          $error = $EVAL_ERROR;
+         $Query_time->{error} = $error;
+      }
+      else {
+         $Query_time->{Query_time} = $query_time;
       }
    }
 
    my $results = {
-      error => $error,
-      sth   => $error ? undef : $sth,  # Only pass sth if no errors.
+      error      => $error,
+      sth        => $error ? undef : $sth,  # Only pass sth if no errors.
+      Query_time => $Query_time,
    };
    return $name, $results;
 }
