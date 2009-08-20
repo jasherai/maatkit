@@ -1996,6 +1996,8 @@ Transformers->import qw(ts);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+$OUTPUT_AUTOFLUSH = 1;
+
 my $o;
 my $dp;
 
