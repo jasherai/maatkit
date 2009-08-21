@@ -54,7 +54,7 @@ package main;
 
 my $tests;
 BEGIN {
-   $tests = 23;
+   $tests = 24;
 }
 
 use Test::More tests => $tests;
@@ -309,9 +309,67 @@ is_deeply(
    'Identical with utf8 columns',
 );
 
+
+# #############################################################################
+# Test that the callbacks work.
+# #############################################################################
+my @rows;
+my $same_row     = sub {
+   push @rows, 'same row';
+};
+my $not_in_left  = sub {
+   push @rows, 'not in left';
+};
+my $not_in_right = sub {
+   push @rows, 'not in right';
+};
+my $key_cmp = sub {
+   my ( $col, $lr, $rr ) = @_;
+   push @rows, "col $col differs";
+};
+
+$s = new MockSync();
+$d = new RowDiff(
+   dbh          => 1,
+   key_cmp      => $key_cmp,
+   same_row     => $same_row,
+   not_in_left  => $not_in_left,
+   not_in_right => $not_in_right,
+);
+@rows = ();
+$d->compare_sets(
+   left => new MockSth(
+      { a => 1, b => 2, c => 3 },
+      { a => 2, b => 2, c => 3 },
+      { a => 3, b => 2, c => 3 },
+      # { a => 4, b => 2, c => 3 },
+   ),
+   right => new MockSth(
+      # { a => 1, b => 2, c => 3 },
+      { a => 2, b => 2, c => 3 },
+      { a => 3, b => 2, c => 3 },
+      { a => 4, b => 2, c => 3 },
+   ),
+   syncer => $s,
+   tbl => {},
+);
+is_deeply(
+   \@rows,
+   [
+      'col a differs',
+      'not in right',
+      'same row',
+      'same row',
+      'not in left',
+   ],
+   'callbacks'
+);
+
 # #############################################################################
 # The following tests use "real" (sandbox) servers and real statement handles.
 # #############################################################################
+
+$d = new RowDiff(dbh => $master_dbh);
 
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'samples/issue_11.sql');

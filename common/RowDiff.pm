@@ -26,6 +26,11 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+# Optional args:
+#   * same_row      Callback when rows are identical
+#   * not_in_left   Callback when right row is not in the left
+#   * not_in_right  Callback when left row is not in the right
+#   * key_cmp       Callback when a column value differs
 sub new {
    my ( $class, %args ) = @_;
    die "I need a dbh" unless $args{dbh};
@@ -86,7 +91,8 @@ sub compare_sets {
 
       my $cmp;
       if ( $lr && $rr ) {
-         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
+         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl,
+            $self->{key_cmp});
          MKDEBUG && _d('Key comparison on left and right:', $cmp);
       }
       if ( $lr || $rr ) {
@@ -96,18 +102,21 @@ sub compare_sets {
          if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
             MKDEBUG && _d('Left and right have the same key');
             $syncer->same_row($lr, $rr);
+            $self->{same_row}->($lr, $rr) if $self->{same_row};
             $lr = $rr = undef; # Fetch another row from each side.
          }
          # The row in the left doesn't exist in the right.
          elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
             MKDEBUG && _d('Left is not in right');
             $syncer->not_in_right($lr);
+            $self->{not_in_right}->($lr) if $self->{not_in_right};
             $lr = undef;
          }
          # Symmetric to the above.
          else {
             MKDEBUG && _d('Right is not in left');
             $syncer->not_in_left($rr);
+            $self->{not_in_left}->($rr) if $self->{not_in_left};
             $rr = undef;
          }
       }
@@ -132,7 +141,7 @@ sub compare_sets {
 # TODO: must generate the comparator function dynamically for speed, so we don't
 # have to check the type of columns constantly
 sub key_cmp {
-   my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
+   my ( $self, $lr, $rr, $key_cols, $tbl, $callback ) = @_;
    MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
    foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
@@ -145,7 +154,11 @@ sub key_cmp {
          if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
             MKDEBUG && _d($col, 'is numeric');
             my $cmp = $l <=> $r;
-            return $cmp unless $cmp == 0;
+            if ( $cmp ) {
+               MKDEBUG && _d('Column', $col, 'differs:', $l, '!=', $r);
+               $callback->($col, $l, $r) if $callback;
+               return $cmp;
+            }
          }
          # Do case-sensitive cmp, expecting most will be eq.  If that fails, try
          # a case-insensitive cmp if possible; otherwise ask MySQL how to sort.
@@ -161,7 +174,11 @@ sub key_cmp {
                MKDEBUG && _d('Comparing', $col, 'in lowercase');
                $cmp = lc $l cmp lc $r;
             }
-            return $cmp unless $cmp == 0;
+            if ( $cmp ) {
+               MKDEBUG && _d('Column', $col, 'differs:', $l, 'ne', $r);
+               $callback->($col, $l, $r) if $callback;
+               return $cmp;
+            }
          }
       }
    }
