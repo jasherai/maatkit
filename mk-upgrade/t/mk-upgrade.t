@@ -80,7 +80,7 @@ like(
 
 
 # #############################################################################
-# Test make_create_table().
+# Test make_table_ddl().
 # #############################################################################
 my $struct = {
    cols => [
@@ -107,8 +107,8 @@ my $struct = {
    },
 };
 is(
-   mk_upgrade::make_create_table($struct),
-   "CREATE TABLE ? (
+   mk_upgrade::make_table_ddl($struct),
+   "(
   id integer,
   i integer,
   f float,
@@ -119,7 +119,7 @@ is(
   v varchar,
   t blob
 )",
-   'make_create_table()'
+   'make_table_ddl()'
 );
 
 # #############################################################################
