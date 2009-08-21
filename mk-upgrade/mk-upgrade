@@ -5772,7 +5772,7 @@ sub main {
          my ($rank, @reasons) = $qranker->rank_results(
             $results,
             # These args are passed through to the ranker subs.
-            dbh   => $host1_dbh,
+            hosts => $hosts,
             event => $event,
             %common_modules,
          ); 
@@ -5924,10 +5924,10 @@ sub main {
 # instead of QueryRanker.
 sub callaghan_rank_sths {
    my ( $host1, $host2, %args ) = @_;
-   foreach my $arg ( qw(dbh event) ) {
+   foreach my $arg ( qw(hosts event OptionParser) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $dbh   = $args{dbh};
+   my $dbh   = $args{hosts}->[0]->{dbh};  # Doesn't matter which one.
    my $event = $args{event};
    my $rank  = 0;
    my @reasons;
@@ -5987,7 +5987,7 @@ sub callaghan_rank_sths {
       return;
    };
 
-   my $rd     = new RowDiff( dbh => $args{dbh} );
+   my $rd     = new RowDiff(dbh => $dbh);
    my $syncer = new MockSyncStream(
       query        => $event->{arg},
       cols         => $struct->{cols},
@@ -6012,7 +6012,26 @@ sub callaghan_rank_sths {
    # The result sets differ, so now we must begin the difficult
    # work: finding and determining the nature of those differences.
    MKDEBUG && _d('Result sets are different');
-   # TODO: ...
+   my $o  = $args{OptionParser};
+   my $db = $o->get('tmp-table-database') || $event->{db} || $event->{Schema};
+   my $host1_dbh = $args{hosts}->[0]->{dbh};
+   my $host2_dbh = $args{hosts}->[1]->{dbh};
+
+   # First thing, make two temps tables into which the outfiles can
+   # be loaded.  This requires that we make a CREATE TABLE statement
+   # for the result sets' columns.
+   my $sth;
+   my $create_sql = make_create_table($struct);
+   $sth = $host1_dbh->prepare($create_sql);
+   $sth->execute("$db.mk_upgrade_host1");
+   $sth = $host2_dbh->prepare($create_sql);
+   $sth->execute("$db.mk_upgrade_host2");
+
+   my $load_sql = 'LOAD DATA LOCAL INFILE ? INTO TABLE ?';
+   $sth = $host1_dbh->prepare($load_sql);
+   $sth->execute("$db.mk_upgrade_host1", $host1_outfile);
+   $sth = $host2_dbh->prepare($load_sql);
+   $sth->execute("$db.mk_upgrade_host2", $host2_outfile);
 
    return $rank, @reasons;
 }
@@ -6046,6 +6065,18 @@ sub open_outfile {
    open my $fh, '>', $outfile or die "Cannot open $outfile: $OS_ERROR";
    MKDEBUG && _d('outfile for', $host, ':', $outfile);
    return $fh, $outfile;
+}
+
+sub make_create_table {
+   my ( $struct ) = @_;
+   my $sql = "CREATE TABLE ? (\n"
+           . (join("\n",
+                 map { "  $_ $struct->{type_for}->{$_}," } @{$struct->{cols}}))
+           . ')';
+   # The last column will be like "i integer,)" which is invalid.
+   $sql =~ s/,\)$/\n)/;
+   MKDEBUG && _d($sql);
+   return $sql;
 }
 
 sub print_errors {

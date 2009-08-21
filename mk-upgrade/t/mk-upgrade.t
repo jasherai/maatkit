@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -76,6 +76,50 @@ like(
    $output,
    qr/--ask-pass/,
    'It runs'
+);
+
+
+# #############################################################################
+# Test make_create_table().
+# #############################################################################
+my $struct = {
+   cols => [
+      'id',
+      'i',
+      'f',
+      'd',
+      'dt',
+      'ts',
+      'c',
+      'v',
+      't',
+   ],
+   type_for => {
+      id => 'integer',
+      i  => 'integer',
+      f  => 'float',
+      d  => 'decimal',
+      dt => 'timestamp',
+      ts => 'timestamp',
+      c  => 'char',
+      v  => 'varchar',
+      t  => 'blob',
+   },
+};
+is(
+   mk_upgrade::make_create_table($struct),
+   "CREATE TABLE ? (
+  id integer,
+  i integer,
+  f float,
+  d decimal,
+  dt timestamp,
+  ts timestamp,
+  c char,
+  v varchar,
+  t blob
+)",
+   'make_create_table()'
 );
 
 # #############################################################################
