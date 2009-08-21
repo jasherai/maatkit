@@ -4293,7 +4293,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 4538
+# RowDiff package 4544
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -4343,23 +4343,27 @@ sub compare_sets {
 
       my $cmp;
       if ( $lr && $rr ) {
-         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
+         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl,
+            $self->{key_cmp});
          MKDEBUG && _d('Key comparison on left and right:', $cmp);
       }
       if ( $lr || $rr ) {
          if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
             MKDEBUG && _d('Left and right have the same key');
             $syncer->same_row($lr, $rr);
+            $self->{same_row}->($lr, $rr) if $self->{same_row};
             $lr = $rr = undef; # Fetch another row from each side.
          }
          elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
             MKDEBUG && _d('Left is not in right');
             $syncer->not_in_right($lr);
+            $self->{not_in_right}->($lr) if $self->{not_in_right};
             $lr = undef;
          }
          else {
             MKDEBUG && _d('Right is not in left');
             $syncer->not_in_left($rr);
+            $self->{not_in_left}->($rr) if $self->{not_in_left};
             $rr = undef;
          }
       }
@@ -4369,7 +4373,7 @@ sub compare_sets {
 }
 
 sub key_cmp {
-   my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
+   my ( $self, $lr, $rr, $key_cols, $tbl, $callback ) = @_;
    MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
    foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
@@ -4382,7 +4386,11 @@ sub key_cmp {
          if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
             MKDEBUG && _d($col, 'is numeric');
             my $cmp = $l <=> $r;
-            return $cmp unless $cmp == 0;
+            if ( $cmp ) {
+               MKDEBUG && _d('Column', $col, 'differs:', $l, '!=', $r);
+               $callback->($col, $l, $r) if $callback;
+               return $cmp;
+            }
          }
          elsif ( $l ne $r ) {
             my $cmp;
@@ -4396,7 +4404,11 @@ sub key_cmp {
                MKDEBUG && _d('Comparing', $col, 'in lowercase');
                $cmp = lc $l cmp lc $r;
             }
-            return $cmp unless $cmp == 0;
+            if ( $cmp ) {
+               MKDEBUG && _d('Column', $col, 'differs:', $l, 'ne', $r);
+               $callback->($col, $l, $r) if $callback;
+               return $cmp;
+            }
          }
       }
    }
