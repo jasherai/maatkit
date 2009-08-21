@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -121,5 +121,22 @@ is(
    'Play session from log with blank lines in queries (issue 418)' 
 );
 
+# #############################################################################
+# Issue 570: Integrate BinaryLogPrarser into mk-log-player
+# #############################################################################
+diag(`rm -rf $tmpdir/*`);
+`../mk-log-player --split Thread_id --base-dir $tmpdir ../../common/t/samples/binlog001.txt --type binlog --session-files 1`;
+$output = `diff $tmpdir/sessions-1.txt samples/split_binlog001.txt`;
+
+is(
+   $output,
+   '',
+   'Split binlog001.txt'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 diag(`rm -rf $tmpdir`);
+diag(`rm -rf ./session-results-*`);
 exit;
