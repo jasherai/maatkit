@@ -2416,6 +2416,11 @@ sub watch_server {
                $increase_sleep = 1;
             }
          }
+         elsif ( $o->get('verbose') > 2 ) {
+            printf("%s%s Seconds_behind_master\n", $dp->as_string($dsn),
+               (defined $stat->{seconds_behind_master} ?
+               $stat->{seconds_behind_master} : 'NULL'));
+         }
       }
 
       # Adjust sleep time.
