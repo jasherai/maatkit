@@ -2417,7 +2417,7 @@ sub watch_server {
             }
          }
          elsif ( $o->get('verbose') > 2 ) {
-            printf("%s%s Seconds_behind_master\n", $dp->as_string($dsn),
+            printf("%s delayed %s sec\n", $dp->as_string($dsn),
                (defined $stat->{seconds_behind_master} ?
                $stat->{seconds_behind_master} : 'NULL'));
          }
@@ -2438,7 +2438,9 @@ sub watch_server {
       # there is no error when it wakes up after 1 second, because 1 was too
       # short.  Now it doubles $sleep, back to 512.  $sleep has the same value
       # it did before the error was ever found.
-      print $dp->as_string($dsn), " sleeping $sleep\n" if $o->get('verbose') > 2;
+      if ( $o->get('verbose') > 2 ) {
+         printf("%s sleeping %f\n", $dp->as_string($dsn), $sleep);
+      }
       sleep($increase_sleep ? $sleep : min($sleep, $o->get('sleep')));
    }
 
