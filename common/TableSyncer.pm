@@ -158,7 +158,7 @@ sub sync_table {
             : () ),
       ],
    );
-   my $rd = new RowDiff( dbh => $args{misc_dbh} );
+   my $rd = $args{RowDiff} || new RowDiff( dbh => $args{misc_dbh} );
 
    $args{algorithm} ||= $self->best_algorithm(
       map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
