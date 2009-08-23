@@ -4,7 +4,7 @@
 
 =head1 NAME
 
-iodump - Compute per-PID I/O stats for Linux when iostat is not available.
+iodump - Compute per-PID I/O stats for Linux when iotop/pidstat/iopp are not available.
 
 =head1 SYNOPSIS
 
