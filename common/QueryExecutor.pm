@@ -369,19 +369,19 @@ sub checksum_results {
 }
 
 
-# callaghan_get_sth() implements part of an idea discussed by Mark Callaghan,
+# get_row_sths() implements part of an idea discussed by Mark Callaghan,
 # Baron Schwartz and Daniel Nichter.  See:
 # http://groups.google.com/group/maatkit-discuss/browse_thread/thread/5d0f208f4e76ec0f 
 # http://groups.google.com/group/maatkit-discuss/browse_thread/thread/49f4564111c78a2f
 
 # The big picture is to execute the query, simultaneously write its rows to
-# an outfile and compare them with TalbeSyncStream.  If no differences are
+# an outfile and compare them with MockSyncStream.  If no differences are
 # found, all is well.  If a difference is found, we stop comparing, write all
-# rows to an outfile and later callaghn_diff() will handle the rest.
+# rows to an outfile and later mk_upgrade::diff_rows() will handle the rest.
 # For now, however, we just get a statement handle for the executed query
 # because QueryExecutor does hosts one-by-one but we need two sths at once.
-# See mk_upgrade::callaghan_rank_sths for how these sths are ranked/compared.
-sub callaghan_get_sth {
+# See mk_upgrade::rank_row_sths() for how these sths are ranked/compared.
+sub get_row_sths {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(query dbh) ) {
       die "I need a $arg argument" unless $args{$arg};
@@ -389,7 +389,7 @@ sub callaghan_get_sth {
    my $query      = $args{query};
    my $dbh        = $args{dbh};
    my $error      = undef;
-   my $name       = 'callaghan_get_sth';
+   my $name       = 'get_row_sths';
    my $Query_time = { error => undef, Query_time => -1, };
    my ( $start, $end, $query_time );
    MKDEBUG && _d($name);

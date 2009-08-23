@@ -332,10 +332,10 @@ is(
 );
 
 # #############################################################################
-# Test that callaghan_get_sth() actually gets us a sth.
+# Test that get_row_sths() actually gets us a sth.
 # #############################################################################
 @callbacks = (
-   sub { $qe->callaghan_get_sth(@_); },
+   sub { $qe->get_row_sths(@_); },
 );
 @results = $qe->exec(
    query     => 'SELECT * FROM test.issue_47',
@@ -343,7 +343,7 @@ is(
    callbacks => \@callbacks,
 );
 is_deeply(
-   $results[0]->{callaghan_get_sth}->{sth}->fetchall_arrayref(),
+   $results[0]->{get_row_sths}->{sth}->fetchall_arrayref(),
    [
       ['1'],
       ['20'],
@@ -355,11 +355,11 @@ is_deeply(
       ['9223372036854775807'],
       ['18446744073709551615']
    ],
-   'callaghan_get_sth()'
+   'get_row_sths()'
 );
 ok(
-   exists $results[0]->{callaghan_get_sth}->{Query_time},
-   'callaghan_get_sth() has Query_time'
+   exists $results[0]->{get_row_sths}->{Query_time},
+   'get_row_sths() has Query_time'
 );
 
 # #############################################################################
