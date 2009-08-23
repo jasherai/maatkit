@@ -80,7 +80,7 @@ SKIP: {
    skip 'Cannot connect to sandbox mater', 1
       unless $dbh;
 
-   diag(`/tmp/12345/use -e 'CREATE DATABASE test'`);
+   diag(`/tmp/12345/use -e 'CREATE DATABASE test' 2>/dev/null`);
    diag(`/tmp/12345/use < samples/col_types.sql`);
 
    my $sth = $dbh->prepare('SELECT * FROM test.col_types_1');
@@ -142,6 +142,17 @@ SKIP: {
             c  => 6,
             v  => 7,
             t  => 8,
+         },
+         is_nullable => {
+            id => 1,
+            i  => 1,
+            f  => 1,
+            d  => 1,
+            dt => 0,
+            ts => 0,
+            c  => 1,
+            v  => 1,
+            t  => 1,
          },
       },
       'Gets result set struct from sth attribs'

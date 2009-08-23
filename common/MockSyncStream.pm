@@ -95,9 +95,11 @@ sub pending_changes {
 # uses sth attributes to return a pseudo table struct for the query's columns.
 sub get_result_set_struct {
    my ( $dbh, $sth ) = @_;
-   my @cols   = @{$sth->{NAME}};
-   my @types  = map { $dbh->type_info($_)->{TYPE_NAME} } @{$sth->{TYPE}};
-   my $struct = {
+   my @cols     = @{$sth->{NAME}};
+   my @types    = map { $dbh->type_info($_)->{TYPE_NAME} } @{$sth->{TYPE}};
+   my @nullable = map { $dbh->type_info($_)->{NULLABLE} == 1 ? 1 : 0 } @{$sth->{TYPE}};
+
+   my $struct   = {
       cols => \@cols, 
       # collation_for => {},  RowDiff::key_cmp() may need this.
    };
@@ -105,9 +107,10 @@ sub get_result_set_struct {
    for my $i ( 0..$#cols ) {
       my $col  = $cols[$i];
       my $type = $types[$i];
-      $struct->{is_col}->{$col}   = 1;
-      $struct->{col_posn}->{$col} = $i;
-      $struct->{type_for}->{$col} = $type;
+      $struct->{is_col}->{$col}      = 1;
+      $struct->{col_posn}->{$col}    = $i;
+      $struct->{type_for}->{$col}    = $type;
+      $struct->{is_nullable}->{$col} = $nullable[$i];
       $struct->{is_numeric}->{$col} 
          = ($type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ? 1 : 0);
    }
