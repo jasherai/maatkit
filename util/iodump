@@ -46,10 +46,10 @@ my $line;
 while ( $oktorun && (defined ($line = <>)) ) {
    my ( $task, $pid, $activity, $where, $device );
    ( $task, $pid, $activity, $where, $device )
-      = $line =~ m/^(\w+)\((\d+)\): (READ|WRITE) block (\d+) on (\S+)/;
+      = $line =~ m/(\S+)\((\d+)\): (READ|WRITE) block (\d+) on (\S+)/;
    if ( !$task ) {
       ( $task, $pid, $activity, $where, $device )
-         = $line =~ m/^(\w+)\((\d+)\): (dirtied) inode \(.*?\) (\d+) on (\S+)/;
+         = $line =~ m/(\S+)\((\d+)\): (dirtied) inode \(.*?\) (\d+) on (\S+)/;
    }
    if ( $task ) {
       my $s = $tasks{$pid} ||= { pid => $pid, task => $task };
