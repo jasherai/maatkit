@@ -3421,7 +3421,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryExecutor package 4536
+# QueryExecutor package 4552
 # ###########################################################################
 package QueryExecutor;
 
@@ -3698,7 +3698,7 @@ sub checksum_results {
 
 
 
-sub callaghan_get_sth {
+sub get_row_sths {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(query dbh) ) {
       die "I need a $arg argument" unless $args{$arg};
@@ -3706,7 +3706,7 @@ sub callaghan_get_sth {
    my $query      = $args{query};
    my $dbh        = $args{dbh};
    my $error      = undef;
-   my $name       = 'callaghan_get_sth';
+   my $name       = 'get_row_sths';
    my $Query_time = { error => undef, Query_time => -1, };
    my ( $start, $end, $query_time );
    MKDEBUG && _d($name);
@@ -5432,7 +5432,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 4170
+# TableSyncer package 4546
 # ###########################################################################
 package TableSyncer;
 
@@ -5553,7 +5553,7 @@ sub sync_table {
             : () ),
       ],
    );
-   my $rd = new RowDiff( dbh => $args{misc_dbh} );
+   my $rd = $args{RowDiff} || new RowDiff( dbh => $args{misc_dbh} );
 
    $args{algorithm} ||= $self->best_algorithm(
       map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
@@ -6491,7 +6491,7 @@ sub main {
          $o->save_error('Specify at least two host DSNs');
       }
       if ( my $compare_method = $o->get('compare-results-method') ) {
-         my %valid_method = qw(checksum 1 callaghan 1);
+         my %valid_method = qw(checksum 1 rows 1);
          $o->save_error("Invalid --compare-results-method: $compare_method")
             unless $valid_method{lc $compare_method};
       }
@@ -6528,10 +6528,10 @@ sub main {
    my $qexec   = new QueryExecutor();
    my $qranker = new QueryRanker(
       ranker_for => {
-         callaghan_get_sth => \&callaghan_rank_sths,
+         get_row_sths => \&rank_row_sths,
       }
    );
-   # Most of these modules are only used in callaghan_rank_sths() if
+   # Most of these modules are only used in rank_row_sths() if
    # the result sets differ.
    my $du       = new MySQLDump();
    my $tp       = new TableParser();
@@ -6583,16 +6583,16 @@ sub main {
    }
 
    # The actual query execution.
-   if ( $compare_method eq 'callaghan' ) {
-      push @qe_callbacks, sub { return $qexec->callaghan_get_sth(@_); };
+   if ( $compare_method eq 'rows' ) {
+      push @qe_callbacks, sub { return $qexec->get_row_sths(@_); };
       push @qe_callbacks, sub {
          my ( %args ) = @_;
-         MKDEBUG && _d('Take Query_time results out of callaghan_get_sth results');
-         # Results for the previous operation, callaghan_get_sth(), will
+         MKDEBUG && _d('Take Query_time results out of get_row_sths results');
+         # Results for the previous operation, get_row_sths(), will
          # have Query_time results.  Since each callback can only return
          # on result, we take out the Query_time results and return them.
-         my $Query_time = $args{results}->{callaghan_get_sth}->{Query_time};
-         delete $args{results}->{callaghan_get_sth}->{Query_time};  # Keep clean
+         my $Query_time = $args{results}->{get_row_sths}->{Query_time};
+         delete $args{results}->{get_row_sths}->{Query_time};  # Keep clean
          return 'Query_time', $Query_time;
       };
    }
@@ -6878,6 +6878,11 @@ sub main {
             $host1_results->{checksum_results}->{n_rows},
             $host2_results->{checksum_results}->{n_rows};
       }
+      if ( $compare_method eq 'rows' ) {
+          printf "# Missing_Rows: %d  Different_rows: %d\n",
+            scalar @{$host1_results->{get_row_sths}->{missing_rows}},
+            scalar @{$host1_results->{get_row_sths}->{different_rows}};
+      }
 
       # Print errors and reasons in a /* comment block */ before the query.
       if ( $o->get('reasons') || $o->get('errors') ) {
@@ -6886,6 +6891,8 @@ sub main {
             if $o->get('errors');
          print_reasons($event->{reasons})
             if $o->get('reasons');
+         print_row_differences($host1_results)
+            if $compare_method eq 'rows';
          print "*/\n";
       }
 
@@ -6902,15 +6909,15 @@ sub main {
 # Subroutines.
 # ############################################################################
 
-# callaghan_rank_sth() implements part of an idea discussed by Mark Callaghan,
+# rank_row_sths() implements part of an idea discussed by Mark Callaghan,
 # Baron Schwartz and Daniel Nichter.  See:
 # http://groups.google.com/group/maatkit-discuss/browse_thread/thread/5d0f208f4e76ec0f 
 # http://groups.google.com/group/maatkit-discuss/browse_thread/thread/49f4564111c78a2f
 
-# This is a QueryRanker callback for the QueryExecutor::callaghan_get_sth
+# This is a QueryRanker callback for the QueryExecutor::get_row_sths
 # operation.  It's not a trivial rank and comparison so we do it here
 # instead of QueryRanker.
-sub callaghan_rank_sths {
+sub rank_row_sths {
    my ( $host1, $host2, %args ) = @_;
    foreach my $arg ( qw(hosts event OptionParser) ) {
       die "I need a $arg argument" unless $args{$arg};
@@ -6919,6 +6926,9 @@ sub callaghan_rank_sths {
    my $event = $args{event};
    my $rank  = 0;
    my @reasons;
+
+   $host1->{missing_rows}   = [];
+   $host1->{different_rows} = [];
 
    if ( $host1->{error} ) {
       $rank += 100;
@@ -7000,14 +7010,52 @@ sub callaghan_rank_sths {
    # The result sets differ, so now we must begin the difficult
    # work: finding and determining the nature of those differences.
    MKDEBUG && _d('Result sets are different');
-   my $o  = $args{OptionParser};
-   my $db = $o->get('tmp-table-database') || $event->{db} || $event->{Schema};
+   my ($missing_rows, $different_rows) = diff_rows(
+      outfiles => [$host1_outfile, $host2_outfile],
+      struct   => $struct,
+      %args,
+   );
 
-   my $host1_dbh = $args{hosts}->[0]->{dbh};
-   my $host1_tbl = "`$db`.`mk_upgrade_host1`";
+   my $n_missing_rows = scalar @$missing_rows;
+   if ( $n_missing_rows ) {
+      my $inc = 10 * $n_missing_rows;
+      push @reasons, "$n_missing_rows missing rows (rank+$inc)";
+   }
 
-   my $host2_dbh = $args{hosts}->[1]->{dbh};
-   my $host2_tbl = "`$db`.`mk_upgrade_host2`";
+   my $n_different_rows = scalar @$different_rows;
+   if ( $n_different_rows ) {
+      my $inc = 5 * $n_different_rows;
+      push @reasons, "$n_different_rows different rows (rank+$inc)";
+   }
+
+   # Doesn't matter in which host's results we save these.  Just remember
+   # which one we used when we go to print these results.
+   $host1->{missing_rows}   = $missing_rows;
+   $host1->{different_rows} = $different_rows;
+
+   return $rank, @reasons;
+}
+
+sub diff_rows {
+   my ( %args ) = @_;
+   my @required_args = qw(hosts event OptionParser outfiles struct TableSyncer);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($hosts, $event, $o, $outfiles, $struct) = @args{@required_args};
+
+   my $dbh  = $args{hosts}->[0]->{dbh};  # Doesn't matter which one.
+   my $db   = $o->get('tmp-table-database') || $event->{db} || $event->{Schema};
+   my $rank = 0;
+   my @reasons;
+
+   my $host1_outfile = $outfiles->[0];
+   my $host1_dbh     = $hosts->[0]->{dbh};
+   my $host1_tbl     = "`$db`.`mk_upgrade_host1`";
+
+   my $host2_outfile = $outfiles->[1];
+   my $host2_dbh     = $hosts->[1]->{dbh};
+   my $host2_tbl     = "`$db`.`mk_upgrade_host2`";
 
    # First thing, make two temps tables into which the outfiles can
    # be loaded.  This requires that we make a CREATE TABLE statement
@@ -7027,13 +7075,68 @@ sub callaghan_rank_sths {
    # Now we need to get all indexes from all tables used by the query
    # and add them to the temp tbl.  Some indexes may be invalid, dupes,
    # or generally useless, but we'll let the sync algo decide that later.
-   add_source_indexes(
+   my $tbl_struct = add_source_indexes(
       query => $event->{arg},
       dest  => [
          { dbh => $host1_dbh, tbl => $host1_tbl, },
          { dbh => $host2_dbh, tbl => $host2_tbl, },
       ],
       %args
+   );
+
+   # Create a RowDiff with callbacks that will do what we want with rows and
+   # columns differ.  This will be passed to TableSyncer which will call it.
+   my @missing_rows;
+   my @different_rows;
+   use constant LEFT  => 0;
+   use constant RIGHT => 1;
+   my @l_r = (undef, undef);
+   my @last_diff_col;
+   my $last_diff = 0;
+   my $key_cmp      = sub {
+      push @last_diff_col, [@_];
+      $last_diff--;
+      return;
+   };
+   my $same_row = sub {
+      my ( $lr, $rr ) = @_;
+      if ( @l_r ) {
+         if ( $l_r[LEFT] && $l_r[RIGHT] ) {
+            push @different_rows, [@l_r, $last_diff_col[$last_diff]];
+
+         }
+         elsif ( $l_r[LEFT] ) {
+            push @missing_rows, [$l_r[LEFT], undef];
+         }
+         else {
+            push @missing_rows, [undef, $l_r[RIGHT]];
+         }
+      }
+      @l_r           = (undef, undef);
+      @last_diff_col = ();
+      $last_diff     = 0;
+      return;
+   };
+   my $not_in_left  = sub {
+      my ( $rr ) = @_;
+      $same_row->() if $l_r[RIGHT];
+      $l_r[RIGHT] = $rr;
+      $same_row->(@l_r) if $l_r[LEFT] && $l_r[RIGHT];
+      return;
+   };
+   my $not_in_right = sub {
+      my ( $lr ) = @_;
+      $same_row->() if $l_r[LEFT];
+      $l_r[LEFT] = $lr;
+      $same_row->(@l_r) if $l_r[LEFT] && $l_r[RIGHT];
+      return;
+   };
+   my $rd = new RowDiff(
+      dbh          => $dbh,
+      key_cmp      => $key_cmp,
+      same_row     => $same_row,
+      not_in_left  => $not_in_left,
+      not_in_right => $not_in_right,
    );
 
    # With whatever index we may have, let TableSyncer choose an
@@ -7058,17 +7161,18 @@ sub callaghan_rank_sths {
       nibbler       => $args{TableNibbler},
       possible_keys => [],  # not actually used; bug?
       parser        => $args{TableParser},
-      print         => 1,
+      print         => 0,
       quoter        => $args{Quoter},
       replace       => 0,
       replicate     => 0,
       transaction   => 0,
       sleep         => 0,
+      RowDiff       => $rd,
       src_db        => $db,
       src_dbh       => $host1_dbh,
       src_tbl       => 'mk_upgrade_host1',
       test          => 0,
-      tbl_struct    => $struct,
+      tbl_struct    => $tbl_struct || $struct,
       timeoutok     => 0,
       trim          => 0,
       versionparser => $args{VersionParser},
@@ -7079,7 +7183,9 @@ sub callaghan_rank_sths {
       skipslavecheck=> 1,
    );
 
-   return $rank, @reasons;
+   $same_row->() if $l_r[LEFT] || $l_r[RIGHT];
+
+   return \@missing_rows, \@different_rows;
 }
 
 # Writes the current row and all remaining rows to an outfile.
@@ -7136,11 +7242,18 @@ sub add_source_indexes {
    my $dbh        = $dest->[0]->{dbh};  # doesn't matter which one
 
    my @src_tbls = $qp->get_tables($query);
+   my $struct;
    my @keys;
    foreach my $db_tbl ( @src_tbls ) {
       my ($db, $tbl) = $q->split_unquote($db_tbl, $default_db);
       if ( $db ) {
-         my $struct = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl));
+         eval {
+            $struct = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl));
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d('Error parsing', $db, '.', $tbl, ':', $EVAL_ERROR);
+            next;
+         }
          push @keys, map {
             ($_->{is_unique} ? 'UNIQUE ' : '') . "KEY ($_->{colnames})";
          } grep { $_->{type} eq 'BTREE' } values %{$struct->{keys}};
@@ -7151,6 +7264,7 @@ sub add_source_indexes {
       }
    }
    MKDEBUG && _d('Source keys:', Dumper(\@keys));
+   return unless @keys;
 
    for my $i ( 0..(@$dest - 1) ) {
       MKDEBUG && _d("Adding source keys to host".($i+1));
@@ -7164,6 +7278,8 @@ sub add_source_indexes {
       }
    }
 
+   # If the query uses only 1 table then return its struct.
+   # return @src_tbls == 1 ? $struct : undef;
    return;
 }
 
@@ -7212,6 +7328,32 @@ sub print_reasons {
    }
    else {
       print "None\n\n";
+   }
+   return;
+}
+
+sub print_row_differences {
+   my ( $host1_results ) = @_;
+   my $missing = $host1_results->{get_row_sths}->{missing_rows};
+   my $diff    = $host1_results->{get_row_sths}->{different_rows};
+   if ( @$missing ) {
+      print "MISSING ROWS: ";
+      print "\n\n";
+      for my $i ( 0..(scalar @$missing - 1) ) {
+         print $i+1, '. Missing on host',
+            ($missing->[$i]->[0] ? "2: ".Dumper($missing->[$i]->[0])
+                                 : "1: ".Dumper($missing->[$i]->[1])
+            ),
+      }
+      print "\n";
+   }
+   if ( @$diff ) {
+      print "DIFFERENT ROWS: ";
+      print "\n\n";
+      for my $i ( 0..(scalar @$diff - 1) ) {
+         print $i+1, '. ', Dumper($diff->[$i]);
+      }
+      print "\n";
    }
    return;
 }
@@ -7576,9 +7718,9 @@ Available compare methods (case-insensitive):
 Do C<CREATE TEMPORARY TABLE `mk_upgrade` AS query> then
 C<CHECKSUM TABLE `mk_upgrade`>.
 
-=item Callaghan
+=item rows
 
-TODO 
+Compare rows to find those which are missing or different.
 
 =back
 

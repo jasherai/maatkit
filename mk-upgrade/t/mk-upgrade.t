@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 18;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -22,6 +22,32 @@ $sb->load_file('master', '../../common/t/samples/issue_11.sql');
 $dbh1->do('INSERT INTO test.issue_11 VALUES (1,2,3),(2,2,3),(3,1,1),(4,5,0)');
 
 my @hosts = ('h=127.1,P=12345', 'h=127.1,P=12346');
+
+my $o = new OptionParser(
+   'description' => 'mk-upgrade',
+);
+$o->get_specs('../mk-upgrade');
+my $qparser = new QueryParser();
+my $tp      = new TableParser();
+my $q       = new Quoter();
+my $du      = new MySQLDump();
+my $syncer  = new TableSyncer();
+my $chunker  = new TableChunker( quoter => $q );
+my $nibbler  = new TableNibbler();
+my $checksum = new TableChecksum();
+my $vp       = new VersionParser();
+my %common_modules = (
+   OptionParser => $o,
+   QueryParser  => $qparser,
+   TableParser  => $tp,
+   Quoter       => $q,
+   MySQLDump    => $du,
+   TableSyncer  => $syncer,
+   TableChunker => $chunker,
+   TableNibbler => $nibbler,
+   TableChecksum => $checksum,
+   VersionParser => $vp,
+);
 
 sub output {
    my $output = '';
@@ -78,11 +104,183 @@ like(
    'It runs'
 );
 
+# #############################################################################
+# Test diff_rows().
+# #############################################################################
+
+$sb->load_file('master', 'samples/diff_results_host1.sql');
+$sb->load_file('slave1', 'samples/diff_results_host2.sql');
+
+my $struct = {
+   col_posn   => { c => 1, i => 0 },
+   cols       => ['i', 'c'],
+   is_col     => { c => 1,  i => 1 },
+   is_numeric => { c => 0,  i => 1 },
+   type_for   => { c => 'char',  i => 'integer'  },
+};
+
+my ($missing, $diff) = mk_upgrade::diff_rows(
+   hosts    => [{ dbh => $dbh1 }, { dbh => $dbh2 }],
+   outfiles => [qw(samples/diff_1-1_outfile.txt samples/diff_1-2_outfile.txt)],
+   event    => {
+      arg => 'SELECT * FROM diff_results.diff_1',
+      db  => 'test',
+   },
+   struct   => $struct,
+   %common_modules,
+);
+is_deeply(
+   $missing,
+      [
+        [
+          {
+            __maatkit_count => '1',
+            c => 'c',
+            i => '3'
+          },
+          undef
+        ],
+        [
+          {
+            __maatkit_count => '1',
+            c => 'e',
+            i => '5'
+          },
+          undef
+        ],
+        [
+          {
+            __maatkit_count => '1',
+            c => 'f',
+            i => '6'
+          },
+          undef
+        ],
+        [
+          {
+            __maatkit_count => '1',
+            c => 'g',
+            i => '7'
+          },
+          undef
+        ]
+      ],
+   'diff 1 missing'
+);
+is_deeply(
+   $diff,
+   [],
+   'diff 1 different'
+);
+
+($missing, $diff) = mk_upgrade::diff_rows(
+   hosts    => [{ dbh => $dbh1 }, { dbh => $dbh2 }],
+   outfiles => [qw(samples/diff_2-1_outfile.txt samples/diff_2-2_outfile.txt)],
+   event    => {
+      arg => 'SELECT * FROM diff_results.diff_2',
+      db  => 'test',
+   },
+   struct   => $struct,
+   %common_modules,
+);
+is_deeply(
+   $missing,
+   [
+      [
+         undef,
+         {
+            __maatkit_count => '1',
+            c => 'b',
+            i => '2'
+         },
+      ],
+      [
+         {
+            __maatkit_count => '1',
+            c => 'a',
+            i => '5'
+         },
+         undef,
+      ],
+   ],
+   'diff 2 missing'
+);
+is_deeply(
+   $diff,
+   [
+      [
+         {
+            __maatkit_count => '1',
+            c => 'l',
+            i => '4'
+         },
+         {
+            __maatkit_count => '1',
+            c => 'r',
+            i => '4'
+         },
+         [
+            'c',
+            'l',
+            'r'
+         ],
+      ],
+   ],
+   'diff 2 different'
+);
+
+($missing, $diff) = mk_upgrade::diff_rows(
+   hosts    => [{ dbh => $dbh1 }, { dbh => $dbh2 }],
+   outfiles => [qw(samples/diff_3-1_outfile.txt samples/diff_3-2_outfile.txt)],
+   event    => {
+      arg => 'SELECT * FROM diff_results.diff_3',
+      db  => 'test',
+   },
+   struct   => $struct,
+   %common_modules,
+);
+is_deeply(
+   $missing,
+   [
+      [
+         undef,
+         {
+            __maatkit_count => '1',
+            c => 'b',
+            i => '2'
+         },
+      ],
+   ],
+   'diff 3 missing'
+);
+is_deeply(
+   $diff,
+   [
+      [
+         {
+            __maatkit_count => '1',
+            c => 'l',
+            i => '4'
+         },
+         {
+            __maatkit_count => '1',
+            c => 'r',
+            i => '4'
+         },
+         [
+            'c',
+            'l',
+            'r'
+         ],
+      ],
+   ],
+   'diff 3 different'
+);
 
 # #############################################################################
 # Test make_table_ddl().
 # #############################################################################
-my $struct = {
+$struct = {
    cols => [
       'id',
       'i',
