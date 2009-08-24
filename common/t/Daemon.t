@@ -19,7 +19,7 @@ my $log_file = '/tmp/daemonizes.output';
 isa_ok($d, 'Daemon');
 
 my $cmd     = 'samples/daemonizes.pl';
-my $ret_val = system("$cmd 2 --daemonize --pid $pid_file >/dev/null 2>/dev/null");
+my $ret_val = system("$cmd 2 --daemonize --pid $pid_file");
 SKIP: {
    skip 'Cannot test Daemon.pm because t/daemonizes.pl is not working',
       18 unless $ret_val == 0;
