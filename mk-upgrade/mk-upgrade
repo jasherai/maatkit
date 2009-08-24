@@ -6552,7 +6552,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MockSyncStream package 4555
+# MockSyncStream package 4559
 # ###########################################################################
 package MockSyncStream;
 
@@ -6622,6 +6622,8 @@ sub get_result_set_struct {
    my @cols     = @{$sth->{NAME}};
    my @types    = map { $dbh->type_info($_)->{TYPE_NAME} } @{$sth->{TYPE}};
    my @nullable = map { $dbh->type_info($_)->{NULLABLE} == 1 ? 1 : 0 } @{$sth->{TYPE}};
+   my @p = @{$sth->{PRECISION}};
+   my @s = @{$sth->{SCALE}};
 
    my $struct   = {
       cols => \@cols, 
@@ -6636,6 +6638,8 @@ sub get_result_set_struct {
       $struct->{is_nullable}->{$col} = $nullable[$i];
       $struct->{is_numeric}->{$col} 
          = ($type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ? 1 : 0);
+      $struct->{precision}->{$col}
+         = ($type =~ m/(?:float|double|decimal)/ ? "($p[$i],$s[$i])" : undef);
    }
 
    return $struct;
@@ -7515,9 +7519,14 @@ sub make_table_ddl {
    my ( $struct ) = @_;
    my $sql = "(\n"
            . (join("\n",
-                 map { "  $_ $struct->{type_for}->{$_}," } @{$struct->{cols}}))
+                 map {
+                    my $name = $_;
+                    my $type = $struct->{type_for}->{$_};
+                    my $prec = $struct->{precision}->{$_} || '';
+                    "  `$name` $type$prec,";
+                 } @{$struct->{cols}}))
            . ')';
-   # The last column will be like "i integer,)" which is invalid.
+   # The last column will be like "`i` integer,)" which is invalid.
    $sql =~ s/,\)$/\n)/;
    MKDEBUG && _d('table ddl:', $sql);
    return $sql;
@@ -8028,6 +8037,15 @@ Compare rows to find those which are missing or different.
 default: yes; group: Comparisons
 
 Compare warnings and errors.
+
+=item --float-precision
+
+type: int; default: 6
+
+Round decimal values to this many places.
+
+This option helps eliminate false-positives caused by floating-point
+imprecision.
 
 =item --max-differences
 
