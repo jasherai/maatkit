@@ -7322,8 +7322,6 @@ sub diff_rows {
 
    my $dbh  = $args{hosts}->[0]->{dbh};  # Doesn't matter which one.
    my $db   = $o->get('tmp-table-database') || $event->{db} || $event->{Schema};
-   my $rank = 0;
-   my @reasons;
 
    my $host1_outfile = $outfiles->[0];
    my $host1_dbh     = $hosts->[0]->{dbh};
@@ -7360,8 +7358,9 @@ sub diff_rows {
       %args
    );
 
-   # Create a RowDiff with callbacks that will do what we want with rows and
-   # columns differ.  This will be passed to TableSyncer which will call it.
+   # Create a RowDiff with callbacks that will do what we want when rows and
+   # columns differ.  This RowDiff is passed to TableSyncer which calls it.
+   # TODO: explain how these callbacks work together.
    my $max_diff = $o->get('max-differences');
    my $n_diff   = 0;
    my @missing_rows;
@@ -7452,7 +7451,8 @@ sub diff_rows {
 
    # With whatever index we may have, let TableSyncer choose an
    # algorithm and find were rows differ.  We don't actually sync
-   # the tables.
+   # the tables (execute=>0).  Instead, the callbacks above will
+   # save rows in @missing_rows and @different_rows.
    my $syncer = $args{TableSyncer};
    my %status = $syncer->sync_table(
       algorithm     => '',  # determine best algo
@@ -7532,6 +7532,12 @@ sub open_outfile {
    return $fh, $outfile;
 }
 
+# Returns just the column definitions for the given struct.
+# Example:
+#   (
+#     `i` integer,
+#     `f` float(10,8)
+#   )
 sub make_table_ddl {
    my ( $struct ) = @_;
    my $sql = "(\n"
@@ -7549,6 +7555,17 @@ sub make_table_ddl {
    return $sql;
 }
 
+# Adds every index from every table used by the query to all the
+# dest tables.  dest is an arrayref of hashes, one for each destination.
+# Each hash needs a dbh and tbl key; e.g.:
+#   [
+#     {
+#       dbh => $dbh,
+#       tbl => 'db.tbl',
+#     },
+#   ],
+# For the moment, the sub returns nothing.  In the future, it should
+# add to $args{struct}->{keys} the keys that it was able to add.
 sub add_source_indexes {
    my ( %args ) = @_;
    my @required_args = qw(query dest QueryParser TableParser Quoter MySQLDump struct);
@@ -7589,7 +7606,7 @@ sub add_source_indexes {
       MKDEBUG && _d("Adding source keys to host".($i+1));
       foreach my $key ( @keys ) {
          my $def = $key->[0];
-         my $sql = "ALTER TABLE $dest->[$i]->{tbl} ADD $key->[0]";
+         my $sql = "ALTER TABLE `$dest->[$i]->{tbl}` ADD $key->[0]";
          MKDEBUG && _d($sql);
          eval {
             $dest->[$i]->{dbh}->do($sql);
