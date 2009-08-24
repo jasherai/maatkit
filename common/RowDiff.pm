@@ -32,6 +32,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #   * not_in_right  Callback when left row is not in the right
 #   * key_cmp       Callback when a column value differs
 #   * done          Callback that stops compare_sets() if it returns true
+#   * trf           Callback to transform numeric values before comparison
 sub new {
    my ( $class, %args ) = @_;
    die "I need a dbh" unless $args{dbh};
@@ -93,8 +94,7 @@ sub compare_sets {
 
       my $cmp;
       if ( $lr && $rr ) {
-         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl,
-            $self->{key_cmp});
+         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
          MKDEBUG && _d('Key comparison on left and right:', $cmp);
       }
       if ( $lr || $rr ) {
@@ -144,8 +144,10 @@ sub compare_sets {
 # TODO: must generate the comparator function dynamically for speed, so we don't
 # have to check the type of columns constantly
 sub key_cmp {
-   my ( $self, $lr, $rr, $key_cols, $tbl, $callback ) = @_;
+   my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
    MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
+   my $callback = $self->{key_cmp};
+   my $trf      = $self->{trf};
    foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
       my $r = $rr->{$col};
@@ -156,6 +158,7 @@ sub key_cmp {
       else {
          if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
             MKDEBUG && _d($col, 'is numeric');
+            ($l, $r) = $trf->($l, $r, $tbl, $col) if $trf;
             my $cmp = $l <=> $r;
             if ( $cmp ) {
                MKDEBUG && _d('Column', $col, 'differs:', $l, '!=', $r);

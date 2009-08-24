@@ -54,7 +54,7 @@ package main;
 
 my $tests;
 BEGIN {
-   $tests = 25;
+   $tests = 26;
 }
 
 use Test::More tests => $tests;
@@ -401,6 +401,40 @@ is_deeply(
    ],
    'done callback'
 );
+
+$d = new RowDiff(
+   dbh          => 1,
+   key_cmp      => $key_cmp,
+   same_row     => $same_row,
+   not_in_left  => $not_in_left,
+   not_in_right => $not_in_right,
+   trf          => sub {
+      my ( $l, $r, $tbl, $col ) = @_;
+      return 1, 1;  # causes all rows to look like they're identical
+   },
+);
+@rows = ();
+$d->compare_sets(
+   left => new MockSth(
+      { a => 1, b => 2, c => 3 },
+      { a => 4, b => 5, c => 6 },
+   ),
+   right => new MockSth(
+      { a => 7,  b => 8,  c => 9  },
+      { a => 10, b => 11, c => 12 },
+   ),
+   syncer => $s,
+   tbl => { is_numeric => { a => 1, b => 1, c => 1 } },
+);
+is_deeply(
+   \@rows,
+   [
+      'same row',
+      'same row',
+   ],
+   'trf callback'
+);
+
 # #############################################################################
 # The following tests use "real" (sandbox) servers and real statement handles.
 # #############################################################################
