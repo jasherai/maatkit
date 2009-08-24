@@ -67,6 +67,8 @@ sub daemonize {
 
    $self->_make_PID_file();
 
+   $OUTPUT_AUTOFLUSH = 1;
+
    # Only reopen STDIN to /dev/null if it's a tty.  It may be a pipe,
    # in which case we don't want to break it.
    if ( -t STDIN ) {
@@ -86,9 +88,7 @@ sub daemonize {
       # best that we just explicitly close all fds before reopening them.
       close STDERR;
       open  STDERR, ">&STDOUT"
-         or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
-
-      $OUTPUT_AUTOFLUSH = 1;
+         or die "Cannot dupe STDERR to STDOUT: $OS_ERROR"; 
    }
    else {
       if ( -t STDOUT ) {
