@@ -31,6 +31,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #   * not_in_left   Callback when right row is not in the left
 #   * not_in_right  Callback when left row is not in the right
 #   * key_cmp       Callback when a column value differs
+#   * done          Callback that stops compare_sets() if it returns true
 sub new {
    my ( $class, %args ) = @_;
    die "I need a dbh" unless $args{dbh};
@@ -48,6 +49,7 @@ sub compare_sets {
       = @args{qw(left right syncer tbl)};
 
    my ($lr, $rr);  # Current row from the left/right sources.
+   my $done = $self->{done};
 
    # We have to manually track if the left or right sth is done
    # fetching rows because sth->{Active} is always true with
@@ -120,6 +122,7 @@ sub compare_sets {
             $rr = undef;
          }
       }
+      $left_done = $right_done = 1 if $done && $done->($left, $right);
    } while ( !($left_done && $right_done) );
    MKDEBUG && _d('No more rows');
    $syncer->done_with_rows();
