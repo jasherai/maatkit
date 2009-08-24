@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 18;
+use Test::More tests => 20;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -27,6 +27,7 @@ my $o = new OptionParser(
    'description' => 'mk-upgrade',
 );
 $o->get_specs('../mk-upgrade');
+$o->get_opts();
 my $qparser = new QueryParser();
 my $tp      = new TableParser();
 my $q       = new Quoter();
@@ -107,7 +108,7 @@ like(
 # #############################################################################
 # Test diff_rows().
 # #############################################################################
-
+diag(`/tmp/12345/use -e 'CREATE DATABASE test' 2>/dev/null`);
 $sb->load_file('master', 'samples/diff_results_host1.sql');
 $sb->load_file('slave1', 'samples/diff_results_host2.sql');
 
@@ -276,6 +277,93 @@ is_deeply(
    ],
    'diff 3 different'
 );
+
+@ARGV=qw(--max-differences 5);
+$o->get_opts();
+($missing, $diff) = mk_upgrade::diff_rows(
+   hosts    => [{ dbh => $dbh1 }, { dbh => $dbh2 }],
+   outfiles => [qw(samples/diff_4-1_outfile.txt samples/diff_4-2_outfile.txt)],
+   event    => {
+      arg => 'SELECT * FROM diff_results.diff_4',
+      db  => 'test',
+   },
+   struct   => $struct,
+   %common_modules,
+);
+is_deeply(
+   $missing,
+   [
+      [
+        undef,
+        {
+          __maatkit_count => '1',
+          c => 'b',
+          i => '2'
+        }
+      ],
+      [
+        {
+          __maatkit_count => '1',
+          c => 'g',
+          i => '7'
+        },
+        undef
+      ],
+      [
+        {
+          __maatkit_count => '1',
+          c => 'g',
+          i => '8'
+        },
+        undef
+      ],
+   ],
+   'diff 4 missing with --max-differences'
+);
+is_deeply(
+   $diff,
+   [
+      [
+        {
+          __maatkit_count => '1',
+          c => 'c',
+          i => '3'
+        },
+        {
+          __maatkit_count => '1',
+          c => 'b',
+          i => '3'
+        },
+        [
+          'i',
+          3,
+          4
+        ]
+      ],
+      [
+        {
+          __maatkit_count => '1',
+          c => '',
+          i => '5'
+        },
+        {
+          __maatkit_count => '1',
+          c => 'e',
+          i => '5'
+        },
+        [
+          'c',
+          '',
+          'e'
+        ]
+      ]
+   ],
+   'diff 4 different with --max-differences'
+);
+
+# Reset opts
+@ARGV=();
+$o->get_opts();
 
 # #############################################################################
 # Test make_table_ddl().

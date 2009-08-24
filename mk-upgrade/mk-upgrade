@@ -4293,7 +4293,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 4544
+# RowDiff package 4557
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -4317,6 +4317,7 @@ sub compare_sets {
       = @args{qw(left right syncer tbl)};
 
    my ($lr, $rr);  # Current row from the left/right sources.
+   my $done = $self->{done};
 
    my ($left_done, $right_done) = (0, 0);
 
@@ -4367,6 +4368,7 @@ sub compare_sets {
             $rr = undef;
          }
       }
+      $left_done = $right_done = 1 if $done && $done->($left, $right);
    } while ( !($left_done && $right_done) );
    MKDEBUG && _d('No more rows');
    $syncer->done_with_rows();
@@ -7354,6 +7356,8 @@ sub diff_rows {
 
    # Create a RowDiff with callbacks that will do what we want with rows and
    # columns differ.  This will be passed to TableSyncer which will call it.
+   my $max_diff = $o->get('max-differences');
+   my $n_diff   = 0;
    my @missing_rows;
    my @different_rows;
    use constant LEFT  => 0;
@@ -7368,17 +7372,23 @@ sub diff_rows {
    };
    my $same_row = sub {
       my ( $lr, $rr ) = @_;
-      if ( @l_r ) {
-         if ( $l_r[LEFT] && $l_r[RIGHT] ) {
-            push @different_rows, [@l_r, $last_diff_col[$last_diff]];
-
-         }
-         elsif ( $l_r[LEFT] ) {
-            push @missing_rows, [$l_r[LEFT], undef];
-         }
-         else {
-            push @missing_rows, [undef, $l_r[RIGHT]];
-         }
+      if ( $l_r[LEFT] && $l_r[RIGHT] ) {
+         MKDEBUG && _d('Saving different row');
+         push @different_rows, [@l_r, $last_diff_col[$last_diff]];
+         $n_diff++;
+      }
+      elsif ( $l_r[LEFT] ) {
+         MKDEBUG && _d('Saving not in right row');
+         push @missing_rows, [$l_r[LEFT], undef];
+         $n_diff++;
+      }
+      elsif ( $l_r[RIGHT] ) {
+         MKDEBUG && _d('Saving not in left row');
+         push @missing_rows, [undef, $l_r[RIGHT]];
+         $n_diff++;
+      }
+      else {
+         MKDEBUG && _d('No missing or different rows in queue');
       }
       @l_r           = (undef, undef);
       @last_diff_col = ();
@@ -7387,17 +7397,28 @@ sub diff_rows {
    };
    my $not_in_left  = sub {
       my ( $rr ) = @_;
-      $same_row->() if $l_r[RIGHT];
+      $same_row->() if $l_r[RIGHT];  # last missing row
       $l_r[RIGHT] = $rr;
       $same_row->(@l_r) if $l_r[LEFT] && $l_r[RIGHT];
       return;
    };
    my $not_in_right = sub {
       my ( $lr ) = @_;
-      $same_row->() if $l_r[LEFT];
+      $same_row->() if $l_r[LEFT];  # last missing row
       $l_r[LEFT] = $lr;
       $same_row->(@l_r) if $l_r[LEFT] && $l_r[RIGHT];
       return;
+   };
+   my $done = sub {
+      my ( $left, $right ) = @_;
+      MKDEBUG && _d('Found', $n_diff, 'of', $max_diff, 'max differences');
+      if ( $n_diff >= $max_diff ) {
+         MKDEBUG && _d('Done comparing rows, got --max-differences', $max_diff);
+         $left->finish();
+         $right->finish();
+         return 1;
+      }
+      return 0;
    };
    my $rd = new RowDiff(
       dbh          => $dbh,
@@ -7405,6 +7426,7 @@ sub diff_rows {
       same_row     => $same_row,
       not_in_left  => $not_in_left,
       not_in_right => $not_in_right,
+      done         => $done,
    );
 
    # With whatever index we may have, let TableSyncer choose an
@@ -7451,7 +7473,9 @@ sub diff_rows {
       skipslavecheck=> 1,
    );
 
-   $same_row->() if $l_r[LEFT] || $l_r[RIGHT];
+   if ( $n_diff < $max_diff ) {
+      $same_row->() if $l_r[LEFT] || $l_r[RIGHT];  # save remaining rows
+   }
 
    return \@missing_rows, \@different_rows;
 }
@@ -8004,6 +8028,16 @@ Compare rows to find those which are missing or different.
 default: yes; group: Comparisons
 
 Compare warnings and errors.
+
+=item --max-differences
+
+type: int; default: 10
+
+Stop comparing rows for C<--compare-results-method rows> after this many differences are found.
+
+This counts for both missing and different rows.  The query's rank will not
+be increased for the different rows past this value.  Therefore, this option
+may lower the query's real rank because all different rows may not be found.
 
 =back
 

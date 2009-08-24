@@ -50,3 +50,12 @@ CREATE TABLE `diff_3` (
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 INSERT INTO `diff_3` VALUES (1,'a'),(2,'b'),(4,'r'),(3,'c');
 
+-- a lot of diffs to test --max-differences
+DROP TABLE IF EXISTS `diff_4`;
+CREATE TABLE `diff_4` (
+  `i` int(11) NOT NULL,  
+  `c` char(1) default NULL,
+  UNIQUE INDEX (i),
+  INDEX (c, i)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+INSERT INTO `diff_4` VALUES (1,'a'),(2,'b'),(3,'b'),(4,'l'),('5','e'),(6,'f');
