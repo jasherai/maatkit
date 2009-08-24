@@ -154,6 +154,17 @@ SKIP: {
             v  => 1,
             t  => 1,
          },
+         precision => {
+            id => undef,
+            i  => undef,
+            f  => '(12,31)',
+            d  => '(7,2)',
+            dt => undef,
+            ts => undef,
+            c  => undef,
+            v  => undef,
+            t  => undef,
+         },
       },
       'Gets result set struct from sth attribs'
    );

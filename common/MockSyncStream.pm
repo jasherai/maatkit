@@ -98,6 +98,8 @@ sub get_result_set_struct {
    my @cols     = @{$sth->{NAME}};
    my @types    = map { $dbh->type_info($_)->{TYPE_NAME} } @{$sth->{TYPE}};
    my @nullable = map { $dbh->type_info($_)->{NULLABLE} == 1 ? 1 : 0 } @{$sth->{TYPE}};
+   my @p = @{$sth->{PRECISION}};
+   my @s = @{$sth->{SCALE}};
 
    my $struct   = {
       cols => \@cols, 
@@ -113,6 +115,8 @@ sub get_result_set_struct {
       $struct->{is_nullable}->{$col} = $nullable[$i];
       $struct->{is_numeric}->{$col} 
          = ($type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ? 1 : 0);
+      $struct->{precision}->{$col}
+         = ($type =~ m/(?:float|double|decimal)/ ? "($p[$i],$s[$i])" : undef);
    }
 
    return $struct;
