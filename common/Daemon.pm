@@ -72,7 +72,7 @@ sub daemonize {
    if ( -t STDIN ) {
       close STDIN;
       open  STDIN, '/dev/null'
-         or die "Cannot reopen STDIN to /dev/null";
+         or die "Cannot reopen STDIN to /dev/null: $OS_ERROR";
    }
 
    if ( $self->{log_file} ) {
@@ -87,6 +87,20 @@ sub daemonize {
       close STDERR;
       open  STDERR, ">&STDOUT"
          or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
+
+      $OUTPUT_AUTOFLUSH = 1;
+   }
+   else {
+      if ( -t STDOUT ) {
+         close STDOUT;
+         open  STDOUT, '>', '/dev/null'
+            or die "Cannot reopen STDOUT to /dev/null: $OS_ERROR";
+      }
+      if ( -t STDERR ) {
+         close STDERR;
+         open  STDERR, '>', '/dev/null'
+            or die "Cannot reopen STDERR to /dev/null: $OS_ERROR";
+      }
    }
 
    MKDEBUG && _d('I am the child and now I live daemonized');
