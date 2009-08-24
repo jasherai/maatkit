@@ -2151,7 +2151,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 3976
+# Daemon package 4565
 # ###########################################################################
 
 package Daemon;
@@ -2199,10 +2199,12 @@ sub daemonize {
 
    $self->_make_PID_file();
 
+   $OUTPUT_AUTOFLUSH = 1;
+
    if ( -t STDIN ) {
       close STDIN;
       open  STDIN, '/dev/null'
-         or die "Cannot reopen STDIN to /dev/null";
+         or die "Cannot reopen STDIN to /dev/null: $OS_ERROR";
    }
 
    if ( $self->{log_file} ) {
@@ -2212,7 +2214,19 @@ sub daemonize {
 
       close STDERR;
       open  STDERR, ">&STDOUT"
-         or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
+         or die "Cannot dupe STDERR to STDOUT: $OS_ERROR"; 
+   }
+   else {
+      if ( -t STDOUT ) {
+         close STDOUT;
+         open  STDOUT, '>', '/dev/null'
+            or die "Cannot reopen STDOUT to /dev/null: $OS_ERROR";
+      }
+      if ( -t STDERR ) {
+         close STDERR;
+         open  STDERR, '>', '/dev/null'
+            or die "Cannot reopen STDERR to /dev/null: $OS_ERROR";
+      }
    }
 
    MKDEBUG && _d('I am the child and now I live daemonized');
