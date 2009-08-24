@@ -4293,7 +4293,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 4557
+# RowDiff package 4561
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -4344,8 +4344,7 @@ sub compare_sets {
 
       my $cmp;
       if ( $lr && $rr ) {
-         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl,
-            $self->{key_cmp});
+         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
          MKDEBUG && _d('Key comparison on left and right:', $cmp);
       }
       if ( $lr || $rr ) {
@@ -4375,8 +4374,10 @@ sub compare_sets {
 }
 
 sub key_cmp {
-   my ( $self, $lr, $rr, $key_cols, $tbl, $callback ) = @_;
+   my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
    MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
+   my $callback = $self->{key_cmp};
+   my $trf      = $self->{trf};
    foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
       my $r = $rr->{$col};
@@ -4387,6 +4388,7 @@ sub key_cmp {
       else {
          if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
             MKDEBUG && _d($col, 'is numeric');
+            ($l, $r) = $trf->($l, $r, $tbl, $col) if $trf;
             my $cmp = $l <=> $r;
             if ( $cmp ) {
                MKDEBUG && _d('Column', $col, 'differs:', $l, '!=', $r);
@@ -7424,6 +7426,20 @@ sub diff_rows {
       }
       return 0;
    };
+   my $trf;
+   if ( my $n = $o->get('float-precision') ) {
+      $trf = sub {
+         my ( $l, $r, $tbl, $col ) = @_;
+         return $l, $r
+            unless $tbl->{type_for}->{$col} =~ m/(?:float|double|decimal)/;
+         my $l_rounded = sprintf "%.${n}f", $l;
+         my $r_rounded = sprintf "%.${n}f", $r;
+         MKDEBUG && _d('Rounded', $l, 'to', $l_rounded,
+            'and', $r, 'to', $r_rounded);
+         return $l_rounded, $r_rounded;
+      };
+   };
+
    my $rd = new RowDiff(
       dbh          => $dbh,
       key_cmp      => $key_cmp,
@@ -7431,6 +7447,7 @@ sub diff_rows {
       not_in_left  => $not_in_left,
       not_in_right => $not_in_right,
       done         => $done,
+      trf          => $trf,
    );
 
    # With whatever index we may have, let TableSyncer choose an
@@ -8040,9 +8057,9 @@ Compare warnings and errors.
 
 =item --float-precision
 
-type: int; default: 6
+type: int
 
-Round decimal values to this many places.
+Round float, double and decimal values to this many places.
 
 This option helps eliminate false-positives caused by floating-point
 imprecision.

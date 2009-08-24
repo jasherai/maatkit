@@ -59,3 +59,12 @@ CREATE TABLE `diff_4` (
   INDEX (c, i)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 INSERT INTO `diff_4` VALUES (1,'a'),(2,'b'),(3,'b'),(4,'l'),('5','e'),(6,'f');
+
+-- test --float-precision
+DROP TABLE IF EXISTS `diff_5`;
+CREATE TABLE `diff_5` (
+  `flo` float(12,10) not null,
+  `dbl` double(12,10) not null,
+  `dec` decimal(12,10) not null
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+INSERT INTO `diff_5` VALUES (1.00000125, 1.00000225, 1.00000325);

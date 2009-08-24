@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 20;
+use Test::More tests => 24;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -365,6 +365,86 @@ is_deeply(
 @ARGV=();
 $o->get_opts();
 
+my $diff_5_struct = {
+   col_posn => {
+     dbl => 1,
+     dec => 2,
+     flo => 0
+   },
+   cols => [
+     'flo',
+     'dbl',
+     'dec'
+   ],
+   is_col => {
+     dbl => 1,
+     dec => 1,
+     flo => 1
+   },
+   is_nullable => {
+     dbl => 1,
+     dec => 1,
+     flo => 1
+   },
+   is_numeric => {
+     dbl => 1,
+     dec => 1,
+     flo => 1
+   },
+   precision => {
+     dbl => '(12,10)',
+     dec => '(14,10)',
+     flo => '(12,10)'
+   },
+   type_for => {
+     dbl => 'double',
+     dec => 'decimal',
+     flo => 'float'
+   },
+};
+($missing, $diff) = mk_upgrade::diff_rows(
+   hosts    => [{ dbh => $dbh1 }, { dbh => $dbh2 }],
+   outfiles => [qw(samples/diff_5-1_outfile.txt samples/diff_5-2_outfile.txt)],
+   event    => {
+      arg => 'SELECT * FROM diff_results.diff_5',
+      db  => 'test',
+   },
+   struct   => $diff_5_struct,
+   %common_modules,
+);
+is_deeply(
+   $missing,
+   [],
+   'diff 5 missing no --float-precision'
+);
+ok(
+   scalar @$diff,
+   'diff 5 different no --float-precision'
+);
+
+@ARGV=qw(--float-precision 6);
+$o->get_opts();
+($missing, $diff) = mk_upgrade::diff_rows(
+   hosts    => [{ dbh => $dbh1 }, { dbh => $dbh2 }],
+   outfiles => [qw(samples/diff_5-1_outfile.txt samples/diff_5-2_outfile.txt)],
+   event    => {
+      arg => 'SELECT * FROM diff_results.diff_5',
+      db  => 'test',
+   },
+   struct   => $diff_5_struct,
+   %common_modules,
+);
+is_deeply(
+   $missing,
+   [],
+   'diff 5 missing --float-precision 6'
+);
+is_deeply(
+   $diff,
+   [],
+   'diff 5 different --float-precision 6'
+);
+
 # #############################################################################
 # Test make_table_ddl().
 # #############################################################################
@@ -391,19 +471,23 @@ $struct = {
       v  => 'varchar',
       t  => 'blob',
    },
+   precision => {
+      f  => '(12,10)',
+      id => undef,
+   },
 };
 is(
    mk_upgrade::make_table_ddl($struct),
    "(
-  id integer,
-  i integer,
-  f float,
-  d decimal,
-  dt timestamp,
-  ts timestamp,
-  c char,
-  v varchar,
-  t blob
+  `id` integer,
+  `i` integer,
+  `f` float(12,10),
+  `d` decimal,
+  `dt` timestamp,
+  `ts` timestamp,
+  `c` char,
+  `v` varchar,
+  `t` blob
 )",
    'make_table_ddl()'
 );

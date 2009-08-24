@@ -62,4 +62,19 @@ CREATE TABLE `diff_4` (
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 INSERT INTO `diff_4` VALUES (1,'a'),(3,'c'),(4,'l'),('5',''),(6,'f'),(7,'g'),(8,'g'),(9,'h'),(10,'i'),(11,'j'),(12,'j');
 
+-- test --float-precision
+-- These values give me:
+-- +--------------+--------------+--------------+
+-- | flo          | dbl          | dec          |
+-- +--------------+--------------+--------------+
+-- | 1.0000011921 | 1.0000022300 | 1.0000032300 | 
+-- +--------------+--------------+--------------+
+DROP TABLE IF EXISTS `diff_5`;
+CREATE TABLE `diff_5` (
+  `flo` float(12,10) not null,
+  `dbl` double(12,10) not null,
+  `dec` decimal(12,10) not null
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+INSERT INTO `diff_5` VALUES (1.00000123, 1.00000223, 1.00000323);
+
 SET SQL_LOG_BIN=1;
