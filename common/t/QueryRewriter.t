@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 120;
+use Test::More tests => 123;
 
 require "../QueryRewriter.pm";
 require '../QueryParser.pm';
@@ -849,6 +849,25 @@ is(
    $qr->fingerprint( load_file('samples/huge_explicit_cols_values.txt') ),
    q{insert into foo (a,b,c,d,e,f,g,h) values(?+)},
    'huge insert with explicit columns before values() (issue 322)',
+);
+
+# #############################################################################
+# Issue 563: Lock tables is not distilled
+# #############################################################################
+is(
+   $qr->distill('LOCK TABLES foo WRITE'),
+   'LOCK foo',
+   'distills lock tables'
+);
+is(
+   $qr->distill('LOCK TABLES foo READ, bar WRITE'),
+   'LOCK foo bar',
+   'distills lock tables (2 tables)'
+);
+is(
+   $qr->distill('UNLOCK TABLES'),
+   'UNLOCK',
+   'distills unlock tables'
 );
 
 exit

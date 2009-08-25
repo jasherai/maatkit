@@ -30,7 +30,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # does not have CREATE, DROP, ALTER, TRUNCATE for example.  But I don't need
 # those for my client yet.  Other verbs: KILL, LOCK, UNLOCK
 our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
-                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START}xi;
+                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK}xi;
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
@@ -194,6 +194,8 @@ sub distill {
       && return "ADMIN";
    $query =~ m/\A\s*use\s+/
       && return "USE";
+   $query =~ m/\A\s*UNLOCK TABLES/i
+      && return "UNLOCK";
 
    # More special cases for data defintion statements.
    # The two evals are a hack to keep Perl from warning that

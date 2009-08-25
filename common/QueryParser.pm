@@ -89,6 +89,17 @@ sub get_tables {
    # They need to be removed so that they are not mistaken for tables.
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
+   # Another special case: LOCK TABLES tbl [[AS] alias] READ|WRITE, etc.
+   # We strip the LOCK TABLES stuff and append "FROM" to fake a SELECT
+   # statement and allow $tbl_regex to match below.
+   if ( $query =~ /^\s*LOCK TABLES/i ) {
+      MKDEBUG && _d('Special table type: LOCK TABLES');
+      $query =~ s/^(\s*LOCK TABLES\s+)//;
+      $query =~ s/\s+(?:READ|WRITE|LOCAL)+\s*//g;
+      MKDEBUG && _d('Locked tables:', $query);
+      $query = "FROM $query";
+   }
+
    $query =~ s/\\["']//g;                # quoted strings
    $query =~ s/".*?"/?/sg;               # quoted strings
    $query =~ s/'.*?'/?/sg;               # quoted strings

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 107;
+use Test::More tests => 114;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -671,6 +671,52 @@ is_deeply(
       'select p.b1927.rtb as pr inner join m.da on da.hr=p.hr and da.node=pr.node ;',
    ],
    'split statements with comment blocks'
+);
+
+# #############################################################################
+# Issue 563: Lock tables is not distilled
+# #############################################################################
+is_deeply(
+   [ $qp->get_tables('LOCK TABLES foo READ')
+   ],
+   [qw(foo)],
+   'LOCK TABLES foo READ'
+);
+is_deeply(
+   [ $qp->get_tables('LOCK TABLES foo WRITE')
+   ],
+   [qw(foo)],
+   'LOCK TABLES foo WRITE'
+);
+is_deeply(
+   [ $qp->get_tables('LOCK TABLES foo READ, bar WRITE')
+   ],
+   [qw(foo bar)],
+   'LOCK TABLES foo READ, bar WRITE'
+);
+is_deeply(
+   [ $qp->get_tables('LOCK TABLES foo AS als WRITE')
+   ],
+   [qw(foo)],
+   'LOCK TABLES foo AS als WRITE'
+);
+is_deeply(
+   [ $qp->get_tables('LOCK TABLES foo AS als1 READ, bar AS als2 WRITE')
+   ],
+   [qw(foo bar)],
+   'LOCK TABLES foo AS als READ, bar AS als2 WRITE'
+);
+is_deeply(
+   [ $qp->get_tables('LOCK TABLES foo als WRITE')
+   ],
+   [qw(foo)],
+   'LOCK TABLES foo als WRITE'
+);
+is_deeply(
+   [ $qp->get_tables('LOCK TABLES foo als1 READ, bar als2 WRITE')
+   ],
+   [qw(foo bar)],
+   'LOCK TABLES foo als READ, bar als2 WRITE'
 );
 
 # #############################################################################
