@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 98;
+use Test::More tests => 99;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -215,6 +215,13 @@ ok(
 ok(
    no_diff($run_with . 'slow035.txt --report-format header,query_report,profile', 'samples/slow035.txt'),
    'Pathological all attribs, minimal attribs, all zero values (slow035)',
+);
+
+# Issue 563, Lock tables is not distilled
+ok(
+   no_diff($run_with . 'slow037.txt --group-by distill --report-format=query_report,profile',
+      'samples/slow037_report.txt'),
+   'Distill UNLOCK and LOCK TABLES'
 );
 
 # #############################################################################
