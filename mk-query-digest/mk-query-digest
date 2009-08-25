@@ -1454,7 +1454,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 4281
+# QueryRewriter package 4569
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1466,7 +1466,7 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
-                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START}xi;
+                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK}xi;
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
@@ -1591,6 +1591,8 @@ sub distill {
       && return "ADMIN";
    $query =~ m/\A\s*use\s+/
       && return "USE";
+   $query =~ m/\A\s*UNLOCK TABLES/i
+      && return "UNLOCK";
 
    eval $QueryParser::data_def_stmts;
    eval $QueryParser::tbl_ident;
@@ -4388,7 +4390,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4520
+# QueryParser package 4569
 # ###########################################################################
 package QueryParser;
 
@@ -4441,6 +4443,14 @@ sub get_tables {
    }
 
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
+
+   if ( $query =~ /^\s*LOCK TABLES/i ) {
+      MKDEBUG && _d('Special table type: LOCK TABLES');
+      $query =~ s/^(\s*LOCK TABLES\s+)//;
+      $query =~ s/\s+(?:READ|WRITE|LOCAL)+\s*//g;
+      MKDEBUG && _d('Locked tables:', $query);
+      $query = "FROM $query";
+   }
 
    $query =~ s/\\["']//g;                # quoted strings
    $query =~ s/".*?"/?/sg;               # quoted strings
