@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 99;
+use Test::More tests => 102;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -858,6 +858,40 @@ SKIP: {
    ok(
       !$output,
       'No longer running for --run-time (issue 361)'
+   );
+
+   diag(`rm -rf /tmp/mk-query-digest.log`);
+
+# #############################################################################
+# Issue 173: Make mk-query-digest do collect-and-report cycles
+# #############################################################################
+
+   # --run-for is tested above.  This tests --iterations by checking that
+   # its value multiplies --run-for.  So if --run-for is 2 and we do 2
+   # iterations, we should run for 4 seconds total.
+   `../mk-query-digest --processlist 127.1 --run-time 2 --iterations 2 --port 12345 --pid /tmp/mk-query-digest.pid --daemonize 1>/dev/null 2>/dev/null`;
+   chomp($pid = `cat /tmp/mk-query-digest.pid`);
+   sleep 3;
+   $output = `ps ax | grep $pid | grep processlist | grep -v grep`;
+   ok(
+      $output,
+      'Still running for --iterations (issue 173)'
+   );
+
+   sleep 2;
+   $output = `ps ax | grep $pid | grep processlist | grep -v grep`;
+   ok(
+      !$output,
+      'No longer running for --iterations (issue 173)'
+   );
+
+   # Another implicit test of --iterations checks that on the second
+   # interation no queries are reported because the slowlog was read
+   # entirely by the first iteration.
+   ok(
+      no_diff($run_with . 'slow002.txt --iterations 2   --report-format=query_report,profile --limit 1',
+      'samples/slow002_iters_2.txt'),
+      '--iterations'
    );
 };
 

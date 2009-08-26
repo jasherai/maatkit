@@ -7151,7 +7151,7 @@ sub main {
       foreach my $ea ( @ea, @tl ) {
          $ea->reset_aggregated_data();
       }
-   }
+   } # ITERATION
 
    # Disconnect all open $dbh's
    map { $dp->disconnect($_) } grep { $_ }
