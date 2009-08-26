@@ -886,7 +886,7 @@ SKIP: {
    );
 
    # Another implicit test of --iterations checks that on the second
-   # interation no queries are reported because the slowlog was read
+   # iteration no queries are reported because the slowlog was read
    # entirely by the first iteration.
    ok(
       no_diff($run_with . 'slow002.txt --iterations 2   --report-format=query_report,profile --limit 1',
