@@ -2427,6 +2427,11 @@ mk-parallel-restore - Load files into MySQL in parallel.
 
 =head1 RISKS
 
+The following section is included to inform users about the potential risks,
+whether known or unknown, of using this tool.  The two main categories of risks
+are those created by the nature of the tool (e.g. read-only tools vs. read-write
+tools) and those created by bugs.
+
 mk-parallel-restore is not a backup program!  It is only for fast data imports.
 Do not rely on mk-parallel-restore for your backups.  You have been warned.
 
@@ -2438,7 +2443,12 @@ At the time of this release, there is a bug which may cause an error on slaves,
 a bug which prevents mk-parallel-restore from creating tables with foreign key
 constraints, and an unverified infinite loop when using L<"--[no]resume">.
 
-See also L<"BUGS">.
+The authoritative source for updated information is always the online issue
+tracking system.  Issues that affect this tool will be marked as such.  You can
+see a list of such issues at the following URL:
+L<http://www.maatkit.org/bugs/mk-parallel-restore>.
+
+See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 

@@ -5055,14 +5055,23 @@ See L<"SPECIFYING HOSTS"> for more on the syntax of the host arguments.
 
 =head1 RISKS
 
+The following section is included to inform users about the potential risks,
+whether known or unknown, of using this tool.  The two main categories of risks
+are those created by the nature of the tool (e.g. read-only tools vs. read-write
+tools) and those created by bugs.
+
 mk-table-checksum only reads information unless L<"--replicate"> is used.
 It make cause significant server load and lock tables while it is checksumming.
 
 At the time of this release, there are bugs which cause mk-table-checksum to
-crash, a bug which affects the chosen L<"--algorithm">, and a bug which
-causes bad <"--where"> clauses with L<"--since">.
+crash and a bug which causes bad <"--where"> clauses with L<"--since">.
 
-See also L<"BUGS">.
+The authoritative source for updated information is always the online issue
+tracking system.  Issues that affect this tool will be marked as such.  You can
+see a list of such issues at the following URL:
+L<http://www.maatkit.org/bugs/mk-table-checksum>.
+
+See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 

@@ -6206,6 +6206,11 @@ through replication and change server1's data:
 
 =head1 RISKS
 
+The following section is included to inform users about the potential risks,
+whether known or unknown, of using this tool.  The two main categories of risks
+are those created by the nature of the tool (e.g. read-only tools vs. read-write
+tools) and those created by bugs.
+
 B<WARNING>: back up your data before you use this tool.
 
 It is a good idea to B<back up your data> and run C<mk-table-sync> with
@@ -6217,10 +6222,15 @@ Be careful when using mk-table-sync in any master-master setup.  Loss of
 data can occur if the script is not used correctly.
 
 At the time of this release, there are bugs which cause mk-table-sync to crash,
-a bug replicating DELETE statements, a bug when using MySQL's replicate-do-db
-option, a bug with L<"--lock"> level 3, and an unverified infinite loop.
+a bug replicating DELETE statements, a bug with L<"--lock"> level 3, and an
+unverified infinite loop.
 
-See also L<"BUGS">.
+The authoritative source for updated information is always the online issue
+tracking system.  Issues that affect this tool will be marked as such.  You can
+see a list of such issues at the following URL:
+L<http://www.maatkit.org/bugs/mk-table-sync>.
+
+See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 

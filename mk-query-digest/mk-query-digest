@@ -7377,6 +7377,11 @@ from replaying them to analyze their performance:
 
 =head1 RISKS
 
+The following section is included to inform users about the potential risks,
+whether known or unknown, of using this tool.  The two main categories of risks
+are those created by the nature of the tool (e.g. read-only tools vs. read-write
+tools) and those created by bugs.
+
 By default mk-query-digest only reads information.  The L<"--execute"> option,
 however, can cause mk-query-digest to modify and delete data.  mk-query-digest
 will write to the L<"--review"> and L<"--review-history"> tables if those
@@ -7388,7 +7393,12 @@ crash, bugs which cause L<"--[no]report"> output to be incorrect, a bug which
 causes incorrect L<"--review"> information, and a bug with L<"--processlist">
 and delayed replication threads.
 
-See also L<"BUGS">.
+The authoritative source for updated information is always the online issue
+tracking system.  Issues that affect this tool will be marked as such.  You can
+see a list of such issues at the following URL:
+L<http://www.maatkit.org/bugs/mk-query-digest>.
+
+See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
