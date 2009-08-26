@@ -5595,7 +5595,7 @@ sub main {
 
          unlock_server(%src_and_dst, %common_modules);
       }
-   }
+   } # sync one table (DSN has t part)
    elsif ( $o->get('replicate') ) {
 
       if ( @dsns > 1 ) {
@@ -5858,30 +5858,75 @@ sub main {
 # ############################################################################
 sub lock_server {
    my ( %args ) = @_;
-   foreach my $arg ( qw(src dst o dp syncer) ) {
+   foreach my $arg ( qw(src dst o dp syncer q ms) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   my $o = $args{o};
+   return unless $o->get('lock') && $o->get('lock') == 3;
+
    eval {
       # Open connections as needed.
       $args{src}->{dbh}      ||= get_cxn($args{src}, %args);
       $args{dst}->{dbh}      ||= get_cxn($args{dst}, %args);
       $args{src}->{misc_dbh} ||= get_cxn($args{src}, %args);
-      $args{syncer}->lock_and_wait(%args, lock_level => 3);
+      $args{syncer}->lock_and_wait(
+         src_dbh      => $args{src}->{dbh},
+         src_db       => '',  # the src and dst db and tbl shouldn't be
+         src_tbl      => '',  # be used with lock level 3.
+         dst_dbh      => $args{dst}->{dbh},
+         dst_db       => '',
+         dst_tbl      => '',
+         misc_dbh     => $args{src}->{misc_dbh},
+         quoter       => $args{q},
+         master_slave => $args{ms},
+         replicate    => $o->get('replicate')   || '', # lock_and_wait() will
+         timeoutok    => $o->get('timeout-ok')  || 0,  # will die if these
+         transaction  => $o->get('transaction') || 0,  # are undef.
+         wait         => $o->get('wait')        || 0,  #
+         lock         => 3,
+         lock_level   => 3,
+      );
+   };
+   if ( $EVAL_ERROR ) {
+      die "Failed to lock server: $EVAL_ERROR";
    }
+   return;
 }
 
 sub unlock_server {
    my ( %args ) = @_;
-   foreach my $arg ( qw(src dst o dp syncer) ) {
+   foreach my $arg ( qw(src dst o dp syncer q) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   my $o = $args{o};
+   return unless $o->get('lock') && $o->get('lock') == 3;
+
    eval {
       # Open connections as needed.
       $args{src}->{dbh}      ||= get_cxn($args{src}, %args);
       $args{dst}->{dbh}      ||= get_cxn($args{dst}, %args);
       $args{src}->{misc_dbh} ||= get_cxn($args{src}, %args);
-      $args{syncer}->unlock(%args, lock_level => 3);
+      $args{syncer}->unlock(
+         src_dbh      => $args{src}->{dbh},
+         src_db       => '',
+         src_tbl      => '',
+         dst_dbh      => $args{dst}->{dbh},
+         dst_db       => '',
+         dst_tbl      => '',
+         misc_dbh     => $args{src}->{misc_dbh},
+         quoter       => $args{q},
+         replicate    => $o->get('replicate')   || 0,
+         timeoutok    => $o->get('timeout-ok')  || 0,
+         transaction  => $o->get('transaction') || 0,
+         wait         => $o->get('wait')        || 0,
+         lock         => 3,
+         lock_level   => 3,
+      );
+   };
+   if ( $EVAL_ERROR ) {
+      die "Failed to unlock server: $EVAL_ERROR";
    }
+   return;
 }
 
 # This is the primary subroutine which actually makes the table syncs

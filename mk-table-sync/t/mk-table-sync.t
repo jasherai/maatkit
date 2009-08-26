@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 56;
+use Test::More tests => 57;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -491,6 +491,17 @@ SKIP: {
       'do-replicate-db is in sync after sync'
    );
 };
+
+# #############################################################################
+# Issue 86: mk-table-sync: lock level 3
+# #############################################################################
+
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,D=test,t=t --print  --lock 3 2>&1`;
+unlike(
+   $output,
+   qr/Failed to lock server/,
+   '--lock 3 (issue 86)'
+);
 
 # #############################################################################
 # Done
