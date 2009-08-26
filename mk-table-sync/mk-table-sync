@@ -5879,7 +5879,7 @@ sub lock_server {
          misc_dbh     => $args{src}->{misc_dbh},
          quoter       => $args{q},
          master_slave => $args{ms},
-         replicate    => $o->get('replicate')   || '', # lock_and_wait() will
+         replicate    => $o->get('replicate')   || 0,  # lock_and_wait() will
          timeoutok    => $o->get('timeout-ok')  || 0,  # will die if these
          transaction  => $o->get('transaction') || 0,  # are undef.
          wait         => $o->get('wait')        || 0,  #
