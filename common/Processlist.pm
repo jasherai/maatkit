@@ -313,6 +313,7 @@ sub find {
                MKDEBUG && _d('Query does not match', $property, 'spec');
                next QUERY;
             }
+            MKDEBUG && _d('Query matches', $property, 'spec');
             $matched++;
          }
       }
