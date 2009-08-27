@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 17;
+use Test::More tests => 18;
 
 require '../mk-kill';
 require '../../common/Sandbox.pm';
@@ -162,6 +162,13 @@ like(
    qr/KILL 29392005 \(Sleep 17 sec\) NULL/,
    '--idle-time'
 );
+
+like(
+   output(qw(../../common/t/samples/recset006.txt --match-state Locked --ignore-state '' --busy-time 5 --print)),
+   qr/KILL 2 \(Query 9 sec\) select \* from foo2/,
+   "--match-state Locked --ignore-state '' --busy-time 5"
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
