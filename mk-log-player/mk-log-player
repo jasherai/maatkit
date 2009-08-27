@@ -1495,7 +1495,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 4223
+# LogSplitter package 4580
 # ###########################################################################
 
 package LogSplitter;
@@ -1515,7 +1515,7 @@ use constant CLOSE_N_LRU_FILES => 100;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(attribute base_dir SlowLogParser session_files) ) {
+   foreach my $arg ( qw(attribute base_dir parser session_files) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -1624,7 +1624,9 @@ sub split {
       return $event;
    };
 
-   my $lp = $self->{SlowLogParser};
+   unshift @callbacks, @{$self->{callbacks}} if $self->{callbacks};
+
+   my $lp = $self->{parser};
    LOG:
    foreach my $log ( @logs ) {
       next unless defined $log;
@@ -2323,6 +2325,25 @@ sub main {
 
       $ARGV[0] = '-' if scalar @ARGV == 0; # causes LogSplitter to read STDIN
 
+      my @callbacks;
+      if ( $o->get('filter') ) {
+         my $filter = $o->get('filter');
+         if ( -f $filter && -r $filter ) {
+            MKDEBUG && _d('Reading file', $filter, 'for --filter code');
+            open my $fh, "<", $filter or die "Cannot open $filter: $OS_ERROR";
+            $filter = do { local $/ = undef; <$fh> };
+            close $fh;
+         }
+         else {
+            $filter = "( $filter )";  # issue 565
+         }
+         my $code   = "sub { MKDEBUG && _d('callback: filter');  my(\$event) = shift; $filter && return \$event; };";
+         MKDEBUG && _d('--filter code:', $code);
+         my $sub = eval $code
+            or die "Error compiling --filter code: $code\n$EVAL_ERROR";
+         push @callbacks, $sub;
+      }
+
       my $parser = $o->get('type') eq 'slowlog' ? new SlowLogParser()
                  : $o->get('type') eq 'binlog'  ? new BinaryLogParser()
                  : die("Unknown type " . $o->get('type'));
@@ -2334,7 +2355,8 @@ sub main {
          session_files  => $o->get('session-files'),
          quiet          => $o->get('quiet'),
          verbose        => $o->get('verbose'),
-         SlowLogParser  => $parser,
+         parser         => $parser,
+         callbacks      => \@callbacks,
       );
       $ls->split(@ARGV);
 
@@ -2779,6 +2801,57 @@ first option on the command line.
 short form: -F; type: string
 
 Only read mysql options from the given file.
+
+=item --filter
+
+type: string; group: Split
+
+Discard events for which this Perl code doesn't return true.
+
+This option is a string of Perl code or a file containing Perl code that gets
+compiled into a subroutine with one argument: $event.  This is a hashref.
+If the given value is a readable file, then mk-log-player reads the entire
+file and uses its contents as the code.  The file should not contain
+a shebang (#!/usr/bin/perl) line.
+
+If the code returns true, the query is split; otherwise it is discarded.
+The code is the last statement in the subroutine other than C<return $event>. 
+The subroutine template is:
+
+  sub { $event = shift; filter && return $event; }
+
+Filters given on the command line are wrapped inside parentheses like like
+C<( filter )>.  For complex, multi-line filters, you must put the code inside
+a file so it will not be wrapped inside parentheses.  Either way, the filter
+must produce syntactically valid code given the template.  For example, an
+if-else branch given on the command line would not be valid:
+
+  --filter 'if () { } else { }'  # WRONG
+
+Since it's given on the command line, the if-else branch would be wrapped inside
+parentheses which is not syntactically valid.  So to accomplish something more
+complex like this would require putting the code in a file, for example
+filter.txt:
+
+  my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0; } $event_ok
+
+Then specify C<--filter filter.txt> to read the code from filter.txt.
+
+If the filter code won't compile, mk-log-player will die with an error.
+If the filter code does compile, an error may still occur at runtime if the
+code tries to do something wrong (like pattern match an undefined value).
+mk-log-player does not provide any safeguards so code carefully!
+
+An example filter that discards everything but SELECT statements:
+
+  --filter '$event->{arg} =~ m/^select/i'
+
+This is compiled into a subroutine like the following:
+
+  sub { $event = shift; ( $event->{arg} =~ m/^select/i ) && return $event; }
+
+You can find an explanation of the structure of $event at
+L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
 
 =item --help
 

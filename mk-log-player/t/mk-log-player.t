@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 13;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -132,6 +132,16 @@ is(
    $output,
    '',
    'Split binlog001.txt'
+);
+
+# #############################################################################
+# Issue 571: Add --filter to mk-log-player
+# #############################################################################
+diag(`rm -rf $tmpdir/*`);
+`../mk-log-player --split Thread_id --base-dir $tmpdir ../../common/t/samples/binlog001.txt --type binlog --session-files 1 --filter '\$event->{arg} && \$event->{arg} eq \"foo\"'`;
+ok(
+   !-f "$tmpdir/sessions-1.txt",
+   '--filter'
 );
 
 # #############################################################################
