@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 30;
+use Test::More tests => 20;
 
 require '../LogSplitter.pm';
 require '../SlowLogParser.pm';
@@ -24,7 +24,7 @@ my $lp = new SlowLogParser();
 my $ls = new LogSplitter(
    attribute     => 'foo',
    base_dir      => $tmpdir,
-   SlowLogParser => $lp,
+   parser        => $lp,
    session_files => 3,
    quiet         => 1,
 );
@@ -58,7 +58,7 @@ diag(`rm -rf $tmpdir/*`);
 $ls = new LogSplitter(
    attribute      => 'Thread_id',
    base_dir       => $tmpdir,
-   SlowLogParser  => $lp,
+   parser         => $lp,
    session_files  => 3,
    quiet          => 1,
    merge_sessions => 0,
@@ -98,7 +98,7 @@ diag(`rm -rf $tmpdir/*`);
 $ls = new LogSplitter(
    attribute      => 'Thread_id',
    base_dir       => $tmpdir,
-   SlowLogParser  => $lp,
+   parser         => $lp,
    session_files  => 10,
    quiet          => 1,
    merge_sessions => 0,
@@ -131,7 +131,7 @@ diag(`rm -rf $tmpdir/*`);
 $ls = new LogSplitter(
    attribute      => 'Thread_id',
    base_dir       => $tmpdir,
-   SlowLogParser  => $lp,
+   parser         => $lp,
    session_files  => 10,
    quiet          => 1,
    merge_sessions => 0,
@@ -183,7 +183,7 @@ diag(`rm -rf $tmpdir/*`);
 $ls = new LogSplitter(
    attribute      => 'Thread_id',
    base_dir       => $tmpdir,
-   SlowLogParser  => $lp,
+   parser         => $lp,
    session_files  => 10,
    quiet          => 1,
 );
@@ -200,9 +200,6 @@ ok(
    'Removes tmp dirs after merging'
 );
 
-diag(`rm -rf $tmpdir`);
-exit;
-
 # #############################################################################
 # Issue 418: mk-log-player dies trying to play statements with blank lines
 # #############################################################################
@@ -211,13 +208,14 @@ exit;
 # do not contain blank lines.
 diag(`rm -rf $tmpdir/*`);
 $ls = new LogSplitter(
-   attribute  => 'Thread_id',
-   saveto_dir => "$tmpdir/",
-   lp         => $lp,
-   verbose    => 0,
+   attribute     => 'Thread_id',
+   base_dir      => $tmpdir,
+   parser        => $lp,
+   quiet         => 1,
+   session_files => 1,
 );
-$ls->split(['samples/slow020.txt' ]);
-$output = `diff $tmpdir/1/session-0001 samples/split_slow020.txt`;
+$ls->split('samples/slow020.txt');
+$output = `diff $tmpdir/sessions-1.txt samples/split_slow020.txt`;
 is(
    $output,
    '',
@@ -225,20 +223,41 @@ is(
 );
 
 # Make sure it works for --maxsessionfiles
-diag(`rm -rf $tmpdir/*`);
+#diag(`rm -rf $tmpdir/*`);
+#$ls = new LogSplitter(
+#   attribute       => 'Thread_id',
+#   saveto_dir      => "$tmpdir/",
+#   lp              => $lp,
+#   verbose         => 0,
+#   maxsessionfiles => 1,
+#);
+#$ls->split(['samples/slow020.txt' ]);
+#$output = `diff $tmpdir/1/session-0001 samples/split_slow020_msf.txt`;
+#is(
+#   $output,
+#   '',
+#   'Collapse multiple \n and \s with --maxsessionfiles (issue 418)'
+#);
+
+# #############################################################################
+# Issue 571: Add --filter to mk-log-player
+# #############################################################################
+my $callback = sub {
+   return;
+};
 $ls = new LogSplitter(
-   attribute       => 'Thread_id',
-   saveto_dir      => "$tmpdir/",
-   lp              => $lp,
-   verbose         => 0,
-   maxsessionfiles => 1,
+   attribute     => 'Thread_id',
+   base_dir      => $tmpdir,
+   parser        => $lp,
+   session_files => 3,
+   quiet         => 1,
+   callbacks     => [$callback],
 );
-$ls->split(['samples/slow020.txt' ]);
-$output = `diff $tmpdir/1/session-0001 samples/split_slow020_msf.txt`;
+$ls->split('samples/slow006.txt');
 is(
-   $output,
-   '',
-   'Collapse multiple \n and \s with --maxsessionfiles (issue 418)'
+   $ls->{n_sessions_saved},
+   0,
+   'callbacks'
 );
 
 # #############################################################################

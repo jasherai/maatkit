@@ -35,7 +35,7 @@ use constant CLOSE_N_LRU_FILES => 100;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(attribute base_dir SlowLogParser session_files) ) {
+   foreach my $arg ( qw(attribute base_dir parser session_files) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -82,7 +82,7 @@ sub split {
       push @logs, '-';
    }
 
-   # This sub is called by SlowLogParser::parse_event().
+   # This sub is called by parser::parse_event().
    # It saves each session to its own file.
    my @callbacks;
    push @callbacks, sub {
@@ -163,8 +163,10 @@ sub split {
       return $event;
    };
 
+   unshift @callbacks, @{$self->{callbacks}} if $self->{callbacks};
+
    # Split all the log files.
-   my $lp = $self->{SlowLogParser};
+   my $lp = $self->{parser};
    LOG:
    foreach my $log ( @logs ) {
       next unless defined $log;
@@ -220,7 +222,7 @@ sub _get_session_ds {
       return;
    }
 
-   # This could indicate a problem in SlowLogParser not parsing
+   # This could indicate a problem in parser not parsing
    # a log event correctly thereby leaving $event->{arg} undefined.
    # Or, it could simply be an event like:
    #   use db;
