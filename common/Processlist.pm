@@ -23,6 +23,11 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 use constant MKDEBUG => $ENV{MKDEBUG};
 use constant {
    ID      => 0,
@@ -268,9 +273,11 @@ sub fire_event {
 #
 sub find {
    my ( $self, $proclist, %find_spec ) = @_;
+   MKDEBUG && _d('find specs:', Dumper(\%find_spec));
    my @matches;
    QUERY:
    foreach my $query ( @$proclist ) {
+      MKDEBUG && _d('Checking query', Dumper($query));
       my $matched = 0;
 
       # Match special busy_time.
@@ -279,6 +286,7 @@ sub find {
             MKDEBUG && _d("Query isn't running long enough");
             next QUERY;
          }
+         MKDEBUG && _d('Exceeds busy time');
          $matched++;
       }
 
@@ -288,6 +296,7 @@ sub find {
             MKDEBUG && _d("Query isn't idle long enough");
             next QUERY;
          }
+         MKDEBUG && _d('Exceeds idle time');
          $matched++;
       }
 
@@ -296,27 +305,28 @@ sub find {
          my $filter = "_find_match_$property";
          if ( defined $find_spec{ignore}->{$property}
               && $self->$filter($query, $find_spec{ignore}->{$property}) ) {
-            MKDEBUG && _d('Query matches ignore', $property, 'filter:',
-               $find_spec{ignore}->{$property}, '=~', $query->{$property});
+            MKDEBUG && _d('Query matches ignore', $property, 'spec');
             next QUERY;
          }
          if ( defined $find_spec{match}->{$property} ) {
             if ( !$self->$filter($query, $find_spec{match}->{$property}) ) {
-               MKDEBUG && _d('Query does not match', $property, 'filter:',
-                  $find_spec{match}->{$property}, '!~', $query->{$property});
+               MKDEBUG && _d('Query does not match', $property, 'spec');
                next QUERY;
             }
             $matched++;
          }
       }
       if ( $matched ) {
-         MKDEBUG && _d("Query passed all defined filters, adding");
+         MKDEBUG && _d("Query matched one or more specs, adding");
          push @matches, $query;
+         next QUERY;
       }
+      MKDEBUG && _d('Query does not match any specs, ignoring');
    } # QUERY
 
    if ( @matches && $find_spec{only_oldest} ) {
       my ( $oldest ) = reverse sort { $a->{Time} <=> $b->{Time} } @matches;
+      MKDEBUG && _d('Oldest query:', Dumper($oldest));
       @matches = $oldest;
    }
 
