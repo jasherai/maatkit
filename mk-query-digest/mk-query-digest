@@ -6360,9 +6360,6 @@ sub main {
          foreach my $col ( @{$tbl->{cols}} ) {
             my ( $attr, $metric ) = $col =~ m/$pat/;
             next unless $attr && $metric;
-            # TODO: should we add info to TableParser to retrieve the
-            # original lettercase of column names when it matters? If so, fix
-            # QueryReview also.
             $attr = ucfirst $attr if $attr =~ m/_/; # TableParser lowercases
             # Add history table values to original select values.
             $select{$attr}++;
@@ -6631,7 +6628,7 @@ sub main {
                $curdb = $db;
             }
             my $start = Time::HiRes::time();
-            $ex_dbh->do($event->{arg}); # TODO: only if it's a cmd=Query event
+            $ex_dbh->do($event->{arg});
             my $end = Time::HiRes::time();
             if ( $o->get('mirror') && $end - $cur_time > $o->get('mirror') ) {
                ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
@@ -6806,8 +6803,6 @@ sub main {
             $misc->{capture});
       }
 
-      # TODO: carry the last db and ts values forward if they're undefined
-      # now.  Do that by unshifting a new callback onto the front of @callbacks.
       my ($fh);
       $run_func = sub {
          if ( !$fh ) {
@@ -6825,10 +6820,6 @@ sub main {
                $at_until   = 0;
             }
          }
-         # TODO: non-blocking I/O so we can respond to CTRL-C.  See
-         # http://www.perlmonks.org/?node_id=55241
-         # http://tinyurl.com/c6lqzz
-         # Or look at the Perl Cookbook, ch07.
 
          my $events;
          $events = $parser->parse_event($fh, $misc, @callbacks);
@@ -6871,7 +6862,6 @@ sub main {
          }
          else {
             $now = time();
-            # TODO: progress report (issue 169)
             last EVENT unless defined $result;
          }
       }
@@ -7248,8 +7238,6 @@ sub find_role {
 }
 
 # Catches signals so we can exit gracefully.
-# TODO: test this
-# TODO: break wait for <$fh> with SIGINT.  Possibly by closing all $fh?
 sub sig_int {
    my ( $signal ) = @_;
    if ( $oktorun ) {
