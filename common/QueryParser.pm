@@ -224,9 +224,7 @@ sub get_aliases {
 sub split {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query = remove_comments($query);
-   $query =~ s/^\s+//;      # Remove leading spaces.
-   $query =~ s/\s{2,}/ /g;  # Remove extra spaces.
+   $query = clean_query($query);
    MKDEBUG && _d('Splitting', $query);
 
    my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
@@ -257,11 +255,81 @@ sub split {
    return @statements;
 }
 
-sub remove_comments {
+sub clean_query {
    my ( $query ) = @_;
    return unless $query;
-   $query =~ s!/\*.*?\*/! !g;
+   $query =~ s!/\*.*?\*/! !g;  # Remove /* comment blocks */
+   $query =~ s/^\s+//;         # Remove leading spaces
+   $query =~ s/\s+$//;         # Remove trailing spaces
+   $query =~ s/\s{2,}/ /g;     # Remove extra spaces
    return $query;
+}
+
+sub split_subquery {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   $query = clean_query($query);
+   $query =~ s/;$//;
+
+   my @subqueries;
+   my $sqno = 0;  # subquery number
+   my $pos  = 0;
+   while ( $query =~ m/(\S+)(?:\s+|\Z)/g ) {
+      $pos = pos($query);
+      my $word = $1;
+      MKDEBUG && _d($word, $sqno);
+      if ( $word =~ m/^\(?SELECT\b/i ) {
+         my $start_pos = $pos - length($word) - 1;
+         if ( $start_pos ) {
+            $sqno++;
+            MKDEBUG && _d('Subquery', $sqno, 'starts at', $start_pos);
+            $subqueries[$sqno] = {
+               start_pos => $start_pos,
+               end_pos   => 0,
+               len       => 0,
+               words     => [$word],
+               lp        => 1, # left parentheses
+               rp        => 0, # right parentheses
+               done      => 0,
+            };
+         }
+         else {
+            MKDEBUG && _d('Main SELECT at pos 0');
+         }
+      }
+      else {
+         next unless $sqno;  # next unless we're in a subquery
+         MKDEBUG && _d('In subquery', $sqno);
+         my $sq = $subqueries[$sqno];
+         if ( $sq->{done} ) {
+            MKDEBUG && _d('This subquery is done; SQL is for',
+               ($sqno - 1 ? "subquery $sqno" : "the main SELECT"));
+            next;
+         }
+         push @{$sq->{words}}, $word;
+         my $lp = ($word =~ tr/\(//) || 0;
+         my $rp = ($word =~ tr/\)//) || 0;
+         MKDEBUG && _d('parentheses left', $lp, 'right', $rp);
+         if ( ($sq->{lp} + $lp) - ($sq->{rp} + $rp) == 0 ) {
+            my $end_pos = $pos - 1;
+            MKDEBUG && _d('Subquery', $sqno, 'ends at', $end_pos);
+            $sq->{end_pos} = $end_pos;
+            $sq->{len}     = $end_pos - $sq->{start_pos};
+         }
+      }
+   }
+
+   for my $i ( 1..$#subqueries ) {
+      my $sq = $subqueries[$i];
+      next unless $sq;
+      $sq->{sql} = join(' ', @{$sq->{words}});
+      substr $query,
+         $sq->{start_pos} + 1,  # +1 for (
+         $sq->{len} - 1,        # -1 for )
+         "__subquery_$i";
+   }
+
+   return $query, map { $_->{sql} } grep { defined $_ } @subqueries;
 }
 
 sub _d {

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 114;
+use Test::More tests => 115;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -671,6 +671,20 @@ is_deeply(
       'select p.b1927.rtb as pr inner join m.da on da.hr=p.hr and da.node=pr.node ;',
    ],
    'split statements with comment blocks'
+);
+
+
+# #############################################################################
+# Test split_subquery().
+# #############################################################################
+$sql = 'SELECT * FROM t1 WHERE column1 = (SELECT column1 FROM t2);';
+is_deeply(
+   [ $qp->split_subquery($sql) ],
+   [
+      'SELECT * FROM t1 WHERE column1 = (__subquery_1)',
+      '(SELECT column1 FROM t2)',
+   ],
+   'split_subquery() basic'
 );
 
 # #############################################################################
