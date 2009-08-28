@@ -19,9 +19,6 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: figure out which variables are session-specific by looking for @@
-# variables.
-
 use strict;
 use warnings FATAL => 'all';
 
@@ -1613,7 +1610,7 @@ sub get_changes {
       my $val = $after->{$_} - $before->{$_} - ( $num_base * $base->{$_} );
       if ( $val < 0 && !defined($non_monotonic_vars{$_}) ) {
          # Handle when a ulong wraps over the 32-bit boundary
-         $val += MAX_ULONG; # TODO: this isn't right on 64-bit servers.
+         $val += MAX_ULONG;
       }
       $_ => $val;
    } @important_vars };
