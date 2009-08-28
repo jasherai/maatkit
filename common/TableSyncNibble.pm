@@ -224,7 +224,10 @@ sub __get_boundaries {
 
 sub prepare {
    my ( $self, $dbh ) = @_;
-   $dbh->do(q{SET @crc := ''});
+   my $sql = 'SET @crc := "", @cnt := 0';
+   MKDEBUG && _d($sql);
+   $dbh->do($sql);
+   return;
 }
 
 sub same_row {
