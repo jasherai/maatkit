@@ -6931,7 +6931,6 @@ sub main {
    # For the moment we only support deterministic SELECT queries.
    # There's no filter/transformation for non-deterministic functions yet,
    # just a simple filter to remove non-SELECTs.
-   # TODO: this will become QueryFilter.
    push @callbacks, sub {
       my ( $event ) = @_;
       if ( $event->{cmd} ne 'Query' ) {
@@ -7734,8 +7733,6 @@ sub get_cxn {
 }
 
 # Catches signals so we can exit gracefully.
-# TODO: test this
-# TODO: break wait for <$fh> with SIGINT.  Possibly by closing all $fh?
 sub sig_int {
    my ( $signal ) = @_;
    if ( $oktorun ) {
