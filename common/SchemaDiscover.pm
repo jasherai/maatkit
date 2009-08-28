@@ -139,8 +139,11 @@ sub discover_stored_code {
             */")
       };
    };
-   MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return "Failed to get stored code: $EVAL_ERROR";
+   }
+   
    my @formatted_code_objs;
    foreach my $code_obj ( @stored_code_objs ) {
       push @formatted_code_objs, "$code_obj->[0] $code_obj->[1] $code_obj->[2]";
