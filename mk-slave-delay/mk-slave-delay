@@ -1678,7 +1678,6 @@ sub main {
       }
    }
 
-   # TODO: this can go into the POD.
    $o->set('interval', max($o->get('interval'), 1));
    if ( $o->get('run-time') ) {
       $o->set('run-time', max($o->get('run-time'), 1));
