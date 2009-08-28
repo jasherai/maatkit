@@ -3495,9 +3495,6 @@ my $already_checksummed;
 #       ...
 #    ],
 #    ...
-# TODO: this is not desirable if there is any issue (error in mysql,
-# problem in our code).  We should get each table and checksum it.
-# See TODO 0xdeadbeef below.
 my %tables_to_checksum;
 
 sub main {
@@ -3510,7 +3507,6 @@ sub main {
 
    # Because of --arg-table, $final_o is the OptionParser obj used to get
    # most options (see my $final_o below).
-   # TODO: This renders lint_check useless; do we need lint_check any longer?
    my $o = new OptionParser(
       dp          => $dp,
       strict      => 0,
@@ -3740,9 +3736,6 @@ sub main {
    # Get table info for all hosts, all slaves, unless we're in the special
    # "repl-re-check" mode in which case %tables_to_checksum has already the
    # inconsistent tables that we need to re-checksum.
-   # TODO: this is not desirable if there is any issue (error in mysql,
-   # problem in our code).  We should get each table and checksum it.
-   # See TODO 0xdeadbeef above.
    get_all_tbls_info(
       dbh      => $main_dbh,
       args_for => \%args_for,
@@ -3907,7 +3900,6 @@ sub checksum_tables {
 
    my ($hdr, $explain);
 
-   # TODO: are we still inside an eval{} here, or is an error a fatal now?
    # NOTE: remember, you can't 'next TABLE' inside the eval{}.
    # NOTE: remember to use the final_o embedded within each $table, not $o
    foreach my $table ( @$tbls ) {
@@ -4205,12 +4197,10 @@ sub checksum_chunks {
             my $is_master = $i == 0; # First host is assumed to be master.
             my $host      = $hosts[$i];
 
-            # TODO: make sure we're using the correct host/dsn/dbh
-
             # Open a single connection for each host.  Re-use the
             # connection for the master/single host.
             if ( $is_master ) {
-               # TODO: Is there a chance this can cause problems while forked?
+               $dbh->{InactiveDestroy} = 1;  # Ensure that this is set.
                $host->{dbh} ||= $dbh;
             }
             else {
@@ -4453,8 +4443,6 @@ sub determine_checksum_strat {
          }
          else {
             # FNV_64 doesn't need the optimize_xor gizmo.
-            # TODO: user-specified functions should be able to take advantage
-            # of this with some cmdline args.
             $o->get('optimize-xor', 0);
          }
       }
@@ -4546,7 +4534,6 @@ sub check_repl_table {
       $dbh->do($del_sql);
    }
 
-   # TODO: Is there a chance this can cause problems while forked?
    my $fetch_sth = $dbh->prepare(
       "SELECT this_crc, this_cnt FROM $replicate_table "
       . "WHERE db = ? AND tbl = ? AND chunk = ?");
@@ -4670,7 +4657,6 @@ sub do_tbl_replicate {
       'on', $host->{h}, ':', $host->{P});
 
    my $dbh = $host->{dbh};
-   # TODO: catch error here, like when host doesn't have the db
    $dbh->do("USE " . $q->quote($tbl->{database}));
 
    my $cnt = 'NULL';
@@ -4768,7 +4754,6 @@ sub do_tbl {
       'using algorithm', $strat);
 
    my $dbh = $host->{dbh};
-   # TODO: catch error here, like when host doesn't have the db
    $dbh->do("USE " . $q->quote($tbl->{database}));
 
    my $cnt = 'NULL';
@@ -4782,7 +4767,6 @@ sub do_tbl {
         && $final_o->get('wait')
         && !$final_o->get('explain') )
    {
-      # TODO: check that $args{dbh} will be master dbh.
       MKDEBUG && _d('Waiting to catch up to master', $args{dbh}->{h},
          ':', $args{dbh}->{P});
       $sta = $ms->wait_for_master(
@@ -4968,8 +4952,6 @@ sub do_count {
    my $sql = "SELECT COUNT(*) FROM "
       . $q->quote(@{$tbl}{qw(database table)});
    if ( $final_o->get('where') || $final_o->get('since') ) {
-      # TODO: this (and the code in inject_chunks) should be abstracted into
-      # some SqlBuilder module or something
       my $where_since = ($final_o->get('where'), $final_o->get('since'));
       $sql .= " WHERE ("
             . join(" AND ", map { "($_)" } grep { $_ } @$where_since )
