@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * Added --[no]check-master (issue 110).
    * --lock 3 did not work (issue 86).
    * The script did not work with MySQL replicate-do-db (issue 533).
    * Removed --[no]utf8.  Pass the C<A> option in a DSN instead.

@@ -1679,7 +1679,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 3249
+# RowDiff package 4561
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1703,14 +1703,16 @@ sub compare_sets {
       = @args{qw(left right syncer tbl)};
 
    my ($lr, $rr);  # Current row from the left/right sources.
+   my $done = $self->{done};
 
    my ($left_done, $right_done) = (0, 0);
 
    do {
       if ( !$lr && !$left_done ) {
          MKDEBUG && _d('Fetching row from left');
-         $lr = $left->fetchrow_hashref();
-         $left_done = ($lr ? 0 : 1);
+         eval { $lr = $left->fetchrow_hashref(); };
+         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+         $left_done = !$lr || $EVAL_ERROR ? 1 : 0;
       }
       elsif ( MKDEBUG ) {
          _d('Left still has rows');
@@ -1718,8 +1720,9 @@ sub compare_sets {
 
       if ( !$rr && !$right_done ) {
          MKDEBUG && _d('Fetching row from right');
-         $rr = $right->fetchrow_hashref();
-         $right_done = ($rr ? 0 : 1);
+         eval { $rr = $right->fetchrow_hashref(); };
+         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+         $right_done = !$rr || $EVAL_ERROR ? 1 : 0;
       }
       elsif ( MKDEBUG ) {
          _d('Right still has rows');
@@ -1734,19 +1737,23 @@ sub compare_sets {
          if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
             MKDEBUG && _d('Left and right have the same key');
             $syncer->same_row($lr, $rr);
+            $self->{same_row}->($lr, $rr) if $self->{same_row};
             $lr = $rr = undef; # Fetch another row from each side.
          }
          elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
             MKDEBUG && _d('Left is not in right');
             $syncer->not_in_right($lr);
+            $self->{not_in_right}->($lr) if $self->{not_in_right};
             $lr = undef;
          }
          else {
             MKDEBUG && _d('Right is not in left');
             $syncer->not_in_left($rr);
+            $self->{not_in_left}->($rr) if $self->{not_in_left};
             $rr = undef;
          }
       }
+      $left_done = $right_done = 1 if $done && $done->($left, $right);
    } while ( !($left_done && $right_done) );
    MKDEBUG && _d('No more rows');
    $syncer->done_with_rows();
@@ -1755,6 +1762,8 @@ sub compare_sets {
 sub key_cmp {
    my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
    MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
+   my $callback = $self->{key_cmp};
+   my $trf      = $self->{trf};
    foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
       my $r = $rr->{$col};
@@ -1765,8 +1774,13 @@ sub key_cmp {
       else {
          if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
             MKDEBUG && _d($col, 'is numeric');
+            ($l, $r) = $trf->($l, $r, $tbl, $col) if $trf;
             my $cmp = $l <=> $r;
-            return $cmp unless $cmp == 0;
+            if ( $cmp ) {
+               MKDEBUG && _d('Column', $col, 'differs:', $l, '!=', $r);
+               $callback->($col, $l, $r) if $callback;
+               return $cmp;
+            }
          }
          elsif ( $l ne $r ) {
             my $cmp;
@@ -1780,7 +1794,11 @@ sub key_cmp {
                MKDEBUG && _d('Comparing', $col, 'in lowercase');
                $cmp = lc $l cmp lc $r;
             }
-            return $cmp unless $cmp == 0;
+            if ( $cmp ) {
+               MKDEBUG && _d('Column', $col, 'differs:', $l, 'ne', $r);
+               $callback->($col, $l, $r) if $callback;
+               return $cmp;
+            }
          }
       }
    }
@@ -3677,7 +3695,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 4170
+# TableSyncer package 4590
 # ###########################################################################
 package TableSyncer;
 
@@ -3782,7 +3800,6 @@ sub sync_table {
          } @_;
       };
 
-      # Set default database in case replicate-do-db is being used (issue 533).
       $args{src_dbh}->do("USE `$args{src_db}`");
       $args{dst_dbh}->do("USE `$args{dst_db}`");
    }
@@ -3802,7 +3819,7 @@ sub sync_table {
             : () ),
       ],
    );
-   my $rd = new RowDiff( dbh => $args{misc_dbh} );
+   my $rd = $args{RowDiff} || new RowDiff( dbh => $args{misc_dbh} );
 
    $args{algorithm} ||= $self->best_algorithm(
       map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
@@ -4286,7 +4303,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 3186
+# TableNibbler package 4586
 # ###########################################################################
 package TableNibbler;
 
@@ -4294,11 +4311,15 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   bless {}, shift;
+   return bless {}, shift;
 }
 
 sub generate_asc_stmt {
@@ -4366,7 +4387,7 @@ sub generate_cmp_where {
    foreach my $arg ( qw(type slice cols quoter is_nullable) ) {
       die "I need a $arg arg" unless defined $args{$arg};
    }
-
+   MKDEBUG && _d('generate_cmp_where args:', Dumper(\%args));
    my @slice       = @{$args{slice}};
    my @cols        = @{$args{cols}};
    my $q           = $args{quoter};
@@ -4424,11 +4445,13 @@ sub generate_cmp_where {
       push @clauses, '(' . join(' AND ', @clause) . ')';
    }
    my $result = '(' . join(' OR ', @clauses) . ')';
-   return {
+   my $where = {
       slice => \@r_slice,
       scols => \@r_scols,
       where => $result,
    };
+   MKDEBUG && _d('generate_cmp_where:', Dumper($where));
+   return $where;
 }
 
 sub generate_del_stmt {
@@ -5618,7 +5641,9 @@ sub main {
                . $dp->as_string($dsns[0]);
          unshift @dsns, $master;
          $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
-         $ms->is_master_of($dsns[0]->{dbh}, $dsns[1]->{dbh});
+         if ( $o->get('check-master') ) {
+            $ms->is_master_of($dsns[0]->{dbh}, $dsns[1]->{dbh});
+         }
 
          my %src_and_dst = (
             src => $dsns[0],
@@ -5764,7 +5789,9 @@ sub main {
                   . $dp->as_string($dsns[0]);
             unshift @dsns, $master;
             $dsns[0]->{dbh} = get_cxn($dsns[0], %common_modules);
-            $ms->is_master_of($dsns[0]->{dbh}, $dsns[1]->{dbh});
+            if ( $o->get('check-master') ) {
+               $ms->is_master_of($dsns[0]->{dbh}, $dsns[1]->{dbh});
+            }
          }
          else {
             die "You specified only one DSN, "
@@ -6528,6 +6555,12 @@ STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
 runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
 binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
+
+=item --[no]check-master
+
+default: yes
+
+Check the master detected for L<"--sync-to-master">.
 
 =item --chunk-size
 
