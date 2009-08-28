@@ -2349,8 +2349,7 @@ sub main {
                while ( oktorun(1)
                        && (too_far_ahead($pos) || too_close_to_io($pos)) ) {
                   # Don't increment stats if the slave didn't catch up while we
-                  # slept. TODO: if the slave is very caught up to the I/O, this
-                  # will be a problem.
+                  # slept.
                   if ( wait_for_master($dbh, \%slave, $pos-$window+1) > 0 ) {
                      if ( too_far_ahead($pos) ) {
                         MKDEBUG && _d('Event', $pos, 'too far ahead of',
