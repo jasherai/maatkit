@@ -1884,7 +1884,6 @@ sub main {
    $root->{h} ||= $dp->get_hostname($dbh);
 
    # Now that we've found them all, recurse through them and do stuff!
-   # TODO: do other actions, such as --exec or whatever.
    print_slaves($ms, $root);
 
    return 0;
