@@ -120,8 +120,9 @@ sub discover_stored_code {
    my ( $self, $dbh ) = @_;
    die "I need a dbh" unless $dbh;
 
-   my @stored_code_objs  =
-      @{ $dbh->selectall_arrayref(
+   my @stored_code_objs;
+   eval {
+      @stored_code_objs = @{ $dbh->selectall_arrayref(
             "SELECT EVENT_OBJECT_SCHEMA AS db,
             CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
             COUNT(*) AS num
@@ -137,6 +138,8 @@ sub discover_stored_code {
                FROM INFORMATION_SCHEMA.EVENTS GROUP BY db, what
             */")
       };
+   };
+   MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
 
    my @formatted_code_objs;
    foreach my $code_obj ( @stored_code_objs ) {
