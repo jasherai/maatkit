@@ -2306,8 +2306,6 @@ sub watch_server {
       [ qr/./                                     => 'skip'              ],
    );
 
-   # TODO: let the user specify more patterns and actions.
-
    # ########################################################################
    # These are actions to take when an error is found.
    # ########################################################################
