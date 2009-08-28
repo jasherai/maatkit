@@ -326,7 +326,6 @@ sub build_query_plan {
    return $tree;
 }
 
-# TODO: "Using index condition" see http://bugs.mysql.com/bug.php?id=30659
 sub transform {
    my ( $self, $row ) = @_;
 
