@@ -57,24 +57,24 @@ test_aggregate(
    {
       db => {
          NULL   => { count => 1,  time => 0 },
-         forest => { count => 50, time => 529 }
+         forest => { count => 50, time => 533 }
       },
       user => {
-         user1 => { count => 50, time => 529 },
+         user1 => { count => 50, time => 533 },
          root  => { count => 1,  time => 0 }
       },
       host => {
-         '0.1.2.11' => { count => 21, time => 183 },
+         '0.1.2.11' => { count => 21, time => 187 },
          '0.1.2.12' => { count => 25, time => 331 },
          '0.1.2.21' => { count => 4,  time => 15 },
          localhost  => { count => 1,  time => 0 }
       },
       state => {
          locked    => { count => 24, time => 84 },
-         preparing => { count => 26, time => 445 },
+         preparing => { count => 26, time => 449 },
          null      => { count => 1,  time => 0 }
       },
-      command => { query => { count => 51, time => 529 } }
+      command => { query => { count => 51, time => 533 } }
    },
    'Sample with 51 processes',
 );
