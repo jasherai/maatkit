@@ -1994,7 +1994,7 @@ sub do_table {
    if ( $trigger_file ) {
       $set_bin_log_fh   = new File::Temp();
       $set_bin_log_file = $set_bin_log_fh->filename;
-      my $bin_log       = $o->get('bin-log');
+      my $bin_log       = $o->get('bin-log') ? 1 : 0;
       `echo 'SET SQL_LOG_BIN=$bin_log;' > $set_bin_log_file`; 
       if ( $trigger_file =~ m/\.gz/ ) {
          # gzipping the file changes its name so File::Temp will no longer
