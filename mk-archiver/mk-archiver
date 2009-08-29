@@ -1599,7 +1599,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 3186
+# TableNibbler package 4610
 # ###########################################################################
 package TableNibbler;
 
@@ -1611,7 +1611,7 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   bless {}, shift;
+   return bless {}, shift;
 }
 
 sub generate_asc_stmt {
@@ -1737,11 +1737,12 @@ sub generate_cmp_where {
       push @clauses, '(' . join(' AND ', @clause) . ')';
    }
    my $result = '(' . join(' OR ', @clauses) . ')';
-   return {
+   my $where = {
       slice => \@r_slice,
       scols => \@r_scols,
       where => $result,
    };
+   return $where;
 }
 
 sub generate_del_stmt {
