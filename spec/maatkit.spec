@@ -10,7 +10,7 @@ Source0:        http://maatkit.googlecode.com/files/%{name}-%{version}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildArch:      noarch
-Requires:       perl-DBI >= 1.13, perl-DBD-mysql >= 1.0, perl-TermReadKey >= 2.10
+Requires:       perl(DBI) >= 1.13, perl(DBD::mysql) >= 1.0, perl(Term::ReadKey) >= 2.10
 # perl-DBI is required by perl-DBD-MySQL anyway
 
 %description
@@ -50,6 +50,9 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Fri Aug 14 2009 Robin Bowes <robin@robinbowes.com> - 3
+Use perl Requires, rather than rpm packages
+
 * Fri Sep 19 2008 Jeremy Cole <baron@percona.com> - 2
 - lowercased the MySQL in requires perl-DBD-mysql
 
