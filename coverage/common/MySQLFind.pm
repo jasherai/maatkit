@@ -9,8 +9,8 @@ Total                          95.4   85.4   88.1   94.4    n/a  100.0   91.8
 Run:          MySQLFind.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:52:52 2009
-Finish:       Fri Jul 31 18:52:54 2009
+Start:        Sat Aug 29 15:03:11 2009
+Finish:       Sat Aug 29 15:03:13 2009
 
 /home/daniel/dev/maatkit/common/MySQLFind.pm
 
@@ -39,22 +39,22 @@ line  err   stmt   bran   cond    sub    pod   time   code
 22             1                    1             5   use strict;
                1                                  2   
                1                                  7   
-23             1                    1             6   use warnings FATAL => 'all';
-               1                                  6   
+23             1                    1            10   use warnings FATAL => 'all';
+               1                                  2   
                1                                  9   
 24                                                    
 25             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
-               1                                  9   
-26             1                    1             6   use Data::Dumper;
-               1                                  3   
+               1                                  7   
+26             1                    1             7   use Data::Dumper;
+               1                                  2   
                1                                  9   
 27                                                    $Data::Dumper::Indent    = 0;
 28                                                    $Data::Dumper::Quotekeys = 0;
 29                                                    
 30             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  1   
-               1                                 12   
+               1                                  2   
+               1                                 10   
 31                                                    
 32                                                    # SYNOPSIS:
 33                                                    #   $f = new MySQLFind(
@@ -88,135 +88,135 @@ line  err   stmt   bran   cond    sub    pod   time   code
 61                                                    #   );
 62                                                    
 63                                                    sub new {
-64            21                   21           207      my ( $class, %args ) = @_;
-65            21                                114      foreach my $arg ( qw(dumper quoter) ) {
-66    ***     42     50                         211         die "I need a $arg argument" unless $args{$arg};
+64            21                   21           241      my ( $class, %args ) = @_;
+65            21                                111      foreach my $arg ( qw(dumper quoter) ) {
+66    ***     42     50                         219         die "I need a $arg argument" unless $args{$arg};
 67                                                       }
-68    ***     21     50                         102      die "Do not pass me a dbh argument" if $args{dbh};
-69            21                                127      my $self = bless \%args, $class;
-70            21    100    100                  343      $self->{need_engine}
+68    ***     21     50                          94      die "Do not pass me a dbh argument" if $args{dbh};
+69            21                                140      my $self = bless \%args, $class;
+70            21    100    100                  368      $self->{need_engine}
       ***                   66                        
 71                                                          = (   $self->{engines}->{permit}
 72                                                             || $self->{engines}->{reject}
 73                                                             || $self->{engines}->{regexp} ? 1 : 0);
-74    ***     21     50     66                  158      die "I need a parser argument"
+74    ***     21     50     66                  171      die "I need a parser argument"
 75                                                          if $self->{need_engine} && !defined $args{parser};
-76            21                                 48      MKDEBUG && _d('Need engine:', $self->{need_engine} ? 'yes' : 'no');
-77            21    100                         160      $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
-78            21    100                         144      $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
-79            21    100                          90      if ( $args{useddl} ) {
-80             4                                 15         MKDEBUG && _d('Will prefer DDL');
+76            21                                 50      MKDEBUG && _d('Need engine:', $self->{need_engine} ? 'yes' : 'no');
+77            21    100                         146      $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
+78            21    100                         150      $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
+79            21    100                          86      if ( $args{useddl} ) {
+80             4                                 11         MKDEBUG && _d('Will prefer DDL');
 81                                                       }
-82            21                                 90      return $self;
+82            21                                 98      return $self;
 83                                                    }
 84                                                    
 85                                                    sub init_timestamp {
-86             9                    9            31      my ( $self, $dbh ) = @_;
-87             9    100                          61      return if $self->{timestamp}->{$dbh}->{now};
-88             3                                 10      my $sql = 'SELECT CURRENT_TIMESTAMP';
-89             3                                  6      MKDEBUG && _d($sql);
-90             3                                  7      ($self->{timestamp}->{$dbh}->{now}) = $dbh->selectrow_array($sql);
-91             3                                415      MKDEBUG && _d('Current timestamp:', $self->{timestamp}->{$dbh}->{now});
+86             9                    9            32      my ( $self, $dbh ) = @_;
+87             9    100                          63      return if $self->{timestamp}->{$dbh}->{now};
+88             3                                  9      my $sql = 'SELECT CURRENT_TIMESTAMP';
+89             3                                  8      MKDEBUG && _d($sql);
+90             3                                  8      ($self->{timestamp}->{$dbh}->{now}) = $dbh->selectrow_array($sql);
+91             3                                414      MKDEBUG && _d('Current timestamp:', $self->{timestamp}->{$dbh}->{now});
 92                                                    }
 93                                                    
 94                                                    sub find_databases {
-95             7                    7            31      my ( $self, $dbh ) = @_;
-96            20                                112      return grep {
+95             7                    7            33      my ( $self, $dbh ) = @_;
+96            20                                113      return grep {
 97                                                          $_ !~ m/^(information_schema|lost\+found)$/i
-98            46                   46           152      }  $self->_filter('databases', sub { $_[0] },
-99             7                                116            $self->{dumper}->get_databases(
+98            46                   46           147      }  $self->_filter('databases', sub { $_[0] },
+99             7                                113            $self->{dumper}->get_databases(
 100                                                               $dbh,
 101                                                               $self->{quoter},
 102                                                               $self->{databases}->{like}));
 103                                                   }
 104                                                   
 105                                                   sub find_tables {
-106           18                   18           117      my ( $self, $dbh, %args ) = @_; 
+106           18                   18           132      my ( $self, $dbh, %args ) = @_; 
 107                                                   
 108                                                      # Get and filter tables by name.
 109                                                      my @tables
-110           77                   77           333         = $self->_filter('tables', sub { $_[0]->{name} },
-111           18                                290            $self->_fetch_tbl_list($dbh, %args));
+110           77                   77           358         = $self->_filter('tables', sub { $_[0]->{name} },
+111           18                                202            $self->_fetch_tbl_list($dbh, %args));
 112                                                   
 113                                                      # Ideally, _fetch_tbl_list() wouldn't return broken tables.  When it
 114                                                      # calls MySQLDumper::get_table_status() it could filter broken tables,
 115                                                      # but not when it calls get_table_list().  So we just filter them here;
 116                                                      # MySQLDumper::get_create_table() will fail on broken tables.
-117           18                                110      my %broken_table;
+117           18                                127      my %broken_table;
 118                                                   
 119                                                      # Filter tables by engines if needed.
-120           18    100                          88      if ( $self->{need_engine} ) {
-121            5                                 23         foreach my $tbl ( @tables ) {
-122           16    100                          77            next if $tbl->{engine};
+120           18    100                          87      if ( $self->{need_engine} ) {
+121            5                                 26         foreach my $tbl ( @tables ) {
+122           16    100                          81            next if $tbl->{engine};
 123                                                            # Strip db from tbl name. The tbl name was qualified with its
 124                                                            # db during _fetch_tbl_list() above.
-125           14                                114            my ( $tbl_name ) = $tbl->{name} =~ m/\.(.+)$/;
-126           14                                120            my $struct = $self->{parser}->parse(
+125           14                                113            my ( $tbl_name ) = $tbl->{name} =~ m/\.(.+)$/;
+126           14                                122            my $struct = $self->{parser}->parse(
 127                                                               $self->{dumper}->get_create_table(
 128                                                                  $dbh, $self->{quoter}, $args{database}, $tbl_name));
-129           14    100                          68            $broken_table{$tbl_name} = 1 unless $struct;
-130           14                                133            $tbl->{engine} = $struct->{engine};
+129           14    100                          69            $broken_table{$tbl_name} = 1 unless $struct;
+130           14                                138            $tbl->{engine} = $struct->{engine};
 131                                                         }
-132            5                   16            48         @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
-              16                                 68   
+132            5                   16            49         @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
+              16                                 67   
 133                                                      }
 134                                                   
-135           18                                127      for my $i ( 0..$#tables ) {
+135           18                                141      for my $i ( 0..$#tables ) {
 136                                                         # <database>.<table> => <table> 
-137           52                                263         $tables[$i]->{name} =~ s/^[^.]*\.//;
+137           52                                279         $tables[$i]->{name} =~ s/^[^.]*\.//;
 138                                                         
-139           52    100                         265         if ( $broken_table{$tables[$i]->{name}} ) {
-140            1                                  4            MKDEBUG && _d('Removing broken table:', $tables[$i]->{name});
+139           52    100                         269         if ( $broken_table{$tables[$i]->{name}} ) {
+140            1                                  3            MKDEBUG && _d('Removing broken table:', $tables[$i]->{name});
 141            1                                  8            delete $tables[$i];
 142                                                         }
 143                                                      }
 144                                                   
 145                                                      # Filter tables by status (if any criteria are defined).
-146           18                                 51      foreach my $crit ( @{$self->{tables}->{status}} ) {
-              18                                 95   
-147            3                                 18         my ($key, $test) = %$crit;
+146           18                                 54      foreach my $crit ( @{$self->{tables}->{status}} ) {
+              18                                 97   
+147            3                                 19         my ($key, $test) = %$crit;
 148                                                         @tables
-149           15                                 63            = grep {
+149           15                                 61            = grep {
 150                                                               # TODO: tests other than date...
-151            3                                 12               $self->_test_date($_, $key, $test, $dbh)
+151            3                                 13               $self->_test_date($_, $key, $test, $dbh)
 152                                                            } @tables;
 153                                                      }
 154                                                   
 155                                                      # Return list of table names.
-156           18                                 82      return map { $_->{name} } @tables;
-              41                                230   
+156           18                                 87      return map { $_->{name} } @tables;
+              41                                236   
 157                                                   }
 158                                                   
 159                                                   sub find_views {
 160            1                    1             6      my ( $self, $dbh, %args ) = @_;
-161            1                                  6      my @tables = $self->_fetch_tbl_list($dbh, %args);
-162            1                                  5      @tables = grep { $_->{engine} eq 'VIEW' } @tables;
-               5                                 22   
-163            1                                  4      map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
-               1                                 10   
-164            1                                  5      return map { $_->{name} } @tables;
-               1                                  6   
+161            1                                  7      my @tables = $self->_fetch_tbl_list($dbh, %args);
+162            1                                  4      @tables = grep { $_->{engine} eq 'VIEW' } @tables;
+               5                                 23   
+163            1                                  3      map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
+               1                                 11   
+164            1                                  4      return map { $_->{name} } @tables;
+               1                                  7   
 165                                                   }
 166                                                   
 167                                                   # USEs the given database, and returns the previous default database.
 168                                                   sub _use_db {
-169           38                   38           159      my ( $self, $dbh, $new ) = @_;
-170           38    100                         155      if ( !$new ) {
-171            1                                  3         MKDEBUG && _d('No new DB to use');
+169           38                   38           167      my ( $self, $dbh, $new ) = @_;
+170           38    100                         152      if ( !$new ) {
+171            1                                  2         MKDEBUG && _d('No new DB to use');
 172            1                                  4         return;
 173                                                      }
-174           37                                107      my $sql = 'SELECT DATABASE()';
-175           37                                 87      MKDEBUG && _d($sql);
-176           37                                 89      my $curr = $dbh->selectrow_array($sql);
-177   ***     37    100     66                 5954      if ( $curr && $new && $curr eq $new ) {
+174           37                                109      my $sql = 'SELECT DATABASE()';
+175           37                                 76      MKDEBUG && _d($sql);
+176           37                                 86      my $curr = $dbh->selectrow_array($sql);
+177   ***     37    100     66                 7328      if ( $curr && $new && $curr eq $new ) {
                            100                        
-178           28                                 65         MKDEBUG && _d('Current and new DB are the same');
-179           28                                108         return $curr;
+178           28                                 70         MKDEBUG && _d('Current and new DB are the same');
+179           28                                123         return $curr;
 180                                                      }
-181            9                                 65      $sql = 'USE ' . $self->{quoter}->quote($new);
-182            9                                 20      MKDEBUG && _d($sql);
-183            9                                996      $dbh->do($sql);
-184            9                                 48      return $curr;
+181            9                                 75      $sql = 'USE ' . $self->{quoter}->quote($new);
+182            9                                 22      MKDEBUG && _d($sql);
+183            9                                780      $dbh->do($sql);
+184            9                                 47      return $curr;
 185                                                   }
 186                                                   
 187                                                   # Returns hashrefs in the format SHOW TABLE STATUS would, but doesn't
@@ -224,24 +224,24 @@ line  err   stmt   bran   cond    sub    pod   time   code
 189                                                   # lowercase. Table names are returned as <database>.<table> so fully-qualified
 190                                                   # matching can be done later on the database name.
 191                                                   sub _fetch_tbl_list {
-192           19                   19           100      my ( $self, $dbh, %args ) = @_;
-193   ***     19     50                          93      die "database is required" unless $args{database};
+192           19                   19           434      my ( $self, $dbh, %args ) = @_;
+193   ***     19     50                          97      die "database is required" unless $args{database};
 194                                                   
-195           19                                 84      my $curr_db = $self->_use_db($dbh, $args{database});
+195           19                                108      my $curr_db = $self->_use_db($dbh, $args{database});
 196                                                   
 197                                                      # Get list of table names either with SHOW TABLE STATUS if any status
 198                                                      # criteria are defined, else by SHOW TABLES.
-199           19                                 55      my @tables;
-200           19    100                          52      if ( scalar @{$self->{tables}->{status}} ) {
-              19                                111   
-201            3                                 32         @tables = $self->{dumper}->get_table_status(
+199           19                                 61      my @tables;
+200           19    100                          47      if ( scalar @{$self->{tables}->{status}} ) {
+              19                                123   
+201            3                                 31         @tables = $self->{dumper}->get_table_status(
 202                                                            $dbh,
 203                                                            $self->{quoter},
 204                                                            $args{database},
 205                                                            $self->{tables}->{like});
 206                                                      }
 207                                                      else {
-208           16                                165         @tables = $self->{dumper}->get_table_list(
+208           16                                176         @tables = $self->{dumper}->get_table_list(
 209                                                            $dbh,
 210                                                            $self->{quoter},
 211                                                            $args{database},
@@ -250,34 +250,34 @@ line  err   stmt   bran   cond    sub    pod   time   code
 214                                                   
 215                                                      # 2) map:  Qualify tables with their database.
 216                                                      # 1) grep: Remove views if needed.
-217           82                                566      @tables = map {
-218           84    100                         475         my %hash = %$_;
-219           82                                461         $hash{name} = join('.', $args{database}, $hash{name});
-220           82                                316         \%hash;
+217           82                                558      @tables = map {
+218           84    100                         505         my %hash = %$_;
+219           82                                490         $hash{name} = join('.', $args{database}, $hash{name});
+220           82                                294         \%hash;
 221                                                      }
 222                                                      grep {
-223           19                                 94         ( $self->{engines}->{views} || ($_->{engine} ne 'VIEW') )
+223           19                                109         ( $self->{engines}->{views} || ($_->{engine} ne 'VIEW') )
 224                                                      } @tables;
 225                                                   
-226           19                                 94      $self->_use_db($dbh, $curr_db);
+226           19                                 97      $self->_use_db($dbh, $curr_db);
 227                                                   
-228           19                                125      return @tables;
+228           19                                140      return @tables;
 229                                                   }
 230                                                   
 231                                                   sub _filter {
-232           30                   30           191      my ( $self, $thing, $sub, @vals ) = @_;
-233           30                                 92      MKDEBUG && _d('Filtering', $thing, 'list on', Dumper($self->{$thing}));
-234           30                                149      my $permit = $self->{$thing}->{permit};
-235           30                                113      my $reject = $self->{$thing}->{reject};
-236           30                                100      my $regexp = $self->{$thing}->{regexp};
-237          139                                453      return grep {
-238           30                                 97         my $val = $sub->($_);
-239          139    100                         507         $val = '' unless defined $val;
+232           30                   30           190      my ( $self, $thing, $sub, @vals ) = @_;
+233           30                                 86      MKDEBUG && _d('Filtering', $thing, 'list on', Dumper($self->{$thing}));
+234           30                                140      my $permit = $self->{$thing}->{permit};
+235           30                                118      my $reject = $self->{$thing}->{reject};
+236           30                                108      my $regexp = $self->{$thing}->{regexp};
+237          139                               2196      return grep {
+238           30                                101         my $val = $sub->($_);
+239          139    100                         529         $val = '' unless defined $val;
 240                                                         # 'tables' is a special case, because it can be matched on either the
 241                                                         # table name or the database and table name.
-242          139    100                         481         if ( $thing eq 'tables' ) {
-243           77                                429            (my $tbl = $val) =~ s/^.*\.//;
-244           77    100    100                 1434            ( !$reject || (!$reject->{$val} && !$reject->{$tbl}) )
+242          139    100                         468         if ( $thing eq 'tables' ) {
+243           77                                482            (my $tbl = $val) =~ s/^.*\.//;
+244           77    100    100                 1421            ( !$reject || (!$reject->{$val} && !$reject->{$tbl}) )
                            100                        
                            100                        
                            100                        
@@ -287,7 +287,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 246                                                               && ( !$regexp || $val =~ m/$regexp/ )
 247                                                         }
 248                                                         else {
-249           62    100    100                  941            ( !$reject || !$reject->{$val} )
+249           62    100    100                  955            ( !$reject || !$reject->{$val} )
                            100                        
                            100                        
                            100                        
@@ -298,22 +298,22 @@ line  err   stmt   bran   cond    sub    pod   time   code
 254                                                   }
 255                                                   
 256                                                   sub _test_date {
-257           15                   15            71      my ( $self, $table, $prop, $test, $dbh ) = @_;
-258           15                                 51      $prop = lc $prop;
-259           15    100                          69      if ( !defined $table->{$prop} ) {
+257           15                   15            68      my ( $self, $table, $prop, $test, $dbh ) = @_;
+258           15                                 53      $prop = lc $prop;
+259           15    100                          66      if ( !defined $table->{$prop} ) {
 260            6                                 13         MKDEBUG && _d($prop, 'is not defined');
-261            6                                 53         return $self->{nullpass};
+261            6                                 57         return $self->{nullpass};
 262                                                      }
-263            9                                 68      my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
-264   ***      9     50                          39      die "Invalid date test $test for $prop" unless defined $num;
-265            9                                 37      $self->init_timestamp($dbh);
-266            9                                 63      my $sql = "SELECT DATE_SUB('$self->{timestamp}->{$dbh}->{now}', "
+263            9                                 67      my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
+264   ***      9     50                          36      die "Invalid date test $test for $prop" unless defined $num;
+265            9                                 33      $self->init_timestamp($dbh);
+266            9                                 65      my $sql = "SELECT DATE_SUB('$self->{timestamp}->{$dbh}->{now}', "
 267                                                              . "INTERVAL $num SECOND)";
 268            9                                 18      MKDEBUG && _d($sql);
-269            9           100                   33      ($self->{timestamp}->{$dbh}->{$num}) ||= $dbh->selectrow_array($sql);
-270            9                                418      my $time = $self->{timestamp}->{$dbh}->{$num};
+269            9           100                   37      ($self->{timestamp}->{$dbh}->{$num}) ||= $dbh->selectrow_array($sql);
+270            9                                383      my $time = $self->{timestamp}->{$dbh}->{$num};
 271                                                      return 
-272   ***      9            66                  173            ( $equality eq '-' && $table->{$prop} gt $time )
+272   ***      9            66                  181            ( $equality eq '-' && $table->{$prop} gt $time )
       ***                   66                        
       ***                   66                        
       ***                   66                        

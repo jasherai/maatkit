@@ -9,8 +9,8 @@ Total                          66.2   50.0   25.0   73.3    n/a  100.0   57.9
 Run:          MySQLDump.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:52:50 2009
-Finish:       Fri Jul 31 18:52:50 2009
+Start:        Sat Aug 29 15:03:09 2009
+Finish:       Sat Aug 29 15:03:09 2009
 
 /home/daniel/dev/maatkit/common/MySQLDump.pm
 
@@ -36,20 +36,20 @@ line  err   stmt   bran   cond    sub    pod   time   code
 19                                                    # ###########################################################################
 20                                                    package MySQLDump;
 21                                                    
-22             1                    1             5   use strict;
+22             1                    1             6   use strict;
                1                                  2   
-               1                                  7   
-23             1                    1             5   use warnings FATAL => 'all';
+               1                                  6   
+23             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  8   
 24                                                    
-25             1                    1             6   use English qw(-no_match_vars);
+25             1                    1            10   use English qw(-no_match_vars);
                1                                  2   
-               1                                  8   
+               1                                  7   
 26                                                    
-27             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
-               1                                 10   
+27             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  2   
+               1                                 27   
 28                                                    
 29                                                    ( our $before = <<'EOF') =~ s/^   //gm;
 30                                                       /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -79,63 +79,63 @@ line  err   stmt   bran   cond    sub    pod   time   code
 54                                                    # * cache: defaults to 1
 55                                                    sub new {
 56             1                    1             6      my ( $class, %args ) = @_;
-57    ***      1     50                          13      $args{cache} = 1 unless defined $args{cache};
+57    ***      1     50                           8      $args{cache} = 1 unless defined $args{cache};
 58             1                                 17      my $self = bless \%args, $class;
 59             1                                  5      return $self;
 60                                                    }
 61                                                    
 62                                                    sub dump {
-63             6                    6            46      my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
+63             6                    6            52      my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
 64                                                    
-65             6    100                          43      if ( $what eq 'table' ) {
+65             6    100                          46      if ( $what eq 'table' ) {
                     100                               
       ***            50                               
-66             3                                 20         my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
-67             3    100                          11         return unless $ddl;
-68             2    100                          11         if ( $ddl->[0] eq 'table' ) {
-69             1                                  7            return $before
+66             3                                 26         my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+67             3    100                          13         return unless $ddl;
+68             2    100                          10         if ( $ddl->[0] eq 'table' ) {
+69             1                                  8            return $before
 70                                                                . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
 71                                                                . $ddl->[1] . ";\n";
 72                                                          }
 73                                                          else {
-74             1                                  6            return 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+74             1                                  7            return 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
 75                                                                . '/*!50001 DROP VIEW IF EXISTS '
 76                                                                . $quoter->quote($tbl) . "*/;\n/*!50001 "
 77                                                                . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
 78                                                          }
 79                                                       }
 80                                                       elsif ( $what eq 'triggers' ) {
-81             2                                  9         my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
-82    ***      2    100     66                   17         if ( $trgs && @$trgs ) {
-83             1                                  6            my $result = $before . "\nDELIMITER ;;\n";
+81             2                                 11         my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
+82    ***      2    100     66                   18         if ( $trgs && @$trgs ) {
+83             1                                  7            my $result = $before . "\nDELIMITER ;;\n";
 84             1                                  4            foreach my $trg ( @$trgs ) {
-85    ***      3     50                          15               if ( $trg->{sql_mode} ) {
-86             3                                 14                  $result .= qq{/*!50003 SET SESSION SQL_MODE='$trg->{sql_mode}' */;;\n};
+85    ***      3     50                          14               if ( $trg->{sql_mode} ) {
+86             3                                 15                  $result .= qq{/*!50003 SET SESSION SQL_MODE='$trg->{sql_mode}' */;;\n};
 87                                                                }
 88             3                                  8               $result .= "/*!50003 CREATE */ ";
 89    ***      3     50                          13               if ( $trg->{definer} ) {
-90             6                                 17                  my ( $user, $host )
+90             6                                 18                  my ( $user, $host )
 91             3                                 16                     = map { s/'/''/g; "'$_'"; }
-               6                                 26   
+               6                                 25   
 92                                                                        split('@', $trg->{definer}, 2);
 93             3                                 16                  $result .= "/*!50017 DEFINER=$user\@$host */ ";
 94                                                                }
 95             3                                 17               $result .= sprintf("/*!50003 TRIGGER %s %s %s ON %s\nFOR EACH ROW %s */;;\n\n",
 96                                                                   $quoter->quote($trg->{trigger}),
-97             3                                 16                  @{$trg}{qw(timing event)},
+97             3                                 18                  @{$trg}{qw(timing event)},
 98                                                                   $quoter->quote($trg->{table}),
 99                                                                   $trg->{statement});
 100                                                            }
 101            1                                  4            $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
-102            1                                  8            return $result;
+102            1                                  9            return $result;
 103                                                         }
 104                                                         else {
-105            1                                  6            return undef;
+105            1                                  5            return undef;
 106                                                         }
 107                                                      }
 108                                                      elsif ( $what eq 'view' ) {
-109            1                                  5         my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
-110            1                                  5         return '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+109            1                                  6         my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+110            1                                  6         return '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
 111                                                            . '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
 112                                                            . '/*!50001 ' . $ddl->[1] . "*/;\n";
 113                                                      }
@@ -146,135 +146,135 @@ line  err   stmt   bran   cond    sub    pod   time   code
 118                                                   
 119                                                   # USEs the given database, and returns the previous default database.
 120                                                   sub _use_db {
-121            7                    7            37      my ( $self, $dbh, $quoter, $new ) = @_;
+121            7                    7            38      my ( $self, $dbh, $quoter, $new ) = @_;
 122            7    100                          33      if ( !$new ) {
 123            1                                  2         MKDEBUG && _d('No new DB to use');
-124            1                                  4         return;
+124            1                                  3         return;
 125                                                      }
-126            6                                 18      my $sql = 'SELECT DATABASE()';
+126            6                                 20      my $sql = 'SELECT DATABASE()';
 127            6                                 14      MKDEBUG && _d($sql);
 128            6                                 17      my $curr = $dbh->selectrow_array($sql);
-129   ***      6    100     66                 1033      if ( $curr && $new && $curr eq $new ) {
+129   ***      6    100     66                 2871      if ( $curr && $new && $curr eq $new ) {
                            100                        
-130            4                                  9         MKDEBUG && _d('Current and new DB are the same');
-131            4                                 16         return $curr;
+130            4                                 13         MKDEBUG && _d('Current and new DB are the same');
+131            4                                 21         return $curr;
 132                                                      }
-133            2                                 21      $sql = 'USE ' . $quoter->quote($new);
-134            2                                  6      MKDEBUG && _d($sql);
-135            2                                230      $dbh->do($sql);
+133            2                                 18      $sql = 'USE ' . $quoter->quote($new);
+134            2                                  5      MKDEBUG && _d($sql);
+135            2                                170      $dbh->do($sql);
 136            2                                 13      return $curr;
 137                                                   }
 138                                                   
 139                                                   sub get_create_table {
-140            4                    4            24      my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-141   ***      4    100     66                   63      if ( !$self->{cache} || !$self->{tables}->{$db}->{$tbl} ) {
-142            3                                 14         my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+140            4                    4            25      my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+141   ***      4    100     66                   69      if ( !$self->{cache} || !$self->{tables}->{$db}->{$tbl} ) {
+142            3                                 12         my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
 143                                                            . q{@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, 'ANSI_QUOTES', ''), ',,', ','), }
 144                                                            . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
 145                                                            . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
-146            3                                  6         MKDEBUG && _d($sql);
-147            3                                  9         eval { $dbh->do($sql); };
-               3                                646   
-148            3                                 12         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-149            3                                 18         my $curr_db = $self->_use_db($dbh, $quoter, $db);
-150            3                                 19         $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
+146            3                                  7         MKDEBUG && _d($sql);
+147            3                                  8         eval { $dbh->do($sql); };
+               3                                777   
+148            3                                 11         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+149            3                                 23         my $curr_db = $self->_use_db($dbh, $quoter, $db);
+150            3                                 17         $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
 151            3                                  9         MKDEBUG && _d($sql);
-152            3                                  7         my $href;
+152            3                                  6         my $href;
 153            3                                  9         eval { $href = $dbh->selectrow_hashref($sql); };
-               3                                  7   
-154            3    100                          21         if ( $EVAL_ERROR ) {
-155            1                                 13            warn "Failed to $sql.  The table may be damaged.\nError: $EVAL_ERROR";
-156            1                                  5            return;
+               3                                  6   
+154            3    100                          23         if ( $EVAL_ERROR ) {
+155            1                                 16            warn "Failed to $sql.  The table may be damaged.\nError: $EVAL_ERROR";
+156            1                                  7            return;
 157                                                         }
-158            2                                  9         $self->_use_db($dbh, $quoter, $curr_db);
-159            2                                  7         $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+158            2                                 11         $self->_use_db($dbh, $quoter, $curr_db);
+159            2                                  6         $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
 160                                                            . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
-161            2                                  4         MKDEBUG && _d($sql);
-162            2                                243         $dbh->do($sql);
-163            2                                 13         my ($key) = grep { m/create table/i } keys %$href;
-               4                                 22   
-164            2    100                          11         if ( $key ) {
-165            1                                  6            MKDEBUG && _d('This table is a base table');
+161            2                                  5         MKDEBUG && _d($sql);
+162            2                                171         $dbh->do($sql);
+163            2                                 15         my ($key) = grep { m/create table/i } keys %$href;
+               4                                 21   
+164            2    100                          10         if ( $key ) {
+165            1                                  2            MKDEBUG && _d('This table is a base table');
 166            1                                 12            $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
 167                                                         }
 168                                                         else {
 169            1                                  3            MKDEBUG && _d('This table is a view');
 170            1                                  4            ($key) = grep { m/create view/i } keys %$href;
                2                                 13   
-171            1                                 10            $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
+171            1                                 11            $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
 172                                                         }
 173                                                      }
-174            3                                 19      return $self->{tables}->{$db}->{$tbl};
+174            3                                 20      return $self->{tables}->{$db}->{$tbl};
 175                                                   }
 176                                                   
 177                                                   sub get_columns {
 178            1                    1             5      my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
 179            1                                  3      MKDEBUG && _d('Get columns for', $db, $tbl);
-180   ***      1     50     33                   52      if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
-181            1                                  4         my $curr_db = $self->_use_db($dbh, $quoter, $db);
-182            1                                  6         my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
+180   ***      1     50     33                   53      if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
+181            1                                  5         my $curr_db = $self->_use_db($dbh, $quoter, $db);
+182            1                                  5         my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
 183            1                                  3         MKDEBUG && _d($sql);
-184            1                                 22         my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
-185            1                                 12         $self->_use_db($dbh, $quoter, $curr_db);
+184            1                                 24         my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
+185            1                                 10         $self->_use_db($dbh, $quoter, $curr_db);
 186            9                                 21         $self->{columns}->{$db}->{$tbl} = [
 187                                                            map {
-188            1                                  5               my %row;
-189            9                                 46               @row{ map { lc $_ } keys %$_ } = values %$_;
-              54                                185   
-190            9                                 47               \%row;
+188            1                                  7               my %row;
+189            9                                 49               @row{ map { lc $_ } keys %$_ } = values %$_;
+              54                                192   
+190            9                                 53               \%row;
 191                                                            } @$cols
 192                                                         ];
 193                                                      }
-194            1                                  8      return $self->{columns}->{$db}->{$tbl};
+194            1                                 10      return $self->{columns}->{$db}->{$tbl};
 195                                                   }
 196                                                   
 197                                                   sub get_tmp_table {
-198            1                    1             7      my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-199            1                                  8      my $result = 'CREATE TABLE ' . $quoter->quote($tbl) . " (\n";
-200            9                                 42      $result .= join(",\n",
+198            1                    1             6      my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+199            1                                  5      my $result = 'CREATE TABLE ' . $quoter->quote($tbl) . " (\n";
+200            9                                 46      $result .= join(",\n",
 201            1                                  6         map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
-202            1                                  4         @{$self->get_columns($dbh, $quoter, $db, $tbl)});
+202            1                                  3         @{$self->get_columns($dbh, $quoter, $db, $tbl)});
 203            1                                  5      $result .= "\n)";
-204            1                                  2      MKDEBUG && _d($result);
-205            1                                  8      return $result;
+204            1                                  3      MKDEBUG && _d($result);
+205            1                                 10      return $result;
 206                                                   }
 207                                                   
 208                                                   sub get_triggers {
-209            2                    2            11      my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-210   ***      2     50     33                   26      if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
-211            2                                  9         $self->{triggers}->{$db} = {};
+209            2                    2            10      my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+210   ***      2     50     33                   27      if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
+211            2                                 10         $self->{triggers}->{$db} = {};
 212            2                                  7         my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
 213                                                            . q{@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, 'ANSI_QUOTES', ''), ',,', ','), }
 214                                                            . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
 215                                                            . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
 216            2                                  4         MKDEBUG && _d($sql);
 217            2                                  6         eval { $dbh->do($sql); };
-               2                                319   
-218            2                                  6         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-219            2                                 12         $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
+               2                                428   
+218            2                                  7         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+219            2                                 16         $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
 220            2                                  5         MKDEBUG && _d($sql);
-221            2                                  4         my $sth = $dbh->prepare($sql);
-222            2                               2577         $sth->execute();
-223            2    100                          47         if ( $sth->rows ) {
-224            1                                 32            my $trgs = $sth->fetchall_arrayref({});
-225            1                                  9            foreach my $trg (@$trgs) {
+221            2                                  5         my $sth = $dbh->prepare($sql);
+222            2                               2536         $sth->execute();
+223            2    100                          55         if ( $sth->rows ) {
+224            1                                 33            my $trgs = $sth->fetchall_arrayref({});
+225            1                                 10            foreach my $trg (@$trgs) {
 226                                                               # Lowercase the hash keys because the NAME_lc property might be set
 227                                                               # on the $dbh, so the lettercase is unpredictable.  This makes them
 228                                                               # predictable.
-229            6                                 16               my %trg;
-230            6                                 33               @trg{ map { lc $_ } keys %$trg } = values %$trg;
-              48                                177   
-231            6                                 24               push @{ $self->{triggers}->{$db}->{ $trg{table} } }, \%trg;
-               6                                 44   
+229            6                                 13               my %trg;
+230            6                                 34               @trg{ map { lc $_ } keys %$trg } = values %$trg;
+              48                                169   
+231            6                                 21               push @{ $self->{triggers}->{$db}->{ $trg{table} } }, \%trg;
+               6                                 49   
 232                                                            }
 233                                                         }
-234            2                                 11         $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+234            2                                  9         $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
 235                                                            . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
-236            2                                 21         MKDEBUG && _d($sql);
-237            2                                356         $dbh->do($sql);
+236            2                                  6         MKDEBUG && _d($sql);
+237            2                                456         $dbh->do($sql);
 238                                                      }
-239   ***      2     50                          11      if ( $tbl ) {
-240            2                                 15         return $self->{triggers}->{$db}->{$tbl};
+239   ***      2     50                          14      if ( $tbl ) {
+240            2                                 17         return $self->{triggers}->{$db}->{$tbl};
 241                                                      }
 242   ***      0                                         return values %{$self->{triggers}->{$db}};
       ***      0                                      

@@ -9,8 +9,8 @@ Total                          85.7   70.0   50.0   80.0    n/a  100.0   82.2
 Run:          TableSyncGroupBy.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:53:59 2009
-Finish:       Fri Jul 31 18:53:59 2009
+Start:        Sat Aug 29 15:04:22 2009
+Finish:       Sat Aug 29 15:04:22 2009
 
 /home/daniel/dev/maatkit/common/TableSyncGroupBy.pm
 
@@ -39,11 +39,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 22                                                    # BY with a count, and then streaming through the results to see how many of
 23                                                    # each group exist.
 24                                                    
-25             1                    1            11   use strict;
+25             1                    1             8   use strict;
                1                                  3   
-               1                                  8   
-26             1                    1           135   use warnings FATAL => 'all';
-               1                                  3   
+               1                                  7   
+26             1                    1             6   use warnings FATAL => 'all';
+               1                                106   
                1                                  7   
 27                                                    
 28             1                    1             6   use English qw(-no_match_vars);
@@ -57,17 +57,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 32                                                    # Arguments:
 33                                                    # * handler ChangeHandler
 34                                                    sub new {
-35             3                    3            67      my ( $class, %args ) = @_;
-36             3                                 12      foreach my $arg ( qw(handler cols) ) {
-37             5    100                          35         die "I need a $arg argument" unless defined $args{$arg};
+35             3                    3            71      my ( $class, %args ) = @_;
+36             3                                 13      foreach my $arg ( qw(handler cols) ) {
+37             5    100                          22         die "I need a $arg argument" unless defined $args{$arg};
 38                                                       }
-39             2                                  8      $args{count_col} = '__maatkit_count';
-40             2                                 15      while ( $args{struct}->{is_col}->{$args{count_col}} ) {
+39             2                                  7      $args{count_col} = '__maatkit_count';
+40             2                                 16      while ( $args{struct}->{is_col}->{$args{count_col}} ) {
 41                                                          # Prepend more _ until not a column.
 42    ***      0                                  0         $args{count_col} = "_$args{count_col}";
 43                                                       }
 44             2                                  4      MKDEBUG && _d('COUNT column will be named', $args{count_col});
-45             2                                 25      return bless { %args }, $class;
+45             2                                 23      return bless { %args }, $class;
 46                                                    }
 47                                                    
 48                                                    # Arguments:
@@ -76,11 +76,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 51                                                    # * table    Table name
 52                                                    # * where    WHERE clause
 53                                                    sub get_sql {
-54             2                    2            19      my ( $self, %args ) = @_;
+54             2                    2            13      my ( $self, %args ) = @_;
 55             2                                  8      my $cols = join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}});
-               6                                 23   
-               2                                  9   
-56    ***      2    100     50                   41      return "SELECT"
+               6                                 36   
+               2                                  8   
+56    ***      2    100     50                   30      return "SELECT"
 57                                                          . ($self->{bufferinmysql} ? ' SQL_BUFFER_RESULT' : '')
 58                                                          . " $cols, COUNT(*) AS $self->{count_col}"
 59                                                          . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
@@ -93,17 +93,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 66                                                    # must either delete or insert the required number of rows to the table.
 67                                                    sub same_row {
 68             2                    2             9      my ( $self, $lr, $rr ) = @_;
-69             2                                  8      my $cc = $self->{count_col};
-70             2                                  7      my $lc = $lr->{$cc};
+69             2                                  7      my $cc = $self->{count_col};
+70             2                                  6      my $lc = $lr->{$cc};
 71             2                                  6      my $rc = $rr->{$cc};
 72             2                                  7      my $diff = abs($lc - $rc);
-73    ***      2     50                           7      return unless $diff;
+73    ***      2     50                           8      return unless $diff;
 74             2                                 11      $lr = { %$lr };
-75             2                                  7      delete $lr->{$cc};
-76             2                                 11      $rr = { %$rr };
-77             2                                  7      delete $rr->{$cc};
+75             2                                  8      delete $lr->{$cc};
+76             2                                  9      $rr = { %$rr };
+77             2                                  6      delete $rr->{$cc};
 78             2                                  9      foreach my $i ( 1 .. $diff ) {
-79             3    100                          11         if ( $lc > $rc ) {
+79             3    100                          10         if ( $lc > $rc ) {
 80             1                                  5            $self->{handler}->change('INSERT', $lr, $self->key_cols());
 81                                                          }
 82                                                          else {
@@ -114,11 +114,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 87                                                    
 88                                                    # Insert into the table the specified number of times.
 89                                                    sub not_in_right {
-90             1                    1             4      my ( $self, $lr ) = @_;
-91             1                                  6      $lr = { %$lr };
+90             1                    1             5      my ( $self, $lr ) = @_;
+91             1                                  5      $lr = { %$lr };
 92             1                                  5      my $cnt = delete $lr->{$self->{count_col}};
 93             1                                  4      foreach my $i ( 1 .. $cnt ) {
-94             2                                  8         $self->{handler}->change('INSERT', $lr, $self->key_cols());
+94             2                                  9         $self->{handler}->change('INSERT', $lr, $self->key_cols());
 95                                                       }
 96                                                    }
 97                                                    
@@ -126,15 +126,15 @@ line  err   stmt   bran   cond    sub    pod   time   code
 99                                                    sub not_in_left {
 100            1                    1             4      my ( $self, $rr ) = @_;
 101            1                                  6      $rr = { %$rr };
-102            1                                  6      my $cnt = delete $rr->{$self->{count_col}};
-103            1                                  4      foreach my $i ( 1 .. $cnt ) {
-104            1                                  5         $self->{handler}->change('DELETE', $rr, $self->key_cols());
+102            1                                  4      my $cnt = delete $rr->{$self->{count_col}};
+103            1                                  5      foreach my $i ( 1 .. $cnt ) {
+104            1                                  4         $self->{handler}->change('DELETE', $rr, $self->key_cols());
 105                                                      }
 106                                                   }
 107                                                   
 108                                                   sub done_with_rows {
-109            1                    1             4      my ( $self ) = @_;
-110            1                                  6      $self->{done} = 1;
+109            1                    1             3      my ( $self ) = @_;
+110            1                                 13      $self->{done} = 1;
 111                                                   }
 112                                                   
 113                                                   sub done {
@@ -143,8 +143,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 116                                                   }
 117                                                   
 118                                                   sub key_cols {
-119            9                    9            29      my ( $self ) = @_;
-120            9                                 46      return $self->{cols};
+119            9                    9            31      my ( $self ) = @_;
+120            9                                 47      return $self->{cols};
 121                                                   }
 122                                                   
 123                                                   # Do any required setup before executing the SQL (such as setting up user

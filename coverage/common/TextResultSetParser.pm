@@ -9,8 +9,8 @@ Total                          73.2   50.0    n/a   84.6    n/a  100.0   70.6
 Run:          TextResultSetParser.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:54:07 2009
-Finish:       Fri Jul 31 18:54:07 2009
+Start:        Sat Aug 29 15:04:29 2009
+Finish:       Sat Aug 29 15:04:29 2009
 
 /home/daniel/dev/maatkit/common/TextResultSetParser.pm
 
@@ -55,8 +55,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 38                                                    # Both horizontal and vertical (\G) text outputs are supported.
 39                                                    
 40             1                    1             5   use strict;
-               1                                  3   
-               1                                  6   
+               1                                  2   
+               1                                  7   
 41             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  8   
@@ -66,30 +66,30 @@ line  err   stmt   bran   cond    sub    pod   time   code
 43                                                    
 44             1                    1             6   use Data::Dumper;
                1                                  2   
-               1                                  7   
+               1                                  9   
 45                                                    $Data::Dumper::Indent    = 1;
 46                                                    $Data::Dumper::Sortkeys  = 1;
 47                                                    $Data::Dumper::Quotekeys = 0;
 48                                                    
 49             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
+               1                                  2   
                1                                 11   
 50                                                    
 51                                                    # Possible args:
 52                                                    #   * value_for    Hashref of original_val => new_val, used to alter values
 53                                                    #
 54                                                    sub new {
-55             1                    1             4      my ( $class, %args ) = @_;
+55             1                    1             5      my ( $class, %args ) = @_;
 56             1                                  4      my $self = { %args };
 57             1                                 13      return bless $self, $class;
 58                                                    }
 59                                                    
 60                                                    sub _parse_tabular {
-61             2                    2            14      my ( $text, @cols ) = @_;
-62             2                                  5      my %row;
-63             2                                 35      my @vals = $text =~ m/\| +([^\|]*?)(?= +\|)/msg;
-64             2    100                          13      return (undef, \@vals) unless @cols;
-65             1                                  7      @row{@cols} = @vals;
+61             2                    2             9      my ( $text, @cols ) = @_;
+62             2                                  6      my %row;
+63             2                                 34      my @vals = $text =~ m/\| +([^\|]*?)(?= +\|)/msg;
+64             2    100                          14      return (undef, \@vals) unless @cols;
+65             1                                  8      @row{@cols} = @vals;
 66             1                                  5      return (\%row, undef);
 67                                                    }
 68                                                    
@@ -103,10 +103,10 @@ line  err   stmt   bran   cond    sub    pod   time   code
 76                                                    }
 77                                                    
 78                                                    sub parse_vertical_row {
-79           167                  167           616      my ( $text ) = @_;
-80           167                               3794      my %row = $text =~ m/^\s*(\w+):(?: ([^\n]*))?/msg;
-81           167                                654      MKDEBUG && _d('vertical row:', Dumper(\%row));
-82           167                                697      return \%row;
+79           167                  167           621      my ( $text ) = @_;
+80           167                               4383      my %row = $text =~ m/^\s*(\w+):(?: ([^\n]*))?/msg;
+81           167                                662      MKDEBUG && _d('vertical row:', Dumper(\%row));
+82           167                               2076      return \%row;
 83                                                    }
 84                                                    
 85                                                    # Returns a result set like:
@@ -118,16 +118,16 @@ line  err   stmt   bran   cond    sub    pod   time   code
 91                                                    #    },
 92                                                    # ]
 93                                                    sub parse {
-94             5                    5           174      my ( $self, $text ) = @_;
+94             5                    5           194      my ( $self, $text ) = @_;
 95             5                                 16      my $result_set;
 96                                                    
 97                                                       # Detect text type: tabular, tab-separated, or vertical
-98             5    100                         157      if ( $text =~ m/^\+---/m ) { # standard "tabular" output
+98             5    100                         168      if ( $text =~ m/^\+---/m ) { # standard "tabular" output
       ***            50                               
       ***            50                               
 99             1                                  2         MKDEBUG && _d('Result set text is standard tabular');
 100            1                                 10         my $line_pattern  = qr/^(\| .*)[\r\n]+/m;
-101            1                                  5         $result_set
+101            1                                  4         $result_set
 102                                                            = parse_horizontal_row($text, $line_pattern, \&_parse_tabular);
 103                                                      }
 104                                                      elsif ( $text =~ m/^id\tselect_type\t/m ) { # tab-separated
@@ -137,9 +137,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 108                                                            = parse_horizontal_row($text, $line_pattern, \&_parse_tab_sep);
 109                                                      }
 110                                                      elsif ( $text =~ m/\*\*\* \d+\. row/ ) { # "vertical" output
-111            4                                  9         MKDEBUG && _d('Result set text is vertical (\G)');
-112            4                                 16         foreach my $row ( split_vertical_rows($text) ) {
-113          167                                600            push @$result_set, parse_vertical_row($row);
+111            4                                 10         MKDEBUG && _d('Result set text is vertical (\G)');
+112            4                                 18         foreach my $row ( split_vertical_rows($text) ) {
+113          167                                623            push @$result_set, parse_vertical_row($row);
 114                                                         }
 115                                                      }
 116                                                      else {
@@ -148,7 +148,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 119                                                      }
 120                                                   
 121                                                      # Convert values.
-122   ***      5     50                          37      if ( $self->{value_for} ) {
+122   ***      5     50                          49      if ( $self->{value_for} ) {
 123   ***      0                                  0         foreach my $result_set ( @$result_set ) {
 124   ***      0                                  0            foreach my $key ( keys %$result_set ) {
 125   ***      0      0                           0               $result_set->{$key} = $self->{value_for}->{ $result_set->{$key} }
@@ -157,30 +157,30 @@ line  err   stmt   bran   cond    sub    pod   time   code
 128                                                         }
 129                                                      }
 130                                                   
-131            5                                 56      return $result_set;
+131            5                                 59      return $result_set;
 132                                                   }
 133                                                   
 134                                                   sub parse_horizontal_row {
 135            1                    1             5      my ( $text, $line_pattern, $sub ) = @_;
 136            1                                  3      my @result_sets = ();
 137            1                                  3      my @cols        = ();
-138            1                                 10      foreach my $line ( $text =~ m/$line_pattern/g ) {
-139            2                                  8         my ( $row, $cols ) = $sub->($line, @cols);
-140            2    100                           9         if ( $row ) {
-141            1                                  5            push @result_sets, $row;
+138            1                                 15      foreach my $line ( $text =~ m/$line_pattern/g ) {
+139            2                                 10         my ( $row, $cols ) = $sub->($line, @cols);
+140            2    100                           8         if ( $row ) {
+141            1                                  9            push @result_sets, $row;
 142                                                         }
 143                                                         else {
-144            1                                  8            @cols = @$cols;
+144            1                                  7            @cols = @$cols;
 145                                                         }
 146                                                      }
 147            1                                 10      return \@result_sets;
 148                                                   }
 149                                                   
 150                                                   sub split_vertical_rows {
-151            4                    4            96      my ( $text ) = @_;
-152            4                                 12      my $ROW_HEADER = '\*{3,} \d+\. row \*{3,}';
-153            4                              11786      my @rows = $text =~ m/($ROW_HEADER.*?)(?=$ROW_HEADER|\z)/omgs;
-154            4                                 91      return @rows;
+151            4                    4           100      my ( $text ) = @_;
+152            4                                 14      my $ROW_HEADER = '\*{3,} \d+\. row \*{3,}';
+153            4                              10139      my @rows = $text =~ m/($ROW_HEADER.*?)(?=$ROW_HEADER|\z)/omgs;
+154            4                                104      return @rows;
 155                                                   }
 156                                                   
 157                                                   sub _d {

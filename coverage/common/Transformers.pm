@@ -9,8 +9,8 @@ Total                          85.4   88.7   87.0   87.5    n/a  100.0   86.8
 Run:          Transformers.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:54:09 2009
-Finish:       Fri Jul 31 18:54:09 2009
+Start:        Sat Aug 29 15:04:31 2009
+Finish:       Sat Aug 29 15:04:31 2009
 
 /home/daniel/dev/maatkit/common/Transformers.pm
 
@@ -38,25 +38,25 @@ line  err   stmt   bran   cond    sub    pod   time   code
 21                                                    # Transformers - Common transformation and beautification subroutines
 22                                                    package Transformers;
 23                                                    
-24             1                    1             5   use strict;
-               1                                  2   
+24             1                    1             4   use strict;
+               1                                  3   
                1                                  5   
-25             1                    1             6   use warnings FATAL => 'all';
-               1                                  2   
-               1                                  7   
-26             1                    1             5   use English qw(-no_match_vars);
+25             1                    1             5   use warnings FATAL => 'all';
+               1                                  3   
+               1                                  8   
+26             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
                1                                 17   
-27             1                    1            11   use Time::Local qw(timelocal);
+27             1                    1            10   use Time::Local qw(timelocal);
                1                                  3   
                1                                 18   
-28             1                    1             6   use Digest::MD5 qw(md5_hex);
-               1                                  3   
-               1                                  6   
+28             1                    1             7   use Digest::MD5 qw(md5_hex);
+               1                                  2   
+               1                                 94   
 29                                                    
-30             1                    1            86   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
-               1                                  7   
+30             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  2   
+               1                                  6   
 31                                                    
 32                                                    require Exporter;
 33                                                    our @ISA         = qw(Exporter);
@@ -80,53 +80,53 @@ line  err   stmt   bran   cond    sub    pod   time   code
 51                                                                                             # like a MySQL YYMMDD without hh:mm:ss.
 52                                                    
 53                                                    sub micro_t {
-54            10                   10            54      my ( $t, %args ) = @_;
+54            10                   10            58      my ( $t, %args ) = @_;
 55            10    100                          45      my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
-56            10    100                          35      my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
-57            10                                 22      my $f;
+56            10    100                          37      my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
+57            10                                 25      my $f;
 58                                                    
-59            10    100                          53      $t = 0 if $t < 0;
+59            10    100                          58      $t = 0 if $t < 0;
 60                                                    
 61                                                       # "Remove" scientific notation so the regex below does not make
 62                                                       # 6.123456e+18 into 6.123456.
-63    ***     10     50                          38      $t = sprintf('%.17f', $t) if $t =~ /e/;
+63    ***     10     50                          41      $t = sprintf('%.17f', $t) if $t =~ /e/;
 64                                                    
 65                                                       # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
 66                                                       # because sprintf() rounds.
-67            10                                 87      $t =~ s/\.(\d{1,6})\d*/\.$1/;
+67            10                                101      $t =~ s/\.(\d{1,6})\d*/\.$1/;
 68                                                    
-69            10    100    100                  139      if ($t > 0 && $t <= 0.000999) {
+69            10    100    100                  140      if ($t > 0 && $t <= 0.000999) {
                     100    100                        
                     100                               
-70             1                                 15         $f = ($t * 1000000) . 'us';
+70             1                                 14         $f = ($t * 1000000) . 'us';
 71                                                       }
 72                                                       elsif ($t >= 0.001000 && $t <= 0.999999) {
-73             4                                 42         $f = sprintf("%.${p_ms}f", $t * 1000);
-74             4                                 21         $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
+73             4                                 54         $f = sprintf("%.${p_ms}f", $t * 1000);
+74             4                                 23         $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
 75                                                       }
 76                                                       elsif ($t >= 1) {
-77             3                                 17         $f = sprintf("%.${p_s}f", $t);
-78             3                                 17         $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
+77             3                                 20         $f = sprintf("%.${p_s}f", $t);
+78             3                                 16         $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
 79                                                       }
 80                                                       else {
 81             2                                  6         $f = 0;  # $t should = 0 at this point
 82                                                       }
 83                                                    
-84            10                                 58      return $f;
+84            10                                 63      return $f;
 85                                                    }
 86                                                    
 87                                                    # Returns what percentage $is of $of.
 88                                                    sub percentage_of {
 89             2                    2            11      my ( $is, $of, %args ) = @_;
 90             2           100                   15      my $p   = $args{p} || 0; # float precision
-91             2    100                           8      my $fmt = $p ? "%.${p}f" : "%d";
-92    ***      2            50                   23      return sprintf $fmt, ($is * 100) / ($of ||= 1);
+91             2    100                           9      my $fmt = $p ? "%.${p}f" : "%d";
+92    ***      2            50                   26      return sprintf $fmt, ($is * 100) / ($of ||= 1);
 93                                                    }
 94                                                    
 95                                                    sub secs_to_time {
-96             4                    4            16      my ( $secs, $fmt ) = @_;
-97             4           100                   13      $secs ||= 0;
-98             4    100                          33      return '00:00' unless $secs;
+96             4                    4            14      my ( $secs, $fmt ) = @_;
+97             4           100                   15      $secs ||= 0;
+98             4    100                          38      return '00:00' unless $secs;
 99                                                    
 100                                                      # Decide what format to use, if not given
 101   ***      3    100     50                   19      $fmt ||= $secs >= 86_400 ? 'd'
@@ -135,7 +135,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 103                                                             :                   'm';
 104                                                   
 105                                                      return
-106            3    100                          38         $fmt eq 'd' ? sprintf(
+106            3    100                          41         $fmt eq 'd' ? sprintf(
                     100                               
 107                                                            "%d+%02d:%02d:%02d",
 108                                                            int($secs / 86_400),
@@ -154,16 +154,16 @@ line  err   stmt   bran   cond    sub    pod   time   code
 121                                                   }
 122                                                   
 123                                                   sub shorten {
-124            6                    6            30      my ( $num, %args ) = @_;
+124            6                    6            37      my ( $num, %args ) = @_;
 125            6    100                          29      my $p = defined $args{p} ? $args{p} : 2;     # float precision
-126            6    100                          19      my $d = defined $args{d} ? $args{d} : 1_024; # divisor
+126            6    100                          24      my $d = defined $args{d} ? $args{d} : 1_024; # divisor
 127            6                                 18      my $n = 0;
-128            6                                 31      my @units = ('', qw(k M G T P E Z Y));
-129            6           100                   59      while ( $num >= $d && $n < @units - 1 ) {
-130           17                                 47         $num /= $d;
-131           17                                122         ++$n;
+128            6                                 32      my @units = ('', qw(k M G T P E Z Y));
+129            6           100                   70      while ( $num >= $d && $n < @units - 1 ) {
+130           17                                 46         $num /= $d;
+131           17                                121         ++$n;
 132                                                      }
-133            6    100    100                  113      return sprintf(
+133            6    100    100                  157      return sprintf(
 134                                                         $num =~ m/\./ || $n
 135                                                            ? "%.${p}f%s"
 136                                                            : '%d',
@@ -183,11 +183,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 150                                                   # Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.  Also
 151                                                   # handles a timestamp with fractions after it.
 152                                                   sub parse_timestamp {
-153            4                    4            15      my ( $val ) = @_;
-154   ***      4     50                          92      if ( my($y, $m, $d, $h, $i, $s, $f)
+153            4                    4            19      my ( $val ) = @_;
+154   ***      4     50                         109      if ( my($y, $m, $d, $h, $i, $s, $f)
 155                                                            = $val =~ m/^$mysql_ts$/ )
 156                                                      {
-157            4    100                          56         return sprintf "%d-%02d-%02d %02d:%02d:"
+157            4    100                          74         return sprintf "%d-%02d-%02d %02d:%02d:"
                     100                               
 158                                                                        . (defined $f ? '%02.6f' : '%02d'),
 159                                                                        $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
@@ -198,11 +198,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 164                                                   # Turns a properly formatted timestamp like 2007-10-15 01:43:52
 165                                                   # into an int (seconds since epoch).  Optional microseconds are ignored.
 166                                                   sub unix_timestamp {
-167            8                    8           353      my ( $val ) = @_;
-168   ***      8     50                         118      if ( my($y, $m, $d, $h, $i, $s)
+167            8                    8           370      my ( $val ) = @_;
+168   ***      8     50                         139      if ( my($y, $m, $d, $h, $i, $s)
 169                                                        = $val =~ m/^$proper_ts$/ )
 170                                                      {
-171            8                                 46         return timelocal($s, $i, $h, $d, $m - 1, $y);
+171            8                                 49         return timelocal($s, $i, $h, $d, $m - 1, $y);
 172                                                      }
 173   ***      0                                  0      return $val;
 174                                                   }
@@ -217,12 +217,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 183                                                   # given value/expression and is expected to return a single value
 184                                                   # (the result of the expression).
 185                                                   sub any_unix_timestamp {
-186           10                   10           257      my ( $val, $callback ) = @_;
+186           10                   10           235      my ( $val, $callback ) = @_;
 187                                                   
-188           10    100                         161      if ( my ($n, $suffix) = $val =~ m/^$n_ts$/ ) {
+188           10    100                         187      if ( my ($n, $suffix) = $val =~ m/^$n_ts$/ ) {
                     100                               
                     100                               
-189            3    100                          29         $n = $suffix eq 's' ? $n            # Seconds
+189            3    100                          21         $n = $suffix eq 's' ? $n            # Seconds
       ***            50                               
       ***            50                               
                     100                               
@@ -230,32 +230,32 @@ line  err   stmt   bran   cond    sub    pod   time   code
 191                                                            : $suffix eq 'h' ? $n * 3600     # Hours
 192                                                            : $suffix eq 'd' ? $n * 86400    # Days
 193                                                            :                  $n;           # default: Seconds
-194            3                                  7         MKDEBUG && _d('ts is now - N[shmd]:', $n);
-195            3                                 26         return time - $n;
+194            3                                 14         MKDEBUG && _d('ts is now - N[shmd]:', $n);
+195            3                                 29         return time - $n;
 196                                                      }
 197                                                      elsif ( my ($ymd, $hms) = $val =~ m/^(\d{6})(?:\s+(\d+:\d+:\d+))?/ ) {
-198            2                                  5         MKDEBUG && _d('ts is MySQL slow log timestamp');
-199            2    100                           9         $val .= ' 00:00:00' unless $hms;
-200            2                                  7         return unix_timestamp(parse_timestamp($val));
+198            2                                  6         MKDEBUG && _d('ts is MySQL slow log timestamp');
+199            2    100                           8         $val .= ' 00:00:00' unless $hms;
+200            2                                  9         return unix_timestamp(parse_timestamp($val));
 201                                                      }
 202                                                      elsif ( ($ymd, $hms) = $val =~ m/^(\d{4}-\d\d-\d\d)(?:[T ](\d+:\d+:\d+))?/) {
-203            2                                  5         MKDEBUG && _d('ts is properly formatted timestamp');
-204            2    100                           8         $val .= ' 00:00:00' unless $hms;
+203            2                                  6         MKDEBUG && _d('ts is properly formatted timestamp');
+204            2    100                           9         $val .= ' 00:00:00' unless $hms;
 205            2                                  8         return unix_timestamp($val);
 206                                                      }
 207                                                      else {
-208            3                                  8         MKDEBUG && _d('ts is MySQL expression');
+208            3                                  7         MKDEBUG && _d('ts is MySQL expression');
 209   ***      3    100     66                   27         return $callback->($val) if $callback && ref $callback eq 'CODE';
 210                                                      }
 211                                                   
-212            2                                  5      MKDEBUG && _d('Unknown ts type:', $val);
-213            2                                 10      return;
+212            2                                  4      MKDEBUG && _d('Unknown ts type:', $val);
+213            2                                 11      return;
 214                                                   }
 215                                                   
 216                                                   # Returns the rightmost 64 bits of an MD5 checksum of the value.
 217                                                   sub make_checksum {
-218            1                    1             4      my ( $val ) = @_;
-219            1                                 22      my $checksum = uc substr(md5_hex($val), -16);
+218            1                    1             5      my ( $val ) = @_;
+219            1                                 29      my $checksum = uc substr(md5_hex($val), -16);
 220            1                                  3      MKDEBUG && _d($checksum, 'checksum for', $val);
 221            1                                  5      return $checksum;
 222                                                   }

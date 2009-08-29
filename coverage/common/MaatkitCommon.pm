@@ -9,8 +9,8 @@ Total                         100.0   71.4   42.1  100.0    n/a  100.0   80.5
 Run:          MaatkitCommon.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:52:15 2009
-Finish:       Fri Jul 31 18:52:15 2009
+Start:        Sat Aug 29 15:02:30 2009
+Finish:       Sat Aug 29 15:02:30 2009
 
 /home/daniel/dev/maatkit/common/MaatkitCommon.pm
 
@@ -42,11 +42,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
                1                                  3   
                1                                  5   
 25             1                    1             6   use warnings FATAL => 'all';
-               1                                  1   
+               1                                  2   
                1                                  5   
 26                                                    
-27             1                    1             9   use English qw(-no_match_vars);
-               1                                  3   
+27             1                    1             5   use English qw(-no_match_vars);
+               1                                  2   
                1                                  4   
 28                                                    
 29                                                    require Exporter;
@@ -58,59 +58,59 @@ line  err   stmt   bran   cond    sub    pod   time   code
 35                                                       get_number_of_cpus
 36                                                    );
 37                                                    
-38             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
+38             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  2   
                1                                  7   
 39                                                    
 40                                                    # Eventually _d() will be exported by default.  We can't do this until
 41                                                    # we remove it from all other modules else we'll get a "redefined" error.
 42                                                    sub _d {
-43             6                    6           165      my ($package, undef, $line) = caller 0;
-44            10    100                          46      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-              10                                 50   
+43             6                    6           221      my ($package, undef, $line) = caller 0;
+44            10    100                          48      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
               10                                 43   
-45             6                                 24           map { defined $_ ? $_ : 'undef' }
+              10                                 49   
+45             6                                 29           map { defined $_ ? $_ : 'undef' }
 46                                                            @_;
-47             6                                 56      print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+47             6                                 61      print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 48                                                    }
 49                                                    
 50                                                    # Returns the number of CPUs.  If no sys info is given, then it's gotten
 51                                                    # from /proc/cpuinfo, sysctl or whatever method will work.  If sys info
 52                                                    # is given, then we try to parse the number of CPUs from it.
 53                                                    sub get_number_of_cpus {
-54             4                    4           274      my ( $sys_info ) = @_;
-55             4                                 11      my $n_cpus; 
+54             4                    4           267      my ( $sys_info ) = @_;
+55             4                                 10      my $n_cpus; 
 56                                                    
 57                                                       # Try to read the number of CPUs in /proc/cpuinfo.
 58                                                       # This only works on GNU/Linux.
-59             4                                  9      my $cpuinfo;
-60    ***      4     50     33                   20      if ( $sys_info || (open $cpuinfo, "<", "/proc/cpuinfo") ) {
-61             4                                 17         local $INPUT_RECORD_SEPARATOR = undef;
-62    ***      4            33                   16         my $contents = $sys_info || <$cpuinfo>;
+59             4                                 11      my $cpuinfo;
+60    ***      4     50     33                   21      if ( $sys_info || (open $cpuinfo, "<", "/proc/cpuinfo") ) {
+61             4                                 19         local $INPUT_RECORD_SEPARATOR = undef;
+62    ***      4            33                   17         my $contents = $sys_info || <$cpuinfo>;
 63             4                                  8         MKDEBUG && _d('sys info:', $contents);
-64    ***      4     50                          15         close $cpuinfo if $cpuinfo;
+64    ***      4     50                          16         close $cpuinfo if $cpuinfo;
 65             4                                 19         $n_cpus = scalar( map { $_ } $contents =~ m/(processor)/g );
                2                                  7   
-66             4                                  9         MKDEBUG && _d('Got', $n_cpus, 'cpus from /proc/cpuinfo');
-67             4    100                          20         return $n_cpus if $n_cpus;
+66             4                                 10         MKDEBUG && _d('Got', $n_cpus, 'cpus from /proc/cpuinfo');
+67             4    100                          22         return $n_cpus if $n_cpus;
 68                                                       }
 69                                                    
 70                                                       # Alternatives to /proc/cpuinfo:
 71                                                    
 72                                                       # FreeBSD and Mac OS X
-73    ***      3     50     33                   17      if ( $sys_info || ($OSNAME =~ m/freebsd/i) || ($OSNAME =~ m/darwin/i) ) { 
+73    ***      3     50     33                   20      if ( $sys_info || ($OSNAME =~ m/freebsd/i) || ($OSNAME =~ m/darwin/i) ) { 
       ***                   33                        
 74    ***      3            33                   12         my $contents = $sys_info || `sysctl hw.ncpu`;
-75             3                                  7         MKDEBUG && _d('sys info:', $contents);
-76    ***      3     50                          30         ($n_cpus) = $contents =~ m/(\d)/ if $contents;
-77             3                                  7         MKDEBUG && _d('Got', $n_cpus, 'cpus from sysctl hw.ncpu');
+75             3                                  6         MKDEBUG && _d('sys info:', $contents);
+76    ***      3     50                          18         ($n_cpus) = $contents =~ m/(\d)/ if $contents;
+77             3                                  6         MKDEBUG && _d('Got', $n_cpus, 'cpus from sysctl hw.ncpu');
 78             3    100                          16         return $n_cpus if $n_cpus;
 79                                                       } 
 80                                                    
 81                                                       # Windows   
-82    ***      2            50                    9      $n_cpus ||= $ENV{NUMBER_OF_PROCESSORS};
+82    ***      2            50                   10      $n_cpus ||= $ENV{NUMBER_OF_PROCESSORS};
 83                                                    
-84             2           100                   20      return $n_cpus || 1; # There has to be at least 1 CPU.
+84             2           100                   22      return $n_cpus || 1; # There has to be at least 1 CPU.
 85                                                    }
 86                                                    
 87                                                    1;

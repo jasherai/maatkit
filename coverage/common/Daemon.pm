@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-.../maatkit/common/Daemon.pm   63.0   38.5   66.7   84.6    n/a  100.0   57.2
-Total                          63.0   38.5   66.7   84.6    n/a  100.0   57.2
+.../maatkit/common/Daemon.pm   58.6   33.3   66.7   84.6    n/a  100.0   52.5
+Total                          58.6   33.3   66.7   84.6    n/a  100.0   52.5
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          Daemon.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:51:27 2009
-Finish:       Fri Jul 31 18:51:35 2009
+Start:        Sat Aug 29 15:01:32 2009
+Finish:       Sat Aug 29 15:01:40 2009
 
 /home/daniel/dev/maatkit/common/Daemon.pm
 
@@ -32,7 +32,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # Daemon package $Revision: 3976 $
+18                                                    # Daemon package $Revision: 4565 $
 19                                                    # ###########################################################################
 20                                                    
 21                                                    # Daemon - Daemonize and handle daemon-related tasks
@@ -40,30 +40,30 @@ line  err   stmt   bran   cond    sub    pod   time   code
 23                                                    
 24             1                    1             5   use strict;
                1                                  3   
-               1                                103   
-25             1                    1             5   use warnings FATAL => 'all';
-               1                                  3   
-               1                                  8   
-26                                                    
-27             1                    1             9   use POSIX qw(setsid);
-               1                                  3   
                1                                  7   
-28             1                    1            10   use English qw(-no_match_vars);
+25             1                    1             5   use warnings FATAL => 'all';
                1                                  2   
-               1                                 10   
+               1                                113   
+26                                                    
+27             1                    1            10   use POSIX qw(setsid);
+               1                                  4   
+               1                                  8   
+28             1                    1            13   use English qw(-no_match_vars);
+               1                                  3   
+               1                                 13   
 29                                                    
-30             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  2   
-               1                                 12   
+30             1                    1             8   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  3   
+               1                                 13   
 31                                                    
 32                                                    # The required o arg is an OptionParser object.
 33                                                    sub new {
-34             3                    3            20      my ( $class, %args ) = @_;
-35             3                                 16      foreach my $arg ( qw(o) ) {
-36    ***      3     50                          20         die "I need a $arg argument" unless $args{$arg};
+34             3                    3            25      my ( $class, %args ) = @_;
+35             3                                 18      foreach my $arg ( qw(o) ) {
+36    ***      3     50                          19         die "I need a $arg argument" unless $args{$arg};
 37                                                       }
-38             3                                 13      my $o = $args{o};
-39             3    100                          16      my $self = {
+38             3                                 14      my $o = $args{o};
+39             3    100                          19      my $self = {
                     100                               
 40                                                          o        => $o,
 41                                                          log_file => $o->has('log') ? $o->get('log') : undef,
@@ -71,10 +71,10 @@ line  err   stmt   bran   cond    sub    pod   time   code
 43                                                       };
 44                                                    
 45                                                       # undef because we can't call like $self->check_PID_file() yet.
-46             3                                 27      check_PID_file(undef, $self->{PID_file});
+46             3                                 22      check_PID_file(undef, $self->{PID_file});
 47                                                    
-48             2                                  5      MKDEBUG && _d('Daemonized child will log to', $self->{log_file});
-49             2                                 15      return bless $self, $class;
+48             2                                  4      MKDEBUG && _d('Daemonized child will log to', $self->{log_file});
+49             2                                 14      return bless $self, $class;
 50                                                    }
 51                                                    
 52                                                    sub daemonize {
@@ -95,141 +95,155 @@ line  err   stmt   bran   cond    sub    pod   time   code
 67                                                    
 68    ***      0                                  0      $self->_make_PID_file();
 69                                                    
-70                                                       # Only reopen STDIN to /dev/null if it's a tty.  It may be a pipe,
-71                                                       # in which case we don't want to break it.
-72    ***      0      0                           0      if ( -t STDIN ) {
-73    ***      0                                  0         close STDIN;
-74    ***      0      0                           0         open  STDIN, '/dev/null'
-75                                                             or die "Cannot reopen STDIN to /dev/null";
-76                                                       }
-77                                                    
-78    ***      0      0                           0      if ( $self->{log_file} ) {
-79    ***      0                                  0         close STDOUT;
-80    ***      0      0                           0         open  STDOUT, '>>', $self->{log_file}
-81                                                             or die "Cannot open log file $self->{log_file}: $OS_ERROR";
-82                                                    
-83                                                          # If we don't close STDERR explicitly, then prove Daemon.t fails
-84                                                          # because STDERR gets written before STDOUT even though we print
-85                                                          # to STDOUT first in the tests.  I don't know why, but it's probably
-86                                                          # best that we just explicitly close all fds before reopening them.
-87    ***      0                                  0         close STDERR;
-88    ***      0      0                           0         open  STDERR, ">&STDOUT"
-89                                                             or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
-90                                                       }
-91                                                    
-92    ***      0                                  0      MKDEBUG && _d('I am the child and now I live daemonized');
-93    ***      0                                  0      return;
-94                                                    }
-95                                                    
-96                                                    # The file arg is optional.  It's used when new() calls this sub
-97                                                    # because $self hasn't been created yet.
-98                                                    sub check_PID_file {
-99             4                    4            16      my ( $self, $file ) = @_;
-100            4    100                          18      my $PID_file = $self ? $self->{PID_file} : $file;
-101            4                                 11      MKDEBUG && _d('Checking PID file', $PID_file);
-102            4    100    100                   62      if ( $PID_file && -f $PID_file ) {
-103            1                                  4         my $pid;
-104            1                                  3         eval { chomp($pid = `cat $PID_file`); };
-               1                               2616   
-105   ***      1     50                          16         die "Cannot cat $PID_file: $OS_ERROR" if $EVAL_ERROR;
-106            1                                  3         MKDEBUG && _d('PID file exists; it contains PID', $pid);
-107   ***      1     50                           9         if ( $pid ) {
-108   ***      0                                  0            my $pid_is_alive = kill 0, $pid;
-109   ***      0      0                           0            if ( $pid_is_alive ) {
-110   ***      0                                  0               die "The PID file $PID_file already exists "
-111                                                                  . " and the PID that it contains, $pid, is running";
-112                                                            }
-113                                                            else {
-114   ***      0                                  0               warn "Overwriting PID file $PID_file because the PID that it "
-115                                                                  . "contains, $pid, is not running";
-116                                                            }
-117                                                         }
-118                                                         else {
-119                                                            # Be safe and die if we can't check that a process is
-120                                                            # or is not already running.
-121            1                                  6            die "The PID file $PID_file already exists but it does not "
-122                                                               . "contain a PID";
-123                                                         }
-124                                                      }
-125                                                      else {
-126            3                                  8         MKDEBUG && _d('No PID file');
-127                                                      }
-128            3                                  9      return;
-129                                                   }
-130                                                   
-131                                                   # Call this for non-daemonized scripts to make a PID file.
-132                                                   sub make_PID_file {
-133            1                    1             4      my ( $self ) = @_;
-134   ***      1     50                           5      if ( exists $self->{child} ) {
-135   ***      0                                  0         die "Do not call Daemon::make_PID_file() for daemonized scripts";
-136                                                      }
-137            1                                  7      $self->_make_PID_file();
-138                                                      # This causes the PID file to be auto-removed when this obj is destroyed.
-139            1                                  8      $self->{rm_PID_file} = 1;
-140            1                                  2      return;
-141                                                   }
-142                                                   
-143                                                   # Do not call this sub directly.  For daemonized scripts, it's called
-144                                                   # automatically from daemonize() if there's a --pid opt.  For non-daemonized
-145                                                   # scripts, call make_PID_file().
-146                                                   sub _make_PID_file {
-147            1                    1             3      my ( $self ) = @_;
-148                                                   
-149            1                                  4      my $PID_file = $self->{PID_file};
-150   ***      1     50                           4      if ( !$PID_file ) {
-151   ***      0                                  0         MKDEBUG && _d('No PID file to create');
-152   ***      0                                  0         return;
-153                                                      }
-154                                                   
-155                                                      # We checked this in new() but we'll double check here.
-156            1                                  8      $self->check_PID_file();
-157                                                   
-158   ***      1     50                          60      open my $PID_FH, '>', $PID_file
-159                                                         or die "Cannot open PID file $PID_file: $OS_ERROR";
-160   ***      1     50                          19      print $PID_FH $PID
-161                                                         or die "Cannot print to PID file $PID_file: $OS_ERROR";
-162   ***      1     50                          34      close $PID_FH
-163                                                         or die "Cannot close PID file $PID_file: $OS_ERROR";
-164                                                   
-165            1                                  3      MKDEBUG && _d('Created PID file:', $self->{PID_file});
-166            1                                  3      return;
-167                                                   }
+70    ***      0                                  0      $OUTPUT_AUTOFLUSH = 1;
+71                                                    
+72                                                       # Only reopen STDIN to /dev/null if it's a tty.  It may be a pipe,
+73                                                       # in which case we don't want to break it.
+74    ***      0      0                           0      if ( -t STDIN ) {
+75    ***      0                                  0         close STDIN;
+76    ***      0      0                           0         open  STDIN, '/dev/null'
+77                                                             or die "Cannot reopen STDIN to /dev/null: $OS_ERROR";
+78                                                       }
+79                                                    
+80    ***      0      0                           0      if ( $self->{log_file} ) {
+81    ***      0                                  0         close STDOUT;
+82    ***      0      0                           0         open  STDOUT, '>>', $self->{log_file}
+83                                                             or die "Cannot open log file $self->{log_file}: $OS_ERROR";
+84                                                    
+85                                                          # If we don't close STDERR explicitly, then prove Daemon.t fails
+86                                                          # because STDERR gets written before STDOUT even though we print
+87                                                          # to STDOUT first in the tests.  I don't know why, but it's probably
+88                                                          # best that we just explicitly close all fds before reopening them.
+89    ***      0                                  0         close STDERR;
+90    ***      0      0                           0         open  STDERR, ">&STDOUT"
+91                                                             or die "Cannot dupe STDERR to STDOUT: $OS_ERROR"; 
+92                                                       }
+93                                                       else {
+94    ***      0      0                           0         if ( -t STDOUT ) {
+95    ***      0                                  0            close STDOUT;
+96    ***      0      0                           0            open  STDOUT, '>', '/dev/null'
+97                                                                or die "Cannot reopen STDOUT to /dev/null: $OS_ERROR";
+98                                                          }
+99    ***      0      0                           0         if ( -t STDERR ) {
+100   ***      0                                  0            close STDERR;
+101   ***      0      0                           0            open  STDERR, '>', '/dev/null'
+102                                                               or die "Cannot reopen STDERR to /dev/null: $OS_ERROR";
+103                                                         }
+104                                                      }
+105                                                   
+106   ***      0                                  0      MKDEBUG && _d('I am the child and now I live daemonized');
+107   ***      0                                  0      return;
+108                                                   }
+109                                                   
+110                                                   # The file arg is optional.  It's used when new() calls this sub
+111                                                   # because $self hasn't been created yet.
+112                                                   sub check_PID_file {
+113            4                    4            20      my ( $self, $file ) = @_;
+114            4    100                          19      my $PID_file = $self ? $self->{PID_file} : $file;
+115            4                                  8      MKDEBUG && _d('Checking PID file', $PID_file);
+116            4    100    100                   64      if ( $PID_file && -f $PID_file ) {
+117            1                                  3         my $pid;
+118            1                                  2         eval { chomp($pid = `cat $PID_file`); };
+               1                               2682   
+119   ***      1     50                          16         die "Cannot cat $PID_file: $OS_ERROR" if $EVAL_ERROR;
+120            1                                  6         MKDEBUG && _d('PID file exists; it contains PID', $pid);
+121   ***      1     50                           9         if ( $pid ) {
+122   ***      0                                  0            my $pid_is_alive = kill 0, $pid;
+123   ***      0      0                           0            if ( $pid_is_alive ) {
+124   ***      0                                  0               die "The PID file $PID_file already exists "
+125                                                                  . " and the PID that it contains, $pid, is running";
+126                                                            }
+127                                                            else {
+128   ***      0                                  0               warn "Overwriting PID file $PID_file because the PID that it "
+129                                                                  . "contains, $pid, is not running";
+130                                                            }
+131                                                         }
+132                                                         else {
+133                                                            # Be safe and die if we can't check that a process is
+134                                                            # or is not already running.
+135            1                                  6            die "The PID file $PID_file already exists but it does not "
+136                                                               . "contain a PID";
+137                                                         }
+138                                                      }
+139                                                      else {
+140            3                                  7         MKDEBUG && _d('No PID file');
+141                                                      }
+142            3                                  9      return;
+143                                                   }
+144                                                   
+145                                                   # Call this for non-daemonized scripts to make a PID file.
+146                                                   sub make_PID_file {
+147            1                    1             4      my ( $self ) = @_;
+148   ***      1     50                          10      if ( exists $self->{child} ) {
+149   ***      0                                  0         die "Do not call Daemon::make_PID_file() for daemonized scripts";
+150                                                      }
+151            1                                  6      $self->_make_PID_file();
+152                                                      # This causes the PID file to be auto-removed when this obj is destroyed.
+153            1                                  8      $self->{rm_PID_file} = 1;
+154            1                                  3      return;
+155                                                   }
+156                                                   
+157                                                   # Do not call this sub directly.  For daemonized scripts, it's called
+158                                                   # automatically from daemonize() if there's a --pid opt.  For non-daemonized
+159                                                   # scripts, call make_PID_file().
+160                                                   sub _make_PID_file {
+161            1                    1             4      my ( $self ) = @_;
+162                                                   
+163            1                                  4      my $PID_file = $self->{PID_file};
+164   ***      1     50                           4      if ( !$PID_file ) {
+165   ***      0                                  0         MKDEBUG && _d('No PID file to create');
+166   ***      0                                  0         return;
+167                                                      }
 168                                                   
-169                                                   sub _remove_PID_file {
-170            1                    1             4      my ( $self ) = @_;
-171   ***      1     50     33                   31      if ( $self->{PID_file} && -f $self->{PID_file} ) {
-172   ***      1     50                          40         unlink $self->{PID_file}
-173                                                            or warn "Cannot remove PID file $self->{PID_file}: $OS_ERROR";
-174            1                                  3         MKDEBUG && _d('Removed PID file');
-175                                                      }
-176                                                      else {
-177   ***      0                                  0         MKDEBUG && _d('No PID to remove');
-178                                                      }
-179            1                                  3      return;
-180                                                   }
-181                                                   
-182                                                   sub DESTROY {
-183            2                    2            12      my ( $self ) = @_;
-184                                                      # Remove the PID only if we're the child.
-185   ***      2    100     66                   38      $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
-186            2                                  6      return;
-187                                                   }
-188                                                   
-189                                                   sub _d {
-190   ***      0                    0                    my ($package, undef, $line) = caller 0;
-191   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+169                                                      # We checked this in new() but we'll double check here.
+170            1                                  4      $self->check_PID_file();
+171                                                   
+172   ***      1     50                          81      open my $PID_FH, '>', $PID_file
+173                                                         or die "Cannot open PID file $PID_file: $OS_ERROR";
+174   ***      1     50                          22      print $PID_FH $PID
+175                                                         or die "Cannot print to PID file $PID_file: $OS_ERROR";
+176   ***      1     50                          32      close $PID_FH
+177                                                         or die "Cannot close PID file $PID_file: $OS_ERROR";
+178                                                   
+179            1                                  2      MKDEBUG && _d('Created PID file:', $self->{PID_file});
+180            1                                  3      return;
+181                                                   }
+182                                                   
+183                                                   sub _remove_PID_file {
+184            1                    1             4      my ( $self ) = @_;
+185   ***      1     50     33                   15      if ( $self->{PID_file} && -f $self->{PID_file} ) {
+186   ***      1     50                          46         unlink $self->{PID_file}
+187                                                            or warn "Cannot remove PID file $self->{PID_file}: $OS_ERROR";
+188            1                                  3         MKDEBUG && _d('Removed PID file');
+189                                                      }
+190                                                      else {
+191   ***      0                                  0         MKDEBUG && _d('No PID to remove');
+192                                                      }
+193            1                                  3      return;
+194                                                   }
+195                                                   
+196                                                   sub DESTROY {
+197            2                    2            13      my ( $self ) = @_;
+198                                                      # Remove the PID only if we're the child.
+199   ***      2    100     66                   34      $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+200            2                                  7      return;
+201                                                   }
+202                                                   
+203                                                   sub _d {
+204   ***      0                    0                    my ($package, undef, $line) = caller 0;
+205   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
       ***      0                                      
       ***      0                                      
-192   ***      0                                              map { defined $_ ? $_ : 'undef' }
-193                                                           @_;
-194   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-195                                                   }
-196                                                   
-197                                                   1;
-198                                                   
-199                                                   # ###########################################################################
-200                                                   # End Daemon package
-201                                                   # ###########################################################################
+206   ***      0                                              map { defined $_ ? $_ : 'undef' }
+207                                                           @_;
+208   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+209                                                   }
+210                                                   
+211                                                   1;
+212                                                   
+213                                                   # ###########################################################################
+214                                                   # End Daemon package
+215                                                   # ###########################################################################
 
 
 Branches
@@ -244,25 +258,29 @@ line  err      %   true  false   branch
 57    ***      0      0      0   if ($pid)
 65    ***      0      0      0   unless POSIX::setsid()
 66    ***      0      0      0   unless chdir '/'
-72    ***      0      0      0   if (-t STDIN)
-74    ***      0      0      0   unless open STDIN, '/dev/null'
-78    ***      0      0      0   if ($$self{'log_file'})
-80    ***      0      0      0   unless open STDOUT, '>>', $$self{'log_file'}
-88    ***      0      0      0   unless open STDERR, '>&STDOUT'
-100          100      1      3   $self ? :
-102          100      1      3   if ($PID_file and -f $PID_file) { }
-105   ***     50      0      1   if $EVAL_ERROR
-107   ***     50      0      1   if ($pid) { }
-109   ***      0      0      0   if ($pid_is_alive) { }
-134   ***     50      0      1   if (exists $$self{'child'})
-150   ***     50      0      1   if (not $PID_file)
-158   ***     50      0      1   unless open my $PID_FH, '>', $PID_file
-160   ***     50      0      1   unless print $PID_FH $PID
-162   ***     50      0      1   unless close $PID_FH
-171   ***     50      1      0   if ($$self{'PID_file'} and -f $$self{'PID_file'}) { }
-172   ***     50      0      1   unless unlink $$self{'PID_file'}
-185          100      1      1   if $$self{'child'} or $$self{'rm_PID_file'}
-191   ***      0      0      0   defined $_ ? :
+74    ***      0      0      0   if (-t STDIN)
+76    ***      0      0      0   unless open STDIN, '/dev/null'
+80    ***      0      0      0   if ($$self{'log_file'}) { }
+82    ***      0      0      0   unless open STDOUT, '>>', $$self{'log_file'}
+90    ***      0      0      0   unless open STDERR, '>&STDOUT'
+94    ***      0      0      0   if (-t STDOUT)
+96    ***      0      0      0   unless open STDOUT, '>', '/dev/null'
+99    ***      0      0      0   if (-t STDERR)
+101   ***      0      0      0   unless open STDERR, '>', '/dev/null'
+114          100      1      3   $self ? :
+116          100      1      3   if ($PID_file and -f $PID_file) { }
+119   ***     50      0      1   if $EVAL_ERROR
+121   ***     50      0      1   if ($pid) { }
+123   ***      0      0      0   if ($pid_is_alive) { }
+148   ***     50      0      1   if (exists $$self{'child'})
+164   ***     50      0      1   if (not $PID_file)
+172   ***     50      0      1   unless open my $PID_FH, '>', $PID_file
+174   ***     50      0      1   unless print $PID_FH $PID
+176   ***     50      0      1   unless close $PID_FH
+185   ***     50      1      0   if ($$self{'PID_file'} and -f $$self{'PID_file'}) { }
+186   ***     50      0      1   unless unlink $$self{'PID_file'}
+199          100      1      1   if $$self{'child'} or $$self{'rm_PID_file'}
+205   ***      0      0      0   defined $_ ? :
 
 
 Conditions
@@ -272,14 +290,14 @@ and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-102          100      1      2      1   $PID_file and -f $PID_file
-171   ***     33      0      0      1   $$self{'PID_file'} and -f $$self{'PID_file'}
+116          100      1      2      1   $PID_file and -f $PID_file
+185   ***     33      0      0      1   $$self{'PID_file'} and -f $$self{'PID_file'}
 
 or 3 conditions
 
 line  err      %      l  !l&&r !l&&!r   expr
 ----- --- ------ ------ ------ ------   ----
-185   ***     66      0      1      1   $$self{'child'} or $$self{'rm_PID_file'}
+199   ***     66      0      1      1   $$self{'child'} or $$self{'rm_PID_file'}
 
 
 Covered Subroutines
@@ -292,11 +310,11 @@ BEGIN                1 /home/daniel/dev/maatkit/common/Daemon.pm:25
 BEGIN                1 /home/daniel/dev/maatkit/common/Daemon.pm:27 
 BEGIN                1 /home/daniel/dev/maatkit/common/Daemon.pm:28 
 BEGIN                1 /home/daniel/dev/maatkit/common/Daemon.pm:30 
-DESTROY              2 /home/daniel/dev/maatkit/common/Daemon.pm:183
-_make_PID_file       1 /home/daniel/dev/maatkit/common/Daemon.pm:147
-_remove_PID_file     1 /home/daniel/dev/maatkit/common/Daemon.pm:170
-check_PID_file       4 /home/daniel/dev/maatkit/common/Daemon.pm:99 
-make_PID_file        1 /home/daniel/dev/maatkit/common/Daemon.pm:133
+DESTROY              2 /home/daniel/dev/maatkit/common/Daemon.pm:197
+_make_PID_file       1 /home/daniel/dev/maatkit/common/Daemon.pm:161
+_remove_PID_file     1 /home/daniel/dev/maatkit/common/Daemon.pm:184
+check_PID_file       4 /home/daniel/dev/maatkit/common/Daemon.pm:113
+make_PID_file        1 /home/daniel/dev/maatkit/common/Daemon.pm:147
 new                  3 /home/daniel/dev/maatkit/common/Daemon.pm:34 
 
 Uncovered Subroutines
@@ -304,7 +322,7 @@ Uncovered Subroutines
 
 Subroutine       Count Location                                     
 ---------------- ----- ---------------------------------------------
-_d                   0 /home/daniel/dev/maatkit/common/Daemon.pm:190
+_d                   0 /home/daniel/dev/maatkit/common/Daemon.pm:204
 daemonize            0 /home/daniel/dev/maatkit/common/Daemon.pm:53 
 
 

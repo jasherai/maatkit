@@ -9,8 +9,8 @@ Total                          69.1   40.6   20.0   85.7    n/a  100.0   60.0
 Run:          Loadavg.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:51:58 2009
-Finish:       Fri Jul 31 18:51:58 2009
+Start:        Sat Aug 29 15:02:04 2009
+Finish:       Sat Aug 29 15:02:04 2009
 
 /home/daniel/dev/maatkit/common/Loadavg.pm
 
@@ -36,30 +36,30 @@ line  err   stmt   bran   cond    sub    pod   time   code
 19                                                    # ###########################################################################
 20                                                    package Loadavg;
 21                                                    
-22             1                    1             4   use strict;
-               1                                  2   
-               1                                107   
+22             1                    1             5   use strict;
+               1                                  3   
+               1                                118   
 23             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
-               1                                  8   
+               1                                  9   
 24                                                    
-25             1                    1             5   use List::Util qw(sum);
+25             1                    1             6   use List::Util qw(sum);
                1                                  2   
-               1                                 12   
+               1                                 13   
 26             1                    1            10   use Time::HiRes qw(time);
                1                                  3   
                1                                  5   
-27             1                    1             6   use English qw(-no_match_vars);
-               1                                  3   
-               1                                  8   
+27             1                    1             7   use English qw(-no_match_vars);
+               1                                  2   
+               1                                  9   
 28                                                    
-29             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
+29             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  3   
                1                                 10   
 30                                                    
 31                                                    sub new {
 32             1                    1             5      my ( $class ) = @_;
-33             1                                 17      return bless {}, $class;
+33             1                                 18      return bless {}, $class;
 34                                                    }
 35                                                    
 36                                                    # Calculates average query time by the Trevor Price method.
@@ -98,24 +98,24 @@ line  err   stmt   bran   cond    sub    pod   time   code
 67                                                    
 68                                                    # Calculates loadavg from the uptime command.
 69                                                    sub loadavg {
-70             1                    1             4      my ( $self ) = @_;
-71             1                               3085      my $str = `uptime`;
-72             1                                 14      chomp $str;
-73    ***      1     50                          13      return 0 unless $str;
+70             1                    1             5      my ( $self ) = @_;
+71             1                               2949      my $str = `uptime`;
+72             1                                  9      chomp $str;
+73    ***      1     50                          11      return 0 unless $str;
 74             1                                 27      my ( $one ) = $str =~ m/load average:\s+(\S[^,]*),/;
-75    ***      1            50                   48      return $one || 0;
+75    ***      1            50                   49      return $one || 0;
 76                                                    }
 77                                                    
 78                                                    # Calculates slave lag.  If the slave is not running, returns 0.
 79                                                    sub slave_lag {
 80             1                    1             4      my ( $self, $dbh ) = @_;
 81    ***      1     50                           5      die "I need a dbh argument" unless $dbh;
-82             1                                 49      my $sl = $dbh->selectall_arrayref('SHOW SLAVE STATUS', { Slice => {} });
+82             1                                 48      my $sl = $dbh->selectall_arrayref('SHOW SLAVE STATUS', { Slice => {} });
 83    ***      1     50                           9      if ( $sl ) {
 84             1                                  4         $sl = $sl->[0];
 85             1                                  8         my ( $key ) = grep { m/behind_master/i } keys %$sl;
-              33                                101   
-86    ***      1     50     50                   31         return $key ? $sl->{$key} || 0 : 0;
+              33                                107   
+86    ***      1     50     50                   32         return $key ? $sl->{$key} || 0 : 0;
 87                                                       }
 88    ***      0                                  0      return 0;
 89                                                    }
@@ -124,64 +124,64 @@ line  err   stmt   bran   cond    sub    pod   time   code
 92                                                    # interval.
 93                                                    sub status {
 94             1                    1            14      my ( $self, $dbh, %args ) = @_;
-95    ***      1     50                           6      die "I need a dbh argument" unless $dbh;
-96             1                                  4      my (undef, $status1)
+95    ***      1     50                           5      die "I need a dbh argument" unless $dbh;
+96             1                                  5      my (undef, $status1)
 97                                                          = $dbh->selectrow_array("SHOW /*!50002 GLOBAL*/ STATUS LIKE '$args{metric}'");
-98    ***      1     50                         366      if ( $args{incstatus} ) {
+98    ***      1     50                         420      if ( $args{incstatus} ) {
 99    ***      0                                  0         sleep(1);
 100   ***      0                                  0         my (undef, $status2)
 101                                                            = $dbh->selectrow_array("SHOW /*!50002 GLOBAL*/ STATUS LIKE '$args{metric}'");
 102   ***      0                                  0         return $status2 - $status1;
 103                                                      }
 104                                                      else {
-105            1                                 11         return $status1;
+105            1                                 15         return $status1;
 106                                                      }
 107                                                   }
 108                                                   
 109                                                   # Returns the highest value for a given section and var, like transactions
 110                                                   # and lock_wait_time.
 111                                                   sub innodb {
-112            2                    2            22      my ( $self, $dbh, %args ) = @_;
-113   ***      2     50                          10      die "I need a dbh argument" unless $dbh;
+112            2                    2            23      my ( $self, $dbh, %args ) = @_;
+113   ***      2     50                          11      die "I need a dbh argument" unless $dbh;
 114            2                                  8      foreach my $arg ( qw(InnoDBStatusParser section var) ) {
-115   ***      6     50                          27         die "I need a $arg argument" unless $args{$arg};
+115   ***      6     50                          28         die "I need a $arg argument" unless $args{$arg};
 116                                                      }
 117            2                                  7      my $is      = $args{InnoDBStatusParser};
 118            2                                  6      my $section = $args{section};
-119            2                                  6      my $var     = $args{var};
+119            2                                  7      my $var     = $args{var};
 120                                                   
 121                                                      # Get and parse SHOW INNODB STATUS text.
 122            2                                  5      my ($status_text, undef) = $dbh->selectrow_array("SHOW INNODB STATUS");
-123   ***      2     50                         752      if ( !$status_text ) {
+123   ***      2     50                         889      if ( !$status_text ) {
 124   ***      0                                  0         MKDEBUG && _d('SHOW INNODB STATUS failed');
 125   ***      0                                  0         return 0;
 126                                                      }
 127            2                                 20      my $idb_stats = $is->parse($status_text);
 128                                                   
-129            2    100                          13      if ( !exists $idb_stats->{$section} ) {
+129            2    100                          11      if ( !exists $idb_stats->{$section} ) {
 130            1                                  2         MKDEBUG && _d('idb status section', $section, 'does not exist');
-131            1                                 42         return 0;
+131            1                                 43         return 0;
 132                                                      }
 133                                                   
 134                                                      # Each section should be an arrayref.  Go through each set of vars
 135                                                      # and find the highest var that we're checking.
 136            1                                  3      my $value = 0;
-137            1                                  2      foreach my $vars ( @{$idb_stats->{$section}} ) {
-               1                                  6   
-138            1                                  1         MKDEBUG && _d($var, '=', $vars->{$var});
+137            1                                  3      foreach my $vars ( @{$idb_stats->{$section}} ) {
+               1                                  5   
+138            1                                  2         MKDEBUG && _d($var, '=', $vars->{$var});
 139   ***      1     50     33                   17         $value = $vars->{$var} && $vars->{$var} > $value ? $vars->{$var} : $value;
 140                                                      }
 141                                                   
-142            1                                  2      MKDEBUG && _d('Highest', $var, '=', $value);
-143            1                                 40      return $value;
+142            1                                  3      MKDEBUG && _d('Highest', $var, '=', $value);
+143            1                                 43      return $value;
 144                                                   }
 145                                                   
 146                                                   sub _d {
 147            1                    1             8      my ($package, undef, $line) = caller 0;
-148   ***      2     50                          10      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-               2                                  8   
-               2                                 11   
-149            1                                  4           map { defined $_ ? $_ : 'undef' }
+148   ***      2     50                          12      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+               2                                  7   
+               2                                 10   
+149            1                                  6           map { defined $_ ? $_ : 'undef' }
 150                                                           @_;
 151            1                                  4      print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 152                                                   }

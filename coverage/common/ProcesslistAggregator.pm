@@ -9,8 +9,8 @@ Total                          85.0   87.5   80.0   85.7    n/a  100.0   85.3
 Run:          ProcesslistAggregator.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:53:04 2009
-Finish:       Fri Jul 31 18:53:04 2009
+Start:        Sat Aug 29 15:03:26 2009
+Finish:       Sat Aug 29 15:03:26 2009
 
 /home/daniel/dev/maatkit/common/ProcesslistAggregator.pm
 
@@ -36,17 +36,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 19                                                    # ###########################################################################
 20                                                    package ProcesslistAggregator;
 21                                                    
-22             1                    1           110   use strict;
+22             1                    1             8   use strict;
                1                                  3   
-               1                                  7   
+               1                                  6   
 23             1                    1             6   use warnings FATAL => 'all';
-               1                                  2   
+               1                                  6   
                1                                  9   
-24             1                    1             5   use English qw(-no_match_vars);
+24             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
-               1                                  7   
+               1                                  8   
 25                                                    
-26             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
+26             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
                1                                 11   
 27                                                    
@@ -55,7 +55,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 30    ***      1            50                   13      my $self = {
 31                                                          undef_val => $args{undef_val} || 'NULL',
 32                                                       };
-33             1                                 10      return bless $self, $class;
+33             1                                 11      return bless $self, $class;
 34                                                    }
 35                                                    
 36                                                    # Given an arrayref of processes ($proclist), returns an hashref of
@@ -64,34 +64,34 @@ line  err   stmt   bran   cond    sub    pod   time   code
 39                                                    # The $proclist arg is usually the return val of:
 40                                                    #    $dbh->selectall_arrayref('SHOW PROCESSLIST', { Slice => {} } );
 41                                                    sub aggregate {
-42             3                    3            25      my ( $self, $proclist ) = @_;
-43             3                                 10      my $aggregate = {};
+42             3                    3            29      my ( $self, $proclist ) = @_;
+43             3                                 11      my $aggregate = {};
 44             3                                  9      foreach my $proc ( @{$proclist} ) {
-               3                                 12   
-45           165                                412         foreach my $field ( keys %{ $proc } ) {
-             165                                757   
+               3                                 13   
+45           165                                417         foreach my $field ( keys %{ $proc } ) {
+             165                                830   
 46                                                             # Don't aggregate these fields.
-47          1320    100                        4653            next if $field eq 'Id';
-48          1155    100                        4050            next if $field eq 'Info';
-49           990    100                        3540            next if $field eq 'Time';
+47          1320    100                        5282            next if $field eq 'Id';
+48          1155    100                        4076            next if $field eq 'Info';
+49           990    100                        3622            next if $field eq 'Time';
 50                                                    
 51                                                             # Format the field's value a little.
-52           825                               2530            my $val  = $proc->{ $field };
-53           825    100                        2825               $val  = $self->{undef_val} if !defined $val;
-54           825    100    100                 5852               $val  = lc $val if ( $field eq 'Command' || $field eq 'State' );
-55           825    100                        3111               $val  =~ s/:.*// if $field eq 'Host';
+52           825                               2580            my $val  = $proc->{ $field };
+53           825    100                        2939               $val  = $self->{undef_val} if !defined $val;
+54           825    100    100                 7025               $val  = lc $val if ( $field eq 'Command' || $field eq 'State' );
+55           825    100                        3166               $val  =~ s/:.*// if $field eq 'Host';
 56                                                    
-57           825                               2487            my $time = $proc->{Time};
-58           825    100                        2913               $time = 0 if $time eq 'NULL';
+57           825                               2534            my $time = $proc->{Time};
+58           825    100                        2946               $time = 0 if $time eq 'NULL';
 59                                                    
 60                                                             # Do this last or else $proc->{$field} won't match.
-61           825                               2369            $field = lc $field;
+61           825                               2442            $field = lc $field;
 62                                                    
-63           825                               3434            $aggregate->{ $field }->{ $val }->{time}  += $time;
-64           825                               3903            $aggregate->{ $field }->{ $val }->{count} += 1;
+63           825                               4469            $aggregate->{ $field }->{ $val }->{time}  += $time;
+64           825                               3900            $aggregate->{ $field }->{ $val }->{count} += 1;
 65                                                          }
 66                                                       }
-67             3                                 23      return $aggregate;
+67             3                                 29      return $aggregate;
 68                                                    }
 69                                                    
 70                                                    sub _d {

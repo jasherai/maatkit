@@ -9,8 +9,8 @@ Total                         100.0  100.0  100.0  100.0    n/a  100.0  100.0
 Run:          Quoter.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:53:19 2009
-Finish:       Fri Jul 31 18:53:19 2009
+Start:        Sat Aug 29 15:03:42 2009
+Finish:       Sat Aug 29 15:03:42 2009
 
 /home/daniel/dev/maatkit/common/Quoter.pm
 
@@ -35,8 +35,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 18                                                    # Quoter package $Revision: 3186 $
 19                                                    # ###########################################################################
 20             1                    1             5   use strict;
-               1                                  3   
-               1                                105   
+               1                                  6   
+               1                                113   
 21             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  6   
@@ -44,35 +44,35 @@ line  err   stmt   bran   cond    sub    pod   time   code
 23                                                    package Quoter;
 24                                                    
 25             1                    1             5   use English qw(-no_match_vars);
-               1                                  3   
-               1                                  6   
-26                                                    
-27             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
-               1                                 12   
+               1                                  7   
+26                                                    
+27             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  2   
+               1                                 11   
 28                                                    
 29                                                    sub new {
 30             1                    1             4      my ( $class ) = @_;
-31             1                                 12      bless {}, $class;
+31             1                                 13      bless {}, $class;
 32                                                    }
 33                                                    
 34                                                    sub quote {
-35             5                    5            23      my ( $self, @vals ) = @_;
-36             5                                 17      foreach my $val ( @vals ) {
-37             7                                 33         $val =~ s/`/``/g;
+35             5                    5            22      my ( $self, @vals ) = @_;
+36             5                                 16      foreach my $val ( @vals ) {
+37             7                                 36         $val =~ s/`/``/g;
 38                                                       }
 39             5                                 17      return join('.', map { '`' . $_ . '`' } @vals);
-               7                                 45   
+               7                                 46   
 40                                                    }
 41                                                    
 42                                                    sub quote_val {
-43             8                    8            34      my ( $self, @vals ) = @_;
+43             8                    8            35      my ( $self, @vals ) = @_;
 44                                                       return join(', ',
 45                                                          map {
-46             8    100                          27            if ( defined $_ ) {
+46             8    100                          32            if ( defined $_ ) {
               10                                 33   
-47             9                                 38               $_ =~ s/(['\\])/\\$1/g;
-48             9    100    100                  115               $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
+47             9                                 44               $_ =~ s/(['\\])/\\$1/g;
+48             9    100    100                  128               $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
 49                                                             }
 50                                                             else {
 51             1                                  7               'NULL';
@@ -82,14 +82,14 @@ line  err   stmt   bran   cond    sub    pod   time   code
 55                                                    }
 56                                                    
 57                                                    sub split_unquote {
-58             4                    4            18      my ( $self, $db_tbl, $default_db ) = @_;
-59             4                                 16      $db_tbl =~ s/`//g;
-60             4                                 19      my ( $db, $tbl ) = split(/[.]/, $db_tbl);
-61             4    100                          16      if ( !$tbl ) {
+58             4                    4            20      my ( $self, $db_tbl, $default_db ) = @_;
+59             4                                 17      $db_tbl =~ s/`//g;
+60             4                                 23      my ( $db, $tbl ) = split(/[.]/, $db_tbl);
+61             4    100                          18      if ( !$tbl ) {
 62             2                                  6         $tbl = $db;
-63             2                                  4         $db  = $default_db;
+63             2                                  5         $db  = $default_db;
 64                                                       }
-65             4                                 29      return ($db, $tbl);
+65             4                                 31      return ($db, $tbl);
 66                                                    }
 67                                                    
 68                                                    1;

@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...common/EventAggregator.pm   97.0   77.7   82.4   96.6    n/a  100.0   89.9
-Total                          97.0   77.7   82.4   96.6    n/a  100.0   89.9
+...common/EventAggregator.pm   97.1   78.7   82.4   96.6    n/a  100.0   90.2
+Total                          97.1   78.7   82.4   96.6    n/a  100.0   90.2
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          EventAggregator.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:51:40 2009
-Finish:       Fri Jul 31 18:51:47 2009
+Start:        Sat Aug 29 15:01:46 2009
+Finish:       Sat Aug 29 15:01:54 2009
 
 /home/daniel/dev/maatkit/common/EventAggregator.pm
 
@@ -32,19 +32,19 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # EventAggregator package $Revision: 4131 $
+18                                                    # EventAggregator package $Revision: 4462 $
 19                                                    # ###########################################################################
 20                                                    package EventAggregator;
 21                                                    
 22             1                    1             7   use strict;
-               1                                  2   
+               1                                  3   
                1                                  6   
 23             1                    1             6   use warnings FATAL => 'all';
-               1                                  2   
-               1                                  5   
+               1                                  3   
+               1                                  6   
 24             1                    1             5   use English qw(-no_match_vars);
                1                                  3   
-               1                                  4   
+               1                                  5   
 25                                                    
 26                                                    # ###########################################################################
 27                                                    # Set up some constants for bucketing values.  It is impossible to keep all
@@ -52,21 +52,21 @@ line  err   stmt   bran   cond    sub    pod   time   code
 29                                                    # and just incrementing the bucket each time works, although it is imprecise.
 30                                                    # See http://code.google.com/p/maatkit/wiki/EventAggregatorInternals.
 31                                                    # ###########################################################################
-32             1                    1             6   use constant MKDEBUG      => $ENV{MKDEBUG};
+32             1                    1             7   use constant MKDEBUG      => $ENV{MKDEBUG};
                1                                  2   
                1                                  7   
 33             1                    1             6   use constant BUCK_SIZE    => 1.05;
-               1                                  2   
-               1                                  4   
-34             1                    1             6   use constant BASE_LOG     => log(BUCK_SIZE);
-               1                                  2   
-               1                                  4   
-35             1                    1             5   use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
+               1                                  6   
+               1                                  5   
+34             1                    1             5   use constant BASE_LOG     => log(BUCK_SIZE);
                1                                  3   
                1                                  4   
-36             1                    1             5   use constant NUM_BUCK     => 1000;
+35             1                    1             6   use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
                1                                  2   
-               1                                  4   
+               1                                  5   
+36             1                    1             6   use constant NUM_BUCK     => 1000;
+               1                                  2   
+               1                                  5   
 37             1                    1             6   use constant MIN_BUCK     => .000001;
                1                                  2   
                1                                  4   
@@ -100,29 +100,29 @@ line  err   stmt   bran   cond    sub    pod   time   code
 65                                                    #              limit, use the last-seen for this class; if none, then 0.
 66                                                    # type_for     A hashref of attribute names and types.
 67                                                    sub new {
-68            16                   16           342      my ( $class, %args ) = @_;
-69            16                                 75      foreach my $arg ( qw(groupby worst) ) {
-70    ***     32     50                         156         die "I need a $arg argument" unless $args{$arg};
+68            17                   17           382      my ( $class, %args ) = @_;
+69            17                                 87      foreach my $arg ( qw(groupby worst) ) {
+70    ***     34     50                         194         die "I need a $arg argument" unless $args{$arg};
 71                                                       }
-72            16           100                  109      my $attributes = $args{attributes} || {};
-73             3                                 27      my $self = {
+72            17           100                  118      my $attributes = $args{attributes} || {};
+73             3                                 30      my $self = {
 74                                                          groupby        => $args{groupby},
 75                                                          detect_attribs => scalar keys %$attributes == 0 ? 1 : 0,
 76                                                          all_attribs    => [ keys %$attributes ],
 77                                                          ignore_attribs => {
-78             3                                 13            map  { $_ => $args{attributes}->{$_} }
-79            16                                149            grep { $_ ne $args{groupby} }
-80            21                                123            @{$args{ignore_attributes}}
+78             3                                 12            map  { $_ => $args{attributes}->{$_} }
+79            17                                174            grep { $_ ne $args{groupby} }
+80            21                                122            @{$args{ignore_attributes}}
 81                                                          },
 82                                                          attributes     => {
-83            22                                 90            map  { $_ => $args{attributes}->{$_} }
-84            21                                105            grep { $_ ne $args{groupby} }
+83            22                                 94            map  { $_ => $args{attributes}->{$_} }
+84            21                                124            grep { $_ ne $args{groupby} }
 85                                                             keys %$attributes
 86                                                          },
 87                                                          alt_attribs    => {
-88            21                                 61            map  { $_ => make_alt_attrib(@{$args{attributes}->{$_}}) }
-              22                                 83   
-89            16    100                         245            grep { $_ ne $args{groupby} }
+88            21                                 64            map  { $_ => make_alt_attrib(@{$args{attributes}->{$_}}) }
+              22                                 86   
+89            17    100                         312            grep { $_ ne $args{groupby} }
 90                                                             keys %$attributes
 91                                                          },
 92                                                          worst        => $args{worst},
@@ -133,9 +133,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 97                                                          result_samples => {},
 98                                                          n_events       => 0,
 99                                                          unrolled_loops => undef,
-100           16    100    100                  162         type_for       => { %{$args{type_for} || {}} },
+100           17    100    100                  180         type_for       => { %{$args{type_for} || { Query_time => 'num' }} },
 101                                                      };
-102           16                                178      return bless $self, $class;
+102           17                                186      return bless $self, $class;
 103                                                   }
 104                                                   
 105                                                   # Delete all collected data, but don't delete things like the generated
@@ -145,22 +145,22 @@ line  err   stmt   bran   cond    sub    pod   time   code
 109                                                   # expected if the stored data is simply wiped out.  Instead, it needs to be
 110                                                   # zeroed out without replacing the actual objects.
 111                                                   sub reset_aggregated_data {
-112            1                    1            12      my ( $self ) = @_;
+112            1                    1            15      my ( $self ) = @_;
 113            1                                  3      foreach my $class ( values %{$self->{result_classes}} ) {
-               1                                  7   
-114            1                                  5         foreach my $attrib ( values %$class ) {
-115            2                                  8            delete @{$attrib}{keys %$attrib};
-               2                                 41   
+               1                                  8   
+114            1                                  4         foreach my $attrib ( values %$class ) {
+115            2                                 10            delete @{$attrib}{keys %$attrib};
+               2                                 46   
 116                                                         }
 117                                                      }
 118            1                                  4      foreach my $class ( values %{$self->{result_globals}} ) {
-               1                                  5   
-119            2                                  8         delete @{$class}{keys %$class};
-               2                                 32   
-120                                                      }
-121            1                                  4      delete @{$self->{result_samples}}{keys %{$self->{result_samples}}};
-               1                                  5   
                1                                  6   
+119            2                                  9         delete @{$class}{keys %$class};
+               2                                 36   
+120                                                      }
+121            1                                  3      delete @{$self->{result_samples}}{keys %{$self->{result_samples}}};
+               1                                  4   
+               1                                  5   
 122            1                                  5      $self->{n_events} = 0;
 123                                                   }
 124                                                   
@@ -170,90 +170,90 @@ line  err   stmt   bran   cond    sub    pod   time   code
 128                                                   # unrolled into a whole subroutine to handle events.  For that reason, you can't
 129                                                   # re-use an instance.
 130                                                   sub aggregate {
-131         1701                 1701         22328      my ( $self, $event ) = @_;
+131         1702                 1702         23492      my ( $self, $event ) = @_;
 132                                                   
-133         1701                               6581      my $group_by = $event->{$self->{groupby}};
-134         1701    100                        5907      return unless defined $group_by;
+133         1702                               6682      my $group_by = $event->{$self->{groupby}};
+134         1702    100                        5992      return unless defined $group_by;
 135                                                   
-136         1699                               4961      $self->{n_events}++;
-137         1699                               3572      MKDEBUG && _d('event', $self->{n_events});
+136         1700                               5140      $self->{n_events}++;
+137         1700                               3659      MKDEBUG && _d('event', $self->{n_events});
 138                                                   
 139                                                      # Run only unrolled loops if available.
-140         1699    100                        7778      return $self->{unrolled_loops}->($self, $event, $group_by)
+140         1700    100                        7700      return $self->{unrolled_loops}->($self, $event, $group_by)
 141                                                         if $self->{unrolled_loops};
 142                                                   
 143                                                      # For the first unroll_limit events, auto-detect new attribs and
 144                                                      # run attrib handlers.
-145         1263    100                        5469      if ( $self->{n_events} <= $self->{unroll_limit} ) {
+145         1264    100                        5541      if ( $self->{n_events} <= $self->{unroll_limit} ) {
 146                                                   
-147         1261    100                        5800         $self->add_new_attributes($event) if $self->{detect_attribs};
+147         1262    100                        5228         $self->add_new_attributes($event) if $self->{detect_attribs};
 148                                                   
-149         1261                               5834         ATTRIB:
-150         1261                               3080         foreach my $attrib ( keys %{$self->{attributes}} ) {
+149         1262                               5959         ATTRIB:
+150         1262                               3035         foreach my $attrib ( keys %{$self->{attributes}} ) {
 151                                                   
 152                                                            # Attrib auto-detection can add a lot of attributes which some events
 153                                                            # may or may not have.  Aggregating a nonexistent attrib is wasteful,
 154                                                            # so we check that the attrib or one of its alternates exists.  If
 155                                                            # one does, then we leave attrib alone because the handler sub will
 156                                                            # also check alternates.
-157         4579    100                       18514            if ( !exists $event->{$attrib} ) {
-158           16                                 37               MKDEBUG && _d("attrib doesn't exist in event:", $attrib);
-159           16                                 79               my $alt_attrib = $self->{alt_attribs}->{$attrib}->($event);
+157         4589    100                       18854            if ( !exists $event->{$attrib} ) {
+158           16                                 38               MKDEBUG && _d("attrib doesn't exist in event:", $attrib);
+159           16                                 86               my $alt_attrib = $self->{alt_attribs}->{$attrib}->($event);
 160           16                                 35               MKDEBUG && _d('alt attrib:', $alt_attrib);
-161           16    100                          76               next ATTRIB unless $alt_attrib;
+161           16    100                          77               next ATTRIB unless $alt_attrib;
 162                                                            }
 163                                                   
 164                                                            # The value of the attribute ( $group_by ) may be an arrayref.
 165                                                            GROUPBY:
-166         4564    100                       17154            foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
-167         4566           100                25573               my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
-168         4566           100                20997               my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
-169         4566                              13574               my $samples       = $self->{result_samples};
-170         4566                              15554               my $handler = $self->{handlers}->{ $attrib };
-171         4566    100                       15760               if ( !$handler ) {
-172           76                                508                  $handler = $self->make_handler(
+166         4574    100                       17178            foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
+167         4576           100                33374               my $class_attrib  = $self->{result_classes}->{$val}->{$attrib} ||= {};
+168         4576           100                22225               my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+169         4576                              13993               my $samples       = $self->{result_samples};
+170         4576                              18039               my $handler = $self->{handlers}->{ $attrib };
+171         4576    100                       15981               if ( !$handler ) {
+172           86                               2240                  $handler = $self->make_handler(
 173                                                                     $attrib,
 174                                                                     $event,
 175                                                                     wor => $self->{worst} eq $attrib,
 176                                                                     alt => $self->{attributes}->{$attrib},
 177                                                                  );
-178           76                                338                  $self->{handlers}->{$attrib} = $handler;
+178           86                                431                  $self->{handlers}->{$attrib} = $handler;
 179                                                               }
-180   ***   4566     50                       15188               next GROUPBY unless $handler;
-181         4566           100                17264               $samples->{$val} ||= $event; # Initialize to the first event.
-182         4566                              18953               $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
+180   ***   4576     50                       15361               next GROUPBY unless $handler;
+181         4576           100                18049               $samples->{$val} ||= $event; # Initialize to the first event.
+182         4576                              19722               $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
 183                                                            }
 184                                                         }
 185                                                      }
 186                                                      else {
 187                                                         # After unroll_limit events, unroll the loops.
-188            2                                 11         $self->_make_unrolled_loops($event);
+188            2                                 10         $self->_make_unrolled_loops($event);
 189                                                         # Run unrolled loops here once.  Next time, they'll be ran
 190                                                         # before this if-else.
-191            2                                 11         $self->{unrolled_loops}->($self, $event, $group_by);
+191            2                                 12         $self->{unrolled_loops}->($self, $event, $group_by);
 192                                                      }
 193                                                   
-194         1263                               7054      return;
+194         1264                               7105      return;
 195                                                   }
 196                                                   
 197                                                   sub _make_unrolled_loops {
-198            2                    2             9      my ( $self, $event ) = @_;
+198            2                    2             8      my ( $self, $event ) = @_;
 199                                                   
-200            2                                 10      my $group_by = $event->{$self->{groupby}};
+200            2                                  9      my $group_by = $event->{$self->{groupby}};
 201                                                   
 202                                                      # All attributes have handlers, so let's combine them into one faster sub.
 203                                                      # Start by getting direct handles to the location of each data store and
 204                                                      # thing that would otherwise be looked up via hash keys.
 205            2                                  6      my @attrs   = grep { $self->{handlers}->{$_} } keys %{$self->{attributes}};
-              16                                 65   
-               2                                 12   
+              16                                 66   
+               2                                 13   
 206            2                                 11      my $globs   = $self->{result_globals}; # Global stats for each
 207            2                                  6      my $samples = $self->{result_samples};
 208                                                   
 209                                                      # Now the tricky part -- must make sure only the desired variables from
 210                                                      # the outer scope are re-used, and any variables that should have their
 211                                                      # own scope are declared within the subroutine.
-212   ***      2     50                          18      my @lines = (
+212   ***      2     50                          15      my @lines = (
 213                                                         'my ( $self, $event, $group_by ) = @_;',
 214                                                         'my ($val, $class, $global, $idx);',
 215                                                         (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
@@ -262,38 +262,38 @@ line  err   stmt   bran   cond    sub    pod   time   code
 218                                                            ||= { map { $_ => { } } @attrs };',
 219                                                         '$samples->{$group_by} ||= $event;', # Always start with the first.
 220                                                      );
-221            2                                 18      foreach my $i ( 0 .. $#attrs ) {
+221            2                                 15      foreach my $i ( 0 .. $#attrs ) {
 222                                                         # Access through array indexes, it's faster than hash lookups
-223           16                                135         push @lines, (
+223           16                                141         push @lines, (
 224                                                            '$class  = $temp->{"'  . $attrs[$i] . '"};',
 225                                                            '$global = $globs->{"' . $attrs[$i] . '"};',
 226                                                            $self->{unrolled_for}->{$attrs[$i]},
 227                                                         );
 228                                                      }
-229   ***      2     50                           9      if ( ref $group_by ) {
+229   ***      2     50                          10      if ( ref $group_by ) {
 230   ***      0                                  0         push @lines, '}'; # Close the loop opened above
 231                                                      }
-232            2                                  8      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
-              56                                360   
-              56                                212   
+232            2                                 11      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+              56                                359   
+              56                                214   
 233            2                                 19      unshift @lines, 'sub {';
-234            2                                  8      push @lines, '}';
+234            2                                  7      push @lines, '}';
 235                                                   
 236                                                      # Make the subroutine.
-237            2                                 50      my $code = join("\n", @lines);
-238            2                                  7      MKDEBUG && _d('Unrolled subroutine:', @lines);
-239            2                               2259      my $sub = eval $code;
-240   ***      2     50                          12      die $EVAL_ERROR if $EVAL_ERROR;
-241            2                                  7      $self->{unrolled_loops} = $sub;
+237            2                                 42      my $code = join("\n", @lines);
+238            2                                  5      MKDEBUG && _d('Unrolled subroutine:', @lines);
+239            2                               2437      my $sub = eval $code;
+240   ***      2     50                          11      die $EVAL_ERROR if $EVAL_ERROR;
+241            2                                  8      $self->{unrolled_loops} = $sub;
 242                                                   
-243            2                                 11      return;
+243            2                                 12      return;
 244                                                   }
 245                                                   
 246                                                   # Return the aggregated results.
 247                                                   sub results {
-248           19                   19          6092      my ( $self ) = @_;
+248           20                   20          6257      my ( $self ) = @_;
 249                                                      return {
-250           19                                293         classes => $self->{result_classes},
+250           20                                340         classes => $self->{result_classes},
 251                                                         globals => $self->{result_globals},
 252                                                         samples => $self->{result_samples},
 253                                                      };
@@ -303,14 +303,14 @@ line  err   stmt   bran   cond    sub    pod   time   code
 257                                                   # a hashref of name => type.
 258                                                   sub attributes {
 259            1                    1             5      my ( $self ) = @_;
-260            1                                  9      return $self->{type_for};
+260            1                                 10      return $self->{type_for};
 261                                                   }
 262                                                   
 263                                                   # Returns the type of the attribute (as decided by the aggregation process,
 264                                                   # which inspects the values).
 265                                                   sub type_for {
-266           79                   79           293      my ( $self, $attrib ) = @_;
-267           79                               1047      return $self->{type_for}->{$attrib};
+266          101                  101           405      my ( $self, $attrib ) = @_;
+267          101                               1254      return $self->{type_for}->{$attrib};
 268                                                   }
 269                                                   
 270                                                   # Make subroutines that do things with events.
@@ -350,32 +350,32 @@ line  err   stmt   bran   cond    sub    pod   time   code
 304                                                   #  $class   is the container to store the aggregated values
 305                                                   #  $global  is is the container to store the globally aggregated values
 306                                                   sub make_handler {
-307           76                   76           471      my ( $self, $attrib, $event, %args ) = @_;
-308   ***     76     50                         323      die "I need an attrib" unless defined $attrib;
-309           76                                215      my ($val) = grep { defined $_ } map { $event->{$_} } @{ $args{alt} };
-              77                                369   
-              77                                311   
-              76                                285   
-310           76                                259      my $is_array = 0;
-311   ***     76     50                         315      if (ref $val eq 'ARRAY') {
+307           86                   86           622      my ( $self, $attrib, $event, %args ) = @_;
+308   ***     86     50                         382      die "I need an attrib" unless defined $attrib;
+309           86                                244      my ($val) = grep { defined $_ } map { $event->{$_} } @{ $args{alt} };
+              87                                327   
+              87                                387   
+              86                                340   
+310           86                                250      my $is_array = 0;
+311   ***     86     50                         395      if (ref $val eq 'ARRAY') {
 312   ***      0                                  0         $is_array = 1;
 313   ***      0                                  0         $val      = $val->[0];
 314                                                      }
-315   ***     76     50                         278      return unless defined $val; # Can't decide type if it's undef.
+315   ***     86     50                         359      return unless defined $val; # Can't decide type if it's undef.
 316                                                   
 317                                                      # Ripped off from Regexp::Common::number and modified.
-318           76                                433      my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
-319           76    100                         313      my $type = $self->type_for($attrib)         ? $self->type_for($attrib)
+318           86                                560      my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
+319           86    100                         366      my $type = $self->type_for($attrib)         ? $self->type_for($attrib)
                     100                               
-      ***            50                               
+                    100                               
 320                                                               : $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
 321                                                               : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
 322                                                               :                                    'string';
-323           76                                191      MKDEBUG && _d('Type for', $attrib, 'is', $type,
+323           86                                230      MKDEBUG && _d('Type for', $attrib, 'is', $type,
 324                                                         '(sample:', $val, '), is array:', $is_array);
-325           76                                328      $self->{type_for}->{$attrib} = $type;
+325           86                                360      $self->{type_for}->{$attrib} = $type;
 326                                                   
-327           76    100                        1578      %args = ( # Set up defaults
+327           86    100                        1927      %args = ( # Set up defaults
                     100                               
                     100                               
                     100                               
@@ -392,451 +392,461 @@ line  err   stmt   bran   cond    sub    pod   time   code
 338                                                         %args,
 339                                                      );
 340                                                   
-341           76                                432      my @lines = ("# type: $type"); # Lines of code for the subroutine
-342           76    100                         386      if ( $args{trf} ) {
-343           14                                 68         push @lines, q{$val = } . $args{trf} . ';';
+341           86                                539      my @lines = ("# type: $type"); # Lines of code for the subroutine
+342           86    100                         387      if ( $args{trf} ) {
+343           14                                 64         push @lines, q{$val = } . $args{trf} . ';';
 344                                                      }
 345                                                   
-346           76                                257      foreach my $place ( qw($class $global) ) {
-347          152                                345         my @tmp;
-348   ***    152     50                         592         if ( $args{min} ) {
-349          152    100                         636            my $op   = $type eq 'num' ? '<' : 'lt';
-350          152                                598            push @tmp, (
+346           86                                292      foreach my $place ( qw($class $global) ) {
+347          172                                917         my @tmp;
+348   ***    172     50                         687         if ( $args{min} ) {
+349          172    100                         660            my $op   = $type eq 'num' ? '<' : 'lt';
+350          172                                717            push @tmp, (
 351                                                               'PLACE->{min} = $val if !defined PLACE->{min} || $val '
 352                                                                  . $op . ' PLACE->{min};',
 353                                                            );
 354                                                         }
-355   ***    152     50                         590         if ( $args{max} ) {
-356          152    100                         539            my $op = ($type eq 'num') ? '>' : 'gt';
-357          152                                543            push @tmp, (
+355   ***    172     50                         652         if ( $args{max} ) {
+356          172    100                        1441            my $op = ($type eq 'num') ? '>' : 'gt';
+357          172                                676            push @tmp, (
 358                                                               'PLACE->{max} = $val if !defined PLACE->{max} || $val '
 359                                                                  . $op . ' PLACE->{max};',
 360                                                            );
 361                                                         }
-362          152    100                         569         if ( $args{sum} ) {
-363          112                                330            push @tmp, 'PLACE->{sum} += $val;';
+362          172    100                         647         if ( $args{sum} ) {
+363          122                                364            push @tmp, 'PLACE->{sum} += $val;';
 364                                                         }
-365   ***    152     50                         556         if ( $args{cnt} ) {
-366          152                                448            push @tmp, '++PLACE->{cnt};';
+365   ***    172     50                         663         if ( $args{cnt} ) {
+366          172                                504            push @tmp, '++PLACE->{cnt};';
 367                                                         }
-368          152    100                         563         if ( $args{all} ) {
-369           84                                287            push @tmp, (
+368          172    100                         658         if ( $args{all} ) {
+369           94                                357            push @tmp, (
 370                                                               'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
 371                                                               '++PLACE->{all}->[ EventAggregator::bucket_idx($val) ];',
 372                                                            );
 373                                                         }
-374          152                                595         push @lines, map { s/PLACE/$place/g; $_ } @tmp;
-             736                               3507   
-             736                               2620   
+374          172                                546         push @lines, map { s/PLACE/$place/g; $_ } @tmp;
+             826                               4393   
+             826                               2997   
 375                                                      }
 376                                                   
 377                                                      # We only save unique/worst values for the class, not globally.
-378           76    100                         331      if ( $args{unq} ) {
-379           34                                106         push @lines, '++$class->{unq}->{$val};';
+378           86    100                        1387      if ( $args{unq} ) {
+379           39                                139         push @lines, '++$class->{unq}->{$val};';
 380                                                      }
-381           76    100                         286      if ( $args{wor} ) {
-382   ***     10     50                          41         my $op = $type eq 'num' ? '>=' : 'ge';
-383           10                                 51         push @lines, (
+381           86    100                         329      if ( $args{wor} ) {
+382   ***     11     50                          50         my $op = $type eq 'num' ? '>=' : 'ge';
+383           11                                 61         push @lines, (
 384                                                            'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
 385                                                            '   $samples->{$group_by} = $event;',
 386                                                            '}',
 387                                                         );
 388                                                      }
 389                                                   
-390                                                      # Make sure the value is constrained to legal limits.  If it's out of bounds,
-391                                                      # just use the last-seen value for it.
-392           76                                182      my @limit;
-393   ***     76    100     66                  716      if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
+390                                                      # Handle broken Query_time like 123.124345.8382 (issue 234).
+391           86                                218      my @broken_query_time;
+392           86    100                         328      if ( $attrib eq 'Query_time' ) {
+393           12                                 60         push @broken_query_time, (
+394                                                            '$val =~ s/^(\d+(?:\.\d+)?).*/$1/;',
+395                                                            '$event->{\''.$attrib.'\'} = $val;',
+396                                                         );
+397                                                      }
+398                                                   
+399                                                      # Make sure the value is constrained to legal limits.  If it's out of bounds,
+400                                                      # just use the last-seen value for it.
+401           86                                215      my @limit;
+402   ***     86    100     66                  870      if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
                            100                        
-394            1                                  7         push @limit, (
-395                                                            "if ( \$val > $self->{attrib_limit} ) {",
-396                                                            '   $val = $class->{last} ||= 0;',
-397                                                            '}',
-398                                                            '$class->{last} = $val;',
-399                                                         );
-400                                                      }
-401                                                   
-402                                                      # Save the code for later, as part of an "unrolled" subroutine.
-403            1                                  6      my @unrolled = (
-404                                                         "\$val = \$event->{'$attrib'};",
-405                                                         ($is_array ? ('foreach my $val ( @$val ) {') : ()),
-406           77                                348         (map { "\$val = \$event->{'$_'} unless defined \$val;" }
-407           76                                275            grep { $_ ne $attrib } @{$args{alt}}),
-             894                               3137   
-408                                                         'defined $val && do {',
-409   ***     76     50                         354         ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
-      ***    894     50                        3259   
-410                                                         '};',
-411                                                         ($is_array ? ('}') : ()),
-412                                                      );
-413           76                                750      $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
-414                                                   
-415                                                      # Build a subroutine with the code.
-416            1                                  8      unshift @lines, (
-417                                                         'sub {',
-418                                                         'my ( $event, $class, $global, $samples, $group_by ) = @_;',
-419                                                         'my ($val, $idx);', # NOTE: define all variables here
-420                                                         "\$val = \$event->{'$attrib'};",
-421           77                                548         (map { "\$val = \$event->{'$_'} unless defined \$val;" }
-422   ***     76     50                         340            grep { $_ ne $attrib } @{$args{alt}}),
-      ***     76     50                         274   
-423                                                         'return unless defined $val;',
-424                                                         ($is_array ? ('foreach my $val ( @$val ) {') : ()),
-425                                                         @limit,
-426                                                         ($is_array ? ('}') : ()),
-427                                                      );
-428           76                                234      push @lines, '}';
-429           76                                430      my $code = join("\n", @lines);
-430           76                                340      $self->{code_for}->{$attrib} = $code;
-431                                                   
-432           76                                163      MKDEBUG && _d('Metric handler for', $attrib, ':', @lines);
-433           76                              13492      my $sub = eval join("\n", @lines);
-434   ***     76     50                         318      die if $EVAL_ERROR;
-435           76                                829      return $sub;
-436                                                   }
-437                                                   
-438                                                   # Returns the bucket number for the given val. Buck numbers are zero-indexed,
-439                                                   # so although there are 1,000 buckets (NUM_BUCK), 999 is the greatest idx.
-440                                                   # *** Notice that this sub is not a class method, so either call it
-441                                                   # from inside this module like bucket_idx() or outside this module
-442                                                   # like EventAggregator::bucket_idx(). ***
-443                                                   # TODO: could export this by default to avoid having to specific packge::.
-444                                                   sub bucket_idx {
-445         7874                 7874         35296      my ( $val ) = @_;
-446         7874    100                       33278      return 0 if $val < MIN_BUCK;
-447         6396                              24999      my $idx = int(BASE_OFFSET + log($val)/BASE_LOG);
-448         6396    100                       36579      return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
-449                                                   }
-450                                                   
-451                                                   # Returns the value for the given bucket.
-452                                                   # The value of each bucket is the first value that it covers. So the value
-453                                                   # of bucket 1 is 0.000001000 because it covers [0.000001000, 0.000001050).
-454                                                   #
-455                                                   # *** Notice that this sub is not a class method, so either call it
-456                                                   # from inside this module like bucket_idx() or outside this module
-457                                                   # like EventAggregator::bucket_value(). ***
-458                                                   # TODO: could export this by default to avoid having to specific packge::.
-459                                                   sub bucket_value {
-460         1007                 1007          3162      my ( $bucket ) = @_;
-461         1007    100                        3570      return 0 if $bucket == 0;
-462   ***   1005     50     33                 7312      die "Invalid bucket: $bucket" if $bucket < 0 || $bucket > (NUM_BUCK-1);
-463                                                      # $bucket - 1 because buckets are shifted up by 1 to handle zero values.
-464         1005                               4534      return (BUCK_SIZE**($bucket-1)) * MIN_BUCK;
-465                                                   }
-466                                                   
-467                                                   # Map the 1,000 base 1.05 buckets to 8 base 10 buckets. Returns an array
-468                                                   # of 1,000 buckets, the value of each represents its index in an 8 bucket
-469                                                   # base 10 array. For example: base 10 bucket 0 represents vals (0, 0.000010),
-470                                                   # and base 1.05 buckets 0..47 represent vals (0, 0.000010401). So the first
-471                                                   # 48 elements of the returned array will have 0 as their values. 
-472                                                   # TODO: right now it's hardcoded to buckets of 10, in the future maybe not.
-473                                                   {
-474                                                      my @buck_tens;
-475                                                      sub buckets_of {
-476   ***      1     50             1             6         return @buck_tens if @buck_tens;
-477                                                   
-478                                                         # To make a more precise map, we first set the starting values for
-479                                                         # each of the 8 base 10 buckets. 
-480            1                                  3         my $start_bucket  = 0;
-481            1                                  4         my @base10_starts = (0);
-482            1                                  3         map { push @base10_starts, (10**$_)*MIN_BUCK } (1..7);
-               7                                 30   
-483                                                   
-484                                                         # Then find the base 1.05 buckets that correspond to each
-485                                                         # base 10 bucket. The last value in each bucket's range belongs
-486                                                         # to the next bucket, so $next_bucket-1 represents the real last
-487                                                         # base 1.05 bucket in which the base 10 bucket's range falls.
-488            1                                  6         for my $base10_bucket ( 0..($#base10_starts-1) ) {
-489            7                                 29            my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
-490            7                                 15            MKDEBUG && _d('Base 10 bucket', $base10_bucket, 'maps to',
-491                                                               'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
-492            7                                 24            for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
-493          331                               1008               $buck_tens[$base1_05_bucket] = $base10_bucket;
-494                                                            }
-495            7                                 23            $start_bucket = $next_bucket;
-496                                                         }
-497                                                   
-498                                                         # Map all remaining base 1.05 buckets to base 10 bucket 7 which
-499                                                         # is for vals > 10.
-500            1                                 30         map { $buck_tens[$_] = 7 } ($start_bucket..(NUM_BUCK-1));
-             669                               2115   
-501                                                   
-502            1                                123         return @buck_tens;
-503                                                      }
-504                                                   }
-505                                                   
-506                                                   # Given an arrayref of vals, returns a hashref with the following
-507                                                   # statistical metrics:
-508                                                   #
-509                                                   #    pct_95    => top bucket value in the 95th percentile
-510                                                   #    cutoff    => How many values fall into the 95th percentile
-511                                                   #    stddev    => of all values
-512                                                   #    median    => of all values
-513                                                   #
-514                                                   # The vals arrayref is the buckets as per the above (see the comments at the top
-515                                                   # of this file).  $args should contain cnt, min and max properties.
-516                                                   sub calculate_statistical_metrics {
-517           17                   17          4323      my ( $self, $vals, $args ) = @_;
-518           17                                 96      my $statistical_metrics = {
-519                                                         pct_95    => 0,
-520                                                         stddev    => 0,
-521                                                         median    => 0,
-522                                                         cutoff    => undef,
-523                                                      };
-524                                                   
-525                                                      # These cases might happen when there is nothing to get from the event, for
-526                                                      # example, processlist sniffing doesn't gather Rows_examined, so $args won't
-527                                                      # have {cnt} or other properties.
-528           17    100    100                  203      return $statistical_metrics
+403            1                                  7         push @limit, (
+404                                                            "if ( \$val > $self->{attrib_limit} ) {",
+405                                                            '   $val = $class->{last} ||= 0;',
+406                                                            '}',
+407                                                            '$class->{last} = $val;',
+408                                                         );
+409                                                      }
+410                                                   
+411                                                      # Save the code for later, as part of an "unrolled" subroutine.
+412            1                                  7      my @unrolled = (
+413                                                         "\$val = \$event->{'$attrib'};",
+414                                                         ($is_array ? ('foreach my $val ( @$val ) {') : ()),
+415           87                                412         (map { "\$val = \$event->{'$_'} unless defined \$val;" }
+416           86                                322            grep { $_ ne $attrib } @{$args{alt}}),
+            1026                               3792   
+417                                                         'defined $val && do {',
+418   ***     86     50                         443         ( map { s/^/   /gm; $_ } (@broken_query_time, @limit, @lines) ), # Indent for debugging
+      ***   1026     50                        3924   
+419                                                         '};',
+420                                                         ($is_array ? ('}') : ()),
+421                                                      );
+422           86                                950      $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
+423                                                   
+424                                                      # Build a subroutine with the code.
+425            1                                  9      unshift @lines, (
+426                                                         'sub {',
+427                                                         'my ( $event, $class, $global, $samples, $group_by ) = @_;',
+428                                                         'my ($val, $idx);', # NOTE: define all variables here
+429                                                         "\$val = \$event->{'$attrib'};",
+430           87                                931         (map { "\$val = \$event->{'$_'} unless defined \$val;" }
+431   ***     86     50                         375            grep { $_ ne $attrib } @{$args{alt}}),
+      ***     86     50                         328   
+432                                                         'return unless defined $val;',
+433                                                         ($is_array ? ('foreach my $val ( @$val ) {') : ()),
+434                                                         @broken_query_time,
+435                                                         @limit,
+436                                                         ($is_array ? ('}') : ()),
+437                                                      );
+438           86                                289      push @lines, '}';
+439           86                                504      my $code = join("\n", @lines);
+440           86                                409      $self->{code_for}->{$attrib} = $code;
+441                                                   
+442           86                                190      MKDEBUG && _d('Metric handler for', $attrib, ':', @lines);
+443           86                              18246      my $sub = eval join("\n", @lines);
+444   ***     86     50                         387      die if $EVAL_ERROR;
+445           86                               1135      return $sub;
+446                                                   }
+447                                                   
+448                                                   # Returns the bucket number for the given val. Buck numbers are zero-indexed,
+449                                                   # so although there are 1,000 buckets (NUM_BUCK), 999 is the greatest idx.
+450                                                   # *** Notice that this sub is not a class method, so either call it
+451                                                   # from inside this module like bucket_idx() or outside this module
+452                                                   # like EventAggregator::bucket_idx(). ***
+453                                                   # TODO: could export this by default to avoid having to specific packge::.
+454                                                   sub bucket_idx {
+455         7884                 7884         39837      my ( $val ) = @_;
+456         7884    100                       33947      return 0 if $val < MIN_BUCK;
+457         6402                              28044      my $idx = int(BASE_OFFSET + log($val)/BASE_LOG);
+458         6402    100                       38127      return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
+459                                                   }
+460                                                   
+461                                                   # Returns the value for the given bucket.
+462                                                   # The value of each bucket is the first value that it covers. So the value
+463                                                   # of bucket 1 is 0.000001000 because it covers [0.000001000, 0.000001050).
+464                                                   #
+465                                                   # *** Notice that this sub is not a class method, so either call it
+466                                                   # from inside this module like bucket_idx() or outside this module
+467                                                   # like EventAggregator::bucket_value(). ***
+468                                                   # TODO: could export this by default to avoid having to specific packge::.
+469                                                   sub bucket_value {
+470         1007                 1007          3105      my ( $bucket ) = @_;
+471         1007    100                        3537      return 0 if $bucket == 0;
+472   ***   1005     50     33                 7559      die "Invalid bucket: $bucket" if $bucket < 0 || $bucket > (NUM_BUCK-1);
+473                                                      # $bucket - 1 because buckets are shifted up by 1 to handle zero values.
+474         1005                               5147      return (BUCK_SIZE**($bucket-1)) * MIN_BUCK;
+475                                                   }
+476                                                   
+477                                                   # Map the 1,000 base 1.05 buckets to 8 base 10 buckets. Returns an array
+478                                                   # of 1,000 buckets, the value of each represents its index in an 8 bucket
+479                                                   # base 10 array. For example: base 10 bucket 0 represents vals (0, 0.000010),
+480                                                   # and base 1.05 buckets 0..47 represent vals (0, 0.000010401). So the first
+481                                                   # 48 elements of the returned array will have 0 as their values. 
+482                                                   # TODO: right now it's hardcoded to buckets of 10, in the future maybe not.
+483                                                   {
+484                                                      my @buck_tens;
+485                                                      sub buckets_of {
+486   ***      1     50             1             5         return @buck_tens if @buck_tens;
+487                                                   
+488                                                         # To make a more precise map, we first set the starting values for
+489                                                         # each of the 8 base 10 buckets. 
+490            1                                  4         my $start_bucket  = 0;
+491            1                                  4         my @base10_starts = (0);
+492            1                                  4         map { push @base10_starts, (10**$_)*MIN_BUCK } (1..7);
+               7                                 28   
+493                                                   
+494                                                         # Then find the base 1.05 buckets that correspond to each
+495                                                         # base 10 bucket. The last value in each bucket's range belongs
+496                                                         # to the next bucket, so $next_bucket-1 represents the real last
+497                                                         # base 1.05 bucket in which the base 10 bucket's range falls.
+498            1                                  7         for my $base10_bucket ( 0..($#base10_starts-1) ) {
+499            7                                 30            my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
+500            7                                 16            MKDEBUG && _d('Base 10 bucket', $base10_bucket, 'maps to',
+501                                                               'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
+502            7                                 26            for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
+503          331                               1023               $buck_tens[$base1_05_bucket] = $base10_bucket;
+504                                                            }
+505            7                                 24            $start_bucket = $next_bucket;
+506                                                         }
+507                                                   
+508                                                         # Map all remaining base 1.05 buckets to base 10 bucket 7 which
+509                                                         # is for vals > 10.
+510            1                                 30         map { $buck_tens[$_] = 7 } ($start_bucket..(NUM_BUCK-1));
+             669                               2135   
+511                                                   
+512            1                                124         return @buck_tens;
+513                                                      }
+514                                                   }
+515                                                   
+516                                                   # Given an arrayref of vals, returns a hashref with the following
+517                                                   # statistical metrics:
+518                                                   #
+519                                                   #    pct_95    => top bucket value in the 95th percentile
+520                                                   #    cutoff    => How many values fall into the 95th percentile
+521                                                   #    stddev    => of all values
+522                                                   #    median    => of all values
+523                                                   #
+524                                                   # The vals arrayref is the buckets as per the above (see the comments at the top
+525                                                   # of this file).  $args should contain cnt, min and max properties.
+526                                                   sub calculate_statistical_metrics {
+527           17                   17          4338      my ( $self, $vals, $args ) = @_;
+528           17                                107      my $statistical_metrics = {
+529                                                         pct_95    => 0,
+530                                                         stddev    => 0,
+531                                                         median    => 0,
+532                                                         cutoff    => undef,
+533                                                      };
+534                                                   
+535                                                      # These cases might happen when there is nothing to get from the event, for
+536                                                      # example, processlist sniffing doesn't gather Rows_examined, so $args won't
+537                                                      # have {cnt} or other properties.
+538           17    100    100                  231      return $statistical_metrics
                            100                        
-529                                                         unless defined $vals && @$vals && $args->{cnt};
-530                                                   
-531                                                      # Return accurate metrics for some cases.
-532           13                                 45      my $n_vals = $args->{cnt};
-533           13    100    100                  120      if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
+539                                                         unless defined $vals && @$vals && $args->{cnt};
+540                                                   
+541                                                      # Return accurate metrics for some cases.
+542           13                                 42      my $n_vals = $args->{cnt};
+543           13    100    100                  131      if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
                     100                               
-534   ***      7            50                   30         my $v      = $args->{max} || 0;
-535   ***      7     50                          43         my $bucket = int(6 + ( log($v > 0 ? $v : MIN_BUCK) / log(10)));
-536   ***      7     50                          33         $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+544   ***      7            50                   31         my $v      = $args->{max} || 0;
+545   ***      7     50                         281         my $bucket = int(6 + ( log($v > 0 ? $v : MIN_BUCK) / log(10)));
+546   ***      7     50                          35         $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
       ***            50                               
-537                                                         return {
-538            7                                109            pct_95 => $v,
-539                                                            stddev => 0,
-540                                                            median => $v,
-541                                                            cutoff => $n_vals,
-542                                                         };
-543                                                      }
-544                                                      elsif ( $n_vals == 2 ) {
-545            1                                  4         foreach my $v ( $args->{min}, $args->{max} ) {
-546   ***      2     50     33                   21            my $bucket = int(6 + ( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)));
-547   ***      2     50                          12            $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+547                                                         return {
+548            7                                 58            pct_95 => $v,
+549                                                            stddev => 0,
+550                                                            median => $v,
+551                                                            cutoff => $n_vals,
+552                                                         };
+553                                                      }
+554                                                      elsif ( $n_vals == 2 ) {
+555            1                                  6         foreach my $v ( $args->{min}, $args->{max} ) {
+556   ***      2     50     33                   27            my $bucket = int(6 + ( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)));
+557   ***      2     50                          12            $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
       ***            50                               
-548                                                         }
-549   ***      1            50                    6         my $v      = $args->{max} || 0;
-550   ***      1            50                    6         my $mean = (($args->{min} || 0) + $v) / 2;
-551                                                         return {
-552            1                                 10            pct_95 => $v,
-553                                                            stddev => sqrt((($v - $mean) ** 2) *2),
-554                                                            median => $mean,
-555                                                            cutoff => $n_vals,
-556                                                         };
-557                                                      }
-558                                                   
-559                                                      # Determine cutoff point for 95% if there are at least 10 vals.  Cutoff
-560                                                      # serves also for the number of vals left in the 95%.  E.g. with 50 vals the
-561                                                      # cutoff is 47 which means there are 47 vals: 0..46.  $cutoff is NOT an array
-562                                                      # index.
-563            5    100                          29      my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
-564            5                                 16      $statistical_metrics->{cutoff} = $cutoff;
-565                                                   
-566                                                      # Calculate the standard deviation and median of all values.
-567            5                                 14      my $total_left = $n_vals;
-568            5                                 15      my $top_vals   = $n_vals - $cutoff; # vals > 95th
-569            5                                 12      my $sum_excl   = 0;
-570            5                                 12      my $sum        = 0;
-571            5                                 14      my $sumsq      = 0;
-572            5                                 16      my $mid        = int($n_vals / 2);
-573            5                                 14      my $median     = 0;
-574            5                                 12      my $prev       = NUM_BUCK-1; # Used for getting median when $cutoff is odd
-575            5                                 13      my $bucket_95  = 0; # top bucket in 95th
-576                                                   
-577            5                                 11      MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals, 'mid:', $mid);
-578                                                   
-579                                                      BUCKET:
-580            5                                 30      for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
-581         5000                              14033         my $val = $vals->[$bucket];
-582         5000    100                       18616         next BUCKET unless $val; 
-583                                                   
-584           19                                 49         $total_left -= $val;
-585           19                                 51         $sum_excl   += $val;
-586           19    100    100                  115         $bucket_95   = $bucket if !$bucket_95 && $sum_excl > $top_vals;
-587                                                   
-588           19    100    100                  125         if ( !$median && $total_left <= $mid ) {
-589   ***      5     50     66                   44            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
-590                                                                    : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
-591                                                         }
-592                                                   
-593           19                                 65         $sum    += $val * $buck_vals[$bucket];
-594           19                                 67         $sumsq  += $val * ($buck_vals[$bucket]**2);
-595           19                                 59         $prev   =  $bucket;
-596                                                      }
+558                                                         }
+559   ***      1            50                    7         my $v      = $args->{max} || 0;
+560   ***      1            50                    7         my $mean = (($args->{min} || 0) + $v) / 2;
+561                                                         return {
+562            1                                 16            pct_95 => $v,
+563                                                            stddev => sqrt((($v - $mean) ** 2) *2),
+564                                                            median => $mean,
+565                                                            cutoff => $n_vals,
+566                                                         };
+567                                                      }
+568                                                   
+569                                                      # Determine cutoff point for 95% if there are at least 10 vals.  Cutoff
+570                                                      # serves also for the number of vals left in the 95%.  E.g. with 50 vals the
+571                                                      # cutoff is 47 which means there are 47 vals: 0..46.  $cutoff is NOT an array
+572                                                      # index.
+573            5    100                          31      my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
+574            5                                 19      $statistical_metrics->{cutoff} = $cutoff;
+575                                                   
+576                                                      # Calculate the standard deviation and median of all values.
+577            5                                 15      my $total_left = $n_vals;
+578            5                                 16      my $top_vals   = $n_vals - $cutoff; # vals > 95th
+579            5                                 15      my $sum_excl   = 0;
+580            5                                 13      my $sum        = 0;
+581            5                                 14      my $sumsq      = 0;
+582            5                                 23      my $mid        = int($n_vals / 2);
+583            5                                 13      my $median     = 0;
+584            5                                 15      my $prev       = NUM_BUCK-1; # Used for getting median when $cutoff is odd
+585            5                                 13      my $bucket_95  = 0; # top bucket in 95th
+586                                                   
+587            5                                 12      MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals, 'mid:', $mid);
+588                                                   
+589                                                      BUCKET:
+590            5                                 37      for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
+591         5000                              16533         my $val = $vals->[$bucket];
+592         5000    100                       30584         next BUCKET unless $val; 
+593                                                   
+594           19                                 50         $total_left -= $val;
+595           19                                 52         $sum_excl   += $val;
+596           19    100    100                  135         $bucket_95   = $bucket if !$bucket_95 && $sum_excl > $top_vals;
 597                                                   
-598            5                                 27      my $var      = $sumsq/$n_vals - ( ($sum/$n_vals) ** 2 );
-599            5    100                          33      my $stddev   = $var > 0 ? sqrt($var) : 0;
-600   ***      5            50                   40      my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
-                           100                        
-601   ***      5     50                          21      $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
+598           19    100    100                  125         if ( !$median && $total_left <= $mid ) {
+599   ***      5     50     66                   50            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
+600                                                                    : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
+601                                                         }
 602                                                   
-603            5                                 12      MKDEBUG && _d('sum:', $sum, 'sumsq:', $sumsq, 'stddev:', $stddev,
-604                                                         'median:', $median, 'prev bucket:', $prev,
-605                                                         'total left:', $total_left, 'sum excl', $sum_excl,
-606                                                         'bucket 95:', $bucket_95, $buck_vals[$bucket_95]);
+603           19                                 72         $sum    += $val * $buck_vals[$bucket];
+604           19                                 73         $sumsq  += $val * ($buck_vals[$bucket]**2);
+605           19                                 60         $prev   =  $bucket;
+606                                                      }
 607                                                   
-608            5                                 17      $statistical_metrics->{stddev} = $stddev;
-609            5                                 18      $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
-610            5                                 15      $statistical_metrics->{median} = $median;
-611                                                   
-612            5                                 26      return $statistical_metrics;
-613                                                   }
-614                                                   
-615                                                   # Return a hashref of the metrics for some attribute, pre-digested.
-616                                                   # %args is:
-617                                                   #  attrib => the attribute to report on
-618                                                   #  where  => the value of the fingerprint for the attrib
-619                                                   sub metrics {
-620            2                    2            13      my ( $self, %args ) = @_;
-621            2                                  8      foreach my $arg ( qw(attrib where) ) {
-622   ***      4     50                          19         die "I need a $arg argument" unless $args{$arg};
-623                                                      }
-624            2                                  9      my $stats = $self->results;
-625            2                                 12      my $store = $stats->{classes}->{$args{where}}->{$args{attrib}};
-626                                                   
-627            2                                 10      my $global_cnt = $stats->{globals}->{$args{attrib}}->{cnt};
-628            2                                 11      my $metrics    = $self->calculate_statistical_metrics($store->{all}, $store);
-629                                                   
-630                                                      return {
-631   ***      2    100     66                   69         cnt    => $store->{cnt},
+608            5                                 33      my $var      = $sumsq/$n_vals - ( ($sum/$n_vals) ** 2 );
+609            5    100                          37      my $stddev   = $var > 0 ? sqrt($var) : 0;
+610   ***      5            50                   49      my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
+                           100                        
+611   ***      5     50                          21      $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
+612                                                   
+613            5                                 11      MKDEBUG && _d('sum:', $sum, 'sumsq:', $sumsq, 'stddev:', $stddev,
+614                                                         'median:', $median, 'prev bucket:', $prev,
+615                                                         'total left:', $total_left, 'sum excl', $sum_excl,
+616                                                         'bucket 95:', $bucket_95, $buck_vals[$bucket_95]);
+617                                                   
+618            5                                 21      $statistical_metrics->{stddev} = $stddev;
+619            5                                 19      $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
+620            5                                 15      $statistical_metrics->{median} = $median;
+621                                                   
+622            5                                 32      return $statistical_metrics;
+623                                                   }
+624                                                   
+625                                                   # Return a hashref of the metrics for some attribute, pre-digested.
+626                                                   # %args is:
+627                                                   #  attrib => the attribute to report on
+628                                                   #  where  => the value of the fingerprint for the attrib
+629                                                   sub metrics {
+630            2                    2            13      my ( $self, %args ) = @_;
+631            2                                  8      foreach my $arg ( qw(attrib where) ) {
+632   ***      4     50                          21         die "I need a $arg argument" unless $args{$arg};
+633                                                      }
+634            2                                  9      my $stats = $self->results;
+635            2                                 13      my $store = $stats->{classes}->{$args{where}}->{$args{attrib}};
+636                                                   
+637            2                                 10      my $global_cnt = $stats->{globals}->{$args{attrib}}->{cnt};
+638            2                                 13      my $metrics    = $self->calculate_statistical_metrics($store->{all}, $store);
+639                                                   
+640                                                      return {
+641   ***      2    100     66                   68         cnt    => $store->{cnt},
       ***           100     66                        
-632                                                         pct    => $global_cnt && $store->{cnt} ? $store->{cnt} / $global_cnt : 0,
-633                                                         sum    => $store->{sum},
-634                                                         min    => $store->{min},
-635                                                         max    => $store->{max},
-636                                                         avg    => $store->{sum} && $store->{cnt} ? $store->{sum} / $store->{cnt} : 0,
-637                                                         median => $metrics->{median},
-638                                                         pct_95 => $metrics->{pct_95},
-639                                                         stddev => $metrics->{stddev},
-640                                                      };
-641                                                   }
-642                                                   
-643                                                   # Find the top N or top % event keys, in sorted order, optionally including
-644                                                   # outliers (ol_...) that are notable for some reason.  %args looks like this:
-645                                                   #
-646                                                   #  attrib      order-by attribute (usually Query_time)
-647                                                   #  orderby     order-by aggregate expression (should be numeric, usually sum)
-648                                                   #  total       include events whose summed attribs are <= this number...
-649                                                   #  count       ...or this many events, whichever is less...
-650                                                   #  ol_attrib   ...or events where the 95th percentile of this attribute...
-651                                                   #  ol_limit    ...is greater than this value, AND...
-652                                                   #  ol_freq     ...the event occurred at least this many times.
-653                                                   # The return value is a list of arrayrefs.  Each arrayref is the event key and
-654                                                   # an explanation of why it was included (top|outlier).
-655                                                   sub top_events {
-656            3                    3            52      my ( $self, %args ) = @_;
-657            3                                 12      my $classes = $self->{result_classes};
-658           15                                 94      my @sorted = reverse sort { # Sorted list of $groupby values
-659           16                                 73         $classes->{$a}->{$args{attrib}}->{$args{orderby}}
-660                                                            <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
-661                                                         } grep {
-662                                                            # Defensive programming
-663            3                                 16            defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
-664                                                         } keys %$classes;
-665            3                                 20      my @chosen;
-666            3                                 11      my ($total, $count) = (0, 0);
-667            3                                 11      foreach my $groupby ( @sorted ) {
-668                                                         # Events that fall into the top criterion for some reason
-669           15    100    100                  242         if ( 
+642                                                         pct    => $global_cnt && $store->{cnt} ? $store->{cnt} / $global_cnt : 0,
+643                                                         sum    => $store->{sum},
+644                                                         min    => $store->{min},
+645                                                         max    => $store->{max},
+646                                                         avg    => $store->{sum} && $store->{cnt} ? $store->{sum} / $store->{cnt} : 0,
+647                                                         median => $metrics->{median},
+648                                                         pct_95 => $metrics->{pct_95},
+649                                                         stddev => $metrics->{stddev},
+650                                                      };
+651                                                   }
+652                                                   
+653                                                   # Find the top N or top % event keys, in sorted order, optionally including
+654                                                   # outliers (ol_...) that are notable for some reason.  %args looks like this:
+655                                                   #
+656                                                   #  attrib      order-by attribute (usually Query_time)
+657                                                   #  orderby     order-by aggregate expression (should be numeric, usually sum)
+658                                                   #  total       include events whose summed attribs are <= this number...
+659                                                   #  count       ...or this many events, whichever is less...
+660                                                   #  ol_attrib   ...or events where the 95th percentile of this attribute...
+661                                                   #  ol_limit    ...is greater than this value, AND...
+662                                                   #  ol_freq     ...the event occurred at least this many times.
+663                                                   # The return value is a list of arrayrefs.  Each arrayref is the event key and
+664                                                   # an explanation of why it was included (top|outlier).
+665                                                   sub top_events {
+666            3                    3            60      my ( $self, %args ) = @_;
+667            3                                 14      my $classes = $self->{result_classes};
+668           15                                 94      my @sorted = reverse sort { # Sorted list of $groupby values
+669           16                                 75         $classes->{$a}->{$args{attrib}}->{$args{orderby}}
+670                                                            <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
+671                                                         } grep {
+672                                                            # Defensive programming
+673            3                                 17            defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
+674                                                         } keys %$classes;
+675            3                                 19      my @chosen;
+676            3                                 11      my ($total, $count) = (0, 0);
+677            3                                 10      foreach my $groupby ( @sorted ) {
+678                                                         # Events that fall into the top criterion for some reason
+679           15    100    100                  252         if ( 
       ***           100     66                        
                            100                        
                            100                        
                            100                        
-670                                                            (!$args{total} || $total < $args{total} )
-671                                                            && ( !$args{count} || $count < $args{count} )
-672                                                         ) {
-673            6                                 24            push @chosen, [$groupby, 'top'];
-674                                                         }
-675                                                   
-676                                                         # Events that are notable outliers
-677                                                         elsif ( $args{ol_attrib} && (!$args{ol_freq}
-678                                                            || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
-679                                                         ) {
-680                                                            # Calculate the 95th percentile of this event's specified attribute.
-681            5                                 11            MKDEBUG && _d('Calculating statistical_metrics');
-682            5                                 36            my $stats = $self->calculate_statistical_metrics(
-683                                                               $classes->{$groupby}->{$args{ol_attrib}}->{all},
-684                                                               $classes->{$groupby}->{$args{ol_attrib}}
-685                                                            );
-686            5    100                          26            if ( $stats->{pct_95} >= $args{ol_limit} ) {
-687            3                                 17               push @chosen, [$groupby, 'outlier'];
-688                                                            }
-689                                                         }
-690                                                   
-691           15                                 72         $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
-692           15                                 44         $count++;
-693                                                      }
-694            3                                 26      return @chosen;
-695                                                   }
-696                                                   
-697                                                   # Adds all new attributes in $event to $self->{attributes}.
-698                                                   sub add_new_attributes {
-699          238                  238           896      my ( $self, $event ) = @_;
-700   ***    238     50                         927      return unless $event;
-701                                                   
-702           56                                145      map {
-703         3761    100    100                33828         my $attrib = $_;
-704           56                                245         $self->{attributes}->{$attrib}  = [$attrib];
-705           56                                186         $self->{alt_attribs}->{$attrib} = make_alt_attrib($attrib);
-706           56                                141         push @{$self->{all_attribs}}, $attrib;
-              56                                214   
-707           56                                170         MKDEBUG && _d('Added new attribute:', $attrib);
-708                                                      }
-709                                                      grep {
-710          238                               1633         $_ ne $self->{groupby}
-711                                                         && !exists $self->{attributes}->{$_}
-712                                                         && !exists $self->{ignore_attribs}->{$_}
-713                                                      }
-714                                                      keys %$event;
-715                                                   
-716          238                               1228      return;
-717                                                   }
-718                                                   
-719                                                   # Returns a list of all the attributes that were either given
-720                                                   # explicitly to new() or that were auto-detected.
-721                                                   sub get_attributes {
-722            1                    1           129      my ( $self ) = @_;
-723            1                                  3      return @{$self->{all_attribs}};
-               1                                 17   
-724                                                   }
+680                                                            (!$args{total} || $total < $args{total} )
+681                                                            && ( !$args{count} || $count < $args{count} )
+682                                                         ) {
+683            6                                 25            push @chosen, [$groupby, 'top'];
+684                                                         }
+685                                                   
+686                                                         # Events that are notable outliers
+687                                                         elsif ( $args{ol_attrib} && (!$args{ol_freq}
+688                                                            || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
+689                                                         ) {
+690                                                            # Calculate the 95th percentile of this event's specified attribute.
+691            5                                 11            MKDEBUG && _d('Calculating statistical_metrics');
+692            5                                 36            my $stats = $self->calculate_statistical_metrics(
+693                                                               $classes->{$groupby}->{$args{ol_attrib}}->{all},
+694                                                               $classes->{$groupby}->{$args{ol_attrib}}
+695                                                            );
+696            5    100                          29            if ( $stats->{pct_95} >= $args{ol_limit} ) {
+697            3                                 16               push @chosen, [$groupby, 'outlier'];
+698                                                            }
+699                                                         }
+700                                                   
+701           15                                 70         $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
+702           15                                 43         $count++;
+703                                                      }
+704            3                                 27      return @chosen;
+705                                                   }
+706                                                   
+707                                                   # Adds all new attributes in $event to $self->{attributes}.
+708                                                   sub add_new_attributes {
+709          239                  239           904      my ( $self, $event ) = @_;
+710   ***    239     50                         924      return unless $event;
+711                                                   
+712           66                                178      map {
+713         3772    100    100                34739         my $attrib = $_;
+714           66                                282         $self->{attributes}->{$attrib}  = [$attrib];
+715           66                                261         $self->{alt_attribs}->{$attrib} = make_alt_attrib($attrib);
+716           66                                180         push @{$self->{all_attribs}}, $attrib;
+              66                                284   
+717           66                                208         MKDEBUG && _d('Added new attribute:', $attrib);
+718                                                      }
+719                                                      grep {
+720          239                               1719         $_ ne $self->{groupby}
+721                                                         && !exists $self->{attributes}->{$_}
+722                                                         && !exists $self->{ignore_attribs}->{$_}
+723                                                      }
+724                                                      keys %$event;
 725                                                   
-726                                                   sub events_processed {
-727            1                    1             4      my ( $self ) = @_;
-728            1                                  7      return $self->{n_events};
-729                                                   }
-730                                                   
-731                                                   sub make_alt_attrib {
-732           77                   77           296      my ( @attribs ) = @_;
-733                                                   
-734           77                                231      my $attrib = shift @attribs;  # Primary attribute.
-735           77    100            15           700      return sub {} unless @attribs;  # No alternates.
-              15                                 57   
-736                                                   
-737            1                                  3      my @lines;
-738            1                                  4      push @lines, 'sub { my ( $event ) = @_; my $alt_attrib;';
-739            1                                  7      push @lines, map  {
-740            1                                  3            "\$alt_attrib = '$_' if !defined \$alt_attrib "
-741                                                            . "&& exists \$event->{'$_'};"
-742                                                         } @attribs;
-743            1                                  3      push @lines, 'return $alt_attrib; }';
-744            1                                  3      MKDEBUG && _d('alt attrib sub for', $attrib, ':', @lines);
-745            1                                 84      my $sub = eval join("\n", @lines);
-746   ***      1     50                           5      die if $EVAL_ERROR;
-747            1                                 16      return $sub;
-748                                                   }
-749                                                   
-750                                                   sub _d {
-751   ***      0                    0                    my ($package, undef, $line) = caller 0;
-752   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-      ***      0                                      
-      ***      0                                      
-753   ***      0                                              map { defined $_ ? $_ : 'undef' }
-754                                                           @_;
-755   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-756                                                   }
-757                                                   
-758                                                   1;
+726          239                               1217      return;
+727                                                   }
+728                                                   
+729                                                   # Returns a list of all the attributes that were either given
+730                                                   # explicitly to new() or that were auto-detected.
+731                                                   sub get_attributes {
+732            1                    1           130      my ( $self ) = @_;
+733            1                                  3      return @{$self->{all_attribs}};
+               1                                 18   
+734                                                   }
+735                                                   
+736                                                   sub events_processed {
+737            1                    1             4      my ( $self ) = @_;
+738            1                                  9      return $self->{n_events};
+739                                                   }
+740                                                   
+741                                                   sub make_alt_attrib {
+742           87                   87           328      my ( @attribs ) = @_;
+743                                                   
+744           87                                276      my $attrib = shift @attribs;  # Primary attribute.
+745           87    100            15           777      return sub {} unless @attribs;  # No alternates.
+              15                                 41   
+746                                                   
+747            1                                  4      my @lines;
+748            1                                  4      push @lines, 'sub { my ( $event ) = @_; my $alt_attrib;';
+749            1                                  7      push @lines, map  {
+750            1                                  4            "\$alt_attrib = '$_' if !defined \$alt_attrib "
+751                                                            . "&& exists \$event->{'$_'};"
+752                                                         } @attribs;
+753            1                                  4      push @lines, 'return $alt_attrib; }';
+754            1                                  3      MKDEBUG && _d('alt attrib sub for', $attrib, ':', @lines);
+755            1                                 85      my $sub = eval join("\n", @lines);
+756   ***      1     50                           6      die if $EVAL_ERROR;
+757            1                                 18      return $sub;
+758                                                   }
 759                                                   
-760                                                   # ###########################################################################
-761                                                   # End EventAggregator package
-762                                                   # ###########################################################################
+760                                                   sub _d {
+761   ***      0                    0                    my ($package, undef, $line) = caller 0;
+762   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+      ***      0                                      
+      ***      0                                      
+763   ***      0                                              map { defined $_ ? $_ : 'undef' }
+764                                                           @_;
+765   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+766                                                   }
+767                                                   
+768                                                   1;
+769                                                   
+770                                                   # ###########################################################################
+771                                                   # End EventAggregator package
+772                                                   # ###########################################################################
 
 
 Branches
@@ -844,80 +854,81 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-70    ***     50      0     32   unless $args{$arg}
-89           100     15      1   unless $args{'type_for'}
-100          100      5     11   scalar keys %$attributes == 0 ? :
-134          100      2   1699   unless defined $group_by
-140          100    436   1263   if $$self{'unrolled_loops'}
-145          100   1261      2   if ($$self{'n_events'} <= $$self{'unroll_limit'}) { }
-147          100    238   1023   if $$self{'detect_attribs'}
-157          100     16   4563   if (not exists $$event{$attrib})
+70    ***     50      0     34   unless $args{$arg}
+89           100     16      1   unless $args{'type_for'}
+100          100      6     11   scalar keys %$attributes == 0 ? :
+134          100      2   1700   unless defined $group_by
+140          100    436   1264   if $$self{'unrolled_loops'}
+145          100   1262      2   if ($$self{'n_events'} <= $$self{'unroll_limit'}) { }
+147          100    239   1023   if $$self{'detect_attribs'}
+157          100     16   4573   if (not exists $$event{$attrib})
 161          100     15      1   unless $alt_attrib
-166          100      4   4560   ref $group_by ? :
-171          100     76   4490   if (not $handler)
-180   ***     50      0   4566   unless $handler
+166          100      4   4570   ref $group_by ? :
+171          100     86   4490   if (not $handler)
+180   ***     50      0   4576   unless $handler
 212   ***     50      0      2   ref $group_by ? :
 229   ***     50      0      2   if (ref $group_by)
 240   ***     50      0      2   if $EVAL_ERROR
-308   ***     50      0     76   unless defined $attrib
-311   ***     50      0     76   if (ref $val eq 'ARRAY')
-315   ***     50      0     76   unless defined $val
-319          100     14     20   $val =~ /^(?:Yes|No)$/ ? :
-             100     42     34   $val =~ /^(?:\d+|$float_re)$/o ? :
-      ***     50      0     76   $self->type_for($attrib) ? :
-327          100     56     20   $type =~ /num|bool/ ? :
-             100     34     42   $type =~ /bool|string/ ? :
-             100     42     34   $type eq 'num' ? :
-             100     14     62   $type eq 'bool' ? :
-342          100     14     62   if ($args{'trf'})
-348   ***     50    152      0   if ($args{'min'})
-349          100     84     68   $type eq 'num' ? :
-355   ***     50    152      0   if ($args{'max'})
-356          100     84     68   $type eq 'num' ? :
-362          100    112     40   if ($args{'sum'})
-365   ***     50    152      0   if ($args{'cnt'})
-368          100     84     68   if ($args{'all'})
-378          100     34     42   if ($args{'unq'})
-381          100     10     66   if ($args{'wor'})
-382   ***     50     10      0   $type eq 'num' ? :
-393          100      1     75   if ($args{'all'} and $type eq 'num' and $$self{'attrib_limit'})
-409   ***     50      0     76   $is_array ? :
-      ***     50      0     76   $is_array ? :
-422   ***     50      0     76   $is_array ? :
-      ***     50      0     76   $is_array ? :
-434   ***     50      0     76   if $EVAL_ERROR
-446          100   1478   6396   if $val < 1e-06
-448          100      1   6395   $idx > 999 ? :
-461          100      2   1005   if $bucket == 0
-462   ***     50      0   1005   if $bucket < 0 or $bucket > 999
-476   ***     50      0      1   if @buck_tens
-528          100      4     13   unless defined $vals and @$vals and $$args{'cnt'}
-533          100      7      6   if ($n_vals == 1 or $$args{'max'} == $$args{'min'}) { }
+308   ***     50      0     86   unless defined $attrib
+311   ***     50      0     86   if (ref $val eq 'ARRAY')
+315   ***     50      0     86   unless defined $val
+319          100     14     25   $val =~ /^(?:Yes|No)$/ ? :
+             100     35     39   $val =~ /^(?:\d+|$float_re)$/o ? :
+             100     12     74   $self->type_for($attrib) ? :
+327          100     61     25   $type =~ /num|bool/ ? :
+             100     39     47   $type =~ /bool|string/ ? :
+             100     47     39   $type eq 'num' ? :
+             100     14     72   $type eq 'bool' ? :
+342          100     14     72   if ($args{'trf'})
+348   ***     50    172      0   if ($args{'min'})
+349          100     94     78   $type eq 'num' ? :
+355   ***     50    172      0   if ($args{'max'})
+356          100     94     78   $type eq 'num' ? :
+362          100    122     50   if ($args{'sum'})
+365   ***     50    172      0   if ($args{'cnt'})
+368          100     94     78   if ($args{'all'})
+378          100     39     47   if ($args{'unq'})
+381          100     11     75   if ($args{'wor'})
+382   ***     50     11      0   $type eq 'num' ? :
+392          100     12     74   if ($attrib eq 'Query_time')
+402          100      1     85   if ($args{'all'} and $type eq 'num' and $$self{'attrib_limit'})
+418   ***     50      0     86   $is_array ? :
+      ***     50      0     86   $is_array ? :
+431   ***     50      0     86   $is_array ? :
+      ***     50      0     86   $is_array ? :
+444   ***     50      0     86   if $EVAL_ERROR
+456          100   1482   6402   if $val < 1e-06
+458          100      1   6401   $idx > 999 ? :
+471          100      2   1005   if $bucket == 0
+472   ***     50      0   1005   if $bucket < 0 or $bucket > 999
+486   ***     50      0      1   if @buck_tens
+538          100      4     13   unless defined $vals and @$vals and $$args{'cnt'}
+543          100      7      6   if ($n_vals == 1 or $$args{'max'} == $$args{'min'}) { }
              100      1      5   elsif ($n_vals == 2) { }
-535   ***     50      7      0   $v > 0 ? :
-536   ***     50      0      7   $bucket < 0 ? :
+545   ***     50      7      0   $v > 0 ? :
+546   ***     50      0      7   $bucket < 0 ? :
       ***     50      0      7   $bucket > 7 ? :
-546   ***     50      2      0   $v && $v > 0 ? :
-547   ***     50      0      2   $bucket < 0 ? :
+556   ***     50      2      0   $v && $v > 0 ? :
+557   ***     50      0      2   $bucket < 0 ? :
       ***     50      0      2   $bucket > 7 ? :
-563          100      4      1   $n_vals >= 10 ? :
-582          100   4981     19   unless $val
-586          100      5     14   if not $bucket_95 and $sum_excl > $top_vals
-588          100      5     14   if (not $median and $total_left <= $mid)
-589   ***     50      5      0   $cutoff % 2 || $val > 1 ? :
-599          100      3      2   $var > 0 ? :
-601   ***     50      0      5   $stddev > $maxstdev ? :
-622   ***     50      0      4   unless $args{$arg}
-631          100      1      1   $global_cnt && $$store{'cnt'} ? :
+573          100      4      1   $n_vals >= 10 ? :
+592          100   4981     19   unless $val
+596          100      5     14   if not $bucket_95 and $sum_excl > $top_vals
+598          100      5     14   if (not $median and $total_left <= $mid)
+599   ***     50      5      0   $cutoff % 2 || $val > 1 ? :
+609          100      3      2   $var > 0 ? :
+611   ***     50      0      5   $stddev > $maxstdev ? :
+632   ***     50      0      4   unless $args{$arg}
+641          100      1      1   $global_cnt && $$store{'cnt'} ? :
              100      1      1   $$store{'sum'} && $$store{'cnt'} ? :
-669          100      6      9   if (!$args{'total'} || $total < $args{'total'} and !$args{'count'} || $count < $args{'count'}) { }
+679          100      6      9   if (!$args{'total'} || $total < $args{'total'} and !$args{'count'} || $count < $args{'count'}) { }
              100      5      4   elsif ($args{'ol_attrib'} and !$args{'ol_freq'} || $$classes{$groupby}{$args{'ol_attrib'}}{'cnt'} >= $args{'ol_freq'}) { }
-686          100      3      2   if ($$stats{'pct_95'} >= $args{'ol_limit'})
-700   ***     50      0    238   unless $event
-703          100     60   3701   if $_ ne $$self{'groupby'} and not exists $$self{'attributes'}{$_}
-735          100     76      1   unless @attribs
-746   ***     50      0      1   if $EVAL_ERROR
-752   ***      0      0      0   defined $_ ? :
+696          100      3      2   if ($$stats{'pct_95'} >= $args{'ol_limit'})
+710   ***     50      0    239   unless $event
+713          100     70   3702   if $_ ne $$self{'groupby'} and not exists $$self{'attributes'}{$_}
+745          100     86      1   unless @attribs
+756   ***     50      0      1   if $EVAL_ERROR
+762   ***      0      0      0   defined $_ ? :
 
 
 Conditions
@@ -927,42 +938,42 @@ and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-393   ***     66     34      0     42   $args{'all'} and $type eq 'num'
-             100     34     41      1   $args{'all'} and $type eq 'num' and $$self{'attrib_limit'}
-528          100      2      1     14   defined $vals and @$vals
+402   ***     66     39      0     47   $args{'all'} and $type eq 'num'
+             100     39     46      1   $args{'all'} and $type eq 'num' and $$self{'attrib_limit'}
+538          100      2      1     14   defined $vals and @$vals
              100      3      1     13   defined $vals and @$vals and $$args{'cnt'}
-546   ***     33      0      0      2   $v && $v > 0
-586          100     11      3      5   not $bucket_95 and $sum_excl > $top_vals
-588          100      5      9      5   not $median and $total_left <= $mid
-631   ***     66      1      0      1   $global_cnt && $$store{'cnt'}
+556   ***     33      0      0      2   $v && $v > 0
+596          100     11      3      5   not $bucket_95 and $sum_excl > $top_vals
+598          100      5      9      5   not $median and $total_left <= $mid
+641   ***     66      1      0      1   $global_cnt && $$store{'cnt'}
       ***     66      1      0      1   $$store{'sum'} && $$store{'cnt'}
-669          100      6      3      6   !$args{'total'} || $total < $args{'total'} and !$args{'count'} || $count < $args{'count'}
+679          100      6      3      6   !$args{'total'} || $total < $args{'total'} and !$args{'count'} || $count < $args{'count'}
              100      3      1      5   $args{'ol_attrib'} and !$args{'ol_freq'} || $$classes{$groupby}{$args{'ol_attrib'}}{'cnt'} >= $args{'ol_freq'}
-703          100    238   3463     60   $_ ne $$self{'groupby'} and not exists $$self{'attributes'}{$_}
+713          100    239   3463     70   $_ ne $$self{'groupby'} and not exists $$self{'attributes'}{$_}
 
 or 2 conditions
 
 line  err      %      l     !l   expr
 ----- --- ------ ------ ------   ----
-72           100     11      5   $args{'attributes'} || {}
-100          100      1     15   $args{'unroll_limit'} || 1000
-167          100   4433    133   $$self{'result_classes'}{$val}{$attrib} ||= {}
-168          100   4490     76   $$self{'result_globals'}{$attrib} ||= {}
-181          100   4538     28   $$samples{$val} ||= $event
-534   ***     50      7      0   $$args{'max'} || 0
-549   ***     50      1      0   $$args{'max'} || 0
-550   ***     50      1      0   $$args{'min'} || 0
-600   ***     50      5      0   $$args{'max'} || 0
+72           100     11      6   $args{'attributes'} || {}
+100          100      1     16   $args{'unroll_limit'} || 1000
+167          100   4433    143   $$self{'result_classes'}{$val}{$attrib} ||= {}
+168          100   4490     86   $$self{'result_globals'}{$attrib} ||= {}
+181          100   4547     29   $$samples{$val} ||= $event
+544   ***     50      7      0   $$args{'max'} || 0
+559   ***     50      1      0   $$args{'max'} || 0
+560   ***     50      1      0   $$args{'min'} || 0
+610   ***     50      5      0   $$args{'max'} || 0
              100      4      1   $$args{'min'} || 0
 
 or 3 conditions
 
 line  err      %      l  !l&&r !l&&!r   expr
 ----- --- ------ ------ ------ ------   ----
-462   ***     33      0      0   1005   $bucket < 0 or $bucket > 999
-533          100      3      4      6   $n_vals == 1 or $$args{'max'} == $$args{'min'}
-589   ***     66      2      3      0   $cutoff % 2 || $val > 1
-669          100      5      4      6   !$args{'total'} || $total < $args{'total'}
+472   ***     33      0      0   1005   $bucket < 0 or $bucket > 999
+543          100      3      4      6   $n_vals == 1 or $$args{'max'} == $$args{'min'}
+599   ***     66      2      3      0   $cutoff % 2 || $val > 1
+679          100      5      4      6   !$args{'total'} || $total < $args{'total'}
       ***     66      0      6      3   !$args{'count'} || $count < $args{'count'}
              100      3      2      1   !$args{'ol_freq'} || $$classes{$groupby}{$args{'ol_attrib'}}{'cnt'} >= $args{'ol_freq'}
 
@@ -981,31 +992,31 @@ BEGIN                             1 /home/daniel/dev/maatkit/common/EventAggrega
 BEGIN                             1 /home/daniel/dev/maatkit/common/EventAggregator.pm:35 
 BEGIN                             1 /home/daniel/dev/maatkit/common/EventAggregator.pm:36 
 BEGIN                             1 /home/daniel/dev/maatkit/common/EventAggregator.pm:37 
-__ANON__                         15 /home/daniel/dev/maatkit/common/EventAggregator.pm:735
+__ANON__                         15 /home/daniel/dev/maatkit/common/EventAggregator.pm:745
 _make_unrolled_loops              2 /home/daniel/dev/maatkit/common/EventAggregator.pm:198
-add_new_attributes              238 /home/daniel/dev/maatkit/common/EventAggregator.pm:699
-aggregate                      1701 /home/daniel/dev/maatkit/common/EventAggregator.pm:131
+add_new_attributes              239 /home/daniel/dev/maatkit/common/EventAggregator.pm:709
+aggregate                      1702 /home/daniel/dev/maatkit/common/EventAggregator.pm:131
 attributes                        1 /home/daniel/dev/maatkit/common/EventAggregator.pm:259
-bucket_idx                     7874 /home/daniel/dev/maatkit/common/EventAggregator.pm:445
-bucket_value                   1007 /home/daniel/dev/maatkit/common/EventAggregator.pm:460
-buckets_of                        1 /home/daniel/dev/maatkit/common/EventAggregator.pm:476
-calculate_statistical_metrics    17 /home/daniel/dev/maatkit/common/EventAggregator.pm:517
-events_processed                  1 /home/daniel/dev/maatkit/common/EventAggregator.pm:727
-get_attributes                    1 /home/daniel/dev/maatkit/common/EventAggregator.pm:722
-make_alt_attrib                  77 /home/daniel/dev/maatkit/common/EventAggregator.pm:732
-make_handler                     76 /home/daniel/dev/maatkit/common/EventAggregator.pm:307
-metrics                           2 /home/daniel/dev/maatkit/common/EventAggregator.pm:620
-new                              16 /home/daniel/dev/maatkit/common/EventAggregator.pm:68 
+bucket_idx                     7884 /home/daniel/dev/maatkit/common/EventAggregator.pm:455
+bucket_value                   1007 /home/daniel/dev/maatkit/common/EventAggregator.pm:470
+buckets_of                        1 /home/daniel/dev/maatkit/common/EventAggregator.pm:486
+calculate_statistical_metrics    17 /home/daniel/dev/maatkit/common/EventAggregator.pm:527
+events_processed                  1 /home/daniel/dev/maatkit/common/EventAggregator.pm:737
+get_attributes                    1 /home/daniel/dev/maatkit/common/EventAggregator.pm:732
+make_alt_attrib                  87 /home/daniel/dev/maatkit/common/EventAggregator.pm:742
+make_handler                     86 /home/daniel/dev/maatkit/common/EventAggregator.pm:307
+metrics                           2 /home/daniel/dev/maatkit/common/EventAggregator.pm:630
+new                              17 /home/daniel/dev/maatkit/common/EventAggregator.pm:68 
 reset_aggregated_data             1 /home/daniel/dev/maatkit/common/EventAggregator.pm:112
-results                          19 /home/daniel/dev/maatkit/common/EventAggregator.pm:248
-top_events                        3 /home/daniel/dev/maatkit/common/EventAggregator.pm:656
-type_for                         79 /home/daniel/dev/maatkit/common/EventAggregator.pm:266
+results                          20 /home/daniel/dev/maatkit/common/EventAggregator.pm:248
+top_events                        3 /home/daniel/dev/maatkit/common/EventAggregator.pm:666
+type_for                        101 /home/daniel/dev/maatkit/common/EventAggregator.pm:266
 
 Uncovered Subroutines
 ---------------------
 
 Subroutine                    Count Location                                              
 ----------------------------- ----- ------------------------------------------------------
-_d                                0 /home/daniel/dev/maatkit/common/EventAggregator.pm:751
+_d                                0 /home/daniel/dev/maatkit/common/EventAggregator.pm:761
 
 

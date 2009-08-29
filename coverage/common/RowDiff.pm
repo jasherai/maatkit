@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...maatkit/common/RowDiff.pm   93.1   87.5   81.0   88.9    n/a  100.0   88.8
-Total                          93.1   87.5   81.0   88.9    n/a  100.0   88.8
+...maatkit/common/RowDiff.pm   91.4   87.0   80.4   88.9    n/a  100.0   87.7
+Total                          91.4   87.0   80.4   88.9    n/a  100.0   87.7
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          RowDiff.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:53:20 2009
-Finish:       Fri Jul 31 18:53:21 2009
+Start:        Sat Aug 29 15:03:43 2009
+Finish:       Sat Aug 29 15:03:43 2009
 
 /home/daniel/dev/maatkit/common/RowDiff.pm
 
@@ -32,211 +32,238 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # RowDiff package $Revision: 3249 $
+18                                                    # RowDiff package $Revision: 4561 $
 19                                                    # ###########################################################################
-20             1                    1             8   use strict;
-               1                                  3   
+20             1                    1             9   use strict;
+               1                                  2   
                1                                  8   
 21             1                    1             6   use warnings FATAL => 'all';
-               1                                  1   
+               1                                  2   
                1                                  9   
 22                                                    
 23                                                    package RowDiff;
 24                                                    
-25             1                    1             6   use English qw(-no_match_vars);
-               1                                  2   
+25             1                    1             5   use English qw(-no_match_vars);
+               1                                  3   
                1                                  8   
 26                                                    
-27             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
+27             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  2   
                1                                 11   
 28                                                    
-29                                                    sub new {
-30             3                    3            71      my ( $class, %args ) = @_;
-31             3    100                          13      die "I need a dbh" unless $args{dbh};
-32             2                                  8      my $self = \%args;
-33             2                                 19      return bless $self, $class;
-34                                                    }
-35                                                    
-36                                                    # Iterates through two sets of rows and finds differences.  Calls various
-37                                                    # methods on the $syncer object when it finds differences.  $left and $right
-38                                                    # should be DBI $sth, or should at least behave like them.  $tbl
-39                                                    # is a struct from TableParser.
-40                                                    sub compare_sets {
-41            11                   11         66180      my ( $self, %args ) = @_;
-42            11                                 65      my ( $left, $right, $syncer, $tbl )
-43                                                          = @args{qw(left right syncer tbl)};
-44                                                    
-45            11                                 34      my ($lr, $rr);  # Current row from the left/right sources.
-46                                                    
-47                                                       # We have to manually track if the left or right sth is done
-48                                                       # fetching rows because sth->{Active} is always true with
-49                                                       # DBD::mysql v3. And we cannot simply while ( $lr || $rr )
-50                                                       # because in the case where left and right have the same key,
-51                                                       # we do this:
-52                                                       #    $lr = $rr = undef; # Fetch another row from each side.
-53                                                       # Unsetting both $lr and $rr there would cause while () to
-54                                                       # terminate. (And while ( $lr && $rr ) is not what we want
-55                                                       # either.) Furthermore, we need to avoid trying to fetch more
-56                                                       # rows if there are none to fetch because doing this would
-57                                                       # cause a DBI error ("fetch without execute"). That's why we
-58                                                       # make these checks:
-59                                                       #    if ( !$lr && !$left_done )
-60                                                       #    if ( !$rr && !$right_done )
-61                                                       # If you make changes here, be sure to test both RowDiff.t
-62                                                       # and RowDiff-custom.t. Look inside the later to see what
-63                                                       # is custom about it.
-64            11                                 38      my ($left_done, $right_done) = (0, 0);
-65                                                    
-66            11           100                   30      do {
-67    ***     23    100     66                  191         if ( !$lr && !$left_done ) {
-68            20                                 41            MKDEBUG && _d('Fetching row from left');
-69            20                                106            $lr = $left->fetchrow_hashref();
-70            20    100                         133            $left_done = ($lr ? 0 : 1);
-71                                                          }
-72                                                          elsif ( MKDEBUG ) {
-73                                                             _d('Left still has rows');
-74                                                          }
-75                                                    
-76            23    100    100                  172         if ( !$rr && !$right_done ) {
-77            20                                 42            MKDEBUG && _d('Fetching row from right');
-78            20                                 85            $rr = $right->fetchrow_hashref();
-79            20    100                         127            $right_done = ($rr ? 0 : 1);
+29                                                    # Optional args:
+30                                                    #   * same_row      Callback when rows are identical
+31                                                    #   * not_in_left   Callback when right row is not in the left
+32                                                    #   * not_in_right  Callback when left row is not in the right
+33                                                    #   * key_cmp       Callback when a column value differs
+34                                                    #   * done          Callback that stops compare_sets() if it returns true
+35                                                    #   * trf           Callback to transform numeric values before comparison
+36                                                    sub new {
+37             7                    7           119      my ( $class, %args ) = @_;
+38             7    100                          35      die "I need a dbh" unless $args{dbh};
+39             6                                 22      my $self = \%args;
+40             6                                 45      return bless $self, $class;
+41                                                    }
+42                                                    
+43                                                    # Iterates through two sets of rows and finds differences.  Calls various
+44                                                    # methods on the $syncer object when it finds differences.  $left and $right
+45                                                    # should be DBI $sth, or should at least behave like them.  $tbl
+46                                                    # is a struct from TableParser.
+47                                                    sub compare_sets {
+48            14                   14         66420      my ( $self, %args ) = @_;
+49            14                                 89      my ( $left, $right, $syncer, $tbl )
+50                                                          = @args{qw(left right syncer tbl)};
+51                                                    
+52            14                                 41      my ($lr, $rr);  # Current row from the left/right sources.
+53            14                                 51      my $done = $self->{done};
+54                                                    
+55                                                       # We have to manually track if the left or right sth is done
+56                                                       # fetching rows because sth->{Active} is always true with
+57                                                       # DBD::mysql v3. And we cannot simply while ( $lr || $rr )
+58                                                       # because in the case where left and right have the same key,
+59                                                       # we do this:
+60                                                       #    $lr = $rr = undef; # Fetch another row from each side.
+61                                                       # Unsetting both $lr and $rr there would cause while () to
+62                                                       # terminate. (And while ( $lr && $rr ) is not what we want
+63                                                       # either.) Furthermore, we need to avoid trying to fetch more
+64                                                       # rows if there are none to fetch because doing this would
+65                                                       # cause a DBI error ("fetch without execute"). That's why we
+66                                                       # make these checks:
+67                                                       #    if ( !$lr && !$left_done )
+68                                                       #    if ( !$rr && !$right_done )
+69                                                       # If you make changes here, be sure to test both RowDiff.t
+70                                                       # and RowDiff-custom.t. Look inside the later to see what
+71                                                       # is custom about it.
+72            14                                 47      my ($left_done, $right_done) = (0, 0);
+73                                                    
+74            14           100                   41      do {
+75    ***     34    100     66                  289         if ( !$lr && !$left_done ) {
+76            30                                 75            MKDEBUG && _d('Fetching row from left');
+77            30                                 78            eval { $lr = $left->fetchrow_hashref(); };
+              30                                160   
+78            30                                132            MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+79    ***     30    100     66                  211            $left_done = !$lr || $EVAL_ERROR ? 1 : 0;
 80                                                          }
 81                                                          elsif ( MKDEBUG ) {
-82                                                             _d('Right still has rows');
+82                                                             _d('Left still has rows');
 83                                                          }
 84                                                    
-85            23                                 50         my $cmp;
-86            23    100    100                  133         if ( $lr && $rr ) {
-87             7                                 37            $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
-88             7                                 21            MKDEBUG && _d('Key comparison on left and right:', $cmp);
-89                                                          }
-90            23    100    100                  211         if ( $lr || $rr ) {
-91                                                             # If the current row is the "same row" on both sides, meaning the two
-92                                                             # rows have the same key, check the contents of the row to see if
-93                                                             # they're the same.
-94            12    100    100                  183            if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
+85            34    100    100                  243         if ( !$rr && !$right_done ) {
+86            29                                 64            MKDEBUG && _d('Fetching row from right');
+87            29                                 76            eval { $rr = $right->fetchrow_hashref(); };
+              29                                123   
+88            29                                110            MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+89    ***     29    100     66                  197            $right_done = !$rr || $EVAL_ERROR ? 1 : 0;
+90                                                          }
+91                                                          elsif ( MKDEBUG ) {
+92                                                             _d('Right still has rows');
+93                                                          }
+94                                                    
+95            34                                 76         my $cmp;
+96            34    100    100                  213         if ( $lr && $rr ) {
+97            15                                 76            $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
+98            15                                 40            MKDEBUG && _d('Key comparison on left and right:', $cmp);
+99                                                          }
+100           34    100    100                  217         if ( $lr || $rr ) {
+101                                                            # If the current row is the "same row" on both sides, meaning the two
+102                                                            # rows have the same key, check the contents of the row to see if
+103                                                            # they're the same.
+104           21    100    100                  348            if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
       ***           100     66                        
                            100                        
       ***                   66                        
                            100                        
-95             6                                 13               MKDEBUG && _d('Left and right have the same key');
-96             6                                 28               $syncer->same_row($lr, $rr);
-97             6                                 97               $lr = $rr = undef; # Fetch another row from each side.
-98                                                             }
-99                                                             # The row in the left doesn't exist in the right.
-100                                                            elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
-101            3                                  7               MKDEBUG && _d('Left is not in right');
-102            3                                 15               $syncer->not_in_right($lr);
-103            3                                 53               $lr = undef;
-104                                                            }
-105                                                            # Symmetric to the above.
-106                                                            else {
-107            3                                  6               MKDEBUG && _d('Right is not in left');
-108            3                                 15               $syncer->not_in_left($rr);
-109            3                                 59               $rr = undef;
-110                                                            }
-111                                                         }
-112                                                      } while ( !($left_done && $right_done) );
-113           11                                 22      MKDEBUG && _d('No more rows');
-114           11                                 51      $syncer->done_with_rows();
-115                                                   }
-116                                                   
-117                                                   # Compare two rows to determine how they should be ordered.  NULL sorts before
-118                                                   # defined values in MySQL, so I consider undef "less than." Numbers are easy to
-119                                                   # compare.  Otherwise string comparison is tricky.  This function must match
-120                                                   # MySQL exactly or the merge algorithm runs off the rails, so when in doubt I
-121                                                   # ask MySQL to compare strings for me.  I can handle numbers and "normal" latin1
-122                                                   # characters without asking MySQL.  See
-123                                                   # http://dev.mysql.com/doc/refman/5.0/en/charset-literal.html.  $r1 and $r2 are
-124                                                   # row hashrefs.  $key_cols is an arrayref of the key columns to compare.  $tbl is the
-125                                                   # structure returned by TableParser.  The result matches Perl's cmp or <=>
-126                                                   # operators:
-127                                                   # 1 cmp 0 =>  1
-128                                                   # 1 cmp 1 =>  0
-129                                                   # 1 cmp 2 => -1
-130                                                   # TODO: must generate the comparator function dynamically for speed, so we don't
-131                                                   # have to check the type of columns constantly
-132                                                   sub key_cmp {
-133           18                   18           135      my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
-134           18                                 43      MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
-135           18                                 64      foreach my $col ( @$key_cols ) {
-136           22                                 68         my $l = $lr->{$col};
-137           22                                 63         my $r = $rr->{$col};
-138           22    100    100                  165         if ( !defined $l || !defined $r ) {
-139            6                                 12            MKDEBUG && _d($col, 'is not defined in both rows');
-140            6    100                          45            return defined $l ? 1 : defined $r ? -1 : 0;
+105           12                                 27               MKDEBUG && _d('Left and right have the same key');
+106           12                                 69               $syncer->same_row($lr, $rr);
+107           12    100                         192               $self->{same_row}->($lr, $rr) if $self->{same_row};
+108           12                                 61               $lr = $rr = undef; # Fetch another row from each side.
+109                                                            }
+110                                                            # The row in the left doesn't exist in the right.
+111                                                            elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
+112            5                                 13               MKDEBUG && _d('Left is not in right');
+113            5                                 28               $syncer->not_in_right($lr);
+114            5    100                          87               $self->{not_in_right}->($lr) if $self->{not_in_right};
+115            5                                 22               $lr = undef;
+116                                                            }
+117                                                            # Symmetric to the above.
+118                                                            else {
+119            4                                  8               MKDEBUG && _d('Right is not in left');
+120            4                                 22               $syncer->not_in_left($rr);
+121            4    100                          63               $self->{not_in_left}->($rr) if $self->{not_in_left};
+122            4                                 16               $rr = undef;
+123                                                            }
+124                                                         }
+125           34    100    100                  307         $left_done = $right_done = 1 if $done && $done->($left, $right);
+126                                                      } while ( !($left_done && $right_done) );
+127           14                                 47      MKDEBUG && _d('No more rows');
+128           14                                 70      $syncer->done_with_rows();
+129                                                   }
+130                                                   
+131                                                   # Compare two rows to determine how they should be ordered.  NULL sorts before
+132                                                   # defined values in MySQL, so I consider undef "less than." Numbers are easy to
+133                                                   # compare.  Otherwise string comparison is tricky.  This function must match
+134                                                   # MySQL exactly or the merge algorithm runs off the rails, so when in doubt I
+135                                                   # ask MySQL to compare strings for me.  I can handle numbers and "normal" latin1
+136                                                   # characters without asking MySQL.  See
+137                                                   # http://dev.mysql.com/doc/refman/5.0/en/charset-literal.html.  $r1 and $r2 are
+138                                                   # row hashrefs.  $key_cols is an arrayref of the key columns to compare.  $tbl is the
+139                                                   # structure returned by TableParser.  The result matches Perl's cmp or <=>
+140                                                   # operators:
+141                                                   # 1 cmp 0 =>  1
+142                                                   # 1 cmp 1 =>  0
+143                                                   # 1 cmp 2 => -1
+144                                                   # TODO: must generate the comparator function dynamically for speed, so we don't
+145                                                   # have to check the type of columns constantly
+146                                                   sub key_cmp {
+147           26                   26           221      my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
+148           26                                 64      MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
+149           26                                 82      my $callback = $self->{key_cmp};
+150           26                                 89      my $trf      = $self->{trf};
+151           26                                 95      foreach my $col ( @$key_cols ) {
+152           30                                112         my $l = $lr->{$col};
+153           30                                 88         my $r = $rr->{$col};
+154           30    100    100                  229         if ( !defined $l || !defined $r ) {
+155            6                                 15            MKDEBUG && _d($col, 'is not defined in both rows');
+156            6    100                          46            return defined $l ? 1 : defined $r ? -1 : 0;
                     100                               
-141                                                         }
-142                                                         else {
-143           16    100                         109            if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
+157                                                         }
+158                                                         else {
+159           24    100                         163            if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
                     100                               
-144            2                                  8               MKDEBUG && _d($col, 'is numeric');
-145            2                                  8               my $cmp = $l <=> $r;
-146   ***      2     50                          14               return $cmp unless $cmp == 0;
-147                                                            }
-148                                                            # Do case-sensitive cmp, expecting most will be eq.  If that fails, try
-149                                                            # a case-insensitive cmp if possible; otherwise ask MySQL how to sort.
-150                                                            elsif ( $l ne $r ) {
-151            6                                 22               my $cmp;
-152            6                                 22               my $coll = $tbl->{collation_for}->{$col};
-153   ***      6    100     33                   42               if ( $coll && ( $coll ne 'latin1_swedish_ci'
+160            4                                 13               MKDEBUG && _d($col, 'is numeric');
+161            4    100                          26               ($l, $r) = $trf->($l, $r, $tbl, $col) if $trf;
+162            4                                 34               my $cmp = $l <=> $r;
+163   ***      4     50                          24               if ( $cmp ) {
+164   ***      0                                  0                  MKDEBUG && _d('Column', $col, 'differs:', $l, '!=', $r);
+165   ***      0      0                           0                  $callback->($col, $l, $r) if $callback;
+166   ***      0                                  0                  return $cmp;
+167                                                               }
+168                                                            }
+169                                                            # Do case-sensitive cmp, expecting most will be eq.  If that fails, try
+170                                                            # a case-insensitive cmp if possible; otherwise ask MySQL how to sort.
+171                                                            elsif ( $l ne $r ) {
+172            8                                 20               my $cmp;
+173            8                                 35               my $coll = $tbl->{collation_for}->{$col};
+174   ***      8    100     33                   62               if ( $coll && ( $coll ne 'latin1_swedish_ci'
       ***                   33                        
       ***                   66                        
-154                                                                              || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) ) {
-155            1                                  3                  MKDEBUG && _d('Comparing', $col, 'via MySQL');
-156            1                                  6                  $cmp = $self->db_cmp($coll, $l, $r);
-157                                                               }
-158                                                               else {
-159            5                                 10                  MKDEBUG && _d('Comparing', $col, 'in lowercase');
-160            5                                 25                  $cmp = lc $l cmp lc $r;
-161                                                               }
-162            6    100                          45               return $cmp unless $cmp == 0;
-163                                                            }
-164                                                         }
-165                                                      }
-166            7                                 30      return 0;
-167                                                   }
-168                                                   
-169                                                   sub db_cmp {
-170            1                    1             5      my ( $self, $collation, $l, $r ) = @_;
-171   ***      1     50                           7      if ( !$self->{sth}->{$collation} ) {
-172   ***      1     50                           5         if ( !$self->{charset_for} ) {
-173            1                                  2            MKDEBUG && _d('Fetching collations from MySQL');
-174            1                                  3            my @collations = @{$self->{dbh}->selectall_arrayref(
-               1                                 28   
-175                                                               'SHOW COLLATION', {Slice => { collation => 1, charset => 1 }})};
-176            1                                 37            foreach my $collation ( @collations ) {
-177          126                                683               $self->{charset_for}->{$collation->{collation}}
-178                                                                  = $collation->{charset};
-179                                                            }
-180                                                         }
-181            1                                 13         my $sql = "SELECT STRCMP(_$self->{charset_for}->{$collation}? COLLATE $collation, "
-182                                                            . "_$self->{charset_for}->{$collation}? COLLATE $collation) AS res";
-183            1                                  2         MKDEBUG && _d($sql);
-184            1                                  3         $self->{sth}->{$collation} = $self->{dbh}->prepare($sql);
-185                                                      }
-186            1                                  9      my $sth = $self->{sth}->{$collation};
-187            1                                231      $sth->execute($l, $r);
-188            1                                 23      return $sth->fetchall_arrayref()->[0]->[0];
-189                                                   }
-190                                                   
-191                                                   sub _d {
-192   ***      0                    0                    my ($package, undef, $line) = caller 0;
-193   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+175                                                                              || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) ) {
+176            1                                  2                  MKDEBUG && _d('Comparing', $col, 'via MySQL');
+177            1                                  6                  $cmp = $self->db_cmp($coll, $l, $r);
+178                                                               }
+179                                                               else {
+180            7                                 16                  MKDEBUG && _d('Comparing', $col, 'in lowercase');
+181            7                                 34                  $cmp = lc $l cmp lc $r;
+182                                                               }
+183            8    100                          38               if ( $cmp ) {
+184            7                                 15                  MKDEBUG && _d('Column', $col, 'differs:', $l, 'ne', $r);
+185            7    100                          29                  $callback->($col, $l, $r) if $callback;
+186            7                                 62                  return $cmp;
+187                                                               }
+188                                                            }
+189                                                         }
+190                                                      }
+191           13                                 55      return 0;
+192                                                   }
+193                                                   
+194                                                   sub db_cmp {
+195            1                    1            10      my ( $self, $collation, $l, $r ) = @_;
+196   ***      1     50                           8      if ( !$self->{sth}->{$collation} ) {
+197   ***      1     50                           5         if ( !$self->{charset_for} ) {
+198            1                                  7            MKDEBUG && _d('Fetching collations from MySQL');
+199            1                                  2            my @collations = @{$self->{dbh}->selectall_arrayref(
+               1                                 26   
+200                                                               'SHOW COLLATION', {Slice => { collation => 1, charset => 1 }})};
+201            1                                 50            foreach my $collation ( @collations ) {
+202          126                                696               $self->{charset_for}->{$collation->{collation}}
+203                                                                  = $collation->{charset};
+204                                                            }
+205                                                         }
+206            1                                 13         my $sql = "SELECT STRCMP(_$self->{charset_for}->{$collation}? COLLATE $collation, "
+207                                                            . "_$self->{charset_for}->{$collation}? COLLATE $collation) AS res";
+208            1                                  3         MKDEBUG && _d($sql);
+209            1                                  2         $self->{sth}->{$collation} = $self->{dbh}->prepare($sql);
+210                                                      }
+211            1                                 10      my $sth = $self->{sth}->{$collation};
+212            1                                295      $sth->execute($l, $r);
+213            1                                 28      return $sth->fetchall_arrayref()->[0]->[0];
+214                                                   }
+215                                                   
+216                                                   sub _d {
+217   ***      0                    0                    my ($package, undef, $line) = caller 0;
+218   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
       ***      0                                      
       ***      0                                      
-194   ***      0                                              map { defined $_ ? $_ : 'undef' }
-195                                                           @_;
-196   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-197                                                   }
-198                                                   
-199                                                   1;
-200                                                   
-201                                                   # ###########################################################################
-202                                                   # End RowDiff package
-203                                                   # ###########################################################################
+219   ***      0                                              map { defined $_ ? $_ : 'undef' }
+220                                                           @_;
+221   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+222                                                   }
+223                                                   
+224                                                   1;
+225                                                   
+226                                                   # ###########################################################################
+227                                                   # End RowDiff package
+228                                                   # ###########################################################################
 
 
 Branches
@@ -244,26 +271,33 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-31           100      1      2   unless $args{'dbh'}
-67           100     20      3   !$lr && !$left_done ? :
-70           100      9     11   $lr ? :
-76           100     20      3   !$rr && !$right_done ? :
-79           100      9     11   $rr ? :
-86           100      7     16   if ($lr and $rr)
-90           100     12     11   if ($lr or $rr)
-94           100      6      6   if ($lr and $rr and defined $cmp and $cmp == 0) { }
-             100      3      3   elsif (not $rr or defined $cmp and $cmp < 0) { }
-138          100      6     16   if (not defined $l or not defined $r) { }
-140          100      2      1   defined $r ? :
+38           100      1      6   unless $args{'dbh'}
+75           100     30      4   !$lr && !$left_done ? :
+79           100     13     17   !$lr || $EVAL_ERROR ? :
+85           100     29      5   !$rr && !$right_done ? :
+89           100     13     16   !$rr || $EVAL_ERROR ? :
+96           100     15     19   if ($lr and $rr)
+100          100     21     13   if ($lr or $rr)
+104          100     12      9   if ($lr and $rr and defined $cmp and $cmp == 0) { }
+             100      5      4   elsif (not $rr or defined $cmp and $cmp < 0) { }
+107          100      6      6   if $$self{'same_row'}
+114          100      2      3   if $$self{'not_in_right'}
+121          100      1      3   if $$self{'not_in_left'}
+125          100      1     33   if $done and &$done($left, $right)
+154          100      6     24   if (not defined $l or not defined $r) { }
+156          100      2      1   defined $r ? :
              100      3      3   defined $l ? :
-143          100      2     14   if ($$tbl{'is_numeric'}{$col}) { }
-             100      6      8   elsif ($l ne $r) { }
-146   ***     50      0      2   unless $cmp == 0
-153          100      1      5   if ($coll and $coll ne 'latin1_swedish_ci' || $l =~ /[^\040-\177]/ || $r =~ /[^\040-\177]/) { }
-162          100      5      1   unless $cmp == 0
-171   ***     50      1      0   if (not $$self{'sth'}{$collation})
-172   ***     50      1      0   if (not $$self{'charset_for'})
-193   ***      0      0      0   defined $_ ? :
+159          100      4     20   if ($$tbl{'is_numeric'}{$col}) { }
+             100      8     12   elsif ($l ne $r) { }
+161          100      2      2   if $trf
+163   ***     50      0      4   if ($cmp)
+165   ***      0      0      0   if $callback
+174          100      1      7   if ($coll and $coll ne 'latin1_swedish_ci' || $l =~ /[^\040-\177]/ || $r =~ /[^\040-\177]/) { }
+183          100      7      1   if ($cmp)
+185          100      2      5   if $callback
+196   ***     50      1      0   if (not $$self{'sth'}{$collation})
+197   ***     50      1      0   if (not $$self{'charset_for'})
+218   ***      0      0      0   defined $_ ? :
 
 
 Conditions
@@ -273,24 +307,27 @@ and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-66           100      9      3     11   $left_done && $right_done
-67    ***     66      0      3     20   !$lr && !$left_done
-76           100      1      2     20   !$rr && !$right_done
-86           100     14      2      7   $lr and $rr
-94           100      3      2      7   $lr and $rr
-      ***     66      5      0      7   $lr and $rr and defined $cmp
-             100      5      1      6   $lr and $rr and defined $cmp and $cmp == 0
-      ***     66      3      0      1   defined $cmp and $cmp < 0
-153   ***     66      5      0      1   $coll and $coll ne 'latin1_swedish_ci' || $l =~ /[^\040-\177]/ || $r =~ /[^\040-\177]/
+74           100     16      4     14   $left_done && $right_done
+75    ***     66      0      4     30   !$lr && !$left_done
+85           100      3      2     29   !$rr && !$right_done
+96           100     17      2     15   $lr and $rr
+104          100      4      2     15   $lr and $rr
+      ***     66      6      0     15   $lr and $rr and defined $cmp
+             100      6      3     12   $lr and $rr and defined $cmp and $cmp == 0
+      ***     66      4      0      3   defined $cmp and $cmp < 0
+125          100     31      2      1   $done and &$done($left, $right)
+174   ***     66      7      0      1   $coll and $coll ne 'latin1_swedish_ci' || $l =~ /[^\040-\177]/ || $r =~ /[^\040-\177]/
 
 or 3 conditions
 
 line  err      %      l  !l&&r !l&&!r   expr
 ----- --- ------ ------ ------ ------   ----
-90           100      9      3     11   $lr or $rr
-94           100      2      1      3   not $rr or defined $cmp and $cmp < 0
-138          100      3      3     16   not defined $l or not defined $r
-153   ***     33      1      0      0   $coll ne 'latin1_swedish_ci' || $l =~ /[^\040-\177]/
+79    ***     66     13      0     17   !$lr || $EVAL_ERROR
+89    ***     66     13      0     16   !$rr || $EVAL_ERROR
+100          100     17      4     13   $lr or $rr
+104          100      2      3      4   not $rr or defined $cmp and $cmp < 0
+154          100      3      3     24   not defined $l or not defined $r
+174   ***     33      1      0      0   $coll ne 'latin1_swedish_ci' || $l =~ /[^\040-\177]/
       ***     33      1      0      0   $coll ne 'latin1_swedish_ci' || $l =~ /[^\040-\177]/ || $r =~ /[^\040-\177]/
 
 
@@ -303,16 +340,16 @@ BEGIN            1 /home/daniel/dev/maatkit/common/RowDiff.pm:20
 BEGIN            1 /home/daniel/dev/maatkit/common/RowDiff.pm:21 
 BEGIN            1 /home/daniel/dev/maatkit/common/RowDiff.pm:25 
 BEGIN            1 /home/daniel/dev/maatkit/common/RowDiff.pm:27 
-compare_sets    11 /home/daniel/dev/maatkit/common/RowDiff.pm:41 
-db_cmp           1 /home/daniel/dev/maatkit/common/RowDiff.pm:170
-key_cmp         18 /home/daniel/dev/maatkit/common/RowDiff.pm:133
-new              3 /home/daniel/dev/maatkit/common/RowDiff.pm:30 
+compare_sets    14 /home/daniel/dev/maatkit/common/RowDiff.pm:48 
+db_cmp           1 /home/daniel/dev/maatkit/common/RowDiff.pm:195
+key_cmp         26 /home/daniel/dev/maatkit/common/RowDiff.pm:147
+new              7 /home/daniel/dev/maatkit/common/RowDiff.pm:37 
 
 Uncovered Subroutines
 ---------------------
 
 Subroutine   Count Location                                      
 ------------ ----- ----------------------------------------------
-_d               0 /home/daniel/dev/maatkit/common/RowDiff.pm:192
+_d               0 /home/daniel/dev/maatkit/common/RowDiff.pm:217
 
 

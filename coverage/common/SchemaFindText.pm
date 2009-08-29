@@ -9,8 +9,8 @@ Total                          86.4   80.0    n/a   88.9    n/a  100.0   85.7
 Run:          SchemaFindText.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:53:24 2009
-Finish:       Fri Jul 31 18:53:24 2009
+Start:        Sat Aug 29 15:03:47 2009
+Finish:       Sat Aug 29 15:03:47 2009
 
 /home/daniel/dev/maatkit/common/SchemaFindText.pm
 
@@ -34,9 +34,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 17                                                    # ###########################################################################
 18                                                    # SchemaFindText package $Revision: 3186 $
 19                                                    # ###########################################################################
-20             1                    1             6   use strict;
-               1                                  2   
-               1                                112   
+20             1                    1             5   use strict;
+               1                                  3   
+               1                                114   
 21             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  6   
@@ -49,13 +49,13 @@ line  err   stmt   bran   cond    sub    pod   time   code
 26                                                    
 27             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
-               1                                 12   
+               1                                 11   
 28                                                    
 29                                                    # Arguments:
 30                                                    # * fh => filehandle
 31                                                    sub new {
 32             1                    1             6      my ( $class, %args ) = @_;
-33             1                                 18      bless {
+33             1                                 17      bless {
 34                                                          %args,
 35                                                          last_tbl_ddl => undef,
 36                                                          queued_db    => undef,
@@ -63,41 +63,41 @@ line  err   stmt   bran   cond    sub    pod   time   code
 38                                                    }
 39                                                    
 40                                                    sub next_db {
-41             2                    2             7      my ( $self ) = @_;
-42             2    100                          10      if ( $self->{queued_db} ) {
+41             2                    2             9      my ( $self ) = @_;
+42             2    100                          11      if ( $self->{queued_db} ) {
 43             1                                  4         my $db = $self->{queued_db};
 44             1                                  3         $self->{queued_db} = undef;
 45             1                                  5         return $db;
 46                                                       }
 47             1                                  5      local $RS = "";
-48             1                                  3      my $fh = $self->{fh};
-49             1                                 24      while ( defined (my $text = <$fh>) ) {
-50             5                                 21         my ($db) = $text =~ m/^USE `([^`]+)`/;
-51             5    100                          52         return $db if $db;
+48             1                                  4      my $fh = $self->{fh};
+49             1                                 22      while ( defined (my $text = <$fh>) ) {
+50             5                                 20         my ($db) = $text =~ m/^USE `([^`]+)`/;
+51             5    100                          47         return $db if $db;
 52                                                       }
 53                                                    }
 54                                                    
 55                                                    sub next_tbl {
-56            20                   20            68      my ( $self ) = @_;
-57            20                                 93      local $RS = "";
-58            20                                 62      my $fh = $self->{fh};
-59            20                                156      while ( defined (my $text = <$fh>) ) {
-60            43    100                         193         if ( my ($db) = $text =~ m/^USE `([^`]+)`/ ) {
+56            20                   20            74      my ( $self ) = @_;
+57            20                                100      local $RS = "";
+58            20                                 67      my $fh = $self->{fh};
+59            20                                195      while ( defined (my $text = <$fh>) ) {
+60            43    100                         196         if ( my ($db) = $text =~ m/^USE `([^`]+)`/ ) {
 61             1                                  4            $self->{queued_db} = $db;
-62             1                                  7            return undef;
+62             1                                  8            return undef;
 63                                                          }
-64            42                                739         my ($ddl) = $text =~ m/^(CREATE TABLE.*?^\)[^\n]*);\n/sm;
-65            42    100                         309         if ( $ddl ) {
-66            19                                 64            $self->{last_tbl_ddl} = $ddl;
-67            19                                115            my ( $tbl ) = $ddl =~ m/CREATE TABLE `([^`]+)`/;
-68            19                                121            return $tbl;
+64            42                                724         my ($ddl) = $text =~ m/^(CREATE TABLE.*?^\)[^\n]*);\n/sm;
+65            42    100                         316         if ( $ddl ) {
+66            19                                 73            $self->{last_tbl_ddl} = $ddl;
+67            19                                134            my ( $tbl ) = $ddl =~ m/CREATE TABLE `([^`]+)`/;
+68            19                                138            return $tbl;
 69                                                          }
 70                                                       }
 71                                                    }
 72                                                    
 73                                                    sub last_tbl_ddl {
-74             2                    2             7      my ( $self ) = @_;
-75             2                                 29      return $self->{last_tbl_ddl};
+74             2                    2             8      my ( $self ) = @_;
+75             2                                 40      return $self->{last_tbl_ddl};
 76                                                    }
 77                                                    
 78                                                    sub _d {

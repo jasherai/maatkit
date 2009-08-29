@@ -9,8 +9,8 @@ Total                          81.0   63.2   54.3   80.0    n/a  100.0   73.1
 Run:          DSNParser.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:51:36 2009
-Finish:       Fri Jul 31 18:51:36 2009
+Start:        Sat Aug 29 15:01:42 2009
+Finish:       Sat Aug 29 15:01:42 2009
 
 /home/daniel/dev/maatkit/common/DSNParser.pm
 
@@ -34,37 +34,37 @@ line  err   stmt   bran   cond    sub    pod   time   code
 17                                                    # ###########################################################################
 18                                                    # DSNParser package $Revision: 4103 $
 19                                                    # ###########################################################################
-20             1                    1             9   use strict;
-               1                                  2   
-               1                                  7   
-21             1                    1           109   use warnings FATAL => 'all';
+20             1                    1             8   use strict;
                1                                  3   
-               1                                  9   
+               1                                  6   
+21             1                    1             5   use warnings FATAL => 'all';
+               1                                  3   
+               1                                118   
 22                                                    
 23                                                    package DSNParser;
 24                                                    
 25             1                    1            10   use DBI;
-               1                                 44   
-               1                                 11   
-26             1                    1             7   use Data::Dumper;
+               1                                 58   
+               1                                 12   
+26             1                    1             8   use Data::Dumper;
                1                                  2   
-               1                                 17   
+               1                                 20   
 27                                                    $Data::Dumper::Indent    = 0;
 28                                                    $Data::Dumper::Quotekeys = 0;
 29             1                    1             6   use English qw(-no_match_vars);
-               1                                  3   
-               1                                  8   
-30                                                    
-31             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
-               1                                 11   
+               1                                  9   
+30                                                    
+31             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  2   
+               1                                 10   
 32                                                    
 33                                                    # Defaults are built-in, but you can add/replace items by passing them as
 34                                                    # hashrefs of {key, desc, copy, dsn}.  The desc and dsn items are optional.
 35                                                    # You can set properties with the prop() sub.  Don't set the 'opts' property.
 36                                                    sub new {
-37             2                    2            22      my ( $class, @opts ) = @_;
-38             2                                 71      my $self = {
+37             2                    2            24      my ( $class, @opts ) = @_;
+38             2                                 55      my $self = {
 39                                                          opts => {
 40                                                             A => {
 41                                                                desc => 'Default character set',
@@ -108,11 +108,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 79                                                             },
 80                                                          },
 81                                                       };
-82             2                                 10      foreach my $opt ( @opts ) {
+82             2                                 13      foreach my $opt ( @opts ) {
 83             1                                  2         MKDEBUG && _d('Adding extra property', $opt->{key});
-84             1                                  9         $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+84             1                                  8         $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
 85                                                       }
-86             2                                 24      return bless $self, $class;
+86             2                                 25      return bless $self, $class;
 87                                                    }
 88                                                    
 89                                                    # Recognized properties:
@@ -120,12 +120,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 91                                                    # * required:  which parts are required (hashref).
 92                                                    # * setvars:   a list of variables to set after connecting
 93                                                    sub prop {
-94            22                   22           100      my ( $self, $prop, $value ) = @_;
-95            22    100                          91      if ( @_ > 2 ) {
+94            22                   22           113      my ( $self, $prop, $value ) = @_;
+95            22    100                          96      if ( @_ > 2 ) {
 96             4                                  9         MKDEBUG && _d('Setting', $prop, 'property');
-97             4                                 15         $self->{$prop} = $value;
+97             4                                 17         $self->{$prop} = $value;
 98                                                       }
-99            22                                128      return $self->{$prop};
+99            22                                130      return $self->{$prop};
 100                                                   }
 101                                                   
 102                                                   # Parse DSN string, like "h=host,P=3306", and return hashref with
@@ -142,72 +142,72 @@ line  err   stmt   bran   cond    sub    pod   time   code
 113                                                   #       A => undef,
 114                                                   #    }
 115                                                   sub parse {
-116           14                   14            82      my ( $self, $dsn, $prev, $defaults ) = @_;
-117   ***     14     50                          59      if ( !$dsn ) {
+116           14                   14            88      my ( $self, $dsn, $prev, $defaults ) = @_;
+117   ***     14     50                          60      if ( !$dsn ) {
 118   ***      0                                  0         MKDEBUG && _d('No DSN to parse');
 119   ***      0                                  0         return;
 120                                                      }
-121           14                                 31      MKDEBUG && _d('Parsing', $dsn);
-122           14           100                   60      $prev     ||= {};
-123           14           100                   51      $defaults ||= {};
-124           14                                 30      my %given_props;
-125           14                                 36      my %final_props;
-126           14                                 35      my %opts = %{$self->{opts}};
-              14                                138   
+121           14                                 30      MKDEBUG && _d('Parsing', $dsn);
+122           14           100                   62      $prev     ||= {};
+123           14           100                   56      $defaults ||= {};
+124           14                                 35      my %given_props;
+125           14                                 31      my %final_props;
+126           14                                 36      my %opts = %{$self->{opts}};
+              14                                131   
 127                                                   
 128                                                      # Parse given props
-129           14                                 96      foreach my $dsn_part ( split(/,/, $dsn) ) {
-130           28    100                         198         if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
+129           14                                104      foreach my $dsn_part ( split(/,/, $dsn) ) {
+130           28    100                         217         if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
 131                                                            # Handle the typical DSN parts like h=host, P=3306, etc.
-132           25                                117            $given_props{$prop_key} = $prop_val;
+132           25                                123            $given_props{$prop_key} = $prop_val;
 133                                                         }
 134                                                         else {
 135                                                            # Handle barewords
 136            3                                  6            MKDEBUG && _d('Interpreting', $dsn_part, 'as h=', $dsn_part);
-137            3                                 13            $given_props{h} = $dsn_part;
+137            3                                 15            $given_props{h} = $dsn_part;
 138                                                         }
 139                                                      }
 140                                                   
 141                                                      # Fill in final props from given, previous, and/or default props
-142           14                                 67      foreach my $key ( keys %opts ) {
-143          124                                252         MKDEBUG && _d('Finding value for', $key);
-144          124                                388         $final_props{$key} = $given_props{$key};
-145          124    100    100                 1060         if (   !defined $final_props{$key}
+142           14                                 68      foreach my $key ( keys %opts ) {
+143          124                                254         MKDEBUG && _d('Finding value for', $key);
+144          124                                395         $final_props{$key} = $given_props{$key};
+145          124    100    100                 1059         if (   !defined $final_props{$key}
       ***                   66                        
 146                                                              && defined $prev->{$key} && $opts{$key}->{copy} )
 147                                                         {
-148           10                                 37            $final_props{$key} = $prev->{$key};
-149           10                                 21            MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
+148           10                                 32            $final_props{$key} = $prev->{$key};
+149           10                                 22            MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
 150                                                         }
-151          124    100                         489         if ( !defined $final_props{$key} ) {
-152           87                                267            $final_props{$key} = $defaults->{$key};
-153           87                                223            MKDEBUG && _d('Copying value for', $key, 'from defaults');
+151          124    100                         487         if ( !defined $final_props{$key} ) {
+152           87                                275            $final_props{$key} = $defaults->{$key};
+153           87                                233            MKDEBUG && _d('Copying value for', $key, 'from defaults');
 154                                                         }
 155                                                      }
 156                                                   
 157                                                      # Sanity check props
-158           14                                 68      foreach my $key ( keys %given_props ) {
-159           27    100                         115         die "Unrecognized DSN part '$key' in '$dsn'\n"
+158           14                                 67      foreach my $key ( keys %given_props ) {
+159           27    100                         116         die "Unrecognized DSN part '$key' in '$dsn'\n"
 160                                                            unless exists $opts{$key};
 161                                                      }
-162           13    100                          56      if ( (my $required = $self->prop('required')) ) {
-163            2                                  9         foreach my $key ( keys %$required ) {
-164            2    100                           8            die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
+162           13    100                          58      if ( (my $required = $self->prop('required')) ) {
+163            2                                 10         foreach my $key ( keys %$required ) {
+164            2    100                           9            die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
 165                                                         }
 166                                                      }
 167                                                   
-168           12                                131      return \%final_props;
+168           12                                141      return \%final_props;
 169                                                   }
 170                                                   
 171                                                   # Like parse() above but takes an OptionParser object instead of
 172                                                   # a DSN string.
 173                                                   sub parse_options {
-174            1                    1            10      my ( $self, $o ) = @_;
+174            1                    1            11      my ( $self, $o ) = @_;
 175   ***      1     50                           6      die 'I need an OptionParser object' unless ref $o eq 'OptionParser';
 176            2                                  9      my $dsn_string
 177                                                         = join(',',
-178            9    100                          31             map  { "$_=".$o->get($_); }
-179            1                                  6             grep { $o->has($_) && $o->get($_) }
+178            9    100                          35             map  { "$_=".$o->get($_); }
+179            1                                  7             grep { $o->has($_) && $o->get($_) }
 180            1                                  3             keys %{$self->{opts}}
 181                                                           );
 182            1                                  4      MKDEBUG && _d('DSN string made from options:', $dsn_string);
@@ -215,68 +215,68 @@ line  err   stmt   bran   cond    sub    pod   time   code
 184                                                   }
 185                                                   
 186                                                   sub as_string {
-187            3                    3            12      my ( $self, $dsn ) = @_;
-188            3    100                          16      return $dsn unless ref $dsn;
-189            6    100                          46      return join(',',
-190           11    100                          80         map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
-191            2                                 17         grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+187            3                    3            11      my ( $self, $dsn ) = @_;
+188            3    100                          18      return $dsn unless ref $dsn;
+189            6    100                          42      return join(',',
+190           11    100                          90         map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+191            2                                 21         grep { defined $dsn->{$_} && $self->{opts}->{$_} }
 192                                                         sort keys %$dsn );
 193                                                   }
 194                                                   
 195                                                   sub usage {
 196            2                    2             9      my ( $self ) = @_;
-197            2                                  7      my $usage
+197            2                                  8      my $usage
 198                                                         = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n\n"
 199                                                         . "  KEY  COPY  MEANING\n"
 200                                                         . "  ===  ====  =============================================\n";
 201            2                                  6      my %opts = %{$self->{opts}};
-               2                                 16   
-202            2                                 20      foreach my $key ( sort keys %opts ) {
-203           18    100    100                  149         $usage .= "  $key    "
+               2                                 19   
+202            2                                 24      foreach my $key ( sort keys %opts ) {
+203           18    100    100                  158         $usage .= "  $key    "
 204                                                                .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
 205                                                                .  ($opts{$key}->{desc} || '[No description]')
 206                                                                . "\n";
 207                                                      }
 208            2                                  7      $usage .= "\n  If the DSN is a bareword, the word is treated as the 'h' key.\n";
-209            2                                 13      return $usage;
+209            2                                 16      return $usage;
 210                                                   }
 211                                                   
 212                                                   # Supports PostgreSQL via the dbidriver element of $info, but assumes MySQL by
 213                                                   # default.
 214                                                   sub get_cxn_params {
-215            4                    4            33      my ( $self, $info ) = @_;
-216            4                                  9      my $dsn;
-217            4                                 12      my %opts = %{$self->{opts}};
+215            4                    4            34      my ( $self, $info ) = @_;
+216            4                                 14      my $dsn;
+217            4                                 10      my %opts = %{$self->{opts}};
                4                                 36   
-218            4           100                   22      my $driver = $self->prop('dbidriver') || '';
-219            4    100                          16      if ( $driver eq 'Pg' ) {
+218            4           100                   20      my $driver = $self->prop('dbidriver') || '';
+219            4    100                          17      if ( $driver eq 'Pg' ) {
 220            1                                  9         $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
 221            2                                  9            . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
-222   ***      1            50                    9                        grep { defined $info->{$_} }
+222   ***      1            50                    8                        grep { defined $info->{$_} }
 223                                                                        qw(h P));
 224                                                      }
 225                                                      else {
-226            8                                 44         $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-227           15                                 54            . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
-228            3           100                   24                        grep { defined $info->{$_} }
+226            8                                 46         $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+227           15                                 52            . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+228            3           100                   27                        grep { defined $info->{$_} }
 229                                                                        qw(F h P S A))
 230                                                            . ';mysql_read_default_group=client';
 231                                                      }
-232            4                                 12      MKDEBUG && _d($dsn);
-233            4                                 40      return ($dsn, $info->{u}, $info->{p});
+232            4                                 13      MKDEBUG && _d($dsn);
+233            4                                 48      return ($dsn, $info->{u}, $info->{p});
 234                                                   }
 235                                                   
 236                                                   # Fills in missing info from a DSN after successfully connecting to the server.
 237                                                   sub fill_in_dsn {
 238            1                    1            18      my ( $self, $dbh, $dsn ) = @_;
 239            1                                  3      my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
-240            1                                  2      my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
-241            1                                237      $user =~ s/@.*//;
-242   ***      1            50                    6      $dsn->{h} ||= $vars->{hostname}->{Value};
-243   ***      1            50                    8      $dsn->{S} ||= $vars->{'socket'}->{Value};
-244   ***      1            50                   40      $dsn->{P} ||= $vars->{port}->{Value};
+240            1                                  3      my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+241            1                                485      $user =~ s/@.*//;
+242   ***      1            50                    7      $dsn->{h} ||= $vars->{hostname}->{Value};
+243   ***      1            50                    7      $dsn->{S} ||= $vars->{'socket'}->{Value};
+244   ***      1            50                   49      $dsn->{P} ||= $vars->{port}->{Value};
 245   ***      1            50                    6      $dsn->{u} ||= $user;
-246   ***      1            50                  116      $dsn->{D} ||= $db;
+246   ***      1            50                  125      $dsn->{D} ||= $db;
 247                                                   }
 248                                                   
 249                                                   # Actually opens a connection, then sets some things on the connection so it is
@@ -285,42 +285,42 @@ line  err   stmt   bran   cond    sub    pod   time   code
 252                                                   sub get_dbh {
 253            1                    1             6      my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
 254   ***      1            50                    5      $opts ||= {};
-255   ***      1     50                          16      my $defaults = {
+255   ***      1     50                          11      my $defaults = {
 256                                                         AutoCommit         => 0,
 257                                                         RaiseError         => 1,
 258                                                         PrintError         => 0,
 259                                                         ShowErrorStatement => 1,
 260                                                         mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
 261                                                      };
-262            1                                  5      @{$defaults}{ keys %$opts } = values %$opts;
-               1                                  4   
+262            1                                 11      @{$defaults}{ keys %$opts } = values %$opts;
+               1                                  3   
 263                                                   
 264                                                      # Try twice to open the $dbh and set it up as desired.
 265            1                                  2      my $dbh;
-266            1                                  3      my $tries = 2;
-267   ***      1            66                   15      while ( !$dbh && $tries-- ) {
+266            1                                  4      my $tries = 2;
+267   ***      1            66                   10      while ( !$dbh && $tries-- ) {
 268                                                         MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
-269            1                                  2            join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+269            1                                  3            join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
 270                                                   
-271            1                                  3         eval {
+271            1                                  2         eval {
 272            1                                  8            $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
 273                                                   
 274                                                            # If it's a MySQL connection, set some options.
-275   ***      1     50                          12            if ( $cxn_string =~ m/mysql/i ) {
+275   ***      1     50                          13            if ( $cxn_string =~ m/mysql/i ) {
 276            1                                  3               my $sql;
 277                                                   
 278                                                               # Set SQL_MODE and options for SHOW CREATE TABLE.
-279            1                                  3               $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
+279            1                                  4               $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
 280                                                                    . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
 281            1                                  2               MKDEBUG && _d($dbh, ':', $sql);
-282            1                                143               $dbh->do($sql);
+282            1                                135               $dbh->do($sql);
 283                                                   
 284                                                               # Set character set and binmode on STDOUT.
-285   ***      1     50                          19               if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+285   ***      1     50                          16               if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
 286            1                                  5                  $sql = "/*!40101 SET NAMES $charset*/";
 287            1                                  3                  MKDEBUG && _d($dbh, ':', $sql);
-288            1                                116                  $dbh->do($sql);
-289            1                                  3                  MKDEBUG && _d('Enabling charset for STDOUT');
+288            1                                 97                  $dbh->do($sql);
+289            1                                  4                  MKDEBUG && _d('Enabling charset for STDOUT');
 290   ***      1     50                          18                  if ( $charset eq 'utf8' ) {
 291   ***      1     50                          20                     binmode(STDOUT, ':utf8')
 292                                                                        or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
@@ -330,7 +330,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 296                                                                  }
 297                                                               }
 298                                                   
-299   ***      1     50                           8               if ( $self->prop('setvars') ) {
+299   ***      1     50                           7               if ( $self->prop('setvars') ) {
 300   ***      0                                  0                  $sql = "SET " . $self->prop('setvars');
 301   ***      0                                  0                  MKDEBUG && _d($dbh, ':', $sql);
 302   ***      0                                  0                  $dbh->do($sql);
@@ -360,7 +360,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 326                                                         '$DBI::VERSION:',        $DBI::VERSION,
 327                                                      );
 328                                                   
-329            1                                  6      return $dbh;
+329            1                                  7      return $dbh;
 330                                                   }
 331                                                   
 332                                                   # Tries to figure out a hostname for the connection.
@@ -402,19 +402,19 @@ line  err   stmt   bran   cond    sub    pod   time   code
 364                                                   # val.
 365                                                   sub copy {
 366            2                    2            11      my ( $self, $dsn_1, $dsn_2, %args ) = @_;
-367   ***      2     50                           8      die 'I need a dsn_1 argument' unless $dsn_1;
-368   ***      2     50                           8      die 'I need a dsn_2 argument' unless $dsn_2;
-369           18                                 46      my %new_dsn = map {
-370            2                                 12         my $key = $_;
-371           18                                 39         my $val;
-372           18    100                          59         if ( $args{overwrite} ) {
-373            9    100                          39            $val = defined $dsn_1->{$key} ? $dsn_1->{$key} : $dsn_2->{$key};
+367   ***      2     50                           9      die 'I need a dsn_1 argument' unless $dsn_1;
+368   ***      2     50                           9      die 'I need a dsn_2 argument' unless $dsn_2;
+369           18                                 42      my %new_dsn = map {
+370            2                                 13         my $key = $_;
+371           18                                 44         my $val;
+372           18    100                          57         if ( $args{overwrite} ) {
+373            9    100                          42            $val = defined $dsn_1->{$key} ? $dsn_1->{$key} : $dsn_2->{$key};
 374                                                         }
 375                                                         else {
-376            9    100                          38            $val = defined $dsn_2->{$key} ? $dsn_2->{$key} : $dsn_1->{$key};
+376            9    100                          41            $val = defined $dsn_2->{$key} ? $dsn_2->{$key} : $dsn_1->{$key};
 377                                                         }
-378           18                                 77         $key => $val;
-379            2                                 11      } keys %{$self->{opts}};
+378           18                                 78         $key => $val;
+379            2                                  5      } keys %{$self->{opts}};
 380            2                                 28      return \%new_dsn;
 381                                                   }
 382                                                   

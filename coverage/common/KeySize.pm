@@ -9,8 +9,8 @@ Total                          95.1   81.8   66.7  100.0    n/a  100.0   91.8
 Run:          KeySize.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:51:55 2009
-Finish:       Fri Jul 31 18:51:56 2009
+Start:        Sat Aug 29 15:02:01 2009
+Finish:       Sat Aug 29 15:02:02 2009
 
 /home/daniel/dev/maatkit/common/KeySize.pm
 
@@ -38,25 +38,25 @@ line  err   stmt   bran   cond    sub    pod   time   code
 21                                                    
 22             1                    1             8   use strict;
                1                                  2   
-               1                                  6   
+               1                                  7   
 23             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
-               1                                  8   
+               1                                  9   
 24             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
-               1                                 10   
+               1                                  7   
 25             1                    1            10   use DBI;
-               1                                  4   
-               1                                 10   
+               1                                  5   
+               1                                 12   
 26                                                    
-27             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
+27             1                    1             9   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
-               1                                 10   
+               1                                 66   
 28                                                    
 29                                                    sub new {
 30             1                    1            15      my ( $class, %args ) = @_;
-31             1                                 11      my $self = { %args };
-32             1                                 13      return bless $self, $class;
+31             1                                  6      my $self = { %args };
+32             1                                 12      return bless $self, $class;
 33                                                    }
 34                                                    
 35                                                    # Returns the key's size in scalar context; returns the key's size
@@ -74,26 +74,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 47                                                    # is returned and you can get the last error, query and EXPLAIN with
 48                                                    # error(), query() and explain().
 49                                                    sub get_key_size {
-50             6                    6           101      my ( $self, %args ) = @_;
-51             6                                 40      foreach my $arg ( qw(name cols tbl_name tbl_struct dbh) ) {
-52    ***     30     50                         135         die "I need a $arg argument" unless $args{$arg};
+50             6                    6            99      my ( $self, %args ) = @_;
+51             6                                 64      foreach my $arg ( qw(name cols tbl_name tbl_struct dbh) ) {
+52    ***     30     50                         134         die "I need a $arg argument" unless $args{$arg};
 53                                                       }
-54             6                                 24      my $name = $args{name};
-55             6                                 22      my @cols = @{$args{cols}};
-               6                                 37   
-56             6                                 22      my $dbh  = $args{dbh};
+54             6                                 26      my $name = $args{name};
+55             6                                 20      my @cols = @{$args{cols}};
+               6                                 34   
+56             6                                 24      my $dbh  = $args{dbh};
 57                                                    
-58             6                                 25      $self->{explain} = '';
-59             6                                 65      $self->{query}   = '';
-60             6                                 26      $self->{error}   = '';
+58             6                                 29      $self->{explain} = '';
+59             6                                 60      $self->{query}   = '';
+60             6                                 24      $self->{error}   = '';
 61                                                    
-62    ***      6     50                          27      if ( @cols == 0 ) {
+62    ***      6     50                          34      if ( @cols == 0 ) {
 63    ***      0                                  0         $self->{error} = "No columns for key $name";
 64    ***      0                                  0         return;
 65                                                       }
 66                                                    
-67             6                                 40      my $key_exists = $self->_key_exists(%args);
-68             6                                 16      MKDEBUG && _d('Key', $name, 'exists in', $args{tbl_name}, ':',
+67             6                                 45      my $key_exists = $self->_key_exists(%args);
+68             6                                 19      MKDEBUG && _d('Key', $name, 'exists in', $args{tbl_name}, ':',
 69                                                          $key_exists ? 'yes': 'no');
 70                                                    
 71                                                       # Construct a SQL statement with WHERE conditions on all key
@@ -104,96 +104,96 @@ line  err   stmt   bran   cond    sub    pod   time   code
 76                                                       # For 2), we have to break normal index usage which normally
 77                                                       # allows MySQL to access only the limited number of rows needed
 78                                                       # to satisify the query because we want to know total table rows.
-79             6    100                          54      my $sql = 'EXPLAIN SELECT ' . join(', ', @cols)
+79             6    100                          55      my $sql = 'EXPLAIN SELECT ' . join(', ', @cols)
 80                                                               . ' FROM ' . $args{tbl_name}
 81                                                               . ($key_exists ? " FORCE INDEX (`$name`)" : '')
 82                                                               . ' WHERE ';
 83             6                                 16      my @where_cols;
-84             6                                 21      foreach my $col ( @cols ) {
-85             8                                 37         push @where_cols, "$col=1";
+84             6                                 22      foreach my $col ( @cols ) {
+85             8                                 36         push @where_cols, "$col=1";
 86                                                       }
 87                                                       # For single column indexes we have to trick MySQL into scanning
 88                                                       # the whole index by giving it two irreducible condtions. Otherwise,
 89                                                       # EXPLAIN rows will report only the rows that satisfy the query
 90                                                       # using the key, but this is not what we want. We want total table rows.
 91                                                       # In other words, we need an EXPLAIN type index, not ref or range.
-92             6    100                          31      if ( scalar @cols == 1 ) {
-93             4                                 17         push @where_cols, "$cols[0]<>1";
+92             6    100                          27      if ( scalar @cols == 1 ) {
+93             4                                 19         push @where_cols, "$cols[0]<>1";
 94                                                       }
-95             6                                 26      $sql .= join(' OR ', @where_cols);
-96             6                                 21      $self->{query} = $sql;
-97             6                                 18      MKDEBUG && _d('sql:', $sql);
+95             6                                 24      $sql .= join(' OR ', @where_cols);
+96             6                                 36      $self->{query} = $sql;
+97             6                                 17      MKDEBUG && _d('sql:', $sql);
 98                                                    
 99             6                                 15      my $explain;
 100            6                                 15      my $sth = $dbh->prepare($sql);
-101            6                                 35      eval { $sth->execute(); };
-               6                               2040   
-102   ***      6     50                          31      if ( $EVAL_ERROR ) {
+101            6                                 36      eval { $sth->execute(); };
+               6                               4740   
+102   ***      6     50                          35      if ( $EVAL_ERROR ) {
 103   ***      0                                  0         $self->{error} = "Cannot get size of $name key: $DBI::errstr";
 104   ***      0                                  0         return;
 105                                                      }
-106            6                                104      $explain = $sth->fetchrow_hashref();
+106            6                                128      $explain = $sth->fetchrow_hashref();
 107                                                   
-108            6                                171      $self->{explain} = $explain;
-109            6                                 23      my $key_len      = $explain->{key_len};
-110            6                                 23      my $rows         = $explain->{rows};
-111            6                                 24      my $chosen_key   = $explain->{key};  # May differ from $name
-112            6                                 13      MKDEBUG && _d('MySQL chose key:', $chosen_key, 'len:', $key_len,
+108            6                                173      $self->{explain} = $explain;
+109            6                                 27      my $key_len      = $explain->{key_len};
+110            6                                 18      my $rows         = $explain->{rows};
+111            6                                 25      my $chosen_key   = $explain->{key};  # May differ from $name
+112            6                                 12      MKDEBUG && _d('MySQL chose key:', $chosen_key, 'len:', $key_len,
 113                                                         'rows:', $rows);
 114                                                   
-115            6                                 19      my $key_size = 0;
-116   ***      6    100     66                   65      if ( $key_len && $rows ) {
-117   ***      5    100     66                   48         if ( $chosen_key =~ m/,/ && $key_len =~ m/,/ ) {
-118            1                                  7            $self->{error} = "MySQL chose multiple keys: $chosen_key";
-119            1                                 24            return;
+115            6                                 18      my $key_size = 0;
+116   ***      6    100     66                   67      if ( $key_len && $rows ) {
+117   ***      5    100     66                   51         if ( $chosen_key =~ m/,/ && $key_len =~ m/,/ ) {
+118            1                                  6            $self->{error} = "MySQL chose multiple keys: $chosen_key";
+119            1                                 28            return;
 120                                                         }
-121            4                                 27         $key_size = $key_len * $rows;
+121            4                                 21         $key_size = $key_len * $rows;
 122                                                      }
 123                                                      else {
 124            1                                  7         $self->{error} = "key_len or rows NULL in EXPLAIN:\n"
 125                                                                        . _explain_to_text($explain);
-126            1                                 47         return;
+126            1                                 45         return;
 127                                                      }
 128                                                   
-129            4    100                         109      return wantarray ? ($key_size, $chosen_key) : $key_size;
+129            4    100                         119      return wantarray ? ($key_size, $chosen_key) : $key_size;
 130                                                   }
 131                                                   
 132                                                   # Returns the last explained query.
 133                                                   sub query {
-134            2                    2            11      my ( $self ) = @_;
-135            2                                 13      return $self->{query};
+134            2                    2             8      my ( $self ) = @_;
+135            2                                 14      return $self->{query};
 136                                                   }
 137                                                   
 138                                                   # Returns the last explain plan.
 139                                                   sub explain {
-140            1                    1             4      my ( $self ) = @_;
-141            1                                  9      return _explain_to_text($self->{explain});
+140            1                    1             5      my ( $self ) = @_;
+141            1                                 11      return _explain_to_text($self->{explain});
 142                                                   }
 143                                                   
 144                                                   # Returns the last error.
 145                                                   sub error {
-146            2                    2            19      my ( $self ) = @_;
-147            2                                 12      return $self->{error};
+146            2                    2            23      my ( $self ) = @_;
+147            2                                 17      return $self->{error};
 148                                                   }
 149                                                   
 150                                                   sub _key_exists {
 151            7                    7           105      my ( $self, %args ) = @_;
-152            7    100                          94      return exists $args{tbl_struct}->{keys}->{ lc $args{name} } ? 1 : 0;
+152            7    100                          88      return exists $args{tbl_struct}->{keys}->{ lc $args{name} } ? 1 : 0;
 153                                                   }
 154                                                   
 155                                                   sub _explain_to_text {
 156            2                    2             9      my ( $explain ) = @_;
-157           20    100                         146      return join("\n",
+157           20    100                         113      return join("\n",
 158            2                                 30         map { "$_: ".($explain->{$_} ? $explain->{$_} : 'NULL') }
 159                                                         sort keys %$explain
 160                                                      );
 161                                                   }
 162                                                   
 163                                                   sub _d {
-164            1                    1            25      my ($package, undef, $line) = caller 0;
-165   ***      2     50                          10      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-               2                                  9   
-               2                                 10   
+164            1                    1            27      my ($package, undef, $line) = caller 0;
+165   ***      2     50                          11      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+               2                                  7   
+               2                                 11   
 166            1                                  5           map { defined $_ ? $_ : 'undef' }
 167                                                           @_;
 168            1                                  3      print STDERR "# $package:$line $PID ", join(' ', @_), "\n";

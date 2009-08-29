@@ -9,8 +9,8 @@ Total                          85.0   56.9   50.0   91.2    n/a  100.0   74.0
 Run:          MasterSlave.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:52:16 2009
-Finish:       Fri Jul 31 18:52:41 2009
+Start:        Sat Aug 29 15:02:32 2009
+Finish:       Sat Aug 29 15:02:58 2009
 
 /home/daniel/dev/maatkit/common/MasterSlave.pm
 
@@ -34,12 +34,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 17                                                    # ###########################################################################
 18                                                    # MasterSlave package $Revision: 4182 $
 19                                                    # ###########################################################################
-20             1                    1             9   use strict;
-               1                                  2   
-               1                                  7   
-21             1                    1           107   use warnings FATAL => 'all';
+20             1                    1             7   use strict;
                1                                  3   
-               1                                  8   
+               1                                  6   
+21             1                    1           120   use warnings FATAL => 'all';
+               1                                  3   
+               1                                  9   
 22                                                    
 23                                                    package MasterSlave;
 24                                                    
@@ -48,7 +48,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
                1                                  7   
 26             1                    1             7   use List::Util qw(min max);
                1                                  2   
-               1                                 10   
+               1                                 11   
 27             1                    1             6   use Data::Dumper;
                1                                  2   
                1                                  8   
@@ -60,7 +60,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
                1                                 11   
 32                                                    
 33                                                    sub new {
-34             1                    1            24      bless {}, shift;
+34             1                    1            28      bless {}, shift;
 35                                                    }
 36                                                    
 37                                                    # Descends to slaves by examining SHOW SLAVE HOSTS.  Arguments is a hashref:
@@ -77,18 +77,18 @@ line  err   stmt   bran   cond    sub    pod   time   code
 48                                                    # The callback gets the slave's DSN, dbh, parent, and the recursion level as args.
 49                                                    # The recursion is tail recursion.
 50                                                    sub recurse_to_slaves {
-51             4                    4            77      my ( $self, $args, $level ) = @_;
+51             4                    4            84      my ( $self, $args, $level ) = @_;
 52             4           100                   19      $level ||= 0;
 53             4                                 17      my $dp   = $args->{dsn_parser};
-54             4                                 16      my $dsn  = $args->{dsn};
+54             4                                 12      my $dsn  = $args->{dsn};
 55                                                    
-56             4                                 10      my $dbh;
-57             4                                 14      eval {
+56             4                                 14      my $dbh;
+57             4                                 12      eval {
 58    ***      4            66                   32         $dbh = $args->{dbh} || $dp->get_dbh(
 59                                                             $dp->get_cxn_params($dsn), { AutoCommit => 1 });
-60             4                                 15         MKDEBUG && _d('Connected to', $dp->as_string($dsn));
+60             4                                 16         MKDEBUG && _d('Connected to', $dp->as_string($dsn));
 61                                                       };
-62    ***      4     50                          19      if ( $EVAL_ERROR ) {
+62    ***      4     50                          16      if ( $EVAL_ERROR ) {
 63    ***      0      0                           0         print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n"
 64                                                             or die "Cannot print: $OS_ERROR";
 65    ***      0                                  0         return;
@@ -97,12 +97,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 68                                                       # SHOW SLAVE HOSTS sometimes has obsolete information.  Verify that this
 69                                                       # server has the ID its master thought, and that we have not seen it before
 70                                                       # in any case.
-71             4                                 12      my $sql  = 'SELECT @@SERVER_ID';
-72             4                                 10      MKDEBUG && _d($sql);
-73             4                                 12      my ($id) = $dbh->selectrow_array($sql);
-74             4                                611      MKDEBUG && _d('Working on server ID', $id);
-75             4                                 20      my $master_thinks_i_am = $dsn->{server_id};
-76    ***      4     50     66                   95      if ( !defined $id
+71             4                                 15      my $sql  = 'SELECT @@SERVER_ID';
+72             4                                  9      MKDEBUG && _d($sql);
+73             4                                 11      my ($id) = $dbh->selectrow_array($sql);
+74             4                                577      MKDEBUG && _d('Working on server ID', $id);
+75             4                                 21      my $master_thinks_i_am = $dsn->{server_id};
+76    ***      4     50     66                  102      if ( !defined $id
       ***                   33                        
       ***                   33                        
 77                                                           || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
@@ -116,20 +116,20 @@ line  err   stmt   bran   cond    sub    pod   time   code
 85                                                       }
 86                                                    
 87                                                       # Call the callback!
-88             4                                 29      $args->{callback}->($dsn, $dbh, $level, $args->{parent});
+88             4                                 36      $args->{callback}->($dsn, $dbh, $level, $args->{parent});
 89                                                    
-90    ***      4    100     66                  145      if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
+90    ***      4    100     66                   71      if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
 91                                                    
 92                                                          # Find the slave hosts.  Eliminate hosts that aren't slaves of me (as
 93                                                          # revealed by server_id and master_id).
-94    ***      3     50                          65         my @slaves =
-95             3                                 33            grep { !$_->{master_id} || $_->{master_id} == $id } # Only my slaves.
+94    ***      3     50                          38         my @slaves =
+95             3                                 31            grep { !$_->{master_id} || $_->{master_id} == $id } # Only my slaves.
 96                                                             $self->find_slave_hosts($dp, $dbh, $dsn, $args->{method});
 97                                                    
-98             3                                 20         foreach my $slave ( @slaves ) {
+98             3                                 21         foreach my $slave ( @slaves ) {
 99             3                                  7            MKDEBUG && _d('Recursing from',
 100                                                               $dp->as_string($dsn), 'to', $dp->as_string($slave));
-101            3                                 61            $self->recurse_to_slaves(
+101            3                                 57            $self->recurse_to_slaves(
 102                                                               { %$args, dsn => $slave, dbh => undef, parent => $dsn }, $level + 1 );
 103                                                         }
 104                                                      }
@@ -151,7 +151,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 120            3                    3            18      my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
 121                                                   
 122            3                                 14      my @methods = qw(processlist hosts);
-123   ***      3     50                          12      if ( $method ) {
+123   ***      3     50                          15      if ( $method ) {
 124                                                         # Remove all but the given method.
 125   ***      0                                  0         @methods = grep { $_ ne $method } @methods;
       ***      0                                  0   
@@ -159,25 +159,25 @@ line  err   stmt   bran   cond    sub    pod   time   code
 127   ***      0                                  0         unshift @methods, $method;
 128                                                      }
 129                                                      else {
-130   ***      3     50     50                   22         if ( ($dsn->{P} || 3306) != 3306 ) {
+130   ***      3     50     50                  108         if ( ($dsn->{P} || 3306) != 3306 ) {
 131            3                                  6            MKDEBUG && _d('Port number is non-standard; using only hosts method');
-132            3                                 12            @methods = qw(hosts);
+132            3                                 13            @methods = qw(hosts);
 133                                                         }
 134                                                      }
 135            3                                  7      MKDEBUG && _d('Looking for slaves on', $dsn_parser->as_string($dsn),
 136                                                         'using methods', @methods);
 137                                                   
-138            3                                  8      my @slaves;
+138            3                                  6      my @slaves;
 139                                                      METHOD:
-140            3                                 16      foreach my $method ( @methods ) {
-141            3                                 10         my $find_slaves = "_find_slaves_by_$method";
-142            3                                  6         MKDEBUG && _d('Finding slaves with', $find_slaves);
+140            3                                 15      foreach my $method ( @methods ) {
+141            3                                 11         my $find_slaves = "_find_slaves_by_$method";
+142            3                                  7         MKDEBUG && _d('Finding slaves with', $find_slaves);
 143            3                                 20         @slaves = $self->$find_slaves($dsn_parser, $dbh, $dsn);
-144            3    100                          21         last METHOD if @slaves;
+144            3    100                          16         last METHOD if @slaves;
 145                                                      }
 146                                                   
-147            3                                  7      MKDEBUG && _d('Found', scalar(@slaves), 'slaves');
-148            3                                 12      return @slaves;
+147            3                                  6      MKDEBUG && _d('Found', scalar(@slaves), 'slaves');
+148            3                                 13      return @slaves;
 149                                                   }
 150                                                   
 151                                                   sub _find_slaves_by_processlist {
@@ -208,32 +208,32 @@ line  err   stmt   bran   cond    sub    pod   time   code
 176                                                   sub _find_slaves_by_hosts {
 177            3                    3            13      my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
 178                                                   
-179            3                                  8      my @slaves;
+179            3                                  9      my @slaves;
 180            3                                  9      my $sql = 'SHOW SLAVE HOSTS';
-181            3                                  7      MKDEBUG && _d($dbh, $sql);
-182            3                                  9      @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
-               3                                 77   
+181            3                                  6      MKDEBUG && _d($dbh, $sql);
+182            3                                  8      @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+               3                                 58   
 183                                                   
 184                                                      # Convert SHOW SLAVE HOSTS into DSN hashes.
-185            3    100                          27      if ( @slaves ) {
+185            3    100                          30      if ( @slaves ) {
 186            2                                  5         MKDEBUG && _d('Found some SHOW SLAVE HOSTS info');
 187            3                                  8         @slaves = map {
-188            2                                  7            my %hash;
+188            2                                  8            my %hash;
 189            3                                 19            @hash{ map { lc $_ } keys %$_ } = values %$_;
-              15                                 60   
-190   ***      3     50                          39            my $spec = "h=$hash{host},P=$hash{port}"
+              15                                 64   
+190   ***      3     50                          47            my $spec = "h=$hash{host},P=$hash{port}"
       ***            50                               
 191                                                               . ( $hash{user} ? ",u=$hash{user}" : '')
 192                                                               . ( $hash{password} ? ",p=$hash{password}" : '');
-193            3                                 15            my $dsn           = $dsn_parser->parse($spec, $dsn);
-194            3                                 13            $dsn->{server_id} = $hash{server_id};
-195            3                                 12            $dsn->{master_id} = $hash{master_id};
-196            3                                 10            $dsn->{source}    = 'hosts';
+193            3                                 17            my $dsn           = $dsn_parser->parse($spec, $dsn);
+194            3                                 16            $dsn->{server_id} = $hash{server_id};
+195            3                                 11            $dsn->{master_id} = $hash{master_id};
+196            3                                  9            $dsn->{source}    = 'hosts';
 197            3                                 17            $dsn;
 198                                                         } @slaves;
 199                                                      }
 200                                                   
-201            3                                 13      return @slaves;
+201            3                                 16      return @slaves;
 202                                                   }
 203                                                   
 204                                                   # Returns PROCESSLIST entries of connected slaves, normalized to lowercase
@@ -242,8 +242,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 207            3                    3            13      my ( $self, $dbh ) = @_;
 208                                                   
 209                                                      # Check for the PROCESS privilege.
-210            3                                 50      my $proc =
-211            3                                  7         grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
+210            3                                 54      my $proc =
+211            3                                  9         grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
 212            3                                  9         @{$dbh->selectcol_arrayref('SHOW GRANTS')};
 213   ***      3     50                          15      if ( !$proc ) {
 214   ***      0                                  0         die "You do not have the PROCESS privilege";
@@ -252,36 +252,36 @@ line  err   stmt   bran   cond    sub    pod   time   code
 217            3                                 10      my $sql = 'SHOW PROCESSLIST';
 218            3                                  6      MKDEBUG && _d($dbh, $sql);
 219                                                      # It's probably a slave if it's doing a binlog dump.
-220           11                                 53      grep { $_->{command} =~ m/Binlog Dump/i }
+220           11                                 55      grep { $_->{command} =~ m/Binlog Dump/i }
               11                                 37   
 221                                                      map  { # Lowercase the column names
 222            3                                 19         my %hash;
-223           11                                 59         @hash{ map { lc $_ } keys %$_ } = values %$_;
-              88                                311   
-224           11                                 52         \%hash;
+223           11                                 63         @hash{ map { lc $_ } keys %$_ } = values %$_;
+              88                                309   
+224           11                                 53         \%hash;
 225                                                      }
-226            3                                  7      @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+226            3                                  9      @{$dbh->selectall_arrayref($sql, { Slice => {} })};
 227                                                   }
 228                                                   
 229                                                   # Verifies that $master is really the master of $slave.  This is not an exact
 230                                                   # science, but there is a decent chance of catching some obvious cases when it
 231                                                   # is not the master.  If not the master, it dies; otherwise returns true.
 232                                                   sub is_master_of {
-233            3                    3            26      my ( $self, $master, $slave ) = @_;
-234   ***      3     50                          18      my $master_status = $self->get_master_status($master)
+233            3                    3            30      my ( $self, $master, $slave ) = @_;
+234   ***      3     50                          16      my $master_status = $self->get_master_status($master)
 235                                                         or die "The server specified as a master is not a master";
 236   ***      3     50                          15      my $slave_status  = $self->get_slave_status($slave)
 237                                                         or die "The server specified as a slave is not a slave";
-238            3    100                          18      my @connected     = $self->get_connected_slaves($master)
+238            3    100                          22      my @connected     = $self->get_connected_slaves($master)
 239                                                         or die "The server specified as a master has no connected slaves";
 240            2                                  4      my (undef, $port) = $master->selectrow_array('SHOW VARIABLES LIKE "port"');
 241                                                   
-242            2    100                         506      if ( $port != $slave_status->{master_port} ) {
+242            2    100                         457      if ( $port != $slave_status->{master_port} ) {
 243            1                                  3         die "The slave is connected to $slave_status->{master_port} "
 244                                                            . "but the master's port is $port";
 245                                                      }
 246                                                   
-247   ***      1     50                           4      if ( !grep { $slave_status->{master_user} eq $_->{user} } @connected ) {
+247   ***      1     50                           5      if ( !grep { $slave_status->{master_user} eq $_->{user} } @connected ) {
                1                                  8   
 248   ***      0                                  0         die "I don't see any slave I/O thread connected with user "
 249                                                            . $slave_status->{master_user};
@@ -296,11 +296,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 258                                                         # thread positions instead of the SQL thread positions!
 259                                                         # Master_Log_File/Read_Master_Log_Pos is the I/O thread's position on the
 260                                                         # master.
-261            1                                 17         my ( $master_log_name, $master_log_num )
+261            1                                 18         my ( $master_log_name, $master_log_num )
 262                                                            = $master_status->{file} =~ m/^(.*?)\.0*([1-9][0-9]*)$/;
-263            1                                 10         my ( $slave_log_name, $slave_log_num )
+263            1                                 11         my ( $slave_log_name, $slave_log_num )
 264                                                            = $slave_status->{master_log_file} =~ m/^(.*?)\.0*([1-9][0-9]*)$/;
-265   ***      1     50     33                   18         if ( $master_log_name ne $slave_log_name
+265   ***      1     50     33                   17         if ( $master_log_name ne $slave_log_name
 266                                                            || abs($master_log_num - $slave_log_num) > 1 )
 267                                                         {
 268   ***      0                                  0            die "The slave thinks it is reading from "
@@ -308,7 +308,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 270                                                               . "master is writing to $master_status->{file}";
 271                                                         }
 272                                                      }
-273            1                                 18      return 1;
+273            1                                 21      return 1;
 274                                                   }
 275                                                   
 276                                                   # Figures out how to connect to the master, by examining SHOW SLAVE STATUS.  But
@@ -317,50 +317,50 @@ line  err   stmt   bran   cond    sub    pod   time   code
 279                                                   # program's --user option, or in a DSN), rather than as the replication user,
 280                                                   # which is often restricted.
 281                                                   sub get_master_dsn {
-282            8                    8            62      my ( $self, $dbh, $dsn, $dsn_parser ) = @_;
-283   ***      8     50                          44      my $master = $self->get_slave_status($dbh) or return undef;
-284            8                                 48      my $spec   = "h=$master->{master_host},P=$master->{master_port}";
-285            8                                 60      return       $dsn_parser->parse($spec, $dsn);
+282            8                    8            66      my ( $self, $dbh, $dsn, $dsn_parser ) = @_;
+283   ***      8     50                          45      my $master = $self->get_slave_status($dbh) or return undef;
+284            8                                 54      my $spec   = "h=$master->{master_host},P=$master->{master_port}";
+285            8                                 59      return       $dsn_parser->parse($spec, $dsn);
 286                                                   }
 287                                                   
 288                                                   # Gets SHOW SLAVE STATUS, with column names all lowercased, as a hashref.
 289                                                   sub get_slave_status {
-290           47                   47           249      my ( $self, $dbh ) = @_;
-291   ***     47     50                         431      if ( !$self->{not_a_slave}->{$dbh} ) {
-292   ***     47            66                  313         my $sth = $self->{sths}->{$dbh}->{SLAVE_STATUS}
+290           47                   47           263      my ( $self, $dbh ) = @_;
+291   ***     47     50                         455      if ( !$self->{not_a_slave}->{$dbh} ) {
+292   ***     47            66                  315         my $sth = $self->{sths}->{$dbh}->{SLAVE_STATUS}
 293                                                               ||= $dbh->prepare('SHOW SLAVE STATUS');
-294           47                                173         MKDEBUG && _d($dbh, 'SHOW SLAVE STATUS');
-295           47                             689869         $sth->execute();
-296           47                                183         my ($ss) = @{$sth->fetchall_arrayref({})};
-              47                                311   
+294           47                                140         MKDEBUG && _d($dbh, 'SHOW SLAVE STATUS');
+295           47                             501769         $sth->execute();
+296           47                                176         my ($ss) = @{$sth->fetchall_arrayref({})};
+              47                                323   
 297                                                   
-298   ***     47    100     66                  746         if ( $ss && %$ss ) {
-299           46                                398            $ss = { map { lc($_) => $ss->{$_} } keys %$ss }; # lowercase the keys
-            1518                               6569   
-300           46                                748            return $ss;
+298   ***     47    100     66                  769         if ( $ss && %$ss ) {
+299           46                                397            $ss = { map { lc($_) => $ss->{$_} } keys %$ss }; # lowercase the keys
+            1518                               6619   
+300           46                                786            return $ss;
 301                                                         }
 302                                                   
 303            1                                  4         MKDEBUG && _d('This server returns nothing for SHOW SLAVE STATUS');
-304            1                                 57         $self->{not_a_slave}->{$dbh}++;
+304            1                                 61         $self->{not_a_slave}->{$dbh}++;
 305                                                      }
 306                                                   }
 307                                                   
 308                                                   # Gets SHOW MASTER STATUS, with column names all lowercased, as a hashref.
 309                                                   sub get_master_status {
-310           16                   16            78      my ( $self, $dbh ) = @_;
-311   ***     16     50                         151      if ( !$self->{not_a_master}->{$dbh} ) {
-312   ***     16            66                   94         my $sth = $self->{sths}->{$dbh}->{MASTER_STATUS}
+310           16                   16            76      my ( $self, $dbh ) = @_;
+311   ***     16     50                         158      if ( !$self->{not_a_master}->{$dbh} ) {
+312   ***     16            66                   88         my $sth = $self->{sths}->{$dbh}->{MASTER_STATUS}
 313                                                               ||= $dbh->prepare('SHOW MASTER STATUS');
-314           16                                 74         MKDEBUG && _d($dbh, 'SHOW MASTER STATUS');
-315           16                               2710         $sth->execute();
+314           16                                 77         MKDEBUG && _d($dbh, 'SHOW MASTER STATUS');
+315           16                               4943         $sth->execute();
 316           16                                 55         my ($ms) = @{$sth->fetchall_arrayref({})};
-              16                                102   
+              16                                105   
 317                                                   
-318   ***     16     50     33                  254         if ( $ms && %$ms ) {
-319           16                                 87            $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
-              64                                317   
-320   ***     16     50     33                  191            if ( $ms->{file} && $ms->{position} ) {
-321           16                                 78               return $ms;
+318   ***     16     50     33                  265         if ( $ms && %$ms ) {
+319           16                                 86            $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
+              64                                326   
+320   ***     16     50     33                  189            if ( $ms->{file} && $ms->{position} ) {
+321           16                                 82               return $ms;
 322                                                            }
 323                                                         }
 324                                                   
@@ -373,51 +373,51 @@ line  err   stmt   bran   cond    sub    pod   time   code
 331                                                   # the return value of MASTER_POS_WAIT().  $ms is the optional result of calling
 332                                                   # get_master_status().
 333                                                   sub wait_for_master {
-334            3                    3        1013810      my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
-335            3                                 12      my $result;
+334            3                    3        1028892      my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
+335            3                                 13      my $result;
 336            3                                 13      MKDEBUG && _d('Waiting for slave to catch up to master');
-337            3           100                   30      $ms ||= $self->get_master_status($master);
-338   ***      3     50                          15      if ( $ms ) {
-339            3                                 26         my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
-340            3                                 12         MKDEBUG && _d($slave, $query);
-341            3                                  9         ($result) = $slave->selectrow_array($query);
-342            3    100                      387441         my $stat = defined $result ? $result : 'NULL';
-343   ***      3    100     33                   47         if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
+337            3           100                   28      $ms ||= $self->get_master_status($master);
+338   ***      3     50                          16      if ( $ms ) {
+339            3                                 28         my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+340            3                                  7         MKDEBUG && _d($slave, $query);
+341            3                                  7         ($result) = $slave->selectrow_array($query);
+342            3    100                      367243         my $stat = defined $result ? $result : 'NULL';
+343   ***      3    100     33                   49         if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
       ***                   66                        
-344            1                                  4            die "MASTER_POS_WAIT returned $stat";
+344            1                                  3            die "MASTER_POS_WAIT returned $stat";
 345                                                         }
 346            2                                  7         MKDEBUG && _d('Result of waiting:', $stat);
 347                                                      }
 348                                                      else {
 349   ***      0                                  0         MKDEBUG && _d('Not waiting: this server is not a master');
 350                                                      }
-351            2                                 18      return $result;
+351            2                                 22      return $result;
 352                                                   }
 353                                                   
 354                                                   # Executes STOP SLAVE.
 355                                                   sub stop_slave {
-356           21                   21           131      my ( $self, $dbh ) = @_;
-357   ***     21            66                  135      my $sth = $self->{sths}->{$dbh}->{STOP_SLAVE}
+356           21                   21           133      my ( $self, $dbh ) = @_;
+357   ***     21            66                  145      my $sth = $self->{sths}->{$dbh}->{STOP_SLAVE}
 358                                                            ||= $dbh->prepare('STOP SLAVE');
-359           21                                 82      MKDEBUG && _d($dbh, $sth->{Statement});
-360           21                             941494      $sth->execute();
+359           21                                 89      MKDEBUG && _d($dbh, $sth->{Statement});
+360           21                             758555      $sth->execute();
 361                                                   }
 362                                                   
 363                                                   # Executes START SLAVE, optionally with UNTIL.
 364                                                   sub start_slave {
-365           19                   19           233      my ( $self, $dbh, $pos ) = @_;
-366           19    100                          87      if ( $pos ) {
+365           19                   19           251      my ( $self, $dbh, $pos ) = @_;
+366           19    100                          97      if ( $pos ) {
 367                                                         # Just like with CHANGE MASTER TO, you can't quote the position.
-368            1                                  9         my $sql = "START SLAVE UNTIL MASTER_LOG_FILE='$pos->{file}', "
+368            1                                  8         my $sql = "START SLAVE UNTIL MASTER_LOG_FILE='$pos->{file}', "
 369                                                                 . "MASTER_LOG_POS=$pos->{position}";
-370            1                                  2         MKDEBUG && _d($dbh, $sql);
-371            1                                257         $dbh->do($sql);
+370            1                                  3         MKDEBUG && _d($dbh, $sql);
+371            1                               4982         $dbh->do($sql);
 372                                                      }
 373                                                      else {
-374   ***     18            66                  147         my $sth = $self->{sths}->{$dbh}->{START_SLAVE}
+374   ***     18            66                  160         my $sth = $self->{sths}->{$dbh}->{START_SLAVE}
 375                                                               ||= $dbh->prepare('START SLAVE');
-376           18                                 58         MKDEBUG && _d($dbh, $sth->{Statement});
-377           18                             291261         $sth->execute();
+376           18                                 62         MKDEBUG && _d($dbh, $sth->{Statement});
+377           18                             239865         $sth->execute();
 378                                                      }
 379                                                   }
 380                                                   
@@ -425,30 +425,30 @@ line  err   stmt   bran   cond    sub    pod   time   code
 382                                                   # complete, the slave is caught up to the master, and the slave process is
 383                                                   # stopped on both servers.
 384                                                   sub catchup_to_master {
-385            3                    3           222      my ( $self, $slave, $master, $time ) = @_;
-386            3                                 17      $self->stop_slave($master);
+385            3                    3           444      my ( $self, $slave, $master, $time ) = @_;
+386            3                                 19      $self->stop_slave($master);
 387            3                                 16      $self->stop_slave($slave);
-388            3                                 25      my $slave_status  = $self->get_slave_status($slave);
-389            3                                 20      my $slave_pos     = $self->repl_posn($slave_status);
-390            3                                 17      my $master_status = $self->get_master_status($master);
-391            3                                 14      my $master_pos    = $self->repl_posn($master_status);
-392            3                                  8      MKDEBUG && _d('Master position:', $self->pos_to_string($master_pos),
+388            3                                 28      my $slave_status  = $self->get_slave_status($slave);
+389            3                                 27      my $slave_pos     = $self->repl_posn($slave_status);
+390            3                                 14      my $master_status = $self->get_master_status($master);
+391            3                                 13      my $master_pos    = $self->repl_posn($master_status);
+392            3                                  9      MKDEBUG && _d('Master position:', $self->pos_to_string($master_pos),
 393                                                         'Slave position:', $self->pos_to_string($slave_pos));
-394            3    100                          16      if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
-395            1                                  3         MKDEBUG && _d('Waiting for slave to catch up to master');
-396            1                                  7         $self->start_slave($slave, $master_pos);
+394            3    100                          15      if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
+395            1                                  2         MKDEBUG && _d('Waiting for slave to catch up to master');
+396            1                                  8         $self->start_slave($slave, $master_pos);
 397                                                         # The slave may catch up instantly and stop, in which case MASTER_POS_WAIT
 398                                                         # will return NULL.  We must catch this; if it returns NULL, then we check
 399                                                         # that its position is as desired.
-400            1                                  5         eval {
-401            1                                  7            $self->wait_for_master($master, $slave, $time, 0, $master_status);
+400            1                                  7         eval {
+401            1                                 11            $self->wait_for_master($master, $slave, $time, 0, $master_status);
 402                                                         };
-403   ***      1     50                          12         if ( $EVAL_ERROR ) {
-404            1                                  5            MKDEBUG && _d($EVAL_ERROR);
-405   ***      1     50                           7            if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
-406            1                                  8               $slave_status = $self->get_slave_status($slave);
-407   ***      1     50                          13               if ( !$self->slave_is_running($slave_status) ) {
-408            1                                  6                  $slave_pos = $self->repl_posn($slave_status);
+403   ***      1     50                          10         if ( $EVAL_ERROR ) {
+404            1                                  3            MKDEBUG && _d($EVAL_ERROR);
+405   ***      1     50                           9            if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
+406            1                                  6               $slave_status = $self->get_slave_status($slave);
+407   ***      1     50                          14               if ( !$self->slave_is_running($slave_status) ) {
+408            1                                  5                  $slave_pos = $self->repl_posn($slave_status);
 409   ***      1     50                           5                  if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
 410            1                                  3                     die "$EVAL_ERROR but slave has not caught up to master";
 411                                                                  }
@@ -470,12 +470,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 427                                                   sub catchup_to_same_pos {
 428            2                    2            10      my ( $self, $s1_dbh, $s2_dbh ) = @_;
 429            2                                 12      $self->stop_slave($s1_dbh);
-430            2                                 11      $self->stop_slave($s2_dbh);
-431            2                                 18      my $s1_status = $self->get_slave_status($s1_dbh);
+430            2                                 12      $self->stop_slave($s2_dbh);
+431            2                                 15      my $s1_status = $self->get_slave_status($s1_dbh);
 432            2                                 11      my $s2_status = $self->get_slave_status($s2_dbh);
 433            2                                 11      my $s1_pos    = $self->repl_posn($s1_status);
-434            2                                  9      my $s2_pos    = $self->repl_posn($s2_status);
-435   ***      2     50                          11      if ( $self->pos_cmp($s1_pos, $s2_pos) < 0 ) {
+434            2                                  8      my $s2_pos    = $self->repl_posn($s2_status);
+435   ***      2     50                          10      if ( $self->pos_cmp($s1_pos, $s2_pos) < 0 ) {
       ***            50                               
 436   ***      0                                  0         $self->start_slave($s1_dbh, $s2_pos);
 437                                                      }
@@ -486,11 +486,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 442                                                      # Re-fetch the replication statuses and positions.
 443            2                                 10      $s1_status = $self->get_slave_status($s1_dbh);
 444            2                                 16      $s2_status = $self->get_slave_status($s2_dbh);
-445            2                                 16      $s1_pos    = $self->repl_posn($s1_status);
-446            2                                  8      $s2_pos    = $self->repl_posn($s2_status);
+445            2                                 17      $s1_pos    = $self->repl_posn($s1_status);
+446            2                                 11      $s2_pos    = $self->repl_posn($s2_status);
 447                                                   
 448                                                      # Verify that they are both stopped and are at the same position.
-449   ***      2     50     33                   10      if ( $self->slave_is_running($s1_status)
+449   ***      2     50     33                   11      if ( $self->slave_is_running($s1_status)
       ***                   33                        
 450                                                        || $self->slave_is_running($s2_status)
 451                                                        || $self->pos_cmp($s1_pos, $s2_pos) != 0)
@@ -502,17 +502,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 457                                                   
 458                                                   # Uses CHANGE MASTER TO to change a slave's master.
 459                                                   sub change_master_to {
-460            3                    3            16      my ( $self, $dbh, $master_dsn, $master_pos ) = @_;
-461            3                                 13      $self->stop_slave($dbh);
+460            3                    3            15      my ( $self, $dbh, $master_dsn, $master_pos ) = @_;
+461            3                                 16      $self->stop_slave($dbh);
 462                                                      # Don't prepare a $sth because CHANGE MASTER TO doesn't like quotes around
 463                                                      # port numbers, etc.  It's possible to specify the bind type, but it's easier
 464                                                      # to just not use a prepared statement.
-465            3                                 11      MKDEBUG && _d(Dumper($master_dsn), Dumper($master_pos));
-466            3                                 34      my $sql = "CHANGE MASTER TO MASTER_HOST='$master_dsn->{h}', "
+465            3                                 10      MKDEBUG && _d(Dumper($master_dsn), Dumper($master_pos));
+466            3                                 37      my $sql = "CHANGE MASTER TO MASTER_HOST='$master_dsn->{h}', "
 467                                                         . "MASTER_PORT= $master_dsn->{P}, MASTER_LOG_FILE='$master_pos->{file}', "
 468                                                         . "MASTER_LOG_POS=$master_pos->{position}";
-469            3                                  8      MKDEBUG && _d($dbh, $sql);
-470            3                             430704      $dbh->do($sql);
+469            3                                  7      MKDEBUG && _d($dbh, $sql);
+470            3                             396118      $dbh->do($sql);
 471                                                   }
 472                                                   
 473                                                   # Moves a slave to be a slave of its grandmaster: a sibling of its master.
@@ -522,33 +522,33 @@ line  err   stmt   bran   cond    sub    pod   time   code
 477                                                      # Connect to the master and the grand-master, and verify that the master is
 478                                                      # also a slave.  Also verify that the grand-master isn't the slave!
 479                                                      # (master-master replication).
-480   ***      1     50                          10      my $master_dsn  = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+480   ***      1     50                           9      my $master_dsn  = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
 481                                                         or die "This server is not a slave";
-482            1                                 10      my $master_dbh  = $dsn_parser->get_dbh(
+482            1                                 11      my $master_dbh  = $dsn_parser->get_dbh(
 483                                                         $dsn_parser->get_cxn_params($master_dsn), { AutoCommit => 1 });
-484   ***      1     50                           7      my $gmaster_dsn
+484   ***      1     50                          11      my $gmaster_dsn
 485                                                         = $self->get_master_dsn($master_dbh, $master_dsn, $dsn_parser)
 486                                                         or die "This server's master is not a slave";
 487            1                                  7      my $gmaster_dbh = $dsn_parser->get_dbh(
 488                                                         $dsn_parser->get_cxn_params($gmaster_dsn), { AutoCommit => 1 });
-489   ***      1     50                           7      if ( $self->short_host($slave_dsn) eq $self->short_host($gmaster_dsn) ) {
+489   ***      1     50                           8      if ( $self->short_host($slave_dsn) eq $self->short_host($gmaster_dsn) ) {
 490   ***      0                                  0         die "The slave's master's master is the slave: master-master replication";
 491                                                      }
 492                                                   
 493                                                      # Stop the master, and make the slave catch up to it.
 494            1                                  6      $self->stop_slave($master_dbh);
-495            1                                  7      $self->catchup_to_master($slave_dbh, $master_dbh, $timeout);
-496            1                                 25      $self->stop_slave($slave_dbh);
+495            1                                  8      $self->catchup_to_master($slave_dbh, $master_dbh, $timeout);
+496            1                                  7      $self->stop_slave($slave_dbh);
 497                                                   
 498                                                      # Get the replication statuses and positions.
 499            1                                  6      my $master_status = $self->get_master_status($master_dbh);
 500            1                                  5      my $mslave_status = $self->get_slave_status($master_dbh);
-501            1                                  5      my $slave_status  = $self->get_slave_status($slave_dbh);
+501            1                                  6      my $slave_status  = $self->get_slave_status($slave_dbh);
 502            1                                  5      my $master_pos    = $self->repl_posn($master_status);
-503            1                                  3      my $slave_pos     = $self->repl_posn($slave_status);
+503            1                                  4      my $slave_pos     = $self->repl_posn($slave_status);
 504                                                   
 505                                                      # Verify that they are both stopped and are at the same position.
-506   ***      1     50     33                    5      if ( !$self->slave_is_running($mslave_status)
+506   ***      1     50     33                    4      if ( !$self->slave_is_running($mslave_status)
       ***                   33                        
 507                                                        && !$self->slave_is_running($slave_status)
 508                                                        && $self->pos_cmp($master_pos, $slave_pos) == 0)
@@ -562,8 +562,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 516                                                   
 517                                                      # Verify that they have the same master and are at the same position.
 518            1                                 20      $mslave_status = $self->get_slave_status($master_dbh);
-519            1                                 11      $slave_status  = $self->get_slave_status($slave_dbh);
-520            1                                 12      my $mslave_pos = $self->repl_posn($mslave_status);
+519            1                                 10      $slave_status  = $self->get_slave_status($slave_dbh);
+520            1                                  9      my $mslave_pos = $self->repl_posn($mslave_status);
 521            1                                  5      $slave_pos     = $self->repl_posn($slave_status);
 522   ***      1     50     33                    6      if ( $self->short_host($mslave_status) ne $self->short_host($slave_status)
 523                                                        || $self->pos_cmp($mslave_pos, $slave_pos) != 0)
@@ -578,43 +578,43 @@ line  err   stmt   bran   cond    sub    pod   time   code
 532                                                   # 3. If one of the servers is behind the other, make it catch up.
 533                                                   # 4. Point the slave to its sibling.
 534                                                   sub make_slave_of_sibling {
-535            2                    2            54      my ( $self, $slave_dbh, $slave_dsn, $sib_dbh, $sib_dsn,
+535            2                    2            58      my ( $self, $slave_dbh, $slave_dsn, $sib_dbh, $sib_dsn,
 536                                                           $dsn_parser, $timeout) = @_;
 537                                                   
 538                                                      # Verify that the sibling is a different server.
-539            2    100                          16      if ( $self->short_host($slave_dsn) eq $self->short_host($sib_dsn) ) {
+539            2    100                          14      if ( $self->short_host($slave_dsn) eq $self->short_host($sib_dsn) ) {
 540            1                                  4         die "You are trying to make the slave a slave of itself";
 541                                                      }
 542                                                   
 543                                                      # Verify that the sibling has the same master, and that it is a master.
 544   ***      1     50                           7      my $master_dsn1 = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
 545                                                         or die "This server is not a slave";
-546            1                                  6      my $master_dbh1 = $dsn_parser->get_dbh(
+546            1                                  7      my $master_dbh1 = $dsn_parser->get_dbh(
 547                                                         $dsn_parser->get_cxn_params($master_dsn1), { AutoCommit => 1 });
-548   ***      1     50                           8      my $master_dsn2 = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+548   ***      1     50                           9      my $master_dsn2 = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
 549                                                         or die "The sibling is not a slave";
 550   ***      1     50                           6      if ( $self->short_host($master_dsn1) ne $self->short_host($master_dsn2) ) {
 551   ***      0                                  0         die "This server isn't a sibling of the slave";
 552                                                      }
-553   ***      1     50                           5      my $sib_master_stat = $self->get_master_status($sib_dbh)
+553   ***      1     50                           4      my $sib_master_stat = $self->get_master_status($sib_dbh)
 554                                                         or die "Binary logging is not enabled on the sibling";
-555   ***      1     50                           5      die "The log_slave_updates option is not enabled on the sibling"
+555   ***      1     50                           6      die "The log_slave_updates option is not enabled on the sibling"
 556                                                         unless $self->has_slave_updates($sib_dbh);
 557                                                   
 558                                                      # Stop the slave and its sibling, then if one is behind the other, make it
 559                                                      # catch up.
-560            1                                  8      $self->catchup_to_same_pos($slave_dbh, $sib_dbh);
+560            1                                  7      $self->catchup_to_same_pos($slave_dbh, $sib_dbh);
 561                                                   
 562                                                      # Actually change the slave's master to its sibling.
-563            1                                  8      $sib_master_stat = $self->get_master_status($sib_dbh);
+563            1                                  7      $sib_master_stat = $self->get_master_status($sib_dbh);
 564            1                                  6      $self->change_master_to($slave_dbh, $sib_dsn,
 565                                                            $self->repl_posn($sib_master_stat));
 566                                                   
 567                                                      # Verify that the slave's master is the sibling and that it is at the same
 568                                                      # position.
 569            1                                 20      my $slave_status = $self->get_slave_status($slave_dbh);
-570            1                                  7      my $slave_pos    = $self->repl_posn($slave_status);
-571            1                                  6      $sib_master_stat = $self->get_master_status($sib_dbh);
+570            1                                  6      my $slave_pos    = $self->repl_posn($slave_status);
+571            1                                  5      $sib_master_stat = $self->get_master_status($sib_dbh);
 572   ***      1     50     33                    7      if ( $self->short_host($slave_status) ne $self->short_host($sib_dsn)
 573                                                        || $self->pos_cmp($self->repl_posn($sib_master_stat), $slave_pos) != 0)
 574                                                      {
@@ -630,11 +630,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 584                                                   #  3. If one of them is behind the other, make it catch up.
 585                                                   #  4. Point the slave to its uncle.
 586                                                   sub make_slave_of_uncle {
-587            1                    1            30      my ( $self, $slave_dbh, $slave_dsn, $unc_dbh, $unc_dsn,
+587            1                    1            33      my ( $self, $slave_dbh, $slave_dsn, $unc_dbh, $unc_dsn,
 588                                                           $dsn_parser, $timeout) = @_;
 589                                                   
 590                                                      # Verify that the uncle is a different server.
-591   ***      1     50                           7      if ( $self->short_host($slave_dsn) eq $self->short_host($unc_dsn) ) {
+591   ***      1     50                           8      if ( $self->short_host($slave_dsn) eq $self->short_host($unc_dsn) ) {
 592   ***      0                                  0         die "You are trying to make the slave a slave of itself";
 593                                                      }
 594                                                   
@@ -643,10 +643,10 @@ line  err   stmt   bran   cond    sub    pod   time   code
 597                                                         or die "This server is not a slave";
 598            1                                  7      my $master_dbh = $dsn_parser->get_dbh(
 599                                                         $dsn_parser->get_cxn_params($master_dsn), { AutoCommit => 1 });
-600   ***      1     50                           8      my $gmaster_dsn
+600   ***      1     50                           9      my $gmaster_dsn
 601                                                         = $self->get_master_dsn($master_dbh, $master_dsn, $dsn_parser)
 602                                                         or die "The master is not a slave";
-603   ***      1     50                           5      my $unc_master_dsn
+603   ***      1     50                           6      my $unc_master_dsn
 604                                                         = $self->get_master_dsn($unc_dbh, $unc_dsn, $dsn_parser)
 605                                                         or die "The uncle is not a slave";
 606   ***      1     50                           5      if ($self->short_host($gmaster_dsn) ne $self->short_host($unc_master_dsn)) {
@@ -654,15 +654,15 @@ line  err   stmt   bran   cond    sub    pod   time   code
 608                                                      }
 609                                                   
 610                                                      # Verify that the uncle is a master.
-611   ***      1     50                           4      my $unc_master_stat = $self->get_master_status($unc_dbh)
+611   ***      1     50                           6      my $unc_master_stat = $self->get_master_status($unc_dbh)
 612                                                         or die "Binary logging is not enabled on the uncle";
 613   ***      1     50                           6      die "The log_slave_updates option is not enabled on the uncle"
 614                                                         unless $self->has_slave_updates($unc_dbh);
 615                                                   
 616                                                      # Stop the master and uncle, then if one is behind the other, make it
 617                                                      # catch up.  Then make the slave catch up to its master.
-618            1                                  6      $self->catchup_to_same_pos($master_dbh, $unc_dbh);
-619            1                                  8      $self->catchup_to_master($slave_dbh, $master_dbh, $timeout);
+618            1                                  7      $self->catchup_to_same_pos($master_dbh, $unc_dbh);
+619            1                                  7      $self->catchup_to_master($slave_dbh, $master_dbh, $timeout);
 620                                                   
 621                                                      # Verify that the slave is caught up to its master.
 622            1                                  6      my $slave_status  = $self->get_slave_status($slave_dbh);
@@ -675,16 +675,16 @@ line  err   stmt   bran   cond    sub    pod   time   code
 629                                                      }
 630                                                   
 631                                                      # Point the slave to its uncle.
-632            1                                  5      $unc_master_stat = $self->get_master_status($unc_dbh);
-633            1                                  6      $self->change_master_to($slave_dbh, $unc_dsn,
+632            1                                  6      $unc_master_stat = $self->get_master_status($unc_dbh);
+633            1                                  7      $self->change_master_to($slave_dbh, $unc_dsn,
 634                                                         $self->repl_posn($unc_master_stat));
 635                                                   
 636                                                   
 637                                                      # Verify that the slave's master is the uncle and that it is at the same
 638                                                      # position.
-639            1                                 21      $slave_status    = $self->get_slave_status($slave_dbh);
-640            1                                 11      my $slave_pos    = $self->repl_posn($slave_status);
-641   ***      1     50     33                    5      if ( $self->short_host($slave_status) ne $self->short_host($unc_dsn)
+639            1                                 18      $slave_status    = $self->get_slave_status($slave_dbh);
+640            1                                 12      my $slave_pos    = $self->repl_posn($slave_status);
+641   ***      1     50     33                    6      if ( $self->short_host($slave_status) ne $self->short_host($unc_dsn)
 642                                                        || $self->pos_cmp($self->repl_posn($unc_master_stat), $slave_pos) != 0)
 643                                                      {
 644   ***      0                                  0         die "After changing the slave's master, it isn't a slave of the uncle, "
@@ -694,39 +694,39 @@ line  err   stmt   bran   cond    sub    pod   time   code
 648                                                   
 649                                                   # Makes a server forget that it is a slave.  Returns the slave status.
 650                                                   sub detach_slave {
-651            1                    1            22      my ( $self, $dbh ) = @_;
+651            1                    1            28      my ( $self, $dbh ) = @_;
 652                                                      # Verify that it is a slave.
-653            1                                  8      $self->stop_slave($dbh);
-654   ***      1     50                          14      my $stat = $self->get_slave_status($dbh)
+653            1                                  9      $self->stop_slave($dbh);
+654   ***      1     50                          15      my $stat = $self->get_slave_status($dbh)
 655                                                         or die "This server is not a slave";
-656            1                             123649      $dbh->do('CHANGE MASTER TO MASTER_HOST=""');
-657            1                             134883      $dbh->do('RESET SLAVE'); # Wipes out master.info, etc etc
-658            1                                 29      return $stat;
+656            1                             190011      $dbh->do('CHANGE MASTER TO MASTER_HOST=""');
+657            1                             156889      $dbh->do('RESET SLAVE'); # Wipes out master.info, etc etc
+658            1                                 30      return $stat;
 659                                                   }
 660                                                   
 661                                                   # Returns true if the slave is running.
 662                                                   sub slave_is_running {
-663            7                    7            28      my ( $self, $slave_status ) = @_;
-664   ***      7            50                   85      return ($slave_status->{slave_sql_running} || 'No') eq 'Yes';
+663            7                    7            29      my ( $self, $slave_status ) = @_;
+664   ***      7            50                   87      return ($slave_status->{slave_sql_running} || 'No') eq 'Yes';
 665                                                   }
 666                                                   
 667                                                   # Returns true if the server's log_slave_updates option is enabled.
 668                                                   sub has_slave_updates {
-669            2                    2            10      my ( $self, $dbh ) = @_;
+669            2                    2             9      my ( $self, $dbh ) = @_;
 670            2                                  7      my $sql = q{SHOW VARIABLES LIKE 'log_slave_updates'};
-671            2                                  4      MKDEBUG && _d($dbh, $sql);
-672            2                                  4      my ($name, $value) = $dbh->selectrow_array($sql);
-673   ***      2            33                  606      return $value && $value =~ m/^(1|ON)$/;
+671            2                                  5      MKDEBUG && _d($dbh, $sql);
+672            2                                  5      my ($name, $value) = $dbh->selectrow_array($sql);
+673   ***      2            33                  643      return $value && $value =~ m/^(1|ON)$/;
 674                                                   }
 675                                                   
 676                                                   # Extracts the replication position out of either SHOW MASTER STATUS or SHOW
 677                                                   # SLAVE STATUS, and returns it as a hashref { file, position }
 678                                                   sub repl_posn {
-679           30                   30           127      my ( $self, $status ) = @_;
-680   ***     30    100     66                  211      if ( exists $status->{file} && exists $status->{position} ) {
+679           30                   30           119      my ( $self, $status ) = @_;
+680   ***     30    100     66                  212      if ( exists $status->{file} && exists $status->{position} ) {
 681                                                         # It's the output of SHOW MASTER STATUS
 682                                                         return {
-683           10                                 72            file     => $status->{file},
+683           10                                 77            file     => $status->{file},
 684                                                            position => $status->{position},
 685                                                         };
 686                                                      }
@@ -748,8 +748,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 702                                                   # Compares two replication positions and returns -1, 0, or 1 just as the cmp
 703                                                   # operator does.
 704                                                   sub pos_cmp {
-705           15                   15            69      my ( $self, $a, $b ) = @_;
-706           15                                 73      return $self->pos_to_string($a) cmp $self->pos_to_string($b);
+705           15                   15            72      my ( $self, $a, $b ) = @_;
+706           15                                 71      return $self->pos_to_string($a) cmp $self->pos_to_string($b);
 707                                                   }
 708                                                   
 709                                                   # Simplifies a hostname as much as possible.  For purposes of replication, a
@@ -758,14 +758,14 @@ line  err   stmt   bran   cond    sub    pod   time   code
 712                                                   # the port is the default 3306, it is omitted.  As a convenience, this sub
 713                                                   # accepts either SHOW SLAVE STATUS or a DSN.
 714                                                   sub short_host {
-715           18                   18            72      my ( $self, $dsn ) = @_;
-716           18                                 56      my ($host, $port);
-717           18    100                          83      if ( $dsn->{master_host} ) {
+715           18                   18            70      my ( $self, $dsn ) = @_;
+716           18                                 57      my ($host, $port);
+717           18    100                          81      if ( $dsn->{master_host} ) {
 718            4                                 14         $host = $dsn->{master_host};
-719            4                                 15         $port = $dsn->{master_port};
+719            4                                 17         $port = $dsn->{master_port};
 720                                                      }
 721                                                      else {
-722           14                                 48         $host = $dsn->{h};
+722           14                                 53         $host = $dsn->{h};
 723           14                                 50         $port = $dsn->{P};
 724                                                      }
 725   ***     18     50     50                  221      return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
@@ -774,10 +774,10 @@ line  err   stmt   bran   cond    sub    pod   time   code
 727                                                   
 728                                                   # Stringifies a position in a way that's string-comparable.
 729                                                   sub pos_to_string {
-730           30                   30           108      my ( $self, $pos ) = @_;
-731           30                                 81      my $fmt  = '%s/%020d';
+730           30                   30           103      my ( $self, $pos ) = @_;
+731           30                                 79      my $fmt  = '%s/%020d';
 732           30                                 96      return sprintf($fmt, @{$pos}{qw(file position)});
-              30                                561   
+              30                                579   
 733                                                   }
 734                                                   
 735                                                   sub _d {

@@ -9,8 +9,8 @@ Total                          68.6   30.0    n/a   87.5    n/a  100.0   64.2
 Run:          MySQLAdvisor.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:52:48 2009
-Finish:       Fri Jul 31 18:52:48 2009
+Start:        Sat Aug 29 15:03:07 2009
+Finish:       Sat Aug 29 15:03:07 2009
 
 /home/daniel/dev/maatkit/common/MySQLAdvisor.pm
 
@@ -40,21 +40,21 @@ line  err   stmt   bran   cond    sub    pod   time   code
 23                                                    
 24             1                    1             6   use strict;
                1                                  2   
-               1                                  6   
-25             1                    1             5   use warnings FATAL => 'all';
+               1                                  7   
+25             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
-               1                                  9   
+               1                                  8   
 26                                                    
-27             1                    1             5   use English qw(-no_match_vars);
+27             1                    1            19   use English qw(-no_match_vars);
                1                                  3   
                1                                  7   
-28             1                    1             6   use List::Util qw(max);
-               1                                  3   
-               1                                 10   
+28             1                    1             7   use List::Util qw(max);
+               1                                  2   
+               1                                 11   
 29                                                    
 30             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
-               1                                 10   
+               1                                  2   
+               1                                 15   
 31                                                    
 32                                                    # These check subs return 0 if the check passes or a string describing what
 33                                                    # failed. If a check can't be tested (e.g. no Innodb_ status values), return 0.
@@ -164,8 +164,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 137                                                   # hash will have only one key = ERROR => value = error msg
 138                                                   sub run_checks {
 139            1                    1             5      my ( $self, $check_name ) = @_;
-140            1                                  4      my %problems;
-141   ***      1     50                           4      if ( defined $check_name ) {
+140            1                                  5      my %problems;
+141   ***      1     50                           6      if ( defined $check_name ) {
 142   ***      0      0                           0         if ( exists $checks{$check_name} ) {
 143   ***      0      0                           0            if ( my $problem = $checks{$check_name}->($self->{sys_vars},
 144                                                                                                      $self->{status_vals},
@@ -179,12 +179,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 152                                                         }
 153                                                      }
 154                                                      else {
-155            1                                 12         foreach my $check_name ( keys %checks ) {
+155            1                                 13         foreach my $check_name ( keys %checks ) {
 156            7    100                          54            if ( my $problem = $checks{$check_name}->($self->{sys_vars},
 157                                                                                                      $self->{status_vals},
 158                                                                                                      $self->{schema},
 159                                                                                                      $self->{counts}) ) {
-160            4                                 17               $problems{$check_name} = $problem;
+160            3                                 13               $problems{$check_name} = $problem;
 161                                                            }
 162                                                         }
 163                                                      }
@@ -216,7 +216,7 @@ line  err      %   true  false   branch
 141   ***     50      0      1   if (defined $check_name) { }
 142   ***      0      0      0   if (exists $checks{$check_name}) { }
 143   ***      0      0      0   if (my $problem = $checks{$check_name}($$self{'sys_vars'}, $$self{'status_vals'}, $$self{'schema'}, $$self{'counts'}))
-156          100      4      2   if (my $problem = $checks{$check_name}($$self{'sys_vars'}, $$self{'status_vals'}, $$self{'schema'}, $$self{'counts'}))
+156          100      3      3   if (my $problem = $checks{$check_name}($$self{'sys_vars'}, $$self{'status_vals'}, $$self{'schema'}, $$self{'counts'}))
 169   ***      0      0      0   defined $_ ? :
 
 

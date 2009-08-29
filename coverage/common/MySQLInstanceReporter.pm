@@ -9,8 +9,8 @@ Total                           9.7    0.0    0.0   46.2    n/a  100.0   10.5
 Run:          MySQLInstanceReporter.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:52:56 2009
-Finish:       Fri Jul 31 18:52:56 2009
+Start:        Sat Aug 29 15:03:15 2009
+Finish:       Sat Aug 29 15:03:15 2009
 
 /home/daniel/dev/maatkit/common/MySQLInstanceReporter.pm
 
@@ -37,19 +37,19 @@ line  err   stmt   bran   cond    sub    pod   time   code
 20                                                    # ###########################################################################
 21                                                    package MySQLInstanceReporter;
 22                                                    
-23             1                    1             7   use strict;
-               1                                  2   
-               1                                122   
+23             1                    1             5   use strict;
+               1                                  3   
+               1                                  7   
 24             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  9   
-25             1                    1             6   use English qw(-no_match_vars);
-               1                                  2   
+25             1                    1           110   use English qw(-no_match_vars);
+               1                                  3   
                1                                  8   
 26                                                    
 27                                                    Transformers->import( qw(micro_t shorten secs_to_time) );
 28                                                    
-29             1                    1             6   use constant MKDEBUG     => $ENV{MKDEBUG};
+29             1                    1             7   use constant MKDEBUG     => $ENV{MKDEBUG};
                1                                  2   
                1                                 11   
 30             1                    1             6   use constant LINE_LENGTH => 74;
@@ -57,9 +57,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
                1                                  4   
 31                                                    
 32                                                    sub new {
-33             1                    1             8      my ( $class, %args ) = @_;
-34             1                                  4      my $self = {};
-35             1                                 28      return bless $self, $class;
+33             1                    1             7      my ( $class, %args ) = @_;
+34             1                                  5      my $self = {};
+35             1                                 27      return bless $self, $class;
 36                                                    }
 37                                                    
 38                                                    sub report {

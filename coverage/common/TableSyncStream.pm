@@ -9,8 +9,8 @@ Total                          79.5   66.7   50.0   80.0    n/a  100.0   77.4
 Run:          TableSyncStream.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Jul 31 18:54:04 2009
-Finish:       Fri Jul 31 18:54:04 2009
+Start:        Sat Aug 29 15:04:26 2009
+Finish:       Sat Aug 29 15:04:26 2009
 
 /home/daniel/dev/maatkit/common/TableSyncStream.pm
 
@@ -38,29 +38,29 @@ line  err   stmt   bran   cond    sub    pod   time   code
 21                                                    # This package implements the simplest possible table-sync algorithm: read every
 22                                                    # row from the tables and compare them.
 23                                                    
-24             1                    1            12   use strict;
+24             1                    1             9   use strict;
+               1                                  3   
+               1                                  8   
+25             1                    1           115   use warnings FATAL => 'all';
                1                                  3   
                1                                  7   
-25             1                    1           110   use warnings FATAL => 'all';
-               1                                  3   
-               1                                  6   
 26                                                    
-27             1                    1             6   use English qw(-no_match_vars);
+27             1                    1             5   use English qw(-no_match_vars);
                1                                  2   
                1                                  6   
 28                                                    
-29             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
+29             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
                1                                 11   
 30                                                    
 31                                                    # Arguments:
 32                                                    # * handler ChangeHandler
 33                                                    sub new {
-34             3                    3            58      my ( $class, %args ) = @_;
-35             3                                 13      foreach my $arg ( qw(handler cols) ) {
+34             3                    3            66      my ( $class, %args ) = @_;
+35             3                                 15      foreach my $arg ( qw(handler cols) ) {
 36             5    100                          22         die "I need a $arg argument" unless defined $args{$arg};
 37                                                       }
-38             2                                 33      return bless { %args }, $class;
+38             2                                 23      return bless { %args }, $class;
 39                                                    }
 40                                                    
 41                                                    # Arguments:
@@ -69,17 +69,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 44                                                    # * table    Table name
 45                                                    # * where    WHERE clause
 46                                                    sub get_sql {
-47             2                    2            12      my ( $self, %args ) = @_;
-48             6                                 25      return "SELECT "
+47             2                    2            15      my ( $self, %args ) = @_;
+48             6                                 40      return "SELECT "
 49                                                          . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
-50    ***      2    100     50                   14         . join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}})
-               2                                  8   
+50    ***      2    100     50                   16         . join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}})
+               2                                 19   
 51                                                          . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
 52                                                          . ' WHERE ' . ( $args{where} || '1=1' );
 53                                                    }
 54                                                    
 55                                                    sub same_row {
-56             2                    2             8      my ( $self, $lr, $rr ) = @_;
+56             2                    2             9      my ( $self, $lr, $rr ) = @_;
 57                                                    }
 58                                                    
 59                                                    sub not_in_right {
@@ -93,18 +93,18 @@ line  err   stmt   bran   cond    sub    pod   time   code
 67                                                    }
 68                                                    
 69                                                    sub done_with_rows {
-70             1                    1             3      my ( $self ) = @_;
-71             1                                  6      $self->{done} = 1;
+70             1                    1             4      my ( $self ) = @_;
+71             1                                  7      $self->{done} = 1;
 72                                                    }
 73                                                    
 74                                                    sub done {
-75             1                    1             5      my ( $self ) = @_;
-76             1                                  5      return $self->{done};
+75             1                    1             4      my ( $self ) = @_;
+76             1                                  7      return $self->{done};
 77                                                    }
 78                                                    
 79                                                    sub key_cols {
-80             5                    5            16      my ( $self ) = @_;
-81             5                                 25      return $self->{cols};
+80             5                    5            17      my ( $self ) = @_;
+81             5                                 27      return $self->{cols};
 82                                                    }
 83                                                    
 84                                                    # Do any required setup before executing the SQL (such as setting up user
