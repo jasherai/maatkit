@@ -23,10 +23,6 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -143,7 +139,7 @@ sub generate_cmp_where {
    foreach my $arg ( qw(type slice cols quoter is_nullable) ) {
       die "I need a $arg arg" unless defined $args{$arg};
    }
-   MKDEBUG && _d('generate_cmp_where args:', Dumper(\%args));
+
    my @slice       = @{$args{slice}};
    my @cols        = @{$args{cols}};
    my $q           = $args{quoter};
@@ -211,7 +207,6 @@ sub generate_cmp_where {
       scols => \@r_scols,
       where => $result,
    };
-   MKDEBUG && _d('generate_cmp_where:', Dumper($where));
    return $where;
 }
 
