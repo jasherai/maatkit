@@ -1,5 +1,34 @@
 #!/usr/bin/env perl
 
+=pod
+
+=head1 NAME
+
+bt-aggregate - Aggregate and print GDB backtraces.
+
+=head1 SYNOPSIS
+
+  bt-aggregate /path/to/backtrace
+
+=head1 OPTIONS
+
+=over
+
+=item -n
+
+Aggregate by only the first N lines of each trace.
+
+=back
+
+=head1 AUTHOR
+
+Baron Schwartz
+
+=head1 LICENSE
+
+This software is released to the public domain, with no guarantees whatsoever.
+
+=cut
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
