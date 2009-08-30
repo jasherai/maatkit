@@ -1,0 +1,35 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+# Look for command-line arguments to see if we're supposed to aggregate by only
+# the first few lines of each stack trace.
+my $n_lines = 0;
+if ( @ARGV && $ARGV[0] =~ m/^-\d/ ) {
+   my $arg = shift @ARGV;
+   ($n_lines) = $arg =~ m/(\d+)/;
+}
+
+local $INPUT_RECORD_SEPARATOR = ''; # Paragraph mode
+
+my %traces;
+
+while ( my $chunk = <> ) {
+   next unless my ( $tid ) = $chunk =~ m/^Thread (\d+)/;
+   $chunk =~ s/\AThread.*$//m;                  # Delete first line
+   $chunk =~ s/#$n_lines\s.*//s if $n_lines;    # Delete all but first N lines
+   $chunk =~ s/(\A\s+)|(\s+\Z)//g;              # Trim whitespace
+   $traces{$chunk}->{count}++;
+   push @{$traces{$chunk}->{tids}}, $tid;
+}
+
+foreach my $trace (
+   reverse sort { $traces{$a}->{count} <=> $traces{$b}->{count} } keys %traces
+) {
+   print $traces{$trace}->{count}, " threads with the following stack trace:\n";
+   # print "\t ", join(",", @{$traces{$trace}->{tids}}), "\n";
+   $trace =~ s/^/\t/gm;
+   print $trace, "\n\n";
+}
