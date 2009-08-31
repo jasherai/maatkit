@@ -200,7 +200,7 @@ sub parse_packet {
       $client      = $src_host;
    }
    else {
-      warn 'Packet is not to or from MySQL server: ', Dumper($packet);
+      MKDEBUG && _d('Packet is not to or from a MySQL server');
       return;
    }
    MKDEBUG && _d('Client:', $client);
