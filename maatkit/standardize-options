@@ -7,6 +7,8 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+use Test::More qw(no_plan);
+
 my @progs = @ARGV;
 if ( !@progs ) {
    @progs = <../mk-*/mk-*>;
@@ -125,38 +127,31 @@ foreach my $prog ( @progs ) {
             }
 
             # Now we have the text of the option and the name of it.  Compare.
-            compare_option($text, $option)
-               or push @wrong, $option;
-            if ( $text =~ m/ $/m ) {
-               $whitespace++;
+            $text        = normalize($text);
+            my $standard = normalize($standard_opts{$option});
+            if ( $text ne $standard ) {
+               is(
+                  $text,
+                  $standard,
+                  "$prog --$option"
+               );
             }
          }
       }
    }
 
    close $fh;
-   if ( @wrong ) {
-      print "$prog has wrong option text: ", join(', ', @wrong), "\n";
-      if ( $whitespace ) {
-         print "   Hint: there is trailing whitespace.\n";
-      }
-   }
-}
-
-sub compare_option {
-   my ( $text, $name ) = @_;
-   $text = normalize($text);
-   my $standard = normalize($standard_opts{$name});
-   return $text eq $standard;
 }
 
 # Make the text into a normalized format
 sub normalize {
    my ( $text ) = @_;
    $text =~ s/(\S)\n *(\S)/$1 $2/g; # Join all lines in a paragraph;
+   $text =~ s/(?:; )?group: \w+\b//;
    $text =~ s/^ *//gm;              # Remove leading whitespace;
    $text =~ s/  */ /g;              # Collapse spaces to a single space.
    $text =~ s/\A\s*//;              # Remove all leading/trailing whitespace.
    $text =~ s/\s*\Z//;
+
    return $text;
 }
