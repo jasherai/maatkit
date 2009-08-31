@@ -2706,8 +2706,8 @@ If only L<"--print"> is given, then mk-slave-prefetch will only read and print
 information.
 
 At the time of this release, there is a bug which prevents mk-slave-prefetch
-from respecting MySQL's relay-log option, and a bug which prevents it from
-finding a database to use.
+from working as expected, a bug which causes MySQL's relay-log option to be
+ignored, and a bug which prevents the script from finding a database to use.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

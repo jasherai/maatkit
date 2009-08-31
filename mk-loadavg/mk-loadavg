@@ -2784,7 +2784,7 @@ sub pretty_print {
    while ( my @row = $sth->fetchrow_array() ) {
       foreach my $col ( 0 .. $#headers ) {
          printf("%${max_len}s: ", $headers[$col]);
-         print($row[$col], "\n");
+         print((defined $row[$col] ? $row[$col] : 'NULL'), "\n");
       }
    }
 }
