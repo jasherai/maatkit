@@ -1,5 +1,7 @@
 Changelog for mk-upgrade:
 
+2009-08-31: version 0.9.1
+
    * The printed value for Host2_Query_time was incorrect.
 
 2009-07-31: version 0.9.0

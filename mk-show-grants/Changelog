@@ -1,5 +1,7 @@
 Changelog for mk-show-grants:
 
+2009-08-31: version 1.0.19
+
    * --ask-pass did not work.
 
 2009-07-31: version 1.0.18

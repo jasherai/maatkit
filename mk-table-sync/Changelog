@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2009-08-31: version 1.0.18
+
    * Added --[no]check-master (issue 110).
    * --lock 3 did not work (issue 86).
    * The script did not work with MySQL replicate-do-db (issue 533).

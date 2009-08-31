@@ -1,5 +1,7 @@
 Changelog for mk-log-player:
 
+2009-08-31: version 1.0.1
+
    * Added --filter for --split (issue 571).
    * Added support for splitting binary logs; --type binlog (issue 570).
    * Added --type option (issue 570).

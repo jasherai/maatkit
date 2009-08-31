@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+2009-08-31: version 1.0.11
+
    * --ask-pass did not work.
 
 2009-07-31: version 1.0.10

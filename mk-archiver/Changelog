@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+2009-08-31: version 1.0.19
+
    * --dest did not inherit password from --source (issue 460).
    * Added standard connection options like --host, --port, etc.(issue 248).
 
