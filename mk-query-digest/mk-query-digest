@@ -8591,7 +8591,14 @@ packets!  That's very useful for testing your tcpdump command.  Note that
 tcpdump can't capture traffic on a Unix socket.  Read
 L<http://bugs.mysql.com/bug.php?id=31577> if you're confused about this.
 
-If you're analyzing traffic to a non-standard port, see L<"--watch-server">.
+All MySQL servers running on port 3306 are automatically detected in the
+tcpdump output.  Therefore, if the tcpdump out contains packets from
+multiple servers on port 3306 (for example, 10.0.0.1:3306, 10.0.0.2:3306,
+etc.), all packets/queries from all these servers will be analyzed
+together as if they were one server.
+
+If you're analyzing traffic for a MySQL server that is not running on port
+3306, see L<"--watch-server">.
 
 =item memcached
 
@@ -8635,10 +8642,16 @@ type: string
 
 This option tells mk-query-digest which server IP address and port (like
 "10.0.0.1:3306") to watch when parsing tcpdump (for L<"--type"> tcpdump and
-memcached); all others are ignored.  If you don't specify it,
+memcached); all other servers are ignored.  If you don't specify it,
 mk-query-digest watches all servers by looking for any IP address using port
 3306 or "mysql".  If you're watching a server with a non-standard port, this
 won't work, so you must specify the IP address and port to watch.
+
+If you want to watch a mix of servers, some running on standard port 3306
+and some running on non-standard ports, you need to create separate
+tcpdump outputs for the non-stanard port servers and then specify this
+option for each.  At present mk-query-digest cannot auto-detect servers on
+port 3306 and also be told to watch a server on a non-standard port.
 
 =item --[no]zero-admin
 
