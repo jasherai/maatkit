@@ -2797,14 +2797,14 @@ with.  And perhaps most importantly, if the connection no longer exists, you
 can assume the connection died without cleaning up its tables, and this table
 is a candidate for removal.
 
-This how I manage scratch tables, and that's why I included this test in
+This is how I manage scratch tables, and that's why I included this test in
 mk-find.
 
-The argument I use to L<"--connection-id"> is "\D_(\d+)$".  That finds tables with a series of
-numbers at the end, preceded by an underscore and some non-number character (the
-latter criterion prevents me from examining tables with a date at the end, which
-people tend to do: baron_scratch_2007_05_07 for example).  It's better to keep
-the scratch tables separate of course.
+The argument I use to L<"--connection-id"> is "\D_(\d+)$".  That finds tables
+with a series of numbers at the end, preceded by an underscore and some
+non-number character (the latter criterion prevents me from examining tables
+with a date at the end, which people tend to do: baron_scratch_2007_05_07 for
+example).  It's better to keep the scratch tables separate of course.
 
 If you do this, make sure the user mk-find runs as has the PROCESS privilege!
 Otherwise it will only see connections from the same user, and might think some
