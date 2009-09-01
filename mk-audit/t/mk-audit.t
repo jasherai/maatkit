@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 my $output = `perl ../mk-audit --help`;
 like($output, qr/Prompt for a password/, 'It compiles');
@@ -16,7 +16,7 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 
 SKIP: {
-   skip 'Sandbox master is not running', 4 unless $dbh;
+   skip 'Sandbox master is not running', 5 unless $dbh;
 
    my $out_file = '/tmp/mk-audit.output';
    my $output = `../mk-audit 1>$out_file 2>$out_file.err`;
@@ -37,6 +37,19 @@ SKIP: {
    like(`grep long_query_time $out_file`, qr/long_query_time\s+3\s+1/, 'long_query_time out of sync');
 
    diag(`rm -f $out_file`);
+
+   # #########################################################################
+   # Issue 391: Add --pid option to all scripts
+   # #########################################################################
+   `touch /tmp/mk-script.pid`;
+   $output = `../mk-audit --pid /tmp/mk-script.pid 2>&1`;
+   like(
+      $output,
+      qr{PID file /tmp/mk-script.pid already exists},
+      'Dies if PID file already exists (issue 391)'
+   );
+   `rm -rf /tmp/mk-script.pid`;
+
 };
 
 exit;
