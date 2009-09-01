@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 7;
+use Test::More tests => 8;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -42,5 +42,17 @@ is($output, '', 'Stops for sentinel');
 ok(! -f '/tmp/mk-slave-prefetch.pid', 'PID file removed');
 
 `rm -f /tmp/mk-slave-prefetch-sentinel`;
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-slave-prefetch -F /tmp/12346/my.sandbox.cnf --print --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 exit;
