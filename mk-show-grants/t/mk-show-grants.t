@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 15;
+use Test::More tests => 16;
 
 require '../mk-show-grants';
 require '../../common/Sandbox.pm';
@@ -137,6 +137,18 @@ print STDERR $output;
 diag(`/tmp/12345/use -u root -e "DROP USER 'bob'\@'%'"`);
 diag(`/tmp/12345/use -u root -e "DROP USER 'bob'\@'localhost'"`);
 diag(`/tmp/12345/use -u root -e "DROP USER 'bob'\@'192.168.1.1'"`);
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-show-grants -F /tmp/12345/my.sandbox.cnf --drop --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # #############################################################################
 # Done.
