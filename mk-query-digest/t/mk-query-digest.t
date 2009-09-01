@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 102;
+use Test::More tests => 103;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -904,6 +904,18 @@ unlike(
    qr/Can't use string/,
    '--filter compiles correctly (issue 565)'
 );
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-query-digest ../../commont/t/samples/slow002.txt --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # #############################################################################
 # Done.
