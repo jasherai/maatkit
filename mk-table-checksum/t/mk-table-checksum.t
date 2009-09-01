@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 101;
+use Test::More tests => 102;
 use List::Util qw(sum);
 
 require '../../common/DSNParser.pm';
@@ -553,6 +553,18 @@ is(
    'chunk-size, modulo and offset in argtable (issue 467)'
 );
 diag(`rm -rf /tmp/mk-table-sync-issue-467-output.txt`);
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-table-checksum h=127.1,P=12345 -d test -t issue_122,issue_94 --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # #############################################################################
 # Done.
