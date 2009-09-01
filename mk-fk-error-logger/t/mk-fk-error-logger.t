@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 17;
+use Test::More tests => 18;
 
 require '../mk-fk-error-logger';
 require '../../common/MaatkitTest.pm';
@@ -166,6 +166,19 @@ SKIP: {
    # test will see.
    $dbh->do('DROP TABLE test.child');
    $dbh->do('DROP TABLE test.parent');
+
+
+   # #########################################################################
+   # Issue 391: Add --pid option to all scripts
+   # #########################################################################
+   `touch /tmp/mk-script.pid`;
+   my $output = `../mk-fk-error-logger h=127.1,P=12345 --print --pid /tmp/mk-script.pid 2>&1`;
+   like(
+      $output,
+      qr{PID file /tmp/mk-script.pid already exists},
+      'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
+   );
+   `rm -rf /tmp/mk-script.pid`;
 
    $sb->wipe_clean($dbh);
    $dbh->disconnect();
