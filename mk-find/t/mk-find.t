@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 17;
+use Test::More tests => 18;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -31,7 +31,7 @@ like(
 # becomes an issue, I may commit my copy of the sakila db to Google Code.
 
 SKIP: {
-   skip 'Sandbox master does not have the sakila database', 2
+   skip 'Sandbox master does not have the sakila database', 15
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
    # ########################################################################
@@ -155,5 +155,21 @@ SKIP: {
    );
 };
 
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-find mysql --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
+
+
+# #############################################################################
+# Done.
+# #############################################################################
 $sb->wipe_clean($dbh);
 exit;
