@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 21;
+use Test::More tests => 22;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -226,6 +226,19 @@ unlike(
    qr/failed/,
    'Source DSN inherits from standard connection options (issue 248)'
 );
+
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-deadlock-logger h=127.1,D=test --clear-deadlocks test.make_deadlock --port 12345 --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # #############################################################################
 # Done.
