@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 18;
+use Test::More tests => 19;
 
 require '../mk-kill';
 require '../../common/Sandbox.pm';
@@ -168,6 +168,18 @@ like(
    qr/KILL 2 \(Query 9 sec\) select \* from foo2/,
    "--match-state Locked --ignore-state '' --busy-time 5"
 );
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-kill ../../common/t/samples/recset006.txt --match-state Locked  --print --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # #############################################################################
 # Done.
