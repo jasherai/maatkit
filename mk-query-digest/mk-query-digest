@@ -3843,7 +3843,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 4384
+# QueryReportFormatter package 4630
 # ###########################################################################
 
 
@@ -4196,7 +4196,6 @@ sub sort_attribs {
 
    ATTRIB:
    foreach my $attrib ( @attribs ) {
-      next ATTRIB if $attrib eq 'pos_in_log';  # See issue 471. 
       if ( exists $basic_attrib{$attrib} ) {
          push @basic_attribs, $attrib;
       }
@@ -6969,7 +6968,7 @@ sub main {
             $orderby_attrib = check_orderby_attrib($orderby_attrib, $ea, $o);
             print $qrf->global_report(
                $ea,
-               select => [ grep { $_ !~ m/^(?:user|db)$/ } @select ],
+               select => [ grep { $_ !~ m/^(?:user|db|pos_in_log)$/ } @select ],
                worst  => $orderby_attrib,
                no_zero_bool => !$o->get('zero-bool'),
             );
@@ -7096,7 +7095,7 @@ sub main {
                print "\n";
                print $qrf->event_report(
                   $ea,
-                  select => \@select,
+                  select => [ grep { $_ !~ m/^(?:pos_in_log)$/ } @select ],
                   where  => $item,
                   rank   => $rank,
                   worst  => $orderby_attrib,

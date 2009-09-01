@@ -843,7 +843,7 @@ SKIP: {
 # Issue 361: Add a --runfor (or something) option to mk-query-digest
 # #############################################################################
 SKIP: {
-   skip 'Cannot connect to sandbox master', 2 unless $dbh1;
+   skip 'Cannot connect to sandbox master', 5 unless $dbh1;
    `../mk-query-digest --processlist 127.1 --run-time 3 --port 12345 --log /tmp/mk-query-digest.log --pid /tmp/mk-query-digest.pid --daemonize 1>/dev/null 2>/dev/null`;
    chomp(my $pid = `cat /tmp/mk-query-digest.pid`);
    sleep 2;
