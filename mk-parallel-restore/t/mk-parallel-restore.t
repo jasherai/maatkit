@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 32;
+use Test::More tests => 33;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -290,6 +290,18 @@ like(
    qr/--threads\s+32/,
    '--threads overrides /proc/cpuinfo (issue 534)'
 );
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `$cmd -D test /tmp/default/ --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # #############################################################################
 # Done.
