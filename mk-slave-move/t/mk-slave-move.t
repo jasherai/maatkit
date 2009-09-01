@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 require '../mk-slave-move';
 require '../../common/Sandbox.pm';
@@ -61,6 +61,18 @@ ok(
    $row->[0]->{Master_Port} eq '12346',
    'slave2 is slave of slave1 again after --slave-of-sibling'
 );
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-slave-move --sibling-of-master h=127.1,P=12347 --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # Stop and remove slave2.
 diag(`/tmp/12347/stop`);
