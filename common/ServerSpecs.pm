@@ -53,6 +53,12 @@ sub server_specs {
          $ver;
       };
    }
+   else {
+      $server{sw}->{libc}->{ver}         = 'Unknown';
+      $server{sw}->{libc}->{threading}   = 'Unknown';
+      $server{sw}->{libc}->{compiled_by} = 'Unknown';
+      $server{sw}->{libc}->{GNU_LIBPTHREAD_VERSION} = 'Unknown';
+   }
 
    if ( -f '/proc/cpuinfo' ) {
       my $info = `cat /proc/cpuinfo`;
