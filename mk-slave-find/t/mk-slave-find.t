@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 3;
+use Test::More tests => 4;
 
 my $output = `perl ../mk-slave-find --help`;
 like($output, qr/Prompt for a password/, 'It compiles');
@@ -55,6 +55,18 @@ is($output, $expected, 'Master with slave and slave of slave');
 #+- 127.0.0.1:12347
 #EOF
 #is($output, $expected, 'Master with two slaves');
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-slave-find -h 127.0.0.1 -P 12345 --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # Stop and remove slave2.
 diag(`/tmp/12347/stop`);
