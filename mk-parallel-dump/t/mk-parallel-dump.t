@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 36;
+use Test::More tests => 37;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -223,6 +223,18 @@ ok(
    -f '/tmp/default/test/issue 446.000000.sql.gz',
    'Dumped table with space in name (issue 446)'
 );
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `$cmd --base-dir /tmp/ --ignore-databases sakila --databases test --tables 'issue 446' --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # #############################################################################
 # Done.
