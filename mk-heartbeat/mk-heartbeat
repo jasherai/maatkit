@@ -2209,6 +2209,11 @@ sub main {
       $daemon->daemonize();
       MKDEBUG && _d('I am a daemon now');
    }
+   elsif ( $o->get('pid') ) {
+      # We're not daemoninzing, it just handles PID stuff.
+      $daemon = new Daemon(o=>$o);
+      $daemon->make_PID_file();
+   }
 
    # Setup for moving averages.
    my @samples;

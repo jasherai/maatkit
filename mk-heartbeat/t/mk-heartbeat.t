@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 16;
+use Test::More tests => 17;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -107,6 +107,18 @@ like(
 # Issue 150: mk-heartbeat dies when slave is shutting down
 # #############################################################################
 # Cannot reproduce with mk-heartbeat r3703.
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-heartbeat --host 127.1 --port 12345 -D test --check --recurse 1 --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # #############################################################################
 # Done.
