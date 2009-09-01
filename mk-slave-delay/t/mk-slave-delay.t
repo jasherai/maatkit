@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 13;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -106,4 +106,19 @@ like(
    '--log'
 );
 
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `../mk-slave-delay --run-time 1s --interval 1s --use-master --host 127.1 --port 12346 --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
+
+# #############################################################################
+# Done.
+# #############################################################################
 exit;
