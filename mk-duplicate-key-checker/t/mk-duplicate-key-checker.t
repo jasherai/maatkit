@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 13;
 
 require '../mk-duplicate-key-checker';
 require '../../common/Sandbox.pm';
@@ -69,6 +69,19 @@ is($output, '', 'Issue 331 crash on fks');
 $sb->load_file('master', 'samples/issue_295.sql', 'test');
 $output = `$cmd -d issue_295 | diff samples/issue_295.txt -`;
 is($output, '', "Shorten, not remove, clustered dupes");
+
+
+# #########################################################################
+# Issue 391: Add --pid option to all scripts
+# #########################################################################
+`touch /tmp/mk-script.pid`;
+$output = `$cmd -d issue_295 --pid /tmp/mk-script.pid 2>&1`;
+like(
+   $output,
+   qr{PID file /tmp/mk-script.pid already exists},
+   'Dies if PID file already exists (issue 391)'
+);
+`rm -rf /tmp/mk-script.pid`;
 
 # #############################################################################
 # Done.
