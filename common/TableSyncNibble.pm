@@ -191,9 +191,9 @@ sub __get_boundaries {
       }
 
       $row = $self->{dbh}->selectrow_hashref($sql);
+      MKDEBUG && _d($row ? 'Got a row' : "Didn't get a row");
    }
 
-   MKDEBUG && _d($row ? 'Got a row' : "Didn't get a row");
    my $where;
    if ( $row ) {
       # Inject the row into the WHERE clause.  The WHERE is for the <= case
