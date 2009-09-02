@@ -347,5 +347,43 @@ like(
    'Buffering in next nibble',
 );
 
-$sb->wipe_clean($dbh);
+# #############################################################################
+# Issue 96: mk-table-sync: Nibbler infinite loop
+# #############################################################################
+
+# This stuff isn't used yet...
+
+$sb->load_file('master', 'samples/issue_96.sql');
+$tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_96', 't'));
+$t = new TableSyncNibble(
+   handler  => $ch,
+   cols     => $tbl_struct->{cols},
+   dbh      => $dbh,
+   database => 'issue_96',
+   table    => 't',
+   chunker  => $chunker,
+   nibbler  => $nibbler,
+   parser   => $tp,
+   struct   => $tbl_struct,
+   checksum => $checksum,
+   vp       => $vp,
+   quoter   => $q,
+   chunksize => 2,
+   where     => '',
+   possible_keys => [],
+   versionparser => $vp,
+   func          => '',
+   trim          => 0,
+);
+$t->get_sql(
+   quoter   => $q,
+   where    => '',
+   database => 'issue_96',
+   table    => 't',
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
+#$sb->wipe_clean($dbh);
 exit;
