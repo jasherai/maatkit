@@ -130,7 +130,7 @@ sub new {
 sub get_sql {
    my ( $self, %args ) = @_;
    if ( $self->{state} ) {
-      return 'SELECT '
+      return 'SELECT /*rows in nibble*/ '
          . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
@@ -223,7 +223,7 @@ sub __make_boundary_sql {
    my $lb;
    my $q   = $self->{quoter};
    my $s   = $self->{sel_stmt};
-   my $sql = 'SELECT '
+   my $sql = 'SELECT /*nibble boundary*/ '
       . join(',', map { $q->quote($_) } @{$s->{cols}})
       . " FROM " . $q->quote($self->{database}, $self->{table})
       . ($self->{versionparser}->version_ge($self->{dbh}, '4.0.9')
