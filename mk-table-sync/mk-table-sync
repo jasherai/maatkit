@@ -3318,7 +3318,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 4661
+# TableSyncNibble package 4664
 # ###########################################################################
 package TableSyncNibble;
 
@@ -3434,24 +3434,25 @@ sub get_sql {
 
 sub __get_boundaries {
    my ( $self ) = @_;
+   my $q = $self->{quoter};
+   my $s = $self->{sel_stmt};
+   my $lb;   # Lower boundary part of WHERE
+   my $ub;   # Upper boundary part of WHERE
+   my $row;  # Next upper boundary row or cached_row
 
    if ( $self->{cached_boundaries} ) {
       MKDEBUG && _d('Using cached boundaries');
       return $self->{cached_boundaries};
    }
 
-   my $q = $self->{quoter};
-   my $s = $self->{sel_stmt};
-   my $row;
-   my $lb; # Lower boundaries
-   my $sql;
    if ( $self->{cached_row} && $self->{cached_nibble} == $self->{nibble} ) {
       MKDEBUG && _d('Using cached row for boundaries');
       $row = $self->{cached_row};
    }
    else {
-      MKDEBUG && _d('Getting next boundary row');
-      ($sql, $lb) = $self->__make_boundary_sql();
+      MKDEBUG && _d('Getting next upper boundary row');
+      my $sql;
+      ($sql, $lb) = $self->__make_boundary_sql();  # $lb from outer scope!
 
       if ( $self->{nibble} == 0 ) {
          my $explain_index = $self->__get_explain_index($sql);
@@ -3467,19 +3468,17 @@ sub __get_boundaries {
       MKDEBUG && _d($row ? 'Got a row' : "Didn't get a row");
    }
 
-   my $where;
    if ( $row ) {
-      my $i  = 0;
-      $where = $s->{boundaries}->{'<='};
-      $where =~ s/\?/$q->quote_val($row->{$s->{scols}->[$i++]})/eg;
+      my $i = 0;
+      $ub   = $s->{boundaries}->{'<='};
+      $ub   =~ s/\?/$q->quote_val($row->{$s->{scols}->[$i++]})/eg;
    }
    else {
-      $where = '1=1';
+      MKDEBUG && _d('No upper boundary');
+      $ub = '1=1';
    }
 
-   if ( $lb ) {
-      $where = "($lb AND $where)";
-   }
+   my $where = $lb ? "($lb AND $ub)" : $ub;
 
    $self->{cached_row}        = $row;
    $self->{cached_nibble}     = $self->{nibble};

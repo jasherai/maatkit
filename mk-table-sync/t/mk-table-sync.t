@@ -482,7 +482,7 @@ SKIP: {
       'do-replicate-db is out of sync before sync'
    );
 
-   diag(`../mk-table-sync h=127.1,P=12348 --sync-to-master --execute --with-triggers --ignore-databases sakila --ignore-tables buddy_list 2>&1`);
+   diag(`../mk-table-sync h=127.1,P=12348 --sync-to-master --execute --with-triggers --ignore-databases sakila,mysql --ignore-tables buddy_list 2>&1`);
 
    $r = $dbh3->selectall_arrayref('SELECT * FROM onlythisdb.t');
    is_deeply(
