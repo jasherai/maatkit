@@ -203,6 +203,7 @@ sub sync_table {
       func          => $args{func},
       trim          => $args{trim},
       bufferinmysql => $args{bufferinmysql},
+      precision     => $args{float_precision},
    );
 
    $self->lock_and_wait(%args, lock_level => 2);
