@@ -109,6 +109,7 @@ sub new {
       cols      => $args{cols},
       trim      => $args{trim},
       buffer    => $args{bufferinmysql},
+      precision => $args{float_precision},
    );
    $args{row_sql} ||= $args{checksum}->make_row_checksum(
       table     => $args{struct},
@@ -116,6 +117,7 @@ sub new {
       func      => $args{func},
       cols      => $args{cols},
       trim      => $args{trim},
+      precision => $args{float_precision},
    );
 
    $args{state}  = 0;
