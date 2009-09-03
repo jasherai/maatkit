@@ -255,7 +255,7 @@ $t->done_with_rows();
 is($t->{state}, 2, 'Now in state to fetch individual rows');
 ok($t->pending_changes(), 'Pending changes not done yet');
 is($t->get_sql(database => 'test', table => 'test1'),
-   q{SELECT `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`, `c`)) AS __crc FROM }
+   q{SELECT /*rows in nibble*/ `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`, `c`)) AS __crc FROM }
    . q{`test`.`test1` WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) }
    . q{AND ((`a` < 2) OR (`a` = 2 AND `b` <= 'ca'))))},
    'SQL now working inside nibble'
@@ -343,7 +343,7 @@ like(
       database => 'test',
       table    => 'test1',
    ),
-   qr/SELECT SQL_BUFFER_RESULT/,
+   qr/SELECT ..rows in nibble.. SQL_BUFFER_RESULT/,
    'Buffering in next nibble',
 );
 
@@ -374,12 +374,6 @@ $t = new TableSyncNibble(
    versionparser => $vp,
    func          => '',
    trim          => 0,
-);
-$t->get_sql(
-   quoter   => $q,
-   where    => '',
-   database => 'issue_96',
-   table    => 't',
 );
 
 # #############################################################################

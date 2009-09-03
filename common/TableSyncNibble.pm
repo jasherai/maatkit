@@ -198,9 +198,9 @@ sub __get_boundaries {
    if ( $row ) {
       # Inject the row into the WHERE clause.  The WHERE is for the <= case
       # because the bottom of the nibble is bounded strictly by >.
-      my $i = 0;
-      ($where = $s->{boundaries}->{'<='})
-         =~ s{([=><]) \?}{"$1 " . $q->quote_val($row->{$s->{scols}->[$i++]})}eg;
+      my $i  = 0;
+      $where = $s->{boundaries}->{'<='};
+      $where =~ s/\?/$q->quote_val($row->{$s->{scols}->[$i++]})/eg;
    }
    else {
       $where = '1=1';
@@ -234,10 +234,9 @@ sub __make_boundary_sql {
       # remembered row.
       my $tmp = $self->{cached_row};
       my $i   = 0;
-      $lb = $s->{boundaries}->{'>'};
-      $lb =~ s{([=><]) \?}
-              {"$1 " . $q->quote_val($tmp->{$s->{scols}->[$i++]})}eg;
-      $sql .= ' WHERE ' . $lb;
+      $lb     = $s->{boundaries}->{'>'};
+      $lb     =~ s/\?/$q->quote_val($tmp->{$s->{scols}->[$i++]})/eg;
+      $sql   .= ' WHERE ' . $lb;
    }
    $sql .= " ORDER BY " . join(',', map { $q->quote($_) } @{$self->{key_cols}})
          . ' LIMIT ' . ($self->{chunksize} - 1) . ', 1';
