@@ -124,12 +124,15 @@ sub new {
    return bless { %args }, $class;
 }
 
-# Depth-first: if a nibble is bad, return SQL to inspect rows individually.
-# Otherwise get the next nibble.  This way we can sync part of the table before
-# moving on to the next part.
+# Returns a SELECT statement that either gets a nibble of rows (state=0) or,
+# if the last nibble was bad (state=1 or 2), gets the rows in the nibble.
+# This way we can sync part of the table before moving on to the next part.
+# Required args: database, table
+# Optional args: where
 sub get_sql {
    my ( $self, %args ) = @_;
    if ( $self->{state} ) {
+      # Selects the individual rows so that they can be compared.
       return 'SELECT /*rows in nibble*/ '
          . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
@@ -139,6 +142,7 @@ sub get_sql {
          . ($args{where} ? " AND ($args{where})" : '');
    }
    else {
+      # Selects the rows as a nibble.
       my $where = $self->__get_boundaries();
       return $self->{chunker}->inject_chunks(
          database  => $args{database},
@@ -152,36 +156,49 @@ sub get_sql {
    }
 }
 
-# Returns a WHERE clause for finding out the boundaries of the nibble.
-# Initially, it'll just be something like "select key_cols ... limit 499, 1".
-# We then remember this row (it is also used elsewhere).  Next time it's like
-# "select key_cols ... where > remembered_row limit 499, 1".  Assuming that
-# the source and destination tables have different data, executing the same
-# query against them might give back a different boundary row, which is not
-# what we want, so each boundary needs to be cached until the 'nibble'
-# increases.
+# Returns a WHERE clause for selecting rows in a nibble relative to lower
+# and upper boundary rows.  Initially neither boundary is defined, so we
+# get the first upper boundary row and return a clause like:
+#   WHERE rows < upper_boundary_row1
+# This selects all "lowest" rows: those before/below the first nibble
+# boundary.  The upper boundary row is saved (as cached_row) so that on the
+# next call it becomes the lower boundary and we get the next upper boundary,
+# resulting in a clause like:
+#   WHERE rows > cached_row && col < upper_boundary_row2
+# This process repeats for subsequent calls. Assuming that the source and
+# destination tables have different data, executing the same query against
+# them might give back a different boundary row, which is not what we want,
+# so each boundary needs to be cached until the nibble increases.
 sub __get_boundaries {
    my ( $self ) = @_;
+   my $q = $self->{quoter};
+   my $s = $self->{sel_stmt};
+   my $lb;   # Lower boundary part of WHERE
+   my $ub;   # Upper boundary part of WHERE
+   my $row;  # Next upper boundary row or cached_row
 
    if ( $self->{cached_boundaries} ) {
       MKDEBUG && _d('Using cached boundaries');
       return $self->{cached_boundaries};
    }
 
-   my $q = $self->{quoter};
-   my $s = $self->{sel_stmt};
-   my $row;
-   my $lb; # Lower boundaries
-   my $sql;
    if ( $self->{cached_row} && $self->{cached_nibble} == $self->{nibble} ) {
+      # If there's a cached (last) row and the nibble number hasn't increased
+      # then a differing row was found in this nibble.  We re-use its
+      # boundaries so that instead of advancing to the next nibble we'll look
+      # at the row in this nibble (get_sql() will return its SELECT
+      # /*rows in nibble*/ query).
       MKDEBUG && _d('Using cached row for boundaries');
       $row = $self->{cached_row};
    }
    else {
-      MKDEBUG && _d('Getting next boundary row');
-      ($sql, $lb) = $self->__make_boundary_sql();
+      MKDEBUG && _d('Getting next upper boundary row');
+      my $sql;
+      ($sql, $lb) = $self->__make_boundary_sql();  # $lb from outer scope!
 
       # Check that $sql will use the index chosen earlier in new().
+      # Only do this for the first nibble.  I assume this will be safe
+      # enough since the WHERE should use the same columns.
       if ( $self->{nibble} == 0 ) {
          my $explain_index = $self->__get_explain_index($sql);
          if ( ($explain_index || '') ne $s->{index} ) {
@@ -196,21 +213,24 @@ sub __get_boundaries {
       MKDEBUG && _d($row ? 'Got a row' : "Didn't get a row");
    }
 
-   my $where;
    if ( $row ) {
-      # Inject the row into the WHERE clause.  The WHERE is for the <= case
-      # because the bottom of the nibble is bounded strictly by >.
-      my $i  = 0;
-      $where = $s->{boundaries}->{'<='};
-      $where =~ s/\?/$q->quote_val($row->{$s->{scols}->[$i++]})/eg;
+      # Add the row to the WHERE clause as the upper boundary.  As such,
+      # the table rows should be <= to this boundary.  (Conversely, for
+      # any lower boundary the table rows should be > the lower boundary.)
+      my $i = 0;
+      $ub   = $s->{boundaries}->{'<='};
+      $ub   =~ s/\?/$q->quote_val($row->{$s->{scols}->[$i++]})/eg;
    }
    else {
-      $where = '1=1';
+      # This usually happens at the end of the table, after we've nibbled
+      # all the rows.
+      MKDEBUG && _d('No upper boundary');
+      $ub = '1=1';
    }
 
-   if ( $lb ) {
-      $where = "($lb AND $where)";
-   }
+   # If $lb is defined, then this is the 2nd or subsequent nibble and
+   # $ub should be the previous boundary.  Else, this is the first nibble.
+   my $where = $lb ? "($lb AND $ub)" : $ub;
 
    $self->{cached_row}        = $row;
    $self->{cached_nibble}     = $self->{nibble};
@@ -220,6 +240,12 @@ sub __get_boundaries {
    return $where;
 }
 
+# Returns a SELECT statement for the next upper boundary row and the
+# lower boundary part of WHERE if this is the 2nd or subsequent nibble.
+# (The first nibble doesn't have a lower boundary.)  The returned SELECT
+# is largely responsible for nibbling the table because if the boundaries
+# are off then the nibble may not advance properly and we'll get stuck
+# in an infinite loop (issue 96).
 sub __make_boundary_sql {
    my ( $self ) = @_;
    my $lb;
@@ -247,6 +273,7 @@ sub __make_boundary_sql {
    return $sql, $lb;
 }
 
+# Returns just the index value from EXPLAIN for the given query (sql).
 sub __get_explain_index {
    my ( $self, $sql ) = @_;
    return unless $sql;

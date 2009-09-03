@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 23;
+use Test::More tests => 25;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -86,7 +86,6 @@ SKIP: {
 
    is (
       $t->get_sql(
-         quoter   => $q,
          where    => 'foo=1',
          database => 'test',
          table    => 'test1',
@@ -347,12 +346,9 @@ like(
    'Buffering in next nibble',
 );
 
-# #############################################################################
+# #########################################################################
 # Issue 96: mk-table-sync: Nibbler infinite loop
-# #############################################################################
-
-# This stuff isn't used yet...
-
+# #########################################################################
 $sb->load_file('master', 'samples/issue_96.sql');
 $tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_96', 't'));
 $t = new TableSyncNibble(
@@ -376,8 +372,34 @@ $t = new TableSyncNibble(
    trim          => 0,
 );
 
+# Test that we die if MySQL isn't using the chosen index (package_id)
+# for the boundary sql.
+diag(`/tmp/12345/use -e 'ALTER TABLE issue_96.t DROP INDEX package_id'`);
+my %args = ( database=>'issue_96', table=>'t' );
+eval {
+   $t->get_sql(%args);
+};
+like(
+   $EVAL_ERROR,
+   qr/^Cannot nibble table `issue_96`.`t` because MySQL chose no index instead of the `package_id` index/,
+   "Die if MySQL doesn't choose our index (issue 96)"
+);
+
+# Restore the index, get the first sql boundary and check that it
+# has the proper ORDER BY clause which makes MySQL use the index.
+diag(`/tmp/12345/use -e 'ALTER TABLE issue_96.t ADD UNIQUE INDEX package_id (package_id,location);'`);
+my $sql;
+eval {
+   ($sql,undef) = $t->__make_boundary_sql();
+};
+is(
+   $sql,
+   "SELECT /*nibble boundary 0*/ `package_id`,`location`,`from_city` FROM `issue_96`.`t` FORCE INDEX(`package_id`) ORDER BY `package_id`,`location` LIMIT 1, 1",
+   'Boundary SQL has ORDER BY key columns'
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
-#$sb->wipe_clean($dbh);
+$sb->wipe_clean($dbh);
 exit;
