@@ -319,7 +319,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 4508
+# TableChecksum package 4669
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -543,8 +543,8 @@ sub make_row_checksum {
          if ( $type eq 'timestamp' ) {
             $result .= ' + 0';
          }
-         elsif ( $type =~ m/float|double/ && $args{precision} ) {
-            $result = "ROUND($result, $args{precision})";
+         elsif ( $type =~ m/float|double/ && $args{float_precision} ) {
+            $result = "ROUND($result, $args{float_precision})";
          }
          elsif ( $type =~ m/varchar/ && $args{trim} ) {
             $result = "TRIM($result)";
@@ -4217,21 +4217,21 @@ sub checksum_tables {
          my $query;
          if ( $checksum_table_data && $do_table ) {
             $query = $tc->make_checksum_query(
-               dbname     => $db,
-               tblname    => $table->{table},
-               table      => $table->{struct},
-               quoter     => $args{q},
-               algorithm  => $strat,
-               func       => $func,
-               crc_wid    => $crc_wid,
-               crc_type   => $crc_type,
-               opt_slice  => $opt_slice,
-               cols       => $final_o->get('columns'),
-               sep        => $final_o->get('separator'),
-               replicate  => $final_o->get('replicate'),
-               precision  => $final_o->get('float-precision'),
-               trim       => $final_o->get('trim'),
-               ignorecols => $final_o->get('ignore-columns'),
+               dbname          => $db,
+               tblname         => $table->{table},
+               table           => $table->{struct},
+               quoter          => $args{q},
+               algorithm       => $strat,
+               func            => $func,
+               crc_wid         => $crc_wid,
+               crc_type        => $crc_type,
+               opt_slice       => $opt_slice,
+               cols            => $final_o->get('columns'),
+               sep             => $final_o->get('separator'),
+               replicate       => $final_o->get('replicate'),
+               float_precision => $final_o->get('float-precision'),
+               trim            => $final_o->get('trim'),
+               ignorecols      => $final_o->get('ignore-columns'),
             );
          }
          else { # --schema
