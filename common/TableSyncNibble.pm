@@ -182,12 +182,14 @@ sub __get_boundaries {
       ($sql, $lb) = $self->__make_boundary_sql();
 
       # Check that $sql will use the index chosen earlier in new().
-      my $explain_index = $self->__get_explain_index($sql);
-      if ( ($explain_index || '') ne $s->{index} ) {
-        die 'Cannot nibble table ' . $q->quote($self->{database},$self->{table})
-         . " because MySQL chose "
-         . ($explain_index ? "the `$explain_index`" : 'no') . ' index'
-         . " instead of the `$s->{index}` index";
+      if ( $self->{nibble} == 0 ) {
+         my $explain_index = $self->__get_explain_index($sql);
+         if ( ($explain_index || '') ne $s->{index} ) {
+         die 'Cannot nibble table '.$q->quote($self->{database},$self->{table})
+            . " because MySQL chose "
+            . ($explain_index ? "the `$explain_index`" : 'no') . ' index'
+            . " instead of the `$s->{index}` index";
+         }
       }
 
       $row = $self->{dbh}->selectrow_hashref($sql);
@@ -223,7 +225,7 @@ sub __make_boundary_sql {
    my $lb;
    my $q   = $self->{quoter};
    my $s   = $self->{sel_stmt};
-   my $sql = 'SELECT /*nibble boundary*/ '
+   my $sql = "SELECT /*nibble boundary $self->{nibble}*/ "
       . join(',', map { $q->quote($_) } @{$s->{cols}})
       . " FROM " . $q->quote($self->{database}, $self->{table})
       . ($self->{versionparser}->version_ge($self->{dbh}, '4.0.9')
