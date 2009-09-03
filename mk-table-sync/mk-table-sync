@@ -2739,7 +2739,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 4508
+# TableChecksum package 4669
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2963,8 +2963,8 @@ sub make_row_checksum {
          if ( $type eq 'timestamp' ) {
             $result .= ' + 0';
          }
-         elsif ( $type =~ m/float|double/ && $args{precision} ) {
-            $result = "ROUND($result, $args{precision})";
+         elsif ( $type =~ m/float|double/ && $args{float_precision} ) {
+            $result = "ROUND($result, $args{float_precision})";
          }
          elsif ( $type =~ m/varchar/ && $args{trim} ) {
             $result = "TRIM($result)";
@@ -3090,7 +3090,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 4493
+# TableSyncChunk package 4669
 # ###########################################################################
 package TableSyncChunk;
 
@@ -3178,6 +3178,7 @@ sub new {
       cols      => $args{cols},
       trim      => $args{trim},
       buffer    => $args{bufferinmysql},
+      float_precision => $args{float_precision},
    );
    $args{row_sql} ||= $args{checksum}->make_row_checksum(
       table     => $args{struct},
@@ -3185,6 +3186,7 @@ sub new {
       func      => $args{func},
       cols      => $args{cols},
       trim      => $args{trim},
+      float_precision => $args{float_precision},
    );
 
    $args{state} = 0;
@@ -3318,7 +3320,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 4664
+# TableSyncNibble package 4669
 # ###########################################################################
 package TableSyncNibble;
 
@@ -3380,25 +3382,27 @@ sub new {
    }
 
    $args{nibble_sql} ||= $args{checksum}->make_checksum_query(
-      dbname    => $args{database},
-      tblname   => $args{table},
-      table     => $args{struct},
-      quoter    => $args{quoter},
-      algorithm => $args{algorithm},
-      func      => $args{func},
-      crc_wid   => $args{crc_wid},
-      crc_type  => $args{crc_type},
-      opt_slice => $args{opt_slice},
-      cols      => $args{cols},
-      trim      => $args{trim},
-      buffer    => $args{bufferinmysql},
+      dbname          => $args{database},
+      tblname         => $args{table},
+      table           => $args{struct},
+      quoter          => $args{quoter},
+      algorithm       => $args{algorithm},
+      func            => $args{func},
+      crc_wid         => $args{crc_wid},
+      crc_type        => $args{crc_type},
+      opt_slice       => $args{opt_slice},
+      cols            => $args{cols},
+      trim            => $args{trim},
+      buffer          => $args{bufferinmysql},
+      float_precision => $args{float_precision},
    );
    $args{row_sql} ||= $args{checksum}->make_row_checksum(
-      table     => $args{struct},
-      quoter    => $args{quoter},
-      func      => $args{func},
-      cols      => $args{cols},
-      trim      => $args{trim},
+      table           => $args{struct},
+      quoter          => $args{quoter},
+      func            => $args{func},
+      cols            => $args{cols},
+      trim            => $args{trim},
+      float_precision => $args{float_precision},
    );
 
    $args{state}  = 0;
@@ -3736,7 +3740,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 4590
+# TableSyncer package 4669
 # ###########################################################################
 package TableSyncer;
 
@@ -3880,26 +3884,27 @@ sub sync_table {
 
    my $class  = "TableSync$args{algorithm}";
    my $plugin = $class->new(
-      handler   => $ch,
-      cols      => $args{cols},
-      dbh       => $args{src_dbh},
-      database  => $args{src_db},
-      dumper    => $args{dumper},
-      table     => $args{src_tbl},
-      chunker   => $args{chunker},
-      nibbler   => $args{nibbler},
-      parser    => $args{parser},
-      struct    => $args{tbl_struct},
-      checksum  => $args{checksum},
-      vp        => $args{versionparser},
-      quoter    => $args{quoter},
-      chunksize => $chunksize,
-      where     => $args{where},
-      possible_keys => [],
-      versionparser => $args{versionparser},
-      func          => $args{func},
-      trim          => $args{trim},
-      bufferinmysql => $args{bufferinmysql},
+      handler         => $ch,
+      cols            => $args{cols},
+      dbh             => $args{src_dbh},
+      database        => $args{src_db},
+      dumper          => $args{dumper},
+      table           => $args{src_tbl},
+      chunker         => $args{chunker},
+      nibbler         => $args{nibbler},
+      parser          => $args{parser},
+      struct          => $args{tbl_struct},
+      checksum        => $args{checksum},
+      vp              => $args{versionparser},
+      quoter          => $args{quoter},
+      chunksize       => $chunksize,
+      where           => $args{where},
+      possible_keys   => [],
+      versionparser   => $args{versionparser},
+      func            => $args{func},
+      trim            => $args{trim},
+      bufferinmysql   => $args{bufferinmysql},
+      float_precision => $args{float_precision},
    );
 
    $self->lock_and_wait(%args, lock_level => 2);
@@ -6043,44 +6048,45 @@ sub sync_a_table {
       } @{$o->get('columns') || $tbl_struct->{cols}};
 
       my %status = $syncer->sync_table(
-         algorithm     => $o->get('algorithm') || '',
-         buffer        => $o->get('buffer-results')  || 0,
-         bufferinmysql => $o->get('buffer-in-mysql') || 0,
-         checksum      => $args{checksum},
-         chunker       => $args{chunker},
-         chunksize     => $o->get('chunk-size'),
-         cols          => \@compare_columns,
-         dst_db        => $args{dst_db},
-         dst_dbh       => $args{dst}->{dbh},
-         dst_tbl       => $args{dst_tbl},
-         dumper        => $du,
-         execute       => $o->get('execute') || 0,
-         index_hint    => $args{index_hint},
-         lock          => $o->get('lock') || 0,
-         misc_dbh      => $args{src}->{misc_dbh},
-         nibbler       => $args{nibbler},
-         possible_keys => \@possible_keys,
-         parser        => $tp,
-         print         => $o->get('print') || 0,
-         quoter        => $q,
-         replace       => $o->get('replace') || 0,
-         replicate     => ($o->get('replicate') || $o->get('sync-to-master'))
-                          || 0,
-         transaction   => $use_txn,
-         sleep         => $o->get('chunk-sleep'),
-         src_db        => $args{src_db},
-         src_dbh       => $args{src}->{dbh},
-         src_tbl       => $args{src_tbl},
-         test          => $o->get('dry-run') || 0,
-         tbl_struct    => $tbl_struct,
-         timeoutok     => $o->get('timeout-ok') || 0,
-         trim          => $o->get('trim') || 0,
-         versionparser => $args{vp},
-         wait          => $o->get('wait') || 0,
-         where         => $args{where} || '',
-         master_slave  => $args{ms},
-         func          => $o->get('function') || '',
-         skipslavecheck=> ($o->get('slave-check') ? 0 : 1),
+         algorithm       => $o->get('algorithm') || '',
+         buffer          => $o->get('buffer-results')  || 0,
+         bufferinmysql   => $o->get('buffer-in-mysql') || 0,
+         checksum        => $args{checksum},
+         chunker         => $args{chunker},
+         chunksize       => $o->get('chunk-size'),
+         cols            => \@compare_columns,
+         dst_db          => $args{dst_db},
+         dst_dbh         => $args{dst}->{dbh},
+         dst_tbl         => $args{dst_tbl},
+         dumper          => $du,
+         execute         => $o->get('execute') || 0,
+         float_precision => $o->get('float-precision'),
+         index_hint      => $args{index_hint},
+         lock            => $o->get('lock') || 0,
+         misc_dbh        => $args{src}->{misc_dbh},
+         nibbler         => $args{nibbler},
+         possible_keys   => \@possible_keys,
+         parser          => $tp,
+         print           => $o->get('print') || 0,
+         quoter          => $q,
+         replace         => $o->get('replace') || 0,
+         replicate       => ($o->get('replicate') || $o->get('sync-to-master'))
+                            || 0,
+         transaction     => $use_txn,
+         sleep           => $o->get('chunk-sleep'),
+         src_db          => $args{src_db},
+         src_dbh         => $args{src}->{dbh},
+         src_tbl         => $args{src_tbl},
+         test            => $o->get('dry-run') || 0,
+         tbl_struct      => $tbl_struct,
+         timeoutok       => $o->get('timeout-ok') || 0,
+         trim            => $o->get('trim') || 0,
+         versionparser   => $args{vp},
+         wait            => $o->get('wait') || 0,
+         where           => $args{where} || '',
+         master_slave    => $args{ms},
+         func            => $o->get('function') || '',
+         skipslavecheck  => ($o->get('slave-check') ? 0 : 1),
       );
 
       if ( $o->get('verbose') ) {
@@ -6676,6 +6682,17 @@ default: yes
 Enable foreign key checks (C<SET FOREIGN_KEY_CHECKS=1>).
 
 Specifying C<--no-foreign-key-checks> will C<SET FOREIGN_KEY_CHECKS=0>.
+
+=item --float-precision
+
+type: int
+
+Precision for C<FLOAT> and C<DOUBLE> column comparisons.
+
+If you specify this option, FLOAT and DOUBLE columns will be rounded to the
+specified number of digits after the decimal point for the checksum.  This can
+avoid mismatches due to different floating-point representations of
+the same values on different MySQL versions and hardware.
 
 =item --function
 

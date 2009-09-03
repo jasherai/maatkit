@@ -1,5 +1,8 @@
 Changelog for mk-table-sync:
 
+   * Added --float-precision (issue 410).
+   * Fixed an infinite loop with the Nibble algorithm (issue 96).
+
 2009-08-31: version 1.0.18
 
    * Added --[no]check-master (issue 110).
