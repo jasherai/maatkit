@@ -367,7 +367,7 @@ is (
       func      => 'SHA1',
       table     => $t,
       quoter    => $q,
-      precision => 5,
+      float_precision => 5,
    ),
    q{SHA1(CONCAT_WS('#', `rental_id`, ROUND(`foo`, 5)))},
    'FLOAT column is rounded to 5 places',

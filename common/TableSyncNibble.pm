@@ -97,27 +97,27 @@ sub new {
    }
 
    $args{nibble_sql} ||= $args{checksum}->make_checksum_query(
-      dbname    => $args{database},
-      tblname   => $args{table},
-      table     => $args{struct},
-      quoter    => $args{quoter},
-      algorithm => $args{algorithm},
-      func      => $args{func},
-      crc_wid   => $args{crc_wid},
-      crc_type  => $args{crc_type},
-      opt_slice => $args{opt_slice},
-      cols      => $args{cols},
-      trim      => $args{trim},
-      buffer    => $args{bufferinmysql},
-      precision => $args{float_precision},
+      dbname          => $args{database},
+      tblname         => $args{table},
+      table           => $args{struct},
+      quoter          => $args{quoter},
+      algorithm       => $args{algorithm},
+      func            => $args{func},
+      crc_wid         => $args{crc_wid},
+      crc_type        => $args{crc_type},
+      opt_slice       => $args{opt_slice},
+      cols            => $args{cols},
+      trim            => $args{trim},
+      buffer          => $args{bufferinmysql},
+      float_precision => $args{float_precision},
    );
    $args{row_sql} ||= $args{checksum}->make_row_checksum(
-      table     => $args{struct},
-      quoter    => $args{quoter},
-      func      => $args{func},
-      cols      => $args{cols},
-      trim      => $args{trim},
-      precision => $args{float_precision},
+      table           => $args{struct},
+      quoter          => $args{quoter},
+      func            => $args{func},
+      cols            => $args{cols},
+      trim            => $args{trim},
+      float_precision => $args{float_precision},
    );
 
    $args{state}  = 0;

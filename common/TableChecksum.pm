@@ -290,8 +290,8 @@ sub make_row_checksum {
          if ( $type eq 'timestamp' ) {
             $result .= ' + 0';
          }
-         elsif ( $type =~ m/float|double/ && $args{precision} ) {
-            $result = "ROUND($result, $args{precision})";
+         elsif ( $type =~ m/float|double/ && $args{float_precision} ) {
+            $result = "ROUND($result, $args{float_precision})";
          }
          elsif ( $type =~ m/varchar/ && $args{trim} ) {
             $result = "TRIM($result)";
