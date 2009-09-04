@@ -44,7 +44,8 @@ sub best_algorithm {
    my ($exact, $cols) = $args{chunker}
       ->find_chunk_columns($args{tbl_struct}, { exact => 1 });
    if ( $exact ) {
-      MKDEBUG && _d('Chunker says', $cols->[0], 'supports chunking exactly');
+      MKDEBUG && _d('Chunker says the', $cols->[0]->{index},
+         'index supports chunking exactly');
       $result = 'Chunk';
       # If Chunker can handle it OK, but not with exact chunk sizes, it means
       # it's using only the first column of a multi-column index, which could

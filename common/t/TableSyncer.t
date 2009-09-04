@@ -16,7 +16,7 @@ $src_dbh = $sb->get_dbh_for('master');
 $dst_dbh = $sb->get_dbh_for('master');
 $dbh     = $sb->get_dbh_for('master');
 if ( $src_dbh ) {
-   plan tests => 18;
+   plan tests => 19;
 }
 else {
    plan skip_all => 'Cannot connect to sandbox master';
@@ -81,6 +81,17 @@ is($ts->best_algorithm(
    ),
    'GroupBy',
    'Got GroupBy algorithm',
+);
+
+is($ts->best_algorithm(
+      tbl_struct  => $tp->parse(
+                     $du->get_create_table( $src_dbh, $q, 'test', 'test3' )),
+      nibbler     => $nibbler,
+      chunker     => $chunker,
+      parser      => $tp,
+   ),
+   'Chunk',
+   'Got Chunk algorithm',
 );
 
 my %args = (
