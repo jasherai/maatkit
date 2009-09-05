@@ -22,20 +22,20 @@ sub throws_ok {
 
 throws_ok(
    sub { new ChangeHandler() },
-   qr/I need a quoter/,
-   'Needs a quoter',
+   qr/I need a Quoter/,
+   'Needs a Quoter',
 );
 
 my @rows;
 my $ch = new ChangeHandler(
-   quoter    => new Quoter(),
-   database  => 'test',
-   table     => 'foo',
-   sdatabase => 'test',
-   stable    => 'test1',
-   actions   => [ sub { push @rows, @_ } ],
-   replace   => 0,
-   queue     => 0,
+   Quoter  => new Quoter(),
+   dst_db  => 'test',
+   dst_tbl => 'foo',
+   src_db  => 'test',
+   src_tbl => 'test1',
+   actions => [ sub { push @rows, @_ } ],
+   replace => 0,
+   queue   => 0,
 );
 
 $ch->change('INSERT', { a => 1, b => 2 }, [qw(a)] );

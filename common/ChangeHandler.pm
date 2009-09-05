@@ -30,24 +30,23 @@ our @ACTIONS  = qw(DELETE REPLACE INSERT UPDATE);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # Arguments:
-# * quoter     Quoter()
-# * database   database name
-# * table      table name
-# * sdatabase  source database name
-# * stable     source table name
+# * Quoter     Quoter object
+# * dst_db     Destination database
+# * dst_tbl    Destination table
+# * src_db     Source database
+# * src_tbl    Source table
 # * actions    arrayref of subroutines to call when handling a change.
 # * replace    Do UPDATE/INSERT as REPLACE.
 # * queue      Queue changes until process_changes is called with a greater
 #              queue level.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(quoter database table sdatabase stable replace queue)
-   ) {
+   foreach my $arg ( qw(Quoter dst_db dst_tbl src_db src_tbl replace queue) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $self = { %args, map { $_ => [] } @ACTIONS };
-   $self->{db_tbl}  = $self->{quoter}->quote(@args{qw(database table)});
-   $self->{sdb_tbl} = $self->{quoter}->quote(@args{qw(sdatabase stable)});
+   $self->{dst_db_tbl} = $self->{Quoter}->quote(@args{qw(dst_db dst_tbl)});
+   $self->{src_db_tbl} = $self->{Quoter}->quote(@args{qw(src_db src_tbl)});
    $self->{changes} = { map { $_ => 0 } @ACTIONS };
    return bless $self, $class;
 }
@@ -118,7 +117,7 @@ sub process_rows {
          MKDEBUG && _d('Not processing now', $queue_level, '<', $self->{queue});
          return;
       }
-
+      MKDEBUG && _d('Processing rows:');
       my ($row, $cur_act);
       eval {
          foreach my $action ( @ACTIONS ) {
@@ -150,20 +149,22 @@ sub process_rows {
 # DELETE never needs to be fetched back.
 sub make_DELETE {
    my ( $self, $row, $cols ) = @_;
-   return "DELETE FROM $self->{db_tbl} WHERE "
+   MKDEBUG && _d('Make DELETE');
+   return "DELETE FROM $self->{dst_db_tbl} WHERE "
       . $self->make_where_clause($row, $cols)
       . ' LIMIT 1';
 }
 
 sub make_UPDATE {
    my ( $self, $row, $cols ) = @_;
+   MKDEBUG && _d('Make UPDATE');
    if ( $self->{replace} ) {
       return $self->make_row('REPLACE', $row, $cols);
    }
    my %in_where = map { $_ => 1 } @$cols;
    my $where = $self->make_where_clause($row, $cols);
    if ( my $dbh = $self->{fetch_back} ) {
-      my $sql = "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1";
+      my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
       MKDEBUG && _d('Fetching data for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
@@ -172,16 +173,17 @@ sub make_UPDATE {
    else {
       $cols = [ sort keys %$row ];
    }
-   return "UPDATE $self->{db_tbl} SET "
+   return "UPDATE $self->{dst_db_tbl} SET "
       . join(', ', map {
-            $self->{quoter}->quote($_)
-            . '=' .  $self->{quoter}->quote_val($row->{$_})
+            $self->{Quoter}->quote($_)
+            . '=' .  $self->{Quoter}->quote_val($row->{$_})
          } grep { !$in_where{$_} } @$cols)
       . " WHERE $where LIMIT 1";
 }
 
 sub make_INSERT {
    my ( $self, $row, $cols ) = @_;
+   MKDEBUG && _d('Make INSERT');
    if ( $self->{replace} ) {
       return $self->make_row('REPLACE', $row, $cols);
    }
@@ -190,6 +192,7 @@ sub make_INSERT {
 
 sub make_REPLACE {
    my ( $self, $row, $cols ) = @_;
+   MKDEBUG && _d('Make REPLACE');
    return $self->make_row('REPLACE', $row, $cols);
 }
 
@@ -198,16 +201,16 @@ sub make_row {
    my @cols = sort keys %$row;
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
-      my $sql = "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1";
+      my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
       MKDEBUG && _d('Fetching data for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       @cols = sort keys %$res;
    }
-   return "$verb INTO $self->{db_tbl}("
-      . join(', ', map { $self->{quoter}->quote($_) } @cols)
+   return "$verb INTO $self->{dst_db_tbl}("
+      . join(', ', map { $self->{Quoter}->quote($_) } @cols)
       . ') VALUES ('
-      . $self->{quoter}->quote_val( @{$row}{@cols} )
+      . $self->{Quoter}->quote_val( @{$row}{@cols} )
       . ')';
 }
 
@@ -216,7 +219,7 @@ sub make_where_clause {
    my @clauses = map {
       my $val = $row->{$_};
       my $sep = defined $val ? '=' : ' IS ';
-      $self->{quoter}->quote($_) . $sep . $self->{quoter}->quote_val($val);
+      $self->{Quoter}->quote($_) . $sep . $self->{Quoter}->quote_val($val);
    } @$cols;
    return join(' AND ', @clauses);
 }
