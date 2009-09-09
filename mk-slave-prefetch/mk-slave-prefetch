@@ -3036,16 +3036,16 @@ occur.  You may see the following counters:
    ======================  =======================================
    mysqlbinlog             Executed mysqlbinlog to read log events.
    events                  The total number of relay log events.
-   not_far_enough_ahead    An event was not at least --offset
+   not_far_enough_ahead    An event was not at least L<"--offset">
                            bytes ahead of the SQL thread.
-   too_far_ahead           An event was more than --offset
-                           + --window bytes ahead of the SQL thread.
-   too_close_to_io_thread  An event was less than --iolag bytes
+   too_far_ahead           An event was more than L<"--offset">
+                           + L<"--window"> bytes ahead of the SQL thread.
+   too_close_to_io_thread  An event was less than L<"--io-lag"> bytes
                            away from the I/O thread's position.
    event_not_allowed       An event wasn't a SET, USE, INSERT,
                            UPDATE, DELETE or REPLACE query.
    event_filtered_out      An event was filtered out because of
-                           --permitregexp or --rejectregexp.
+                           L<"--permit-regexp"> or L<"--reject-regexp">.
    same_timestamp          A SET TIMESTAMP event was ignored because
                            it had the same timestamp as the last one.
    do_query                A transformed event was executed
@@ -3053,7 +3053,7 @@ occur.  You may see the following counters:
    query_error             An executed query had an error.
    query_too_long          An event was not executed because its
                            average query length exceeded
-                           --maxquerytime.
+                           L<"--max-query-time">.
    query_not_rewritten     A query could not be rewritten to a
                            SELECT.
    master_pos_wait         The tool waited for the SQL thread to
@@ -3085,7 +3085,7 @@ Where to create temp files for C<LOAD DATA INFILE> queries.  The default will
 cause C<mysqlbinlog> to skip the file and the associated C<LOAD DATA INFILE>
 command entirely.
 
-If C<mk-slave-prefetch> sees a C<LOAD DATA INFILE> command (which it won't, if
+If C<mk-slave-prefetch> sees a C<LOAD DATA INFILE> command (which it won't if
 this is left at the default), it will try to remove the temporary file, then
 skip the event.
 
