@@ -2174,11 +2174,11 @@ sub main {
    my ($chk_int, $chk_min, $chk_max) = @{$o->get('check-interval')};
    if ( grep { !defined $_ || $_ !~ m/^\d+$/ } ($chk_int, $chk_min, $chk_max) )
    {
-      $o->save_error("You must specify three elements for --checkint");
+      $o->save_error("You must specify three elements for --check-interval");
    }
    elsif ( $chk_int > $chk_max || $chk_int < $chk_min
            || $chk_max < $chk_min || $chk_min < 0 ) {
-      $o->save_error("You specified an invalid range for --checkint");
+      $o->save_error("You specified an invalid range for --check-interval");
    }
 
    if ( @ARGV > 1 ) {
@@ -2373,7 +2373,7 @@ sub main {
 
                   %slave    = get_status($dbh);
                   $last_chk = $i;
-               }
+               } # too far ahead or too close to io
 
                if ( $event->{arg} ) {
                   $event->{arg} = $qr->strip_comments($event->{arg});
@@ -2469,7 +2469,7 @@ sub main {
                   $stats{query_not_rewritten}++;
                   _d($event->{arg}) if MKDEBUG || $o->get('print-nonrewritten');
                }
-            }
+            } # parse binlog
 
             MKDEBUG && _d('Closing filehandle');
 
@@ -2496,13 +2496,13 @@ sub main {
                   MKDEBUG && _d('Exit status', $CHILD_ERROR,'from mysqlbinlog');
                }
             }
-         }
+         } # slave is running
 
          if ( oktorun() ) {
             $stats{sleep}++;
             sleep(1);
          }
-      }
+      } # get slave status
    };
    if ( $EVAL_ERROR ) {
       print $EVAL_ERROR;
