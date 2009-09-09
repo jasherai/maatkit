@@ -33,8 +33,11 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   die "I need a quoter" unless $args{quoter};
-   bless { %args }, $class;
+   foreach my $arg ( qw(Quoter MySQLDump) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 my $EPOCH      = '1970-01-01';
@@ -43,30 +46,34 @@ my %int_types  = map { $_ => 1 }
 my %real_types = map { $_ => 1 }
    qw( decimal double float );
 
-# $table  hashref returned from TableParser::parse
-# $opts   hashref of options
-#         exact: try to support exact chunk sizes (may still chunk fuzzily)
-#         possible_keys: arrayref of keys to prefer, in order.  These can be
-#                        generated from EXPLAIN by TableParser.pm
+# Arguments:
+#   * table_struct    Hashref returned from TableParser::parse
+#   * exact           (optional) bool: Try to support exact chunk sizes
+#                     (may still chunk fuzzily)
+#   * possible_keys   (optional) Arrayref of keys to prefer, in order.
+#                     These can be generated from EXPLAIN by TableParser.pm
 # Returns an array:
 #   whether the table can be chunked exactly, if requested (zero otherwise)
 #   arrayref of columns that support chunking
 sub find_chunk_columns {
-   my ( $self, $table, $opts ) = @_;
-   $opts ||= {};
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(tbl_struct) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $tbl_struct = $args{tbl_struct};
 
    my %prefer;
-   if ( $opts->{possible_keys} && @{$opts->{possible_keys}} ) {
+   if ( $args{possible_keys} && @{$args{possible_keys}} ) {
       my $i = 1;
-      %prefer = map { $_ => $i++ } @{$opts->{possible_keys}};
+      %prefer = map { $_ => $i++ } @{$args{possible_keys}};
       MKDEBUG && _d('Preferred indexes for chunking:',
-         join(', ', @{$opts->{possible_keys}}));
+         join(', ', @{$args{possible_keys}}));
    }
 
    # See if there's an index that will support chunking.
    my @possible_keys;
    KEY:
-   foreach my $key ( values %{ $table->{keys} } ) {
+   foreach my $key ( values %{ $tbl_struct->{keys} } ) {
 
       # Accept only BTREE indexes.
       next unless $key->{type} eq 'BTREE';
@@ -75,7 +82,7 @@ sub find_chunk_columns {
       defined $_ && next KEY for @{ $key->{col_prefixes} };
 
       # If exact, accept only unique, single-column indexes.
-      if ( $opts->{exact} ) {
+      if ( $args{exact} ) {
          next unless $key->{is_unique} && @{$key->{cols}} == 1;
       }
 
@@ -97,17 +104,17 @@ sub find_chunk_columns {
       my $col = $key->{cols}->[0];
 
       # Accept only integer or real number type columns.
-      next unless ( $int_types{$table->{type_for}->{$col}}
-                    || $real_types{$table->{type_for}->{$col}} );
+      next unless ( $int_types{$tbl_struct->{type_for}->{$col}}
+                    || $real_types{$tbl_struct->{type_for}->{$col}} );
 
       # Save the candidate column and its index.
       push @candidate_cols, { column => $col, index => $key->{name} };
    }
 
-   $can_chunk_exact = 1 if ( $opts->{exact} && scalar @candidate_cols );
+   $can_chunk_exact = 1 if ( $args{exact} && scalar @candidate_cols );
 
    if ( MKDEBUG ) {
-      my $chunk_type = $opts->{exact} ? 'Exact' : 'Inexact';
+      my $chunk_type = $args{exact} ? 'Exact' : 'Inexact';
       _d($chunk_type, 'chunkable:',
          join(', ', map { "$_->{column} on $_->{index}" } @candidate_cols));
    }
@@ -117,13 +124,13 @@ sub find_chunk_columns {
    my @result;
    if ( !%prefer ) {
       MKDEBUG && _d('Ordering columns by order in tbl, PK first');
-      if ( $table->{keys}->{PRIMARY} ) {
-         my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
+      if ( $tbl_struct->{keys}->{PRIMARY} ) {
+         my $pk_first_col = $tbl_struct->{keys}->{PRIMARY}->{cols}->[0];
          @result = grep { $_->{column} eq $pk_first_col } @candidate_cols;
          @candidate_cols = grep { $_->{column} ne $pk_first_col } @candidate_cols;
       }
       my $i = 0;
-      my %col_pos = map { $_ => $i++ } @{$table->{cols}};
+      my %col_pos = map { $_ => $i++ } @{$tbl_struct->{cols}};
       push @result, sort { $col_pos{$a->{column}} <=> $col_pos{$b->{column}} }
                        @candidate_cols;
    }
@@ -140,32 +147,34 @@ sub find_chunk_columns {
    return ($can_chunk_exact, \@result);
 }
 
-# table:         output from TableParser::parse
-# col:           which column to chunk on
-# min:           min value of col
-# max:           max value of col
-# rows_in_range: how many rows are in the table between min and max
-# size:          how large each chunk should be
-# dbh:           a DBI connection to MySQL
-# exact:         whether to chunk exactly (optional)
+# Arguments:
+#   * tbl_struct     Output from TableParser::parse
+#   * chunk_col      Which column to chunk on
+#   * min            Min value of col
+#   * max            Max value of col
+#   * rows_in_range  How many rows are in the table between min and max
+#   * chunk_size     How large each chunk should be (not adjusted)
+#   * dbh            A DBI connection to MySQL
+#   * exact          Whether to chunk exactly (optional)
 #
 # Returns a list of WHERE clauses, one for each chunk.  Each is quoted with
 # double-quotes, so it'll be easy to enclose them in single-quotes when used as
 # command-line arguments.
 sub calculate_chunks {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(table col min max rows_in_range size dbh) ) {
-      die "Required argument $arg not given or undefined"
-         unless defined $args{$arg};
+   foreach my $arg ( qw(dbh tbl_struct chunk_col min max rows_in_range
+                        chunk_size dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
    MKDEBUG && _d('Arguments:',
       join(', ',
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') } keys %args));
+   my $dbh = $args{dbh};
 
    my @chunks;
    my ($range_func, $start_point, $end_point);
-   my $col_type = $args{table}->{type_for}->{$args{col}};
-   MKDEBUG && _d('Chunking on', $args{col}, '(',$col_type,')');
+   my $col_type = $args{tbl_struct}->{type_for}->{$args{chunk_col}};
+   MKDEBUG && _d('Chunking on', $args{chunk_col}, '(',$col_type,')');
 
    # Determine chunk size in "distance between endpoints" that will give
    # approximately the right number of rows between the endpoints.  Also
@@ -179,26 +188,26 @@ sub calculate_chunks {
    elsif ( $col_type eq 'timestamp' ) {
       my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
       MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
+      ($start_point, $end_point) = $dbh->selectrow_array($sql);
       $range_func  = 'range_timestamp';
    }
    elsif ( $col_type eq 'date' ) {
       my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
       MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
+      ($start_point, $end_point) = $dbh->selectrow_array($sql);
       $range_func  = 'range_date';
    }
    elsif ( $col_type eq 'time' ) {
       my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
       MKDEBUG && _d($sql);
-      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
+      ($start_point, $end_point) = $dbh->selectrow_array($sql);
       $range_func  = 'range_time';
    }
    elsif ( $col_type eq 'datetime' ) {
       # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
       # to maintain just one kind of code, so I do it all with DATE_ADD().
-      $start_point = $self->timestampdiff($args{dbh}, $args{min});
-      $end_point   = $self->timestampdiff($args{dbh}, $args{max});
+      $start_point = $self->timestampdiff($dbh, $args{min});
+      $end_point   = $self->timestampdiff($dbh, $args{max});
       $range_func  = 'range_datetime';
    }
    else {
@@ -221,13 +230,15 @@ sub calculate_chunks {
    # Calculate the chunk size, in terms of "distance between endpoints."  If
    # possible and requested, forbid chunks from being any bigger than
    # specified.
-   my $interval = $args{size} * ($end_point - $start_point) / $args{rows_in_range};
+   my $interval = $args{chunk_size}
+                * ($end_point - $start_point)
+                / $args{rows_in_range};
    if ( $int_types{$col_type} ) {
       $interval = ceil($interval);
    }
-   $interval ||= $args{size};
+   $interval ||= $args{chunk_size};
    if ( $args{exact} ) {
-      $interval = $args{size};
+      $interval = $args{chunk_size};
    }
    MKDEBUG && _d('Chunk interval:', $interval, 'units');
 
@@ -239,12 +250,12 @@ sub calculate_chunks {
    # >= 30 AND < 60
    # >= 60 AND < 90
    # >= 90
-   my $col = "`$args{col}`";
+   my $col = $self->{Quoter}->quote($args{chunk_col});
    if ( $start_point < $end_point ) {
       my ( $beg, $end );
       my $iter = 0;
       for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
-         ( $beg, $end ) = $self->$range_func($args{dbh}, $i, $interval, $end_point);
+         ( $beg, $end ) = $self->$range_func($dbh, $i, $interval, $end_point);
 
          # The first chunk.
          if ( $iter++ == 0 ) {
@@ -259,7 +270,7 @@ sub calculate_chunks {
       # Remove the last chunk and replace it with one that matches everything
       # from the beginning of the last chunk to infinity.  If the chunk column
       # is nullable, do NULL separately.
-      my $nullable = $args{table}->{is_nullable}->{$args{col}};
+      my $nullable = $args{tbl_struct}->{is_nullable}->{$args{chunk_col}};
       pop @chunks;
       if ( @chunks ) {
          push @chunks, "$col >= " . $self->quote($beg);
@@ -274,6 +285,7 @@ sub calculate_chunks {
    }
    else {
       # There are no chunks; just do the whole table in one chunk.
+      MKDEBUG && _d('No chunks; using single chunk 1=1');
       push @chunks, '1=1';
    }
 
@@ -291,32 +303,46 @@ sub get_first_chunkable_column {
 # mebibytes, gibibytes, or kibibytes respectively.  If it's just a number, treat
 # it as a number of rows and return right away.
 sub size_to_rows {
-   my ( $self, $dbh, $db, $tbl, $size, $dumper ) = @_;
-  
-   my ( $num, $suffix ) = $size =~ m/^(\d+)([MGk])?$/;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl chunk_size);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbl, $chunk_size) = @args{@required_args};
+   my $q  = $self->{Quoter};
+   my $du = $self->{MySQLDump};
+
+   my ( $num, $suffix ) = $chunk_size =~ m/^(\d+)([MGk])?$/;
    if ( $suffix ) { # Convert to bytes.
-      $size = $suffix eq 'k' ? $num * 1_024
-            : $suffix eq 'M' ? $num * 1_024 * 1_024
-            :                  $num * 1_024 * 1_024 * 1_024;
+      $chunk_size = $suffix eq 'k' ? $num * 1_024
+                  : $suffix eq 'M' ? $num * 1_024 * 1_024
+                  :                  $num * 1_024 * 1_024 * 1_024;
    }
    elsif ( $num ) {
       return $num;
    }
    else {
-      die "Invalid size spec $size; must be an integer with optional suffix kMG";
+      die "Invalid chunk size $chunk_size; must be an integer "
+         . "with optional suffix kMG";
    }
 
-   my @status = $dumper->get_table_status($dbh, $self->{quoter}, $db);
+   my @status = $du->get_table_status($dbh, $q, $db);
    my ($status) = grep { $_->{name} eq $tbl } @status;
    my $avg_row_length = $status->{avg_row_length};
-   return $avg_row_length ? ceil($size / $avg_row_length) : undef;
+   return $avg_row_length ? ceil($chunk_size / $avg_row_length) : undef;
 }
 
 # Determine the range of values for the chunk_col column on this table.
 # The $where could come from many places; it is not trustworthy.
 sub get_range_statistics {
-   my ( $self, $dbh, $db, $tbl, $col, $where ) = @_;
-   my $q = $self->{quoter};
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl chunk_col);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbl, $col) = @args{@required_args};
+   my $where = $args{where};
+   my $q = $self->{Quoter};
    my $sql = "SELECT MIN(" . $q->quote($col) . "), MAX(" . $q->quote($col)
       . ") FROM " . $q->quote($db, $tbl)
       . ($where ? " WHERE $where" : '');
@@ -357,7 +383,7 @@ sub quote {
 sub inject_chunks {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(database table chunks chunk_num query) ) {
-      die "$arg is required" unless defined $args{$arg};
+      die "I need a $arg argument" unless defined $args{$arg};
    }
    MKDEBUG && _d('Injecting chunk', $args{chunk_num});
    my $comment = sprintf("/*%s.%s:%d/%d*/",
@@ -370,10 +396,9 @@ sub inject_chunks {
          . join(" AND ", map { "($_)" } grep { $_ } @{$args{where}} )
          . ")";
    }
-   my $db_tbl     = $self->{quoter}->quote(@args{qw(database table)});
-   my $index_hint = defined $args{index_hint}
-                    ? "USE INDEX (`$args{index_hint}`)"
-                    : '';
+   my $db_tbl     = $self->{Quoter}->quote(@args{qw(database table)});
+   my $index_hint = $args{index_hint} || '';
+
    MKDEBUG && _d('Parameters:',
       Dumper({WHERE => $where, DB_TBL => $db_tbl, INDEX_HINT => $index_hint}));
    $args{query} =~ s!/\*WHERE\*/! $where!;

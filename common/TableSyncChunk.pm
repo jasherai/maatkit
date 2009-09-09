@@ -32,103 +32,99 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use Data::Dumper;
-$Data::Dumper::Indent    = 0;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dbh database table handler chunker quoter struct
-                        checksum cols vp chunksize where possible_keys
-                        dumper trim) ) {
+   foreach my $arg ( qw(TableChunker Quoter) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
+   my $self = { %args };
+   return bless $self, $class;
+}
 
-   # Sanity check.  The row-level (state 2) checksums use __crc, so the table
-   # had better not use that...
-   $args{crc_col} = '__crc';
-   while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
-      $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
+sub name {
+   return 'Chunk';
+}
+
+sub can_sync {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(tbl_struct) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
    }
-   MKDEBUG && _d('CRC column will be named', $args{crc_col});
+   my ($exact, $cols) = $self->{TableChunker}->find_chunk_columns(
+      %args,
+      exact => 1,
+   );
+   # If Chunker can handle it OK, but *not* with exact chunk sizes, it means
+   # it's using only the first column of a multi-column index, which could
+   # be really bad.  It's better to use Nibble for these, because at least
+   # it can reliably select a chunk of rows of the desired size.
+   return unless $exact;
 
-   # Chunk the table and store the chunks for later processing.
+   if ( $args{index_struct}
+        && !grep { $args{index_struct}->{name} eq $_->{name} } @$cols ) {
+      MKDEBUG && _d('Cannot sync with', $args{index_struct}->{name});
+      return;
+   }
+
+   return (
+      chunk_col   => $cols->[0]->{column},
+      chunk_index => $cols->[0]->{index},
+   );
+}
+
+sub prepare_to_sync {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl tbl_struct cols
+                          chunk_col chunk_index chunk_size ChangeHandler);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $dbh      = $args{dbh};
+   my $chunker  = $self->{TableChunker};
+
+   $self->{chunk_index}   = $args{chunk_index};
+   $self->{chunk_col}     = $args{chunk_col};
+   $self->{crc_col}       = $args{crc_col};
+   $self->{index_hint}    = $args{index_hint};
+   $self->{ChangeHandler} = $args{ChangeHandler};
+
+   $self->{ChangeHandler}->fetch_back($dbh);
+
    my @chunks;
-   my ( $col, $idx ) = $args{chunker}->get_first_chunkable_column(
-      $args{struct}, { possible_keys => $args{possible_keys} });
-   $args{index} = $idx;
-   if ( $col ) {
-      my %params = $args{chunker}->get_range_statistics(
-         $args{dbh}, $args{database}, $args{table}, $col,
-         $args{where});
-      if ( !grep { !defined $params{$_} }
-            qw(min max rows_in_range) )
-      {
-         @chunks = $args{chunker}->calculate_chunks(
-            dbh      => $args{dbh},
-            table    => $args{struct},
-            col      => $col,
-            size     => $args{chunksize},
-            %params,
-         );
-      }
-      else {
-         @chunks = '1=1';
-      }
-      $args{chunk_col} = $col;
+   my %range_params = $chunker->get_range_statistics(%args);
+   if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
+      $args{chunk_size} = $chunker->size_to_rows(%args);
+      @chunks = $chunker->calculate_chunks(%args, %range_params);
    }
-   die "Cannot chunk $args{database}.$args{table}" unless @chunks;
-   $args{chunks}     = \@chunks;
-   $args{chunk_num}  = 0;
-
-   # Decide on checksumming strategy and store checksum query prototypes for
-   # later.
-   $args{algorithm} = $args{checksum}->best_algorithm(
-      algorithm   => 'BIT_XOR',
-      vp          => $args{vp},
-      dbh         => $args{dbh},
-      where       => 1,
-      chunk       => 1,
-      count       => 1,
-   );
-   $args{func} = $args{checksum}->choose_hash_func(
-      func => $args{func},
-      dbh  => $args{dbh},
-   );
-   $args{crc_wid}    = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
-   ($args{crc_type}) = $args{checksum}->get_crc_type($args{dbh}, $args{func});
-   if ( $args{algorithm} eq 'BIT_XOR' && $args{crc_type} !~ m/int$/ ) {
-      $args{opt_slice}
-         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => $args{func});
+   else {
+      MKDEBUG && _d('No range statistics; using single chunk 1=1');
+      @chunks = '1=1';
    }
-   $args{chunk_sql} ||= $args{checksum}->make_checksum_query(
-      dbname    => $args{database},
-      tblname   => $args{table},
-      table     => $args{struct},
-      quoter    => $args{quoter},
-      algorithm => $args{algorithm},
-      func      => $args{func},
-      crc_wid   => $args{crc_wid},
-      crc_type  => $args{crc_type},
-      opt_slice => $args{opt_slice},
-      cols      => $args{cols},
-      trim      => $args{trim},
-      buffer    => $args{bufferinmysql},
-      float_precision => $args{float_precision},
-   );
-   $args{row_sql} ||= $args{checksum}->make_row_checksum(
-      table     => $args{struct},
-      quoter    => $args{quoter},
-      func      => $args{func},
-      cols      => $args{cols},
-      trim      => $args{trim},
-      float_precision => $args{float_precision},
-   );
 
-   $args{state} = 0;
-   $args{handler}->fetch_back($args{dbh});
-   return bless { %args }, $class;
+   $self->{chunks}    = \@chunks;
+   $self->{chunk_num} = 0;
+   $self->{state}     = 0;
+
+   return;
+}
+
+sub uses_checksum {
+   return 1;
+}
+
+sub set_checksum_queries {
+   my ( $self, $chunk_sql, $row_sql ) = @_;
+   die "I need a chunk_sql argument" unless $chunk_sql;
+   die "I need a row_sql argument" unless $row_sql;
+   $self->{chunk_sql} = $chunk_sql;
+   $self->{row_sql} = $row_sql;
+   return;
 }
 
 # Depth-first: if there are any bad chunks, return SQL to inspect their rows
@@ -137,33 +133,29 @@ sub new {
 sub get_sql {
    my ( $self, %args ) = @_;
    if ( $self->{state} ) {
-      my $index_hint = defined $args{index_hint}
-                       ? " USE INDEX (`$args{index_hint}`) "
-                       : '';
       return 'SELECT '
-         . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
-         . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
+         . ($args{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
+         . join(', ', map { $self->{Quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
-         . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
-         . $index_hint 
+         . ' FROM ' . $self->{Quoter}->quote(@args{qw(database table)})
+         . ' '. ($self->{index_hint} || '')
          . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
          . ($args{where} ? " AND ($args{where})" : '');
    }
    else {
-      return $self->{chunker}->inject_chunks(
+      return $self->{TableChunker}->inject_chunks(
          database   => $args{database},
          table      => $args{table},
          chunks     => $self->{chunks},
          chunk_num  => $self->{chunk_num},
          query      => $self->{chunk_sql},
-         where      => [$args{where}],
-         quoter     => $self->{quoter},
-         index_hint => $args{index_hint},
+         index_hint => $self->{index_hint},
+         where      => [ $args{where} ],
       );
    }
 }
 
-sub prepare {
+sub prepare_sync_cycle {
    my ( $self, $dbh ) = @_;
    my $sql = 'SET @crc := "", @cnt := 0';
    MKDEBUG && _d($sql);
@@ -175,7 +167,7 @@ sub same_row {
    my ( $self, $lr, $rr ) = @_;
    if ( $self->{state} ) {
       if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
-         $self->{handler}->change('UPDATE', $lr, $self->key_cols());
+         $self->{ChangeHandler}->change('UPDATE', $lr, $self->key_cols());
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
@@ -191,13 +183,13 @@ sub same_row {
 sub not_in_right {
    my ( $self, $lr ) = @_;
    die "Called not_in_right in state 0" unless $self->{state};
-   $self->{handler}->change('INSERT', $lr, $self->key_cols());
+   $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
    die "Called not_in_left in state 0" unless $self->{state};
-   $self->{handler}->change('DELETE', $rr, $self->key_cols());
+   $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
 }
 
 sub done_with_rows {

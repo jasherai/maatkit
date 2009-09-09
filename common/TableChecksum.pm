@@ -17,11 +17,10 @@
 # ###########################################################################
 # TableChecksum package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package TableChecksum;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use List::Util qw(max);
 
@@ -36,7 +35,12 @@ our %ALGOS = (
 );
 
 sub new {
-   bless {}, shift;
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(Quoter VersionParser) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 # Perl implementation of CRC32, ripped off from Digest::Crc32.  The results
@@ -90,9 +94,8 @@ sub get_crc_type {
    return ($type, $length);
 }
 
-# Options:
-#   algorithm   Optional: one of CHECKSUM, ACCUM, BIT_XOR
-#   vp          VersionParser object
+# Arguments:
+#   algorithm   (optional) One of CHECKSUM, ACCUM, BIT_XOR
 #   dbh         DB handle
 #   where       bool: whether user wants a WHERE clause applied
 #   chunk       bool: whether user wants to checksum in chunks
@@ -100,7 +103,8 @@ sub get_crc_type {
 #   count       bool: whether user wants a row count too
 sub best_algorithm {
    my ( $self, %args ) = @_;
-   my ($alg, $vp, $dbh) = @args{ qw(algorithm vp dbh) };
+   my ( $alg, $dbh ) = @args{ qw(algorithm dbh) };
+   my $vp = $self->{VersionParser};
    my @choices = sort { $ALGOS{$a}->{pref} <=> $ALGOS{$b}->{pref} } keys %ALGOS;
    die "Invalid checksum algorithm $alg"
       if $alg && !$ALGOS{$alg};
@@ -145,11 +149,14 @@ sub is_hash_algorithm {
 }
 
 # Picks a hash function, in order of speed.
+# Arguments:
+#   * dbh
+#   * function  (optional) Preferred function: SHA1, MD5, etc.
 sub choose_hash_func {
    my ( $self, %args ) = @_;
    my @funcs = qw(CRC32 FNV1A_64 FNV_64 MD5 SHA1);
-   if ( $args{func} ) {
-      unshift @funcs, $args{func};
+   if ( $args{function} ) {
+      unshift @funcs, $args{function};
    }
    my ($result, $error);
    do {
@@ -180,8 +187,7 @@ sub choose_hash_func {
    # integer.  CRC32 is an example.  In these cases no optimization or slicing
    # is necessary.
 sub optimize_xor {
-   my ( $self, %args ) = @_;
-   my ( $dbh, $func ) = @args{qw(dbh func)};
+   my ( $self, $dbh, $func ) = @_;
 
    die "$func never needs the BIT_XOR optimization"
       if $func =~ m/^(?:FNV1A_64|FNV_64|CRC32)$/i;
@@ -226,10 +232,16 @@ sub optimize_xor {
 # of that expression in characters.  If the opt_slice argument is given, use a
 # variable to avoid calling the $query expression multiple times.  The variable
 # goes in slice $opt_slice.
+# Arguments:
+#   * query
+#   * crc_wid
+#   * opt_slice  (optional)
 sub make_xor_slices {
    my ( $self, %args ) = @_;
-   my ( $query, $crc_wid, $opt_slice )
-      = @args{qw(query crc_wid opt_slice)};
+   foreach my $arg ( qw(query crc_wid) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ( $query, $crc_wid, $opt_slice ) = @args{qw(query crc_wid opt_slice)};
 
    # Create a series of slices with @crc as a placeholder.
    my @slices;
@@ -258,17 +270,16 @@ sub make_xor_slices {
 }
 
 # Generates a checksum query for a given table.  Arguments:
-# *   table      Struct as returned by TableParser::parse()
-# *   quoter     Quoter()
-# *   func       SHA1, MD5, etc
-# *   sep        (Optional) Separator for CONCAT_WS(); default #
-# *   cols       (Optional) arrayref of columns to checksum
-# *   trim       (Optional) wrap VARCHAR in TRIM() for 4.x / 5.x compatibility
-# *   ignorecols (Optional) arrayref of columns to exclude from checksum
+# *   tbl_struct  Struct as returned by TableParser::parse()
+# *   function    SHA1, MD5, etc
+# *   sep         (optional) Separator for CONCAT_WS(); default #
+# *   cols        (optional) arrayref of columns to checksum
+# *   trim        (optional) wrap VARCHAR in TRIM() for 4.x / 5.x compatibility
+# *   ignorecols  (optional) arrayref of columns to exclude from checksum
 sub make_row_checksum {
    my ( $self, %args ) = @_;
-   my ( $table, $quoter, $func )
-      = @args{ qw(table quoter func) };
+   my ( $tbl_struct, $func ) = @args{ qw(tbl_struct function) };
+   my $q = $self->{Quoter};
 
    my $sep = $args{sep} || '#';
    $sep =~ s/'//g;
@@ -282,11 +293,11 @@ sub make_row_checksum {
    # stringify uniformly.
    my %cols = map { lc($_) => 1 }
               grep { !exists $ignorecols{$_} }
-              ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
+              ($args{cols} ? @{$args{cols}} : @{$tbl_struct->{cols}});
    my @cols =
       map {
-         my $type = $table->{type_for}->{$_};
-         my $result = $quoter->quote($_);
+         my $type = $tbl_struct->{type_for}->{$_};
+         my $result = $q->quote($_);
          if ( $type eq 'timestamp' ) {
             $result .= ' + 0';
          }
@@ -301,15 +312,15 @@ sub make_row_checksum {
       grep {
          $cols{$_}
       }
-      @{$table->{cols}};
+      @{$tbl_struct->{cols}};
 
    my $query;
    if ( uc $func ne 'FNV_64' && uc $func ne 'FNV1A_64' ) {
       # Add a bitmap of which nullable columns are NULL.
-      my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
+      my @nulls = grep { $cols{$_} } @{$tbl_struct->{null_cols}};
       if ( @nulls ) {
          my $bitmap = "CONCAT("
-            . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @nulls)
+            . join(', ', map { 'ISNULL(' . $q->quote($_) . ')' } @nulls)
             . ")";
          push @cols, $bitmap;
       }
@@ -329,36 +340,35 @@ sub make_row_checksum {
 }
 
 # Generates a checksum query for a given table.  Arguments:
-# *   dbname    Database name
-# *   tblname   Table name
-# *   table     Struct as returned by TableParser::parse()
-# *   quoter    Quoter()
-# *   algorithm Any of @ALGOS
-# *   func      SHA1, MD5, etc
-# *   crc_wid   Width of the string returned by func
-# *   crc_type  Type of func's result
-# *   opt_slice (Optional) Which slice gets opt_xor (see make_xor_slices()).
-# *   cols      (Optional) see make_row_checksum()
-# *   sep       (Optional) see make_row_checksum()
-# *   replicate (Optional) generate query to REPLACE into this table.
-# *   trim      (Optional) see make_row_checksum().
-# *   buffer    (Optional) Adds SQL_BUFFER_RESULT.
+# *   db          Database name
+# *   tbl         Table name
+# *   tbl_struct  Struct as returned by TableParser::parse()
+# *   algorithm   Any of @ALGOS
+# *   function    SHA1, MD5, etc
+# *   crc_wid     Width of the string returned by function
+# *   crc_type    Type of function's result
+# *   opt_slice   (optional) Which slice gets opt_xor (see make_xor_slices()).
+# *   cols        (optional) see make_row_checksum()
+# *   sep         (optional) see make_row_checksum()
+# *   replicate   (optional) generate query to REPLACE into this table.
+# *   trim        (optional) see make_row_checksum().
+# *   buffer      (optional) Adds SQL_BUFFER_RESULT.
 sub make_checksum_query {
    my ( $self, %args ) = @_;
-   my @arg_names = qw(dbname tblname table quoter algorithm
-        func crc_wid crc_type opt_slice);
-   foreach my $arg( @arg_names ) {
-      die "You must specify argument $arg" unless exists $args{$arg};
+   my @required_args = qw(db tbl tbl_struct algorithm function crc_wid crc_type);
+   foreach my $arg( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
-   my ( $dbname, $tblname, $table, $quoter, $algorithm,
-        $func, $crc_wid, $crc_type, $opt_slice ) = @args{ @arg_names };
+   my ( $db, $tbl, $tbl_struct, $algorithm,
+        $func, $crc_wid, $crc_type) = @args{@required_args};
+   my $q = $self->{Quoter};
+   my $result;
+
    die "Invalid or missing checksum algorithm"
       unless $algorithm && $ALGOS{$algorithm};
 
-   my $result;
-
    if ( $algorithm eq 'CHECKSUM' ) {
-      return "CHECKSUM TABLE " . $quoter->quote($dbname, $tblname);
+      return "CHECKSUM TABLE " . $q->quote($db, $tbl);
    }
 
    my $expr = $self->make_row_checksum(%args);

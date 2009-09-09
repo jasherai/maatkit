@@ -1,39 +1,19 @@
 #!/usr/bin/perl
 
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More;
 use English qw(-no_match_vars);
-use DBI;
+use Test::More;
 
 # Open a connection to MySQL, or skip the rest of the tests.
-my $dbh;
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
-my $dp = new DSNParser();
-my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-
-$dbh     = $sb->get_dbh_for('master');
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
 
 if ( $dbh ) {
-   plan tests => 24;
+   plan tests => 27;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -49,12 +29,13 @@ require "../TableChunker.pm";
 require "../TableParser.pm";
 require "../MySQLDump.pm";
 require "../VersionParser.pm";
+require "../TableSyncer.pm";
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
    eval { $code->(); };
    like( $EVAL_ERROR, $pat, $msg );
-}
+};
 
 my $mysql = $sb->_use_for('master');
 
@@ -64,58 +45,68 @@ my $tp = new TableParser();
 my $du = new MySQLDump();
 my $q  = new Quoter();
 my $vp = new VersionParser();
-my $ddl        = $du->get_create_table($dbh, $q, 'test', 'test1');
-my $tbl_struct = $tp->parse($ddl);
-my $chunker    = new TableChunker( quoter => $q );
-my $checksum   = new TableChecksum();
+my $chunker    = new TableChunker( Quoter => $q, MySQLDump => $du );
+my $checksum   = new TableChecksum( Quoter => $q, VersionParser => $vp );
+my $syncer     = new TableSyncer();
 
+my $ddl;
+my $tbl_struct;
+my %args;
 my @rows;
+
 my $ch = new ChangeHandler(
-   quoter    => new Quoter(),
-   database  => 'test',
-   table     => 'test1',
-   sdatabase => 'test',
-   stable    => 'test1',
-   replace   => 0,
-   actions   => [ sub { push @rows, @_ }, ],
-   queue     => 0,
+   Quoter  => new Quoter(),
+   dst_db  => 'test',
+   dst_tbl => 'test1',
+   src_db  => 'test',
+   src_tbl => 'test1',
+   replace => 0,
+   actions => [ sub { push @rows, @_ }, ],
+   queue   => 0,
 );
 
-my $t;
+my $t = new TableSyncChunk(
+   TableChunker  => $chunker,
+   Quoter        => $q,
+);
+isa_ok($t, 'TableSyncChunk');
+
+$ddl        = $du->get_create_table($dbh, $q, 'test', 'test1');
+$tbl_struct = $tp->parse($ddl);
+%args       = (
+   dbh           => $dbh,
+   db            => 'test',
+   tbl           => 'test1',
+   tbl_struct    => $tbl_struct,
+   cols          => $tbl_struct->{cols},
+   chunk_col     => 'a',
+   chunk_index   => 'PRIMARY',
+   chunk_size    => 2,
+   where         => 'a>2',
+   crc_col       => '__crc',
+   index_hint    => 'USE INDEX (`PRIMARY`)',
+   ChangeHandler => $ch,
+);
+$t->prepare_to_sync(%args);
 
 # Test with FNV_64 just to make sure there are no errors
 eval { $dbh->do('select fnv_64(1)') };
 SKIP: {
    skip 'No FNV_64 function installed', 2 if $EVAL_ERROR;
 
-   $t = new TableSyncChunk(
-      handler  => $ch,
-      cols     => $tbl_struct->{cols},
-      dbh      => $dbh,
-      database => 'test',
-      table    => 'test1',
-      chunker  => $chunker,
-      struct   => $tbl_struct,
-      checksum => $checksum,
-      vp       => $vp,
-      quoter   => $q,
-      chunksize => 1,
-      where     => 'a>2',
-      possible_keys => [],
-      func          => 'FNV_64',
-      dumper        => $du,
-      trim          => 0,
+   $t->set_checksum_queries(
+      $syncer->make_checksum_queries(
+         %args,
+         TableChecksum => $checksum,
+         function      => 'FNV_64'
+      )
    );
-
-   is($t->{index}, 'PRIMARY', 'Selects PRIMARY index');   
 
    is(
       $t->get_sql(
-         quoter     => $q,
          where      => 'foo=1',
          database   => 'test',
-         table      => 'test1',
-         index_hint => $t->{index},
+         table      => 'test1', 
       ),
       q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
       . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`) AS UNSIGNED)), 10, 16)) AS }
@@ -123,25 +114,6 @@ SKIP: {
       'First nibble SQL with FNV_64 (with USE INDEX)',
    );
 }
-
-$t = new TableSyncChunk(
-   handler  => $ch,
-   cols     => $tbl_struct->{cols},
-   dbh      => $dbh,
-   database => 'test',
-   table    => 'test1',
-   chunker  => $chunker,
-   struct   => $tbl_struct,
-   checksum => $checksum,
-   vp       => $vp,
-   quoter   => $q,
-   chunksize => 1,
-   where     => 'a>2',
-   func      => 'SHA1',
-   possible_keys => [],
-   dumper        => $du,
-   trim          => 0,
-);
 
 is_deeply(
    $t->{chunks},
@@ -152,53 +124,38 @@ is_deeply(
    'Chunks with WHERE'
 );
 
-$t = new TableSyncChunk(
-   handler  => $ch,
-   cols     => $tbl_struct->{cols},
-   dbh      => $dbh,
-   database => 'test',
-   table    => 'test1',
-   chunker  => $chunker,
-   struct   => $tbl_struct,
-   checksum => $checksum,
-   vp       => $vp,
-   quoter   => $q,
-   chunksize => 2,
-   where     => '',
-   possible_keys => [],
-   func      => 'SHA1',
-   dumper    => $du,
-   trim      => 0,
-   bufferinmysql => 1,
-);
-
-like ($t->get_sql(
-      quoter   => $q,
+unlike(
+   $t->get_sql(
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
+   ),
+   qr/SQL_BUFFER_RESULT/,
+   'No buffering',
+);
+
+# SQL_BUFFER_RESULT only appears in the row query, state 1 or 2.
+$t->{state} = 1;
+like(
+   $t->get_sql(
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+      buffer_in_mysql => 1,
    ),
    qr/SELECT SQL_BUFFER_RESULT/,
    'Has SQL_BUFFER_RESULT',
 );
 
-$t = new TableSyncChunk(
-   handler  => $ch,
-   cols     => $tbl_struct->{cols},
-   dbh      => $dbh,
-   database => 'test',
-   table    => 'test1',
-   chunker  => $chunker,
-   struct   => $tbl_struct,
-   checksum => $checksum,
-   vp       => $vp,
-   quoter   => $q,
-   chunksize => 2,
-   where     => '',
-   possible_keys => [],
-   func      => 'SHA1',
-   dumper    => $du,
-   trim      => 0,
+# Remove the WHERE so we get enough rows to make chunks.
+$args{where} = undef;
+$t->prepare_to_sync(%args);
+$t->set_checksum_queries(
+   $syncer->make_checksum_queries(
+      %args,
+      TableChecksum => $checksum,
+      function      => 'SHA1'
+   )
 );
 
 is_deeply(
@@ -210,37 +167,28 @@ is_deeply(
    'Chunks'
 );
 
-like ($t->get_sql(
-      quoter   => $q,
+like(
+   $t->get_sql(
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    ),
    qr/SELECT .*?CONCAT_WS.*?`a` < 3/,
-   'First chunk SQL',
-);
-
-unlike ($t->get_sql(
-      quoter   => $q,
-      where    => 'foo=1',
-      database => 'test',
-      table    => 'test1',
-   ),
-   qr/SQL_BUFFER_RESULT/,
-   'No buffering',
+   'First chunk SQL (without index hint)',
 );
 
 is_deeply($t->key_cols(), [qw(chunk_num)], 'Key cols in state 0');
 $t->done_with_rows();
 
 like($t->get_sql(
-      quoter   => $q,
-      where    => 'foo=1',
-      database => 'test',
-      table    => 'test1',
+      quoter     => $q,
+      where      => 'foo=1',
+      database   => 'test',
+      table      => 'test1',
+      index_hint => 'USE INDEX (`PRIMARY`)',
    ),
-   qr/SELECT .*?CONCAT_WS.*?FROM `test`\.`test1`  WHERE.*?`a` >= 3/,
-   'Second chunk SQL (without USE INDEX)',
+   qr/SELECT .*?CONCAT_WS.*?FROM `test`\.`test1` USE INDEX \(`PRIMARY`\) WHERE.*?`a` >= 3/,
+   'Second chunk SQL (with index hint)',
 );
 
 $t->done_with_rows();
@@ -248,23 +196,13 @@ ok($t->done(), 'Now done');
 
 # Now start over, and this time "find some bad chunks," as it were.
 
-$t = new TableSyncChunk(
-   handler  => $ch,
-   cols     => $tbl_struct->{cols},
-   dbh      => $dbh,
-   database => 'test',
-   table    => 'test1',
-   chunker  => $chunker,
-   struct   => $tbl_struct,
-   checksum => $checksum,
-   vp       => $vp,
-   quoter   => $q,
-   chunksize => 2,
-   where     => '',
-   possible_keys => [],
-   func      => 'SHA1',
-   dumper    => $du,
-   trim      => 0,
+$t->prepare_to_sync(%args);
+$t->set_checksum_queries(
+   $syncer->make_checksum_queries(
+      %args,
+      TableChecksum => $checksum,
+      function      => 'SHA1'
+   )
 );
 
 throws_ok(
@@ -283,9 +221,13 @@ is($t->{state}, 1, 'Working inside chunk');
 $t->done_with_rows();
 is($t->{state}, 2, 'Now in state to fetch individual rows');
 ok($t->pending_changes(), 'Pending changes not done yet');
-is($t->get_sql(database => 'test', table => 'test1'),
+is(
+   $t->get_sql(
+      database => 'test',
+      table    => 'test1',
+   ),
    "SELECT `a`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM "
-      . "`test`.`test1` WHERE (`a` < 3)",
+      . "`test`.`test1` USE INDEX (`PRIMARY`) WHERE (`a` < 3)",
    'SQL now working inside chunk'
 );
 ok($t->{state}, 'Still working inside chunk');
@@ -334,5 +276,41 @@ $t->done_with_rows();
 is($t->{state}, 0, 'Now not working inside chunk');
 is($t->pending_changes(), 0, 'No pending changes');
 
+# ###########################################################################
+# Test can_sync().
+# ###########################################################################
+$ddl        = $du->get_create_table($dbh, $q, 'test', 'test1');
+$tbl_struct = $tp->parse($ddl);
+my %sync    = $t->can_sync(tbl_struct=>$tbl_struct);
+is_deeply(
+   \%sync,
+   {},
+   'Cannot sync table1 (no good single column index)'
+);
+
+$ddl        = $du->get_create_table($dbh, $q, 'test', 'test5');
+$tbl_struct = $tp->parse($ddl);
+%sync       = $t->can_sync(tbl_struct=>$tbl_struct);
+is_deeply(
+   \%sync,
+   {},
+   'Cannot sync table5 (no indexes)'
+);
+
+$ddl        = $du->get_create_table($dbh, $q, 'test', 'test3');
+$tbl_struct = $tp->parse($ddl);
+%sync       = $t->can_sync(tbl_struct=>$tbl_struct);
+is_deeply(
+   \%sync, 
+   {
+      chunk_col   => 'a',
+      chunk_index => 'PRIMARY',
+   },
+   'Can sync table3'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 $sb->wipe_clean($dbh);
 exit;

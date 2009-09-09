@@ -23,86 +23,76 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-our %ALGOS = map { lc $_ => $_ } qw(Stream Chunk Nibble GroupBy);
-
 sub new {
-   bless {}, shift;
+   return bless {}, shift;
 }
 
-# Choose the best algorithm for syncing a given table.
-sub best_algorithm {
+# Return the first plugin from the arrayref of TableSync* plugins
+# that can sync the given table struct.  plugin->can_sync() should
+# return a hash of args that it wants back when plugin->prepare_to_sync()
+# is called.
+sub get_best_plugin {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(tbl_struct parser nibbler chunker) ) {
+   foreach my $arg ( qw(plugins tbl_struct) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $result;
-
-   # See if Chunker says it can handle the table
-   my ($exact, $cols) = $args{chunker}
-      ->find_chunk_columns($args{tbl_struct}, { exact => 1 });
-   if ( $exact ) {
-      MKDEBUG && _d('Chunker says the', $cols->[0]->{index},
-         'index supports chunking exactly');
-      $result = 'Chunk';
-      # If Chunker can handle it OK, but not with exact chunk sizes, it means
-      # it's using only the first column of a multi-column index, which could
-      # be really bad.  It's better to use Nibble for these, because at least
-      # it can reliably select a chunk of rows of the desired size.
-   }
-   else {
-      # If there's an index, $nibbler->generate_asc_stmt() will use it, so it
-      # is an indication that the nibble algorithm will work.
-      my ($idx) = $args{parser}->find_best_index($args{tbl_struct});
-      if ( $idx ) {
-         MKDEBUG && _d('Parser found best index', $idx, 'so Nibbler will work');
-         $result = 'Nibble';
-      }
-      else {
-         # If not, GroupBy is the only choice.  We don't automatically choose
-         # Stream, it must be specified by the user.
-         MKDEBUG && _d('No primary or unique non-null key in table');
-         $result = 'GroupBy';
+   foreach my $plugin ( @{$args{plugins}} ) {
+      my %plugin_args = $plugin->can_sync(%args);
+      if ( %plugin_args ) {
+        MKDEBUG && _d('Can sync with', $plugin, Dumper(\%plugin_args));
+        return $plugin, %plugin_args;
       }
    }
-   MKDEBUG && _d('Algorithm:', $result);
-   return $result;
+   return;
 }
 
 sub sync_table {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(
-      buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
-      misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
-      timeoutok transaction versionparser wait where possible_keys cols
-      nibbler parser master_slave func dumper trim skipslavecheck bufferinmysql) )
-   {
+   my @required_args = qw(src_dbh src_db src_tbl dst_dbh dst_db dst_tbl
+                          tbl_struct cols chunk_size function plugins
+                          TableChecksum TableChunker VersionParser Quoter
+                          master_slave);
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    MKDEBUG && _d('Syncing table with args',
       join(', ',
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
+   my $dbh = $args{src_dbh};
+   my $vp  = $args{VersionParser};
+   my $q   = $args{Quoter};
 
-   my $sleep = $args{sleep} || 0;
+   # ########################################################################
+   # Get the first plugin that says it can sync this table.
+   # ########################################################################
+   my ($plugin, %plugin_args) = $self->get_best_plugin(%args);
+   die "No plugin can sync `$args{src_db}`.`$args{src_tbl}`" unless $plugin;
 
-   my $can_replace
-      = grep { $_->{is_unique} } values %{$args{tbl_struct}->{keys}};
-   MKDEBUG && _d('This table\'s replace-ability:', $can_replace);
-   my $use_replace = $args{replace} || $args{replicate};
-
-   # TODO: for two-way sync, the change handler needs both DBHs.
+   # ########################################################################
    # Check permissions on writable tables (TODO: 2-way needs to check both)
+   # TODO: for two-way sync, the change handler needs both DBHs.
+   # ########################################################################
    my $update_func;
    my $change_dbh;
+   my $use_replace;
    if ( $args{execute} ) {
       if ( $args{replicate} ) {
          $change_dbh = $args{src_dbh};
          $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
          # Is it possible to make changes on the master?  Only if REPLACE will
          # work OK.
+         my $can_replace
+            = grep { $_->{is_unique} } values %{$args{tbl_struct}->{keys}};
+         MKDEBUG && _d("This table's replace-ability:", $can_replace);
+         $use_replace = $args{replace} || $args{replicate};
          if ( !$can_replace ) {
             die "Can't make changes on the master: no unique index exists";
          }
@@ -146,13 +136,10 @@ sub sync_table {
       $args{dst_dbh}->do("USE `$args{dst_db}`");
    }
 
+   # TODO: these should be given as args so caller can make them as they wish
    my $ch = new ChangeHandler(
+      %args,
       queue     => $args{buffer} ? 0 : 1,
-      quoter    => $args{quoter},
-      database  => $args{dst_db},
-      table     => $args{dst_tbl},
-      sdatabase => $args{src_db},
-      stable    => $args{src_tbl},
       replace   => $use_replace,
       actions   => [
          ( $update_func ? $update_func            : () ),
@@ -165,69 +152,61 @@ sub sync_table {
    );
    my $rd = $args{RowDiff} || new RowDiff( dbh => $args{misc_dbh} );
 
-   $args{algorithm} ||= $self->best_algorithm(
-      map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
-
-   if ( !$ALGOS{ lc $args{algorithm} } ) {
-      die "No such algorithm $args{algorithm}; try one of "
-         . join(', ', values %ALGOS) . "\n";
-   }
-   $args{algorithm} = $ALGOS{ lc $args{algorithm} };
-
-   if ( $args{test} ) {
-      return ($ch->get_changes(), ALGORITHM => $args{algorithm});
+   if ( $args{dry_run} ) {
+      return $ch->get_changes(), ALGORITHM => $plugin->get_name();
    }
 
-   # The sync algorithms must be sheltered from size-to-rows conversions.
-   my $chunksize = $args{chunker}->size_to_rows(
-         @args{qw(src_dbh src_db src_tbl chunksize dumper)}),
+   # ########################################################################
+   # Prepare the plugin.
+   # ########################################################################
 
-   my $class  = "TableSync$args{algorithm}";
-   my $plugin = $class->new(
-      handler         => $ch,
-      cols            => $args{cols},
-      dbh             => $args{src_dbh},
-      database        => $args{src_db},
-      dumper          => $args{dumper},
-      table           => $args{src_tbl},
-      chunker         => $args{chunker},
-      nibbler         => $args{nibbler},
-      parser          => $args{parser},
-      struct          => $args{tbl_struct},
-      checksum        => $args{checksum},
-      vp              => $args{versionparser},
-      quoter          => $args{quoter},
-      chunksize       => $chunksize,
-      where           => $args{where},
-      possible_keys   => [],
-      versionparser   => $args{versionparser},
-      func            => $args{func},
-      trim            => $args{trim},
-      bufferinmysql   => $args{bufferinmysql},
-      float_precision => $args{float_precision},
+   # The row-level (state 2) checksums use __crc, so the table can't use that.
+   my $crc_col = '__crc';
+   while ( $args{tbl_struct}->{is_col}->{$args{crc_col}} ) {
+      $crc_col = "_$crc_col"; # Prepend more _ until not a column.
+   }
+   MKDEBUG && _d('CRC column:', $crc_col);
+
+   my $index_hint;
+   if ( $args{index_struct} ) {
+      my $hint = $vp->version_ge($dbh, '4.0.9') ? 'FORCE' : 'USE';
+      $index_hint = "$hint (" . $q->quote($args{index_struct}->{name}) . ")";
+   }
+
+   $plugin->prepare_to_sync(
+      %args,
+      %plugin_args,
+      crc_col    => $crc_col,
+      index_hint => $index_hint,
    );
 
+   if ( $plugin->uses_checksum() ) {
+      my ($chunk_sql, $row_sql) = make_checksum_queries(%args);
+      $plugin->set_chunk_sql($chunk_sql);
+      $plugin->set_row_sql($row_sql);
+   } 
+
+   # ########################################################################
+   # Start syncing the table.
+   # ########################################################################
    $self->lock_and_wait(%args, lock_level => 2);
 
    my $cycle = 0;
-   while ( !$plugin->done ) {
+   while ( !$plugin->done() ) {
 
       # Do as much of the work as possible before opening a transaction or
       # locking the tables.
       MKDEBUG && _d('Beginning sync cycle', $cycle);
       my $src_sql = $plugin->get_sql(
-         quoter     => $args{quoter},
          database   => $args{src_db},
          table      => $args{src_tbl},
          where      => $args{where},
-         index_hint => $args{index_hint} ? $plugin->{index} : undef,
       );
       my $dst_sql = $plugin->get_sql(
          quoter     => $args{quoter},
          database   => $args{dst_db},
          table      => $args{dst_tbl},
          where      => $args{where},
-         index_hint => $args{index_hint} ? $plugin->{index} : undef,
       );
       if ( $args{transaction} ) {
          # TODO: update this for 2-way sync.
@@ -244,8 +223,8 @@ sub sync_table {
             $dst_sql .= ' LOCK IN SHARE MODE';
          }
       }
-      $plugin->prepare($args{src_dbh});
-      $plugin->prepare($args{dst_dbh});
+      $plugin->prepare_sync_cycle($args{src_dbh});
+      $plugin->prepare_sync_cycle($args{dst_dbh});
       MKDEBUG && _d('src:', $src_sql);
       MKDEBUG && _d('dst:', $dst_sql);
       my $src_sth = $args{src_dbh}
@@ -276,8 +255,6 @@ sub sync_table {
       $ch->process_rows(1);
 
       $cycle++;
-
-      sleep $sleep;
    }
 
    $ch->process_rows();
@@ -285,6 +262,48 @@ sub sync_table {
    $self->unlock(%args, lock_level => 2);
 
    return ($ch->get_changes(), ALGORITHM => $args{algorithm});
+}
+
+sub make_checksum_queries {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(TableChecksum dbh db tbl tbl_struct);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($checksum, $dbh) = @args{@required_args};
+
+   # Decide on checksumming strategy and store checksum query prototypes for
+   # later.
+   my $algorithm  = $checksum->best_algorithm(
+      algorithm => 'BIT_XOR',
+      dbh       => $dbh,
+      where     => 1,
+      chunk     => 1,
+      count     => 1,
+   );
+   my $func       = $checksum->choose_hash_func(%args);
+   my $crc_wid    = $checksum->get_crc_wid($dbh, $func);
+   my ($crc_type) = $checksum->get_crc_type($dbh, $func);
+   my $opt_slice;
+   if ( $algorithm eq 'BIT_XOR' && $crc_type !~ m/int$/ ) {
+      $opt_slice = $checksum->optimize_xor($dbh, $func);
+   }
+   
+   my $chunk_sql = $checksum->make_checksum_query(
+      %args,
+      algorithm => $algorithm,
+      function  => $func,
+      crc_wid   => $crc_wid,
+      crc_type  => $crc_type,
+      opt_slice => $opt_slice,
+   );
+   MKDEBUG && _d('Chunk sql:', $chunk_sql);
+   my $row_sql = $checksum->make_row_checksum(
+      %args,
+      function => $func,
+   );
+   MKDEBUG && _d('Row sql:', $row_sql);
+   return $chunk_sql, $row_sql;
 }
 
 # This query will check all needed privileges on the table without actually

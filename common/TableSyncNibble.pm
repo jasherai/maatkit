@@ -126,6 +126,18 @@ sub new {
    return bless { %args }, $class;
 }
 
+sub can_sync {
+   my ( $self, %args ) = @_;
+   # If there's an index, $nibbler->generate_asc_stmt() will use it, so it
+   # is an indication that the nibble algorithm will work.
+   # my ($idx) = $args{parser}->find_best_index($args{tbl_struct});
+   # if ( $idx ) {
+   #   MKDEBUG && _d('Parser found best index', $idx, 'so Nibbler will work');
+   #   $result = 'Nibble';
+   # }
+   return;
+}
+
 # Returns a SELECT statement that either gets a nibble of rows (state=0) or,
 # if the last nibble was bad (state=1 or 2), gets the rows in the nibble.
 # This way we can sync part of the table before moving on to the next part.
