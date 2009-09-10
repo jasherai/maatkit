@@ -371,7 +371,7 @@ sub _in_window {
    # longer prefetching.  We need to stop pipelining events
    # and start skipping them until we're back in the window
    # or ahead of the slave.
-   return unless $self->_far_enough_ahead();
+   return 0 unless $self->_far_enough_ahead();
 
    # We're ahead of the slave, but check that we're not too
    # far ahead, i.e. out of the window or too close to the end
@@ -429,8 +429,8 @@ sub _far_enough_ahead {
 # Whether we are slave pos+offset+window ahead of the slave.
 sub _too_far_ahead {
    my ( $self ) = @_;
-   return
-      $self->{pos} > $self->{slave}->{pos} + $self->{offset} + $self->{window);
+   return $self->{pos}
+      > $self->{slave}->{pos} + $self->{offset} + $self->{window} ? 1 : 0;
 }
 
 # Whether we are too close to where the I/O thread is writing.
@@ -458,6 +458,10 @@ sub _wait_for_master {
    return $events;
 }
 
+# Does everything necessary to make the given DMS query ready for
+# pipelined execution in pipeline_event() if the query can/should
+# be executed.  If yes, then the prepared query and its fingerprint
+# are returned; else nothing is returned.
 sub prepare_query {
    my ( $self, $query ) = @_;
    my $qr = $self->{QueryRewriter};
@@ -480,53 +484,49 @@ sub prepare_query {
    }
 
    my $select = $qr->convert_to_select($query);
-   if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
-      my $fingerprint = $qr->fingerprint(
-         $select,
-         { prefixes => $self->{'num-prefix'} }
-      );
-
-      if ( (my $avg = $self->__get_avg($fingerprint))
-           < $self->{'max-query-time'} ) {
-
-         # Safeguard as much as possible against enormous result sets.
-         $select = $qr->convert_select_list($select);
-         if ( $self->{have_subqueries}
-              && !$self->__have_seen_query($fingerprint) ) {
-            # Wrap in a "derived table," but only if it hasn't been
-            # seen before.  This way, really short queries avoid the
-            # overhead of creating the temp table.
-            $select = $qr->wrap_in_derived($select);
-         }
-
-         # Success: the prepared and converted query ready to execute.
-         return $select, $fingerprint;
-      }
-      else {
-         # The query's average execution time is longer than the
-         # specified limit, so we skip it and just wait for the
-         # master to pass it by.
-         MKDEBUG && _d('Avg time', $avg, 'too long for', $fingerprint);
-         $self->{stats}->{query_too_long}++;
-
-         my $wait_for_master = $self->{callbacks}->{wait_for_master};
-         my %wait_args       = (
-            dbh       => $self->{dbh},
-            mfile     => $self->{slave}->{mfile},
-            mpos      => $self->{slave}->{mpos},
-            until_pos => $self->{pos} + 1,
-            slave_pos => $self->{slave}->{pos},
-         );
-         $self->{stats}->{master_pos_wait}++;
-         $wait_for_master->(%wait_args);
-         $self->_get_slave_status();
-         return;
-      }
+   if ( $select !~ m/\A\s*(?:set|select|use)/i ) {
+      MKDEBUG && _d('Cannot rewrite query as SELECT');
+      _d($query) if $self->{'print-nonrewritten'};
+      $self->{stats}->{query_not_rewritten}++;
    }
-   MKDEBUG && _d('Cannot rewrite query as SELECT');
-   _d($query) if $self->{'print-nonrewritten'};
-   $self->{stats}->{query_not_rewritten}++;
-   return;
+
+   my $fingerprint = $qr->fingerprint(
+      $select,
+      { prefixes => $self->{'num-prefix'} }
+   );
+
+   if ((my $avg = $self->__get_avg($fingerprint))>=$self->{'max-query-time'}) {
+      # The query's average execution time is longer than the
+      # specified limit, so we skip it and just wait for the
+      # master to pass it by.
+      MKDEBUG && _d('Avg time', $avg, 'too long for', $fingerprint);
+      $self->{stats}->{query_too_long}++;
+      my $wait_for_master = $self->{callbacks}->{wait_for_master};
+      my %wait_args       = (
+         dbh       => $self->{dbh},
+         mfile     => $self->{slave}->{mfile},
+         mpos      => $self->{slave}->{mpos},
+         until_pos => $self->{pos} + 1,
+         slave_pos => $self->{slave}->{pos},
+      );
+      $self->{stats}->{master_pos_wait}++;
+      $wait_for_master->(%wait_args);
+      $self->_get_slave_status();
+      return;
+   }
+
+   # Safeguard as much as possible against enormous result sets.
+   $select = $qr->convert_select_list($select);
+   if ( $self->{have_subqueries}
+        && !$self->__have_seen_query($fingerprint) ) {
+      # Wrap in a "derived table," but only if it hasn't been
+      # seen before.  This way, really short queries avoid the
+      # overhead of creating the temp table.
+      $select = $qr->wrap_in_derived($select);
+   }
+
+   # Success: the prepared and converted query ready to execute.
+   return $select, $fingerprint;
 }
 
 sub query_is_allowed {
@@ -540,7 +540,7 @@ sub query_is_allowed {
       {
          MKDEBUG && _d('Query is not allowed, fails permit/reject regexp');
          $self->{stats}->{event_filtered_out}++;
-         next EVENT;
+         return 0;
       }
       return 1;
    }

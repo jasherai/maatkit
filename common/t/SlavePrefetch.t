@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 19;
+use Test::More tests => 35;
 
 require '../SlavePrefetch.pm';
 require '../QueryRewriter.pm';
@@ -223,7 +223,7 @@ $spf->_get_slave_status();
 
 # pos:       100
 # slave pos: 700
-# offset:    256
+# offset:    25
 # window:    1024
 is(
    $spf->_far_enough_ahead(),
@@ -235,7 +235,7 @@ $spf->set_pipeline_pos(700, 750);
 
 # pos:       700
 # slave pos: 700
-# offset:    256
+# offset:    25
 # window:    1024
 is(
    $spf->_far_enough_ahead(),
@@ -247,7 +247,7 @@ $spf->set_pipeline_pos(725, 750);
 
 # pos:       725
 # slave pos: 700
-# offset:    256
+# offset:    25
 # window:    1024
 is(
    $spf->_far_enough_ahead(),
@@ -259,7 +259,7 @@ $spf->set_pipeline_pos(726, 750);
 
 # pos:       726
 # slave pos: 700
-# offset:    256
+# offset:    25
 # window:    1024
 is(
    $spf->_far_enough_ahead(),
@@ -267,6 +267,137 @@ is(
    "Far enough ahead: first byte ahead of slave"
 );
 
+$spf->set_pipeline_pos(500, 550);
+
+# pos:       500
+# slave pos: 700
+# offset:    25
+# window:    1024
+is(
+   $spf->_too_far_ahead(),
+   0,
+   "Too far ahead: behind slave"
+);
+
+$spf->set_pipeline_pos(1500, 1550);
+
+# pos:       1500
+# slave pos: 700
+# offset:    25
+# window:    1024
+is(
+   $spf->_too_far_ahead(),
+   0,
+   "Too far ahead: in window"
+);
+
+$spf->set_pipeline_pos(1749, 1850);
+
+# pos:       1749
+# slave pos: 700
+# offset:    25
+# window:    1024
+is(
+   $spf->_too_far_ahead(),
+   0,
+   "Too far ahead: at last byte in window"
+);
+
+$spf->set_pipeline_pos(1750, 1850);
+
+# pos:       1750
+# slave pos: 700
+# offset:    25
+# window:    1024
+is(
+   $spf->_too_far_ahead(),
+   1,
+   "Too far ahead: first byte past window"
+);
+
+# TODO: test _too_close_to_io().
+
+# To fully test _in_window() we'll need to set a wait_for_master callback.
+# For the offline tests, all it has to do is return some number of events.
+my $n_events;
+sub wait_for_master {
+   return $n_events;
+}
+
+eval {
+   $spf->set_callbacks( wait_for_master => \&wait_for_master );
+};
+is(
+   $EVAL_ERROR,
+   '',
+   'No error setting wait_for_master callback'
+);
+
+# _in_window() should return immediately if we're not far enough ahead.
+# So do like befor and make it seem like we're way behind the slave.
+$spf->set_pipeline_pos(100, 150);
+
+# pos:       100
+# slave pos: 700
+# offset:    25
+# window:    1024
+is(
+   $spf->_in_window(),
+   0,
+   "In window: way behind slave"
+);
+
+# _in_window() will wait_for_master if we're too far ahead or too close
+# to io (and if it's oktorun).  It should let the slave catch up just
+# until we're back in the window, then return 1.
+
+# First let's test that oktorun will early-terminate the loop and cause
+# _in_window() to return 1 even though we're out of the window.
+$oktorun = 0;
+
+$spf->set_pipeline_pos(5000, 5050);
+
+# pos:       5000
+# slave pos: 700
+# offset:    25
+# window:    1024
+is(
+   $spf->_in_window(),
+   1,
+   "In window: past window but oktorun caused early return"
+);
+
+# Now we're oktorun but too far ahead, so wait_for_master() should
+# get called and it's going to wait until ???
+$oktorun = 1;
+# TODO: ^
+
+
+# #############################################################################
+# Test query_is_allowed().
+# #############################################################################
+
+# query_is_allowed() expects that the query is already stripped of comments.
+
+# Remember to increase tests (line 6) if you add more types.
+my @ok_types = qw(use insert update delete replace);
+my @not_ok_types = qw(select create drop alter);
+
+foreach my $ok_type ( @ok_types ) {
+   is(
+      $spf->query_is_allowed("$ok_type from blah blah etc."),
+      1,
+      "$ok_type is allowed"
+   );
+}
+
+foreach my $not_ok_type ( @not_ok_types ) {
+   is(
+      $spf->query_is_allowed("$not_ok_type from blah blah etc."),
+      0,
+      "$not_ok_type is NOT allowed"
+   );
+}
 # #############################################################################
 # Done.
 # #############################################################################
