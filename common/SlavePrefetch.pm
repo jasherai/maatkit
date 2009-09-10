@@ -39,9 +39,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #   * chk_int            Check interval
 #   * chk_min            Minimum check interval
 #   * chk_max            Maximum check interval 
-#   * VersionParser      Common module
+#   * datadir            datadir system var
 #   * QueryRewriter      Common module
 #   * stats_file         (optional) Filename with saved stats
+#   * have_subqueries    (optional) bool: Yes if MySQL >= 4.1.0
 #   * offset             # The remaining args are equivalent mk-slave-prefetch
 #   * window             # options.  Defaults are provided to make testing
 #   * io-lag             # easier, so they are technically optional.
@@ -56,7 +57,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw(dbh oktorun callbacks chk_int chk_min chk_max
-                          VersionParser QueryRewriter);
+                          datadir QueryRewriter);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -66,22 +67,24 @@ sub new {
    $args{'query-sample-size'} ||= 4;
    $args{'max-query-time'}    ||= 1;
 
-   my ($datadir) = ($args{dbh}->selectrow_array('SHOW VARIABLES LIKE "datadir"'))[1];
-   MKDEBUG && _d('Data directory', $datadir);
-
    my $self = {
-      %args,
-      datadir         => $datadir,
-      have_subqueries => $args{VersionParser}->version_ge($args{dbh},'4.1.0'),
-      pos             => 0,
-      next            => 0,
-      last_ts         => 0,
-      slave           => undef,
-      n_events        => 0,
-      last_chk        => 0,
-      stats           => {},
-      query_stats     => {},
-      query_errors    => {},
+      %args, 
+      pos          => 0,
+      next         => 0,
+      last_ts      => 0,
+      slave        => undef,
+      n_events     => 0,
+      last_chk     => 0,
+      stats        => {},
+      query_stats  => {},
+      query_errors => {},
+      callbacks    => {
+         show_slave_status => sub {
+            my ( $dbh ) = @_;
+            return $dbh->selectrow_hashref("SHOW SLAVE STATUS");
+         }, 
+         wait_for_master   => \&_wait_for_master,
+      },
    };
 
    # Pre-init saved stats from file.
@@ -89,6 +92,17 @@ sub new {
       if $args{stats_file};
 
    return bless $self, $class;
+}
+
+sub set_callbacks {
+   my ( $self, %callbacks ) = @_;
+   foreach my $func ( keys %callbacks ) {
+      die "Callback $func does not exist"
+         unless exists $self->{callbacks}->{$func};
+      $self->{callbacks}->{$func} = $callbacks{$func};
+      MKDEBUG && _d('Set new callback for', $func);
+   }
+   return;
 }
 
 sub init_stats {
@@ -162,7 +176,7 @@ sub open_relay_log {
    }
    $self->{cmd} = $cmd;
    $self->{stats}->{mysqlbinlog}++;
-   return;
+   return $fh;
 }
 
 sub close_relay_log {
@@ -172,7 +186,7 @@ sub close_relay_log {
    # before reading all data from it.  It hangs and prints angry
    # messages about a closed file.  So I'll find the mysqlbinlog
    # process created by the open() and kill it.
-   my $procs = `ps -eaf | grep mysqlbinlog`;
+   my $procs = `ps -eaf | grep mysqlbinlog | grep -v grep`;
    my $cmd   = $self->{cmd};
    MKDEBUG && _d($procs);
    if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
@@ -182,6 +196,9 @@ sub close_relay_log {
          MKDEBUG && _d('Will kill process', $proc);
          kill(15, $proc);
       }
+   }
+   else {
+      warn "Cannot find mysqlbinlog command in ps";
    }
    if ( !close($fh) ) {
       if ( $OS_ERROR ) {
@@ -194,10 +211,17 @@ sub close_relay_log {
    return;
 }
 
-sub get_slave_status {
-   my ( $self ) = @_;
+# This is the private interface, called internally to update
+# $self->{slave}.  The public interface to return $self->{slave}
+# is get_slave_status().
+sub _get_slave_status {
+   my ( $self, $callback ) = @_;
    $self->{stats}->{show_slave_status}++;
-   my $status = $self->{dbh}->selectrow_hashref("SHOW SLAVE STATUS");
+
+   # Remember to $dbh->{FetchHashKeyName} = 'NAME_lc'.
+
+   my $show_slave_status = $self->{callbacks}->{show_slave_status};
+   my $status            = $show_slave_status->($self->{dbh}); 
    if ( !$status || !%$status ) {
       die "No output from SHOW SLAVE STATUS";
    }
@@ -218,8 +242,14 @@ sub get_slave_status {
 
    $self->{slave}    = \%status;
    $self->{last_chk} = $self->{n_events};
-   MKDEBUG && _d('Slave status:', $self->{slave});
+   MKDEBUG && _d('Slave status:', Dumper($self->{slave}));
    return;
+}
+
+# Public interface for returning the current/last slave status.
+sub get_slave_status {
+   my ( $self ) = @_;
+   return $self->{slave};
 }
 
 sub slave_is_running {
@@ -227,7 +257,28 @@ sub slave_is_running {
    return $self->{slave}->{running};
 }
 
-sub reset_pipeline {
+sub get_interval {
+   my ( $self ) = @_;
+   return $self->{n_events}, $self->{last_chk};
+}
+
+sub get_pipeline_pos {
+   my ( $self ) = @_;
+   return $self->{pos}, $self->{next}, $self->{last_ts};
+}
+
+sub set_pipeline_pos {
+   my ( $self, $pos, $next, $ts ) = @_;
+   die "pos must be >= 0"  unless defined $pos && $pos >= 0;
+   die "next must be >= 0" unless defined $pos && $pos >= 0;
+   $self->{pos}     = $pos;
+   $self->{next}    = $next;
+   $self->{last_ts} = $ts || 0;  # undef same as zero
+   MKDEBUG && _d('Set pipeline pos', @_);
+   return;
+}
+
+sub reset_pipeline_pos {
    my ( $self ) = @_;
    $self->{pos}     = 0; # Current position we're reading in relay log.
    $self->{next}    = 0; # Start of next relay log event.
@@ -256,7 +307,7 @@ sub pipeline_event {
    # Time to check the slave's status again?
    if ( $self->{pos} > $self->{slave}->{pos}
         && ($self->{n_events} - $self->{last_chk}) >= $self->{chk_int} ) {
-      $self->get_slave_status();
+      $self->_get_slave_status();
       $self->{chk_int} = $self->{pos} <= $self->{slave_pos}  
          ? max($self->{chk_min}, $self->{chk_int} / 2) # slave caught up to us
          : min($self->{chk_max}, $self->{chk_int} * 2);
@@ -294,6 +345,21 @@ sub pipeline_event {
    return;
 }
 
+sub get_window {
+   my ( $self ) = @_;
+   return $self->{offset}, $self->{window};
+}
+
+sub set_window {
+   my ( $self, $offset, $window ) = @_;
+   die "offset must be > 0" unless $offset;
+   die "window must be > 0" unless $window;
+   $self->{offset} = $offset;
+   $self->{window} = $window;
+   MKDEBUG && _d('Set window', @_);
+   return;
+}
+
 # Returns false if the current pos is out of the window,
 # else returns true.  This "throttles" pipeline_event()
 # so that it only executes queries when we're in the window.
@@ -304,19 +370,28 @@ sub _in_window {
    # longer prefetching.  We need to stop pipelining events
    # and start skipping them until we're back in the window
    # or ahead of the slave.
-   return 0 if $self->_not_far_enough_ahead();
+   return unless $self->_far_enough_ahead();
 
    # We're ahead of the slave, but check that we're not too
    # far ahead, i.e. out of the window or too close to the end
    # of the binlog.  If we are, wait for the slave to catch up
    # then go back to pipelining events.
+   my $wait_for_master = $self->{callbacks}->{wait_for_master};
    while ( $self->{oktorun}->(only_if_slave_is_running => 1,
                               slave_is_running => $self->slave_is_running())
            && ($self->_too_far_ahead() || $self->_too_close_to_io()) )
    {
       # Don't increment stats if the slave didn't catch up while we
       # slept.
-      if ( $self->wait_for_master($self->{pos} - $self->{window} + 1) > 0 ) {
+      my %wait_args       = (
+         dbh       => $self->{dbh},
+         mfile     => $self->{slave}->{mfile},
+         mpos      => $self->{slave}->{mpos},
+         until_pos => $self->{pos} - $self->{window} + 1, 
+         slave_pos => $self->{slave}->{pos},
+      );
+      $self->{stats}->{master_pos_wait}++;
+      if ( $wait_for_master->(%wait_args) > 0 ) {
          if ( $self->_too_far_ahead() ) {
             MKDEBUG && _d('Event', $self->{pos}, 'too far ahead of',
                $self->{slave}->{pos});
@@ -332,22 +407,22 @@ sub _in_window {
       else {
          MKDEBUG && _d('SQL thread did not advance');
       }
-      $self->get_slave_status();
+      $self->_get_slave_status();
    }
 
    return 1;
 }
 
-# Whether we are far enough ahead of the slave.
-sub _not_far_enough_ahead {
+# Whether we are far enough ahead of the slave (i.e. in the window).
+sub _far_enough_ahead {
    my ( $self ) = @_;
    if ( $self->{pos} < $self->{slave}->{pos} + $self->{offset} ) {
       MKDEBUG && _d($self->{pos}, 'is not',
          $self->{offset}, 'ahead of', $self->{slave}->{pos});
       $self->{stats}->{not_far_enough_ahead}++;
-      return 1;
+      return 0;
    }
-   return 0;
+   return 1;
 }
 
 # Whether we are too far ahead of the slave.
@@ -364,15 +439,19 @@ sub _too_close_to_io {
          >= $self->{slave}->{pos} + $self->{slave}->{lag} - $self->{'io-lag'};
 }
 
-sub wait_for_master {
-   my ( $self, $until_pos ) = @_;
-   $self->{stats}->{master_pos_wait}++;
-   my $sql = "SELECT COALESCE(MASTER_POS_WAIT('$self->{slave}->{mfile}', "
-      . ($self->{slave}->{mpos} + ($until_pos - $self->{slave}->{pos}))
+sub _wait_for_master {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh mfile mpos until_pos slave_pos);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $mfile, $mpos, $until_pos, $slave_pos) = @args{@required_args};
+   my $sql = "SELECT COALESCE(MASTER_POS_WAIT('$mfile', "
+      . $mpos + ($until_pos - $slave_pos)
       . ", 1), 0)";
    MKDEBUG && _d('Waiting for master:', $sql);
    my $start = gettimeofday();
-   my ($events) = $self->{dbh}->selectrow_array($sql);
+   my ($events) = $dbh->selectrow_array($sql);
    MKDEBUG && _d('Waited', (gettimeofday - $start), 'and got', $events);
    return $events;
 }
@@ -427,8 +506,18 @@ sub prepare_query {
          # master to pass it by.
          MKDEBUG && _d('Avg time', $avg, 'too long for', $fingerprint);
          $self->{stats}->{query_too_long}++;
-         $self->wait_for_master($self->{pos} + 1);
-         $self->get_slave_status();
+
+         my $wait_for_master = $self->{callbacks}->{wait_for_master};
+         my %wait_args       = (
+            dbh       => $self->{dbh},
+            mfile     => $self->{slave}->{mfile},
+            mpos      => $self->{slave}->{mpos},
+            until_pos => $self->{pos} + 1,
+            slave_pos => $self->{slave}->{pos},
+         );
+         $self->{stats}->{master_pos_wait}++;
+         $wait_for_master->(%wait_args);
+         $self->_get_slave_status();
          return;
       }
    }
