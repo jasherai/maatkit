@@ -305,6 +305,7 @@ sub pipeline_event {
    }
 
    # Time to check the slave's status again?
+   # TODO: factor this, too
    if ( $self->{pos} > $self->{slave}->{pos}
         && ($self->{n_events} - $self->{last_chk}) >= $self->{chk_int} ) {
       $self->_get_slave_status();
@@ -413,7 +414,7 @@ sub _in_window {
    return 1;
 }
 
-# Whether we are far enough ahead of the slave (i.e. in the window).
+# Whether we are slave pos+offset ahead of the slave.
 sub _far_enough_ahead {
    my ( $self ) = @_;
    if ( $self->{pos} < $self->{slave}->{pos} + $self->{offset} ) {
@@ -425,10 +426,11 @@ sub _far_enough_ahead {
    return 1;
 }
 
-# Whether we are too far ahead of the slave.
+# Whether we are slave pos+offset+window ahead of the slave.
 sub _too_far_ahead {
    my ( $self ) = @_;
-   return ($self->{pos} > $self->{slave}->{pos} + $self->{window});
+   return
+      $self->{pos} > $self->{slave}->{pos} + $self->{offset} + $self->{window);
 }
 
 # Whether we are too close to where the I/O thread is writing.
