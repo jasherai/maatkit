@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 35;
+use Test::More tests => 41;
 
 require '../SlavePrefetch.pm';
 require '../QueryRewriter.pm';
@@ -12,6 +12,8 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $qr      = new QueryRewriter();
 my $dbh     = 1;  # we don't need to connect yet
@@ -318,9 +320,17 @@ is(
 # TODO: test _too_close_to_io().
 
 # To fully test _in_window() we'll need to set a wait_for_master callback.
-# For the offline tests, all it has to do is return some number of events.
-my $n_events;
+# For the offline tests, it will simulate MASTER_POS_WAIT() by setting
+# the slave stats given an array of stats.  Each call shifts and sets
+# global $slave_status to the next stats in the array.  Then when
+# _get_slave_status() is called after wait_for_master(), the faux stats
+# get set.
+my @slave_stats;
+my $n_events = 1;
 sub wait_for_master {
+   if ( @slave_stats ) {
+      $slave_status = shift @slave_stats;
+   }
    return $n_events;
 }
 
@@ -368,10 +378,97 @@ is(
 );
 
 # Now we're oktorun but too far ahead, so wait_for_master() should
-# get called and it's going to wait until ???
+# get called and it's going to wait until the next window.  So let's
+# test all this.
 $oktorun = 1;
-# TODO: ^
 
+$spf->set_window(50, 100);
+$spf->set_pipeline_pos(800, 900);
+$slave_status->{exec_master_log_pos} = 100;
+$slave_status->{relay_log_pos}       = 200;
+$spf->_get_slave_status();
+
+# offset       50
+# window       100
+
+# pos   mysql  mk   
+# ----+------------
+# mst | 100    700
+# slv | 200    800
+
+# +100 difference between master and slave pos
+
+# in terms of master pos (for MASTER_POS_WAIT()):
+#   in window    150-250
+#   past window  450
+#   next window  650-750
+# in terms of slave pos (for _too_*()):
+#   next window  750-850
+
+# Window lower/upper, past and next are in terms of the master pos
+# because MASTER_POS_WAIT() uses this (exec_master_log_pos), not
+# the slave pos (relay_log_pos).
+is(
+   $spf->next_window(),
+   650,  # in terms of master pos
+   'Next window'
+);
+
+# Make some faux slave stats that simulate replication progress.
+@slave_stats = ();
+push @slave_stats,
+   {
+      # Read 400 bytes
+      exec_master_log_pos   => 500,
+      relay_log_pos         => 600,
+      slave_sql_running     => 'Yes',
+      master_log_file       => 'mysql-bin.000001',
+      relay_master_log_file => 'mysql-bin.000001',
+      relay_log_file        => 'mysql-relay-bin.000003',
+      read_master_log_pos   => 1925,
+   },
+   {
+      # Read 100 bytes--in window now
+      exec_master_log_pos   => 600,
+      relay_log_pos         => 700,
+      slave_sql_running     => 'Yes',
+      master_log_file       => 'mysql-bin.000001',
+      relay_master_log_file => 'mysql-bin.000001',
+      relay_log_file        => 'mysql-relay-bin.000003',
+      read_master_log_pos   => 1925,
+   },
+   {
+      # Read 50 bytes--shouldn't be used; see below
+      exec_master_log_pos   => 650,
+      relay_log_pos         => 750,
+      slave_sql_running     => 'Yes',
+      master_log_file       => 'mysql-bin.000001',
+      relay_master_log_file => 'mysql-bin.000001',
+      relay_log_file        => 'mysql-relay-bin.000003',
+      read_master_log_pos   => 1925,
+   };
+
+is(
+   $spf->_in_window(),
+   1,
+   "In window: slave caught up"
+);
+is_deeply(
+   \@slave_stats,
+   [
+      {
+         # Read 50 bytes--shouldn't be used; that's why it's still here
+         exec_master_log_pos   => 650,
+         relay_log_pos         => 750,
+         slave_sql_running     => 'Yes',
+         master_log_file       => 'mysql-bin.000001',
+         relay_master_log_file => 'mysql-bin.000001',
+         relay_log_file        => 'mysql-relay-bin.000003',
+         read_master_log_pos   => 1925,
+      },
+   ],
+   'In window: stopped waiting once slave was in window'
+);
 
 # #############################################################################
 # Test query_is_allowed().
@@ -398,6 +495,24 @@ foreach my $not_ok_type ( @not_ok_types ) {
       "$not_ok_type is NOT allowed"
    );
 }
+
+is(
+   $spf->query_is_allowed("SET timestamp=1197996507"),
+   1,
+   "SET timestamp is allowed"
+);
+is(
+   $spf->query_is_allowed('SET @var=1'),
+   1,
+   'SET @var is allowed'
+);
+is(
+   $spf->query_is_allowed("SET insert_id=34484549"),
+   0,
+   "SET insert_id is NOT allowed"
+);
+
+
 # #############################################################################
 # Done.
 # #############################################################################

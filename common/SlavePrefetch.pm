@@ -366,6 +366,9 @@ sub set_window {
 # so that it only executes queries when we're in the window.
 sub _in_window {
    my ( $self ) = @_;
+   MKDEBUG && _d('pos:', $self->{pos},
+      'slave pos:', $self->{slave}->{pos},
+      'master pos', $self->{slave}->{mpos});
 
    # We're behind the slave which is bad because we're no
    # longer prefetching.  We need to stop pipelining events
@@ -378,30 +381,23 @@ sub _in_window {
    # of the binlog.  If we are, wait for the slave to catch up
    # then go back to pipelining events.
    my $wait_for_master = $self->{callbacks}->{wait_for_master};
+   my %wait_args       = (
+      dbh       => $self->{dbh},
+      mfile     => $self->{slave}->{mfile},
+      until_pos => $self->next_window(),
+   );
    while ( $self->{oktorun}->(only_if_slave_is_running => 1,
                               slave_is_running => $self->slave_is_running())
            && ($self->_too_far_ahead() || $self->_too_close_to_io()) )
    {
       # Don't increment stats if the slave didn't catch up while we
       # slept.
-      my %wait_args       = (
-         dbh       => $self->{dbh},
-         mfile     => $self->{slave}->{mfile},
-         mpos      => $self->{slave}->{mpos},
-         until_pos => $self->{pos} - $self->{window} + 1, 
-         slave_pos => $self->{slave}->{pos},
-      );
       $self->{stats}->{master_pos_wait}++;
       if ( $wait_for_master->(%wait_args) > 0 ) {
          if ( $self->_too_far_ahead() ) {
-            MKDEBUG && _d('Event', $self->{pos}, 'too far ahead of',
-               $self->{slave}->{pos});
             $self->{stats}->{too_far_ahead}++;
          }
          elsif ( $self->_too_close_to_io() ) {
-            MKDEBUG && _d('Event', $self->{pos}, 'too close to I/O thread',
-                          '(', $self->{slave}->{pos}, '+',
-                          $self->{slave}->{lag}, ')');
             $self->{stats}->{too_close_to_io_thread}++;
          }
       }
@@ -411,6 +407,9 @@ sub _in_window {
       $self->_get_slave_status();
    }
 
+   MKDEBUG && _d('In window, pos', $self->{pos},
+      'slave pos', $self->{slave}->{pos}, 'master pos', $self->{slave}->{mpos},
+      'interation', $self->{n_events});
    return 1;
 }
 
@@ -429,33 +428,58 @@ sub _far_enough_ahead {
 # Whether we are slave pos+offset+window ahead of the slave.
 sub _too_far_ahead {
    my ( $self ) = @_;
-   return $self->{pos}
-      > $self->{slave}->{pos} + $self->{offset} + $self->{window} ? 1 : 0;
+   my $too_far =
+      $self->{pos}
+         > $self->{slave}->{pos} + $self->{offset} + $self->{window} ? 1 : 0;
+   MKDEBUG && _d('pos', $self->{pos}, 'too far ahead of',
+      'slave pos', $self->{slave}->{pos}, ':', $too_far ? 'yes' : 'no');
+   return $too_far;
 }
 
 # Whether we are too close to where the I/O thread is writing.
 sub _too_close_to_io {
    my ( $self ) = @_;
-   return $self->{slave}->{lag}
+   my $too_close= $self->{slave}->{lag}
       && $self->{pos}
          >= $self->{slave}->{pos} + $self->{slave}->{lag} - $self->{'io-lag'};
+   MKDEBUG && _d('pos', $self->{pos},
+      'too close to I/O thread pos', $self->{slave}->{pos}, '+',
+      $self->{slave}->{lag}, ':', $too_close ? 'yes' : 'no');
+   return $too_close;
 }
 
 sub _wait_for_master {
    my ( %args ) = @_;
-   my @required_args = qw(dbh mfile mpos until_pos slave_pos);
+   my @required_args = qw(dbh mfile until_pos wait timeout);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($dbh, $mfile, $mpos, $until_pos, $slave_pos) = @args{@required_args};
-   my $sql = "SELECT COALESCE(MASTER_POS_WAIT('$mfile', "
-      . $mpos + ($until_pos - $slave_pos)
-      . ", 1), 0)";
+   my $timeout = $args{timeout} || 1;
+   my ($dbh, $mfile, $until_pos) = @args{@required_args};
+   my $sql = "SELECT COALESCE(MASTER_POS_WAIT('$mfile',$until_pos,$timeout),0)";
    MKDEBUG && _d('Waiting for master:', $sql);
    my $start = gettimeofday();
    my ($events) = $dbh->selectrow_array($sql);
    MKDEBUG && _d('Waited', (gettimeofday - $start), 'and got', $events);
    return $events;
+}
+
+# The next window is pos-offset, assuming that master/slave pos
+# are behind pos.  If we get too far ahead, we need to wait until
+# the slave is right behind us.  The closest it can get is offset
+# bytes behind us, thus pos-offset.  However, the return value is
+# in terms of master pos because this is what MASTER_POS_WAIT()
+# expects.
+sub next_window {
+   my ( $self ) = @_;
+   my $next_window = 
+         $self->{slave}->{mpos}                    # master pos
+         + ($self->{pos} - $self->{slave}->{pos})  # how far we're ahead
+         - $self->{offset};                        # offset;
+   MKDEBUG && _d('master pos:', $self->{slave}->{mpos},
+      'next window:', $next_window,
+      'bytes left:', $next_window - $self->{offset} - $self->{slave}->{mpos});
+   return $next_window;
 }
 
 # Does everything necessary to make the given DMS query ready for
@@ -488,29 +512,37 @@ sub prepare_query {
       MKDEBUG && _d('Cannot rewrite query as SELECT');
       _d($query) if $self->{'print-nonrewritten'};
       $self->{stats}->{query_not_rewritten}++;
+      return;
    }
 
    my $fingerprint = $qr->fingerprint(
       $select,
       { prefixes => $self->{'num-prefix'} }
    );
-
    if ((my $avg = $self->__get_avg($fingerprint))>=$self->{'max-query-time'}) {
-      # The query's average execution time is longer than the
-      # specified limit, so we skip it and just wait for the
-      # master to pass it by.
+      # The query's average execution time is longer than the specified
+      # limit, so we skip it and wait for the slave to execute it.  We
+      # do *not* want to skip it and continue pipelining events because
+      # the caches that we would warm while executing ahead of the slave
+      # would become cold once the slave hits this slow query and stalls.
+      # In general, we want to always be just a little ahead of the slave
+      # so it executes in the warmth of our pipelining wake.
       MKDEBUG && _d('Avg time', $avg, 'too long for', $fingerprint);
       $self->{stats}->{query_too_long}++;
+
       my $wait_for_master = $self->{callbacks}->{wait_for_master};
+      my $until_pos = 
+            $self->{slave}->{mpos}                    # master pos
+            + ($self->{pos} - $self->{slave}->{pos})  # how far we're ahead
+            + 1;                                      # 1 past this query
       my %wait_args       = (
          dbh       => $self->{dbh},
          mfile     => $self->{slave}->{mfile},
-         mpos      => $self->{slave}->{mpos},
-         until_pos => $self->{pos} + 1,
-         slave_pos => $self->{slave}->{pos},
+         until_pos => $until_pos,
       );
       $self->{stats}->{master_pos_wait}++;
       $wait_for_master->(%wait_args);
+
       $self->_get_slave_status();
       return;
    }
