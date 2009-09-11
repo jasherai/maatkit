@@ -35,7 +35,6 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # Arguments:
 #   * dbh                Slave dbh
 #   * oktorun            Callback for early termination
-#   * callbacks          Arrayref of callbacks to execute valid queries
 #   * chk_int            Check interval
 #   * chk_min            Minimum check interval
 #   * chk_max            Maximum check interval 
@@ -56,7 +55,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #   * progress           #
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(dbh oktorun callbacks chk_int chk_min chk_max
+   my @required_args = qw(dbh oktorun chk_int chk_min chk_max
                           datadir QueryRewriter);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
@@ -211,6 +210,27 @@ sub close_relay_log {
    return;
 }
 
+# Returns true if it's time to _get_slave_status() again.
+sub _check_slave_status {
+   my ( $self ) = @_;
+   return
+      $self->{pos} > $self->{slave}->{pos}
+      && ($self->{n_events} - $self->{last_chk}) >= $self->{chk_int} ? 1 : 0;
+}
+
+# Returns the next check interval.
+sub _get_next_chk_int {
+   my ( $self ) = @_;
+   if ( $self->{pos} <= $self->{slave}->{pos} ) {
+      # The slave caught up to us so do another check sooner than usual.
+      return max($self->{chk_min}, $self->{chk_int} / 2);
+   }
+   else {
+      # We're ahead of the slave so wait a little longer until the next check.
+      return min($self->{chk_max}, $self->{chk_int} * 2);
+   }
+}
+
 # This is the private interface, called internally to update
 # $self->{slave}.  The public interface to return $self->{slave}
 # is get_slave_status().
@@ -288,14 +308,12 @@ sub reset_pipeline_pos {
 }
 
 sub pipeline_event {
-   my ( $self, $event ) = @_;
+   my ( $self, $event, @callbacks ) = @_;
 
    # Update pos and next.
-   $self->{stats}->{events}++;
+   $self->{n_events}++;
    $self->{pos}  = $event->{offset} if $event->{offset};
-   $self->{next} = max($self->{next}, $self->{pos} + ($event->{end} || 0));
-   MKDEBUG && _d('pos:', $self->{pos}, 'next:', $self->{next},
-      'slave pos:', $self->{slave}->{pos});
+   $self->{next} = max($self->{next},$self->{pos}+($event->{end_log_pos} || 0));
 
    if ( $self->{progress}
         && $self->{stats}->{events} % $self->{progress} == 0 ) {
@@ -305,13 +323,11 @@ sub pipeline_event {
    }
 
    # Time to check the slave's status again?
-   # TODO: factor this, too
-   if ( $self->{pos} > $self->{slave}->{pos}
-        && ($self->{n_events} - $self->{last_chk}) >= $self->{chk_int} ) {
+   if ( $self->_check_slave_status() ) { 
+      MKDEBUG && _d('Checking slave status at interval', $self->{n_events});
       $self->_get_slave_status();
-      $self->{chk_int} = $self->{pos} <= $self->{slave_pos}  
-         ? max($self->{chk_min}, $self->{chk_int} / 2) # slave caught up to us
-         : min($self->{chk_max}, $self->{chk_int} * 2);
+      $self->{chk_int} = $self->_get_next_chk_int();
+      MKDEBUG && _d('Next check interval:', $self->{chk_int});
    }
 
    # We're in the window if we're not behind the slave or too far
@@ -330,7 +346,7 @@ sub pipeline_event {
          return;
       }
 
-      my ($query, $fingerprint) = prepare_query($event->{arg});
+      my ($query, $fingerprint) = $self->prepare_query($event->{arg});
       if ( !$query ) {
          MKDEBUG && _d('Failed to prepare query, skipping');
          return;
@@ -338,7 +354,7 @@ sub pipeline_event {
 
       # Do it!
       $self->{stats}->{do_query}++;
-      foreach my $callback ( @{$self->{callbacks}} ) {
+      foreach my $callback ( @callbacks ) {
          $callback->($query, $fingerprint);
       }
    }
@@ -366,7 +382,8 @@ sub set_window {
 # so that it only executes queries when we're in the window.
 sub _in_window {
    my ( $self ) = @_;
-   MKDEBUG && _d('pos:', $self->{pos},
+   MKDEBUG && _d('Checking window, pos:', $self->{pos},
+      'next', $self->{next},
       'slave pos:', $self->{slave}->{pos},
       'master pos', $self->{slave}->{mpos});
 
@@ -407,9 +424,7 @@ sub _in_window {
       $self->_get_slave_status();
    }
 
-   MKDEBUG && _d('In window, pos', $self->{pos},
-      'slave pos', $self->{slave}->{pos}, 'master pos', $self->{slave}->{mpos},
-      'interation', $self->{n_events});
+   MKDEBUG && _d('Event', $self->{n_events}, 'is in the window');
    return 1;
 }
 
@@ -476,7 +491,7 @@ sub next_window {
          $self->{slave}->{mpos}                    # master pos
          + ($self->{pos} - $self->{slave}->{pos})  # how far we're ahead
          - $self->{offset};                        # offset;
-   MKDEBUG && _d('master pos:', $self->{slave}->{mpos},
+   MKDEBUG && _d('Next window, master pos:', $self->{slave}->{mpos},
       'next window:', $next_window,
       'bytes left:', $next_window - $self->{offset} - $self->{slave}->{mpos});
    return $next_window;
@@ -496,7 +511,8 @@ sub prepare_query {
 
    # If the event is SET TIMESTAMP and we've already set the
    # timestamp to that value, skip it.
-   if ( (my ($new_ts) = $query =~ m/SET TIMESTAMP=(\d+)/) ) {
+   if ( (my ($new_ts) = $query =~ m/SET timestamp=(\d+)/) ) {
+      MKDEBUG && _d('timestamp query:', $query);
       if ( $new_ts == $self->{last_ts} ) {
          MKDEBUG && _d('Already saw timestamp', $new_ts);
          $self->{stats}->{same_timestamp}++;
@@ -509,7 +525,7 @@ sub prepare_query {
 
    my $select = $qr->convert_to_select($query);
    if ( $select !~ m/\A\s*(?:set|select|use)/i ) {
-      MKDEBUG && _d('Cannot rewrite query as SELECT');
+      MKDEBUG && _d('Cannot rewrite query as SELECT:', $query);
       _d($query) if $self->{'print-nonrewritten'};
       $self->{stats}->{query_not_rewritten}++;
       return;
@@ -519,46 +535,74 @@ sub prepare_query {
       $select,
       { prefixes => $self->{'num-prefix'} }
    );
-   if ((my $avg = $self->__get_avg($fingerprint))>=$self->{'max-query-time'}) {
-      # The query's average execution time is longer than the specified
-      # limit, so we skip it and wait for the slave to execute it.  We
-      # do *not* want to skip it and continue pipelining events because
-      # the caches that we would warm while executing ahead of the slave
-      # would become cold once the slave hits this slow query and stalls.
-      # In general, we want to always be just a little ahead of the slave
-      # so it executes in the warmth of our pipelining wake.
+
+   # If the query's average execution time is longer than the specified
+   # limit, we wait for the slave to execute it then skip it ourself.
+   # We do *not* want to skip it and continue pipelining events because
+   # the caches that we would warm while executing ahead of the slave
+   # would become cold once the slave hits this slow query and stalls.
+   # In general, we want to always be just a little ahead of the slave
+   # so it executes in the warmth of our pipelining wake.
+   if ((my $avg = $self->get_avg($fingerprint)) >= $self->{'max-query-time'}) {
       MKDEBUG && _d('Avg time', $avg, 'too long for', $fingerprint);
       $self->{stats}->{query_too_long}++;
-
-      my $wait_for_master = $self->{callbacks}->{wait_for_master};
-      my $until_pos = 
-            $self->{slave}->{mpos}                    # master pos
-            + ($self->{pos} - $self->{slave}->{pos})  # how far we're ahead
-            + 1;                                      # 1 past this query
-      my %wait_args       = (
-         dbh       => $self->{dbh},
-         mfile     => $self->{slave}->{mfile},
-         until_pos => $until_pos,
-      );
-      $self->{stats}->{master_pos_wait}++;
-      $wait_for_master->(%wait_args);
-
-      $self->_get_slave_status();
-      return;
+      return $self->_wait_skip_query($avg);
    }
 
    # Safeguard as much as possible against enormous result sets.
    $select = $qr->convert_select_list($select);
-   if ( $self->{have_subqueries}
-        && !$self->__have_seen_query($fingerprint) ) {
-      # Wrap in a "derived table," but only if it hasn't been
-      # seen before.  This way, really short queries avoid the
-      # overhead of creating the temp table.
-      $select = $qr->wrap_in_derived($select);
-   }
+
+   # The following block is/was meant to prevent huge insert/select queries
+   # from slowing us, and maybe the network, down by wrapping the query like
+   # select 1 from (<query>) as x limit 1.  This way, the huge result set of
+   # the query is not transmitted but the query itself is still executed.
+   # If someone has a similar problem, we can re-enable (and fix) this block.
+   # The bug here is that by this point the query is already seen so the if()
+   # is always false.
+   # if ( $self->{have_subqueries} && !$self->have_seen($fingerprint) ) {
+   #    # Wrap in a "derived table," but only if it hasn't been
+   #    # seen before.  This way, really short queries avoid the
+   #    # overhead of creating the temp table.
+   #    # $select = $qr->wrap_in_derived($select);
+   # }
 
    # Success: the prepared and converted query ready to execute.
    return $select, $fingerprint;
+}
+
+# Waits for the slave to catch up, execute the query at our current
+# pos, and then move on.  This is usually used to wait-skip slow queries,
+# so the wait arg is important.  If a slow query takes 3 seconds, and
+# it takes the slave another 1 second to reach our pos, then we can
+# either wait_for_master 4 times (1s each) or just wait twice, 3s each
+# time but the 2nd time will return as soon as the slave has moved
+# past the slow query.
+sub _wait_skip_query {
+   my ( $self, $wait ) = @_;
+   my $wait_for_master = $self->{callbacks}->{wait_for_master};
+   my $until_pos = 
+         $self->{slave}->{mpos}                    # master pos
+         + ($self->{pos} - $self->{slave}->{pos})  # how far we're ahead
+         + 1;                                      # 1 past this query
+   my %wait_args       = (
+      dbh       => $self->{dbh},
+      mfile     => $self->{slave}->{mfile},
+      until_pos => $until_pos,
+      timeout   => $wait,
+   );
+   my $start = gettimeofday();
+   while ( $self->{oktorun}->(only_if_slave_is_running => 1,
+                              slave_is_running => $self->slave_is_running())
+           && ($self->{slave}->{pos} <= $self->{pos}) ) {
+      $self->{stats}->{master_pos_wait}++;
+      $wait_for_master->(%wait_args);
+      $self->_get_slave_status();
+      MKDEBUG && _d('Bytes until slave reaches wait-skip query:',
+         $self->{pos} - $self->{slave}->{pos});
+   }
+   MKDEBUG && _d('Waited', (gettimeofday - $start), 'to skip query');
+   $self->_get_slave_status();
+   return;
 }
 
 sub query_is_allowed {
@@ -620,15 +664,10 @@ sub __store_avg {
    return;
 }
 
-sub __have_seen_query {
-   my ( $self, $query ) = @_;
-   return $self->{query_stats}->{$query}->{seen};
-}
-
-sub __get_avg {
-   my ( $self, $query ) = @_;
-   $self->{query_stats}->{$query}->{seen}++;
-   return $self->{query_stats}->{$query}->{avg} || 0;
+sub get_avg {
+   my ( $self, $fingerprint ) = @_;
+   $self->{query_stats}->{$fingerprint}->{seen}++;
+   return $self->{query_stats}->{$fingerprint}->{avg} || 0;
 }
 
 sub _d {

@@ -3,10 +3,11 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 41;
+use Test::More tests => 54;
 
 require '../SlavePrefetch.pm';
 require '../QueryRewriter.pm';
+require '../BinaryLogParser.pm';
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -18,21 +19,14 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 my $qr      = new QueryRewriter();
 my $dbh     = 1;  # we don't need to connect yet
 my $oktorun = 1;
-my @queries;
 
 sub oktorun {
    return $oktorun;
 }
 
-sub save_query {
-   print @queries, [ @_ ];
-   return;
-}
-
 my $spf = new SlavePrefetch(
    dbh             => $dbh,
    oktorun         => \&oktorun,
-   callbacks       => [ \&save_queries ],
    chk_int         => 4,
    chk_min         => 1,
    chk_max         => 8,
@@ -512,6 +506,225 @@ is(
    "SET insert_id is NOT allowed"
 );
 
+
+# #############################################################################
+# Test that we skip already-seen timestamps.
+# #############################################################################
+
+# No interface for this, so we hack it in.
+$spf->{last_ts} = '12345';
+
+is(
+   $spf->prepare_query('SET timestamp=12345'),
+   undef,
+   'Skip already-seen timestamps'
+);
+is(
+   $spf->prepare_query('SET timestamp=44485'),
+   'set timestamp=?',
+   'Does not skip new timestamp'
+);
+
+# #############################################################################
+# Test general cases for prepare_query().
+# #############################################################################
+is_deeply(
+   [ $spf->prepare_query('INSERT INTO foo (a,b) VALUES (1,2)') ],
+   [
+      'select 1 from  foo  where a=1 and b=2',
+      'select * from foo where a=? and b=?',
+   ],
+   'Prepare INSERT'
+);
+
+is_deeply(
+   [ $spf->prepare_query('UPDATE foo SET bar=1 WHERE id=9') ],
+   [
+      'select isnull(coalesce(  bar=1 )) from foo where  id=9',
+      'select bar=? from foo where id=?'
+   ],
+   'Prepare UPDATE'
+);
+
+is_deeply(
+   [ $spf->prepare_query('DELETE FROM foo WHERE id=9') ],
+   [
+      'select 1 from  foo WHERE id=9',
+      'select * from foo where id=?',
+   ],
+   'Prepare DELETE'
+);
+
+is_deeply(
+   [ $spf->prepare_query('/* comment */ DELETE FROM foo WHERE id=9; -- foo') ],
+   [
+      'select 1 from  foo WHERE id=9; ',
+      'select * from foo where id=?; ',
+   ],
+   'Prepare DELETE with comments'
+);
+
+is_deeply(
+   [ $spf->prepare_query('USE db') ],
+   [ 'USE db', 'use ?' ],
+   'Prepare USE'
+);
+
+is_deeply(
+   [ $spf->prepare_query('replace into foo select * from bar') ],
+   [ 'select 1 from bar', 'select * from bar' ],
+   'Prepare REPLACE INTO'
+);
+
+# #############################################################################
+# Test that slow queries are skipped, wait_skip_query().
+# #############################################################################
+
+# Like the _in_window() test before, we need to simulate all the pos.
+# The slow query is at our pos, 100, so we'll need to wait until the
+# slave passes this pos.
+
+$spf->set_window(50, 500);
+$spf->set_pipeline_pos(100, 200);
+$slave_status->{exec_master_log_pos} = 50;
+$slave_status->{relay_log_pos}       = 50;
+$spf->_get_slave_status();
+
+@slave_stats = ();
+push @slave_stats,
+   {
+      # 20 bytes before slow query...
+      exec_master_log_pos   => 80,
+      relay_log_pos         => 80,
+      slave_sql_running     => 'Yes',
+      master_log_file       => 'mysql-bin.000001',
+      relay_master_log_file => 'mysql-bin.000001',
+      relay_log_file        => 'mysql-relay-bin.000003',
+      read_master_log_pos   => 1925,
+   },
+   {
+      # At slow query...
+      exec_master_log_pos   => 100,
+      relay_log_pos         => 100,
+      slave_sql_running     => 'Yes',
+      master_log_file       => 'mysql-bin.000001',
+      relay_master_log_file => 'mysql-bin.000001',
+      relay_log_file        => 'mysql-relay-bin.000003',
+      read_master_log_pos   => 1925,
+   },
+   {
+      # Past slow query and done waiting.
+      exec_master_log_pos   => 150,
+      relay_log_pos         => 150,
+      slave_sql_running     => 'Yes',
+      master_log_file       => 'mysql-bin.000001',
+      relay_master_log_file => 'mysql-bin.000001',
+      relay_log_file        => 'mysql-relay-bin.000003',
+      read_master_log_pos   => 1925,
+   },
+   {
+      _wait_skip_query => "should stop before here",
+   };
+
+# No interface for this either so hack it in.
+my ($query, $fp) = $spf->prepare_query('INSERT INTO foo (a,b) VALUES (1,2)');
+$spf->{query_stats}->{$fp}->{avg} = 3;
+
+is(
+   $spf->prepare_query('INSERT INTO foo (a,b) VALUES (1,2)'),
+   undef,
+   'Does not prepare slow query'
+);
+
+is_deeply(
+   \@slave_stats,
+   [
+      {
+         _wait_skip_query => "should stop before here",
+      },
+   ],
+   '_wait_skip_query() stopped waiting once query was skipped'
+);
+
+
+# #############################################################################
+# Test the big fish: pipeline_event().
+# #############################################################################
+my $parser = new BinaryLogParser();
+my @events;
+my @queries;
+my @callbacks;
+
+sub save_query {
+   push @queries, [ @_ ];
+}
+push @callbacks, \&save_query;
+
+sub parse_binlog {
+   my ( $file ) = @_;
+   @events = ();
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+   1 while ( $parser->parse_event($fh, undef, sub { push @events, @_; }) );
+   close $fh;
+   return;
+}
+
+parse_binlog('samples/binlog003.txt');
+# print Dumper(\@events);  # uncomment if you want to see what's going on
+
+$spf->set_window(100, 300);
+$spf->reset_pipeline_pos();
+$slave_status->{exec_master_log_pos} = 263;
+$slave_status->{relay_log_pos}       = 263;
+$spf->_get_slave_status();
+
+# Slave is at event 1 (pos 263) and we "read" (shift) event 1,
+# so we are *not* in the window because we're not far enough ahead.
+# Given the 100 offset, we need to be at least pos 363, which is
+# event 3 at pos/offset 434.
+my $event = shift @events;
+$spf->pipeline_event($event, @callbacks),
+is_deeply(
+   \@queries,
+   [],
+   "Query not pipelined because we're on top of the slave"
+);
+   
+$event = shift @events;
+   $spf->pipeline_event($event, @callbacks),
+is_deeply(
+   \@queries,
+   [],
+   "Query not pipelined because we're still not far enough ahead"
+);
+
+
+$event = shift @events;  # event 2, first past offset
+$spf->pipeline_event($event, @callbacks),
+is_deeply(
+   \@queries,
+   [ [
+      'select 1 from  t  where i=1',  # query
+      'select * from t where i=?',    # fingerprint
+   ] ],
+   'Executes first query in the window'
+);
+
+# Events 3 and 4 are still in the window because
+#     slave pos    263
+#   + offset       100
+#   + window       300
+#   = outer limit  663
+# and event 5 begins at 721, past the outer limit.  But event 4
+# is going to trigger the interval which is 4,1,8 (args to new()).
+# 
+
+#$event = shift @events;  # event 2, first past offset
+#$spf->pipeline_event($event, @callbacks),
+#$event = shift @events;  # event 2, first past offset
+#$spf->pipeline_event($event, @callbacks),
+#$event = shift @events;  # event 2, first past offset
+#$spf->pipeline_event($event, @callbacks),
 
 # #############################################################################
 # Done.
