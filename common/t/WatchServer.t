@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 9;
+use Test::More tests => 10;
 
 require "../WatchServer.pm";
 
@@ -110,6 +110,12 @@ is(
    $w->ok(),
    1,
    'vmstat swpd'
+);
+
+is_deeply(
+   [ $w->get_last_check() ],
+   [ '0', '==', '0' ],
+   'get_last_check()'
 );
 
 # ###########################################################################

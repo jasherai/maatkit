@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 10;
+use Test::More tests => 11;
 
 require "../WatchStatus.pm";
 require "../DSNParser.pm";
@@ -131,6 +131,12 @@ is(
    $w->ok(),
    0,
    'Slave status not ok'
+);
+
+is_deeply(
+   [ $w->get_last_check() ],
+   [ '61', '<', '60' ],
+   'get_last_check()'
 );
 
 # ###########################################################################

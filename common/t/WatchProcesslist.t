@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 require "../WatchProcesslist.pm";
 require "../DSNParser.pm";
@@ -62,6 +62,12 @@ is(
    $w->ok(),
    1,
    'Processlist db time ok'
+);
+
+is_deeply(
+   [ $w->get_last_check() ],
+   [ '533', '==', '533' ],
+   'get_last_check()'
 );
 
 # ###########################################################################
