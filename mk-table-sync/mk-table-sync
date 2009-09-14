@@ -6592,7 +6592,8 @@ connecting to MySQL.
 
 default: yes
 
-Check the master detected for L<"--sync-to-master">.
+With L<"--sync-to-master">, try to verify that the detected
+master is the real master.
 
 =item --chunk-size
 
