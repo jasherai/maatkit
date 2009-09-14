@@ -95,7 +95,7 @@ sub parse_params {
    my $innodb_status_parser;
    if ( $stats eq 'innodb' ) {
       eval {
-         my $innodb_status_parser = new InnoDBStatusParser();
+         $innodb_status_parser = new InnoDBStatusParser();
       };
       MKDEBUG && $EVAL_ERROR && _d('Cannot create an InnoDBStatusParser object:', $EVAL_ERROR);
       $args{InnoDBStatusParser} = $innodb_status_parser;

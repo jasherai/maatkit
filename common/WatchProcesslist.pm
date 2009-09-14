@@ -100,7 +100,7 @@ sub parse_params {
    my %args;
    my $pla;
    eval {
-      my $pla = new ProcesslistAggregator();
+      $pla = new ProcesslistAggregator();
    };
    MKDEBUG && $EVAL_ERROR && _d('Cannot create a ProcesslistAggregator object:',
       $EVAL_ERROR);
