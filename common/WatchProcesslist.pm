@@ -59,7 +59,7 @@ sub parse_params {
    MKDEBUG && _d('Parsed', $params, 'as', $col, $val, $agg, $cmp, $thres);
    die "No column parameter; expected db, user, host, state or command"
       unless $col;
-   die "Invalid column parameter: $col; expected db, user, host, state or command"
+   die "Invalid column: $col; expected db, user, host, state or command"
       unless $col eq 'db' || $col eq 'user' || $col eq 'host' 
           || $col eq 'state' || $col eq 'command';
    die "No value parameter" unless $val;
@@ -67,7 +67,7 @@ sub parse_params {
    die "Invalid aggregate: $agg; expected count or time"
       unless $agg eq 'count' || $agg eq 'time';
    die "No comparison parameter; expected >, < or =" unless $cmp;
-   die "Invalid comparison parameter: $cmp; expected >, < or ="
+   die "Invalid comparison: $cmp; expected >, < or ="
       unless $cmp eq '<' || $cmp eq '>' || $cmp eq '=';
    die "No threshold value (N)" unless defined $thres;
 

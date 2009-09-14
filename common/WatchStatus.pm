@@ -58,11 +58,11 @@ sub parse_params {
    $stats = lc $stats;
    MKDEBUG && _d('Parsed', $params, 'as', $stats, $var, $cmp, $thres);
    die "No stats parameter; expected status, innodb or slave" unless $stats;
-   die "Invalid stats parameter: $stats; expected status, innodb or slave"
+   die "Invalid stats: $stats; expected status, innodb or slave"
       unless $stats eq 'status' || $stats eq 'innodb' || $stats eq 'slave';
    die "No var parameter" unless $var;
    die "No comparison parameter; expected >, < or =" unless $cmp;
-   die "Invalid comparison parameter: $cmp; expected >, < or ="
+   die "Invalid comparison: $cmp; expected >, < or ="
       unless $cmp eq '<' || $cmp eq '>' || $cmp eq '=';
    die "No threshold value (N)" unless defined $thres;
 
