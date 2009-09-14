@@ -54,9 +54,9 @@ sub new {
 
 sub parse_params {
    my ( $params ) = @_;
-   my ( $stats, $var, $cmp, $thres ) = split(':', $params);
+   my ( $stats, $var, $cmp, $thresh ) = split(':', $params);
    $stats = lc $stats;
-   MKDEBUG && _d('Parsed', $params, 'as', $stats, $var, $cmp, $thres);
+   MKDEBUG && _d('Parsed', $params, 'as', $stats, $var, $cmp, $thresh);
    die "No stats parameter; expected status, innodb or slave" unless $stats;
    die "Invalid stats: $stats; expected status, innodb or slave"
       unless $stats eq 'status' || $stats eq 'innodb' || $stats eq 'slave';
@@ -64,7 +64,7 @@ sub parse_params {
    die "No comparison parameter; expected >, < or =" unless $cmp;
    die "Invalid comparison: $cmp; expected >, < or ="
       unless $cmp eq '<' || $cmp eq '>' || $cmp eq '=';
-   die "No threshold value (N)" unless defined $thres;
+   die "No threshold value (N)" unless defined $thresh;
 
    # User probably doesn't care that = and == mean different things
    # in a programming language; just do what they expect.
@@ -75,7 +75,8 @@ sub parse_params {
       '   my ( $self, %args ) = @_;',
       "   my \$val = \$self->_get_val_from_$stats('$var', %args);",
       "   MKDEBUG && _d('Current $stats:$var =', \$val);",
-      "   return \$val $cmp $thres ? 1 : 0;",
+      "   \$self->_save_last_check(\$val, '$cmp', '$thresh');",
+      "   return \$val $cmp $thresh ? 1 : 0;",
       '}',
    );
 
@@ -217,6 +218,17 @@ sub trevorprice {
    my $qps = ($status2 - $status1) / $time;
    return 0 unless $qps;
    return ($num_running / $num_samples) / $qps;
+}
+
+sub _save_last_check {
+   my ( $self, @args ) = @_;
+   $self->{last_check} = [ @args ];
+   return;
+}
+
+sub get_last_check {
+   my ( $self ) = @_;
+   return @{ $self->{last_check} };
 }
 
 sub _d {

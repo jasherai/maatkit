@@ -53,8 +53,8 @@ sub new {
 
 sub parse_params {
    my ( $params ) = @_;
-   my ( $cmd, $cmd_arg, $cmp, $thres ) = split(':', $params);
-   MKDEBUG && _d('Parsed', $params, 'as', $cmd, $cmd_arg, $cmp, $thres);
+   my ( $cmd, $cmd_arg, $cmp, $thresh ) = split(':', $params);
+   MKDEBUG && _d('Parsed', $params, 'as', $cmd, $cmd_arg, $cmp, $thresh);
    die "No command parameter" unless $cmd;
    die "Invalid command: $cmd; expected loadavg or uptime"
       unless $cmd eq 'loadavg' || $cmd eq 'vmstat';
@@ -71,7 +71,7 @@ sub parse_params {
    die "No comparison parameter; expected >, < or =" unless $cmp;
    die "Invalid comparison parameter: $cmp; expected >, < or ="
       unless $cmp eq '<' || $cmp eq '>' || $cmp eq '=';
-   die "No threshold value (N)" unless defined $thres;
+   die "No threshold value (N)" unless defined $thresh;
 
    # User probably doesn't care that = and == mean different things
    # in a programming language; just do what they expect.
@@ -82,7 +82,8 @@ sub parse_params {
       '   my ( $self, %args ) = @_;',
       "   my \$val = \$self->_get_val_from_$cmd('$cmd_arg', %args);",
       "   MKDEBUG && _d('Current $cmd $cmd_arg =', \$val);",
-      "   return \$val $cmp $thres ? 1 : 0;",
+      "   \$self->_save_last_check(\$val, '$cmp', '$thresh');",
+      "   return \$val $cmp $thresh ? 1 : 0;",
       '}',
    );
 
@@ -161,6 +162,17 @@ sub _get_val_from_vmstat {
    my ( $self, $cmd_arg, %args ) = @_;
    my $vmstat_output = $self->{callbacks}->{vmstat}->();
    return _parse_vmstat($vmstat_output)->{$cmd_arg} || 0;
+}
+
+sub _save_last_check {
+   my ( $self, @args ) = @_;
+   $self->{last_check} = [ @args ];
+   return;
+}
+
+sub get_last_check {
+   my ( $self ) = @_;
+   return @{ $self->{last_check} };
 }
 
 sub _d {

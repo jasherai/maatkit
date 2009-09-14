@@ -52,11 +52,11 @@ sub new {
 
 sub parse_params {
    my ( $params ) = @_;
-   my ( $col, $val, $agg, $cmp, $thres ) = split(':', $params);
+   my ( $col, $val, $agg, $cmp, $thresh ) = split(':', $params);
    $col = lc $col;
    $val = lc $val;
    $agg = lc $agg;
-   MKDEBUG && _d('Parsed', $params, 'as', $col, $val, $agg, $cmp, $thres);
+   MKDEBUG && _d('Parsed', $params, 'as', $col, $val, $agg, $cmp, $thresh);
    die "No column parameter; expected db, user, host, state or command"
       unless $col;
    die "Invalid column: $col; expected db, user, host, state or command"
@@ -69,7 +69,7 @@ sub parse_params {
    die "No comparison parameter; expected >, < or =" unless $cmp;
    die "Invalid comparison: $cmp; expected >, < or ="
       unless $cmp eq '<' || $cmp eq '>' || $cmp eq '=';
-   die "No threshold value (N)" unless defined $thres;
+   die "No threshold value (N)" unless defined $thresh;
 
    # User probably doesn't care that = and == mean different things
    # in a programming language; just do what they expect.
@@ -82,7 +82,8 @@ sub parse_params {
       '   my $apl  = $self->{ProcesslistAggregator}->aggregate($proc);',
       "   my \$val = \$apl->{$col}->{'$val'}->{$agg} || 0;",
       "   MKDEBUG && _d('Current $col $val $agg =', \$val);",
-      "   return \$val $cmp $thres ? 1 : 0;",
+      "   \$self->_save_last_check(\$val, '$cmp', '$thresh');",
+      "   return \$val $cmp $thresh ? 1 : 0;",
       '}',
    );
 
@@ -127,6 +128,17 @@ sub ok {
 sub _show_processlist {
    my ( $dbh, %args ) = @_;
    return $dbh->selectall_arrayref('SHOW PROCESSLIST', { Slice => {} } );
+}
+
+sub _save_last_check {
+   my ( $self, @args ) = @_;
+   $self->{last_check} = [ @args ];
+   return;
+}
+
+sub get_last_check {
+   my ( $self ) = @_;
+   return @{ $self->{last_check} };
 }
 
 sub _d {
