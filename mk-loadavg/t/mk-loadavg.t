@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 5;
 
-require '../mk-loadavg-2';
+require '../mk-loadavg';
 require '../../common/Sandbox.pm';
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -13,7 +13,7 @@ my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 
 my $cnf = '/tmp/12345/my.sandbox.cnf';
-my $cmd = "perl ../mk-loadavg-2 -F $cnf ";
+my $cmd = "perl ../mk-loadavg -F $cnf ";
 
 sub output {
    my $output = '';
