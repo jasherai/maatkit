@@ -72,9 +72,10 @@ sub new {
       next         => 0,
       last_ts      => 0,
       slave        => undef,
-      n_events     => 0,
       last_chk     => 0,
-      stats        => {},
+      stats        => {
+         events => 0
+      },
       query_stats  => {},
       query_errors => {},
       callbacks    => {
@@ -215,7 +216,8 @@ sub _check_slave_status {
    my ( $self ) = @_;
    return
       $self->{pos} > $self->{slave}->{pos}
-      && ($self->{n_events} - $self->{last_chk}) >= $self->{chk_int} ? 1 : 0;
+      && ($self->{stats}->{events} - $self->{last_chk}) >= $self->{chk_int}
+         ? 1 : 0;
 }
 
 # Returns the next check interval.
@@ -261,7 +263,7 @@ sub _get_slave_status {
    );
 
    $self->{slave}    = \%status;
-   $self->{last_chk} = $self->{n_events};
+   $self->{last_chk} = $self->{stats}->{events};
    MKDEBUG && _d('Slave status:', Dumper($self->{slave}));
    return;
 }
@@ -279,7 +281,7 @@ sub slave_is_running {
 
 sub get_interval {
    my ( $self ) = @_;
-   return $self->{n_events}, $self->{last_chk};
+   return $self->{stats}->{events}, $self->{last_chk};
 }
 
 sub get_pipeline_pos {
@@ -311,7 +313,7 @@ sub pipeline_event {
    my ( $self, $event, @callbacks ) = @_;
 
    # Update pos and next.
-   $self->{n_events}++;
+   $self->{stats}->{events}++;
    $self->{pos}  = $event->{offset} if $event->{offset};
    $self->{next} = max($self->{next},$self->{pos}+($event->{end_log_pos} || 0));
 
@@ -324,7 +326,8 @@ sub pipeline_event {
 
    # Time to check the slave's status again?
    if ( $self->_check_slave_status() ) { 
-      MKDEBUG && _d('Checking slave status at interval', $self->{n_events});
+      MKDEBUG && _d('Checking slave status at interval',
+         $self->{stats}->{events});
       $self->_get_slave_status();
       $self->{chk_int} = $self->_get_next_chk_int();
       MKDEBUG && _d('Next check interval:', $self->{chk_int});
@@ -426,11 +429,12 @@ sub _in_window {
    }
 
    if ( !$oktorun ) {
-      MKDEBUG && _d('Not oktorun while waiting for event', $self->{n_events});
+      MKDEBUG && _d('Not oktorun while waiting for event',
+         $self->{stats}->{events});
       return 0;
    }
 
-   MKDEBUG && _d('Event', $self->{n_events}, 'is in the window');
+   MKDEBUG && _d('Event', $self->{stats}->{events}, 'is in the window');
    return 1;
 }
 

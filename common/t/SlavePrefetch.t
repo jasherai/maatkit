@@ -835,7 +835,8 @@ SKIP: {
    is_deeply(
       $stats,
       {
-         query_error => 1
+         events      => 0,
+         query_error => 1,
       },
       'Get stats'
    );
