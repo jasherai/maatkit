@@ -403,8 +403,9 @@ sub _in_window {
       mfile     => $self->{slave}->{mfile},
       until_pos => $self->next_window(),
    );
-   while ( $self->{oktorun}->(only_if_slave_is_running => 1,
-                              slave_is_running => $self->slave_is_running())
+   my $oktorun = 1;
+   while ( ($oktorun = $self->{oktorun}->(only_if_slave_is_running => 1,
+                              slave_is_running => $self->slave_is_running()))
            && ($self->_too_far_ahead() || $self->_too_close_to_io()) )
    {
       # Don't increment stats if the slave didn't catch up while we
@@ -422,6 +423,11 @@ sub _in_window {
          MKDEBUG && _d('SQL thread did not advance');
       }
       $self->_get_slave_status();
+   }
+
+   if ( !$oktorun ) {
+      MKDEBUG && _d('Not oktorun while waiting for event', $self->{n_events});
+      return 0;
    }
 
    MKDEBUG && _d('Event', $self->{n_events}, 'is in the window');
@@ -465,7 +471,7 @@ sub _too_close_to_io {
 
 sub _wait_for_master {
    my ( %args ) = @_;
-   my @required_args = qw(dbh mfile until_pos wait timeout);
+   my @required_args = qw(dbh mfile until_pos);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -634,12 +640,10 @@ sub exec {
    };
    if ( $EVAL_ERROR ) {
       $self->{stats}->{query_error}++;
+      $self->{query_errors}->{$fingerprint}++;
       if ( (($self->{errors} || 0) == 2) || MKDEBUG ) {
          _d($EVAL_ERROR);
          _d('SQL was:', $query);
-      }
-      elsif ( ($self->{errors} || 0) == 1 ) {
-         $self->{query_errors}->{$fingerprint}++;
       }
    }
    return;
@@ -649,9 +653,9 @@ sub exec {
 # only a few samples.  So if we want to collect 16 samples and the first one
 # is huge, it will be weighted as 1/16th of its size.
 sub __store_avg {
-   my ( $self, $query, $time ) = @_;
-   MKDEBUG && _d('Execution time:', $query, $time);
-   my $query_stats = $self->{query_stats}->{$query};
+   my ( $self, $fingerprint, $time ) = @_;
+   MKDEBUG && _d('Execution time:', $fingerprint, $time);
+   my $query_stats = $self->{query_stats}->{$fingerprint} ||= {};
    my $samples     = $query_stats->{samples} ||= [];
    push @$samples, $time;
    if ( @$samples > $self->{'query-sample-size'} ) {

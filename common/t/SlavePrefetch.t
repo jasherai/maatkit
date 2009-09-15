@@ -3,11 +3,15 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 54;
+use Test::More tests => 66;
 
 require '../SlavePrefetch.pm';
 require '../QueryRewriter.pm';
 require '../BinaryLogParser.pm';
+require '../DSNParser.pm';
+require '../Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -367,7 +371,7 @@ $spf->set_pipeline_pos(5000, 5050);
 # window:    1024
 is(
    $spf->_in_window(),
-   1,
+   0,
    "In window: past window but oktorun caused early return"
 );
 
@@ -699,7 +703,7 @@ is_deeply(
 );
 
 
-$event = shift @events;  # event 2, first past offset
+$event = shift @events;  # event 3, first past offset
 $spf->pipeline_event($event, @callbacks),
 is_deeply(
    \@queries,
@@ -710,23 +714,182 @@ is_deeply(
    'Executes first query in the window'
 );
 
-# Events 3 and 4 are still in the window because
+# Events 4 and 5 are still in the window because
 #     slave pos    263
 #   + offset       100
 #   + window       300
 #   = outer limit  663
-# and event 5 begins at 721, past the outer limit.  But event 4
+# and event 6 begins at 721, past the outer limit.  But event 4
 # is going to trigger the interval which is 4,1,8 (args to new()).
-# 
+# So let's update the slave status as if the slave had caught up
+# to event 3.  But this make event 4 too close to the slave because
+# slave pos 434 + offset 100 = 535 as minimum pos ahead of slave.
+# So event 4 should be skipped and event 5 at pos 606 is next in window.
+$slave_status->{exec_master_log_pos} = 434;
+$slave_status->{relay_log_pos}       = 434;
 
-#$event = shift @events;  # event 2, first past offset
-#$spf->pipeline_event($event, @callbacks),
-#$event = shift @events;  # event 2, first past offset
-#$spf->pipeline_event($event, @callbacks),
-#$event = shift @events;  # event 2, first past offset
-#$spf->pipeline_event($event, @callbacks),
+@queries = ();  # clear event 3
+
+$event = shift @events;  # event 4, triggers interval check
+$spf->pipeline_event($event, @callbacks),
+is_deeply(
+   \@queries,
+   [],
+   'Query no longer in window after interval check'
+);
+
+is(
+   $spf->_get_next_chk_int(),
+   8,
+   'Next check interval longer'
+);
+
+$event = shift @events;  # event 5
+$spf->pipeline_event($event, @callbacks),
+is_deeply(
+   \@queries,
+   [ [
+      'select 1 from  t  limit 1',
+      'select * from t limit ?',
+   ] ],
+   'Pipelines first query in updated window/interval'
+);
+
+# Now let's pretend like we've made it too far ahead of the slave,
+# past the window which ends at 835.  Event 8 at pos 911 is too far.
+
+@queries = ();  # clear event 5
+
+$event = shift @events;  # event 6
+$spf->pipeline_event($event, @callbacks),
+$event = shift @events;  # event 7
+$spf->pipeline_event($event, @callbacks),
+is_deeply(
+   \@queries,
+   [
+      [
+         'select 1 from  t where i = 3 or i = 5',
+         'select * from t where i = ? or i = ?'
+      ],
+      [
+         'select isnull(coalesce(  i = 11 )) from t where  i = 10',
+         'select i = ? from t where i = ?'
+      ]
+   ],
+   'Events 6 and 7'
+);
+
+@queries = ();  # clear events 6 and 7
+
+# _in_window() is going to try to wait for the slave which will start
+# calling our callback, popping slave_stats, but we won't bother to
+# set this, we'll just terminate the loop early.
+$oktorun = 0;
+$event = shift @events;  # event 8
+$spf->pipeline_event($event, @callbacks),
+is_deeply(
+   \@queries,
+   [],
+   'Event 8 too far ahead of slave'
+);
+
+# ###########################################################################
+# Online tests.
+# ###########################################################################
+my $master_dbh = $sb->get_dbh_for('master');
+my $slave_dbh  = $sb->get_dbh_for('slave1');
+
+SKIP: {
+   skip 'Cannot connect to sandbox master or slave', 1
+      unless $master_dbh && $slave_dbh;
+
+   my $spf = new SlavePrefetch(
+      dbh             => $slave_dbh,
+      oktorun         => \&oktorun,
+      chk_int         => 4,
+      chk_min         => 1,
+      chk_max         => 8,
+      datadir         => '/tmp/12346/data',
+      QueryRewriter   => $qr,
+      have_subqueries => 1,
+   );
+
+   $sb->load_file('master', 'samples/issue_376.sql');
+
+   # Test that exec() actually executes the query.
+   $slave_dbh->do('SET @a=1');
+   $spf->exec('SET @a=5', 'set @a=?');
+   is_deeply(
+      $slave_dbh->selectrow_arrayref('SELECT @a'),
+      ['5'],
+      'exec() executes the query'
+   );
+
+   # This causes an error so that stats->{query_error} gets set
+   # and we can check later that get_stats() returns the stats.
+   $spf->exec('foo', 'foo');
+
+   # exec() should have stored the query time which we can
+   # get from the stats.
+   my ($stats, $query_stats, $query_errors) = $spf->get_stats();
+   is_deeply(
+      $stats,
+      {
+         query_error => 1
+      },
+      'Get stats'
+   );
+
+   is_deeply(
+      $query_errors,
+      {
+         foo => 1,
+      },
+      'Get query errors'
+   );
+
+   ok(
+      exists $query_stats->{'set @a=?'}
+      && exists $query_stats->{'set @a=?'}->{avg}
+      && exists $query_stats->{'set @a=?'}->{samples},
+      'Get query stats'
+   );
+
+   # Test wait_for_master().
+   my $ms = $master_dbh->selectrow_hashref('SHOW MASTER STATUS');
+   my $ss = $slave_dbh->selectrow_hashref('SHOW SLAVE STATUS');
+   my $master_pos = $ms->{Position};
+   my %wait_args = (
+      dbh       => $slave_dbh,
+      mfile     => $ss->{Relay_Master_Log_File},
+      until_pos => $master_pos + 100,
+   );
+   is(
+      SlavePrefetch::_wait_for_master(%wait_args),
+      -1,
+      '_wait_for_master() timeout 1s after no events'
+   );
+
+   $wait_args{until_pos} = $master_pos;
+   is(
+      SlavePrefetch::_wait_for_master(%wait_args),
+      0,
+      '_wait_for_master() return immediately when already at pos'
+   );
+};
 
 # #############################################################################
 # Done.
 # #############################################################################
+my $output = '';
+{
+   local *STDERR;
+   open STDERR, '>', \$output;
+   $spf->_d('Complete test coverage');
+}
+like(
+   $output,
+   qr/Complete test coverage/,
+   '_d() works'
+);
 exit;
