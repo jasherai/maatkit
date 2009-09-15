@@ -143,6 +143,7 @@ sub _vmstat {
 #   etc.
 sub _parse_vmstat {
    my ( $vmstat_output ) = @_;
+   MKDEBUG && _d('vmstat output:', $vmstat_output);
    my @lines =
       map {
          my $line = $_;
@@ -153,7 +154,7 @@ sub _parse_vmstat {
    my $n_vals = scalar @{$lines[1]};
    for my $i ( 0..$n_vals-1 ) {
       next unless $lines[1]->[$i];
-      $vmstat{$lines[1]->[$i]} = $lines[2]->[$i];
+      $vmstat{$lines[1]->[$i]} = $lines[-1]->[$i];
    }
    return \%vmstat;
 }

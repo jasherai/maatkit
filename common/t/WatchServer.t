@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 10;
+use Test::More tests => 11;
 
 require "../WatchServer.pm";
 
@@ -41,7 +41,36 @@ is_deeply(
       id    => '93',
       wa    => '1'
    },
-   'Parse vmstat output'
+   'Parse vmstat output, 1 line'
+);
+
+$vmstat_output ="procs -----------memory---------- ---swap-- -----io---- -system-- ----cpu----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa
+  2  0      0 592164 143884 571712    0    0     6     9  228  340  4  1 94  1
+   1  0      0 592144 143888 571712    0    0     0    76  682  725  2  1 94  2
+";
+
+is_deeply(
+   WatchServer::_parse_vmstat($vmstat_output),
+   {
+      b     => '0',
+      r     => '1',
+      swpd  => '0',
+      free  => '592144',
+      buff  => '143888',
+      cache => '571712',
+      si    => '0',
+      so    => '0',
+      bi    => '0',
+      bo    => '76',
+      in    => '682',
+      cs    => '725',
+      us    => '2',
+      sy    => '1',
+      id    => '94',
+      wa    => '2'
+   },
+   'Parse vmstat output, 2 lines'
 );
 
 # ###########################################################################
