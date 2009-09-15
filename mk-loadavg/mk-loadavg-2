@@ -3026,7 +3026,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# WatchServer package 4695
+# WatchServer package 4698
 # ###########################################################################
 package WatchServer;
 
@@ -3143,6 +3143,7 @@ sub _vmstat {
 
 sub _parse_vmstat {
    my ( $vmstat_output ) = @_;
+   MKDEBUG && _d('vmstat output:', $vmstat_output);
    my @lines =
       map {
          my $line = $_;
@@ -3153,7 +3154,7 @@ sub _parse_vmstat {
    my $n_vals = scalar @{$lines[1]};
    for my $i ( 0..$n_vals-1 ) {
       next unless $lines[1]->[$i];
-      $vmstat{$lines[1]->[$i]} = $lines[2]->[$i];
+      $vmstat{$lines[1]->[$i]} = $lines[-1]->[$i];
    }
    return \%vmstat;
 }
@@ -3274,6 +3275,12 @@ sub main {
          );
       };
       die "Failed to load --watch $module: $EVAL_ERROR" if $EVAL_ERROR;
+
+      # Set any callbacks.
+      if ( (my $vmstat = $o->get('vmstat')) && $module eq 'WatchServer' ) {
+         $watch->set_callbacks( vmstat => sub { return `$vmstat`; } );
+      }
+
       push @watches, { name => "$plugin->[0]:$plugin->[1]", module => $watch, };
    }
 
@@ -3657,6 +3664,22 @@ properly watching all its values.
 =item --version
 
 Show version and exit.
+
+=item --vmstat
+
+type: string; default: vmstat; group: Watch
+
+vmstat command for L<"--watch"> Server:vmstat:...
+
+The vmstat output should look like:
+
+procs -----------memory---------- ---swap-- -----io---- -system-- ----cpu----
+r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa
+0  0      0 590380 143756 571852    0    0     6     9  228  340  4  1 94  1
+0  0      0 590400 143764 571852    0    0     0    28  751  818  4  2 90  3
+
+The 2nd line from the top needs to be column headers for subsequent lines.
+Values are taken from the last line.
 
 =item --watch
 
