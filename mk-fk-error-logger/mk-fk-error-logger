@@ -1739,7 +1739,9 @@ sub main {
             grep { $_ }
             ( $dst_dsn->{D}, $dst_dsn->{t} ));
       $dst_dbh = get_cxn($dst_dsn, 0, %modules);
-      $ins_sth  = $dst_dbh->prepare("INSERT IGNORE INTO $db_tbl VALUES (?, ?)");
+      my $sql = "INSERT IGNORE INTO $db_tbl VALUES (?, ?)";
+      MKDEBUG && _d('insert sql:', $sql);
+      $ins_sth  = $dst_dbh->prepare($sql);
    }
 
    # Daemonize only after (potentially) asking for passwords for --ask-pass.
@@ -1765,7 +1767,17 @@ sub main {
       my ($ts, $fk_error) = get_fk_error($text);
 
       # Save and/or print the foreign key error.
-      $ins_sth->execute(parse_timestamp($ts), $fk_error) if $ins_sth;
+      if ( $ins_sth ) {
+         my $fk_ts = parse_timestamp($ts);
+         MKDEBUG && _d('Saving fk error', $ts, $fk_error);
+         eval {
+            $ins_sth->execute($fk_ts, $fk_error);
+         };
+         if ( $EVAL_ERROR ) {
+            warn $EVAL_ERROR;
+            MKDEBUG && _d($EVAL_ERROR);
+         }
+      }
       print "$ts $fk_error\n\n" if $o->get('print') || !$o->got('dest');
 
       # If there's an --interval argument, run forever or till specified.
@@ -1797,7 +1809,7 @@ sub get_fk_error {
    my ($ts, $fke) = $text =~ m/LATEST FOREIGN KEY ERROR.+?$idb_ts\s*(.+?)---/ms;
    chomp $fke if $fke;
 
-   MKDEBUG && _d($ts, $fke);
+   MKDEBUG && _d('Latest fk error:', $ts, $fke);
    return $ts, $fke;
 }
 
