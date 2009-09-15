@@ -1252,405 +1252,176 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# NOT UPDATED LogParser package 3186
+# BinaryLogParser package 4277
 # ###########################################################################
-package LogParser;
+package BinaryLogParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
+   my ( $class, %args ) = @_;
+   return bless {}, $class;
 }
 
-my $general_log_first_line = qr{
-   \A
-   (?:(\d{6}\s+\d{1,2}:\d\d:\d\d)|\t)? # Timestamp
-   \t
-   (?:\s*(\d+))                        # Thread ID
-   \s
-   (.*)                                # Everything else
-   \Z
-}xs;
-
-my $general_log_any_line = qr{
-   \A(
-      Connect
-      |Field\sList
-      |Init\sDB
-      |Query
-      |Quit
-   )
-   (?:\s+(.*\Z))?
-}xs;
-
-my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
-my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
-
-my $binlog_line_1 = qr{^# at (\d+)};
-my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
-my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)};
+my $binlog_line_1 = qr/at (\d+)$/m;
+my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/m;
+my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
 
 sub parse_event {
-   my ( $self, $fh, $code, $mode ) = @_;
-   my $event; # Don't initialize, that'll cause a loop.
-
-   my $done = 0;
-   my $type = 0; # 0 = comments, 1 = USE and SET etc, 2 = the actual query
-   my $line = defined $self->{last_line} ? $self->{last_line} : <$fh>;
-   $mode  ||= '';
-
-   LINE:
-   while ( !$done && defined $line ) {
-      MKDEBUG && _d('type:', $type, $line);
-      my $handled_line = 0;
-
-      if ( !$mode && $line =~ m/^# [A-Z]/ ) {
-         MKDEBUG && _d('Setting mode to slow log');
-         $mode ||= 'slow';
-      }
-
-      if ( $line =~ m/Version:.+ started with:/ ) {
-         MKDEBUG && _d('Chomping out header lines');
-         <$fh>; # Tcp port: etc
-         <$fh>; # Column headers
-         $line = <$fh>;
-         $type = 0;
-         redo LINE;
-      }
-
-      elsif ( $mode ne 'slow'
-         && (my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s)
-      ) {
-         MKDEBUG && _d('Beginning of general log event');
-         $handled_line = 1;
-         $mode ||= 'log';
-         $self->{last_line} = undef;
-         if ( $type == 0 ) {
-            MKDEBUG && _d('Type 0');
-            my ( $cmd, $arg ) = $rest =~ m/$general_log_any_line/;
-            $event = {
-               ts  => $ts || '',
-               id  => $id,
-               cmd => $cmd,
-               arg => $arg || '',
-            };
-            if ( $cmd ne 'Query' ) {
-               MKDEBUG && _d('Not a query, done with this event');
-               $done = 1;
-               chomp $event->{arg} if $event->{arg};
-            }
-            $type = 2;
-         }
-         else {
-            MKDEBUG && _d('Saving line for next invocation');
-            $self->{last_line} = $line;
-            $done = 1;
-            chomp $event->{arg} if $event->{arg};
-         }
-      }
-
-      elsif ( $mode eq 'slow' ) {
-         if ( $line =~ m/^# No InnoDB statistics available/ ) {
-            $handled_line = 1;
-            MKDEBUG && _d('Ignoring line');
-            $line = <$fh>;
-            $type = 0;
-            next LINE;
-         }
-
-         elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
-            $handled_line = 1;
-            MKDEBUG && _d('Beginning of slow log event');
-            $self->{last_line} = undef;
-            if ( $type == 0 ) {
-               MKDEBUG && _d('Type 0');
-               $event->{ts} = $time;
-               if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-                  @{$event}{qw(user host ip)} = ($user, $host, $ip);
-               }
-            }
-            else {
-               MKDEBUG && _d('Saving line for next invocation');
-               $self->{last_line} = $line;
-               $done = 1;
-            }
-            $type = 0;
-         }
-
-         elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-            $handled_line = 1;
-            if ( $type == 0 ) {
-               MKDEBUG && _d('Type 0');
-               @{$event}{qw(user host ip)} = ($user, $host, $ip);
-            }
-            else {
-               MKDEBUG && _d('Saving line for next invocation');
-               $self->{last_line} = $line;
-               $done = 1;
-            }
-            $type = 0;
-         }
-
-         elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
-
-            if ( $type == 0 ) {
-               if ( $line =~ m/^#.+;/ ) {
-                  MKDEBUG && _d('Commented event line ends header');
-               }
-               else {
-                  $handled_line = 1;
-                  MKDEBUG && _d('Splitting line into fields');
-                  @{$event}{keys %hash} = values %hash;
-               }
-            }
-            elsif ( $type == 1 && $line =~ m/^#.+;/ ) {
-               MKDEBUG && _d('Commented event line after type 1 line');
-               $handled_line = 0;
-            }
-            else {
-               $handled_line = 1;
-               MKDEBUG && _d('Saving line for next invocation');
-               $self->{last_line} = $line;
-               $done = 1;
-            }
-            $type = 0;
-         }
-      }
-
-      if ( !$handled_line ) {
-         $event->{cmd} = 'Query';
-         if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
-            MKDEBUG && _d('Line is the end of a query within event');
-            if ( my ( $db ) = $line =~ m/^use (.*);/i ) {
-               MKDEBUG && _d('Setting event DB to', $db);
-               $event->{db} = $db;
-               $type = 1;
-            }
-            elsif ( $type < 2 && (my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) ) {
-               MKDEBUG && _d('Setting a property for event');
-               push @{$event->{settings}}, $setting;
-               $type = 1;
-            }
-            else {
-               MKDEBUG && _d('Line is a continuation of prev line');
-               if ( $line =~ m/^# / ) {
-                  MKDEBUG && _d('Line is a commented event line');
-                  $line =~ s/.+: (.+);\n/$1/;
-                  $event->{cmd} = 'Admin';
-               }
-               $event->{arg} .= $line;
-               $type = 2;
-            }
-         }
-         else {
-            MKDEBUG && _d('Line is a continuation of prev line');
-            $event->{arg} .= $line;
-            $type = 2;
-         }
-      }
-
-      $event->{NR} = $NR;
-
-      $line = <$fh> unless $done;
-   }
-
-   if ( !defined $line ) {
-      MKDEBUG && _d('EOF found');
-      $self->{last_line} = undef;
-   }
-
-   if ( $mode && $mode eq 'slow' ) {
-      MKDEBUG && _d('Slow log, trimming');
-      $event->{arg} =~ s/;\s*\Z// if $event->{arg};
-   }
-
-   $code->($event) if $event && $code;
-   return $event;
-}
-
-sub parse_slowlog_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $num_events = 0;
+   my $oktorun_here = 1;
+   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
+   my $num_events   = 0;
 
-   my @pending;
    local $INPUT_RECORD_SEPARATOR = ";\n#";
-   my $trimlen    = length($INPUT_RECORD_SEPARATOR);
    my $pos_in_log = tell($fh);
    my $stmt;
+   my ($delim, $delim_len) = (undef, 0);
 
    EVENT:
-   while ( defined($stmt = shift @pending) or defined($stmt = <$fh>) ) {
-      my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
+   while ( $$oktorun && defined($stmt = <$fh>) ) {
+      my @properties = ('pos_in_log', $pos_in_log);
+      my ($ts, $sid, $end, $type, $rest);
       $pos_in_log = tell($fh);
-
-      if ( $stmt =~ s{
-            ^(?:
-            Tcp\sport:\s+\d+
-            |
-            /.*Version.*started
-            |
-            Time\s+Id\s+Command
-            ).*\n
-         }{}gmxo
-      ){
-         my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
-         if ( @chunks > 1 ) {
-            $stmt = shift @chunks;
-            unshift @pending, @chunks;
-         }
-      }
-
-      $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
       $stmt =~ s/;\n#?\Z//;
 
-
-      my ($got_ts, $got_uh, $got_ac, $got_db, $got_set);
+      my ( $got_offset, $got_hdr );
       my $pos = 0;
       my $len = length($stmt);
       my $found_arg = 0;
       LINE:
-      while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
+      while ( $stmt =~ m/^(.*)$/mg ) { # /g requires scalar match.
          $pos     = pos($stmt);  # Be careful not to mess this up!
          my $line = $1;          # Necessary for /g and pos() to work.
+         $line    =~ s/$delim// if $delim;
+         MKDEBUG && _d($line);
 
-         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
-
-            if ( !$got_ts
-               && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
-               && ++$got_ts
-            ) {
-               push @properties, 'ts', $time;
-               if ( !$got_uh
-                  && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
-                  && ++$got_uh
-               ) {
-                  push @properties, 'user', $user, 'host', $host, 'ip', $ip;
-               }
+         if ( $line =~ m/^\/\*.+\*\/;/ ) {
+            MKDEBUG && _d('Comment line');
+            next LINE;
+         }
+ 
+         if ( $line =~ m/^DELIMITER/m ) {
+            my ( $del ) = $line =~ m/^DELIMITER (\S*)$/m;
+            if ( $del ) {
+               $delim_len = length $del;
+               $delim     = quotemeta $del;
+               MKDEBUG && _d('delimiter:', $delim);
             }
-
-            elsif ( !$got_uh
-                  && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
-                  && ++$got_uh
-            ) {
-               push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+            else {
+               MKDEBUG && _d('Delimiter reset to ;');
+               $delim     = undef;
+               $delim_len = 0;
             }
+            next LINE;
+         }
 
-            elsif ( !$got_ac
-                  && $line =~ m/^# (?:administrator command:.*)$/
-                  && ++$got_ac
-            ) {
-               push @properties, 'cmd', 'Admin', 'arg', $line;
-               $found_arg++;
-            }
+         next LINE if $line =~ m/End of log file/;
 
-            elsif ( my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+)/g ) {
-               push @properties, @temp;
-            }
+         if ( !$got_offset && (my ( $offset ) = $line =~ m/$binlog_line_1/m) ) {
+            MKDEBUG && _d('Got the at offset line');
+            push @properties, 'offset', $offset;
+            $got_offset++;
+         }
 
-            elsif ( !$got_db
-                  && (my ( $db ) = $line =~ m/^USE ([^;]+)/i )
-                  && ++$got_db
-            ) {
+         elsif ( !$got_hdr && $line =~ m/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)/ ) {
+            ($ts, $sid, $end, $type, $rest) = $line =~ m/$binlog_line_2/m;
+            MKDEBUG && _d('Got the header line; type:', $type, 'rest:', $rest);
+            push @properties, 'cmd', 'Query', 'ts', $ts, 'server_id', $sid,
+               'end_log_pos', $end;
+            $got_hdr++;
+         }
+
+         elsif ( $line =~ m/^(?:#|use |SET)/i ) {
+
+            if ( my ( $db ) = $line =~ m/^use ([^;]+)/ ) {
+               MKDEBUG && _d("Got a default database:", $db);
                push @properties, 'db', $db;
             }
 
-            elsif ( !$got_set
-                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/i )
-                  && ++$got_set
-            ) {
-               push @properties, split(/,|\s*=\s*/, $setting);
+            elsif ( my ($setting) = $line =~ m/^SET\s+([^;]*)/ ) {
+               MKDEBUG && _d("Got some setting:", $setting);
+               push @properties, map { s/\s+//; lc } split(/,|\s*=\s*/, $setting);
             }
 
-            if ( !$found_arg && $pos == $len ) {
-               local $INPUT_RECORD_SEPARATOR = ";\n";
-               if ( defined(my $l = <$fh>) ) {
-                  chomp $l;
-                  push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
-                  $found_arg++;
+         }
+         else {
+            MKDEBUG && _d("Got the query/arg line at pos", $pos);
+            $found_arg++;
+            if ( $got_offset && $got_hdr ) {
+               if ( $type eq 'Xid' ) {
+                  my ($xid) = $rest =~ m/(\d+)/;
+                  push @properties, 'Xid', $xid;
+               }
+               elsif ( $type eq 'Query' ) {
+                  my ($i, $t, $c) = $rest =~ m/$binlog_line_2_rest/m;
+                  push @properties, 'Thread_id', $i, 'Query_time', $t,
+                                    'error_code', $c;
                }
                else {
-                  next EVENT;
+                  die "Unknown event type $type"
+                     unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
                }
             }
-         }
-         else {
-            push @properties, 'arg', substr($stmt, $pos - length($line));
+            else {
+               MKDEBUG && _d("It's not a query/arg, it's just some SQL fluff");
+               push @properties, 'cmd', 'Query', 'ts', undef;
+            }
+
+            my $delim_len = ($pos == length($stmt) ? $delim_len : 0);
+            my $arg = substr($stmt, $pos - length($line) - $delim_len);
+
+            $arg =~ s/$delim// if $delim; # Remove the delimiter.
+
+            if ( $arg =~ m/^DELIMITER/m ) {
+               my ( $del ) = $arg =~ m/^DELIMITER (\S*)$/m;
+               if ( $del ) {
+                  $delim_len = length $del;
+                  $delim     = quotemeta $del;
+                  MKDEBUG && _d('delimiter:', $delim);
+               }
+               else {
+                  MKDEBUG && _d('Delimiter reset to ;');
+                  $del       = ';';
+                  $delim     = undef;
+                  $delim_len = 0;
+               }
+
+               $arg =~ s/^DELIMITER.*$//m;  # Remove DELIMITER from arg.
+            }
+
+            $arg =~ s/;$//gm;  # Ensure ending ; are gone.
+            $arg =~ s/\s+$//;  # Remove trailing spaces and newlines.
+
+            push @properties, 'arg', $arg, 'bytes', length($arg);
             last LINE;
          }
-      }
+      } # LINE
 
-      my $event = { @properties };
-      foreach my $callback ( @callbacks ) {
-         last unless $event = $callback->($event);
-      }
-      ++$num_events;
-      last EVENT unless @pending;
-   }
-   return $num_events;
-}
-
-sub parse_binlog_event {
-   my ( $self, $fh, $code ) = @_;
-   my $event;
-
-   my $term  = $self->{term} || ";\n"; # Corresponds to DELIMITER
-   my $tpat  = quotemeta $term;
-   local $RS = $term;
-   my $line  = <$fh>;
-
-   LINE: {
-      return unless $line;
-
-      if ( $line =~ m/^DELIMITER/m ) {
-         my($del)      = $line =~ m/^DELIMITER ([^\n]+)/m;
-         $self->{term} = $del;
-         local $RS     = $del;
-         $line         = <$fh>; # Throw away DELIMITER line
-         MKDEBUG && _d('New record separator:', $del);
-         redo LINE;
-      }
-
-      $line =~ s/$tpat\Z//;
-
-      if ( my ( $offset ) = $line =~ m/$binlog_line_1/m ) {
-         $self->{last_line} = undef;
-         $event = {
-            offset => $offset,
-         };
-         my ( $ts, $sid, $end, $type, $rest ) = $line =~ m/$binlog_line_2/m;
-         @{$event}{qw(ts server_id end type)} = ($ts, $sid, $end, $type);
-         (my $arg = $line) =~ s/\n*^#.*\n//gm; # Remove comment lines
-         $event->{arg} = $arg;
-         if ( $type eq 'Xid' ) {
-            my ($xid) = $rest =~ m/(\d+)/;
-            $event->{xid} = $xid;
+      if ( $found_arg ) {
+         MKDEBUG && _d('Properties of event:', Dumper(\@properties));
+         my $event = { @properties };
+         foreach my $callback ( @callbacks ) {
+            last unless $event = $callback->($event);
          }
-         elsif ( $type eq 'Query' ) {
-            @{$event}{qw(id time code)} = $rest =~ m/$binlog_line_2_rest/;
-         }
-         else {
-            die "Unknown event type $type"
-               unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
-         }
+         ++$num_events;
       }
       else {
-         $event = {
-            arg => $line,
-         };
+         MKDEBUG && _d('Event had no arg');
       }
-   }
 
-   if ( !defined $line ) {
-      delete $self->{term};
-   }
+   } # EVENT
 
-   $code->($event) if $event && $code;
-   return $event;
+   return $num_events;
 }
 
 sub _d {
@@ -1664,7 +1435,7 @@ sub _d {
 1;
 
 # ###########################################################################
-# NOT UPDATED LogParser package
+# End BinaryLogParser package
 # ###########################################################################
 
 # ###########################################################################
@@ -2121,6 +1892,578 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# SlavePrefetch package 4713
+# ###########################################################################
+package SlavePrefetch;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use List::Util qw(min max sum);
+use Time::HiRes qw(gettimeofday);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw(dbh oktorun chk_int chk_min chk_max
+                          datadir QueryRewriter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   $args{'offset'}            ||= 128;
+   $args{'window'}            ||= 4_096;
+   $args{'io-lag'}            ||= 1_024;
+   $args{'query-sample-size'} ||= 4;
+   $args{'max-query-time'}    ||= 1;
+
+   my $self = {
+      %args, 
+      pos          => 0,
+      next         => 0,
+      last_ts      => 0,
+      slave        => undef,
+      last_chk     => 0,
+      stats        => {
+         events => 0
+      },
+      query_stats  => {},
+      query_errors => {},
+      callbacks    => {
+         show_slave_status => sub {
+            my ( $dbh ) = @_;
+            return $dbh->selectrow_hashref("SHOW SLAVE STATUS");
+         }, 
+         wait_for_master   => \&_wait_for_master,
+      },
+   };
+
+   init_stats($self->{stats}, $args{stats_file}, $args{'query-sample-size'})
+      if $args{stats_file};
+
+   return bless $self, $class;
+}
+
+sub set_callbacks {
+   my ( $self, %callbacks ) = @_;
+   foreach my $func ( keys %callbacks ) {
+      die "Callback $func does not exist"
+         unless exists $self->{callbacks}->{$func};
+      $self->{callbacks}->{$func} = $callbacks{$func};
+      MKDEBUG && _d('Set new callback for', $func);
+   }
+   return;
+}
+
+sub init_stats {
+   my ( $stats, $file, $n_samples ) = @_;
+   open my $fh, "<", $file or die $OS_ERROR;
+   MKDEBUG && _d('Reading saved stats from', $file);
+   my ($type, $rest);
+   while ( my $line = <$fh> ) {
+      ($type, $rest) = $line =~ m/^# (query|stats): (.*)$/;
+      next unless $type;
+      if ( $type eq 'query' ) {
+         $stats->{$rest} = { seen => 1, samples => [] };
+      }
+      else {
+         my ( $seen, $exec, $sum, $avg )
+            = $rest =~ m/seen=(\S+) exec=(\S+) sum=(\S+) avg=(\S+)/;
+         if ( $seen ) {
+            $stats->{$rest}->{samples}
+               = [ map { $avg } (1..$n_samples) ];
+            $stats->{$rest}->{avg} = $avg;
+         }
+      }
+   }
+   close $fh or die $OS_ERROR;
+   return;
+}
+
+sub incr_stat {
+   my ( $self, $stat ) = @_;
+   $self->{stats}->{$stat}++;
+   return;
+}
+
+sub get_stats {
+   my ( $self ) = @_;
+   return $self->{stats}, $self->{query_stats}, $self->{query_errors};
+}
+
+sub open_relay_log {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(tmpdir);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($tmpdir)    = @args{@required_args};
+   my $datadir     = $args{datadir}     || $self->{datadir};
+   my $start_pos   = $args{start_pos}   || $self->{slave}->{pos};
+   my $file        = $args{file}        || $self->{slave}->{file};
+   my $mysqlbinlog = $args{mysqlbinlog} || 'mysqlbinlog';
+
+   if ( !-r "$datadir/$file" ) {
+      die "Relay log $datadir/$file does not exist or is not readable";
+   }
+
+   my $cmd = "$mysqlbinlog -l $tmpdir "
+           . " --start-pos=$start_pos $datadir/$file"
+           . (MKDEBUG ? ' 2>/dev/null' : '');
+   MKDEBUG && _d('Opening relay log:', $cmd);
+
+   open my $fh, "$cmd |" or die $OS_ERROR; # Succeeds even on error
+   if ( $CHILD_ERROR ) {
+      die "$cmd returned exit code " . ($CHILD_ERROR >> 8)
+         . '.  Try running the command manually or using MKDEBUG=1' ;
+   }
+   $self->{cmd} = $cmd;
+   $self->{stats}->{mysqlbinlog}++;
+   return $fh;
+}
+
+sub close_relay_log {
+   my ( $self, $fh ) = @_;
+   MKDEBUG && _d('Closing relay log');
+   my $procs = `ps -eaf | grep mysqlbinlog | grep -v grep`;
+   my $cmd   = $self->{cmd};
+   MKDEBUG && _d($procs);
+   if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
+      chomp $line;
+      MKDEBUG && _d($line);
+      if ( my ( $proc ) = $line =~ m/(\d+)/ ) {
+         MKDEBUG && _d('Will kill process', $proc);
+         kill(15, $proc);
+      }
+   }
+   else {
+      warn "Cannot find mysqlbinlog command in ps";
+   }
+   if ( !close($fh) ) {
+      if ( $OS_ERROR ) {
+         warn "Error closing mysqlbinlog pipe: $OS_ERROR\n";
+      }
+      else {
+         MKDEBUG && _d('Exit status', $CHILD_ERROR,'from mysqlbinlog');
+      }
+   }
+   return;
+}
+
+sub _check_slave_status {
+   my ( $self ) = @_;
+   return
+      $self->{pos} > $self->{slave}->{pos}
+      && ($self->{stats}->{events} - $self->{last_chk}) >= $self->{chk_int}
+         ? 1 : 0;
+}
+
+sub _get_next_chk_int {
+   my ( $self ) = @_;
+   if ( $self->{pos} <= $self->{slave}->{pos} ) {
+      return max($self->{chk_min}, $self->{chk_int} / 2);
+   }
+   else {
+      return min($self->{chk_max}, $self->{chk_int} * 2);
+   }
+}
+
+sub _get_slave_status {
+   my ( $self, $callback ) = @_;
+   $self->{stats}->{show_slave_status}++;
+
+
+   my $show_slave_status = $self->{callbacks}->{show_slave_status};
+   my $status            = $show_slave_status->($self->{dbh}); 
+   if ( !$status || !%$status ) {
+      die "No output from SHOW SLAVE STATUS";
+   }
+   my %status = (
+      running => ($status->{slave_sql_running} || '') eq 'Yes',
+      file    => $status->{relay_log_file},
+      pos     => $status->{relay_log_pos},
+      lag   => $status->{master_log_file} eq $status->{relay_master_log_file}
+             ? $status->{read_master_log_pos} - $status->{exec_master_log_pos}
+             : 0,
+      mfile => $status->{relay_master_log_file},
+      mpos  => $status->{exec_master_log_pos},
+   );
+
+   $self->{slave}    = \%status;
+   $self->{last_chk} = $self->{stats}->{events};
+   MKDEBUG && _d('Slave status:', Dumper($self->{slave}));
+   return;
+}
+
+sub get_slave_status {
+   my ( $self ) = @_;
+   return $self->{slave};
+}
+
+sub slave_is_running {
+   my ( $self ) = @_;
+   return $self->{slave}->{running};
+}
+
+sub get_interval {
+   my ( $self ) = @_;
+   return $self->{stats}->{events}, $self->{last_chk};
+}
+
+sub get_pipeline_pos {
+   my ( $self ) = @_;
+   return $self->{pos}, $self->{next}, $self->{last_ts};
+}
+
+sub set_pipeline_pos {
+   my ( $self, $pos, $next, $ts ) = @_;
+   die "pos must be >= 0"  unless defined $pos && $pos >= 0;
+   die "next must be >= 0" unless defined $pos && $pos >= 0;
+   $self->{pos}     = $pos;
+   $self->{next}    = $next;
+   $self->{last_ts} = $ts || 0;  # undef same as zero
+   MKDEBUG && _d('Set pipeline pos', @_);
+   return;
+}
+
+sub reset_pipeline_pos {
+   my ( $self ) = @_;
+   $self->{pos}     = 0; # Current position we're reading in relay log.
+   $self->{next}    = 0; # Start of next relay log event.
+   $self->{last_ts} = 0; # Last seen timestamp.
+   MKDEBUG && _d('Reset pipeline');
+   return;
+}
+
+sub pipeline_event {
+   my ( $self, $event, @callbacks ) = @_;
+   $self->{stats}->{events}++;
+
+   if ( !$event->{offset} ) {
+      MKDEBUG && _d('Event has no offset, skipping');
+      $self->{stats}->{event_without_offset}++;
+      return;
+   }
+
+   $self->{pos}  = $event->{offset} if $event->{offset};
+   $self->{next} = max($self->{next},$self->{pos}+($event->{end_log_pos} || 0));
+
+   if ( $self->{progress}
+        && $self->{stats}->{events} % $self->{progress} == 0 ) {
+      print("# $self->{slave}->{file} $self->{pos} ",
+         join(' ', map { "$_:$self->{stats}->{$_}" } keys %{$self->{stats}}),
+         "\n");
+   }
+
+   if ( $self->_check_slave_status() ) { 
+      MKDEBUG && _d('Checking slave status at interval',
+         $self->{stats}->{events});
+      $self->_get_slave_status();
+      $self->{chk_int} = $self->_get_next_chk_int();
+      MKDEBUG && _d('Next check interval:', $self->{chk_int});
+   }
+
+   return unless $self->_in_window();
+
+   if ( $event->{arg} ) {
+      if ( my ($file) = $event->{arg} =~ m/INFILE ('[^']+')/i ) {
+         $self->{stats}->{load_data_infile}++;
+         if ( !unlink($file) ) {
+            MKDEBUG && _d('Could not unlink', $file);
+            $self->{stats}->{could_not_unlink}++;
+         }
+         return;
+      }
+
+      my ($query, $fingerprint) = $self->prepare_query($event->{arg});
+      if ( !$query ) {
+         MKDEBUG && _d('Failed to prepare query, skipping');
+         return;
+      }
+
+      $self->{stats}->{do_query}++;
+      foreach my $callback ( @callbacks ) {
+         $callback->($query, $fingerprint);
+      }
+   }
+
+   return;
+}
+
+sub get_window {
+   my ( $self ) = @_;
+   return $self->{offset}, $self->{window};
+}
+
+sub set_window {
+   my ( $self, $offset, $window ) = @_;
+   die "offset must be > 0" unless $offset;
+   die "window must be > 0" unless $window;
+   $self->{offset} = $offset;
+   $self->{window} = $window;
+   MKDEBUG && _d('Set window', @_);
+   return;
+}
+
+sub _in_window {
+   my ( $self ) = @_;
+   MKDEBUG && _d('Checking window, pos:', $self->{pos},
+      'next', $self->{next},
+      'slave pos:', $self->{slave}->{pos},
+      'master pos', $self->{slave}->{mpos});
+
+   return 0 unless $self->_far_enough_ahead();
+
+   my $wait_for_master = $self->{callbacks}->{wait_for_master};
+   my %wait_args       = (
+      dbh       => $self->{dbh},
+      mfile     => $self->{slave}->{mfile},
+      until_pos => $self->next_window(),
+   );
+   my $oktorun = 1;
+   while ( ($oktorun = $self->{oktorun}->(only_if_slave_is_running => 1,
+                              slave_is_running => $self->slave_is_running()))
+           && ($self->_too_far_ahead() || $self->_too_close_to_io()) )
+   {
+      $self->{stats}->{master_pos_wait}++;
+      if ( $wait_for_master->(%wait_args) > 0 ) {
+         if ( $self->_too_far_ahead() ) {
+            $self->{stats}->{too_far_ahead}++;
+         }
+         elsif ( $self->_too_close_to_io() ) {
+            $self->{stats}->{too_close_to_io_thread}++;
+         }
+      }
+      else {
+         MKDEBUG && _d('SQL thread did not advance');
+      }
+      $self->_get_slave_status();
+   }
+
+   if ( !$oktorun ) {
+      MKDEBUG && _d('Not oktorun while waiting for event',
+         $self->{stats}->{events});
+      return 0;
+   }
+
+   MKDEBUG && _d('Event', $self->{stats}->{events}, 'is in the window');
+   return 1;
+}
+
+sub _far_enough_ahead {
+   my ( $self ) = @_;
+   if ( $self->{pos} < $self->{slave}->{pos} + $self->{offset} ) {
+      MKDEBUG && _d($self->{pos}, 'is not',
+         $self->{offset}, 'ahead of', $self->{slave}->{pos});
+      $self->{stats}->{not_far_enough_ahead}++;
+      return 0;
+   }
+   return 1;
+}
+
+sub _too_far_ahead {
+   my ( $self ) = @_;
+   my $too_far =
+      $self->{pos}
+         > $self->{slave}->{pos} + $self->{offset} + $self->{window} ? 1 : 0;
+   MKDEBUG && _d('pos', $self->{pos}, 'too far ahead of',
+      'slave pos', $self->{slave}->{pos}, ':', $too_far ? 'yes' : 'no');
+   return $too_far;
+}
+
+sub _too_close_to_io {
+   my ( $self ) = @_;
+   my $too_close= $self->{slave}->{lag}
+      && $self->{pos}
+         >= $self->{slave}->{pos} + $self->{slave}->{lag} - $self->{'io-lag'};
+   MKDEBUG && _d('pos', $self->{pos},
+      'too close to I/O thread pos', $self->{slave}->{pos}, '+',
+      $self->{slave}->{lag}, ':', $too_close ? 'yes' : 'no');
+   return $too_close;
+}
+
+sub _wait_for_master {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh mfile until_pos);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $timeout = $args{timeout} || 1;
+   my ($dbh, $mfile, $until_pos) = @args{@required_args};
+   my $sql = "SELECT COALESCE(MASTER_POS_WAIT('$mfile',$until_pos,$timeout),0)";
+   MKDEBUG && _d('Waiting for master:', $sql);
+   my $start = gettimeofday();
+   my ($events) = $dbh->selectrow_array($sql);
+   MKDEBUG && _d('Waited', (gettimeofday - $start), 'and got', $events);
+   return $events;
+}
+
+sub next_window {
+   my ( $self ) = @_;
+   my $next_window = 
+         $self->{slave}->{mpos}                    # master pos
+         + ($self->{pos} - $self->{slave}->{pos})  # how far we're ahead
+         - $self->{offset};                        # offset;
+   MKDEBUG && _d('Next window, master pos:', $self->{slave}->{mpos},
+      'next window:', $next_window,
+      'bytes left:', $next_window - $self->{offset} - $self->{slave}->{mpos});
+   return $next_window;
+}
+
+sub prepare_query {
+   my ( $self, $query ) = @_;
+   my $qr = $self->{QueryRewriter};
+
+   $query = $qr->strip_comments($query);
+
+   return unless $self->query_is_allowed($query);
+
+   if ( (my ($new_ts) = $query =~ m/SET timestamp=(\d+)/) ) {
+      MKDEBUG && _d('timestamp query:', $query);
+      if ( $new_ts == $self->{last_ts} ) {
+         MKDEBUG && _d('Already saw timestamp', $new_ts);
+         $self->{stats}->{same_timestamp}++;
+         return;
+      }
+      else {
+         $self->{last_ts} = $new_ts;
+      }
+   }
+
+   my $select = $qr->convert_to_select($query);
+   if ( $select !~ m/\A\s*(?:set|select|use)/i ) {
+      MKDEBUG && _d('Cannot rewrite query as SELECT:',
+         (length $query > 240 ? substr($query, 0, 237) . '...' : $query));
+      _d($query) if $self->{'print-nonrewritten'};
+      $self->{stats}->{query_not_rewritten}++;
+      return;
+   }
+
+   my $fingerprint = $qr->fingerprint(
+      $select,
+      { prefixes => $self->{'num-prefix'} }
+   );
+
+   if ((my $avg = $self->get_avg($fingerprint)) >= $self->{'max-query-time'}) {
+      MKDEBUG && _d('Avg time', $avg, 'too long for', $fingerprint);
+      $self->{stats}->{query_too_long}++;
+      return $self->_wait_skip_query($avg);
+   }
+
+   $select = $qr->convert_select_list($select);
+
+
+   return $select, $fingerprint;
+}
+
+sub _wait_skip_query {
+   my ( $self, $wait ) = @_;
+   my $wait_for_master = $self->{callbacks}->{wait_for_master};
+   my $until_pos = 
+         $self->{slave}->{mpos}                    # master pos
+         + ($self->{pos} - $self->{slave}->{pos})  # how far we're ahead
+         + 1;                                      # 1 past this query
+   my %wait_args       = (
+      dbh       => $self->{dbh},
+      mfile     => $self->{slave}->{mfile},
+      until_pos => $until_pos,
+      timeout   => $wait,
+   );
+   my $start = gettimeofday();
+   while ( $self->{oktorun}->(only_if_slave_is_running => 1,
+                              slave_is_running => $self->slave_is_running())
+           && ($self->{slave}->{pos} <= $self->{pos}) ) {
+      $self->{stats}->{master_pos_wait}++;
+      $wait_for_master->(%wait_args);
+      $self->_get_slave_status();
+      MKDEBUG && _d('Bytes until slave reaches wait-skip query:',
+         $self->{pos} - $self->{slave}->{pos});
+   }
+   MKDEBUG && _d('Waited', (gettimeofday - $start), 'to skip query');
+   $self->_get_slave_status();
+   return;
+}
+
+sub query_is_allowed {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   if ( $query =~ m/\A\s*(?:set [t@]|use|insert|update|delete|replace)/i ) {
+      my $reject_regexp = $self->{reject_regexp};
+      my $permit_regexp = $self->{permit_regexp};
+      if ( ($reject_regexp && $query =~ m/$reject_regexp/o)
+           || ($permit_regexp && $query !~ m/$permit_regexp/o) )
+      {
+         MKDEBUG && _d('Query is not allowed, fails permit/reject regexp');
+         $self->{stats}->{event_filtered_out}++;
+         return 0;
+      }
+      return 1;
+   }
+   MKDEBUG && _d('Query is not allowed, wrong type');
+   $self->{stats}->{event_not_allowed}++;
+   return 0;
+}
+
+sub exec {
+   my ( $self, $query, $fingerprint ) = @_;
+   eval {
+      my $start = gettimeofday();
+      $self->{dbh}->do($query);
+      $self->__store_avg($fingerprint, gettimeofday() - $start);
+   };
+   if ( $EVAL_ERROR ) {
+      $self->{stats}->{query_error}++;
+      $self->{query_errors}->{$fingerprint}++;
+      if ( (($self->{errors} || 0) == 2) || MKDEBUG ) {
+         _d($EVAL_ERROR);
+         _d('SQL was:', $query);
+      }
+   }
+   return;
+}
+
+sub __store_avg {
+   my ( $self, $fingerprint, $time ) = @_;
+   MKDEBUG && _d('Execution time:', $fingerprint, $time);
+   my $query_stats = $self->{query_stats}->{$fingerprint} ||= {};
+   my $samples     = $query_stats->{samples} ||= [];
+   push @$samples, $time;
+   if ( @$samples > $self->{'query-sample-size'} ) {
+      shift @$samples;
+   }
+   $query_stats->{avg} = sum(@$samples) / $self->{'query-sample-size'};
+   $query_stats->{exec}++;
+   $query_stats->{sum} += $time;
+   MKDEBUG && _d('Average time:', $query_stats->{avg});
+   return;
+}
+
+sub get_avg {
+   my ( $self, $fingerprint ) = @_;
+   $self->{query_stats}->{$fingerprint}->{seen}++;
+   return $self->{query_stats}->{$fingerprint}->{avg} || 0;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SlavePrefetch package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -2131,33 +2474,24 @@ sub _d {
 package mk_slave_prefetch;
 
 use English qw(-no_match_vars);
-use List::Util qw(min max sum);
-use Time::HiRes qw(gettimeofday);
+use List::Util qw(max sum);
 use sigtrap qw(handler finish untrapped normal-signals);
 
 use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
-$Data::Dumper::Indent    = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-my $o;
-my %query_stats;
-my %stats;
-my %slave;
-my $last_chk = 0;
+# $oktorun must be global so finish() can access it if we catch a signal.
 my $oktorun  = 1;
-my $now;
-my $end;
-my $sentinel;
-my $time;
-my $window;
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
    my $dp = new DSNParser();
-   $o     = new OptionParser(
+   my $o  = new OptionParser(
       strict      => 0,
       prompt      => '[OPTION...] [FILE]',
       description => q{pipelines relay logs to pre-warm the slave's caches.},
@@ -2188,23 +2522,9 @@ sub main {
    $o->usage_or_errors();
 
    # ########################################################################
-   # Set frequently used opts to vars to avoid sub calling overhead.
-   # ########################################################################
-   # These opts are used in the main while().
-   my $permit_regexp = $o->get('permit-regexp');
-   my $reject_regexp = $o->get('reject-regexp');
-   my $progress      = $o->get('progress');
-   my $execute       = $o->get('execute');
-   my $print         = $o->get('print');
-   # These opts are mostly used in subs.
-   $window           = $o->get('window');
-   $sentinel         = $o->get('sentinel');
-   $time             = $o->get('run-time');
-
-   # ########################################################################
    # First things first: if --stop was given, create the sentinel file.
    # ########################################################################
-   if ( $o->get('stop') ) {
+   if ( my $sentinel = $o->get('stop') ) {
       open my $file, ">", $sentinel
          or die "Cannot open $sentinel: $OS_ERROR\n";
       print $file "Remove this file to permit mk-slave-prefetch to run\n"
@@ -2213,32 +2533,6 @@ sub main {
          or die "Cannot close $sentinel: $OS_ERROR\n";
       print "Successfully created file $sentinel\n";
       return 0;
-   }
-
-   # ########################################################################
-   # Initialize the query stats from the file on the commandline, if any.
-   # ######################################################################## 
-   my %query_errors;
-   if ( @ARGV ) {
-      open my $fh, "<", $ARGV[0] or die $OS_ERROR;
-      my ($type, $rest);
-      while ( my $line = <$fh> ) {
-         ($type, $rest) = $line =~ m/^# (query|stats): (.*)$/;
-         next unless $type;
-         if ( $type eq 'query' ) {
-            $query_stats{$rest} = { seen => 1, samples => [] };
-         }
-         else {
-            my ( $seen, $exec, $sum, $avg )
-               = $rest =~ m/seen=(\S+) exec=(\S+) sum=(\S+) avg=(\S+)/;
-            if ( $seen ) {
-               $query_stats{$rest}->{samples}
-                  = [ map { $avg } (1 ..  $o->get('query-samp-size')) ];
-               $query_stats{$rest}->{avg} = $avg;
-            }
-         }
-      }
-      close $fh or die $OS_ERROR;
    }
 
    # ########################################################################
@@ -2256,7 +2550,7 @@ sub main {
    $dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
 
    # ########################################################################
-   # Daemonize only after (potentially) asking for passwords for --askpass.
+   # Daemonize only after (potentially) asking for passwords.
    # ########################################################################
    my $daemon;
    if ( $o->get('daemonize') ) {
@@ -2273,260 +2567,134 @@ sub main {
    # ########################################################################
    # Ready to work now.
    # ########################################################################
-   my $qr = new QueryRewriter();
-   my $lp = new LogParser();
-   my $vp = new VersionParser();
+   my $lp  = new BinaryLogParser();
+   my $qr  = new QueryRewriter();
+   my $vp  = new VersionParser();
 
-   my $have_subqueries = $vp->version_ge($dbh, '4.1.0');
-
-   my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
+   my ($datadir) = ($dbh->selectrow_array('SHOW VARIABLES LIKE "datadir"'))[1];
    MKDEBUG && _d('Data directory', $datadir);
 
-   $now = time();
-   $end = $now + ( $time || 0 );  # When we should exit
+   # Declare these before new SlavePrefetch so they're available to the
+   # oktorun callback arg but don't define them yet because spf->new()
+   # could be slow if it has a huge stats_file to initialize. 
+   my $time;
+   my $now;
+   my $end;
+
+   # Declare but don't define $spf yet so we can reference it in a
+   # callback to itself that's passed in @callbacks to $spf->new().
+   my $spf;
+   my @callbacks;
+   if ( $o->get('execute') ) {
+      push @callbacks, sub {
+         return $spf->execute(@_);
+      };
+   }
+   if ( $o->get('print') ) {
+      push @callbacks, sub {
+         my ( $query, $fingerprint ) = @_;
+         print $query, ";\n";
+         return;
+      };
+   }
+   my %spf_options = map { $_ => $o->get($_) } qw(
+      offset
+      window
+      io-lag
+      query-sample-size
+      errors
+      num-prefix
+      max-query-time
+      print-nonrewritten
+      reject-regexp
+      permit-regexp
+      progress
+   );
+   $spf = new SlavePrefetch(
+      dbh             => $dbh,
+      oktorun         => sub {
+         my ( %args_from_spf ) = @_;
+         return oktorun(
+            %args_from_spf,
+            sentinel => $o->get('sentinel'),
+            time     => $time,
+            end      => $end,
+            now      => \$now,
+         );
+      },
+      callbacks       => \@callbacks,
+      chk_int         => $chk_int,
+      chk_min         => $chk_min,
+      chk_max         => $chk_max,
+      datadir         => $datadir,
+      QueryRewriter   => $qr,
+      have_subqueries => $vp->version_ge($dbh,'4.1.0'),
+      stats_file      => shift @ARGV,
+      %spf_options,
+   );
+
+   $time = $o->get('run-time');
+   $now  = time();
+   $end  = $now + ( $time || 0 );  # When we should exit
 
    eval {
       while ( oktorun() ) {
-         %slave = get_status($dbh);
-
-         my $pos  = 0; # Current position we're reading in relay log.
-         my $next = 0; # Start of next relay log event.
-         my $ts   = 0; # Last seen timestamp.
-
-         if ( $slave{running} ) {
-            my $cmd = "mysqlbinlog -l "
-                    . $o->get('tmpdir')
-                    . " --start-pos=$slave{pos} $datadir/$slave{file}"
-                    . (MKDEBUG ? ' 2>/dev/null' : '');
-            # Ensure file is readable
-            if ( !-r "$datadir/$slave{file}" ) {
-               die("$datadir/$slave{file} doesn't exist or isn't readable");
-            }
-            MKDEBUG && _d($cmd);
-            open my $fh, "$cmd |" or die $OS_ERROR; # Succeeds even on error
-            if ( $CHILD_ERROR ) {
-               die("$cmd returned exit code " . ($CHILD_ERROR >> 8)
-                  . '.  Try running the command manually or using MKDEBUG=1.');
-            }
-            $stats{mysqlbinlog}++;
-
-            my $i = 0;
+         $spf->_get_slave_status();
+         if ( $spf->slave_is_running() ) {
+            my $fh = $spf->open_relay_log( tmpdir => $o->get('tmpdir') );
             EVENT:
-            while ( oktorun(1) && (my $event = $lp->parse_binlog_event($fh)) ) {
-               $stats{events}++;
-               $pos  = $event->{offset} || $pos;
-               $next = max($next, $pos + ($event->{end} || 0));
-               MKDEBUG && _d('i:', $i, 'pos:', $pos, 'next:', $next,
-                  'slave:', $slave{pos});
-               $i++;
-
-               if ( $progress && $stats{events} % $progress == 0 ) {
-                  print("# $slave{file} $pos ",
-                     join(' ', map { "$_:$stats{$_}" } keys %stats), "\n");
-               }
-
-               # If it's a LOAD DATA INFILE, rm the temp file.
-               if ( $event->{arg}
-                    && (my ($file) = $event->{arg} =~ m/INFILE ('[^']+')/i) ) {
-                  $stats{load_data_infile}++;
-                  if ( !unlink($file) ) {
-                     MKDEBUG && _d('Could not unlink', $file);
-                     $stats{could_not_unlink}++;
-                  }
-                  next EVENT;
-               }
-
-               # Stay ahead of the slave.
-               next EVENT if not_far_enough_ahead($pos);
-
-               # Time to check the slave's status again?
-               if ( $pos > $slave{pos} && ($i - $last_chk) >= $chk_int ) {
-                  %slave    = get_status($dbh);
-                  $last_chk = $i;
-                  $chk_int  = $pos <= $slave{pos} # The slave caught up to us
-                     ? max($chk_min, $chk_int / 2)
-                     : min($chk_max, $chk_int * 2);
-                  next EVENT if not_far_enough_ahead($pos);
-               }
-
-               # But don't get too far ahead or too close to the end of
-               # the binlog.
-               while ( oktorun(1)
-                       && (too_far_ahead($pos) || too_close_to_io($pos)) ) {
-                  # Don't increment stats if the slave didn't catch up while we
-                  # slept.
-                  if ( wait_for_master($dbh, \%slave, $pos-$window+1) > 0 ) {
-                     if ( too_far_ahead($pos) ) {
-                        MKDEBUG && _d('Event', $pos, 'too far ahead of',
-                           $slave{pos});
-                        $stats{too_far_ahead}++;
-                     }
-                     elsif ( too_close_to_io($pos) ) {
-                        MKDEBUG && _d('Event', $pos, 'too close to I/O thread',
-                                      '(', $slave{pos}, '+', $slave{lag}, ')');
-                        $stats{too_close_to_io_thread}++;
-                     }
-                  }
-                  else {
-                     MKDEBUG && _d('SQL thread did not advance');
-                  }
-
-                  %slave    = get_status($dbh);
-                  $last_chk = $i;
-               } # too far ahead or too close to io
-
-               if ( $event->{arg} ) {
-                  $event->{arg} = $qr->strip_comments($event->{arg});
-               }
-
-               if ( ($event->{arg}||'')
-                    !~ m/\A\s*(?:set [t@]|use|insert|update|delete|replace)/i) {
-                  MKDEBUG && _d('Event arg: ',
-                     (defined $event->{arg}
-                        ?  substr($event->{arg}, 0, 50)
-                        : 'undef'));
-                  MKDEBUG && _d('Skipping this event because not allowable');
-                  $stats{event_not_allowed}++;
-                  next EVENT;
-               }
-
-               if ( ($reject_regexp && $event->{arg} =~ m/$reject_regexp/o)
-                    || ($permit_regexp && $event->{arg} !~ m/$permit_regexp/o) )
-               {
-                  MKDEBUG && _d('Skipping because of permit/reject regexp');
-                  $stats{event_filtered_out}++;
-                  next EVENT;
-               }
-
-               # If the event is SET TIMESTAMP and we've already set the
-               # timestamp to that value, skip it.
-               if ( (my ($newts) = $event->{arg} =~ m/SET TIMESTAMP=(\d+)/) ) {
-                  if ( $newts == $ts ) {
-                     MKDEBUG && _d('Already saw timestamp', $newts);
-                     $stats{same_timestamp}++;
-                     next EVENT;
-                  }
-                  else {
-                     $ts = $newts;
-                  }
-               }
-
-               # Convert the event to a SELECT and print/execute it.
-               my $select = $qr->convert_to_select($event->{arg});
-               if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
-                  my $fingerprint = $qr->fingerprint(
-                     $event->{arg}, {prefixes => $o->get('num-prefix')});
-                  if ( (my $avg = get_avg($fingerprint))
-                       < $o->get('max-query-time') ) {
-
-                     # Safeguard as much as possible against really enormous
-                     # result sets.
-                     my $sql = $qr->convert_select_list($select);
-                     if ( $have_subqueries && !have_seen_query($fingerprint)) {
-                        # Wrap in a "derived table," but only if it hasn't been
-                        # seen before.  This way, really short queries avoid the
-                        # overhead of creating the temp table.
-                        $sql = $qr->wrap_in_derived($sql);
-                     }
-
-                     # Do it!
-                     MKDEBUG && _d($sql);
-                     $stats{do_query}++;
-                     if ( $execute ) {
-                        eval {
-                           my $start = gettimeofday();
-                           $dbh->do($sql);
-                           store_avg($fingerprint, gettimeofday() - $start);
-                        };
-                        if ( $EVAL_ERROR ) {
-                           $stats{query_error}++;
-                           if ( ($o->get('errors') == 2) || MKDEBUG ) {
-                              _d($EVAL_ERROR);
-                              _d('SQL was:', $event->{arg});
-                           }
-                           elsif ( $o->get('errors') == 1 ) {
-                              $query_errors{$fingerprint}++;
-                           }
-                        }
-                     }
-                     elsif ( $print ) {
-                        print $sql, ";\n";
-                     }
-                  }
-                  else {
-                     # The query's average execution time is longer than the
-                     # specified limit, so we skip it and just wait for the
-                     # master to pass it by.
-                     MKDEBUG && _d('Avg time', $avg, 'too long for',
-                        $fingerprint);
-                     $stats{query_too_long}++;
-                     wait_for_master($dbh, \%slave, $pos + 1);
-                     %slave    = get_status($dbh);
-                     $last_chk = $i;
-                  }
-               }
-               else {
-                  $stats{query_not_rewritten}++;
-                  _d($event->{arg}) if MKDEBUG || $o->get('print-nonrewritten');
-               }
-            } # parse binlog
-
-            MKDEBUG && _d('Closing filehandle');
-
-            # Unfortunately, mysqlbinlog does NOT like me to close the pipe
-            # before reading all data from it.  It hangs and prints angry
-            # messages about a closed file.  So I'll find the mysqlbinlog
-            # process created by the open() and kill it.
-            my $procs = `ps -eaf | grep mysqlbinlog`;
-            MKDEBUG && _d($procs);
-            if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
-               chomp $line;
-               MKDEBUG && _d($line);
-               if ( my ( $proc ) = $line =~ m/(\d+)/ ) {
-                  MKDEBUG && _d('Will kill process', $proc);
-                  kill(15, $proc);
-               }
+            while (
+               oktorun(
+                  only_if_slave_is_running => 1,
+                  slave_is_running         => $spf->slave_is_running()) )
+            {
+               my $event = $lp->parse_event(
+                  $fh,
+                  undef,
+                  sub { $spf->pipeline_event(@_); }
+               );
+               last EVENT unless $event;
             }
-
-            if ( !close($fh) ) {
-               if ( $OS_ERROR ) {
-                  warn "Error closing mysqlbinlog pipe: $OS_ERROR\n";
-               }
-               else {
-                  MKDEBUG && _d('Exit status', $CHILD_ERROR,'from mysqlbinlog');
-               }
-            }
-         } # slave is running
+         }
+         else {
+            MKDEBUG && _d('Slave is not running');
+         }
 
          if ( oktorun() ) {
-            $stats{sleep}++;
-            sleep(1);
+            $spf->incr_stat('sleep');
+            MKDEBUG && _d('Sleeping', time);
+            sleep 1;
          }
-      } # get slave status
+      }
+      # Reset pos, next, etc. before next run.
+      $spf->reset_pipeline_pos();
    };
    if ( $EVAL_ERROR ) {
       print $EVAL_ERROR;
    }
 
    # Print statistics
+   my ($stats, $query_stats, $query_errors) = $spf->get_stats();
    if ( $o->get('statistics') ) {
       # Print operations in order of descending count, with percentage.
-      my $maxlen = max(0, map { length($_) } keys %stats);
-      my $total  = sum(0, values %stats);
+      my $maxlen = max(0, map { length($_) } keys %$stats);
+      my $total  = sum(0, ($stats->{events} || 1));
       printf("# %-${maxlen}s \%10s %10s\n", qw(Action Count Pct));
       my $fmt = "# %-${maxlen}s \%10d %10.2f\n";
-      foreach my $key (reverse sort { $stats{$a} <=> $stats{$b} } keys %stats) {
-         printf($fmt, $key, $stats{$key}, $stats{$key} / $total * 100);
+      foreach my $key (
+         reverse sort { $stats->{$a} <=> $stats->{$b} } keys %$stats )
+      {
+         printf($fmt, $key, $stats->{$key}, $stats->{$key} / $total * 100);
       }
 
-      # Print normalized queries, their average exec times, times seen and times
-      # executed.  Sort in order of times seen descending.
+      # Print normalized queries, their average exec times, times seen and
+      # times executed.  Sort in order of times seen descending.
       foreach my $query (
          reverse sort {
-            $query_stats{$a}->{seen} <=> $query_stats{$b}->{seen}
-         } keys %query_stats
-      ) {
-         my $stats = $query_stats{$query};
+            $query_stats->{$a}->{seen} <=> $query_stats->{$b}->{seen}
+         } keys %$query_stats )
+      {
+         my $stats = $query_stats->{$query};
          print
             "# query: ", $query, "\n# stats: ",
             join(' ',
@@ -2539,9 +2707,9 @@ sub main {
    if ( $o->get('errors') == 1 ) {
       foreach my $query (
          reverse sort {
-            $query_errors{$a} <=> $query_errors{$b} } keys %query_errors
+            $query_errors->{$a} <=> $query_errors->{$b} } keys %$query_errors
       ) {
-         print "# error $query_errors{$query} times: ", $query, "\n";
+         print "# error $query_errors->{$query} times: ", $query, "\n";
       }
    }
 
@@ -2554,110 +2722,32 @@ sub main {
 
 # Catches signals so we can exit gracefully.
 sub finish {
-   my ($signal) = @_;
+   my ( $signal ) = @_;
    print STDERR "Exiting on SIG$signal.\n";
    $oktorun = 0;
+   return;
 }
 
 # It's ok to run if we haven't been told to stop, we haven't exceeded the
 # time.  The parameter adds the further restriction that the slave must be
 # running.
 sub oktorun {
-   my ( $only_if_slave_running ) = @_;
-   $now = time();
-   return (!$only_if_slave_running || $slave{running})
+   my ( %args ) = @_;
+
+   # These default vals make it oktorun.
+   my $only_if_slave_running = $args{only_if_slave_is_running} || 0;
+   my $slave_is_running      = $args{slave_is_running} || 0;
+   my $sentinel              = $args{sentinel} || '';
+   my $time                  = $args{time} || 0;
+   my $end                   = $args{end} || 0;
+   my $now                   = $args{now} || 0;
+
+   # Notice the dereference: we're modifying the arg!
+   $$now = time() if $now && ref $now;
+
+   return (!$only_if_slave_running || $slave_is_running)
       && !-f $sentinel
       && ((!$time || $now < $end) && $oktorun);
-}
-
-# Whether we are far enough ahead of the slave.
-sub not_far_enough_ahead {
-   my ( $pos ) = @_;
-   my $offset = $o->get('offset');
-   if ( $pos < $slave{pos} + $offset ) {
-      MKDEBUG && _d($pos, 'is not', $offset, 'ahead of', $slave{pos});
-      $stats{not_far_enough_ahead}++;
-      return 1;
-   }
-   return 0;
-}
-
-# Whether we are too far ahead of the slave.
-sub too_far_ahead {
-   my ( $pos ) = @_;
-   return ($pos > $slave{pos} + $window);
-}
-
-# Whether we are too close to where the I/O thread is writing.
-sub too_close_to_io {
-   my ( $pos ) = @_;
-   return $slave{lag} && $pos >= $slave{pos} + $slave{lag} - $o->get('io-lag');
-}
-
-sub wait_for_master {
-   my ( $dbh, $slave, $pos ) = @_;
-   $stats{master_pos_wait}++;
-   my $sql = "SELECT COALESCE(MASTER_POS_WAIT('$slave->{mfile}', "
-      . ($slave->{mpos} + ($pos - $slave->{pos})) . ", 1), 0)";
-   MKDEBUG && _d($sql);
-   my $start = gettimeofday();
-   my ($events) = $dbh->selectrow_array($sql);
-   MKDEBUG && _d('Waited', (gettimeofday - $start), 'and got', $events);
-   return $events;
-}
-
-# The average is weighted so we don't quit trying a statement when we have
-# only a few samples.  So if we want to collect 16 samples and the first one
-# is huge, it will be weighted as 1/16th of its size.
-sub store_avg {
-   my ( $query, $time ) = @_;
-   MKDEBUG && _d('Execution time:', $query, $time);
-   $query_stats{$query}->{samples} ||= [];
-   my $samples = $query_stats{$query}->{samples};
-   push @$samples, $time;
-   if ( @$samples > $o->get('query-sample-size') ) {
-      shift @$samples;
-   }
-   $query_stats{$query}->{avg} = sum(@$samples) / $o->get('query-sample-size');
-   $query_stats{$query}->{exec}++;
-   $query_stats{$query}->{sum} += $time;
-   MKDEBUG && _d('Average time:', $query_stats{$query}->{avg});
-}
-
-sub have_seen_query {
-   my ( $query ) = @_;
-   return $query_stats{$query}->{seen};
-}
-
-sub get_avg {
-   my ( $query ) = @_;
-   $query_stats{$query}->{seen}++;
-   return $query_stats{$query}->{avg} || 0;
-}
-
-sub get_status {
-   my ( $dbh ) = @_;
-   $stats{show_slave_status}++;
-   my $status = $dbh->selectrow_hashref("SHOW SLAVE STATUS");
-   if ( !$status || ! %$status ) {
-      die "No output from SHOW SLAVE STATUS.\n";
-   }
-   my %status = (
-      running => ($status->{slave_sql_running} || '') eq 'Yes',
-      file    => $status->{relay_log_file},
-      pos     => $status->{relay_log_pos},
-                 # If the slave SQL thread is executing from the same log the
-                 # I/O thread is reading from, in general (except when the
-                 # master or slave starts a new binlog or relay log) we can tell
-                 # how many bytes the SQL thread lags the I/O thread.
-      lag     => $status->{master_log_file} eq $status->{relay_master_log_file}
-               ? $status->{read_master_log_pos} - $status->{exec_master_log_pos}
-               : 0,
-      mfile   => $status->{relay_master_log_file},
-      mpos    => $status->{exec_master_log_pos},
-   );
-   MKDEBUG && _d(Dumper(\%status));
-   return %status;
 }
 
 sub _d {
