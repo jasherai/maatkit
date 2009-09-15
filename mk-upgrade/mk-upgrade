@@ -3076,7 +3076,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4606
+# QueryParser package 4704
 # ###########################################################################
 package QueryParser;
 
@@ -3119,7 +3119,7 @@ sub get_tables {
          return ();
       }
       if ( $ddl_stmt =~ m/CREATE/i && $query =~ m/$ddl_stmt\b.+?\bSELECT\b/i ) {
-         my ($select) = $query =~ m/\b(SELECT\b.+)/i;
+         my ($select) = $query =~ m/\b(SELECT\b.+)/is;
          MKDEBUG && _d('CREATE TABLE ... SELECT:', $select);
          return $self->get_tables($select);
       }
