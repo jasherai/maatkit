@@ -545,7 +545,8 @@ sub prepare_query {
 
    my $select = $qr->convert_to_select($query);
    if ( $select !~ m/\A\s*(?:set|select|use)/i ) {
-      MKDEBUG && _d('Cannot rewrite query as SELECT:', $query);
+      MKDEBUG && _d('Cannot rewrite query as SELECT:',
+         (length $query > 240 ? substr($query, 0, 237) . '...' : $query));
       _d($query) if $self->{'print-nonrewritten'};
       $self->{stats}->{query_not_rewritten}++;
       return;
