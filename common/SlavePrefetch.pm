@@ -311,6 +311,7 @@ sub reset_pipeline_pos {
 
 sub pipeline_event {
    my ( $self, $event, @callbacks ) = @_;
+   $self->{stats}->{events}++;
 
    if ( !$event->{offset} ) {
       # This will happen for start/end of log stuff like:
@@ -323,7 +324,6 @@ sub pipeline_event {
    }
 
    # Update pos and next.
-   $self->{stats}->{events}++;
    $self->{pos}  = $event->{offset} if $event->{offset};
    $self->{next} = max($self->{next},$self->{pos}+($event->{end_log_pos} || 0));
 
