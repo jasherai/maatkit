@@ -1,5 +1,7 @@
 Changelog for mk-upgrade:
 
+   * Tables from some multi-line queries could not be parsed.
+
 2009-08-31: version 0.9.1
 
    * The printed value for Host2_Query_time was incorrect.
