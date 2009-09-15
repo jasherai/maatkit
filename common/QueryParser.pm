@@ -76,7 +76,7 @@ sub get_tables {
       if ( $ddl_stmt =~ m/CREATE/i && $query =~ m/$ddl_stmt\b.+?\bSELECT\b/i ) {
          # Handle CREATE TABLE ... SELECT.  In this case, the real tables
          # come from the SELECT, not the CREATE.
-         my ($select) = $query =~ m/\b(SELECT\b.+)/i;
+         my ($select) = $query =~ m/\b(SELECT\b.+)/is;
          MKDEBUG && _d('CREATE TABLE ... SELECT:', $select);
          return $self->get_tables($select);
       }

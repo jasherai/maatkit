@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 115;
+use Test::More tests => 116;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -731,6 +731,15 @@ is_deeply(
    ],
    [qw(foo bar)],
    'LOCK TABLES foo als READ, bar als2 WRITE'
+);
+
+$sql = "CREATE TEMPORARY TABLE mk_upgrade AS SELECT col1, col2
+        FROM foo, bar
+        WHERE id = 1";
+is_deeply(
+   [ $qp->get_tables($sql) ],
+   [qw(foo bar)],
+   'Get tables from special case multi-line query'
 );
 
 # #############################################################################
