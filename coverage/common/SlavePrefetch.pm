@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-...t/common/SlavePrefetch.pm   76.2   50.0   49.3   87.5    n/a  100.0   68.0
-Total                          76.2   50.0   49.3   87.5    n/a  100.0   68.0
+...t/common/SlavePrefetch.pm   82.1   51.9   50.7   92.5    n/a  100.0   72.3
+Total                          82.1   51.9   50.7   92.5    n/a  100.0   72.3
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          SlavePrefetch.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Tue Sep 15 15:58:23 2009
-Finish:       Tue Sep 15 15:58:23 2009
+Start:        Tue Sep 15 16:21:14 2009
+Finish:       Tue Sep 15 16:21:16 2009
 
 /home/daniel/dev/maatkit/common/SlavePrefetch.pm
 
@@ -36,32 +36,32 @@ line  err   stmt   bran   cond    sub    pod   time   code
 19                                                    # ###########################################################################
 20                                                    package SlavePrefetch;
 21                                                    
-22             1                    1             7   use strict;
-               1                                  3   
-               1                                  6   
-23             1                    1             5   use warnings FATAL => 'all';
+22             1                    1             8   use strict;
+               1                                  2   
+               1                                  7   
+23             1                    1             6   use warnings FATAL => 'all';
                1                                  2   
                1                                  8   
 24             1                    1             6   use English qw(-no_match_vars);
                1                                  2   
                1                                  7   
 25                                                    
-26             1                    1             7   use List::Util qw(min max sum);
-               1                                  2   
-               1                                 11   
-27             1                    1            25   use Time::HiRes qw(gettimeofday);
+26             1                    1             6   use List::Util qw(min max sum);
                1                                  3   
-               1                                  6   
+               1                                 11   
+27             1                    1            10   use Time::HiRes qw(gettimeofday);
+               1                                  3   
+               1                                  5   
 28             1                    1             7   use Data::Dumper;
-               1                                  2   
-               1                                  7   
+               1                                  3   
+               1                                  8   
 29                                                    $Data::Dumper::Indent    = 1;
 30                                                    $Data::Dumper::Sortkeys  = 1;
 31                                                    $Data::Dumper::Quotekeys = 0;
 32                                                    
 33             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
-               1                                  3   
-               1                                  9   
+               1                                  2   
+               1                                  8   
 34                                                    
 35                                                    # Arguments:
 36                                                    #   * dbh                Slave dbh
@@ -85,17 +85,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 54                                                    #   * permit-regexp      #
 55                                                    #   * progress           #
 56                                                    sub new {
-57             2                    2            83      my ( $class, %args ) = @_;
+57             2                    2            78      my ( $class, %args ) = @_;
 58             2                                 14      my @required_args = qw(dbh oktorun chk_int chk_min chk_max
 59                                                                              datadir QueryRewriter);
 60             2                                 10      foreach my $arg ( @required_args ) {
-61    ***     14     50                          62         die "I need a $arg argument" unless $args{$arg};
+61    ***     14     50                          60         die "I need a $arg argument" unless $args{$arg};
 62                                                       }
 63    ***      2            50                   12      $args{'offset'}            ||= 128;
-64    ***      2            50                   12      $args{'window'}            ||= 4_096;
-65    ***      2            50                    8      $args{'io-lag'}            ||= 1_024;
-66    ***      2            50                   29      $args{'query-sample-size'} ||= 4;
-67    ***      2            50                   10      $args{'max-query-time'}    ||= 1;
+64    ***      2            50                   14      $args{'window'}            ||= 4_096;
+65    ***      2            50                   10      $args{'io-lag'}            ||= 1_024;
+66    ***      2            50                    9      $args{'query-sample-size'} ||= 4;
+67    ***      2            50                   11      $args{'max-query-time'}    ||= 1;
 68                                                    
 69                                                       my $self = {
 70                                                          %args, 
@@ -113,26 +113,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 82    ***      0                    0             0               my ( $dbh ) = @_;
 83    ***      0                                  0               return $dbh->selectrow_hashref("SHOW SLAVE STATUS");
 84                                                             }, 
-85             2                                 60            wait_for_master   => \&_wait_for_master,
+85             2                                 56            wait_for_master   => \&_wait_for_master,
 86                                                          },
 87                                                       };
 88                                                    
 89                                                       # Pre-init saved stats from file.
-90    ***      2     50                          13      init_stats($self->{stats}, $args{stats_file}, $args{'query-sample-size'})
+90    ***      2     50                          12      init_stats($self->{stats}, $args{stats_file}, $args{'query-sample-size'})
 91                                                          if $args{stats_file};
 92                                                    
-93             2                                 23      return bless $self, $class;
+93             2                                 21      return bless $self, $class;
 94                                                    }
 95                                                    
 96                                                    sub set_callbacks {
-97             2                    2            96      my ( $self, %callbacks ) = @_;
-98             2                                 12      foreach my $func ( keys %callbacks ) {
-99    ***      2     50                          15         die "Callback $func does not exist"
+97             2                    2           101      my ( $self, %callbacks ) = @_;
+98             2                                 13      foreach my $func ( keys %callbacks ) {
+99    ***      2     50                          13         die "Callback $func does not exist"
 100                                                            unless exists $self->{callbacks}->{$func};
-101            2                                  8         $self->{callbacks}->{$func} = $callbacks{$func};
-102            2                                 17         MKDEBUG && _d('Set new callback for', $func);
+101            2                                 11         $self->{callbacks}->{$func} = $callbacks{$func};
+102            2                                 16         MKDEBUG && _d('Set new callback for', $func);
 103                                                      }
-104            2                                 10      return;
+104            2                                 11      return;
 105                                                   }
 106                                                   
 107                                                   sub init_stats {
@@ -167,8 +167,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 136                                                   }
 137                                                   
 138                                                   sub get_stats {
-139            1                    1             5      my ( $self ) = @_;
-140            1                                  8      return $self->{stats}, $self->{query_stats}, $self->{query_errors};
+139            1                    1             4      my ( $self ) = @_;
+140            1                                  7      return $self->{stats}, $self->{query_stats}, $self->{query_errors};
 141                                                   }
 142                                                   
 143                                                   # Arguments:
@@ -178,19 +178,19 @@ line  err   stmt   bran   cond    sub    pod   time   code
 147                                                   #   * file           (optional) Name of the relay log
 148                                                   #   * mysqlbinlog    (optional) mysqlbinlog command (if not in PATH)
 149                                                   sub open_relay_log {
-150            1                    1            19      my ( $self, %args ) = @_;
-151            1                                  7      my @required_args = qw(tmpdir);
-152            1                                  6      foreach my $arg ( @required_args ) {
+150            1                    1            20      my ( $self, %args ) = @_;
+151            1                                  8      my @required_args = qw(tmpdir);
+152            1                                  8      foreach my $arg ( @required_args ) {
 153   ***      1     50                          14         die "I need a $arg argument" unless $args{$arg};
 154                                                      }
-155            1                                  6      my ($tmpdir)    = @args{@required_args};
-156   ***      1            33                    6      my $datadir     = $args{datadir}     || $self->{datadir};
-157   ***      1            33                    5      my $start_pos   = $args{start_pos}   || $self->{slave}->{pos};
-158   ***      1            33                    6      my $file        = $args{file}        || $self->{slave}->{file};
-159   ***      1            50                   20      my $mysqlbinlog = $args{mysqlbinlog} || 'mysqlbinlog';
+155            1                                  5      my ($tmpdir)    = @args{@required_args};
+156   ***      1            33                    7      my $datadir     = $args{datadir}     || $self->{datadir};
+157   ***      1            33                    6      my $start_pos   = $args{start_pos}   || $self->{slave}->{pos};
+158   ***      1            33                    5      my $file        = $args{file}        || $self->{slave}->{file};
+159   ***      1            50                   17      my $mysqlbinlog = $args{mysqlbinlog} || 'mysqlbinlog';
 160                                                   
 161                                                      # Ensure file is readable
-162   ***      1     50                          21      if ( !-r "$datadir/$file" ) {
+162   ***      1     50                          25      if ( !-r "$datadir/$file" ) {
 163   ***      0                                  0         die "Relay log $datadir/$file does not exist or is not readable";
 164                                                      }
 165                                                   
@@ -199,27 +199,27 @@ line  err   stmt   bran   cond    sub    pod   time   code
 168                                                              . (MKDEBUG ? ' 2>/dev/null' : '');
 169            1                                  3      MKDEBUG && _d('Opening relay log:', $cmd);
 170                                                   
-171   ***      1     50                        4252      open my $fh, "$cmd |" or die $OS_ERROR; # Succeeds even on error
-172   ***      1     50                          25      if ( $CHILD_ERROR ) {
+171   ***      1     50                        1232      open my $fh, "$cmd |" or die $OS_ERROR; # Succeeds even on error
+172   ***      1     50                          16      if ( $CHILD_ERROR ) {
 173   ***      0                                  0         die "$cmd returned exit code " . ($CHILD_ERROR >> 8)
 174                                                            . '.  Try running the command manually or using MKDEBUG=1' ;
 175                                                      }
-176            1                                 25      $self->{cmd} = $cmd;
+176            1                                 18      $self->{cmd} = $cmd;
 177            1                                 10      $self->{stats}->{mysqlbinlog}++;
-178            1                                 48      return $fh;
+178            1                                 41      return $fh;
 179                                                   }
 180                                                   
 181                                                   sub close_relay_log {
-182            1                    1          4965      my ( $self, $fh ) = @_;
-183            1                                  8      MKDEBUG && _d('Closing relay log');
+182            1                    1          4050      my ( $self, $fh ) = @_;
+183            1                                  6      MKDEBUG && _d('Closing relay log');
 184                                                      # Unfortunately, mysqlbinlog does NOT like me to close the pipe
 185                                                      # before reading all data from it.  It hangs and prints angry
 186                                                      # messages about a closed file.  So I'll find the mysqlbinlog
 187                                                      # process created by the open() and kill it.
-188            1                              21447      my $procs = `ps -eaf | grep mysqlbinlog | grep -v grep`;
-189            1                                 17      my $cmd   = $self->{cmd};
-190            1                                  3      MKDEBUG && _d($procs);
-191   ***      1     50                          63      if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
+188            1                              15915      my $procs = `ps -eaf | grep mysqlbinlog | grep -v grep`;
+189            1                                 15      my $cmd   = $self->{cmd};
+190            1                                  4      MKDEBUG && _d($procs);
+191   ***      1     50                          59      if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
 192   ***      0                                  0         chomp $line;
 193   ***      0                                  0         MKDEBUG && _d($line);
 194   ***      0      0                           0         if ( my ( $proc ) = $line =~ m/(\d+)/ ) {
@@ -228,9 +228,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 197                                                         }
 198                                                      }
 199                                                      else {
-200            1                                 48         warn "Cannot find mysqlbinlog command in ps";
+200            1                                 49         warn "Cannot find mysqlbinlog command in ps";
 201                                                      }
-202   ***      1     50                          39      if ( !close($fh) ) {
+202   ***      1     50                          44      if ( !close($fh) ) {
 203   ***      0      0                           0         if ( $OS_ERROR ) {
 204   ***      0                                  0            warn "Error closing mysqlbinlog pipe: $OS_ERROR\n";
 205                                                         }
@@ -238,14 +238,14 @@ line  err   stmt   bran   cond    sub    pod   time   code
 207   ***      0                                  0            MKDEBUG && _d('Exit status', $CHILD_ERROR,'from mysqlbinlog');
 208                                                         }
 209                                                      }
-210            1                                 25      return;
+210            1                                 22      return;
 211                                                   }
 212                                                   
 213                                                   # Returns true if it's time to _get_slave_status() again.
 214                                                   sub _check_slave_status {
-215            8                    8            29      my ( $self ) = @_;
+215            8                    8            27      my ( $self ) = @_;
 216                                                      return
-217            8    100    100                  113         $self->{pos} > $self->{slave}->{pos}
+217            8    100    100                  120         $self->{pos} > $self->{slave}->{pos}
 218                                                         && ($self->{n_events} - $self->{last_chk}) >= $self->{chk_int} ? 1 : 0;
 219                                                   }
 220                                                   
@@ -266,17 +266,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 235                                                   # $self->{slave}.  The public interface to return $self->{slave}
 236                                                   # is get_slave_status().
 237                                                   sub _get_slave_status {
-238           12                   12            59      my ( $self, $callback ) = @_;
-239           12                                 49      $self->{stats}->{show_slave_status}++;
+238           12                   12            61      my ( $self, $callback ) = @_;
+239           12                                 52      $self->{stats}->{show_slave_status}++;
 240                                                   
 241                                                      # Remember to $dbh->{FetchHashKeyName} = 'NAME_lc'.
 242                                                   
-243           12                                 46      my $show_slave_status = $self->{callbacks}->{show_slave_status};
-244           12                                 56      my $status            = $show_slave_status->($self->{dbh}); 
-245   ***     12     50     33                  171      if ( !$status || !%$status ) {
+243           12                                 49      my $show_slave_status = $self->{callbacks}->{show_slave_status};
+244           12                                 57      my $status            = $show_slave_status->($self->{dbh}); 
+245   ***     12     50     33                  173      if ( !$status || !%$status ) {
 246   ***      0                                  0         die "No output from SHOW SLAVE STATUS";
 247                                                      }
-248   ***     12     50     50                  235      my %status = (
+248   ***     12     50     50                  251      my %status = (
 249                                                         running => ($status->{slave_sql_running} || '') eq 'Yes',
 250                                                         file    => $status->{relay_log_file},
 251                                                         pos     => $status->{relay_log_pos},
@@ -291,62 +291,62 @@ line  err   stmt   bran   cond    sub    pod   time   code
 260                                                         mpos  => $status->{exec_master_log_pos},
 261                                                      );
 262                                                   
-263           12                                 56      $self->{slave}    = \%status;
-264           12                                 60      $self->{last_chk} = $self->{n_events};
-265           12                                 28      MKDEBUG && _d('Slave status:', Dumper($self->{slave}));
-266           12                                 45      return;
+263           12                                 54      $self->{slave}    = \%status;
+264           12                                 58      $self->{last_chk} = $self->{n_events};
+265           12                                 26      MKDEBUG && _d('Slave status:', Dumper($self->{slave}));
+266           12                                 44      return;
 267                                                   }
 268                                                   
 269                                                   # Public interface for returning the current/last slave status.
 270                                                   sub get_slave_status {
-271            1                    1             8      my ( $self ) = @_;
-272            1                                 23      return $self->{slave};
+271            1                    1             4      my ( $self ) = @_;
+272            1                                 17      return $self->{slave};
 273                                                   }
 274                                                   
 275                                                   sub slave_is_running {
-276           15                   15            67      my ( $self ) = @_;
-277           15                                 98      return $self->{slave}->{running};
+276           15                   15            64      my ( $self ) = @_;
+277           15                                103      return $self->{slave}->{running};
 278                                                   }
 279                                                   
 280                                                   sub get_interval {
-281            1                    1             5      my ( $self ) = @_;
-282            1                                 11      return $self->{n_events}, $self->{last_chk};
+281            1                    1             4      my ( $self ) = @_;
+282            1                                  9      return $self->{n_events}, $self->{last_chk};
 283                                                   }
 284                                                   
 285                                                   sub get_pipeline_pos {
-286            3                    3            21      my ( $self ) = @_;
-287            3                                 28      return $self->{pos}, $self->{next}, $self->{last_ts};
+286            3                    3            24      my ( $self ) = @_;
+287            3                                 27      return $self->{pos}, $self->{next}, $self->{last_ts};
 288                                                   }
 289                                                   
 290                                                   sub set_pipeline_pos {
 291           13                   13            68      my ( $self, $pos, $next, $ts ) = @_;
 292   ***     13     50     33                  118      die "pos must be >= 0"  unless defined $pos && $pos >= 0;
-293   ***     13     50     33                   97      die "next must be >= 0" unless defined $pos && $pos >= 0;
-294           13                                 42      $self->{pos}     = $pos;
+293   ***     13     50     33                  102      die "next must be >= 0" unless defined $pos && $pos >= 0;
+294           13                                 45      $self->{pos}     = $pos;
 295           13                                 46      $self->{next}    = $next;
-296           13           100                   96      $self->{last_ts} = $ts || 0;  # undef same as zero
-297           13                                 29      MKDEBUG && _d('Set pipeline pos', @_);
-298           13                                 40      return;
+296           13           100                   92      $self->{last_ts} = $ts || 0;  # undef same as zero
+297           13                                 27      MKDEBUG && _d('Set pipeline pos', @_);
+298           13                                 41      return;
 299                                                   }
 300                                                   
 301                                                   sub reset_pipeline_pos {
-302            2                    2            11      my ( $self ) = @_;
+302            2                    2            18      my ( $self ) = @_;
 303            2                                  8      $self->{pos}     = 0; # Current position we're reading in relay log.
-304            2                                  6      $self->{next}    = 0; # Start of next relay log event.
+304            2                                  7      $self->{next}    = 0; # Start of next relay log event.
 305            2                                  7      $self->{last_ts} = 0; # Last seen timestamp.
-306            2                                  4      MKDEBUG && _d('Reset pipeline');
-307            2                                  7      return;
+306            2                                  5      MKDEBUG && _d('Reset pipeline');
+307            2                                  6      return;
 308                                                   }
 309                                                   
 310                                                   sub pipeline_event {
-311            8                    8           148      my ( $self, $event, @callbacks ) = @_;
+311            8                    8           162      my ( $self, $event, @callbacks ) = @_;
 312                                                   
 313                                                      # Update pos and next.
-314            8                                 31      $self->{n_events}++;
-315   ***      8     50                          46      $self->{pos}  = $event->{offset} if $event->{offset};
-316   ***      8            50                   83      $self->{next} = max($self->{next},$self->{pos}+($event->{end_log_pos} || 0));
+314            8                                 30      $self->{n_events}++;
+315   ***      8     50                          49      $self->{pos}  = $event->{offset} if $event->{offset};
+316   ***      8            50                   87      $self->{next} = max($self->{next},$self->{pos}+($event->{end_log_pos} || 0));
 317                                                   
-318   ***      8     50     33                   44      if ( $self->{progress}
+318   ***      8     50     33                   42      if ( $self->{progress}
 319                                                           && $self->{stats}->{events} % $self->{progress} == 0 ) {
 320   ***      0                                  0         print("# $self->{slave}->{file} $self->{pos} ",
 321   ***      0                                  0            join(' ', map { "$_:$self->{stats}->{$_}" } keys %{$self->{stats}}),
@@ -355,21 +355,21 @@ line  err   stmt   bran   cond    sub    pod   time   code
 323                                                      }
 324                                                   
 325                                                      # Time to check the slave's status again?
-326            8    100                          33      if ( $self->_check_slave_status() ) { 
-327            1                                  3         MKDEBUG && _d('Checking slave status at interval', $self->{n_events});
-328            1                                  5         $self->_get_slave_status();
-329            1                                  7         $self->{chk_int} = $self->_get_next_chk_int();
-330            1                                  3         MKDEBUG && _d('Next check interval:', $self->{chk_int});
+326            8    100                          34      if ( $self->_check_slave_status() ) { 
+327            1                                  2         MKDEBUG && _d('Checking slave status at interval', $self->{n_events});
+328            1                                  6         $self->_get_slave_status();
+329            1                                  4         $self->{chk_int} = $self->_get_next_chk_int();
+330            1                                  2         MKDEBUG && _d('Next check interval:', $self->{chk_int});
 331                                                      }
 332                                                   
 333                                                      # We're in the window if we're not behind the slave or too far
 334                                                      # ahead of it.  We can only execute queries while in the window.
-335            8    100                          32      return unless $self->_in_window();
+335            8    100                          31      return unless $self->_in_window();
 336                                                   
-337   ***      4     50                          19      if ( $event->{arg} ) {
+337   ***      4     50                          21      if ( $event->{arg} ) {
 338                                                         # If it's a LOAD DATA INFILE, rm the temp file.
 339                                                         # TODO: maybe this should still be before _in_window()?
-340   ***      4     50                          38         if ( my ($file) = $event->{arg} =~ m/INFILE ('[^']+')/i ) {
+340   ***      4     50                          32         if ( my ($file) = $event->{arg} =~ m/INFILE ('[^']+')/i ) {
 341   ***      0                                  0            $self->{stats}->{load_data_infile}++;
 342   ***      0      0                           0            if ( !unlink($file) ) {
 343   ***      0                                  0               MKDEBUG && _d('Could not unlink', $file);
@@ -378,43 +378,43 @@ line  err   stmt   bran   cond    sub    pod   time   code
 346   ***      0                                  0            return;
 347                                                         }
 348                                                   
-349            4                                 18         my ($query, $fingerprint) = $self->prepare_query($event->{arg});
+349            4                                 21         my ($query, $fingerprint) = $self->prepare_query($event->{arg});
 350   ***      4     50                          18         if ( !$query ) {
 351   ***      0                                  0            MKDEBUG && _d('Failed to prepare query, skipping');
 352   ***      0                                  0            return;
 353                                                         }
 354                                                   
 355                                                         # Do it!
-356            4                                 15         $self->{stats}->{do_query}++;
-357            4                                 16         foreach my $callback ( @callbacks ) {
+356            4                                 17         $self->{stats}->{do_query}++;
+357            4                                 35         foreach my $callback ( @callbacks ) {
 358            4                                 18            $callback->($query, $fingerprint);
 359                                                         }
 360                                                      }
 361                                                   
-362            4                                 60      return;
+362            4                                 69      return;
 363                                                   }
 364                                                   
 365                                                   sub get_window {
-366            2                    2             9      my ( $self ) = @_;
-367            2                                 18      return $self->{offset}, $self->{window};
+366            2                    2            15      my ( $self ) = @_;
+367            2                                 15      return $self->{offset}, $self->{window};
 368                                                   }
 369                                                   
 370                                                   sub set_window {
-371            4                    4            35      my ( $self, $offset, $window ) = @_;
-372   ***      4     50                          16      die "offset must be > 0" unless $offset;
-373   ***      4     50                          14      die "window must be > 0" unless $window;
-374            4                                 23      $self->{offset} = $offset;
+371            4                    4            36      my ( $self, $offset, $window ) = @_;
+372   ***      4     50                          18      die "offset must be > 0" unless $offset;
+373   ***      4     50                          20      die "window must be > 0" unless $window;
+374            4                                 16      $self->{offset} = $offset;
 375            4                                 15      $self->{window} = $window;
 376            4                                  9      MKDEBUG && _d('Set window', @_);
-377            4                                 14      return;
+377            4                                 16      return;
 378                                                   }
 379                                                   
 380                                                   # Returns false if the current pos is out of the window,
 381                                                   # else returns true.  This "throttles" pipeline_event()
 382                                                   # so that it only executes queries when we're in the window.
 383                                                   sub _in_window {
-384           11                   11            42      my ( $self ) = @_;
-385           11                                 24      MKDEBUG && _d('Checking window, pos:', $self->{pos},
+384           11                   11            48      my ( $self ) = @_;
+385           11                                 28      MKDEBUG && _d('Checking window, pos:', $self->{pos},
 386                                                         'next', $self->{next},
 387                                                         'slave pos:', $self->{slave}->{pos},
 388                                                         'master pos', $self->{slave}->{mpos});
@@ -423,31 +423,31 @@ line  err   stmt   bran   cond    sub    pod   time   code
 391                                                      # longer prefetching.  We need to stop pipelining events
 392                                                      # and start skipping them until we're back in the window
 393                                                      # or ahead of the slave.
-394           11    100                          43      return 0 unless $self->_far_enough_ahead();
+394           11    100                          46      return 0 unless $self->_far_enough_ahead();
 395                                                   
 396                                                      # We're ahead of the slave, but check that we're not too
 397                                                      # far ahead, i.e. out of the window or too close to the end
 398                                                      # of the binlog.  If we are, wait for the slave to catch up
 399                                                      # then go back to pipelining events.
 400            7                                 28      my $wait_for_master = $self->{callbacks}->{wait_for_master};
-401            7                                 50      my %wait_args       = (
+401            7                                 48      my %wait_args       = (
 402                                                         dbh       => $self->{dbh},
 403                                                         mfile     => $self->{slave}->{mfile},
 404                                                         until_pos => $self->next_window(),
 405                                                      );
 406            7                                 22      my $oktorun = 1;
-407   ***      7            66                   48      while ( ($oktorun = $self->{oktorun}->(only_if_slave_is_running => 1,
+407   ***      7            66                   36      while ( ($oktorun = $self->{oktorun}->(only_if_slave_is_running => 1,
                            100                        
 408                                                                                 slave_is_running => $self->slave_is_running()))
 409                                                              && ($self->_too_far_ahead() || $self->_too_close_to_io()) )
 410                                                      {
 411                                                         # Don't increment stats if the slave didn't catch up while we
 412                                                         # slept.
-413            2                                  8         $self->{stats}->{master_pos_wait}++;
+413            2                                  9         $self->{stats}->{master_pos_wait}++;
 414   ***      2     50                          11         if ( $wait_for_master->(%wait_args) > 0 ) {
-415   ***      2     50                          35            if ( $self->_too_far_ahead() ) {
+415   ***      2     50                          33            if ( $self->_too_far_ahead() ) {
       ***             0                               
-416            2                                  8               $self->{stats}->{too_far_ahead}++;
+416            2                                  9               $self->{stats}->{too_far_ahead}++;
 417                                                            }
 418                                                            elsif ( $self->_too_close_to_io() ) {
 419   ***      0                                  0               $self->{stats}->{too_close_to_io_thread}++;
@@ -460,63 +460,63 @@ line  err   stmt   bran   cond    sub    pod   time   code
 426                                                      }
 427                                                   
 428            7    100                          43      if ( !$oktorun ) {
-429            2                                  4         MKDEBUG && _d('Not oktorun while waiting for event', $self->{n_events});
-430            2                                 17         return 0;
+429            2                                  5         MKDEBUG && _d('Not oktorun while waiting for event', $self->{n_events});
+430            2                                 15         return 0;
 431                                                      }
 432                                                   
-433            5                                 10      MKDEBUG && _d('Event', $self->{n_events}, 'is in the window');
-434            5                                 28      return 1;
+433            5                                 12      MKDEBUG && _d('Event', $self->{n_events}, 'is in the window');
+434            5                                 24      return 1;
 435                                                   }
 436                                                   
 437                                                   # Whether we are slave pos+offset ahead of the slave.
 438                                                   sub _far_enough_ahead {
 439           15                   15            52      my ( $self ) = @_;
-440           15    100                         108      if ( $self->{pos} < $self->{slave}->{pos} + $self->{offset} ) {
-441            6                                 14         MKDEBUG && _d($self->{pos}, 'is not',
+440           15    100                         100      if ( $self->{pos} < $self->{slave}->{pos} + $self->{offset} ) {
+441            6                                 15         MKDEBUG && _d($self->{pos}, 'is not',
 442                                                            $self->{offset}, 'ahead of', $self->{slave}->{pos});
 443            6                                 23         $self->{stats}->{not_far_enough_ahead}++;
-444            6                                 51         return 0;
+444            6                                 64         return 0;
 445                                                      }
-446            9                                 38      return 1;
+446            9                                 42      return 1;
 447                                                   }
 448                                                   
 449                                                   # Whether we are slave pos+offset+window ahead of the slave.
 450                                                   sub _too_far_ahead {
 451           13                   13            99      my ( $self ) = @_;
-452           13    100                          92      my $too_far =
+452           13    100                         108      my $too_far =
 453                                                         $self->{pos}
 454                                                            > $self->{slave}->{pos} + $self->{offset} + $self->{window} ? 1 : 0;
-455           13                                 27      MKDEBUG && _d('pos', $self->{pos}, 'too far ahead of',
+455           13                                 29      MKDEBUG && _d('pos', $self->{pos}, 'too far ahead of',
 456                                                         'slave pos', $self->{slave}->{pos}, ':', $too_far ? 'yes' : 'no');
-457           13                                 82      return $too_far;
+457           13                                 86      return $too_far;
 458                                                   }
 459                                                   
 460                                                   # Whether we are too close to where the I/O thread is writing.
 461                                                   sub _too_close_to_io {
-462            5                    5            19      my ( $self ) = @_;
+462            5                    5            18      my ( $self ) = @_;
 463   ***      5            33                   65      my $too_close= $self->{slave}->{lag}
 464                                                         && $self->{pos}
 465                                                            >= $self->{slave}->{pos} + $self->{slave}->{lag} - $self->{'io-lag'};
-466            5                                 11      MKDEBUG && _d('pos', $self->{pos},
+466            5                                 10      MKDEBUG && _d('pos', $self->{pos},
 467                                                         'too close to I/O thread pos', $self->{slave}->{pos}, '+',
 468                                                         $self->{slave}->{lag}, ':', $too_close ? 'yes' : 'no');
-469            5                                 38      return $too_close;
+469            5                                 39      return $too_close;
 470                                                   }
 471                                                   
 472                                                   sub _wait_for_master {
-473   ***      0                    0             0      my ( %args ) = @_;
-474   ***      0                                  0      my @required_args = qw(dbh mfile until_pos wait timeout);
-475   ***      0                                  0      foreach my $arg ( @required_args ) {
-476   ***      0      0                           0         die "I need a $arg argument" unless $args{$arg};
+473            2                    2            50      my ( %args ) = @_;
+474            2                                 12      my @required_args = qw(dbh mfile until_pos);
+475            2                                  9      foreach my $arg ( @required_args ) {
+476   ***      6     50                          30         die "I need a $arg argument" unless $args{$arg};
 477                                                      }
-478   ***      0             0                    0      my $timeout = $args{timeout} || 1;
-479   ***      0                                  0      my ($dbh, $mfile, $until_pos) = @args{@required_args};
-480   ***      0                                  0      my $sql = "SELECT COALESCE(MASTER_POS_WAIT('$mfile',$until_pos,$timeout),0)";
-481   ***      0                                  0      MKDEBUG && _d('Waiting for master:', $sql);
-482   ***      0                                  0      my $start = gettimeofday();
-483   ***      0                                  0      my ($events) = $dbh->selectrow_array($sql);
-484   ***      0                                  0      MKDEBUG && _d('Waited', (gettimeofday - $start), 'and got', $events);
-485   ***      0                                  0      return $events;
+478   ***      2            50                   22      my $timeout = $args{timeout} || 1;
+479            2                                 10      my ($dbh, $mfile, $until_pos) = @args{@required_args};
+480            2                                 12      my $sql = "SELECT COALESCE(MASTER_POS_WAIT('$mfile',$until_pos,$timeout),0)";
+481            2                                  4      MKDEBUG && _d('Waiting for master:', $sql);
+482            2                                 14      my $start = gettimeofday();
+483            2                                  4      my ($events) = $dbh->selectrow_array($sql);
+484            2                             1000721      MKDEBUG && _d('Waited', (gettimeofday - $start), 'and got', $events);
+485            2                                 25      return $events;
 486                                                   }
 487                                                   
 488                                                   # The next window is pos-offset, assuming that master/slave pos
@@ -526,8 +526,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 492                                                   # in terms of master pos because this is what MASTER_POS_WAIT()
 493                                                   # expects.
 494                                                   sub next_window {
-495            8                    8            27      my ( $self ) = @_;
-496            8                                 56      my $next_window = 
+495            8                    8            29      my ( $self ) = @_;
+496            8                                 54      my $next_window = 
 497                                                            $self->{slave}->{mpos}                    # master pos
 498                                                            + ($self->{pos} - $self->{slave}->{pos})  # how far we're ahead
 499                                                            - $self->{offset};                        # offset;
@@ -542,36 +542,36 @@ line  err   stmt   bran   cond    sub    pod   time   code
 508                                                   # be executed.  If yes, then the prepared query and its fingerprint
 509                                                   # are returned; else nothing is returned.
 510                                                   sub prepare_query {
-511           14                   14            88      my ( $self, $query ) = @_;
-512           14                                 53      my $qr = $self->{QueryRewriter};
+511           14                   14            77      my ( $self, $query ) = @_;
+512           14                                 54      my $qr = $self->{QueryRewriter};
 513                                                   
-514           14                                 64      $query = $qr->strip_comments($query);
+514           14                                 66      $query = $qr->strip_comments($query);
 515                                                   
 516   ***     14     50                          55      return unless $self->query_is_allowed($query);
 517                                                   
 518                                                      # If the event is SET TIMESTAMP and we've already set the
 519                                                      # timestamp to that value, skip it.
-520           14    100                          90      if ( (my ($new_ts) = $query =~ m/SET timestamp=(\d+)/) ) {
-521            2                                  5         MKDEBUG && _d('timestamp query:', $query);
+520           14    100                          83      if ( (my ($new_ts) = $query =~ m/SET timestamp=(\d+)/) ) {
+521            2                                  4         MKDEBUG && _d('timestamp query:', $query);
 522            2    100                          12         if ( $new_ts == $self->{last_ts} ) {
-523            1                                  4            MKDEBUG && _d('Already saw timestamp', $new_ts);
-524            1                                  4            $self->{stats}->{same_timestamp}++;
-525            1                                  6            return;
+523            1                                  2            MKDEBUG && _d('Already saw timestamp', $new_ts);
+524            1                                  5            $self->{stats}->{same_timestamp}++;
+525            1                                  5            return;
 526                                                         }
 527                                                         else {
-528            1                                  5            $self->{last_ts} = $new_ts;
+528            1                                  4            $self->{last_ts} = $new_ts;
 529                                                         }
 530                                                      }
 531                                                   
-532           13                                 67      my $select = $qr->convert_to_select($query);
-533   ***     13     50                          80      if ( $select !~ m/\A\s*(?:set|select|use)/i ) {
+532           13                                 75      my $select = $qr->convert_to_select($query);
+533   ***     13     50                          77      if ( $select !~ m/\A\s*(?:set|select|use)/i ) {
 534   ***      0                                  0         MKDEBUG && _d('Cannot rewrite query as SELECT:', $query);
 535   ***      0      0                           0         _d($query) if $self->{'print-nonrewritten'};
 536   ***      0                                  0         $self->{stats}->{query_not_rewritten}++;
 537   ***      0                                  0         return;
 538                                                      }
 539                                                   
-540           13                                 97      my $fingerprint = $qr->fingerprint(
+540           13                                 93      my $fingerprint = $qr->fingerprint(
 541                                                         $select,
 542                                                         { prefixes => $self->{'num-prefix'} }
 543                                                      );
@@ -583,14 +583,14 @@ line  err   stmt   bran   cond    sub    pod   time   code
 549                                                      # would become cold once the slave hits this slow query and stalls.
 550                                                      # In general, we want to always be just a little ahead of the slave
 551                                                      # so it executes in the warmth of our pipelining wake.
-552           13    100                          73      if ((my $avg = $self->get_avg($fingerprint)) >= $self->{'max-query-time'}) {
+552           13    100                          70      if ((my $avg = $self->get_avg($fingerprint)) >= $self->{'max-query-time'}) {
 553            1                                  3         MKDEBUG && _d('Avg time', $avg, 'too long for', $fingerprint);
 554            1                                  6         $self->{stats}->{query_too_long}++;
-555            1                                  8         return $self->_wait_skip_query($avg);
+555            1                                  6         return $self->_wait_skip_query($avg);
 556                                                      }
 557                                                   
 558                                                      # Safeguard as much as possible against enormous result sets.
-559           12                                 52      $select = $qr->convert_select_list($select);
+559           12                                 58      $select = $qr->convert_select_list($select);
 560                                                   
 561                                                      # The following block is/was meant to prevent huge insert/select queries
 562                                                      # from slowing us, and maybe the network, down by wrapping the query like
@@ -607,7 +607,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 573                                                      # }
 574                                                   
 575                                                      # Success: the prepared and converted query ready to execute.
-576           12                                 85      return $select, $fingerprint;
+576           12                                 79      return $select, $fingerprint;
 577                                                   }
 578                                                   
 579                                                   # Waits for the slave to catch up, execute the query at our current
@@ -619,39 +619,39 @@ line  err   stmt   bran   cond    sub    pod   time   code
 585                                                   # past the slow query.
 586                                                   sub _wait_skip_query {
 587            1                    1             5      my ( $self, $wait ) = @_;
-588            1                                  9      my $wait_for_master = $self->{callbacks}->{wait_for_master};
-589            1                                  9      my $until_pos = 
+588            1                                  5      my $wait_for_master = $self->{callbacks}->{wait_for_master};
+589            1                                  7      my $until_pos = 
 590                                                            $self->{slave}->{mpos}                    # master pos
 591                                                            + ($self->{pos} - $self->{slave}->{pos})  # how far we're ahead
 592                                                            + 1;                                      # 1 past this query
-593            1                                 10      my %wait_args       = (
+593            1                                  9      my %wait_args       = (
 594                                                         dbh       => $self->{dbh},
 595                                                         mfile     => $self->{slave}->{mfile},
 596                                                         until_pos => $until_pos,
 597                                                         timeout   => $wait,
 598                                                      );
-599            1                                 33      my $start = gettimeofday();
-600   ***      1            66                    7      while ( $self->{oktorun}->(only_if_slave_is_running => 1,
+599            1                                 27      my $start = gettimeofday();
+600   ***      1            66                    5      while ( $self->{oktorun}->(only_if_slave_is_running => 1,
 601                                                                                 slave_is_running => $self->slave_is_running())
 602                                                              && ($self->{slave}->{pos} <= $self->{pos}) ) {
 603            3                                 43         $self->{stats}->{master_pos_wait}++;
-604            3                                 15         $wait_for_master->(%wait_args);
-605            3                                 37         $self->_get_slave_status();
-606            3                                 12         MKDEBUG && _d('Bytes until slave reaches wait-skip query:',
+604            3                                 14         $wait_for_master->(%wait_args);
+605            3                                 43         $self->_get_slave_status();
+606            3                                 13         MKDEBUG && _d('Bytes until slave reaches wait-skip query:',
 607                                                            $self->{pos} - $self->{slave}->{pos});
 608                                                      }
-609            1                                 13      MKDEBUG && _d('Waited', (gettimeofday - $start), 'to skip query');
-610            1                                  3      $self->_get_slave_status();
-611            1                                  9      return;
+609            1                                 12      MKDEBUG && _d('Waited', (gettimeofday - $start), 'to skip query');
+610            1                                  4      $self->_get_slave_status();
+611            1                                  7      return;
 612                                                   }
 613                                                   
 614                                                   sub query_is_allowed {
-615           26                   26           162      my ( $self, $query ) = @_;
-616   ***     26     50                         100      return unless $query;
-617           26    100                         171      if ( $query =~ m/\A\s*(?:set [t@]|use|insert|update|delete|replace)/i ) {
-618           21                                 77         my $reject_regexp = $self->{reject_regexp};
-619           21                                 65         my $permit_regexp = $self->{permit_regexp};
-620   ***     21     50     33                  228         if ( ($reject_regexp && $query =~ m/$reject_regexp/o)
+615           26                   26           172      my ( $self, $query ) = @_;
+616   ***     26     50                         102      return unless $query;
+617           26    100                         184      if ( $query =~ m/\A\s*(?:set [t@]|use|insert|update|delete|replace)/i ) {
+618           21                                 80         my $reject_regexp = $self->{reject_regexp};
+619           21                                 62         my $permit_regexp = $self->{permit_regexp};
+620   ***     21     50     33                  220         if ( ($reject_regexp && $query =~ m/$reject_regexp/o)
       ***                   33                        
       ***                   33                        
 621                                                              || ($permit_regexp && $query !~ m/$permit_regexp/o) )
@@ -660,65 +660,65 @@ line  err   stmt   bran   cond    sub    pod   time   code
 624   ***      0                                  0            $self->{stats}->{event_filtered_out}++;
 625   ***      0                                  0            return 0;
 626                                                         }
-627           21                                111         return 1;
+627           21                                108         return 1;
 628                                                      }
-629            5                                 11      MKDEBUG && _d('Query is not allowed, wrong type');
-630            5                                 21      $self->{stats}->{event_not_allowed}++;
-631            5                                 27      return 0;
+629            5                                 13      MKDEBUG && _d('Query is not allowed, wrong type');
+630            5                                 24      $self->{stats}->{event_not_allowed}++;
+631            5                                 72      return 0;
 632                                                   }
 633                                                   
 634                                                   sub exec {
-635            2                    2           216      my ( $self, $query, $fingerprint ) = @_;
-636            2                                 10      eval {
-637            2                                 16         my $start = gettimeofday();
-638            2                                 84         $self->{dbh}->do($query);
+635            2                    2           228      my ( $self, $query, $fingerprint ) = @_;
+636            2                                  8      eval {
+637            2                                 15         my $start = gettimeofday();
+638            2                                 82         $self->{dbh}->do($query);
 639            1                                 18         $self->__store_avg($fingerprint, gettimeofday() - $start);
 640                                                      };
-641            2    100                          13      if ( $EVAL_ERROR ) {
-642            1                                  6         $self->{stats}->{query_error}++;
-643            1                                  6         $self->{query_errors}->{$fingerprint}++;
-644   ***      1     50     50                   20         if ( (($self->{errors} || 0) == 2) || MKDEBUG ) {
+641            2    100                          16      if ( $EVAL_ERROR ) {
+642            1                                  8         $self->{stats}->{query_error}++;
+643            1                                  7         $self->{query_errors}->{$fingerprint}++;
+644   ***      1     50     50                   21         if ( (($self->{errors} || 0) == 2) || MKDEBUG ) {
       ***                   50                        
 645   ***      0                                  0            _d($EVAL_ERROR);
 646   ***      0                                  0            _d('SQL was:', $query);
 647                                                         }
 648                                                      }
-649            2                                  7      return;
+649            2                                  9      return;
 650                                                   }
 651                                                   
 652                                                   # The average is weighted so we don't quit trying a statement when we have
 653                                                   # only a few samples.  So if we want to collect 16 samples and the first one
 654                                                   # is huge, it will be weighted as 1/16th of its size.
 655                                                   sub __store_avg {
-656            1                    1             6      my ( $self, $fingerprint, $time ) = @_;
+656            1                    1             7      my ( $self, $fingerprint, $time ) = @_;
 657            1                                  3      MKDEBUG && _d('Execution time:', $fingerprint, $time);
 658   ***      1            50                   29      my $query_stats = $self->{query_stats}->{$fingerprint} ||= {};
-659   ***      1            50                   17      my $samples     = $query_stats->{samples} ||= [];
-660            1                                  6      push @$samples, $time;
-661   ***      1     50                           9      if ( @$samples > $self->{'query-sample-size'} ) {
+659   ***      1            50                   12      my $samples     = $query_stats->{samples} ||= [];
+660            1                                  4      push @$samples, $time;
+661   ***      1     50                           6      if ( @$samples > $self->{'query-sample-size'} ) {
 662   ***      0                                  0         shift @$samples;
 663                                                      }
 664            1                                 28      $query_stats->{avg} = sum(@$samples) / $self->{'query-sample-size'};
-665            1                                  6      $query_stats->{exec}++;
-666            1                                  6      $query_stats->{sum} += $time;
-667            1                                  3      MKDEBUG && _d('Average time:', $query_stats->{avg});
+665            1                                  7      $query_stats->{exec}++;
+666            1                                  7      $query_stats->{sum} += $time;
+667            1                                  2      MKDEBUG && _d('Average time:', $query_stats->{avg});
 668            1                                  4      return;
 669                                                   }
 670                                                   
 671                                                   sub get_avg {
-672           13                   13            57      my ( $self, $fingerprint ) = @_;
-673           13                                 81      $self->{query_stats}->{$fingerprint}->{seen}++;
-674           13           100                  155      return $self->{query_stats}->{$fingerprint}->{avg} || 0;
+672           13                   13            53      my ( $self, $fingerprint ) = @_;
+673           13                                 74      $self->{query_stats}->{$fingerprint}->{seen}++;
+674           13           100                  150      return $self->{query_stats}->{$fingerprint}->{avg} || 0;
 675                                                   }
 676                                                   
 677                                                   sub _d {
-678   ***      0                    0                    my ($package, undef, $line) = caller 0;
-679   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-      ***      0                                      
-      ***      0                                      
-680   ***      0                                              map { defined $_ ? $_ : 'undef' }
+678            1                    1            26      my ($package, undef, $line) = caller 0;
+679   ***      2     50                          13      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+               2                                  7   
+               2                                 14   
+680            1                                  4           map { defined $_ ? $_ : 'undef' }
 681                                                           @_;
-682   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+682            1                                  4      print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 683                                                   }
 684                                                   
 685                                                   1;
@@ -772,7 +772,7 @@ line  err      %   true  false   branch
 428          100      2      5   if (not $oktorun)
 440          100      6      9   if ($$self{'pos'} < $$self{'slave'}{'pos'} + $$self{'offset'})
 452          100      5      8   $$self{'pos'} > $$self{'slave'}{'pos'} + $$self{'offset'} + $$self{'window'} ? :
-476   ***      0      0      0   unless $args{$arg}
+476   ***     50      0      6   unless $args{$arg}
 516   ***     50      0     14   unless $self->query_is_allowed($query)
 520          100      2     12   if (my($new_ts) = $query =~ /SET timestamp=(\d+)/)
 522          100      1      1   if ($new_ts == $$self{'last_ts'}) { }
@@ -785,7 +785,7 @@ line  err      %   true  false   branch
 641          100      1      1   if ($EVAL_ERROR)
 644   ***     50      0      1   if (($$self{'errors'} || 0) == 2 or undef)
 661   ***     50      0      1   if (@$samples > $$self{'query-sample-size'})
-679   ***      0      0      0   defined $_ ? :
+679   ***     50      2      0   defined $_ ? :
 
 
 Conditions
@@ -818,7 +818,7 @@ line  err      %      l     !l   expr
 248   ***     50     12      0   $$status{'slave_sql_running'} || ''
 296          100      1     12   $ts || 0
 316   ***     50      8      0   $$event{'end_log_pos'} || 0
-478   ***      0      0      0   $args{'timeout'} || 1
+478   ***     50      0      2   $args{'timeout'} || 1
 644   ***     50      0      1   $$self{'errors'} || 0
       ***     50      0      1   ($$self{'errors'} || 0) == 2 or undef
 658   ***     50      0      1   $$self{'query_stats'}{$fingerprint} ||= {}
@@ -851,12 +851,14 @@ BEGIN                   1 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:28
 BEGIN                   1 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:33 
 __store_avg             1 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:656
 _check_slave_status     8 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:215
+_d                      1 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:678
 _far_enough_ahead      15 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:439
 _get_next_chk_int       2 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:223
 _get_slave_status      12 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:238
 _in_window             11 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:384
 _too_close_to_io        5 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:462
 _too_far_ahead         13 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:451
+_wait_for_master        2 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:473
 _wait_skip_query        1 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:587
 close_relay_log         1 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:182
 exec                    2 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:635
@@ -884,8 +886,6 @@ Uncovered Subroutines
 Subroutine          Count Location                                            
 ------------------- ----- ----------------------------------------------------
 __ANON__                0 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:82 
-_d                      0 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:678
-_wait_for_master        0 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:473
 incr_stat               0 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:133
 init_stats              0 /home/daniel/dev/maatkit/common/SlavePrefetch.pm:108
 
