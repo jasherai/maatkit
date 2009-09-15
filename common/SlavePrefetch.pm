@@ -312,6 +312,16 @@ sub reset_pipeline_pos {
 sub pipeline_event {
    my ( $self, $event, @callbacks ) = @_;
 
+   if ( !$event->{offset} ) {
+      # This will happen for start/end of log stuff like:
+      #   End of log file
+      #   ROLLBACK /* added by mysqlbinlog */;
+      #   /*!50003 SET COMPLETION_TYPE=@OLD_COMPLETION_TYPE*/;
+      MKDEBUG && _d('Event has no offset, skipping');
+      $self->{stats}->{event_without_offset}++;
+      return;
+   }
+
    # Update pos and next.
    $self->{stats}->{events}++;
    $self->{pos}  = $event->{offset} if $event->{offset};
