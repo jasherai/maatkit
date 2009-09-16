@@ -3513,7 +3513,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryExecutor package 4552
+# QueryExecutor package 4719
 # ###########################################################################
 package QueryExecutor;
 
@@ -3742,6 +3742,8 @@ sub checksum_results {
       push @errors, $error;
    }
    else {
+      MKDEBUG && _d('n rows:', $n_rows, 'tbl checksum:', $tbl_checksum);
+
       eval {
          my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
          MKDEBUG && _d('tmp table ddl:', Dumper($ddl));
@@ -3770,7 +3772,7 @@ sub checksum_results {
       push @errors, $error;
       MKDEBUG && _d($error);
    }
-   if ( !$tbl_checksum ) {
+   if ( $n_rows && !$tbl_checksum ) {
       $error = "CHECKSUM TABLE didn't return a value";
       push @errors, $error;
       MKDEBUG && _d($error);
@@ -6945,7 +6947,7 @@ sub main {
    );
    # Most of these modules are only used in rank_row_sths() if
    # the result sets differ.
-   my $du       = new MySQLDump();
+   my $du       = new MySQLDump(cache => 0);
    my $tp       = new TableParser();
    my $q        = new Quoter();
    my $vp       = new VersionParser();
@@ -7275,6 +7277,23 @@ sub main {
       my $query         = $event->{arg};
       my $host1_results = $event->{results}->[0];
       my $host2_results = $event->{results}->[1] || $host1_results;
+
+      if ( $o->get('only-failed-queries') ) {
+         my $has_errors = 0;
+         HOST:
+         foreach my $host_results ( @{$event->{results}} ) {
+            foreach my $op ( keys %$host_results ) {
+               if ( $host_results->{$op}->{error} ) {
+                  $has_errors = 1;
+                  last HOST;
+               }
+            }
+         }
+         if ( !$has_errors ) {
+            MKDEBUG && _d('Query has no errors:', $query);
+            next QUERY;
+         }
+      }
 
       if ( $o->get('dump-results') ) {
          print Dumper($event->{results});
@@ -8107,6 +8126,10 @@ Connect to host.
 type: string
 
 Print all output to this file when daemonized.
+
+=item --only-failed-queries
+
+Report only queries that had at least one failure of any kind.
 
 =item --password
 
