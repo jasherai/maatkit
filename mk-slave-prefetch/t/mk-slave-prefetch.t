@@ -39,72 +39,66 @@ like($output, qr/Prompt for a password/, 'It compiles');
 # ###########################################################################
 $sb->load_file('slave1', 'samples/secondary_indexes.sql');
 
-my $tbl_struct = $tp->parse($du->get_create_table($slave_dbh, $q, 'test2','t'));
-my $rows       = $slave_dbh->selectall_arrayref('select * from test2.t order by a', { Slice => {} });
-my @queries    = mk_slave_prefetch::make_secondary_index_queries(
-   rows       => $rows,
-   db_tbl     => 'test2.t',
-   tbl_struct => $tbl_struct,
+my @queries = mk_slave_prefetch::get_secondary_index_queries(
+   dbh         => $slave_dbh,
+   db          => 'test2',
+   query       => 'select 1 from test2.t order by a',
    %common_modules,
 );
 is_deeply(
    \@queries,
    [
-      "SELECT `c` FROM test2.t FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1
-UNION ALL SELECT `c` FROM test2.t FORCE INDEX(`c`) WHERE `c`=2 LIMIT 1
-UNION ALL SELECT `c` FROM test2.t FORCE INDEX(`c`) WHERE `c`=5 LIMIT 1
-UNION ALL SELECT `c` FROM test2.t FORCE INDEX(`c`) WHERE `c`='0' LIMIT 1
-UNION ALL SELECT `c` FROM test2.t FORCE INDEX(`c`) WHERE `c` IS NULL LIMIT 1
-UNION ALL SELECT `c` FROM test2.t FORCE INDEX(`c`) WHERE `c`=7 LIMIT 1",
+      "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1
+UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=2 LIMIT 1
+UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=5 LIMIT 1
+UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='0' LIMIT 1
+UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c` IS NULL LIMIT 1
+UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=7 LIMIT 1",
 
 
-      "SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1
-UNION ALL SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b`=2 AND `c`=2 LIMIT 1
-UNION ALL SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b`=4 AND `c`=5 LIMIT 1
-UNION ALL SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b`='0' AND `c`='0' LIMIT 1
-UNION ALL SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b`=1 AND `c`=2 LIMIT 1
-UNION ALL SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b`=6 AND `c` IS NULL LIMIT 1
-UNION ALL SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b` IS NULL AND `c`=7 LIMIT 1
-UNION ALL SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b` IS NULL AND `c` IS NULL LIMIT 1",
+      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=2 LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=4 AND `c`=5 LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='0' AND `c`='0' LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=1 AND `c`=2 LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=6 AND `c` IS NULL LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c`=7 LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c` IS NULL LIMIT 1",
    ],
    'Secondary index queries for multi-row prefetch query'
 );
 
-
-$rows    = $slave_dbh->selectall_arrayref('select * from test2.t where a=1 and b=2', { Slice => {} });
-@queries = mk_slave_prefetch::make_secondary_index_queries(
-   rows       => $rows,
-   db_tbl     => 'test2.t',
-   tbl_struct => $tbl_struct,
+@queries = mk_slave_prefetch::get_secondary_index_queries(
+   dbh         => $slave_dbh,
+   db          => 'test2',
+   query       => 'select 1 from test2.t where a=1 and b=2',
    %common_modules,
 );
 is_deeply(
    \@queries,
    [
-      "SELECT `c` FROM test2.t FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1",
+      "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1",
 
-      "SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1",
+      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1",
    ],
    'Secondary index queries for single-row prefetch query'
 );
 
-
-$rows    = $slave_dbh->selectall_arrayref('select * from test2.t where a>5', { Slice => {} });
-@queries = mk_slave_prefetch::make_secondary_index_queries(
-   rows       => $rows,
-   db_tbl     => 'test2.t',
-   tbl_struct => $tbl_struct,
+@queries = mk_slave_prefetch::get_secondary_index_queries(
+   dbh         => $slave_dbh,
+   db          => 'test2',
+   query       => 'select 1 from `test2`.`t` where a>5',
    %common_modules,
 );
 is_deeply(
    \@queries,
    [
-      "SELECT `c` FROM test2.t FORCE INDEX(`c`) WHERE `c` IS NULL LIMIT 1
-UNION ALL SELECT `c` FROM test2.t FORCE INDEX(`c`) WHERE `c`=7 LIMIT 1",
+      "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c` IS NULL LIMIT 1
+UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=7 LIMIT 1",
 
-      "SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b`=6 AND `c` IS NULL LIMIT 1
-UNION ALL SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b` IS NULL AND `c`=7 LIMIT 1
-UNION ALL SELECT `b`, `c` FROM test2.t FORCE INDEX(`b`) WHERE `b` IS NULL AND `c` IS NULL LIMIT 1",
+      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=6 AND `c` IS NULL LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c`=7 LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c` IS NULL LIMIT 1",
    ],
    'Secondary index queries with NULL row values'
 );

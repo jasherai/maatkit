@@ -2954,7 +2954,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# SlavePrefetch package 4713
+# SlavePrefetch package 4723
 # ###########################################################################
 package SlavePrefetch;
 
@@ -3248,9 +3248,15 @@ sub pipeline_event {
          return;
       }
 
+      $self->{last_db} = $event->{db} if $event->{db};
+
       $self->{stats}->{do_query}++;
       foreach my $callback ( @callbacks ) {
-         $callback->($query, $fingerprint);
+         $callback->(
+            query       => $query,
+            fingerprint => $fingerprint,
+            db          => $event->{db} || $self->{last_db},
+         );
       }
    }
 
@@ -3472,7 +3478,9 @@ sub query_is_allowed {
 }
 
 sub exec {
-   my ( $self, $query, $fingerprint ) = @_;
+   my ( $self, %args ) = @_;
+   my $query       = $args{query};
+   my $fingerprint = $args{fingerprint};
    eval {
       my $start = gettimeofday();
       $self->{dbh}->do($query);
@@ -3536,6 +3544,8 @@ sub _d {
 package mk_slave_prefetch;
 
 use English qw(-no_match_vars);
+use threads;
+use Thread::Queue;
 use List::Util qw(max sum);
 use sigtrap qw(handler finish untrapped normal-signals);
 
@@ -3547,7 +3557,7 @@ $Data::Dumper::Quotekeys = 0;
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # $oktorun must be global so finish() can access it if we catch a signal.
-my $oktorun  = 1;
+my $oktorun = 1;
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -3633,12 +3643,40 @@ sub main {
    my $lp  = new BinaryLogParser();
    my $qr  = new QueryRewriter();
    my $vp  = new VersionParser();
-   my $tp  = new TableParser();
-   my $du  = new MySQLDump(cache => 0);
-   my $qp  = new QueryParser();
 
    my ($datadir) = ($dbh->selectrow_array('SHOW VARIABLES LIKE "datadir"'))[1];
    MKDEBUG && _d('Data directory', $datadir);
+
+   # Create the prefetching threads.
+   my $query_queue = new Thread::Queue;
+   my $n_threads   = $o->get('threads') || 1;
+
+   # To avoid having threads close/re-open MySQL connections, we pre-create a
+   # connection for each thread.  $dbhs[0] is our connection (the script),
+   # and $dbhs[1..n_threads-1] are for the threads.  Thread IDs start at 1
+   # and are unique so they shouldn't overlap.
+   my @dbhs = ($dbh);
+
+   for ( 0..$n_threads-1 ) {
+      # Create a connection for this thread.
+      my $thr_dbh = $dp->get_dbh($dp->get_cxn_params($dsn),{ AutoCommit => 1 });
+      $thr_dbh->{FetchHashKeyName} = 'NAME_lc';
+      $thr_dbh->{InactiveDestroy}  = 1;
+      $thr_dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
+      push @dbhs, $thr_dbh;
+
+      threads::async {
+         my $query;
+         my $tid = threads::tid();
+         while( $query = $query_queue->dequeue() ) {
+            if ( $query ) {
+               eval { $dbhs[$tid]->do($query); };
+               MKDEBUG && $EVAL_ERROR && _d('Error executing', $query, ':',
+                  $EVAL_ERROR);
+            }; 
+        }
+     };
+   } 
 
    # Declare these before new SlavePrefetch so they're available to the
    # oktorun callback arg but don't define them yet because spf->new()
@@ -3659,13 +3697,36 @@ sub main {
    my @callbacks;
    if ( $o->get('execute') ) {
       push @callbacks, sub {
-         return $spf->execute(@_);
+         MKDEBUG && _d('callback: execute');
+         return $spf->exec(@_);
       };
+   }
+   if ( $o->get('secondary-indexes') ) {
+      my $tp  = new TableParser();
+      my $du  = new MySQLDump(cache => 0);
+      my $qp  = new QueryParser();
+      my $q   = new Quoter();
+
+      push @callbacks, sub {
+         my ( %args ) = @_;
+         MKDEBUG && _d('callback: secondary indexes');
+         my @secondary_index_queries = get_secondary_index_queries(
+            %args,
+            dbh         => $dbh,  # script dbh for SHOW CREATE TABLE, etc.
+            MySQLDump   => $du,
+            TableParser => $tp,
+            Quoter      => $q,
+            QueryParser => $qp,
+         );
+         $query_queue->enqueue(@secondary_index_queries);
+         return;
+      };   
    }
    if ( $o->get('print') ) {
       push @callbacks, sub {
-         my ( $query, $fingerprint ) = @_;
-         print $query, ";\n";
+         my ( %args ) = @_;
+         MKDEBUG && _d('callback: print');
+         print $args{query}, ";\n";
          return;
       };
    }
@@ -3691,7 +3752,6 @@ sub main {
             %oktorun_args,
          );
       },
-      callbacks       => \@callbacks,
       chk_int         => $chk_int,
       chk_min         => $chk_min,
       chk_max         => $chk_max,
@@ -3701,7 +3761,7 @@ sub main {
       stats_file      => shift @ARGV,
       %spf_options,
    );
-
+ 
    $time = $o->get('run-time');
    $now  = time();
    $end  = $now + ( $time || 0 );  # When we should exit
@@ -3721,7 +3781,11 @@ sub main {
                my $event = $lp->parse_event(
                   $fh,
                   undef,
-                  sub { $spf->pipeline_event(@_); }
+                  sub {
+                     my ( $event ) = @_;
+                     $spf->pipeline_event($event, @callbacks);
+                     return $event;
+                  },
                );
                last EVENT unless $event;
             }
@@ -3820,27 +3884,65 @@ sub oktorun {
       && ((!$time || $now < $end) && $oktorun);
 }
 
-sub foo {
+sub get_secondary_index_queries {
    my ( %args ) = @_;
-   my @required_args = qw(dbh db query
+   my @required_args = qw(dbh query
                           MySQLDump TableParser Quoter QueryParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($dbh, $db, $query, $du, $tp, $q, $qp) = @args{@required_args};
+   my ($dbh, $query, $du, $tp, $q, $qp) = @args{@required_args};
+   my $db = $args{db};
+
+   if ( $query !~ m/select 1 from/ ) {
+      MKDEBUG && _d("Query doesn't 'select 1 from'; is it a rewritten query?");
+      return;
+   }
+   $query =~ s/select 1 from/select * from/;
+
+   MKDEBUG && _d('Getting secondary index queries for', $query);
+
    my @tbls = $qp->get_tables($query);
-   if ( !@tbls ) {
+   my $tbl  = $tbls[0];
+   if ( !$tbl ) {
       MKDEBUG && _d('Cannot parse tables from', $query);
       return;
    }
-   my $tbl = $tbls[0];
+   ($db, $tbl) = $q->split_unquote($tbl);
    MKDEBUG && _d('Using table', $tbl);
-   my $tbl_struct = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl));
-   my @queries = make_secondary_indexes(
+   if ( !$db ) {
+      MKDEBUG && _d('No db for table, skipping query');
+      return;
+   }
+
+   my $tbl_struct;
+   eval {
+      $tbl_struct = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl));
+   };
+   if ( $EVAL_ERROR || !$tbl_struct ) {
+      MKDEBUG && _d('Failed to', $tbl, 'struct:', $EVAL_ERROR);
+      return;
+   }
+
+   my $rows;
+   eval {
+      $rows = $dbh->selectall_arrayref($query, { Slice => {} });
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d('Error executing prefetch query:', $EVAL_ERROR);
+      return;
+   }
+   if ( @$rows == 0 ) {
+      MKDEBUG && _d("Query didn't return any rows");
+      return;
+   }
+
+   return make_secondary_index_queries(
       %args,
+      rows       => $rows,
+      db_tbl     => $q->quote($db, $tbl),
       tbl_struct => $tbl_struct,
    );
-
 }
 
 sub make_secondary_index_queries {
@@ -3885,7 +3987,6 @@ sub make_secondary_index_queries {
 
    return @queries;
 }
-
 
 sub _d {
    my ($package, undef, $line) = caller 0;
@@ -4234,6 +4335,10 @@ type: time
 
 How long C<mk-slave-prefetch> should run before exiting.  The default is to run forever.
 
+=item --secondary-indexes
+
+Prefetch secondary indexes for pipelined queries.
+
 =item --sentinel
 
 type: string; default: /tmp/mk-slave-prefetch-sentinel
@@ -4303,6 +4408,12 @@ samples.
 =item --stop
 
 Stop running instances by creating the L<"--sentinel"> file.
+
+=item --threads
+
+type: int; default: 2
+
+Number of concurrent threads to use for pipelining queries.
 
 =item --tmpdir
 
