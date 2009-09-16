@@ -660,7 +660,8 @@ my @queries;
 my @callbacks;
 
 sub save_query {
-   push @queries, [ @_ ];
+   my ( %args ) = @_;
+   push @queries, [ $args{query}, $args{fingerprint} ];
 }
 push @callbacks, \&save_query;
 

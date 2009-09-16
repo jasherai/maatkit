@@ -365,10 +365,16 @@ sub pipeline_event {
          return;
       }
 
+      $self->{last_db} = $event->{db} if $event->{db};
+
       # Do it!
       $self->{stats}->{do_query}++;
       foreach my $callback ( @callbacks ) {
-         $callback->($query, $fingerprint);
+         $callback->(
+            query       => $query,
+            fingerprint => $fingerprint,
+            db          => $event->{db} || $self->{last_db},
+         );
       }
    }
 
