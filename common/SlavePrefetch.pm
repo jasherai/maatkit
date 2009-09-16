@@ -653,7 +653,9 @@ sub query_is_allowed {
 }
 
 sub exec {
-   my ( $self, $query, $fingerprint ) = @_;
+   my ( $self, %args ) = @_;
+   my $query       = $args{query};
+   my $fingerprint = $args{fingerprint};
    eval {
       my $start = gettimeofday();
       $self->{dbh}->do($query);

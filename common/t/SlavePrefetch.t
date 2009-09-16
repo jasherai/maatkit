@@ -819,7 +819,7 @@ SKIP: {
 
    # Test that exec() actually executes the query.
    $slave_dbh->do('SET @a=1');
-   $spf->exec('SET @a=5', 'set @a=?');
+   $spf->exec(query=>'SET @a=5', fingerprint=>'set @a=?');
    is_deeply(
       $slave_dbh->selectrow_arrayref('SELECT @a'),
       ['5'],
@@ -828,7 +828,7 @@ SKIP: {
 
    # This causes an error so that stats->{query_error} gets set
    # and we can check later that get_stats() returns the stats.
-   $spf->exec('foo', 'foo');
+   $spf->exec(query=>'foo', fingerprint=>'foo');
 
    # exec() should have stored the query time which we can
    # get from the stats.
