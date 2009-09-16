@@ -316,6 +316,8 @@ sub checksum_results {
       push @errors, $error;
    }
    else {
+      MKDEBUG && _d('n rows:', $n_rows, 'tbl checksum:', $tbl_checksum);
+
       # Parse the tmp table's struct.
       eval {
          my $ddl = $du->get_create_table($dbh, $q, $db, $tmp_tbl);
@@ -349,7 +351,7 @@ sub checksum_results {
       push @errors, $error;
       MKDEBUG && _d($error);
    }
-   if ( !$tbl_checksum ) {
+   if ( $n_rows && !$tbl_checksum ) {
       $error = "CHECKSUM TABLE didn't return a value";
       push @errors, $error;
       MKDEBUG && _d($error);
