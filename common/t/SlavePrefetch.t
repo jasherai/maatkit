@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 66;
+use Test::More tests => 68;
 
 require '../SlavePrefetch.pm';
 require '../QueryRewriter.pm';
@@ -879,6 +879,42 @@ SKIP: {
       '_wait_for_master() return immediately when already at pos'
    );
 };
+
+# #############################################################################
+# Test that we get a database.
+# #############################################################################
+my @dbs;
+sub save_dbs {
+   my ( %args ) = @_;
+   push @dbs, $args{db};
+}
+
+parse_binlog('samples/binlog003.txt');
+
+$oktorun = 1;
+$spf->set_window(100, 9000);
+$spf->reset_pipeline_pos();
+$slave_status->{exec_master_log_pos} = 163;
+$slave_status->{relay_log_pos}       = 163;
+$spf->_get_slave_status();
+
+$spf->reset_stats(all => 1);
+
+for ( 1..6 ) {
+   $spf->pipeline_event(shift @events, \&save_dbs);
+}
+is_deeply(
+   \@dbs,
+   [ undef, qw(test1 test1 test2 test2 test2) ],
+   'Carries last db forward'
+);
+
+my ($stats, $query_stats, $query_errors) = $spf->get_stats();
+is(
+   $stats->{no_database},
+   1,
+   'Records 1 no database'
+);
 
 # #############################################################################
 # Done.

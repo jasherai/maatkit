@@ -141,6 +141,15 @@ sub get_stats {
    return $self->{stats}, $self->{query_stats}, $self->{query_errors};
 }
 
+sub reset_stats {
+   my ( $self, %args ) = @_;
+   $self->{stats} = { events => 0, } if $args{all} || $args{stats};
+   $self->{query_stats}  = {}        if $args{all} || $args{query_stats};
+   $self->{query_errors} = {}        if $args{all} || $args{query_errors};
+   return;
+}
+
+
 # Arguments:
 #   * tmpdir         Dir for mysqlbinlog --local-load
 #   * datadir        (optional) Datadir for file
@@ -365,7 +374,12 @@ sub pipeline_event {
          return;
       }
 
-      $self->{last_db} = $event->{db} if $event->{db};
+      my $db = $event->{db};
+      if ( $db && (!$self->{last_db} || $self->{last_db} ne $db) ) {
+         $self->{last_db} = $db;
+         MKDEBUG && _d('USE', $self->{last_db});
+      }
+      $self->{stats}->{no_database}++ unless $self->{last_db};
 
       # Do it!
       $self->{stats}->{do_query}++;
@@ -373,7 +387,7 @@ sub pipeline_event {
          $callback->(
             query       => $query,
             fingerprint => $fingerprint,
-            db          => $event->{db} || $self->{last_db},
+            db          => $self->{last_db},
          );
       }
    }
