@@ -3678,7 +3678,11 @@ sub main {
    # To avoid having threads close/re-open MySQL connections, we pre-create a
    # connection for each thread.  $dbhs[0] is our connection (the script),
    # and $dbhs[1..n_threads-1] are for the threads.  Thread IDs start at 1
-   # and are unique so they shouldn't overlap.
+   # and are unique so they shouldn't overlap. -- Originally I wanted to
+   # enqueue the dbh with the query but dequeue(COUNT) only works with
+   # Thread::Queue v2.01+ but Perl v5.10.0 has v2.00; Perl 5.10.1 is needed
+   # which has v2.11.  So this is the more backwards-compatible solution
+   # (i.e. it should work in Perl 5.8, too).
    my @dbhs = ($dbh);
 
    for ( 0..$n_threads-1 ) {
