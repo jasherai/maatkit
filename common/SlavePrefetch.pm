@@ -83,6 +83,15 @@ sub new {
             my ( $dbh ) = @_;
             return $dbh->selectrow_hashref("SHOW SLAVE STATUS");
          }, 
+         use_db            => sub {
+            my ( $dbh, $db ) = @_;
+            eval {
+               MKDEBUG && _d('USE', $db);
+               $dbh->do("USE `$db`");
+            };
+            MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+            return;
+         },
          wait_for_master   => \&_wait_for_master,
       },
    };
@@ -376,8 +385,9 @@ sub pipeline_event {
 
       my $db = $event->{db};
       if ( $db && (!$self->{last_db} || $self->{last_db} ne $db) ) {
+         MKDEBUG && _d('Change db, last:', $self->{last_db}, 'current:', $db);
+         $self->{callbacks}->{use_db}->($self->{dbh}, $db);
          $self->{last_db} = $db;
-         MKDEBUG && _d('USE', $self->{last_db});
       }
       $self->{stats}->{no_database}++ unless $self->{last_db};
 

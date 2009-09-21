@@ -888,6 +888,10 @@ sub save_dbs {
    my ( %args ) = @_;
    push @dbs, $args{db};
 }
+sub use_db {
+   my ( $dbh, $db ) = @_;
+   push @dbs, "USE $db";
+};
 
 parse_binlog('samples/binlog003.txt');
 
@@ -899,13 +903,14 @@ $slave_status->{relay_log_pos}       = 163;
 $spf->_get_slave_status();
 
 $spf->reset_stats(all => 1);
+$spf->set_callbacks( use_db => \&use_db );
 
 for ( 1..6 ) {
    $spf->pipeline_event(shift @events, \&save_dbs);
 }
 is_deeply(
    \@dbs,
-   [ undef, qw(test1 test1 test2 test2 test2) ],
+   [ undef, 'USE test1', qw(test1 test1), 'USE test2', qw(test2 test2 test2) ],
    'Carries last db forward'
 );
 
