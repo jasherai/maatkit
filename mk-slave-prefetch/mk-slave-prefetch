@@ -2954,7 +2954,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# SlavePrefetch package 4723
+# SlavePrefetch package 4726
 # ###########################################################################
 package SlavePrefetch;
 
@@ -3001,6 +3001,15 @@ sub new {
             my ( $dbh ) = @_;
             return $dbh->selectrow_hashref("SHOW SLAVE STATUS");
          }, 
+         use_db            => sub {
+            my ( $dbh, $db ) = @_;
+            eval {
+               MKDEBUG && _d('USE', $db);
+               $dbh->do("USE `$db`");
+            };
+            MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+            return;
+         },
          wait_for_master   => \&_wait_for_master,
       },
    };
@@ -3057,6 +3066,15 @@ sub get_stats {
    my ( $self ) = @_;
    return $self->{stats}, $self->{query_stats}, $self->{query_errors};
 }
+
+sub reset_stats {
+   my ( $self, %args ) = @_;
+   $self->{stats} = { events => 0, } if $args{all} || $args{stats};
+   $self->{query_stats}  = {}        if $args{all} || $args{query_stats};
+   $self->{query_errors} = {}        if $args{all} || $args{query_errors};
+   return;
+}
+
 
 sub open_relay_log {
    my ( $self, %args ) = @_;
@@ -3248,14 +3266,20 @@ sub pipeline_event {
          return;
       }
 
-      $self->{last_db} = $event->{db} if $event->{db};
+      my $db = $event->{db};
+      if ( $db && (!$self->{last_db} || $self->{last_db} ne $db) ) {
+         MKDEBUG && _d('Change db, last:', $self->{last_db}, 'current:', $db);
+         $self->{callbacks}->{use_db}->($self->{dbh}, $db);
+         $self->{last_db} = $db;
+      }
+      $self->{stats}->{no_database}++ unless $self->{last_db};
 
       $self->{stats}->{do_query}++;
       foreach my $callback ( @callbacks ) {
          $callback->(
             query       => $query,
             fingerprint => $fingerprint,
-            db          => $event->{db} || $self->{last_db},
+            db          => $self->{last_db},
          );
       }
    }
