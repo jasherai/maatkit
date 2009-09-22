@@ -42,16 +42,14 @@ sub new {
 
 my $EPOCH      = '1970-01-01';
 my %int_types  = map { $_ => 1 }
-   qw( bigint date datetime int mediumint smallint time timestamp tinyint year );
+   qw(bigint date datetime int mediumint smallint time timestamp tinyint year);
 my %real_types = map { $_ => 1 }
-   qw( decimal double float );
+   qw(decimal double float);
 
 # Arguments:
 #   * table_struct    Hashref returned from TableParser::parse
 #   * exact           (optional) bool: Try to support exact chunk sizes
 #                     (may still chunk fuzzily)
-#   * possible_keys   (optional) Arrayref of keys to prefer, in order.
-#                     These can be generated from EXPLAIN by TableParser.pm
 # Returns an array:
 #   whether the table can be chunked exactly, if requested (zero otherwise)
 #   arrayref of columns that support chunking
@@ -61,14 +59,6 @@ sub find_chunk_columns {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $tbl_struct = $args{tbl_struct};
-
-   my %prefer;
-   if ( $args{possible_keys} && @{$args{possible_keys}} ) {
-      my $i = 1;
-      %prefer = map { $_ => $i++ } @{$args{possible_keys}};
-      MKDEBUG && _d('Preferred indexes for chunking:',
-         join(', ', @{$args{possible_keys}}));
-   }
 
    # See if there's an index that will support chunking.
    my @possible_keys;
@@ -88,12 +78,6 @@ sub find_chunk_columns {
 
       push @possible_keys, $key;
    }
-
-   # Sort keys by preferred-ness.
-   @possible_keys = sort {
-      ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
-   } @possible_keys;
-
    MKDEBUG && _d('Possible keys in order:',
       join(', ', map { $_->{name} } @possible_keys));
 
@@ -122,21 +106,16 @@ sub find_chunk_columns {
    # Order the candidates by their original column order.
    # Put the PK's first column first, if it's a candidate.
    my @result;
-   if ( !%prefer ) {
-      MKDEBUG && _d('Ordering columns by order in tbl, PK first');
-      if ( $tbl_struct->{keys}->{PRIMARY} ) {
-         my $pk_first_col = $tbl_struct->{keys}->{PRIMARY}->{cols}->[0];
-         @result = grep { $_->{column} eq $pk_first_col } @candidate_cols;
-         @candidate_cols = grep { $_->{column} ne $pk_first_col } @candidate_cols;
-      }
-      my $i = 0;
-      my %col_pos = map { $_ => $i++ } @{$tbl_struct->{cols}};
-      push @result, sort { $col_pos{$a->{column}} <=> $col_pos{$b->{column}} }
-                       @candidate_cols;
+   MKDEBUG && _d('Ordering columns by order in tbl, PK first');
+   if ( $tbl_struct->{keys}->{PRIMARY} ) {
+      my $pk_first_col = $tbl_struct->{keys}->{PRIMARY}->{cols}->[0];
+      @result = grep { $_->{column} eq $pk_first_col } @candidate_cols;
+      @candidate_cols = grep { $_->{column} ne $pk_first_col } @candidate_cols;
    }
-   else {
-      @result = @candidate_cols;
-   }
+   my $i = 0;
+   my %col_pos = map { $_ => $i++ } @{$tbl_struct->{cols}};
+   push @result, sort { $col_pos{$a->{column}} <=> $col_pos{$b->{column}} }
+                    @candidate_cols;
 
    if ( MKDEBUG ) {
       _d('Chunkable columns:',
@@ -144,7 +123,7 @@ sub find_chunk_columns {
       _d('Can chunk exactly:', $can_chunk_exact);
    }
 
-   return ($can_chunk_exact, \@result);
+   return ($can_chunk_exact, @result);
 }
 
 # Arguments:
@@ -164,7 +143,7 @@ sub calculate_chunks {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(dbh tbl_struct chunk_col min max rows_in_range
                         chunk_size dbh) ) {
-      die "I need a $arg argument" unless $args{$arg};
+      die "I need a $arg argument" unless defined $args{$arg};
    }
    MKDEBUG && _d('Arguments:',
       join(', ',

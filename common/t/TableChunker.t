@@ -1,28 +1,9 @@
 #!/usr/bin/perl
 
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
 use strict;
 use warnings FATAL => 'all';
-
-
-use Test::More tests => 29;
-use DBI;
 use English qw(-no_match_vars);
+use Test::More tests => 28;
 
 require "../TableParser.pm";
 require "../TableChunker.pm";
@@ -36,10 +17,10 @@ my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 $sb->create_dbs($dbh, ['test']);
 
-my $q = new Quoter();
-my $p = new TableParser();
-my $c = new TableChunker( quoter => $q );
-my $d = new MySQLDump();
+my $q  = new Quoter();
+my $p  = new TableParser();
+my $du = new MySQLDump();
+my $c  = new TableChunker(Quoter => $q, MySQLDump => $du);
 my $t;
 
 sub throws_ok {
@@ -58,47 +39,47 @@ sub load_file {
 
 $t = $p->parse( load_file('samples/sakila.film.sql') );
 is_deeply(
-   [ $c->find_chunk_columns($t) ],
+   [ $c->find_chunk_columns(tbl_struct=>$t) ],
    [ 0,
-     [
-        { column => 'film_id', index => 'PRIMARY' },
-        { column => 'language_id', index => 'idx_fk_language_id' },
-        { column => 'original_language_id',
-             index => 'idx_fk_original_language_id' },
-      ],
+     { column => 'film_id', index => 'PRIMARY' },
+     { column => 'language_id', index => 'idx_fk_language_id' },
+     { column => 'original_language_id',
+       index => 'idx_fk_original_language_id' },
    ],
    'Found chunkable columns on sakila.film',
 );
 
 is_deeply(
-   [ $c->find_chunk_columns($t, { exact => 1 }) ],
-   [ 1, [ { column => 'film_id', index => 'PRIMARY' } ] ],
+   [ $c->find_chunk_columns(tbl_struct=>$t, exact => 1) ],
+   [ 1, { column => 'film_id', index => 'PRIMARY' } ],
    'Found exact chunkable columns on sakila.film',
 );
 
-is_deeply(
-   [ $c->find_chunk_columns($t, { possible_keys => [qw(idx_fk_language_id)] }) ],
-   [ 0,
-     [
-        { column => 'language_id', index => 'idx_fk_language_id' },
-        { column => 'original_language_id',
-             index => 'idx_fk_original_language_id' },
-        { column => 'film_id', index => 'PRIMARY' },
-     ]
-   ],
-   'Found preferred chunkable columns on sakila.film',
-);
+# This test was removed because possible_keys was only used (vaguely)
+# by mk-table-sync/TableSync* but this functionality is now handled
+# in TableSync*::can_sync() with the optional args col and index.
+# In other words: it's someone else's job to get/check the preferred index.
+#is_deeply(
+#   [ $c->find_chunk_columns($t, { possible_keys => [qw(idx_fk_language_id)] }) ],
+#   [ 0,
+#     [
+#        { column => 'language_id', index => 'idx_fk_language_id' },
+#        { column => 'original_language_id',
+#             index => 'idx_fk_original_language_id' },
+#        { column => 'film_id', index => 'PRIMARY' },
+#     ]
+#   ],
+#   'Found preferred chunkable columns on sakila.film',
+#);
 
 $t = $p->parse( load_file('samples/pk_not_first.sql') );
 is_deeply(
-   [ $c->find_chunk_columns($t) ],
+   [ $c->find_chunk_columns(tbl_struct=>$t) ],
    [ 0,
-     [
-        { column => 'film_id', index => 'PRIMARY' },
-        { column => 'language_id', index => 'idx_fk_language_id' },
-        { column => 'original_language_id',
-             index => 'idx_fk_original_language_id' },
-     ],
+     { column => 'film_id', index => 'PRIMARY' },
+     { column => 'language_id', index => 'idx_fk_language_id' },
+     { column => 'original_language_id',
+        index => 'idx_fk_original_language_id' },
    ],
    'PK column is first',
 );
@@ -153,12 +134,12 @@ SKIP: {
    my @chunks;
 
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'film_id',
+      tbl_struct    => $t,
+      chunk_col     => 'film_id',
       min           => 0,
       max           => 99,
       rows_in_range => 100,
-      size          => 30,
+      chunk_size    => 30,
       dbh           => $dbh,
    );
    is_deeply(
@@ -173,12 +154,12 @@ SKIP: {
    );
 
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'film_id',
+      tbl_struct    => $t,
+      chunk_col     => 'film_id',
       min           => 0,
       max           => 99,
       rows_in_range => 100,
-      size          => 300,
+      chunk_size    => 300,
       dbh           => $dbh,
    );
    is_deeply(
@@ -190,12 +171,12 @@ SKIP: {
    );
 
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'film_id',
+      tbl_struct    => $t,
+      chunk_col     => 'film_id',
       min           => 0,
       max           => 0,
       rows_in_range => 100,
-      size          => 300,
+      chunk_size    => 300,
       dbh           => $dbh,
    );
    is_deeply(
@@ -207,12 +188,12 @@ SKIP: {
    );
 
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'original_language_id',
+      tbl_struct    => $t,
+      chunk_col     => 'original_language_id',
       min           => 0,
       max           => 99,
       rows_in_range => 100,
-      size          => 50,
+      chunk_size    => 50,
       dbh           => $dbh,
    );
    is_deeply(
@@ -228,12 +209,12 @@ SKIP: {
    $t = $p->parse( load_file('samples/daycol.sql') );
 
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
+      tbl_struct    => $t,
+      chunk_col     => 'a',
       min           => '2001-01-01',
       max           => '2002-01-01',
       rows_in_range => 365,
-      size          => 90,
+      chunk_size    => 90,
       dbh           => $dbh,
    );
    is_deeply(
@@ -250,12 +231,12 @@ SKIP: {
 
    $t = $p->parse( load_file('samples/date.sql') );
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
+      tbl_struct    => $t,
+      chunk_col     => 'a',
       min           => '2000-01-01',
       max           => '2005-11-26',
       rows_in_range => 3,
-      size          => 1,
+      chunk_size    => 1,
       dbh           => $dbh,
    );
    is_deeply(
@@ -269,12 +250,12 @@ SKIP: {
    );
 
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
+      tbl_struct    => $t,
+      chunk_col     => 'a',
       min           => '0000-00-00',
       max           => '2005-11-26',
       rows_in_range => 3,
-      size          => 1,
+      chunk_size    => 1,
       dbh           => $dbh,
    );
    is_deeply(
@@ -289,12 +270,12 @@ SKIP: {
 
    $t = $p->parse( load_file('samples/datetime.sql') );
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
+      tbl_struct    => $t,
+      chunk_col     => 'a',
       min           => '1922-01-14 05:18:23',
       max           => '2005-11-26 00:59:19',
       rows_in_range => 3,
-      size          => 1,
+      chunk_size    => 1,
       dbh           => $dbh,
    );
    is_deeply(
@@ -308,12 +289,12 @@ SKIP: {
    );
 
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
+      tbl_struct    => $t,
+      chunk_col     => 'a',
       min           => '0000-00-00 00:00:00',
       max           => '2005-11-26 00:59:19',
       rows_in_range => 3,
-      size          => 1,
+      chunk_size    => 1,
       dbh           => $dbh,
    );
    is_deeply(
@@ -328,12 +309,12 @@ SKIP: {
 
    $t = $p->parse( load_file('samples/timecol.sql') );
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
+      tbl_struct    => $t,
+      chunk_col     => 'a',
       min           => '00:59:19',
       max           => '09:03:15',
       rows_in_range => 3,
-      size          => 1,
+      chunk_size    => 1,
       dbh           => $dbh,
    );
    is_deeply(
@@ -348,12 +329,12 @@ SKIP: {
 
    $t = $p->parse( load_file('samples/doublecol.sql') );
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
+      tbl_struct    => $t,
+      chunk_col     => 'a',
       min           => '1',
       max           => '99.999',
       rows_in_range => 3,
-      size          => 1,
+      chunk_size    => 1,
       dbh           => $dbh,
    );
    is_deeply(
@@ -367,12 +348,12 @@ SKIP: {
    );
 
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
+      tbl_struct    => $t,
+      chunk_col     => 'a',
       min           => '1',
       max           => '2',
       rows_in_range => 5,
-      size          => 3,
+      chunk_size    => 3,
       dbh           => $dbh,
    );
    is_deeply(
@@ -386,12 +367,12 @@ SKIP: {
 
    eval {
       @chunks = $c->calculate_chunks(
-         table         => $t,
-         col           => 'a',
+         tbl_struct    => $t,
+         chunk_col     => 'a',
          min           => '1',
          max           => '2',
          rows_in_range => 50000000,
-         size          => 3,
+         chunk_size    => 3,
          dbh           => $dbh,
       );
    };
@@ -403,12 +384,12 @@ SKIP: {
 
    $t = $p->parse( load_file('samples/floatcol.sql') );
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
+      tbl_struct    => $t,
+      chunk_col     => 'a',
       min           => '1',
       max           => '99.999',
       rows_in_range => 3,
-      size          => 1,
+      chunk_size    => 1,
       dbh           => $dbh,
    );
    is_deeply(
@@ -423,12 +404,12 @@ SKIP: {
 
    $t = $p->parse( load_file('samples/decimalcol.sql') );
    @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
+      tbl_struct    => $t,
+      chunk_col     => 'a',
       min           => '1',
       max           => '99.999',
       rows_in_range => 3,
-      size          => 1,
+      chunk_size    => 1,
       dbh           => $dbh,
    );
    is_deeply(
@@ -442,19 +423,46 @@ SKIP: {
    );
 
    throws_ok(
-      sub { $c->get_range_statistics($dbh, 'sakila', 'film', 'film_id', 'film_id>') },
+      sub { $c->get_range_statistics(
+            dbh       => $dbh,
+            db        => 'sakila',
+            tbl       => 'film',
+            chunk_col => 'film_id',
+            where     => 'film_id>'
+         )
+      },
       qr/WHERE clause: /,
       'shows full SQL on error',
    );
 
    throws_ok(
-      sub { $c->size_to_rows($dbh, 'sakila', 'film', 'foo', $d) },
-      qr/Invalid size spec/,
-      'Rejects bad size spec',
+      sub { $c->size_to_rows(
+            dbh        => $dbh,
+            db         => 'sakila',
+            tbl        => 'film',
+            chunk_size => 'foo'
+         )
+      },
+      qr/Invalid chunk size/,
+      'Rejects chunk size',
    );
 
-   is( $c->size_to_rows($dbh, 'sakila', 'film', '5', $d), 5, 'Numeric size' );
-   my $size = $c->size_to_rows($dbh, 'sakila', 'film', '5k', $d);
+   is(
+      $c->size_to_rows(
+         dbh        => $dbh,
+         db         => 'sakila',
+         tbl        => 'film',
+         chunk_size => '5'
+      ),
+      5,
+      'Numeric size'
+   );
+   my $size = $c->size_to_rows(
+      dbh        => $dbh,
+      db         => 'sakila',
+      tbl        => 'film',
+      chunk_size => '5k'
+   );
    ok($size >= 20 && $size <= 30, 'Convert bytes to rows');
 };
 
@@ -462,15 +470,20 @@ SKIP: {
 # Issue 47: TableChunker::range_num broken for very large bigint
 # #############################################################################
 $sb->load_file('master', 'samples/issue_47.sql');
-$t = $p->parse( $d->get_create_table($dbh, $q, 'test', 'issue_47') );
-my %params = $c->get_range_statistics($dbh, 'test', 'issue_47', 'userid');
+$t = $p->parse( $du->get_create_table($dbh, $q, 'test', 'issue_47') );
+my %params = $c->get_range_statistics(
+   dbh       => $dbh,
+   db        => 'test',
+   tbl       => 'issue_47',
+   chunk_col => 'userid'
+);
 my @chunks;
 eval {
    @chunks = $c->calculate_chunks(
-      dbh      => $dbh,
-      table    => $t,
-      col      => 'userid',
-      size     => '4',
+      dbh        => $dbh,
+      tbl_struct => $t,
+      chunk_col  => 'userid',
+      chunk_size => '4',
       %params,
    );
 };
@@ -487,23 +500,21 @@ is(
       chunks      => [ '1=1', 'a=b' ],
       chunk_num   => 1,
       where       => [],
-      index_hint  => 'idx_a',
+      index_hint  => 'USE INDEX (`idx_a`)',
    ),
    'SELECT  1 AS chunk_num, FROM `test`.`issue_8` USE INDEX (`idx_a`) WHERE (a=b)',
    'Adds USE INDEX (issue 8)'
 );
 
 $sb->load_file('master', 'samples/issue_8.sql');
-$t = $p->parse( $d->get_create_table($dbh, $q, 'test', 'issue_8') );
-my @candidates = $c->find_chunk_columns($t);
+$t = $p->parse( $du->get_create_table($dbh, $q, 'test', 'issue_8') );
+my @candidates = $c->find_chunk_columns(tbl_struct=>$t);
 is_deeply(
    \@candidates,
    [
       0,
-      [
-         { column => 'id',    index => 'PRIMARY'  },
-         { column => 'foo',   index => 'uidx_foo' },
-      ],
+      { column => 'id',    index => 'PRIMARY'  },
+      { column => 'foo',   index => 'uidx_foo' },
    ],
    'find_chunk_columns() returns col and idx candidates'
 );
