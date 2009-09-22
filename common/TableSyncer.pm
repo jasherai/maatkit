@@ -53,12 +53,34 @@ sub get_best_plugin {
    return;
 }
 
+# Arguments:
+#   * plugins        Arrayref of TableSync* modules, in order of preference
+#   * src            Hashref with source dbh, db, tbl
+#   * dst            Hashref with destination dbh, db, tbl
+#   * tbl_struct     Return val from TableParser::parser() for src & dst tbl
+#   * cols           Arrayref of tbl columns used to sync/compare
+#   * chunk_size     Size/number of rows to select in each chunk
+#   * function       Crypto hash function used for checksumming chunks
+#   * RowDiff        A RowDiff module
+#   * ChangeHandler  A ChangeHandler module
+#   * TableChecksum  A TableChecksum module
+#   * VersionParser  A VersionParser module
+#   * Quoter         A Quoter module
+#   * MasterSlave    A MasterSlave module
+#   * dry_run        (optional) Prepare to sync but don't actually sync
+#   * chunk_col      (optional) Column name to chunk table on
+#   * chunk_index    (optional) Index to use for chunking table
+#   * buffer         (optional) Buffer results in MySQL
+#   * transaction    (optional)
+#   * change_dbh     (optional) dbh on which changes are made
+#   * lock           (optional)
+#   * wait           (optional)
+#   * timeout_ok     (optional)
 sub sync_table {
    my ( $self, %args ) = @_;
-   my @required_args = qw(src_dbh src_db src_tbl dst_dbh dst_db dst_tbl
-                          tbl_struct cols chunk_size function plugins
-                          TableChecksum TableChunker VersionParser Quoter
-                          master_slave);
+   my @required_args = qw(plugins src dst tbl_struct col chunk_size function
+                          RowDiff ChangeHandler TableChecksum VersionParser
+                          Quoter MasterSlave);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -66,99 +88,14 @@ sub sync_table {
       join(', ',
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
-   my $dbh = $args{src_dbh};
-   my $vp  = $args{VersionParser};
-   my $q   = $args{Quoter};
+   my ($plugins, $src, $dst, $tbl_struct, $col, $chunk_size, $function,
+       $rd, $ch, $checksum, $vp, $q, $ms) = @args{@required_args};
 
    # ########################################################################
-   # Get the first plugin that says it can sync this table.
+   # Get and prepare the first plugin that can sync this table.
    # ########################################################################
    my ($plugin, %plugin_args) = $self->get_best_plugin(%args);
    die "No plugin can sync `$args{src_db}`.`$args{src_tbl}`" unless $plugin;
-
-   # ########################################################################
-   # Check permissions on writable tables (TODO: 2-way needs to check both)
-   # TODO: for two-way sync, the change handler needs both DBHs.
-   # ########################################################################
-   my $update_func;
-   my $change_dbh;
-   my $use_replace;
-   if ( $args{execute} ) {
-      if ( $args{replicate} ) {
-         $change_dbh = $args{src_dbh};
-         $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
-         # Is it possible to make changes on the master?  Only if REPLACE will
-         # work OK.
-         my $can_replace
-            = grep { $_->{is_unique} } values %{$args{tbl_struct}->{keys}};
-         MKDEBUG && _d("This table's replace-ability:", $can_replace);
-         $use_replace = $args{replace} || $args{replicate};
-         if ( !$can_replace ) {
-            die "Can't make changes on the master: no unique index exists";
-         }
-      }
-      else {
-         $change_dbh = $args{dst_dbh};
-         $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
-         # Is it safe to change data on $change_dbh?  It's only safe if it's not
-         # a slave.  We don't change tables on slaves directly.  If we are
-         # forced to change data on a slave, we require either that a) binary
-         # logging is disabled, or b) the check is bypassed.  By the way, just
-         # because the server is a slave doesn't mean it's not also the master
-         # of the master (master-master replication).
-         my $slave_status = $args{master_slave}->get_slave_status($change_dbh);
-         my (undef, $log_bin) = $change_dbh->selectrow_array(
-            'SHOW VARIABLES LIKE "log_bin"');
-         my ($sql_log_bin) = $change_dbh->selectrow_array(
-            'SELECT @@SQL_LOG_BIN');
-         MKDEBUG && _d('Variables: log_bin=',
-            (defined $log_bin ? $log_bin : 'NULL'),
-            ' @@SQL_LOG_BIN=',
-            (defined $sql_log_bin ? $sql_log_bin : 'NULL'));
-         if ( !$args{skipslavecheck} && $slave_status && $sql_log_bin
-            && ($log_bin || 'OFF') eq 'ON' )
-         {
-            die "Can't make changes on $change_dbh because it's a slave: see "
-               . "the documentation section 'REPLICATION SAFETY' for solutions "
-               . "to this problem.";
-         }
-      }
-      MKDEBUG && _d('Will make changes via', $change_dbh);
-      $update_func = sub {
-         map {
-            MKDEBUG && _d('About to execute:', $_);
-            $change_dbh->do($_);
-         } @_;
-      };
-
-      # Set default database in case replicate-do-db is being used (issue 533).
-      $args{src_dbh}->do("USE `$args{src_db}`");
-      $args{dst_dbh}->do("USE `$args{dst_db}`");
-   }
-
-   # TODO: these should be given as args so caller can make them as they wish
-   my $ch = new ChangeHandler(
-      %args,
-      queue     => $args{buffer} ? 0 : 1,
-      replace   => $use_replace,
-      actions   => [
-         ( $update_func ? $update_func            : () ),
-         # Print AFTER executing, so the print isn't misleading in case of an
-         # index violation etc that doesn't actually get executed.
-         ( $args{print}
-            ? sub { print(@_, ";\n") or die "Cannot print: $OS_ERROR" }
-            : () ),
-      ],
-   );
-   my $rd = $args{RowDiff} || new RowDiff( dbh => $args{misc_dbh} );
-
-   if ( $args{dry_run} ) {
-      return $ch->get_changes(), ALGORITHM => $plugin->get_name();
-   }
-
-   # ########################################################################
-   # Prepare the plugin.
-   # ########################################################################
 
    # The row-level (state 2) checksums use __crc, so the table can't use that.
    my $crc_col = '__crc';
@@ -169,7 +106,7 @@ sub sync_table {
 
    my $index_hint;
    if ( $args{index_struct} ) {
-      my $hint = $vp->version_ge($dbh, '4.0.9') ? 'FORCE' : 'USE';
+      my $hint = $vp->version_ge($src->{dbh}, '4.0.9') ? 'FORCE' : 'USE';
       $index_hint = "$hint (" . $q->quote($args{index_struct}->{name}) . ")";
    }
 
@@ -185,6 +122,13 @@ sub sync_table {
       $plugin->set_chunk_sql($chunk_sql);
       $plugin->set_row_sql($row_sql);
    } 
+
+   # ########################################################################
+   # Plugin is ready, return now if this is a dry run.
+   # ########################################################################
+   if ( $args{dry_run} ) {
+      return $ch->get_changes(), ALGORITHM => $plugin->get_name();
+   }
 
    # ########################################################################
    # Start syncing the table.
@@ -210,11 +154,11 @@ sub sync_table {
       );
       if ( $args{transaction} ) {
          # TODO: update this for 2-way sync.
-         if ( $change_dbh && $change_dbh eq $args{src_dbh} ) {
+         if ( $args{change_dbh} && $args{change_dbh} eq $src->{dbh} ) {
             $src_sql .= ' FOR UPDATE';
             $dst_sql .= ' LOCK IN SHARE MODE';
          }
-         elsif ( $change_dbh ) {
+         elsif ( $args{change_dbh} ) {
             $src_sql .= ' LOCK IN SHARE MODE';
             $dst_sql .= ' FOR UPDATE';
          }
@@ -261,7 +205,7 @@ sub sync_table {
 
    $self->unlock(%args, lock_level => 2);
 
-   return ($ch->get_changes(), ALGORITHM => $args{algorithm});
+   return $ch->get_changes(), ALGORITHM => $plugin->get_name();
 }
 
 sub make_checksum_queries {
