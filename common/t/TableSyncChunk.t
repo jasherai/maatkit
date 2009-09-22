@@ -13,7 +13,7 @@ my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 
 if ( $dbh ) {
-   plan tests => 27;
+   plan tests => 31;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -92,7 +92,7 @@ $t->prepare_to_sync(%args);
 # Test with FNV_64 just to make sure there are no errors
 eval { $dbh->do('select fnv_64(1)') };
 SKIP: {
-   skip 'No FNV_64 function installed', 2 if $EVAL_ERROR;
+   skip 'No FNV_64 function installed', 1 if $EVAL_ERROR;
 
    $t->set_checksum_queries(
       $syncer->make_checksum_queries(
@@ -114,6 +114,14 @@ SKIP: {
       'First nibble SQL with FNV_64 (with USE INDEX)',
    );
 }
+
+$t->set_checksum_queries(
+   $syncer->make_checksum_queries(
+      %args,
+      TableChecksum => $checksum,
+      function      => 'SHA1'
+   )
+);
 
 is_deeply(
    $t->{chunks},
@@ -297,6 +305,8 @@ is_deeply(
    'Cannot sync table5 (no indexes)'
 );
 
+# create table test3(a int not null primary key, b int not null, unique(b));
+
 $ddl        = $du->get_create_table($dbh, $q, 'test', 'test3');
 $tbl_struct = $tp->parse($ddl);
 %sync       = $t->can_sync(tbl_struct=>$tbl_struct);
@@ -306,9 +316,45 @@ is_deeply(
       chunk_col   => 'a',
       chunk_index => 'PRIMARY',
    },
-   'Can sync table3'
+   'Can sync table3, chooses best col and index'
 );
 
+%sync = $t->can_sync(tbl_struct=>$tbl_struct, col=>'b');
+is_deeply(
+   \%sync, 
+   {
+      chunk_col   => 'b',
+      chunk_index => 'b',
+   },
+   'Can sync table3 with requested col'
+);
+
+%sync = $t->can_sync(tbl_struct=>$tbl_struct, index=>'b');
+is_deeply(
+   \%sync, 
+   {
+      chunk_col   => 'b',
+      chunk_index => 'b',
+   },
+   'Can sync table3 with requested index'
+);
+
+%sync = $t->can_sync(tbl_struct=>$tbl_struct, col=>'b', index=>'b');
+is_deeply(
+   \%sync, 
+   {
+      chunk_col   => 'b',
+      chunk_index => 'b',
+   },
+   'Can sync table3 with requested col and index'
+);
+
+%sync = $t->can_sync(tbl_struct=>$tbl_struct, col=>'b', index=>'PRIMARY');
+is_deeply(
+   \%sync, 
+   {},
+   'Cannot sync table3 with requested col and index'
+);
 # #############################################################################
 # Done.
 # #############################################################################

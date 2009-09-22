@@ -51,30 +51,65 @@ sub name {
    return 'Chunk';
 }
 
+# Returns a hash (true) with a chunk_col and chunk_index that can be used
+# to sync the given tbl_struct.  Else, returns nothing (false) if the table
+# cannot be synced.  Arguments:
+#   * tbl_struct    Return value of TableParser::parse()
+#   * col           (optional) Column name to chunk on
+#   * index         (optional) Index to use for chunking
+# If either col or index are given, then they are required so the return value
+# will only be true if they're among the possible chunkable columns.  If
+# neither is given, then the first (best) chunkable col and index are returned.
+# The return value should be passed back to prepare_to_sync().
 sub can_sync {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(tbl_struct) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my ($exact, $cols) = $self->{TableChunker}->find_chunk_columns(
+
+   # Find all possible chunkable cols/indexes.  If Chunker can handle it OK
+   # but *not* with exact chunk sizes, it means it's using only the first
+   # column of a multi-column index, which could be really bad.  It's better
+   # to use Nibble for these, because at least it can reliably select a chunk
+   # of rows of the desired size.
+   my ($exact, @chunkable_cols) = $self->{TableChunker}->find_chunk_columns(
       %args,
       exact => 1,
    );
-   # If Chunker can handle it OK, but *not* with exact chunk sizes, it means
-   # it's using only the first column of a multi-column index, which could
-   # be really bad.  It's better to use Nibble for these, because at least
-   # it can reliably select a chunk of rows of the desired size.
    return unless $exact;
 
-   if ( $args{index_struct}
-        && !grep { $args{index_struct}->{name} eq $_->{name} } @$cols ) {
-      MKDEBUG && _d('Cannot sync with', $args{index_struct}->{name});
-      return;
+   # Check if the requested chunk col and/or index are among the possible
+   # columns found above.
+   my $colno;
+   if ( $args{col} || $args{index} ) {
+      MKDEBUG && _d('Checking requested col', $args{col},
+         'and/or index', $args{index});
+      for my $i ( 0..$#chunkable_cols ) {
+         if ( $args{col} ) {
+            next unless $chunkable_cols[$i]->{column} eq $args{col};
+         }
+         if ( $args{index} ) {
+            next unless $chunkable_cols[$i]->{index} eq $args{index};
+         }
+         $colno = $i;
+         last;
+      }
+
+      if ( !$colno ) {
+         MKDEBUG && _d('Cannot chunk on column', $args{col},
+            'and/or using index', $args{index});
+         return;
+      }
+   }
+   else {
+      $colno = 0;  # First, best chunkable column/index.
    }
 
+   MKDEBUG && _d('Can chunk on column', $chunkable_cols[$colno]->{column},
+      'using index', $chunkable_cols[$colno]->{index});
    return (
-      chunk_col   => $cols->[0]->{column},
-      chunk_index => $cols->[0]->{index},
+      chunk_col   => $chunkable_cols[$colno]->{column},
+      chunk_index => $chunkable_cols[$colno]->{index},
    );
 }
 
