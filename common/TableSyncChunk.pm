@@ -115,12 +115,11 @@ sub can_sync {
 
 sub prepare_to_sync {
    my ( $self, %args ) = @_;
-   my @required_args = qw(dbh db tbl tbl_struct cols
+   my @required_args = qw(dbh db tbl tbl_struct cols crc_col
                           chunk_col chunk_index chunk_size ChangeHandler);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my $dbh      = $args{dbh};
    my $chunker  = $self->{TableChunker};
 
    $self->{chunk_index}   = $args{chunk_index};
@@ -129,7 +128,7 @@ sub prepare_to_sync {
    $self->{index_hint}    = $args{index_hint};
    $self->{ChangeHandler} = $args{ChangeHandler};
 
-   $self->{ChangeHandler}->fetch_back($dbh);
+   $self->{ChangeHandler}->fetch_back($args{dbh});
 
    my @chunks;
    my %range_params = $chunker->get_range_statistics(%args);
