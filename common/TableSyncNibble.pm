@@ -41,100 +41,99 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use Data::Dumper;
-$Data::Dumper::Indent    = 0;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dbh database table handler nibbler quoter struct
-                        parser checksum cols vp chunksize where chunker
-                        versionparser possible_keys trim) ) {
+   foreach my $arg ( qw(TableNibbler TableChunker TableParser Quoter
+                        VersionParser) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
+   my $self = { %args };
+   return bless $self, $class;
+}
 
-   # Sanity check.  The row-level (state 2) checksums use __crc, so the table
-   # had better not use that...
-   $args{crc_col} = '__crc';
-   while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
-      $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
-   }
-   MKDEBUG && _d('CRC column will be named', $args{crc_col});
-
-   $args{sel_stmt} = $args{nibbler}->generate_asc_stmt(
-      parser   => $args{parser},
-      tbl      => $args{struct},
-      index    => $args{possible_keys}->[0],
-      quoter   => $args{quoter},
-      asconly  => 1,
-   );
-
-   die "No suitable index found"
-      unless $args{sel_stmt}->{index}
-         && $args{struct}->{keys}->{$args{sel_stmt}->{index}}->{is_unique};
-   $args{key_cols} = $args{struct}->{keys}->{$args{sel_stmt}->{index}}->{cols};
-
-   # Decide on checksumming strategy and store checksum query prototypes for
-   # later. TODO: some of this code might be factored out into TableSyncer.
-   $args{algorithm} = $args{checksum}->best_algorithm(
-      algorithm   => 'BIT_XOR',
-      vp          => $args{vp},
-      dbh         => $args{dbh},
-      where       => 1,
-      chunk       => 1,
-      count       => 1,
-   );
-   $args{func} = $args{checksum}->choose_hash_func(
-      dbh  => $args{dbh},
-      func => $args{func},
-   );
-   $args{crc_wid}    = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
-   ($args{crc_type}) = $args{checksum}->get_crc_type($args{dbh}, $args{func});
-   if ( $args{algorithm} eq 'BIT_XOR' && $args{crc_type} !~ m/int$/ ) {
-      $args{opt_slice}
-         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => $args{func});
-   }
-
-   $args{nibble_sql} ||= $args{checksum}->make_checksum_query(
-      dbname          => $args{database},
-      tblname         => $args{table},
-      table           => $args{struct},
-      quoter          => $args{quoter},
-      algorithm       => $args{algorithm},
-      func            => $args{func},
-      crc_wid         => $args{crc_wid},
-      crc_type        => $args{crc_type},
-      opt_slice       => $args{opt_slice},
-      cols            => $args{cols},
-      trim            => $args{trim},
-      buffer          => $args{bufferinmysql},
-      float_precision => $args{float_precision},
-   );
-   $args{row_sql} ||= $args{checksum}->make_row_checksum(
-      table           => $args{struct},
-      quoter          => $args{quoter},
-      func            => $args{func},
-      cols            => $args{cols},
-      trim            => $args{trim},
-      float_precision => $args{float_precision},
-   );
-
-   $args{state}  = 0;
-   $args{nibble} = 0;
-   $args{handler}->fetch_back($args{dbh});
-   return bless { %args }, $class;
+sub name {
+   return 'Nibble';
 }
 
 sub can_sync {
    my ( $self, %args ) = @_;
-   # If there's an index, $nibbler->generate_asc_stmt() will use it, so it
-   # is an indication that the nibble algorithm will work.
-   # my ($idx) = $args{parser}->find_best_index($args{tbl_struct});
-   # if ( $idx ) {
-   #   MKDEBUG && _d('Parser found best index', $idx, 'so Nibbler will work');
-   #   $result = 'Nibble';
-   # }
+   foreach my $arg ( qw(tbl_struct) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   # If there's an index, TableNibbler::generate_asc_stmt() will use it,
+   # so it is an indication that the nibble algorithm will work.
+   my $nibble_index = $self->{TableParser}->find_best_index($args{tbl_struct});
+   if ( $nibble_index ) {
+      MKDEBUG && _d('Best nibble index:', Dumper($nibble_index));
+      if ( !$nibble_index->{is_unique} ) {
+         MKDEBUG && _d('Best nibble index is not unique');
+         return;
+      }
+      if ( $args{index} && $args{index} ne $nibble_index->{name} ) {
+         MKDEBUG && _d('Best nibble index is not requested index',
+            $args{index});
+         return;
+      }
+   }
+   else {
+      MKDEBUG && _d('No best nibble index returned');
+      return;
+   }
+
+   MKDEBUG && _d('Can nibble using index', $nibble_index->{name});
+   return (
+      index => $nibble_index->{name},
+   );
+}
+
+sub prepare_to_sync {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl tbl_struct index chunk_size crc_col
+                          ChangeHandler);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   $self->{dbh}           = $args{dbh};
+   $self->{crc_col}       = $args{crc_col};
+   $self->{index_hint}    = $args{index_hint};
+   $self->{key_cols}      = $args{tbl_struct}->{keys}->{ $args{index} }->{cols};
+   $self->{chunk_size}    = $self->{TableChunker}->size_to_rows(%args);
+   $self->{ChangeHandler} = $args{ChangeHandler};
+
+   $self->{ChangeHandler}->fetch_back($args{dbh});
+
+   $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
+      %args,
+      asc_only  => 1,
+   );
+
+   $self->{nibble}            = 0;
+   $self->{cached_row}        = undef;
+   $self->{cached_nibble}     = undef;
+   $self->{cached_boundaries} = undef;
+   $self->{state}             = 0;
+
+   return;
+}
+
+sub uses_checksum {
+   return 1;
+}
+
+sub set_checksum_queries {
+   my ( $self, $nibble_sql, $row_sql ) = @_;
+   die "I need a nibble_sql argument" unless $nibble_sql;
+   die "I need a row_sql argument" unless $row_sql;
+   $self->{nibble_sql} = $nibble_sql;
+   $self->{row_sql} = $row_sql;
    return;
 }
 
@@ -145,27 +144,27 @@ sub can_sync {
 # Optional args: where
 sub get_sql {
    my ( $self, %args ) = @_;
+   my $q = $self->{Quoter};
    if ( $self->{state} ) {
       # Selects the individual rows so that they can be compared.
       return 'SELECT /*rows in nibble*/ '
-         . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
-         . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
+         . ($args{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
+         . join(', ', map { $q->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
-         . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
-         . ' WHERE (' . $self->__get_boundaries() . ')'
+         . ' FROM ' . $q->quote(@args{qw(database table)})
+         . ' WHERE (' . $self->__get_boundaries(%args) . ')'
          . ($args{where} ? " AND ($args{where})" : '');
    }
    else {
       # Selects the rows as a nibble.
-      my $where = $self->__get_boundaries();
-      return $self->{chunker}->inject_chunks(
+      my $where = $self->__get_boundaries(%args);
+      return $self->{TableChunker}->inject_chunks(
          database  => $args{database},
          table     => $args{table},
          chunks    => [$where],
          chunk_num => 0,
          query     => $self->{nibble_sql},
          where     => [$args{where}],
-         quoter    => $self->{quoter},
       );
    }
 }
@@ -184,8 +183,8 @@ sub get_sql {
 # them might give back a different boundary row, which is not what we want,
 # so each boundary needs to be cached until the nibble increases.
 sub __get_boundaries {
-   my ( $self ) = @_;
-   my $q = $self->{quoter};
+   my ( $self, %args ) = @_;
+   my $q = $self->{Quoter};
    my $s = $self->{sel_stmt};
    my $lb;   # Lower boundary part of WHERE
    my $ub;   # Upper boundary part of WHERE
@@ -208,7 +207,7 @@ sub __get_boundaries {
    else {
       MKDEBUG && _d('Getting next upper boundary row');
       my $sql;
-      ($sql, $lb) = $self->__make_boundary_sql();  # $lb from outer scope!
+      ($sql, $lb) = $self->__make_boundary_sql(%args);  # $lb from outer scope!
 
       # Check that $sql will use the index chosen earlier in new().
       # Only do this for the first nibble.  I assume this will be safe
@@ -216,7 +215,7 @@ sub __get_boundaries {
       if ( $self->{nibble} == 0 ) {
          my $explain_index = $self->__get_explain_index($sql);
          if ( ($explain_index || '') ne $s->{index} ) {
-         die 'Cannot nibble table '.$q->quote($self->{database},$self->{table})
+         die 'Cannot nibble table '.$q->quote($args{database}, $args{table})
             . " because MySQL chose "
             . ($explain_index ? "the `$explain_index`" : 'no') . ' index'
             . " instead of the `$s->{index}` index";
@@ -261,16 +260,17 @@ sub __get_boundaries {
 # are off then the nibble may not advance properly and we'll get stuck
 # in an infinite loop (issue 96).
 sub __make_boundary_sql {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
    my $lb;
-   my $q   = $self->{quoter};
+   my $q   = $self->{Quoter};
    my $s   = $self->{sel_stmt};
    my $sql = "SELECT /*nibble boundary $self->{nibble}*/ "
       . join(',', map { $q->quote($_) } @{$s->{cols}})
-      . " FROM " . $q->quote($self->{database}, $self->{table})
-      . ($self->{versionparser}->version_ge($self->{dbh}, '4.0.9')
+      . " FROM " . $q->quote($args{database}, $args{table})
+      . ($self->{VersionParser}->version_ge($self->{dbh}, '4.0.9')
          ? " FORCE" : " USE")
       . " INDEX(" . $q->quote($s->{index}) . ")";
+
    if ( $self->{nibble} ) {
       # The lower boundaries of the nibble must be defined, based on the last
       # remembered row.
@@ -281,7 +281,7 @@ sub __make_boundary_sql {
       $sql   .= ' WHERE ' . $lb;
    }
    $sql .= " ORDER BY " . join(',', map { $q->quote($_) } @{$self->{key_cols}})
-         . ' LIMIT ' . ($self->{chunksize} - 1) . ', 1';
+         . ' LIMIT ' . ($self->{chunk_size} - 1) . ', 1';
    MKDEBUG && _d('Lower boundary:', $lb);
    MKDEBUG && _d('Next boundary sql:', $sql);
    return $sql, $lb;
@@ -315,7 +315,7 @@ sub same_row {
    my ( $self, $lr, $rr ) = @_;
    if ( $self->{state} ) {
       if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
-         $self->{handler}->change('UPDATE', $lr, $self->key_cols());
+         $self->{ChangeHandler}->change('UPDATE', $lr, $self->key_cols());
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
@@ -331,13 +331,13 @@ sub same_row {
 sub not_in_right {
    my ( $self, $lr ) = @_;
    die "Called not_in_right in state 0" unless $self->{state};
-   $self->{handler}->change('INSERT', $lr, $self->key_cols());
+   $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
    die "Called not_in_left in state 0" unless $self->{state};
-   $self->{handler}->change('DELETE', $rr, $self->key_cols());
+   $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
 }
 
 sub done_with_rows {

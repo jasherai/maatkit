@@ -5,14 +5,12 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 25;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+require '../DSNParser.pm';
+require '../Sandbox.pm';
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
-
-$sb->create_dbs($dbh, ['test']);
 
 require "../TableSyncNibble.pm";
 require "../Quoter.pm";
@@ -23,6 +21,8 @@ require "../TableNibbler.pm";
 require "../TableParser.pm";
 require "../MySQLDump.pm";
 require "../VersionParser.pm";
+require "../MasterSlave.pm";
+require "../TableSyncer.pm";
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -32,63 +32,95 @@ sub throws_ok {
 
 my $mysql = $sb->_use_for('master');
 
-diag(`$mysql < samples/before-TableSyncNibble.sql`);
-
+my $ms = new MasterSlave();
 my $tp = new TableParser();
 my $du = new MySQLDump();
 my $q  = new Quoter();
 my $vp = new VersionParser();
-my $ddl        = $du->get_create_table($dbh, $q, 'test', 'test1');
-my $tbl_struct = $tp->parse($ddl);
-my $nibbler    = new TableNibbler();
-my $checksum   = new TableChecksum();
-my $chunker    = new TableChunker( quoter => $q );
+
+my $nibbler = new TableNibbler(
+   TableParser => $tp,
+   Quoter      => $q,
+);
+my $checksum = new TableChecksum(
+   Quoter        => $q,
+   VersionParser => $vp,
+);
+my $chunker = new TableChunker(
+   MySQLDump => $du,
+   Quoter    => $q
+);
+my $t = new TableSyncNibble(
+   TableNibbler  => $nibbler,
+   TableParser   => $tp,
+   TableChunker  => $chunker,
+   Quoter        => $q,
+   VersionParser => $vp,
+);
 
 my @rows;
 my $ch = new ChangeHandler(
-   quoter    => new Quoter(),
-   database  => 'test',
-   table     => 'test1',
-   sdatabase => 'test',
-   stable    => 'test1',
-   replace   => 0,
-   actions   => [ sub { push @rows, @_ }, ],
-   queue     => 0,
+   Quoter   => $q,
+   dst_db   => 'test',
+   dst_tbl  => 'test1',
+   src_db   => 'test',
+   src_tbl  => 'test1',
+   replace  => 0,
+   actions  => [ sub { push @rows, @_ }, ],
+   queue    => 0,
 );
 
-my $t;
+my $syncer = new TableSyncer(
+   MasterSlave   => $ms,
+   TableChecksum => $checksum,
+   Quoter        => $q,
+   VersionParser => $vp
+);
 
+$sb->create_dbs($dbh, ['test']);
+diag(`$mysql < samples/before-TableSyncNibble.sql`);
+my $ddl        = $du->get_create_table($dbh, $q, 'test', 'test1');
+my $tbl_struct = $tp->parse($ddl);
+my $src = {
+   db  => 'test',
+   tbl => 'test1',
+   dbh => $dbh,
+};
+my $dst = {
+   db  => 'test',
+   tbl => 'test1',
+   dbh => $dbh,
+};
+my %args       = (
+   src           => $src,
+   dst           => $dst,
+   dbh           => $dbh,
+   db            => 'test',
+   tbl           => 'test1',
+   tbl_struct    => $tbl_struct,
+   cols          => $tbl_struct->{cols},
+   chunk_size    => 1,
+   index         => 'PRIMARY',
+   where         => 'a>2',
+   crc_col       => '__crc',
+   index_hint    => 'USE INDEX (`PRIMARY`)',
+   ChangeHandler => $ch,
+);
+
+$t->prepare_to_sync(%args);
 # Test with FNV_64 just to make sure there are no errors
 eval { $dbh->do('select fnv_64(1)') };
 SKIP: {
    skip 'No FNV_64 function installed', 1 if $EVAL_ERROR;
 
-   $t = new TableSyncNibble(
-      handler  => $ch,
-      cols     => $tbl_struct->{cols},
-      dbh      => $dbh,
-      database => 'test',
-      table    => 'test1',
-      chunker  => $chunker,
-      nibbler  => $nibbler,
-      parser   => $tp,
-      struct   => $tbl_struct,
-      checksum => $checksum,
-      vp       => $vp,
-      quoter   => $q,
-      chunksize => 1,
-      where     => 'a>2',
-      possible_keys => [],
-      versionparser => $vp,
-      func          => 'FNV_64',
-      trim          => 0,
+   $t->set_checksum_queries(
+      $syncer->make_checksum_queries(%args, function => 'FNV_64')
    );
-
-   is (
+   is(
       $t->get_sql(
-         where    => 'foo=1',
          database => 'test',
          table    => 'test1',
+         where    => 'foo=1',
       ),
       q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS }
       . q{cnt, LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`, `c`) AS UNSIGNED)), }
@@ -98,30 +130,11 @@ SKIP: {
    );
 }
 
-$t = new TableSyncNibble(
-   handler  => $ch,
-   cols     => $tbl_struct->{cols},
-   dbh      => $dbh,
-   database => 'test',
-   table    => 'test1',
-   chunker  => $chunker,
-   nibbler  => $nibbler,
-   parser   => $tp,
-   struct   => $tbl_struct,
-   checksum => $checksum,
-   vp       => $vp,
-   quoter   => $q,
-   chunksize => 1,
-   where     => 'a>2',
-   possible_keys => [],
-   versionparser => $vp,
-   func          => 'SHA1',
-   trim          => 0,
+$t->set_checksum_queries(
+   $syncer->make_checksum_queries(%args, function => 'SHA1')
 );
-
 is(
    $t->get_sql(
-      quoter   => $q,
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
@@ -138,7 +151,6 @@ is(
 
 is(
    $t->get_sql(
-      quoter   => $q,
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
@@ -158,7 +170,6 @@ delete $t->{cached_boundaries};
 
 is(
    $t->get_sql(
-      quoter   => $q,
       where    => '(foo=1)',
       database => 'test',
       table    => 'test1',
@@ -177,21 +188,18 @@ is(
 # Bump the nibble boundaries ahead until we run off the end of the table.
 $t->done_with_rows();
 $t->get_sql(
-      quoter   => $q,
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    );
 $t->done_with_rows();
 $t->get_sql(
-      quoter   => $q,
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    );
 $t->done_with_rows();
 $t->get_sql(
-      quoter   => $q,
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
@@ -199,7 +207,6 @@ $t->get_sql(
 
 is(
    $t->get_sql(
-      quoter   => $q,
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
@@ -226,7 +233,6 @@ delete $t->{cached_row};
 
 is_deeply($t->key_cols(), [qw(chunk_num)], 'Key cols in state 0');
 $t->get_sql(
-      quoter   => $q,
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
@@ -296,51 +302,34 @@ is($t->{state}, 0, 'Now not working inside nibble');
 is($t->pending_changes(), 0, 'No pending changes');
 
 # Now test that SQL_BUFFER_RESULT is in the queries OK
-$t = new TableSyncNibble(
-   handler  => $ch,
-   cols     => $tbl_struct->{cols},
-   dbh      => $dbh,
-   database => 'test',
-   table    => 'test1',
-   chunker  => $chunker,
-   nibbler  => $nibbler,
-   parser   => $tp,
-   struct   => $tbl_struct,
-   checksum => $checksum,
-   vp       => $vp,
-   quoter   => $q,
-   chunksize => 1,
-   where     => 'a>2',
-   possible_keys => [],
-   versionparser => $vp,
-   func          => 'SHA1',
-   trim          => 0,
-   bufferinmysql => 1,
-);
-
+$t->{nibble} = 0;
+$t->{state}  = 1;
+delete $t->{cached_boundaries};
+delete $t->{cached_nibble};
+delete $t->{cached_row};
 like(
    $t->get_sql(
-      quoter   => $q,
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
+      buffer_in_mysql => 1,
    ),
-   qr/SELECT SQL_BUFFER_RESULT/,
+   qr/SELECT ..rows in nibble.. SQL_BUFFER_RESULT/,
    'Buffering in first nibble',
 );
 
 # "find a bad row"
 $t->same_row(
-   { chunk_num => 0, cnt => 0, crc => 'abc' },
-   { chunk_num => 0, cnt => 1, crc => 'abc' },
+   { chunk_num => 0, cnt => 0, __crc => 'abc' },
+   { chunk_num => 0, cnt => 1, __crc => 'abc' },
 );
 
 like(
    $t->get_sql(
-      quoter   => $q,
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
+      buffer_in_mysql => 1,
    ),
    qr/SELECT ..rows in nibble.. SQL_BUFFER_RESULT/,
    'Buffering in next nibble',
@@ -351,33 +340,24 @@ like(
 # #########################################################################
 $sb->load_file('master', 'samples/issue_96.sql');
 $tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_96', 't'));
-$t = new TableSyncNibble(
-   handler  => $ch,
-   cols     => $tbl_struct->{cols},
-   dbh      => $dbh,
-   database => 'issue_96',
-   table    => 't',
-   chunker  => $chunker,
-   nibbler  => $nibbler,
-   parser   => $tp,
-   struct   => $tbl_struct,
-   checksum => $checksum,
-   vp       => $vp,
-   quoter   => $q,
-   chunksize => 2,
-   where     => '',
-   possible_keys => [],
-   versionparser => $vp,
-   func          => '',
-   trim          => 0,
+$t->prepare_to_sync(
+   ChangeHandler  => $ch,
+   cols           => $tbl_struct->{cols},
+   dbh            => $dbh,
+   db             => 'issue_96',
+   tbl            => 't',
+   tbl_struct     => $tbl_struct,
+   chunk_size     => 2,
+   index          => 'package_id',
+   crc_col        => '__crc_col',
 );
 
 # Test that we die if MySQL isn't using the chosen index (package_id)
 # for the boundary sql.
 diag(`/tmp/12345/use -e 'ALTER TABLE issue_96.t DROP INDEX package_id'`);
-my %args = ( database=>'issue_96', table=>'t' );
+my %args2 = ( database=>'issue_96', table=>'t' );
 eval {
-   $t->get_sql(%args);
+   $t->get_sql(database=>'issue_96', tbl=>'t', %args2);
 };
 like(
    $EVAL_ERROR,
@@ -390,7 +370,7 @@ like(
 diag(`/tmp/12345/use -e 'ALTER TABLE issue_96.t ADD UNIQUE INDEX package_id (package_id,location);'`);
 my $sql;
 eval {
-   ($sql,undef) = $t->__make_boundary_sql();
+   ($sql,undef) = $t->__make_boundary_sql(%args2);
 };
 is(
    $sql,
