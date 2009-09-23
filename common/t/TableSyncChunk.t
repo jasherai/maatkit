@@ -30,6 +30,7 @@ require "../TableParser.pm";
 require "../MySQLDump.pm";
 require "../VersionParser.pm";
 require "../TableSyncer.pm";
+require "../MasterSlave.pm";
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -45,14 +46,30 @@ my $tp = new TableParser();
 my $du = new MySQLDump();
 my $q  = new Quoter();
 my $vp = new VersionParser();
+my $ms = new MasterSlave();
 my $chunker    = new TableChunker( Quoter => $q, MySQLDump => $du );
 my $checksum   = new TableChecksum( Quoter => $q, VersionParser => $vp );
-my $syncer     = new TableSyncer();
+my $syncer     = new TableSyncer(
+   MasterSlave   => $ms,
+   TableChecksum => $checksum,
+   Quoter        => $q,
+   VersionParser => $vp
+);
 
 my $ddl;
 my $tbl_struct;
 my %args;
 my @rows;
+my $src = {
+   db  => 'test',
+   tbl => 'test1',
+   dbh => $dbh,
+};
+my $dst = {
+   db  => 'test',
+   tbl => 'test1',
+   dbh => $dbh,
+};
 
 my $ch = new ChangeHandler(
    Quoter  => new Quoter(),
@@ -74,6 +91,8 @@ isa_ok($t, 'TableSyncChunk');
 $ddl        = $du->get_create_table($dbh, $q, 'test', 'test1');
 $tbl_struct = $tp->parse($ddl);
 %args       = (
+   src           => $src,
+   dst           => $dst,
    dbh           => $dbh,
    db            => 'test',
    tbl           => 'test1',
@@ -95,13 +114,8 @@ SKIP: {
    skip 'No FNV_64 function installed', 1 if $EVAL_ERROR;
 
    $t->set_checksum_queries(
-      $syncer->make_checksum_queries(
-         %args,
-         TableChecksum => $checksum,
-         function      => 'FNV_64'
-      )
+      $syncer->make_checksum_queries(%args, function => 'FNV_64')
    );
-
    is(
       $t->get_sql(
          where      => 'foo=1',
@@ -116,13 +130,8 @@ SKIP: {
 }
 
 $t->set_checksum_queries(
-   $syncer->make_checksum_queries(
-      %args,
-      TableChecksum => $checksum,
-      function      => 'SHA1'
-   )
+   $syncer->make_checksum_queries(%args, function => 'SHA1')
 );
-
 is_deeply(
    $t->{chunks},
    [
@@ -159,13 +168,8 @@ like(
 $args{where} = undef;
 $t->prepare_to_sync(%args);
 $t->set_checksum_queries(
-   $syncer->make_checksum_queries(
-      %args,
-      TableChecksum => $checksum,
-      function      => 'SHA1'
-   )
+   $syncer->make_checksum_queries(%args, function => 'SHA1')
 );
-
 is_deeply(
    $t->{chunks},
    [
@@ -206,13 +210,8 @@ ok($t->done(), 'Now done');
 
 $t->prepare_to_sync(%args);
 $t->set_checksum_queries(
-   $syncer->make_checksum_queries(
-      %args,
-      TableChecksum => $checksum,
-      function      => 'SHA1'
-   )
+   $syncer->make_checksum_queries(%args, function => 'SHA1')
 );
-
 throws_ok(
    sub { $t->not_in_left() },
    qr/in state 0/,
@@ -355,6 +354,7 @@ is_deeply(
    {},
    'Cannot sync table3 with requested col and index'
 );
+
 # #############################################################################
 # Done.
 # #############################################################################
