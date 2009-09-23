@@ -167,7 +167,7 @@ sub set_checksum_queries {
 # table before moving on to the next part.
 sub get_sql {
    my ( $self, %args ) = @_;
-   if ( $self->{state} ) {
+   if ( $self->{state} ) {  # checksum a chunk of rows
       return 'SELECT '
          . ($args{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
          . join(', ', map { $self->{Quoter}->quote($_) } @{$self->key_cols()})
@@ -177,7 +177,7 @@ sub get_sql {
          . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
          . ($args{where} ? " AND ($args{where})" : '');
    }
-   else {
+   else {  # checksum the rows
       return $self->{TableChunker}->inject_chunks(
          database   => $args{database},
          table      => $args{table},
@@ -200,12 +200,13 @@ sub prepare_sync_cycle {
 
 sub same_row {
    my ( $self, $lr, $rr ) = @_;
-   if ( $self->{state} ) {
+   if ( $self->{state} ) {  # checksumming rows
       if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
          $self->{ChangeHandler}->change('UPDATE', $lr, $self->key_cols());
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
+      # checksumming a chunk of rows
       MKDEBUG && _d('Rows:', Dumper($lr, $rr));
       MKDEBUG && _d('Will examine this chunk before moving to next');
       $self->{state} = 1; # Must examine this chunk row-by-row
@@ -219,26 +220,34 @@ sub not_in_right {
    my ( $self, $lr ) = @_;
    die "Called not_in_right in state 0" unless $self->{state};
    $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
+   return;
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
    die "Called not_in_left in state 0" unless $self->{state};
    $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
+   return;
 }
 
 sub done_with_rows {
    my ( $self ) = @_;
    if ( $self->{state} == 1 ) {
+      # The chunk of rows differed, now checksum the rows.
       $self->{state} = 2;
       MKDEBUG && _d('Setting state =', $self->{state});
    }
    else {
+      # State might be 0 or 2.  If 0 then the chunk of rows was the same
+      # and we move on to the next chunk.  If 2 then we just resolved any
+      # row differences by calling not_in_left/right() so move on to the
+      # next chunk.
       $self->{state} = 0;
       $self->{chunk_num}++;
       MKDEBUG && _d('Setting state =', $self->{state},
          'chunk_num =', $self->{chunk_num});
    }
+   return;
 }
 
 sub done {
@@ -254,6 +263,8 @@ sub pending_changes {
    my ( $self ) = @_;
    if ( $self->{state} ) {
       MKDEBUG && _d('There are pending changes');
+      # There are pending changes because in state 1 or 2 the chunk of rows
+      # differs so there's at least 1 row that differs and needs to be changed.
       return 1;
    }
    else {
