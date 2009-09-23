@@ -1,34 +1,21 @@
 #!/usr/bin/perl
 
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 25;
 use English qw(-no_match_vars);
+use Test::More tests => 24;
 
 require "../TableParser.pm";
 require "../TableNibbler.pm";
 require "../Quoter.pm";
 
-my $p = new TableParser();
-my $n = new TableNibbler();
-my $q = new Quoter();
+my $tp = new TableParser();
+my $q  = new Quoter();
+my $n  = new TableNibbler(
+   TableParser => $tp,
+   Quoter      => $q,
+);
+
 my $t;
 
 sub load_file {
@@ -45,14 +32,13 @@ sub throws_ok {
    like ( $EVAL_ERROR, $pat, $msg );
 }
 
-$t = $p->parse( load_file('samples/sakila.film.sql') );
+$t = $tp->parse( load_file('samples/sakila.film.sql') );
 
 is_deeply(
    $n->generate_asc_stmt (
-      parser => $p,
-      tbl    => $t,
-      cols   => $t->{cols},
-      quoter => $q,
+      tbl_struct => $t,
+      cols       => $t->{cols},
+      index      => 'PRIMARY',
    ),
    {
       cols  => [qw(film_id title description release_year language_id
@@ -75,9 +61,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_del_stmt (
-      parser => $p,
-      tbl    => $t,
-      quoter => $q,
+      tbl_struct => $t,
    ),
    {
       cols  => [qw(film_id)],
@@ -91,9 +75,8 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt (
-      parser => $p,
-      tbl    => $t,
-      quoter => $q,
+      tbl_struct => $t,
+      index      => 'PRIMARY',
    ),
    {
       cols  => [qw(film_id title description release_year language_id
@@ -117,10 +100,8 @@ is_deeply(
 throws_ok(
    sub {
       $n->generate_asc_stmt (
-         parser => $p,
-         tbl    => $t,
+         tbl_struct => $t,
          cols   => $t->{cols},
-         quoter => $q,
          index  => 'title',
       )
    },
@@ -130,10 +111,8 @@ throws_ok(
 
 is_deeply(
    $n->generate_asc_stmt (
-      parser => $p,
-      tbl    => $t,
+      tbl_struct => $t,
       cols   => $t->{cols},
-      quoter => $q,
       index  => 'idx_title',
    ),
    {
@@ -157,9 +136,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_del_stmt (
-      parser => $p,
-      tbl    => $t,
-      quoter => $q,
+      tbl_struct => $t,
       index  => 'idx_title',
       cols   => [qw(film_id)],
    ),
@@ -173,13 +150,14 @@ is_deeply(
    'del stmt on sakila.film with different index and extra column',
 );
 
+# TableParser::find_best_index() is case-insensitive, returning the
+# correct case even if the wrong case is given.  But generate_asc_stmt()
+# no longer calls find_best_index() so this test is a moot point.
 is_deeply(
    $n->generate_asc_stmt (
-      parser => $p,
-      tbl    => $t,
+      tbl_struct => $t,
       cols   => $t->{cols},
-      quoter => $q,
-      index  => 'IDX_TITLE',
+      index  => 'idx_title',
    ),
    {
       cols  => [qw(film_id title description release_year language_id
@@ -202,10 +180,9 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt (
-      parser => $p,
-      tbl    => $t,
+      tbl_struct => $t,
       cols   => [qw(title)],
-      quoter => $q,
+      index  => 'PRIMARY',
    ),
    {
       cols  => [qw(title film_id)],
@@ -226,14 +203,12 @@ is_deeply(
 # ##########################################################################
 # Switch to the rental table
 # ##########################################################################
-$t = $p->parse( load_file('samples/sakila.rental.sql') );
+$t = $tp->parse( load_file('samples/sakila.rental.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
-      parser => $p,
-      tbl    => $t,
+      tbl_struct => $t,
       cols   => $t->{cols},
-      quoter => $q,
       index  => 'rental_date',
    ),
    {
@@ -264,9 +239,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_del_stmt (
-      parser => $p,
-      tbl    => $t,
-      quoter => $q,
+      tbl_struct => $t,
       index  => 'rental_date',
    ),
    {
@@ -280,7 +253,7 @@ is_deeply(
 );
 
 # Check that I can select from one table and insert into another OK
-my $f = $p->parse( load_file('samples/sakila.film.sql') );
+my $f = $tp->parse( load_file('samples/sakila.film.sql') );
 is_deeply(
    $n->generate_ins_stmt(
       ins_tbl  => $f,
@@ -293,8 +266,8 @@ is_deeply(
    'Generated an INSERT statement from film into rental',
 );
 
-my $sel_tbl = $p->parse( load_file('samples/issue_131_sel.sql') );
-my $ins_tbl = $p->parse( load_file('samples/issue_131_ins.sql') );  
+my $sel_tbl = $tp->parse( load_file('samples/issue_131_sel.sql') );
+my $ins_tbl = $tp->parse( load_file('samples/issue_131_ins.sql') );  
 is_deeply(
    $n->generate_ins_stmt(
       ins_tbl  => $ins_tbl,
@@ -309,12 +282,10 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt(
-      parser => $p,
-      tbl    => $t,
+      tbl_struct => $t,
       cols   => $t->{cols},
-      quoter => $q,
       index  => 'rental_date',
-      ascfirst => 1,
+      asc_first => 1,
    ),
    {
       cols  => [qw(rental_id rental_date inventory_id customer_id
@@ -330,17 +301,15 @@ is_deeply(
          '<'  => '((`rental_date` < ?))',
       },
    },
-   'Alternate index with ascfirst on sakila.rental',
+   'Alternate index with asc_first on sakila.rental',
 );
 
 is_deeply(
    $n->generate_asc_stmt(
-      parser => $p,
-      tbl    => $t,
+      tbl_struct => $t,
       cols   => $t->{cols},
-      quoter => $q,
       index  => 'rental_date',
-      asconly => 1,
+      asc_only => 1,
    ),
    {
       cols  => [qw(rental_id rental_date inventory_id customer_id
@@ -371,14 +340,12 @@ is_deeply(
 # ##########################################################################
 # Switch to the rental table with customer_id nullable
 # ##########################################################################
-$t = $p->parse( load_file('samples/sakila.rental.null.sql') );
+$t = $tp->parse( load_file('samples/sakila.rental.null.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
-      parser => $p,
-      tbl    => $t,
+      tbl_struct => $t,
       cols   => $t->{cols},
-      quoter => $q,
       index  => 'rental_date',
    ),
    {
@@ -412,9 +379,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_del_stmt (
-      parser => $p,
-      tbl    => $t,
-      quoter => $q,
+      tbl_struct => $t,
       index  => 'rental_date',
    ),
    {
@@ -430,12 +395,10 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt(
-      parser => $p,
-      tbl    => $t,
+      tbl_struct => $t,
       cols   => $t->{cols},
-      quoter => $q,
       index  => 'rental_date',
-      asconly => 1,
+      asc_only => 1,
    ),
    {
       cols  => [qw(rental_id rental_date inventory_id customer_id
@@ -469,14 +432,12 @@ is_deeply(
 # ##########################################################################
 # Switch to the rental table with inventory_id nullable
 # ##########################################################################
-$t = $p->parse( load_file('samples/sakila.rental.null2.sql') );
+$t = $tp->parse( load_file('samples/sakila.rental.null2.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
-      parser => $p,
-      tbl    => $t,
+      tbl_struct => $t,
       cols   => $t->{cols},
-      quoter => $q,
       index  => 'rental_date',
    ),
    {
@@ -514,12 +475,10 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt(
-      parser => $p,
-      tbl    => $t,
+      tbl_struct => $t,
       cols   => $t->{cols},
-      quoter => $q,
       index  => 'rental_date',
-      asconly => 1,
+      asc_only => 1,
    ),
    {
       cols  => [qw(rental_id rental_date inventory_id customer_id
@@ -557,13 +516,11 @@ is_deeply(
 # ##########################################################################
 # Switch to the rental table with cols in a different order.
 # ##########################################################################
-$t = $p->parse( load_file('samples/sakila.rental.remix.sql') );
+$t = $tp->parse( load_file('samples/sakila.rental.remix.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
-      parser => $p,
-      tbl    => $t,
-      quoter => $q,
+      tbl_struct => $t,
       index  => 'rental_date',
    ),
    {
@@ -595,23 +552,22 @@ is_deeply(
 # ##########################################################################
 # Switch to table without any indexes
 # ##########################################################################
-$t = $p->parse( load_file('samples/t1.sql') );
+$t = $tp->parse( load_file('samples/t1.sql') );
 
-throws_ok(
-   sub {
-      $n->generate_asc_stmt (
-         parser => $p,
-         tbl    => $t,
-         quoter => $q,
-      )
-   },
-   qr/Cannot find an ascendable index in table/,
-   'Error when no good index',
-);
+# This test is no longer needed because TableSyncNibble shouldn't
+# ask TableNibbler to asc an indexless table.
+# throws_ok(
+#    sub {
+#       $n->generate_asc_stmt (
+#          tbl_struct => $t,
+#       )
+#    },
+#    qr/Cannot find an ascendable index in table/,
+#    'Error when no good index',
+# );
 
 is_deeply(
    $n->generate_cmp_where(
-      quoter => $q,
       cols   => [qw(a b c d)],
       slice  => [0, 3],
       is_nullable => {},
@@ -627,7 +583,6 @@ is_deeply(
 
 is_deeply(
    $n->generate_cmp_where(
-      quoter => $q,
       cols   => [qw(a b c d)],
       slice  => [0, 3],
       is_nullable => {},
@@ -643,7 +598,6 @@ is_deeply(
 
 is_deeply(
    $n->generate_cmp_where(
-      quoter => $q,
       cols   => [qw(a b c d)],
       slice  => [0, 3],
       is_nullable => {},
@@ -659,7 +613,6 @@ is_deeply(
 
 is_deeply(
    $n->generate_cmp_where(
-      quoter => $q,
       cols   => [qw(a b c d)],
       slice  => [0, 3],
       is_nullable => {},
@@ -672,3 +625,9 @@ is_deeply(
    },
    'WHERE for <',
 );
+
+
+# #############################################################################
+# Done.
+# #############################################################################
+exit;

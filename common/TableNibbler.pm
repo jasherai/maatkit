@@ -27,54 +27,59 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   return bless {}, shift;
+   my ( $class, %args ) = @_;
+   my @required_args = qw(TableParser Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 # Arguments are as follows:
-# * parser   TableParser
-# * tbl      Hashref as provided by TableParser.
-# * cols     Arrayref of columns to SELECT from the table. Defaults to all.
-# * index    Which index to ascend; optional.
-# * ascfirst Ascend the first column of the given index.
-# * quoter   a Quoter object
-# * asconly  Whether to ascend strictly, that is, the WHERE clause for
-#            the asc_stmt will fetch the next row > the given arguments.
-#            The option is to fetch the row >=, which could loop
-#            infinitely.  Default is false.
+# * tbl_struct    Hashref returned from TableParser::parse().
+# * cols          Arrayref of columns to SELECT from the table
+# * index         Which index to ascend; optional.
+# * asc_only      Whether to ascend strictly, that is, the WHERE clause for
+#                 the asc_stmt will fetch the next row > the given arguments.
+#                 The option is to fetch the row >=, which could loop
+#                 infinitely.  Default is false.
 #
 # Returns a hashref of
-# * cols:  columns in the select stmt, with required extras appended
-# * index: index chosen to ascend
-# * where: WHERE clause
-# * slice: col ordinals to pull from a row that will satisfy ? placeholders
-# * scols: ditto, but column names instead of ordinals
+#   * cols:  columns in the select stmt, with required extras appended
+#   * index: index chosen to ascend
+#   * where: WHERE clause
+#   * slice: col ordinals to pull from a row that will satisfy ? placeholders
+#   * scols: ditto, but column names instead of ordinals
 #
 # In other words,
-# $first = $dbh->prepare <....>;
-# $next  = $dbh->prepare <....>;
-# $row = $first->fetchrow_arrayref();
-# $row = $next->fetchrow_arrayref(@{$row}[@slice]);
+#   $first = $dbh->prepare <....>;
+#   $next  = $dbh->prepare <....>;
+#   $row = $first->fetchrow_arrayref();
+#   $row = $next->fetchrow_arrayref(@{$row}[@slice]);
 sub generate_asc_stmt {
    my ( $self, %args ) = @_;
+   my @required_args = qw(tbl_struct index);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($tbl_struct, $index) = @args{@required_args};
+   my @cols = $args{cols}  ? @{$args{cols}} : @{$tbl_struct->{cols}};
+   my $q    = $self->{Quoter};
 
-   my $tbl  = $args{tbl};
-   my @cols = $args{cols} ? @{$args{cols}} : @{$tbl->{cols}};
-   my $q    = $args{quoter};
+   # This shouldn't happen.  TableSyncNibble shouldn't call us with
+   # a nonexistent index.
+   die "Index '$index' does not exist in table"
+      unless exists $tbl_struct->{keys}->{$index};
 
-   my @asc_cols;
+   my @asc_cols = @{$tbl_struct->{keys}->{$index}->{cols}};
    my @asc_slice;
 
-   # ##########################################################################
-   # Detect indexes and columns needed.
-   # ##########################################################################
-   my $index = $args{parser}->find_best_index($tbl, $args{index});
-   die "Cannot find an ascendable index in table" unless $index;
-
    # These are the columns we'll ascend.
-   @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
+   @asc_cols = @{$tbl_struct->{keys}->{$index}->{cols}};
    MKDEBUG && _d('Will ascend index', $index);
    MKDEBUG && _d('Will ascend columns', join(', ', @asc_cols));
-   if ( $args{ascfirst} ) {
+   if ( $args{asc_first} ) {
       @asc_cols = $asc_cols[0];
       MKDEBUG && _d('Ascending only first column');
    }
@@ -102,7 +107,7 @@ sub generate_asc_stmt {
    # ##########################################################################
    # Figure out how to ascend the index by building a possibly complicated
    # WHERE clause that will define a range beginning with a row retrieved by
-   # asc_stmt.  If asconly is given, the row's lower end should not include
+   # asc_stmt.  If asc_only is given, the row's lower end should not include
    # the row.
    # ##########################################################################
    if ( @asc_slice ) {
@@ -114,11 +119,11 @@ sub generate_asc_stmt {
             slice       => \@asc_slice,
             cols        => \@cols,
             quoter      => $q,
-            is_nullable => $tbl->{is_nullable},
+            is_nullable => $tbl_struct->{is_nullable},
          );
          $asc_stmt->{boundaries}->{$cmp} = $cmp_where->{where};
       }
-      my $cmp = $args{asconly} ? '>' : '>=';
+      my $cmp = $args{asc_only} ? '>' : '>=';
       $asc_stmt->{where} = $asc_stmt->{boundaries}->{$cmp};
       $asc_stmt->{slice} = $cmp_where->{slice};
       $asc_stmt->{scols} = $cmp_where->{scols};
@@ -136,15 +141,14 @@ sub generate_asc_stmt {
 # pattern is (>), (= >), (= = >), (= = = >=).
 sub generate_cmp_where {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(type slice cols quoter is_nullable) ) {
+   foreach my $arg ( qw(type slice cols is_nullable) ) {
       die "I need a $arg arg" unless defined $args{$arg};
    }
-
    my @slice       = @{$args{slice}};
    my @cols        = @{$args{cols}};
-   my $q           = $args{quoter};
    my $is_nullable = $args{is_nullable};
    my $type        = $args{type};
+   my $q           = $self->{Quoter};
 
    (my $cmp = $type) =~ s/=//;
 
@@ -214,15 +218,18 @@ sub generate_cmp_where {
 # columns.  For that reason you should call this before calling
 # generate_asc_stmt(), so you know what columns you'll need to fetch from the
 # table.  Arguments:
-# * parser * tbl * cols * quoter * index
+#   * tbl_struct
+#   * cols
+#   * index
 # These are the same as the arguments to generate_asc_stmt().  Return value is
 # similar too.
 sub generate_del_stmt {
    my ( $self, %args ) = @_;
 
-   my $tbl  = $args{tbl};
+   my $tbl  = $args{tbl_struct};
    my @cols = $args{cols} ? @{$args{cols}} : ();
-   my $q    = $args{quoter};
+   my $tp   = $self->{TableParser};
+   my $q    = $self->{Quoter};
 
    my @del_cols;
    my @del_slice;
@@ -231,7 +238,7 @@ sub generate_del_stmt {
    # Detect the best or preferred index to use for the WHERE clause needed to
    # delete the rows.
    # ##########################################################################
-   my $index = $args{parser}->find_best_index($tbl, $args{index});
+   my $index = $tp->find_best_index($tbl, $args{index});
    die "Cannot find an ascendable index in table" unless $index;
 
    # These are the columns needed for the DELETE statement's WHERE clause.
