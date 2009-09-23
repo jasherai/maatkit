@@ -30,8 +30,19 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+# Arguments:
+#   * TableChecksum  A TableChecksum module
+#   * VersionParser  A VersionParser module
+#   * Quoter         A Quoter module
+#   * MasterSlave    A MasterSlave module
 sub new {
-   return bless {}, shift;
+   my ( $class, %args ) = @_;
+   my @required_args = qw(TableChecksum VersionParser Quoter MasterSlave);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 # Return the first plugin from the arrayref of TableSync* plugins
@@ -53,74 +64,89 @@ sub get_best_plugin {
    return;
 }
 
-# Arguments:
-#   * plugins        Arrayref of TableSync* modules, in order of preference
-#   * src            Hashref with source dbh, db, tbl
-#   * dst            Hashref with destination dbh, db, tbl
-#   * tbl_struct     Return val from TableParser::parser() for src & dst tbl
-#   * cols           Arrayref of tbl columns used to sync/compare
-#   * chunk_size     Size/number of rows to select in each chunk
-#   * function       Crypto hash function used for checksumming chunks
-#   * RowDiff        A RowDiff module
-#   * ChangeHandler  A ChangeHandler module
-#   * TableChecksum  A TableChecksum module
-#   * VersionParser  A VersionParser module
-#   * Quoter         A Quoter module
-#   * MasterSlave    A MasterSlave module
-#   * dry_run        (optional) Prepare to sync but don't actually sync
-#   * chunk_col      (optional) Column name to chunk table on
-#   * chunk_index    (optional) Index to use for chunking table
-#   * buffer         (optional) Buffer results in MySQL
-#   * transaction    (optional)
-#   * change_dbh     (optional) dbh on which changes are made
-#   * lock           (optional)
-#   * wait           (optional)
-#   * timeout_ok     (optional)
+# Required arguments:
+#   * plugins         Arrayref of TableSync* modules, in order of preference
+#   * src             Hashref with source dbh, db, tbl
+#   * dst             Hashref with destination dbh, db, tbl
+#   * tbl_struct      Return val from TableParser::parser() for src and dst tbl
+#   * cols            Arrayref of column names to checksum/compare
+#   * chunk_size      Size/number of rows to select in each chunk
+#   * RowDiff         A RowDiff module
+#   * ChangeHandler   A ChangeHandler module
+# Optional arguments:
+#   * replicate       If syncing via replication (default no)
+#   * function        Crypto hash func for checksumming chunks (default CRC32)
+#   * dry_run         Prepare to sync but don't actually sync (default no)
+#   * chunk_col       Column name to chunk table on (default auto-choose)
+#   * chunk_index     Index name to use for chunking table (default auto-choose)
+#   * buffer_in_mysql Buffer results in MySQL (default no)
+#   * transaction     locking
+#   * change_dbh      locking
+#   * lock            locking
+#   * wait            locking
+#   * timeout_ok      locking
 sub sync_table {
    my ( $self, %args ) = @_;
-   my @required_args = qw(plugins src dst tbl_struct col chunk_size function
-                          RowDiff ChangeHandler TableChecksum VersionParser
-                          Quoter MasterSlave);
+   my @required_args = qw(plugins src dst tbl_struct cols chunk_size
+                          RowDiff ChangeHandler);
    foreach my $arg ( @required_args ) {
-      die "I need a $arg argument" unless defined $args{$arg};
+      die "I need a $arg argument" unless $args{$arg};
    }
-   MKDEBUG && _d('Syncing table with args',
-      join(', ',
-         map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
-         sort keys %args));
-   my ($plugins, $src, $dst, $tbl_struct, $col, $chunk_size, $function,
-       $rd, $ch, $checksum, $vp, $q, $ms) = @args{@required_args};
+   MKDEBUG && _d('Syncing table with args', Dumper(\%args));
+   my ($plugins, $src, $dst, $tbl_struct, $cols, $chunk_size, $rd, $ch)
+      = @args{@required_args};
+   my $q  = $self->{Quoter};
+   my $vp = $self->{VersionParser};
 
    # ########################################################################
    # Get and prepare the first plugin that can sync this table.
    # ########################################################################
    my ($plugin, %plugin_args) = $self->get_best_plugin(%args);
-   die "No plugin can sync `$args{src_db}`.`$args{src_tbl}`" unless $plugin;
+   die "No plugin can sync $src->{db}.$src->{tbl}" unless $plugin;
 
    # The row-level (state 2) checksums use __crc, so the table can't use that.
    my $crc_col = '__crc';
-   while ( $args{tbl_struct}->{is_col}->{$args{crc_col}} ) {
+   while ( $tbl_struct->{is_col}->{$crc_col} ) {
       $crc_col = "_$crc_col"; # Prepend more _ until not a column.
    }
    MKDEBUG && _d('CRC column:', $crc_col);
 
    my $index_hint;
-   if ( $args{index_struct} ) {
-      my $hint = $vp->version_ge($src->{dbh}, '4.0.9') ? 'FORCE' : 'USE';
-      $index_hint = "$hint (" . $q->quote($args{index_struct}->{name}) . ")";
+   if ( $args{chunk_index} ) {
+      my $hint = ($vp->version_ge($src->{dbh}, '4.0.9')
+                  && $vp->version_ge($dst->{dbh}, '4.0.9')) ? 'FORCE' : 'USE';
+      $index_hint = "$hint (" . $q->quote($args{chunk_index}) . ")";
+      MKDEBUG && _d('Index hint:', $index_hint);
    }
 
-   $plugin->prepare_to_sync(
-      %args,
-      %plugin_args,
-      crc_col    => $crc_col,
-      index_hint => $index_hint,
-   );
+   eval {
+      $plugin->prepare_to_sync(
+         %args,
+         %plugin_args,
+         crc_col    => $crc_col,
+         index_hint => $index_hint,
+      );
+   };
+   if ( $EVAL_ERROR ) {
+      # At present, no plugin should fail to prepare, but just in case...
+      die 'Failed to prepare TableSync', $plugin->get_name(), ' plugin: ',
+         $EVAL_ERROR;
+   }
 
+   # Some plugins like TableSyncChunk use checksum queries, others like
+   # TableSyncGroupBy do not.  For those that do, make chunk (state 0)
+   # and row (state 2) checksum queries.
    if ( $plugin->uses_checksum() ) {
-      my ($chunk_sql, $row_sql) = make_checksum_queries(%args);
-      $plugin->set_chunk_sql($chunk_sql);
-      $plugin->set_row_sql($row_sql);
+      eval {
+         my ($chunk_sql, $row_sql) = $self->make_checksum_queries(%args);
+         $plugin->set_chunk_sql($chunk_sql);
+         $plugin->set_row_sql($row_sql);
+      };
+      if ( $EVAL_ERROR ) {
+         # This happens if src and dst are really different and the same
+         # checksum algo and hash func can't be used on both.
+         die "Failed to make checksum queries: $EVAL_ERROR";
+      }
    } 
 
    # ########################################################################
@@ -133,7 +159,7 @@ sub sync_table {
    # ########################################################################
    # Start syncing the table.
    # ########################################################################
-   $self->lock_and_wait(%args, lock_level => 2);
+   $self->lock_and_wait(%args, lock_level => 2);  # per-table lock
 
    my $cycle = 0;
    while ( !$plugin->done() ) {
@@ -155,14 +181,17 @@ sub sync_table {
       if ( $args{transaction} ) {
          # TODO: update this for 2-way sync.
          if ( $args{change_dbh} && $args{change_dbh} eq $src->{dbh} ) {
+            # Making changes on master which will replicate to the slave.
             $src_sql .= ' FOR UPDATE';
             $dst_sql .= ' LOCK IN SHARE MODE';
          }
          elsif ( $args{change_dbh} ) {
+            # Making changes on the slave.
             $src_sql .= ' LOCK IN SHARE MODE';
             $dst_sql .= ' FOR UPDATE';
          }
          else {
+            # TODO: this doesn't really happen
             $src_sql .= ' LOCK IN SHARE MODE';
             $dst_sql .= ' LOCK IN SHARE MODE';
          }
@@ -181,6 +210,7 @@ sub sync_table {
       # currently has locked).
       my $executed_src = 0;
       if ( !$cycle || !$plugin->pending_changes() ) {
+         # per-sync cycle lock
          $executed_src
             = $self->lock_and_wait(%args, src_sth => $src_sth, lock_level => 1);
       }
@@ -193,7 +223,7 @@ sub sync_table {
          left   => $src_sth,
          right  => $dst_sth,
          syncer => $plugin,
-         tbl    => $args{tbl_struct},
+         tbl    => $tbl_struct,
       );
       MKDEBUG && _d('Finished sync cycle', $cycle);
       $ch->process_rows(1);
@@ -210,41 +240,65 @@ sub sync_table {
 
 sub make_checksum_queries {
    my ( $self, %args ) = @_;
-   my @required_args = qw(TableChecksum dbh db tbl tbl_struct);
+   my @required_args = qw(src dst tbl_struct);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($checksum, $dbh) = @args{@required_args};
+   my ($src, $dst, $tbl_struct) = @args{@required_args};
+   my $checksum = $self->{TableChecksum};
 
    # Decide on checksumming strategy and store checksum query prototypes for
    # later.
-   my $algorithm  = $checksum->best_algorithm(
+   my $src_algo = $checksum->best_algorithm(
       algorithm => 'BIT_XOR',
-      dbh       => $dbh,
+      dbh       => $src->{dbh},
       where     => 1,
       chunk     => 1,
       count     => 1,
    );
-   my $func       = $checksum->choose_hash_func(%args);
-   my $crc_wid    = $checksum->get_crc_wid($dbh, $func);
-   my ($crc_type) = $checksum->get_crc_type($dbh, $func);
-   my $opt_slice;
-   if ( $algorithm eq 'BIT_XOR' && $crc_type !~ m/int$/ ) {
-      $opt_slice = $checksum->optimize_xor($dbh, $func);
+   my $dst_algo = $checksum->best_algorithm(
+      algorithm => 'BIT_XOR',
+      dbh       => $dst->{dbh},
+      where     => 1,
+      chunk     => 1,
+      count     => 1,
+   );
+   if ( $src_algo ne $dst_algo ) {
+      die "Source and destination checksum algorithms are different: ",
+         "$src_algo on source, $dst_algo on destination"
    }
-   
+
+   my $src_func = $checksum->choose_hash_func(dbh => $src->{dbh}, %args);
+   my $dst_func = $checksum->choose_hash_func(dbh => $dst->{dbh}, %args);
+   if ( $src_func ne $dst_func ) {
+      die "Source and destination hash functions are different: ",
+      "$src_func on source, $dst_func on destination";
+   }
+
+   # Since the checksum algo and hash func are the same on src and dst
+   # it doesn't matter if we use src_algo/func or dst_algo/func.
+
+   my $crc_wid    = $checksum->get_crc_wid($src->{dbh}, $src_func);
+   my ($crc_type) = $checksum->get_crc_type($src->{dbh}, $src_func);
+   my $opt_slice;
+   if ( $src_algo eq 'BIT_XOR' && $crc_type !~ m/int$/ ) {
+      $opt_slice = $checksum->optimize_xor($src->{dbh}, $src_func);
+   }
+
    my $chunk_sql = $checksum->make_checksum_query(
-      %args,
-      algorithm => $algorithm,
-      function  => $func,
+      db        => $src->{db},
+      tbl       => $src->{tbl},
+      algorithm => $src_algo,
+      function  => $src_func,
       crc_wid   => $crc_wid,
       crc_type  => $crc_type,
       opt_slice => $opt_slice,
+      %args,
    );
    MKDEBUG && _d('Chunk sql:', $chunk_sql);
    my $row_sql = $checksum->make_row_checksum(
       %args,
-      function => $func,
+      function => $src_func,
    );
    MKDEBUG && _d('Row sql:', $row_sql);
    return $chunk_sql, $row_sql;
@@ -282,7 +336,7 @@ sub unlock {
    my ( $self, %args ) = @_;
 
    foreach my $arg ( qw(
-      dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
+      dst_db dst_dbh dst_tbl lock replicate src_db src_dbh src_tbl
       timeoutok transaction wait lock_level) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
@@ -305,10 +359,10 @@ sub unlock {
 }
 
 # Lock levels:
-# 0 => none
-# 1 => per sync cycle
-# 2 => per table
-# 3 => global
+#   0 => none
+#   1 => per sync cycle
+#   2 => per table
+#   3 => global
 # This function might actually execute the $src_sth.  If we're using
 # transactions instead of table locks, the $src_sth has to be executed before
 # the MASTER_POS_WAIT() on the slave.  The return value is whether the
@@ -326,7 +380,7 @@ sub lock_and_wait {
 
    return unless $args{lock} && $args{lock} == $args{lock_level};
 
-   # First, unlock/commit.
+   # First, commit/unlock the previous transaction/lock.
    foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
       if ( $args{transaction} ) {
          MKDEBUG && _d('Committing', $dbh);
@@ -347,6 +401,7 @@ sub lock_and_wait {
       $args{src_dbh}->do($sql);
    }
    else {
+      # Lock level 2 (per-table) or 1 (per-sync cycle)
       if ( $args{transaction} ) {
          if ( $args{src_sth} ) {
             # Execute the $src_sth on the source, so LOCK IN SHARE MODE/FOR
