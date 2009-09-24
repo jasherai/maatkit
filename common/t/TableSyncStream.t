@@ -43,20 +43,23 @@ my $ch = new ChangeHandler(
 $t->prepare_to_sync(
    ChangeHandler   => $ch,
    cols            => [qw(a b c)],
+   buffer_in_mysql => 1,
 );
-
 is(
    $t->get_sql(
       where    => 'foo=1',
       database => 'test',
       table    => 'foo',
-      buffer_in_mysql => 1,
    ),
    'SELECT SQL_BUFFER_RESULT `a`, `b`, `c` FROM `test`.`foo` WHERE foo=1',
    'Got SQL with SQL_BUFFER_RESULT OK',
 );
 
 
+$t->prepare_to_sync(
+   ChangeHandler   => $ch,
+   cols            => [qw(a b c)],
+);
 is(
    $t->get_sql(
       where    => 'foo=1',

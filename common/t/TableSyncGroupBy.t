@@ -45,11 +45,10 @@ $t->prepare_to_sync(
    ChangeHandler => $ch,
    cols          => [qw(a b c)],
    tbl_struct    => $tbl_struct,
+   buffer_in_mysql => 1,
 );
-
 is(
    $t->get_sql(
-      buffer_in_mysql => 1,
       where    => 'foo=1',
       database => 'test',
       table    => 'foo',
@@ -59,6 +58,11 @@ is(
    'Got SQL with SQL_BUFFER_RESULT',
 );
 
+$t->prepare_to_sync(
+   ChangeHandler => $ch,
+   cols          => [qw(a b c)],
+   tbl_struct    => $tbl_struct,
+);
 is(
    $t->get_sql(
       where    => 'foo=1',
