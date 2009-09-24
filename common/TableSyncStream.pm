@@ -28,27 +28,53 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-# Arguments:
-# * handler ChangeHandler
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(handler cols) ) {
-      die "I need a $arg argument" unless defined $args{$arg};
+   foreach my $arg ( qw(Quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
-   return bless { %args }, $class;
+   my $self = { %args };
+   return bless $self, $class;
 }
 
-# Arguments:
-# * quoter   Quoter
-# * database Database name
-# * table    Table name
-# * where    WHERE clause
+sub get_name {
+   return 'Stream';
+}
+
+sub can_sync {
+   return ();  # We can sync anything.
+}
+
+sub prepare_to_sync {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(cols ChangeHandler);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   $self->{cols}          = $args{cols};
+   $self->{ChangeHandler} = $args{ChangeHandler};
+   return;
+}
+
+sub uses_checksum {
+   return 0;  # We don't need checksum queries.
+}
+
+sub set_checksum_queries {
+   return;  # This shouldn't be called, but just in case.
+}
+
+sub prepare_sync_cycle {
+   my ( $self, $dbh ) = @_;
+   return;
+}
+
 sub get_sql {
    my ( $self, %args ) = @_;
    return "SELECT "
-      . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
-      . join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}})
-      . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
+      . ($args{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
+      . join(', ', map { $self->{Quoter}->quote($_) } @{$self->{cols}})
+      . ' FROM ' . $self->{Quoter}->quote(@args{qw(database table)})
       . ' WHERE ' . ( $args{where} || '1=1' );
 }
 
@@ -58,12 +84,12 @@ sub same_row {
 
 sub not_in_right {
    my ( $self, $lr ) = @_;
-   $self->{handler}->change('INSERT', $lr, $self->key_cols());
+   $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
-   $self->{handler}->change('DELETE', $rr, $self->key_cols());
+   $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
 }
 
 sub done_with_rows {
@@ -81,16 +107,11 @@ sub key_cols {
    return $self->{cols};
 }
 
-# Do any required setup before executing the SQL (such as setting up user
-# variables for checksum queries).
-sub prepare {
-   my ( $self, $dbh ) = @_;
-}
-
 # Return 1 if you have changes yet to make and you don't want the TableSyncer to
 # commit your transaction or release your locks.
 sub pending_changes {
    my ( $self ) = @_;
+   return;
 }
 
 sub _d {

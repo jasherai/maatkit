@@ -161,6 +161,14 @@ sub set_checksum_queries {
    return;
 }
 
+sub prepare_sync_cycle {
+   my ( $self, $dbh ) = @_;
+   my $sql = 'SET @crc := "", @cnt := 0';
+   MKDEBUG && _d($sql);
+   $dbh->do($sql);
+   return;
+}
+
 # Depth-first: if there are any bad chunks, return SQL to inspect their rows
 # individually.  Otherwise get the next chunk.  This way we can sync part of the
 # table before moving on to the next part.
@@ -187,14 +195,6 @@ sub get_sql {
          where      => [ $args{where} ],
       );
    }
-}
-
-sub prepare_sync_cycle {
-   my ( $self, $dbh ) = @_;
-   my $sql = 'SET @crc := "", @cnt := 0';
-   MKDEBUG && _d($sql);
-   $dbh->do($sql);
-   return;
 }
 
 sub same_row {

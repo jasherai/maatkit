@@ -137,6 +137,14 @@ sub set_checksum_queries {
    return;
 }
 
+sub prepare_sync_cycle {
+   my ( $self, $dbh ) = @_;
+   my $sql = 'SET @crc := "", @cnt := 0';
+   MKDEBUG && _d($sql);
+   $dbh->do($sql);
+   return;
+}
+
 # Returns a SELECT statement that either gets a nibble of rows (state=0) or,
 # if the last nibble was bad (state=1 or 2), gets the rows in the nibble.
 # This way we can sync part of the table before moving on to the next part.
@@ -301,14 +309,6 @@ sub __get_explain_index {
    }
    MKDEBUG && _d('EXPLAIN key:', $explain->[0]->{key}); 
    return $explain->[0]->{key}
-}
-
-sub prepare {
-   my ( $self, $dbh ) = @_;
-   my $sql = 'SET @crc := "", @cnt := 0';
-   MKDEBUG && _d($sql);
-   $dbh->do($sql);
-   return;
 }
 
 sub same_row {

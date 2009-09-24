@@ -46,14 +46,6 @@ sub can_sync {
    return ();  # We can sync anything.
 }
 
-sub uses_checksum {
-   return 0;  # We don't need checksum queries.
-}
-
-sub set_checksum_queries {
-   return;  # This shouldn't be called, but just in case.
-}
-
 sub prepare_to_sync {
    my ( $self, %args ) = @_;
    my @required_args = qw(tbl_struct cols ChangeHandler);
@@ -71,6 +63,19 @@ sub prepare_to_sync {
    }
    MKDEBUG && _d('COUNT column will be named', $self->{count_col});
 
+   return;
+}
+
+sub uses_checksum {
+   return 0;  # We don't need checksum queries.
+}
+
+sub set_checksum_queries {
+   return;  # This shouldn't be called, but just in case.
+}
+
+sub prepare_sync_cycle {
+   my ( $self, $dbh ) = @_;
    return;
 }
 
@@ -144,16 +149,11 @@ sub key_cols {
    return $self->{cols};
 }
 
-# Do any required setup before executing the SQL (such as setting up user
-# variables for checksum queries).
-sub prepare {
-   my ( $self, $dbh ) = @_;
-}
-
 # Return 1 if you have changes yet to make and you don't want the TableSyncer to
 # commit your transaction or release your locks.
 sub pending_changes {
    my ( $self ) = @_;
+   return;
 }
 
 sub _d {
