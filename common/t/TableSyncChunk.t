@@ -152,13 +152,13 @@ unlike(
 );
 
 # SQL_BUFFER_RESULT only appears in the row query, state 1 or 2.
+$t->prepare_to_sync(%args, buffer_in_mysql => 1);
 $t->{state} = 1;
 like(
    $t->get_sql(
       where    => 'foo=1',
       database => 'test',
-      table    => 'test1',
-      buffer_in_mysql => 1,
+      table    => 'test1', 
    ),
    qr/SELECT SQL_BUFFER_RESULT/,
    'Has SQL_BUFFER_RESULT',
@@ -286,21 +286,19 @@ is($t->pending_changes(), 0, 'No pending changes');
 # ###########################################################################
 # Test can_sync().
 # ###########################################################################
-$ddl        = $du->get_create_table($dbh, $q, 'test', 'test1');
+$ddl        = $du->get_create_table($dbh, $q, 'test', 'test6');
 $tbl_struct = $tp->parse($ddl);
-my %sync    = $t->can_sync(tbl_struct=>$tbl_struct);
 is_deeply(
-   \%sync,
-   {},
+   [ $t->can_sync(tbl_struct=>$tbl_struct) ],
+   [],
    'Cannot sync table1 (no good single column index)'
 );
 
 $ddl        = $du->get_create_table($dbh, $q, 'test', 'test5');
 $tbl_struct = $tp->parse($ddl);
-%sync       = $t->can_sync(tbl_struct=>$tbl_struct);
 is_deeply(
-   \%sync,
-   {},
+   [ $t->can_sync(tbl_struct=>$tbl_struct) ],
+   [],
    'Cannot sync table5 (no indexes)'
 );
 
@@ -308,50 +306,45 @@ is_deeply(
 
 $ddl        = $du->get_create_table($dbh, $q, 'test', 'test3');
 $tbl_struct = $tp->parse($ddl);
-%sync       = $t->can_sync(tbl_struct=>$tbl_struct);
 is_deeply(
-   \%sync, 
-   {
-      chunk_col   => 'a',
-      chunk_index => 'PRIMARY',
-   },
+   [ $t->can_sync(tbl_struct=>$tbl_struct) ],
+   [ 1,
+     chunk_col   => 'a',
+     chunk_index => 'PRIMARY',
+   ],
    'Can sync table3, chooses best col and index'
 );
 
-%sync = $t->can_sync(tbl_struct=>$tbl_struct, col=>'b');
 is_deeply(
-   \%sync, 
-   {
-      chunk_col   => 'b',
-      chunk_index => 'b',
-   },
+   [ $t->can_sync(tbl_struct=>$tbl_struct, chunk_col=>'b') ],
+   [ 1,
+     chunk_col   => 'b',
+     chunk_index => 'b',
+   ],
    'Can sync table3 with requested col'
 );
 
-%sync = $t->can_sync(tbl_struct=>$tbl_struct, index=>'b');
 is_deeply(
-   \%sync, 
-   {
-      chunk_col   => 'b',
-      chunk_index => 'b',
-   },
+   [ $t->can_sync(tbl_struct=>$tbl_struct, chunk_index=>'b') ],
+   [ 1,
+     chunk_col   => 'b',
+     chunk_index => 'b',
+   ],
    'Can sync table3 with requested index'
 );
-
-%sync = $t->can_sync(tbl_struct=>$tbl_struct, col=>'b', index=>'b');
+ 
 is_deeply(
-   \%sync, 
-   {
-      chunk_col   => 'b',
-      chunk_index => 'b',
-   },
+   [ $t->can_sync(tbl_struct=>$tbl_struct, chunk_col=>'b', chunk_index=>'b') ],
+   [ 1,
+     chunk_col   => 'b',
+     chunk_index => 'b',
+   ],
    'Can sync table3 with requested col and index'
 );
 
-%sync = $t->can_sync(tbl_struct=>$tbl_struct, col=>'b', index=>'PRIMARY');
 is_deeply(
-   \%sync, 
-   {},
+   [ $t->can_sync(tbl_struct=>$tbl_struct, chunk_col=>'b', chunk_index=>'PRIMARY') ],
+   [],
    'Cannot sync table3 with requested col and index'
 );
 
