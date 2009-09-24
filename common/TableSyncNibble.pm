@@ -49,8 +49,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(TableNibbler TableChunker TableParser Quoter
-                        VersionParser) ) {
+   foreach my $arg ( qw(TableNibbler TableChunker TableParser Quoter) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $self = { %args };
@@ -275,9 +274,7 @@ sub __make_boundary_sql {
    my $sql = "SELECT /*nibble boundary $self->{nibble}*/ "
       . join(',', map { $q->quote($_) } @{$s->{cols}})
       . " FROM " . $q->quote($args{database}, $args{table})
-      . ($self->{VersionParser}->version_ge($self->{dbh}, '4.0.9')
-         ? " FORCE" : " USE")
-      . " INDEX(" . $q->quote($s->{index}) . ")";
+      . ' ' . ($self->{index_hint} || '');
 
    if ( $self->{nibble} ) {
       # The lower boundaries of the nibble must be defined, based on the last

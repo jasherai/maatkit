@@ -350,6 +350,7 @@ $t->prepare_to_sync(
    chunk_size     => 2,
    index          => 'package_id',
    crc_col        => '__crc_col',
+   index_hint     => 'FORCE INDEX(`package_id`)',
 );
 
 # Test that we die if MySQL isn't using the chosen index (package_id)
