@@ -26,8 +26,9 @@ use English qw(-no_match_vars);
 use POSIX qw(ceil);
 use List::Util qw(min max);
 use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
-$Data::Dumper::Indent    = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -61,41 +62,40 @@ sub find_chunk_columns {
    my $tbl_struct = $args{tbl_struct};
 
    # See if there's an index that will support chunking.
-   my @possible_keys;
-   KEY:
-   foreach my $key ( values %{ $tbl_struct->{keys} } ) {
+   my @possible_indexes;
+   foreach my $index ( values %{ $tbl_struct->{keys} } ) {
 
       # Accept only BTREE indexes.
-      next unless $key->{type} eq 'BTREE';
+      next unless $index->{type} eq 'BTREE';
 
       # Reject indexes with prefixed columns.
-      defined $_ && next KEY for @{ $key->{col_prefixes} };
+      defined $_ && next for @{ $index->{col_prefixes} };
 
       # If exact, accept only unique, single-column indexes.
       if ( $args{exact} ) {
-         next unless $key->{is_unique} && @{$key->{cols}} == 1;
+         next unless $index->{is_unique} && @{$index->{cols}} == 1;
       }
 
-      push @possible_keys, $key;
+      push @possible_indexes, $index;
    }
-   MKDEBUG && _d('Possible keys in order:',
-      join(', ', map { $_->{name} } @possible_keys));
+   MKDEBUG && _d('Possible chunk indexes in order:',
+      join(', ', map { $_->{name} } @possible_indexes));
 
    # Build list of candidate chunk columns.   
    my $can_chunk_exact = 0;
    my @candidate_cols;
-   foreach my $key ( @possible_keys ) { 
-      my $col = $key->{cols}->[0];
+   foreach my $index ( @possible_indexes ) { 
+      my $col = $index->{cols}->[0];
 
       # Accept only integer or real number type columns.
       next unless ( $int_types{$tbl_struct->{type_for}->{$col}}
                     || $real_types{$tbl_struct->{type_for}->{$col}} );
 
       # Save the candidate column and its index.
-      push @candidate_cols, { column => $col, index => $key->{name} };
+      push @candidate_cols, { column => $col, index => $index->{name} };
    }
 
-   $can_chunk_exact = 1 if ( $args{exact} && scalar @candidate_cols );
+   $can_chunk_exact = 1 if $args{exact} && scalar @candidate_cols;
 
    if ( MKDEBUG ) {
       my $chunk_type = $args{exact} ? 'Exact' : 'Inexact';
@@ -109,8 +109,8 @@ sub find_chunk_columns {
    MKDEBUG && _d('Ordering columns by order in tbl, PK first');
    if ( $tbl_struct->{keys}->{PRIMARY} ) {
       my $pk_first_col = $tbl_struct->{keys}->{PRIMARY}->{cols}->[0];
-      @result = grep { $_->{column} eq $pk_first_col } @candidate_cols;
-      @candidate_cols = grep { $_->{column} ne $pk_first_col } @candidate_cols;
+      @result          = grep { $_->{column} eq $pk_first_col } @candidate_cols;
+      @candidate_cols  = grep { $_->{column} ne $pk_first_col } @candidate_cols;
    }
    my $i = 0;
    my %col_pos = map { $_ => $i++ } @{$tbl_struct->{cols}};
@@ -127,7 +127,7 @@ sub find_chunk_columns {
 }
 
 # Arguments:
-#   * tbl_struct     Output from TableParser::parse
+#   * tbl_struct     Return value from TableParser::parse()
 #   * chunk_col      Which column to chunk on
 #   * min            Min value of col
 #   * max            Max value of col
@@ -145,15 +145,13 @@ sub calculate_chunks {
                         chunk_size dbh) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   MKDEBUG && _d('Arguments:',
-      join(', ',
-         map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') } keys %args));
+   MKDEBUG && _d('Calculate chunks for', Dumper(\%args));
    my $dbh = $args{dbh};
 
    my @chunks;
    my ($range_func, $start_point, $end_point);
    my $col_type = $args{tbl_struct}->{type_for}->{$args{chunk_col}};
-   MKDEBUG && _d('Chunking on', $args{chunk_col}, '(',$col_type,')');
+   MKDEBUG && _d('chunk col type:', $col_type);
 
    # Determine chunk size in "distance between endpoints" that will give
    # approximately the right number of rows between the endpoints.  Also
@@ -365,10 +363,11 @@ sub inject_chunks {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    MKDEBUG && _d('Injecting chunk', $args{chunk_num});
+   my $query   = $args{query};
    my $comment = sprintf("/*%s.%s:%d/%d*/",
       $args{database}, $args{table},
       $args{chunk_num} + 1, scalar @{$args{chunks}});
-   $args{query} =~ s!/\*PROGRESS_COMMENT\*/!$comment!;
+   $query =~ s!/\*PROGRESS_COMMENT\*/!$comment!;
    my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
    if ( $args{where} && grep { $_ } @{$args{where}} ) {
       $where .= " AND ("
@@ -380,11 +379,12 @@ sub inject_chunks {
 
    MKDEBUG && _d('Parameters:',
       Dumper({WHERE => $where, DB_TBL => $db_tbl, INDEX_HINT => $index_hint}));
-   $args{query} =~ s!/\*WHERE\*/! $where!;
-   $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
-   $args{query} =~ s!/\*INDEX_HINT\*/! $index_hint!;
-   $args{query} =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
-   return $args{query};
+   $query =~ s!/\*WHERE\*/! $where!;
+   $query =~ s!/\*DB_TBL\*/!$db_tbl!;
+   $query =~ s!/\*INDEX_HINT\*/! $index_hint!;
+   $query =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
+
+   return $query;
 }
 
 # ###########################################################################
