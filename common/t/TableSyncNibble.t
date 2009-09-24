@@ -100,7 +100,8 @@ my %args       = (
    tbl_struct    => $tbl_struct,
    cols          => $tbl_struct->{cols},
    chunk_size    => 1,
-   index         => 'PRIMARY',
+   chunk_index   => 'PRIMARY',
+   key_cols      => $tbl_struct->{keys}->{PRIMARY}->{cols},
    where         => 'a>2',
    crc_col       => '__crc',
    index_hint    => 'USE INDEX (`PRIMARY`)',
@@ -124,7 +125,7 @@ SKIP: {
       ),
       q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS }
       . q{cnt, LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`, `c`) AS UNSIGNED)), }
-      . q{10, 16)) AS crc FROM `test`.`test1`  WHERE (((`a` < 1) OR (`a` = 1 }
+      . q{10, 16)) AS crc FROM `test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < 1) OR (`a` = 1 }
       . q{AND `b` <= 'en'))) AND ((foo=1))},
       'First nibble SQL with FNV_64',
    );
@@ -145,7 +146,7 @@ is(
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1`  WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND ((foo=1))},
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND ((foo=1))},
    'First nibble SQL',
 );
 
@@ -161,7 +162,7 @@ is(
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1`  WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND ((foo=1))},
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND ((foo=1))},
    'First nibble SQL, again',
 );
 
@@ -180,7 +181,7 @@ is(
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1`  WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) AND }
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) AND }
    . q{((`a` < 2) OR (`a` = 2 AND `b` <= 'ca')))) AND (((foo=1)))},
    'Second nibble SQL',
 );
@@ -217,7 +218,7 @@ is(
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1`  WHERE ((((`a` > 4) OR (`a` = 4 AND `b` > 'bz')) AND }
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > 4) OR (`a` = 4 AND `b` > 'bz')) AND }
    . q{1=1)) AND ((foo=1))},
    'End-of-table nibble SQL',
 );
@@ -261,7 +262,7 @@ is($t->{state}, 2, 'Now in state to fetch individual rows');
 ok($t->pending_changes(), 'Pending changes not done yet');
 is($t->get_sql(database => 'test', table => 'test1'),
    q{SELECT /*rows in nibble*/ `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`, `c`)) AS __crc FROM }
-   . q{`test`.`test1` WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) }
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) }
    . q{AND ((`a` < 2) OR (`a` = 2 AND `b` <= 'ca'))))},
    'SQL now working inside nibble'
 );
@@ -302,11 +303,8 @@ is($t->{state}, 0, 'Now not working inside nibble');
 is($t->pending_changes(), 0, 'No pending changes');
 
 # Now test that SQL_BUFFER_RESULT is in the queries OK
-$t->{nibble} = 0;
-$t->{state}  = 1;
-delete $t->{cached_boundaries};
-delete $t->{cached_nibble};
-delete $t->{cached_row};
+$t->prepare_to_sync(%args, buffer_in_mysql=>1);
+$t->{state} = 1;
 like(
    $t->get_sql(
       where    => 'foo=1',
@@ -348,9 +346,10 @@ $t->prepare_to_sync(
    tbl            => 't',
    tbl_struct     => $tbl_struct,
    chunk_size     => 2,
-   index          => 'package_id',
+   chunk_index    => 'package_id',
    crc_col        => '__crc_col',
    index_hint     => 'FORCE INDEX(`package_id`)',
+   key_cols       => $tbl_struct->{keys}->{package_id}->{cols},
 );
 
 # Test that we die if MySQL isn't using the chosen index (package_id)
