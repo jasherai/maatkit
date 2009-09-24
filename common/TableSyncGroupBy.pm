@@ -29,34 +29,58 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-# Arguments:
-# * handler ChangeHandler
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(handler cols) ) {
-      die "I need a $arg argument" unless defined $args{$arg};
+   foreach my $arg ( qw(Quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
-   $args{count_col} = '__maatkit_count';
-   while ( $args{struct}->{is_col}->{$args{count_col}} ) {
-      # Prepend more _ until not a column.
-      $args{count_col} = "_$args{count_col}";
-   }
-   MKDEBUG && _d('COUNT column will be named', $args{count_col});
-   return bless { %args }, $class;
+   my $self = { %args };
+   return bless $self, $class;
 }
 
-# Arguments:
-# * quoter   Quoter
-# * database Database name
-# * table    Table name
-# * where    WHERE clause
+sub get_name {
+   return 'GroupBy';
+}
+
+sub can_sync {
+   return ();  # We can sync anything.
+}
+
+sub uses_checksum {
+   return 0;  # We don't need checksum queries.
+}
+
+sub set_checksum_queries {
+   return;  # This shouldn't be called, but just in case.
+}
+
+sub prepare_to_sync {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(tbl_struct cols ChangeHandler);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   $self->{cols}          = $args{cols};
+   $self->{ChangeHandler} = $args{ChangeHandler};
+
+   $self->{count_col} = '__maatkit_count';
+   while ( $args{tbl_struct}->{is_col}->{$self->{count_col}} ) {
+      # Prepend more _ until not a column.
+      $self->{count_col} = "_$self->{count_col}";
+   }
+   MKDEBUG && _d('COUNT column will be named', $self->{count_col});
+
+   return;
+}
+
 sub get_sql {
    my ( $self, %args ) = @_;
-   my $cols = join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}});
+   my $cols = join(', ', map { $self->{Quoter}->quote($_) } @{$self->{cols}});
    return "SELECT"
-      . ($self->{bufferinmysql} ? ' SQL_BUFFER_RESULT' : '')
+      . ($args{buffer_in_mysql} ? ' SQL_BUFFER_RESULT' : '')
       . " $cols, COUNT(*) AS $self->{count_col}"
-      . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
+      . ' FROM ' . $self->{Quoter}->quote(@args{qw(database table)})
       . ' WHERE ' . ( $args{where} || '1=1' )
       . " GROUP BY $cols ORDER BY $cols";
 }
@@ -77,10 +101,10 @@ sub same_row {
    delete $rr->{$cc};
    foreach my $i ( 1 .. $diff ) {
       if ( $lc > $rc ) {
-         $self->{handler}->change('INSERT', $lr, $self->key_cols());
+         $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
       }
       else {
-         $self->{handler}->change('DELETE', $rr, $self->key_cols());
+         $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
       }
    }
 }
@@ -91,7 +115,7 @@ sub not_in_right {
    $lr = { %$lr };
    my $cnt = delete $lr->{$self->{count_col}};
    foreach my $i ( 1 .. $cnt ) {
-      $self->{handler}->change('INSERT', $lr, $self->key_cols());
+      $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
    }
 }
 
@@ -101,7 +125,7 @@ sub not_in_left {
    $rr = { %$rr };
    my $cnt = delete $rr->{$self->{count_col}};
    foreach my $i ( 1 .. $cnt ) {
-      $self->{handler}->change('DELETE', $rr, $self->key_cols());
+      $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
    }
 }
 

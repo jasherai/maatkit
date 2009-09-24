@@ -1,26 +1,9 @@
 #!/usr/bin/perl
 
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 5;
 use English qw(-no_match_vars);
+use Test::More tests => 5;
 
 require "../TableSyncGroupBy.pm";
 require "../Quoter.pm";
@@ -34,33 +17,39 @@ sub throws_ok {
    like( $EVAL_ERROR, $pat, $msg );
 }
 
-my ($t);
+my $q = new Quoter();
+my $tbl_struct = { is_col => {} };  # fake tbl_struct
 my @rows;
 
 throws_ok(
    sub { new TableSyncGroupBy() },
-   qr/I need a handler/,
-   'ChangeHandler required'
+   qr/I need a Quoter/,
+   'Quoter required'
+);
+my $t = new TableSyncGroupBy(
+   Quoter => $q,
 );
 
 my $ch = new ChangeHandler(
-   quoter    => new Quoter(),
-   database  => 'test',
-   table     => 'foo',
-   sdatabase => 'test',
-   stable    => 'foo',
+   Quoter    => $q,
+   dst_db    => 'test',
+   dst_tbl   => 'foo',
+   src_db    => 'test',
+   src_tbl   => 'foo',
    replace   => 0,
    actions   => [ sub { push @rows, @_ }, ],
    queue     => 0,
 );
-$t = new TableSyncGroupBy(
-   handler => $ch,
-   cols    => [qw(a b c)],
-   bufferinmysql => 1,
+
+$t->prepare_to_sync(
+   ChangeHandler => $ch,
+   cols          => [qw(a b c)],
+   tbl_struct    => $tbl_struct,
 );
 
-is($t->get_sql(
-      quoter   => new Quoter(),
+is(
+   $t->get_sql(
+      buffer_in_mysql => 1,
       where    => 'foo=1',
       database => 'test',
       table    => 'foo',
@@ -70,13 +59,8 @@ is($t->get_sql(
    'Got SQL with SQL_BUFFER_RESULT',
 );
 
-$t = new TableSyncGroupBy(
-   handler => $ch,
-   cols    => [qw(a b c)],
-);
-
-is($t->get_sql(
-      quoter   => new Quoter(),
+is(
+   $t->get_sql(
       where    => 'foo=1',
       database => 'test',
       table    => 'foo',
