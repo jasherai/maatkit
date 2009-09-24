@@ -3,42 +3,47 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More;
+use Test::More tests => 19;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
-my $dp = new DSNParser();
-my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-
-# Open a connection to MySQL, or skip the rest of the tests.
-my ( $src_dbh, $dst_dbh, $dbh );
-$src_dbh = $sb->get_dbh_for('master');
-$dst_dbh = $sb->get_dbh_for('master');
-$dbh     = $sb->get_dbh_for('master');
-if ( $src_dbh ) {
-   plan tests => 19;
-}
-else {
-   plan skip_all => 'Cannot connect to sandbox master';
-}
-
-$sb->create_dbs($dbh, ['test']);
-
-require "../ChangeHandler.pm";
-require "../MySQLDump.pm";
+# TableSyncer and its required modules:
+require "../TableSyncer.pm";
+require "../MasterSlave.pm";
 require "../Quoter.pm";
-require "../RowDiff.pm";
 require "../TableChecksum.pm";
+require "../VersionParser.pm";
+# The sync plugins:
+require "../TableSyncChunk.pm";
+require "../TableSyncNibble.pm";
+require "../TableSyncGroupBy.pm";
+require "../TableSyncStream.pm";
+# Helper modules for the sync plugins:
 require "../TableChunker.pm";
 require "../TableNibbler.pm";
+# Modules for sync():
+require "../ChangeHandler.pm";
+require "../RowDiff.pm";
+# And other modules:
+require "../MySQLDump.pm";
 require "../TableParser.pm";
-require "../TableSyncChunk.pm";
-require "../TableSyncer.pm";
-require "../TableSyncStream.pm";
-require "../TableSyncGroupBy.pm";
-require "../TableSyncNibble.pm";
-require "../VersionParser.pm";
-require "../MasterSlave.pm";
+require '../DSNParser.pm';
+require '../Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $src_dbh  = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+my $dst_dbh  = $sb->get_dbh_for('slave1')
+   or BAIL_OUT('Cannot connect to sandbox slave');
+my $dbh      = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+$sb->create_dbs($dbh, ['test']);
+my $mysql = $sb->_use_for('master');
+$sb->load_file('master', 'samples/before-TableSyncChunk.sql');
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -46,145 +51,196 @@ sub throws_ok {
    like( $EVAL_ERROR, $pat, $msg );
 }
 
-my $mysql = $sb->_use_for('master');
+my $tp = new TableParser();
+my $du = new MySQLDump( cache => 0 );
+my ($rows, $cnt);
 
-diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
-my $ts         = new TableSyncer();
-my $tp         = new TableParser();
-my $du         = new MySQLDump( cache => 0 );
-my $q          = new Quoter();
-my $vp         = new VersionParser();
-my $ddl        = $du->get_create_table( $src_dbh, $q, 'test', 'test1' );
-my $tbl_struct = $tp->parse($ddl);
-my $chunker    = new TableChunker( quoter => $q );
-my $checksum   = new TableChecksum();
-my $nibbler    = new TableNibbler();
-my $ms         = new MasterSlave();
-my ( $rows, $cnt );
-
-my $algo = $ts->best_algorithm(
-   tbl_struct  => $tbl_struct,
-   nibbler     => $nibbler,
-   chunker     => $chunker,
-   parser      => $tp,
+# ###########################################################################
+# Make a TableSyncer object.
+# ###########################################################################
+throws_ok(
+   sub { new TableSyncer() },
+   qr/I need a MasterSlave/,
+   'MasterSlave required'
+);
+throws_ok(
+   sub { new TableSyncer(MasterSlave=>1) },
+   qr/I need a Quoter/,
+   'Quoter required'
+);
+throws_ok(
+   sub { new TableSyncer(MasterSlave=>1, Quoter=>1) },
+   qr/I need a VersionParser/,
+   'VersionParser required'
+);
+throws_ok(
+   sub { new TableSyncer(MasterSlave=>1, Quoter=>1, VersionParser=>1) },
+   qr/I need a TableChecksum/,
+   'TableChecksum required'
 );
 
-ok( $algo, 'Found an algorithm' );
+my $ms       = new MasterSlave();
+my $q        = new Quoter();
+my $vp       = new VersionParser();
+my $checksum = new TableChecksum(
+   Quoter         => $q,
+   VersionParser => $vp,
+);
+my $syncer = new TableSyncer(
+   MasterSlave   => $ms,
+   Quoter        => $q,
+   TableChecksum => $checksum,
+   VersionParser => $vp,
+);
+isa_ok($syncer, 'TableSyncer');
 
-is($ts->best_algorithm(
-      tbl_struct  => $tp->parse(
-                     $du->get_create_table( $src_dbh, $q, 'test', 'test5' )),
-      nibbler     => $nibbler,
-      chunker     => $chunker,
-      parser      => $tp,
-   ),
-   'GroupBy',
+# ###########################################################################
+# Make TableSync* objects.
+# ###########################################################################
+my $chunker    = new TableChunker( Quoter => $q, MySQLDump => $du );
+my $sync_chunk = new TableSyncChunk(
+   TableChunker => $chunker,
+   Quoter       => $q,
+);
+
+my $nibbler     = new TableNibbler( TableParser => $tp, Quoter => $q );
+my $sync_nibble = new TableSyncNibble(
+   TableNibbler  => $nibbler,
+   TableChunker  => $chunker,
+   TableParser   => $tp,
+   Quoter        => $q,
+);
+
+# TODO:
+my $sync_groupby = new TableSyncGroupBy( Quoter => $q );
+my $sync_stream  = new TableSyncStream( Quoter => $q );
+
+my $plugins = [$sync_chunk, $sync_nibble, $sync_groupby, $sync_stream];
+
+# ###########################################################################
+# Test get_best_plugin() (formerly best_algorithm()).
+# ###########################################################################
+my $tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test5'));
+is_deeply(
+   [
+      $syncer->get_best_plugin(
+         plugins     => $plugins,
+         tbl_struct  => $tbl_struct,
+      )
+   ],
+   [ $sync_groupby, 1 ],
    'Got GroupBy algorithm',
 );
 
-is($ts->best_algorithm(
-      tbl_struct  => $tp->parse(
-                     $du->get_create_table( $src_dbh, $q, 'test', 'test3' )),
-      nibbler     => $nibbler,
-      chunker     => $chunker,
-      parser      => $tp,
-   ),
-   'Chunk',
+$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test3'));
+is_deeply(
+   [
+      $syncer->get_best_plugin(
+         plugins     => $plugins,
+         tbl_struct  => $tbl_struct,
+      )
+   ],
+   [ $sync_chunk, { chunk_col => 'a', chunk_index => 'PRIMARY' } ],
    'Got Chunk algorithm',
 );
 
+# ###########################################################################
+# Test sync_table().
+# ###########################################################################
+
+# Redo this in case any tests above change $tbl_struct.
+$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test3'));
+
+my $src = {
+   dbh      => $src_dbh,
+   misc_dbh => $dbh,
+   db       => 'test',
+   tbl      => 'test3',
+};
+my $dst = {
+   dbh => $dst_dbh,
+   db  => 'test',
+   tbl => 'test3',
+};
+my $rd = new RowDiff(dbh=>$src_dbh);
+my @rows;
+my $ch = new ChangeHandler(
+   Quoter  => $q,
+   src_db  => $src->{db},
+   src_tbl => $src->{tbl},
+   dst_db  => $dst->{db},
+   dst_tbl => $dst->{tbl},
+   actions => [ sub { push @rows, @_ } ],
+   replace => 0,
+   queue   => 0,
+);
 my %args = (
-   buffer        => 0,
-   checksum      => $checksum,
-   chunker       => $chunker,
-   chunksize     => 2,
-   dst_dbh       => $dst_dbh,
-   dumper        => $du,
-   execute       => 1,
-   lock          => 0,
-   misc_dbh      => $src_dbh,
-   print         => 0,
-   quoter        => $q,
-   replace       => 0,
-   replicate     => 0,
-   src_dbh       => $src_dbh,
-   tbl_struct    => $tbl_struct,
-   timeoutok     => 0,
-   transaction   => 0,
-   versionparser => $vp,
-   wait          => 0,
-   where         => '',
-   possible_keys => [],
-   cols          => $tbl_struct->{cols},
-   test          => 0,
-   nibbler       => $nibbler,
-   parser        => $tp,
-   master_slave  => $ms,
-   func          => 'SHA1',
-   trim          => 0,
-   skipslavecheck=> 0,
-   bufferinmysql => 0,
+   plugins        => $plugins,
+   src            => $src,
+   dst            => $dst,
+   tbl_struct     => $tbl_struct,
+   cols           => $tbl_struct->{cols},
+   chunk_size     => 2,
+   RowDiff        => $rd,
+   ChangeHandler  => $ch,
+   function       => 'SHA1',
 );
 
-# This should die because of a bad algorithm.
-throws_ok (
-   sub { $ts->sync_table(
-      %args,
-      algorithm     => 'fibble',
-      dst_db        => 'test',
-      dst_tbl       => 'test2',
-      src_db        => 'test',
-      src_tbl       => 'test1',
-   ) },
-   qr/No such algorithm/,
-   'Unknown algorithm',
+# Add a row to dst.test.test3 to make it differ.
+$dst_dbh->do('INSERT INTO test.test3 VALUES (3,3)');
+
+# Do a dry run sync, so nothing should happen.
+is_deeply(
+   { $syncer->sync_table(%args, dry_run => 1) },
+   {
+      DELETE    => 0,
+      INSERT    => 0,
+      REPLACE   => 0,
+      UPDATE    => 0,
+      ALGORITHM => 'Chunk',
+   },
+   'Dry run, no changes, Chunk plugin'
 );
 
-# This should be OK even though the algorithm is in the wrong lettercase.
-$ts->sync_table(
-   %args,
-   algorithm     => 'ChUnK',
-   dst_db        => 'test',
-   dst_tbl       => 'test2',
-   src_db        => 'test',
-   src_tbl       => 'test1',
-   test          => 1,
+my $src_rows = $src_dbh->selectrow_arrayref('select count(*) from test.test3');
+my $dst_rows = $dst_dbh->selectrow_arrayref('select count(*) from test.test3');
+ok(
+   $src_rows->[0] == 2 && $dst_rows->[0] == 3,
+   'Nothing happened, src and dst still out of sync'
 );
 
-# This should be OK because it ought to choose an algorithm automatically.
-$ts->sync_table(
-   %args,
-   # NOTE: no algorithm
-   dst_db        => 'test',
-   dst_tbl       => 'test2',
-   src_db        => 'test',
-   src_tbl       => 'test1',
-   test          => 1,
+# Now do a real run so the tables are synced.
+is_deeply(
+   { $syncer->sync_table(%args) },
+   {
+      DELETE    => 1,
+      INSERT    => 0,
+      REPLACE   => 0,
+      UPDATE    => 0,
+      ALGORITHM => 'Chunk',
+   },
+   'Synced tables with 1 DELETE',
 );
 
-# Nothing should happen because I gave the 'test' argument.
-$cnt = $dbh->selectall_arrayref('select count(*) from test.test2')
-   ->[0]->[0];
-is( $cnt, 0, 'Nothing happened' );
-
-$ts->sync_table(
-   %args,
-   algorithm     => 'Chunk',
-   dst_db        => 'test',
-   dst_tbl       => 'test2',
-   src_db        => 'test',
-   src_tbl       => 'test1',
+is_deeply(
+   \@rows,
+   [ 'DELETE FROM `test`.`test3` WHERE `a`=3 LIMIT 1' ],
+   'ChangeHandler made the DELETE statement'
 );
 
-$cnt = $dbh->selectall_arrayref('select count(*) from test.test2')
-   ->[0]->[0];
-is( $cnt, 4, 'Four rows in destination after Chunk' );
+$src_rows = $src_dbh->selectrow_arrayref('select count(*) from test.test3');
+$dst_rows = $dst_dbh->selectrow_arrayref('select count(*) from test.test3');
+ok(
+   $src_rows->[0] == 2 && $dst_rows->[0] == 3,
+   'Nothing happened because no action executed the DELETE statement'
+);
 
+exit;
 diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
 # This should be OK because it ought to convert the size to rows.
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    chunksize     => '1k',
    algorithm     => 'Chunk',
@@ -196,7 +252,7 @@ $ts->sync_table(
 
 diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    algorithm     => 'Stream',
    dst_db        => 'test',
@@ -210,7 +266,7 @@ is( $cnt, 4, 'Four rows in destination after Stream' );
 
 diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    algorithm     => 'GroupBy',
    dst_db        => 'test',
@@ -227,7 +283,7 @@ diag(`$mysql < samples/before-TableSyncGroupBy.sql`);
 my $ddl2        = $du->get_create_table( $src_dbh, $q, 'test', 'test1' );
 my $tbl_struct2 = $tp->parse($ddl2);
 
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    tbl_struct    => $tbl_struct2,
    cols          => [qw(a b c)],
@@ -257,7 +313,7 @@ is_deeply($rows,
 
 diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    algorithm     => 'Nibble',
    dst_db        => 'test',
@@ -271,7 +327,7 @@ is( $cnt, 4, 'Four rows in destination after Nibble' );
 
 diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    algorithm     => 'Stream',
    dst_db        => 'test',
@@ -289,7 +345,7 @@ is_deeply($rows,
 diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
 
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    algorithm     => 'Chunk',
    dst_db        => 'test',
@@ -306,7 +362,7 @@ is_deeply($rows,
 
 diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    lock          => 1, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    algorithm     => 'Chunk',
@@ -319,7 +375,7 @@ $ts->sync_table(
 # The locks should be released.
 ok($src_dbh->do('select * from test.test4'), 'cycle locks released');
 
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    lock          => 2, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    algorithm     => 'Chunk',
@@ -332,7 +388,7 @@ $ts->sync_table(
 # The locks should be released.
 ok($src_dbh->do('select * from test.test4'), 'table locks released');
 
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    lock          => 3, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    algorithm     => 'Chunk',
@@ -346,7 +402,7 @@ ok($dbh->do('replace into test.test3 select * from test.test3 limit 0'),
    'sync_table does not lock in level 3 locking');
 
 eval {
-   $ts->lock_and_wait(
+   $syncer->lock_and_wait(
       %args,
       lock          => 3, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       algorithm     => 'Chunk',
@@ -401,7 +457,7 @@ is_deeply(
    'Infinite loop table differs (issue 96)'
 );
 
-$ts->sync_table(
+$syncer->sync_table(
    %args,
    algorithm     => 'Nibble',
    dst_db        => 'issue_96',

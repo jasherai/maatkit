@@ -31,13 +31,13 @@ $Data::Dumper::Quotekeys = 0;
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # Arguments:
-#   * TableChecksum  A TableChecksum module
-#   * VersionParser  A VersionParser module
-#   * Quoter         A Quoter module
 #   * MasterSlave    A MasterSlave module
+#   * Quoter         A Quoter module
+#   * VersionParser  A VersionParser module
+#   * TableChecksum  A TableChecksum module
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(TableChecksum VersionParser Quoter MasterSlave);
+   my @required_args = qw(MasterSlave Quoter VersionParser TableChecksum);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -46,21 +46,25 @@ sub new {
 }
 
 # Return the first plugin from the arrayref of TableSync* plugins
-# that can sync the given table struct.  plugin->can_sync() should
-# return a hash of args that it wants back when plugin->prepare_to_sync()
-# is called.
+# that can sync the given table struct.  plugin->can_sync() usually
+# returns a hashref that it wants back when plugin->prepare_to_sync()
+# is called.  Or, it may return nothing (false) to say that it can't
+# sync the table.
 sub get_best_plugin {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(plugins tbl_struct) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   MKDEBUG && _d('Getting best plugin');
    foreach my $plugin ( @{$args{plugins}} ) {
-      my %plugin_args = $plugin->can_sync(%args);
-      if ( %plugin_args ) {
-        MKDEBUG && _d('Can sync with', $plugin, Dumper(\%plugin_args));
-        return $plugin, %plugin_args;
+      MKDEBUG && _d('Trying plugin', $plugin->name());
+      my $plugin_args = $plugin->can_sync(%args);
+      if ( $plugin_args ) {
+        MKDEBUG && _d('Can sync with', $plugin->name(), Dumper($plugin_args));
+        return $plugin, $plugin_args;
       }
    }
+   MKDEBUG && _d('No plugin can sync the table');
    return;
 }
 
@@ -74,12 +78,13 @@ sub get_best_plugin {
 #   * RowDiff         A RowDiff module
 #   * ChangeHandler   A ChangeHandler module
 # Optional arguments:
+#   * where           WHERE clause to restrict synced rows (default none)
 #   * replicate       If syncing via replication (default no)
 #   * function        Crypto hash func for checksumming chunks (default CRC32)
 #   * dry_run         Prepare to sync but don't actually sync (default no)
 #   * chunk_col       Column name to chunk table on (default auto-choose)
 #   * chunk_index     Index name to use for chunking table (default auto-choose)
-#   * buffer_in_mysql Buffer results in MySQL (default no)
+#   * buffer_in_mysql Use SQL_BUFFER_RESULT (default no)
 #   * transaction     locking
 #   * change_dbh      locking
 #   * lock            locking
@@ -95,13 +100,20 @@ sub sync_table {
    MKDEBUG && _d('Syncing table with args', Dumper(\%args));
    my ($plugins, $src, $dst, $tbl_struct, $cols, $chunk_size, $rd, $ch)
       = @args{@required_args};
+
+   $args{replicate}   ||= 0;
+   $args{lock}        ||= 0;
+   $args{wait}        ||= 0;
+   $args{transaction} ||= 0;
+   $args{timeout_ok}  ||= 0;
+
    my $q  = $self->{Quoter};
    my $vp = $self->{VersionParser};
 
    # ########################################################################
    # Get and prepare the first plugin that can sync this table.
    # ########################################################################
-   my ($plugin, %plugin_args) = $self->get_best_plugin(%args);
+   my ($plugin, $plugin_args) = $self->get_best_plugin(%args);
    die "No plugin can sync $src->{db}.$src->{tbl}" unless $plugin;
 
    # The row-level (state 2) checksums use __crc, so the table can't use that.
@@ -116,20 +128,23 @@ sub sync_table {
       my $hint = ($vp->version_ge($src->{dbh}, '4.0.9')
                   && $vp->version_ge($dst->{dbh}, '4.0.9')) ? 'FORCE' : 'USE';
       $index_hint = "$hint (" . $q->quote($args{chunk_index}) . ")";
-      MKDEBUG && _d('Index hint:', $index_hint);
    }
+   MKDEBUG && _d('Index hint:', $index_hint);
 
    eval {
       $plugin->prepare_to_sync(
          %args,
-         %plugin_args,
-         crc_col    => $crc_col,
-         index_hint => $index_hint,
+         dbh         => $src->{dbh},
+         db          => $src->{db},
+         tbl         => $src->{tbl},
+         plugin_args => $plugin_args,
+         crc_col     => $crc_col,
+         index_hint  => $index_hint,
       );
    };
    if ( $EVAL_ERROR ) {
       # At present, no plugin should fail to prepare, but just in case...
-      die 'Failed to prepare TableSync', $plugin->get_name(), ' plugin: ',
+      die 'Failed to prepare TableSync', $plugin->name(), ' plugin: ',
          $EVAL_ERROR;
    }
 
@@ -139,8 +154,7 @@ sub sync_table {
    if ( $plugin->uses_checksum() ) {
       eval {
          my ($chunk_sql, $row_sql) = $self->make_checksum_queries(%args);
-         $plugin->set_chunk_sql($chunk_sql);
-         $plugin->set_row_sql($row_sql);
+         $plugin->set_checksum_queries($chunk_sql, $row_sql);
       };
       if ( $EVAL_ERROR ) {
          # This happens if src and dst are really different and the same
@@ -153,12 +167,24 @@ sub sync_table {
    # Plugin is ready, return now if this is a dry run.
    # ########################################################################
    if ( $args{dry_run} ) {
-      return $ch->get_changes(), ALGORITHM => $plugin->get_name();
+      return $ch->get_changes(), ALGORITHM => $plugin->name();
    }
 
    # ########################################################################
    # Start syncing the table.
    # ########################################################################
+
+   # USE db on src and dst for cases like when replicate-do-db is being used.
+   eval {
+      $src->{dbh}->do("USE `$src->{db}`");
+      $dst->{dbh}->do("USE `$dst->{db}`");
+   };
+   if ( $EVAL_ERROR ) {
+      # This shouldn't happen, but just in case.  (The db and tbl on src
+      # and dst should be checked before calling this sub.)
+      die "Failed to USE database on source or destination: $EVAL_ERROR";
+   }
+
    $self->lock_and_wait(%args, lock_level => 2);  # per-table lock
 
    my $cycle = 0;
@@ -168,14 +194,13 @@ sub sync_table {
       # locking the tables.
       MKDEBUG && _d('Beginning sync cycle', $cycle);
       my $src_sql = $plugin->get_sql(
-         database   => $args{src_db},
-         table      => $args{src_tbl},
+         database   => $src->{db},
+         table      => $src->{tbl},
          where      => $args{where},
       );
       my $dst_sql = $plugin->get_sql(
-         quoter     => $args{quoter},
-         database   => $args{dst_db},
-         table      => $args{dst_tbl},
+         database   => $dst->{db},
+         table      => $dst->{tbl},
          where      => $args{where},
       );
       if ( $args{transaction} ) {
@@ -196,14 +221,12 @@ sub sync_table {
             $dst_sql .= ' LOCK IN SHARE MODE';
          }
       }
-      $plugin->prepare_sync_cycle($args{src_dbh});
-      $plugin->prepare_sync_cycle($args{dst_dbh});
+      $plugin->prepare_sync_cycle($src);
+      $plugin->prepare_sync_cycle($dst);
       MKDEBUG && _d('src:', $src_sql);
       MKDEBUG && _d('dst:', $dst_sql);
-      my $src_sth = $args{src_dbh}
-         ->prepare( $src_sql, { mysql_use_result => !$args{buffer} } );
-      my $dst_sth = $args{dst_dbh}
-         ->prepare( $dst_sql, { mysql_use_result => !$args{buffer} } );
+      my $src_sth = $src->{dbh}->prepare($src_sql);
+      my $dst_sth = $dst->{dbh}->prepare($dst_sql);
 
       # The first cycle should lock to begin work; after that, unlock only if
       # the plugin says it's OK (it may want to dig deeper on the rows it
@@ -235,7 +258,7 @@ sub sync_table {
 
    $self->unlock(%args, lock_level => 2);
 
-   return $ch->get_changes(), ALGORITHM => $plugin->get_name();
+   return $ch->get_changes(), ALGORITHM => $plugin->name();
 }
 
 sub make_checksum_queries {
@@ -267,6 +290,7 @@ sub make_checksum_queries {
       die "Source and destination checksum algorithms are different: ",
          "$src_algo on source, $dst_algo on destination"
    }
+   MKDEBUG && _d('Chosen algo:', $src_algo);
 
    my $src_func = $checksum->choose_hash_func(dbh => $src->{dbh}, %args);
    my $dst_func = $checksum->choose_hash_func(dbh => $dst->{dbh}, %args);
@@ -274,6 +298,7 @@ sub make_checksum_queries {
       die "Source and destination hash functions are different: ",
       "$src_func on source, $dst_func on destination";
    }
+   MKDEBUG && _d('Chosen hash func:', $src_func);
 
    # Since the checksum algo and hash func are the same on src and dst
    # it doesn't matter if we use src_algo/func or dst_algo/func.
@@ -335,20 +360,20 @@ sub lock_table {
 sub unlock {
    my ( $self, %args ) = @_;
 
-   foreach my $arg ( qw(
-      dst_db dst_dbh dst_tbl lock replicate src_db src_dbh src_tbl
-      timeoutok transaction wait lock_level) )
-   {
+   foreach my $arg ( qw(src dst lock replicate timeout_ok transaction wait
+                        lock_level) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
+   my $src = $args{src};
+   my $dst = $args{dst};
 
    return unless $args{lock} && $args{lock} <= $args{lock_level};
 
    # First, unlock/commit.
-   foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
+   foreach my $dbh ( $src->{dbh}, $dst->{dbh} ) {
       if ( $args{transaction} ) {
          MKDEBUG && _d('Committing', $dbh);
-         $dbh->commit;
+         $dbh->commit();
       }
       else {
          my $sql = 'UNLOCK TABLES';
@@ -356,6 +381,8 @@ sub unlock {
          $dbh->do($sql);
       }
    }
+
+   return;
 }
 
 # Lock levels:
@@ -371,20 +398,20 @@ sub lock_and_wait {
    my ( $self, %args ) = @_;
    my $result = 0;
 
-   foreach my $arg ( qw(
-      dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
-      timeoutok transaction wait lock_level misc_dbh master_slave) )
-   {
+   foreach my $arg ( qw(src dst lock replicate timeout_ok transaction wait
+                        lock_level) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
+   my $src = $args{src};
+   my $dst = $args{dst};
 
    return unless $args{lock} && $args{lock} == $args{lock_level};
 
    # First, commit/unlock the previous transaction/lock.
-   foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
+   foreach my $dbh ( $src->{dbh}, $dst->{dbh} ) {
       if ( $args{transaction} ) {
          MKDEBUG && _d('Committing', $dbh);
-         $dbh->commit;
+         $dbh->commit();
       }
       else {
          my $sql = 'UNLOCK TABLES';
@@ -397,8 +424,8 @@ sub lock_and_wait {
    # might have to wait for the slave to catch up before locking on the dest.
    if ( $args{lock} == 3 ) {
       my $sql = 'FLUSH TABLES WITH READ LOCK';
-      MKDEBUG && _d($args{src_dbh}, ',', $sql);
-      $args{src_dbh}->do($sql);
+      MKDEBUG && _d($src->{dbh}, ',', $sql);
+      $src->{dbh}->do($sql);
    }
    else {
       # Lock level 2 (per-table) or 1 (per-sync cycle)
@@ -412,8 +439,8 @@ sub lock_and_wait {
          }
       }
       else {
-         $self->lock_table($args{src_dbh}, 'source',
-            $args{quoter}->quote($args{src_db}, $args{src_tbl}),
+         $self->lock_table($src->{dbh}, 'source',
+            $self->{Quoter}->quote($args{src_db}, $args{src_tbl}),
             $args{replicate} ? 'WRITE' : 'READ');
       }
    }
@@ -421,10 +448,10 @@ sub lock_and_wait {
    # If there is any error beyond this point, we need to unlock/commit.
    eval {
       if ( $args{wait} ) {
-         # Always use the $misc_dbh dbh to check the master's position, because
-         # the $src_dbh might be in use due to executing $src_sth.
+         # Always use the misc_dbh dbh to check the master's position, because
+         # the main dbh might be in use due to executing $src_sth.
          $args{master_slave}->wait_for_master(
-            $args{misc_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
+            $src->{misc_dbh}, $dst->{dbh}, $args{wait}, $args{timeout_ok});
       }
 
       # Don't lock on destination if it's a replication slave, or the
@@ -436,12 +463,12 @@ sub lock_and_wait {
       else {
          if ( $args{lock} == 3 ) {
             my $sql = 'FLUSH TABLES WITH READ LOCK';
-            MKDEBUG && _d($args{dst_dbh}, ',', $sql);
-            $args{dst_dbh}->do($sql);
+            MKDEBUG && _d($dst->{dbh}, ',', $sql);
+            $dst->{dbh}->do($sql);
          }
          elsif ( !$args{transaction} ) {
-            $self->lock_table($args{dst_dbh}, 'dest',
-               $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
+            $self->lock_table($dst->{dbh}, 'dest',
+               $self->{Quoter}->quote($args{dst_db}, $args{dst_tbl}),
                $args{execute} ? 'WRITE' : 'READ');
          }
       }

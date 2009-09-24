@@ -107,30 +107,33 @@ sub can_sync {
 
    MKDEBUG && _d('Can chunk on column', $chunkable_cols[$colno]->{column},
       'using index', $chunkable_cols[$colno]->{index});
-   return (
+   return {
       chunk_col   => $chunkable_cols[$colno]->{column},
       chunk_index => $chunkable_cols[$colno]->{index},
-   );
+   };
 }
 
 sub prepare_to_sync {
    my ( $self, %args ) = @_;
-   my @required_args = qw(dbh db tbl tbl_struct cols crc_col
-                          chunk_col chunk_index chunk_size ChangeHandler);
+   my @required_args = qw(plugin_args dbh db tbl tbl_struct cols crc_col
+                          chunk_size ChangeHandler);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $chunker  = $self->{TableChunker};
 
-   $self->{chunk_index}   = $args{chunk_index};
-   $self->{chunk_col}     = $args{chunk_col};
-   $self->{crc_col}       = $args{crc_col};
-   $self->{index_hint}    = $args{index_hint};
-   $self->{ChangeHandler} = $args{ChangeHandler};
+   $self->{chunk_index}     = $args{plugin_args}->{chunk_index};
+   $self->{chunk_col}       = $args{plugin_args}->{chunk_col};
+   $self->{crc_col}         = $args{crc_col};
+   $self->{index_hint}      = $args{index_hint};
+   $self->{buffer_in_mysql} = $args{buffer_in_mysql};
+   $self->{ChangeHandler}   = $args{ChangeHandler};
 
    $self->{ChangeHandler}->fetch_back($args{dbh});
 
    my @chunks;
+   # get_range_statistics() and calculate_chunks() expect this arg.
+   $args{chunk_col} = $self->{chunk_col};
    my %range_params = $chunker->get_range_statistics(%args);
    if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
       $args{chunk_size} = $chunker->size_to_rows(%args);
@@ -162,10 +165,10 @@ sub set_checksum_queries {
 }
 
 sub prepare_sync_cycle {
-   my ( $self, $dbh ) = @_;
+   my ( $self, $host ) = @_;
    my $sql = 'SET @crc := "", @cnt := 0';
    MKDEBUG && _d($sql);
-   $dbh->do($sql);
+   $host->{dbh}->do($sql);
    return;
 }
 
@@ -176,7 +179,7 @@ sub get_sql {
    my ( $self, %args ) = @_;
    if ( $self->{state} ) {  # checksum a chunk of rows
       return 'SELECT '
-         . ($args{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
+         . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
          . join(', ', map { $self->{Quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{Quoter}->quote(@args{qw(database table)})

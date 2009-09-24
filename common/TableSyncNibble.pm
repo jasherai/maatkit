@@ -87,9 +87,9 @@ sub can_sync {
    }
 
    MKDEBUG && _d('Can nibble using index', $nibble_index->{name});
-   return (
+   return {
       index => $nibble_index->{name},
-   );
+   };
 }
 
 sub prepare_to_sync {
@@ -100,12 +100,13 @@ sub prepare_to_sync {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
-   $self->{dbh}           = $args{dbh};
-   $self->{crc_col}       = $args{crc_col};
-   $self->{index_hint}    = $args{index_hint};
-   $self->{key_cols}      = $args{tbl_struct}->{keys}->{ $args{index} }->{cols};
-   $self->{chunk_size}    = $self->{TableChunker}->size_to_rows(%args);
-   $self->{ChangeHandler} = $args{ChangeHandler};
+   $self->{dbh}             = $args{dbh};
+   $self->{crc_col}         = $args{crc_col};
+   $self->{index_hint}      = $args{index_hint};
+   $self->{key_cols}        = $args{tbl_struct}->{keys}->{$args{index}}->{cols};
+   $self->{chunk_size}      = $self->{TableChunker}->size_to_rows(%args);
+   $self->{buffer_in_mysql} = $args{buffer_in_mysql};
+   $self->{ChangeHandler}   = $args{ChangeHandler};
 
    $self->{ChangeHandler}->fetch_back($args{dbh});
 
@@ -137,10 +138,10 @@ sub set_checksum_queries {
 }
 
 sub prepare_sync_cycle {
-   my ( $self, $dbh ) = @_;
+   my ( $self, $host ) = @_;
    my $sql = 'SET @crc := "", @cnt := 0';
    MKDEBUG && _d($sql);
-   $dbh->do($sql);
+   $host->{dbh}->do($sql);
    return;
 }
 
@@ -155,7 +156,7 @@ sub get_sql {
    if ( $self->{state} ) {
       # Selects the individual rows so that they can be compared.
       return 'SELECT /*rows in nibble*/ '
-         . ($args{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
+         . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
          . join(', ', map { $q->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $q->quote(@args{qw(database table)})

@@ -38,12 +38,12 @@ sub new {
    return bless $self, $class;
 }
 
-sub get_name {
+sub name {
    return 'GroupBy';
 }
 
 sub can_sync {
-   return ();  # We can sync anything.
+   return 1;  # We can sync anything.
 }
 
 sub prepare_to_sync {
@@ -53,8 +53,9 @@ sub prepare_to_sync {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
-   $self->{cols}          = $args{cols};
-   $self->{ChangeHandler} = $args{ChangeHandler};
+   $self->{cols}            = $args{cols};
+   $self->{buffer_in_mysql} = $args{buffer_in_mysql};
+   $self->{ChangeHandler}   = $args{ChangeHandler};
 
    $self->{count_col} = '__maatkit_count';
    while ( $args{tbl_struct}->{is_col}->{$self->{count_col}} ) {
@@ -75,7 +76,7 @@ sub set_checksum_queries {
 }
 
 sub prepare_sync_cycle {
-   my ( $self, $dbh ) = @_;
+   my ( $self, $host ) = @_;
    return;
 }
 
@@ -83,7 +84,7 @@ sub get_sql {
    my ( $self, %args ) = @_;
    my $cols = join(', ', map { $self->{Quoter}->quote($_) } @{$self->{cols}});
    return "SELECT"
-      . ($args{buffer_in_mysql} ? ' SQL_BUFFER_RESULT' : '')
+      . ($self->{buffer_in_mysql} ? ' SQL_BUFFER_RESULT' : '')
       . " $cols, COUNT(*) AS $self->{count_col}"
       . ' FROM ' . $self->{Quoter}->quote(@args{qw(database table)})
       . ' WHERE ' . ( $args{where} || '1=1' )

@@ -37,12 +37,12 @@ sub new {
    return bless $self, $class;
 }
 
-sub get_name {
+sub name {
    return 'Stream';
 }
 
 sub can_sync {
-   return ();  # We can sync anything.
+   return 1;  # We can sync anything.
 }
 
 sub prepare_to_sync {
@@ -51,8 +51,9 @@ sub prepare_to_sync {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   $self->{cols}          = $args{cols};
-   $self->{ChangeHandler} = $args{ChangeHandler};
+   $self->{cols}            = $args{cols};
+   $self->{buffer_in_mysql} = $args{buffer_in_mysql};
+   $self->{ChangeHandler}   = $args{ChangeHandler};
    return;
 }
 
@@ -65,14 +66,14 @@ sub set_checksum_queries {
 }
 
 sub prepare_sync_cycle {
-   my ( $self, $dbh ) = @_;
+   my ( $self, $host ) = @_;
    return;
 }
 
 sub get_sql {
    my ( $self, %args ) = @_;
    return "SELECT "
-      . ($args{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
+      . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
       . join(', ', map { $self->{Quoter}->quote($_) } @{$self->{cols}})
       . ' FROM ' . $self->{Quoter}->quote(@args{qw(database table)})
       . ' WHERE ' . ( $args{where} || '1=1' );
