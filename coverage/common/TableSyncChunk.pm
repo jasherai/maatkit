@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-.../common/TableSyncChunk.pm   87.6   66.7   38.5   88.2    n/a  100.0   79.5
-Total                          87.6   66.7   38.5   88.2    n/a  100.0   79.5
+.../common/TableSyncChunk.pm   88.7   80.0   54.5   81.8    n/a  100.0   84.3
+Total                          88.7   80.0   54.5   81.8    n/a  100.0   84.3
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          TableSyncChunk.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Sat Aug 29 15:04:03 2009
-Finish:       Sat Aug 29 15:04:04 2009
+Start:        Thu Sep 24 23:37:25 2009
+Finish:       Thu Sep 24 23:37:26 2009
 
 /home/daniel/dev/maatkit/common/TableSyncChunk.pm
 
@@ -32,7 +32,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # TableSyncChunk package $Revision: 4493 $
+18                                                    # TableSyncChunk package $Revision: 4743 $
 19                                                    # ###########################################################################
 20                                                    package TableSyncChunk;
 21                                                    # This package implements a simple sync algorithm:
@@ -44,255 +44,295 @@ line  err   stmt   bran   cond    sub    pod   time   code
 27                                                    # See TableSyncStream for the TableSync interface this conforms to.
 28                                                    
 29             1                    1            13   use strict;
-               1                                  2   
+               1                                  3   
                1                                  8   
 30             1                    1             6   use warnings FATAL => 'all';
-               1                                  2   
+               1                                  3   
                1                                  7   
 31                                                    
 32             1                    1             6   use English qw(-no_match_vars);
-               1                                  2   
+               1                                  3   
                1                                  8   
-33             1                    1             7   use List::Util qw(max);
+33             1                    1             8   use List::Util qw(max);
                1                                  3   
                1                                 12   
 34             1                    1             6   use Data::Dumper;
                1                                  3   
-               1                                  6   
-35                                                    $Data::Dumper::Indent    = 0;
-36                                                    $Data::Dumper::Quotekeys = 0;
-37                                                    
-38             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
+               1                                  5   
+35                                                    $Data::Dumper::Indent    = 1;
+36                                                    $Data::Dumper::Sortkeys  = 1;
+37                                                    $Data::Dumper::Quotekeys = 0;
+38                                                    
+39             1                    1             7   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
-               1                                 10   
-39                                                    
-40                                                    sub new {
-41             4                    4           778      my ( $class, %args ) = @_;
-42             4                                 31      foreach my $arg ( qw(dbh database table handler chunker quoter struct
-43                                                                            checksum cols vp chunksize where possible_keys
-44                                                                            dumper trim) ) {
-45    ***     60     50                         249         die "I need a $arg argument" unless defined $args{$arg};
-46                                                       }
-47                                                    
-48                                                       # Sanity check.  The row-level (state 2) checksums use __crc, so the table
-49                                                       # had better not use that...
-50             4                                 17      $args{crc_col} = '__crc';
-51             4                                 29      while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
-52    ***      0                                  0         $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
-53                                                       }
-54             4                                  8      MKDEBUG && _d('CRC column will be named', $args{crc_col});
-55                                                    
-56                                                       # Chunk the table and store the chunks for later processing.
-57             4                                 12      my @chunks;
-58             4                                 39      my ( $col, $idx ) = $args{chunker}->get_first_chunkable_column(
-59                                                          $args{struct}, { possible_keys => $args{possible_keys} });
-60             4                                 16      $args{index} = $idx;
-61    ***      4     50                          17      if ( $col ) {
-62             4                                 38         my %params = $args{chunker}->get_range_statistics(
-63                                                             $args{dbh}, $args{database}, $args{table}, $col,
-64                                                             $args{where});
-65    ***      4     50                          20         if ( !grep { !defined $params{$_} }
-              12                                 53   
-66                                                                qw(min max rows_in_range) )
-67                                                          {
-68             4                                 45            @chunks = $args{chunker}->calculate_chunks(
-69                                                                dbh      => $args{dbh},
-70                                                                table    => $args{struct},
-71                                                                col      => $col,
-72                                                                size     => $args{chunksize},
-73                                                                %params,
-74                                                             );
-75                                                          }
-76                                                          else {
-77    ***      0                                  0            @chunks = '1=1';
-78                                                          }
-79             4                                 24         $args{chunk_col} = $col;
-80                                                       }
-81    ***      4     50                          18      die "Cannot chunk $args{database}.$args{table}" unless @chunks;
-82             4                                 18      $args{chunks}     = \@chunks;
-83             4                                 14      $args{chunk_num}  = 0;
-84                                                    
-85                                                       # Decide on checksumming strategy and store checksum query prototypes for
-86                                                       # later.
-87             4                                 46      $args{algorithm} = $args{checksum}->best_algorithm(
-88                                                          algorithm   => 'BIT_XOR',
-89                                                          vp          => $args{vp},
-90                                                          dbh         => $args{dbh},
-91                                                          where       => 1,
-92                                                          chunk       => 1,
-93                                                          count       => 1,
-94                                                       );
-95             4                                 31      $args{func} = $args{checksum}->choose_hash_func(
-96                                                          func => $args{func},
-97                                                          dbh  => $args{dbh},
-98                                                       );
-99             4                                 43      $args{crc_wid}    = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
-100            4                                 30      ($args{crc_type}) = $args{checksum}->get_crc_type($args{dbh}, $args{func});
-101   ***      4     50     33                   58      if ( $args{algorithm} eq 'BIT_XOR' && $args{crc_type} !~ m/int$/ ) {
-102            4                                 35         $args{opt_slice}
-103                                                            = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => $args{func});
-104                                                      }
-105   ***      4            50                   89      $args{chunk_sql} ||= $args{checksum}->make_checksum_query(
-106                                                         dbname    => $args{database},
-107                                                         tblname   => $args{table},
-108                                                         table     => $args{struct},
-109                                                         quoter    => $args{quoter},
-110                                                         algorithm => $args{algorithm},
-111                                                         func      => $args{func},
-112                                                         crc_wid   => $args{crc_wid},
-113                                                         crc_type  => $args{crc_type},
-114                                                         opt_slice => $args{opt_slice},
-115                                                         cols      => $args{cols},
-116                                                         trim      => $args{trim},
-117                                                         buffer    => $args{bufferinmysql},
-118                                                      );
-119   ***      4            50                   46      $args{row_sql} ||= $args{checksum}->make_row_checksum(
-120                                                         table     => $args{struct},
-121                                                         quoter    => $args{quoter},
-122                                                         func      => $args{func},
-123                                                         cols      => $args{cols},
-124                                                         trim      => $args{trim},
-125                                                      );
-126                                                   
-127            4                                 16      $args{state} = 0;
-128            4                                 31      $args{handler}->fetch_back($args{dbh});
-129            4                                167      return bless { %args }, $class;
-130                                                   }
+               1                                  9   
+40                                                    
+41                                                    sub new {
+42             1                    1            25      my ( $class, %args ) = @_;
+43             1                                  7      foreach my $arg ( qw(TableChunker Quoter) ) {
+44    ***      2     50                          10         die "I need a $arg argument" unless defined $args{$arg};
+45                                                       }
+46             1                                  6      my $self = { %args };
+47             1                                 17      return bless $self, $class;
+48                                                    }
+49                                                    
+50                                                    sub name {
+51    ***      0                    0             0      return 'Chunk';
+52                                                    }
+53                                                    
+54                                                    # Returns a hash (true) with a chunk_col and chunk_index that can be used
+55                                                    # to sync the given tbl_struct.  Else, returns nothing (false) if the table
+56                                                    # cannot be synced.  Arguments:
+57                                                    #   * tbl_struct    Return value of TableParser::parse()
+58                                                    #   * chunk_col     (optional) Column name to chunk on
+59                                                    #   * chunk_index   (optional) Index to use for chunking
+60                                                    # If either chunk_col or chunk_index are given, then they are required so
+61                                                    # the return value will only be true if they're among the possible chunkable
+62                                                    # columns.  If neither is given, then the first (best) chunkable col and index
+63                                                    # are returned.  The return value should be passed back to prepare_to_sync().
+64                                                    sub can_sync {
+65             7                    7            94      my ( $self, %args ) = @_;
+66             7                                 31      foreach my $arg ( qw(tbl_struct) ) {
+67    ***      7     50                          49         die "I need a $arg argument" unless defined $args{$arg};
+68                                                       }
+69                                                    
+70                                                       # Find all possible chunkable cols/indexes.  If Chunker can handle it OK
+71                                                       # but *not* with exact chunk sizes, it means it's using only the first
+72                                                       # column of a multi-column index, which could be really bad.  It's better
+73                                                       # to use Nibble for these, because at least it can reliably select a chunk
+74                                                       # of rows of the desired size.
+75             7                                 70      my ($exact, @chunkable_cols) = $self->{TableChunker}->find_chunk_columns(
+76                                                          %args,
+77                                                          exact => 1,
+78                                                       );
+79             7    100                          40      return unless $exact;
+80                                                    
+81                                                       # Check if the requested chunk col and/or index are among the possible
+82                                                       # columns found above.
+83             5                                 13      my $colno;
+84             5    100    100                   40      if ( $args{chunk_col} || $args{chunk_index} ) {
+85             4                                 11         MKDEBUG && _d('Checking requested col', $args{chunk_col},
+86                                                             'and/or index', $args{chunk_index});
+87             4                                 26         for my $i ( 0..$#chunkable_cols ) {
+88             8    100                          33            if ( $args{chunk_col} ) {
+89             6    100                          34               next unless $chunkable_cols[$i]->{column} eq $args{chunk_col};
+90                                                             }
+91             5    100                          23            if ( $args{chunk_index} ) {
+92             4    100                          25               next unless $chunkable_cols[$i]->{index} eq $args{chunk_index};
+93                                                             }
+94             3                                  8            $colno = $i;
+95             3                                 10            last;
+96                                                          }
+97                                                    
+98             4    100                          16         if ( !$colno ) {
+99             1                                  3            MKDEBUG && _d('Cannot chunk on column', $args{chunk_col},
+100                                                               'and/or using index', $args{chunk_index});
+101            1                                  8            return;
+102                                                         }
+103                                                      }
+104                                                      else {
+105            1                                  3         $colno = 0;  # First, best chunkable column/index.
+106                                                      }
+107                                                   
+108            4                                 10      MKDEBUG && _d('Can chunk on column', $chunkable_cols[$colno]->{column},
+109                                                         'using index', $chunkable_cols[$colno]->{index});
+110                                                      return (
+111            4                                 67         1,
+112                                                         chunk_col   => $chunkable_cols[$colno]->{column},
+113                                                         chunk_index => $chunkable_cols[$colno]->{index},
+114                                                      ),
+115                                                   }
+116                                                   
+117                                                   sub prepare_to_sync {
+118            4                    4           122      my ( $self, %args ) = @_;
+119            4                                 36      my @required_args = qw(dbh db tbl tbl_struct cols chunk_col
+120                                                                             chunk_size crc_col ChangeHandler);
+121            4                                 16      foreach my $arg ( @required_args ) {
+122   ***     36     50                         155         die "I need a $arg argument" unless defined $args{$arg};
+123                                                      }
+124            4                                 16      my $chunker  = $self->{TableChunker};
+125                                                   
+126            4                                 18      $self->{chunk_col}       = $args{chunk_col};
+127            4                                 19      $self->{crc_col}         = $args{crc_col};
+128            4                                 16      $self->{index_hint}      = $args{index_hint};
+129            4                                 15      $self->{buffer_in_mysql} = $args{buffer_in_mysql};
+130            4                                 16      $self->{ChangeHandler}   = $args{ChangeHandler};
 131                                                   
-132                                                   # Depth-first: if there are any bad chunks, return SQL to inspect their rows
-133                                                   # individually.  Otherwise get the next chunk.  This way we can sync part of the
-134                                                   # table before moving on to the next part.
-135                                                   sub get_sql {
-136            5                    5            87      my ( $self, %args ) = @_;
-137            5    100                          28      if ( $self->{state} ) {
-138   ***      1     50                           6         my $index_hint = defined $args{index_hint}
-139                                                                          ? " USE INDEX (`$args{index_hint}`) "
-140                                                                          : '';
-141            1                                  5         return 'SELECT '
-142                                                            . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
-143   ***      1     50                           7            . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
-      ***      1     50                           5   
-144                                                            . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
-145                                                            . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
-146                                                            . $index_hint 
-147                                                            . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
-148                                                            . ($args{where} ? " AND ($args{where})" : '');
-149                                                      }
-150                                                      else {
-151            4                                 63         return $self->{chunker}->inject_chunks(
-152                                                            database   => $args{database},
-153                                                            table      => $args{table},
-154                                                            chunks     => $self->{chunks},
-155                                                            chunk_num  => $self->{chunk_num},
-156                                                            query      => $self->{chunk_sql},
-157                                                            where      => [$args{where}],
-158                                                            quoter     => $self->{quoter},
-159                                                            index_hint => $args{index_hint},
-160                                                         );
-161                                                      }
-162                                                   }
-163                                                   
-164                                                   sub prepare {
-165   ***      0                    0             0      my ( $self, $dbh ) = @_;
-166   ***      0                                  0      my $sql = 'SET @crc := "", @cnt := 0';
-167   ***      0                                  0      MKDEBUG && _d($sql);
-168   ***      0                                  0      $dbh->do($sql);
-169   ***      0                                  0      return;
-170                                                   }
-171                                                   
-172                                                   sub same_row {
-173            3                    3            40      my ( $self, $lr, $rr ) = @_;
-174   ***      3    100     33                   21      if ( $self->{state} ) {
-      ***            50                               
-175            2    100                          16         if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
-176            1                                  5            $self->{handler}->change('UPDATE', $lr, $self->key_cols());
-177                                                         }
-178                                                      }
-179                                                      elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
-180            1                                  3         MKDEBUG && _d('Rows:', Dumper($lr, $rr));
-181            1                                  3         MKDEBUG && _d('Will examine this chunk before moving to next');
-182            1                                  5         $self->{state} = 1; # Must examine this chunk row-by-row
-183                                                      }
-184                                                   }
-185                                                   
-186                                                   # This (and not_in_left) should NEVER be called in state 0.  If there are
-187                                                   # missing rows in state 0 in one of the tables, the CRC will be all 0's and the
-188                                                   # cnt will be 0, but the result set should still come back.
-189                                                   sub not_in_right {
-190            1                    1             4      my ( $self, $lr ) = @_;
-191   ***      1     50                           6      die "Called not_in_right in state 0" unless $self->{state};
-192            1                                  7      $self->{handler}->change('INSERT', $lr, $self->key_cols());
-193                                                   }
-194                                                   
-195                                                   sub not_in_left {
-196            2                    2            62      my ( $self, $rr ) = @_;
-197            2    100                           8      die "Called not_in_left in state 0" unless $self->{state};
-198            1                                  6      $self->{handler}->change('DELETE', $rr, $self->key_cols());
+132            4                                 29      $self->{ChangeHandler}->fetch_back($args{dbh});
+133                                                   
+134            4                                 13      my @chunks;
+135            4                                 46      my %range_params = $chunker->get_range_statistics(%args);
+136   ***      4     50                          23      if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
+              12                                 53   
+137            4                                 44         $args{chunk_size} = $chunker->size_to_rows(%args);
+138            4                                 42         @chunks = $chunker->calculate_chunks(%args, %range_params);
+139                                                      }
+140                                                      else {
+141   ***      0                                  0         MKDEBUG && _d('No range statistics; using single chunk 1=1');
+142   ***      0                                  0         @chunks = '1=1';
+143                                                      }
+144                                                   
+145            4                                 29      $self->{chunks}    = \@chunks;
+146            4                                 21      $self->{chunk_num} = 0;
+147            4                                 13      $self->{state}     = 0;
+148                                                   
+149            4                                 55      return;
+150                                                   }
+151                                                   
+152                                                   sub uses_checksum {
+153   ***      0                    0             0      return 1;
+154                                                   }
+155                                                   
+156                                                   sub set_checksum_queries {
+157            3                    3            18      my ( $self, $chunk_sql, $row_sql ) = @_;
+158   ***      3     50                          14      die "I need a chunk_sql argument" unless $chunk_sql;
+159   ***      3     50                          12      die "I need a row_sql argument" unless $row_sql;
+160            3                                 14      $self->{chunk_sql} = $chunk_sql;
+161            3                                 12      $self->{row_sql} = $row_sql;
+162            3                                 12      return;
+163                                                   }
+164                                                   
+165                                                   sub prepare_sync_cycle {
+166   ***      0                    0             0      my ( $self, $host ) = @_;
+167   ***      0                                  0      my $sql = 'SET @crc := "", @cnt := 0';
+168   ***      0                                  0      MKDEBUG && _d($sql);
+169   ***      0                                  0      $host->{dbh}->do($sql);
+170   ***      0                                  0      return;
+171                                                   }
+172                                                   
+173                                                   # Depth-first: if there are any bad chunks, return SQL to inspect their rows
+174                                                   # individually.  Otherwise get the next chunk.  This way we can sync part of the
+175                                                   # table before moving on to the next part.
+176                                                   sub get_sql {
+177            5                    5            42      my ( $self, %args ) = @_;
+178            5    100                          27      if ( $self->{state} ) {  # checksum a chunk of rows
+179            2                                 13         return 'SELECT '
+180                                                            . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
+181   ***      2    100     50                   14            . join(', ', map { $self->{Quoter}->quote($_) } @{$self->key_cols()})
+               2    100                          15   
+182                                                            . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
+183                                                            . ' FROM ' . $self->{Quoter}->quote(@args{qw(database table)})
+184                                                            . ' '. ($self->{index_hint} || '')
+185                                                            . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
+186                                                            . ($args{where} ? " AND ($args{where})" : '');
+187                                                      }
+188                                                      else {  # checksum the rows
+189            3                                 47         return $self->{TableChunker}->inject_chunks(
+190                                                            database   => $args{database},
+191                                                            table      => $args{table},
+192                                                            chunks     => $self->{chunks},
+193                                                            chunk_num  => $self->{chunk_num},
+194                                                            query      => $self->{chunk_sql},
+195                                                            index_hint => $self->{index_hint},
+196                                                            where      => [ $args{where} ],
+197                                                         );
+198                                                      }
 199                                                   }
 200                                                   
-201                                                   sub done_with_rows {
-202            4                    4            19      my ( $self ) = @_;
-203            4    100                          22      if ( $self->{state} == 1 ) {
-204            1                                  4         $self->{state} = 2;
-205            1                                  3         MKDEBUG && _d('Setting state =', $self->{state});
-206                                                      }
-207                                                      else {
-208            3                                 10         $self->{state} = 0;
-209            3                                 11         $self->{chunk_num}++;
-210            3                                 10         MKDEBUG && _d('Setting state =', $self->{state},
-211                                                            'chunk_num =', $self->{chunk_num});
-212                                                      }
-213                                                   }
-214                                                   
-215                                                   sub done {
-216            1                    1             5      my ( $self ) = @_;
-217                                                      MKDEBUG && _d('Done with', $self->{chunk_num}, 'of',
-218            1                                  3         scalar(@{$self->{chunks}}), 'chunks');
-219            1                                  2      MKDEBUG && $self->{state} && _d('Chunk differs; must examine rows');
-220            1                                 15      return $self->{state} == 0
-221   ***      1            33                    9         && $self->{chunk_num} >= scalar(@{$self->{chunks}})
-222                                                   }
-223                                                   
-224                                                   sub pending_changes {
-225            3                    3            22      my ( $self ) = @_;
-226            3    100                          15      if ( $self->{state} ) {
-227            2                                  4         MKDEBUG && _d('There are pending changes');
-228            2                                 15         return 1;
-229                                                      }
-230                                                      else {
-231            1                                  3         MKDEBUG && _d('No pending changes');
-232            1                                  5         return 0;
-233                                                      }
-234                                                   }
-235                                                   
-236                                                   sub key_cols {
-237            5                    5            20      my ( $self ) = @_;
-238            5                                 15      my @cols;
-239            5    100                          27      if ( $self->{state} == 0 ) {
-240            1                                  4         @cols = qw(chunk_num);
-241                                                      }
-242                                                      else {
-243            4                                 20         @cols = $self->{chunk_col};
-244                                                      }
-245            5                                 13      MKDEBUG && _d('State', $self->{state},',', 'key cols', join(', ', @cols));
-246            5                                 37      return \@cols;
-247                                                   }
-248                                                   
-249                                                   sub _d {
-250   ***      0                    0                    my ($package, undef, $line) = caller 0;
-251   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+201                                                   sub same_row {
+202            3                    3            17      my ( $self, $lr, $rr ) = @_;
+203   ***      3    100     33                   24      if ( $self->{state} ) {  # checksumming rows
+      ***            50                               
+204            2    100                          18         if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
+205            1                                  7            $self->{ChangeHandler}->change('UPDATE', $lr, $self->key_cols());
+206                                                         }
+207                                                      }
+208                                                      elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
+209                                                         # checksumming a chunk of rows
+210            1                                  2         MKDEBUG && _d('Rows:', Dumper($lr, $rr));
+211            1                                  3         MKDEBUG && _d('Will examine this chunk before moving to next');
+212            1                                  5         $self->{state} = 1; # Must examine this chunk row-by-row
+213                                                      }
+214                                                   }
+215                                                   
+216                                                   # This (and not_in_left) should NEVER be called in state 0.  If there are
+217                                                   # missing rows in state 0 in one of the tables, the CRC will be all 0's and the
+218                                                   # cnt will be 0, but the result set should still come back.
+219                                                   sub not_in_right {
+220            1                    1             6      my ( $self, $lr ) = @_;
+221   ***      1     50                           8      die "Called not_in_right in state 0" unless $self->{state};
+222            1                                  7      $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
+223            1                                  5      return;
+224                                                   }
+225                                                   
+226                                                   sub not_in_left {
+227            2                    2             9      my ( $self, $rr ) = @_;
+228            2    100                           8      die "Called not_in_left in state 0" unless $self->{state};
+229            1                                  5      $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
+230            1                                  6      return;
+231                                                   }
+232                                                   
+233                                                   sub done_with_rows {
+234            4                    4            18      my ( $self ) = @_;
+235            4    100                          28      if ( $self->{state} == 1 ) {
+236                                                         # The chunk of rows differed, now checksum the rows.
+237            1                                  3         $self->{state} = 2;
+238            1                                  3         MKDEBUG && _d('Setting state =', $self->{state});
+239                                                      }
+240                                                      else {
+241                                                         # State might be 0 or 2.  If 0 then the chunk of rows was the same
+242                                                         # and we move on to the next chunk.  If 2 then we just resolved any
+243                                                         # row differences by calling not_in_left/right() so move on to the
+244                                                         # next chunk.
+245            3                                 13         $self->{state} = 0;
+246            3                                 11         $self->{chunk_num}++;
+247            3                                  7         MKDEBUG && _d('Setting state =', $self->{state},
+248                                                            'chunk_num =', $self->{chunk_num});
+249                                                      }
+250            4                                 14      return;
+251                                                   }
+252                                                   
+253                                                   sub done {
+254            1                    1             4      my ( $self ) = @_;
+255                                                      MKDEBUG && _d('Done with', $self->{chunk_num}, 'of',
+256            1                                  4         scalar(@{$self->{chunks}}), 'chunks');
+257            1                                  2      MKDEBUG && $self->{state} && _d('Chunk differs; must examine rows');
+258            1                                 20      return $self->{state} == 0
+259   ***      1            33                    9         && $self->{chunk_num} >= scalar(@{$self->{chunks}})
+260                                                   }
+261                                                   
+262                                                   sub pending_changes {
+263            3                    3            13      my ( $self ) = @_;
+264            3    100                          17      if ( $self->{state} ) {
+265            2                                  4         MKDEBUG && _d('There are pending changes');
+266                                                         # There are pending changes because in state 1 or 2 the chunk of rows
+267                                                         # differs so there's at least 1 row that differs and needs to be changed.
+268            2                                 12         return 1;
+269                                                      }
+270                                                      else {
+271            1                                  3         MKDEBUG && _d('No pending changes');
+272            1                                  6         return 0;
+273                                                      }
+274                                                   }
+275                                                   
+276                                                   sub key_cols {
+277            6                    6            24      my ( $self ) = @_;
+278            6                                 18      my @cols;
+279            6    100                          31      if ( $self->{state} == 0 ) {
+280            1                                  4         @cols = qw(chunk_num);
+281                                                      }
+282                                                      else {
+283            5                                 24         @cols = $self->{chunk_col};
+284                                                      }
+285            6                                 18      MKDEBUG && _d('State', $self->{state},',', 'key cols', join(', ', @cols));
+286            6                                 43      return \@cols;
+287                                                   }
+288                                                   
+289                                                   sub _d {
+290   ***      0                    0                    my ($package, undef, $line) = caller 0;
+291   ***      0      0                                  @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
       ***      0                                      
       ***      0                                      
-252   ***      0                                              map { defined $_ ? $_ : 'undef' }
-253                                                           @_;
-254   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-255                                                   }
-256                                                   
-257                                                   1;
-258                                                   
-259                                                   # ###########################################################################
-260                                                   # End TableSyncChunk package
-261                                                   # ###########################################################################
+292   ***      0                                              map { defined $_ ? $_ : 'undef' }
+293                                                           @_;
+294   ***      0                                         print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+295                                                   }
+296                                                   
+297                                                   1;
+298                                                   
+299                                                   # ###########################################################################
+300                                                   # End TableSyncChunk package
+301                                                   # ###########################################################################
 
 
 Branches
@@ -300,24 +340,31 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-45    ***     50      0     60   unless defined $args{$arg}
-61    ***     50      4      0   if ($col)
-65    ***     50      4      0   if (not grep {not defined $params{$_};} 'min', 'max', 'rows_in_range') { }
-81    ***     50      0      4   unless @chunks
-101   ***     50      4      0   if ($args{'algorithm'} eq 'BIT_XOR' and not $args{'crc_type'} =~ /int$/)
-137          100      1      4   if ($$self{'state'}) { }
-138   ***     50      0      1   defined $args{'index_hint'} ? :
-143   ***     50      0      1   $$self{'bufferinmysql'} ? :
-      ***     50      0      1   $args{'where'} ? :
-174          100      2      1   if ($$self{'state'}) { }
+44    ***     50      0      2   unless defined $args{$arg}
+67    ***     50      0      7   unless defined $args{$arg}
+79           100      2      5   unless $exact
+84           100      4      1   if ($args{'chunk_col'} or $args{'chunk_index'}) { }
+88           100      6      2   if ($args{'chunk_col'})
+89           100      3      3   unless $chunkable_cols[$i]{'column'} eq $args{'chunk_col'}
+91           100      4      1   if ($args{'chunk_index'})
+92           100      2      2   unless $chunkable_cols[$i]{'index'} eq $args{'chunk_index'}
+98           100      1      3   if (not $colno)
+122   ***     50      0     36   unless defined $args{$arg}
+136   ***     50      4      0   if (not grep {not defined $range_params{$_};} 'min', 'max', 'rows_in_range') { }
+158   ***     50      0      3   unless $chunk_sql
+159   ***     50      0      3   unless $row_sql
+178          100      2      3   if ($$self{'state'}) { }
+181          100      1      1   $$self{'buffer_in_mysql'} ? :
+             100      1      1   $args{'where'} ? :
+203          100      2      1   if ($$self{'state'}) { }
       ***     50      1      0   elsif ($$lr{'cnt'} != $$rr{'cnt'} or $$lr{'crc'} ne $$rr{'crc'}) { }
-175          100      1      1   if ($$lr{$$self{'crc_col'}} ne $$rr{$$self{'crc_col'}})
-191   ***     50      0      1   unless $$self{'state'}
-197          100      1      1   unless $$self{'state'}
-203          100      1      3   if ($$self{'state'} == 1) { }
-226          100      2      1   if ($$self{'state'}) { }
-239          100      1      4   if ($$self{'state'} == 0) { }
-251   ***      0      0      0   defined $_ ? :
+204          100      1      1   if ($$lr{$$self{'crc_col'}} ne $$rr{$$self{'crc_col'}})
+221   ***     50      0      1   unless $$self{'state'}
+228          100      1      1   unless $$self{'state'}
+235          100      1      3   if ($$self{'state'} == 1) { }
+264          100      2      1   if ($$self{'state'}) { }
+279          100      1      5   if ($$self{'state'} == 0) { }
+291   ***      0      0      0   defined $_ ? :
 
 
 Conditions
@@ -327,50 +374,54 @@ and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-101   ***     33      0      0      4   $args{'algorithm'} eq 'BIT_XOR' and not $args{'crc_type'} =~ /int$/
-221   ***     33      0      0      1   $$self{'state'} == 0 && $$self{'chunk_num'} >= scalar @{$$self{'chunks'};}
+259   ***     33      0      0      1   $$self{'state'} == 0 && $$self{'chunk_num'} >= scalar @{$$self{'chunks'};}
 
 or 2 conditions
 
 line  err      %      l     !l   expr
 ----- --- ------ ------ ------   ----
-105   ***     50      0      4   $args{'chunk_sql'} ||= $args{'checksum'}->make_checksum_query('dbname', $args{'database'}, 'tblname', $args{'table'}, 'table', $args{'struct'}, 'quoter', $args{'quoter'}, 'algorithm', $args{'algorithm'}, 'func', $args{'func'}, 'crc_wid', $args{'crc_wid'}, 'crc_type', $args{'crc_type'}, 'opt_slice', $args{'opt_slice'}, 'cols', $args{'cols'}, 'trim', $args{'trim'}, 'buffer', $args{'bufferinmysql'})
-119   ***     50      0      4   $args{'row_sql'} ||= $args{'checksum'}->make_row_checksum('table', $args{'struct'}, 'quoter', $args{'quoter'}, 'func', $args{'func'}, 'cols', $args{'cols'}, 'trim', $args{'trim'})
+181   ***     50      2      0   $$self{'index_hint'} || ''
 
 or 3 conditions
 
 line  err      %      l  !l&&r !l&&!r   expr
 ----- --- ------ ------ ------ ------   ----
-174   ***     33      1      0      0   $$lr{'cnt'} != $$rr{'cnt'} or $$lr{'crc'} ne $$rr{'crc'}
+84           100      3      1      1   $args{'chunk_col'} or $args{'chunk_index'}
+203   ***     33      1      0      0   $$lr{'cnt'} != $$rr{'cnt'} or $$lr{'crc'} ne $$rr{'crc'}
 
 
 Covered Subroutines
 -------------------
 
-Subroutine      Count Location                                             
---------------- ----- -----------------------------------------------------
-BEGIN               1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:29 
-BEGIN               1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:30 
-BEGIN               1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:32 
-BEGIN               1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:33 
-BEGIN               1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:34 
-BEGIN               1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:38 
-done                1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:216
-done_with_rows      4 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:202
-get_sql             5 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:136
-key_cols            5 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:237
-new                 4 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:41 
-not_in_left         2 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:196
-not_in_right        1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:190
-pending_changes     3 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:225
-same_row            3 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:173
+Subroutine           Count Location                                             
+-------------------- ----- -----------------------------------------------------
+BEGIN                    1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:29 
+BEGIN                    1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:30 
+BEGIN                    1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:32 
+BEGIN                    1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:33 
+BEGIN                    1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:34 
+BEGIN                    1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:39 
+can_sync                 7 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:65 
+done                     1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:254
+done_with_rows           4 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:234
+get_sql                  5 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:177
+key_cols                 6 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:277
+new                      1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:42 
+not_in_left              2 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:227
+not_in_right             1 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:220
+pending_changes          3 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:263
+prepare_to_sync          4 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:118
+same_row                 3 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:202
+set_checksum_queries     3 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:157
 
 Uncovered Subroutines
 ---------------------
 
-Subroutine      Count Location                                             
---------------- ----- -----------------------------------------------------
-_d                  0 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:250
-prepare             0 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:165
+Subroutine           Count Location                                             
+-------------------- ----- -----------------------------------------------------
+_d                       0 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:290
+name                     0 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:51 
+prepare_sync_cycle       0 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:166
+uses_checksum            0 /home/daniel/dev/maatkit/common/TableSyncChunk.pm:153
 
 
