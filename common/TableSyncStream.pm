@@ -81,6 +81,7 @@ sub get_sql {
 
 sub same_row {
    my ( $self, $lr, $rr ) = @_;
+   return;
 }
 
 sub not_in_right {

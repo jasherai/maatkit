@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 19;
+use Test::More tests => 29;
 
 # TableSyncer and its required modules:
 require "../TableSyncer.pm";
@@ -80,6 +80,7 @@ throws_ok(
    'TableChecksum required'
 );
 
+my $rd       = new RowDiff(dbh=>$src_dbh);
 my $ms       = new MasterSlave();
 my $q        = new Quoter();
 my $vp       = new VersionParser();
@@ -98,25 +99,34 @@ isa_ok($syncer, 'TableSyncer');
 # ###########################################################################
 # Make TableSync* objects.
 # ###########################################################################
-my $chunker    = new TableChunker( Quoter => $q, MySQLDump => $du );
-my $sync_chunk = new TableSyncChunk(
-   TableChunker => $chunker,
-   Quoter       => $q,
-);
+my $chunker = new TableChunker( Quoter => $q, MySQLDump => $du );
+my $nibbler = new TableNibbler( TableParser => $tp, Quoter => $q );
 
-my $nibbler     = new TableNibbler( TableParser => $tp, Quoter => $q );
-my $sync_nibble = new TableSyncNibble(
-   TableNibbler  => $nibbler,
-   TableChunker  => $chunker,
-   TableParser   => $tp,
-   Quoter        => $q,
-);
+my ($sync_chunk, $sync_nibble, $sync_groupby, $sync_stream);
+my $plugins = [];
 
-# TODO:
-my $sync_groupby = new TableSyncGroupBy( Quoter => $q );
-my $sync_stream  = new TableSyncStream( Quoter => $q );
+# Call this func to re-make/reset the plugins.
 
-my $plugins = [$sync_chunk, $sync_nibble, $sync_groupby, $sync_stream];
+sub make_plugins {
+   $sync_chunk = new TableSyncChunk(
+      TableChunker => $chunker,
+      Quoter       => $q,
+   );
+   $sync_nibble = new TableSyncNibble(
+      TableNibbler  => $nibbler,
+      TableChunker  => $chunker,
+      TableParser   => $tp,
+      Quoter        => $q,
+   );
+   $sync_groupby = new TableSyncGroupBy( Quoter => $q );
+   $sync_stream  = new TableSyncStream( Quoter => $q );
+
+   $plugins = [$sync_chunk, $sync_nibble, $sync_groupby, $sync_stream];
+
+   return;
+}
+
+make_plugins();
 
 # ###########################################################################
 # Test get_best_plugin() (formerly best_algorithm()).
@@ -129,52 +139,66 @@ is_deeply(
          tbl_struct  => $tbl_struct,
       )
    ],
-   [ $sync_groupby, 1 ],
-   'Got GroupBy algorithm',
+   [ $sync_groupby ],
+   'Best plugin GroupBy'
 );
 
 $tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test3'));
+my ($plugin, %plugin_args) = $syncer->get_best_plugin(
+   plugins     => $plugins,
+   tbl_struct  => $tbl_struct,
+);
 is_deeply(
-   [
-      $syncer->get_best_plugin(
-         plugins     => $plugins,
-         tbl_struct  => $tbl_struct,
-      )
-   ],
-   [ $sync_chunk, { chunk_col => 'a', chunk_index => 'PRIMARY' } ],
-   'Got Chunk algorithm',
+   [ $plugin, \%plugin_args, ],
+   [ $sync_chunk, { chunk_index => 'PRIMARY', chunk_col => 'a', } ],
+   'Best plugin Chunk'
+);
+
+$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test6'));
+($plugin, %plugin_args) = $syncer->get_best_plugin(
+   plugins     => $plugins,
+   tbl_struct  => $tbl_struct,
+);
+is_deeply(
+   [ $plugin, \%plugin_args, ],
+   [ $sync_nibble, { chunk_index => 'a', key_cols => [qw(a)], } ],
+   'Best plugin Nibble'
 );
 
 # ###########################################################################
-# Test sync_table().
+# Test sync_table() for each plugin with a basic, 4 row data set.
 # ###########################################################################
+
+# REMEMBER: call new_ch() before each sync to reset the number of actions.
 
 # Redo this in case any tests above change $tbl_struct.
-$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test3'));
+$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test1'));
 
+# test1 has 4 rows and test2, which is the same struct, is empty.
+# So after sync, test2 should have the same 4 rows as test1.
+my $test1_rows = [
+ [qw(1 en)],
+ [qw(2 ca)],
+ [qw(3 ab)],
+ [qw(4 bz)],
+];
+my $inserts = [
+   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en')",
+   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca')",
+   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (3, 'ab')",
+   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (4, 'bz')",
+];
 my $src = {
    dbh      => $src_dbh,
    misc_dbh => $dbh,
    db       => 'test',
-   tbl      => 'test3',
+   tbl      => 'test1',
 };
 my $dst = {
    dbh => $dst_dbh,
    db  => 'test',
-   tbl => 'test3',
+   tbl => 'test2',
 };
-my $rd = new RowDiff(dbh=>$src_dbh);
-my @rows;
-my $ch = new ChangeHandler(
-   Quoter  => $q,
-   src_db  => $src->{db},
-   src_tbl => $src->{tbl},
-   dst_db  => $dst->{db},
-   dst_tbl => $dst->{tbl},
-   actions => [ sub { push @rows, @_ } ],
-   replace => 0,
-   queue   => 0,
-);
 my %args = (
    plugins        => $plugins,
    src            => $src,
@@ -183,14 +207,29 @@ my %args = (
    cols           => $tbl_struct->{cols},
    chunk_size     => 2,
    RowDiff        => $rd,
-   ChangeHandler  => $ch,
+   ChangeHandler  => undef,  # call new_ch()
    function       => 'SHA1',
 );
 
-# Add a row to dst.test.test3 to make it differ.
-$dst_dbh->do('INSERT INTO test.test3 VALUES (3,3)');
+my @rows;
+sub new_ch {
+   return new ChangeHandler(
+      Quoter  => $q,
+      src_db  => $src->{db},
+      src_tbl => $src->{tbl},
+      dst_db  => $dst->{db},
+      dst_tbl => $dst->{tbl},
+      actions => [ sub { push @rows, @_; $dst_dbh->do(@_); } ],
+      replace => 0,
+      queue   => 0,
+   );
+}
 
-# Do a dry run sync, so nothing should happen.
+# First, do a dry run sync, so nothing should happen.
+$dst_dbh->do('TRUNCATE TABLE test.test2');
+@rows = ();
+$args{ChangeHandler} = new_ch();
+
 is_deeply(
    { $syncer->sync_table(%args, dry_run => 1) },
    {
@@ -203,99 +242,216 @@ is_deeply(
    'Dry run, no changes, Chunk plugin'
 );
 
-my $src_rows = $src_dbh->selectrow_arrayref('select count(*) from test.test3');
-my $dst_rows = $dst_dbh->selectrow_arrayref('select count(*) from test.test3');
-ok(
-   $src_rows->[0] == 2 && $dst_rows->[0] == 3,
-   'Nothing happened, src and dst still out of sync'
+is_deeply(
+   \@rows,
+   [],
+   'Dry run, no SQL statements made'
 );
 
-# Now do a real run so the tables are synced.
+is_deeply(
+   $dst_dbh->selectall_arrayref('SELECT * FROM test.test2 ORDER BY a, b'),
+   [],
+   'Dry run, no rows changed'
+);
+
+# Now do the real syncs that should insert 4 rows into test2.
+
+# Sync with Chunk.
 is_deeply(
    { $syncer->sync_table(%args) },
    {
-      DELETE    => 1,
-      INSERT    => 0,
+      DELETE    => 0,
+      INSERT    => 4,
       REPLACE   => 0,
       UPDATE    => 0,
       ALGORITHM => 'Chunk',
    },
-   'Synced tables with 1 DELETE',
+   'Sync with Chunk, 4 INSERTs'
 );
 
 is_deeply(
    \@rows,
-   [ 'DELETE FROM `test`.`test3` WHERE `a`=3 LIMIT 1' ],
-   'ChangeHandler made the DELETE statement'
+   $inserts,
+   'Sync with Chunk, ChangeHandler made INSERT statements'
 );
 
-$src_rows = $src_dbh->selectrow_arrayref('select count(*) from test.test3');
-$dst_rows = $dst_dbh->selectrow_arrayref('select count(*) from test.test3');
-ok(
-   $src_rows->[0] == 2 && $dst_rows->[0] == 3,
-   'Nothing happened because no action executed the DELETE statement'
+is_deeply(
+   $dst_dbh->selectall_arrayref('SELECT * FROM test.test2 ORDER BY a, b'),
+   $test1_rows,
+   'Sync with Chunk, dst rows match src rows'
 );
 
-exit;
-diag(`$mysql < samples/before-TableSyncChunk.sql`);
+# Sync with Chunk again, but use chunk_size = 1k which should be converted.
+$dst_dbh->do('TRUNCATE TABLE test.test2');
+@rows = ();
+$args{ChangeHandler} = new_ch();
 
-# This should be OK because it ought to convert the size to rows.
-$syncer->sync_table(
-   %args,
-   chunksize     => '1k',
-   algorithm     => 'Chunk',
-   dst_db        => 'test',
-   dst_tbl       => 'test2',
-   src_db        => 'test',
-   src_tbl       => 'test1',
+is_deeply(
+   { $syncer->sync_table(%args) },
+   {
+      DELETE    => 0,
+      INSERT    => 4,
+      REPLACE   => 0,
+      UPDATE    => 0,
+      ALGORITHM => 'Chunk',
+   },
+   'Sync with Chunk chunk size 1k, 4 INSERTs'
 );
 
-diag(`$mysql < samples/before-TableSyncChunk.sql`);
-
-$syncer->sync_table(
-   %args,
-   algorithm     => 'Stream',
-   dst_db        => 'test',
-   dst_tbl       => 'test2',
-   src_db        => 'test',
-   src_tbl       => 'test1',
+is_deeply(
+   \@rows,
+   $inserts,
+   'Sync with Chunk chunk size 1k, ChangeHandler made INSERT statements'
 );
 
-$cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
-is( $cnt, 4, 'Four rows in destination after Stream' );
-
-diag(`$mysql < samples/before-TableSyncChunk.sql`);
-
-$syncer->sync_table(
-   %args,
-   algorithm     => 'GroupBy',
-   dst_db        => 'test',
-   dst_tbl       => 'test2',
-   src_db        => 'test',
-   src_tbl       => 'test1',
+is_deeply(
+   $dst_dbh->selectall_arrayref('SELECT * FROM test.test2 ORDER BY a, b'),
+   $test1_rows,
+   'Sync with Chunk chunk size 1k, dst rows match src rows'
 );
 
-$cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
-is( $cnt, 4, 'Four rows in destination after GroupBy' );
+# Sync with Nibble.
+$dst_dbh->do('TRUNCATE TABLE test.test2');
+@rows = ();
+$args{ChangeHandler} = new_ch();
 
-diag(`$mysql < samples/before-TableSyncGroupBy.sql`);
-
-my $ddl2        = $du->get_create_table( $src_dbh, $q, 'test', 'test1' );
-my $tbl_struct2 = $tp->parse($ddl2);
-
-$syncer->sync_table(
-   %args,
-   tbl_struct    => $tbl_struct2,
-   cols          => [qw(a b c)],
-   algorithm     => 'GroupBy',
-   dst_db        => 'test',
-   dst_tbl       => 'test2',
-   src_db        => 'test',
-   src_tbl       => 'test1',
+is_deeply(
+   { $syncer->sync_table(%args, plugins => [$sync_nibble]) },
+   {
+      DELETE    => 0,
+      INSERT    => 4,
+      REPLACE   => 0,
+      UPDATE    => 0,
+      ALGORITHM => 'Nibble',
+   },
+   'Sync with Nibble, 4 INSERTs'
 );
 
-$rows = $dbh->selectall_arrayref('select * from test.test2 order by a, b, c', { Slice => {}} );
-is_deeply($rows,
+is_deeply(
+   \@rows,
+   $inserts,
+   'Sync with Nibble, ChangeHandler made INSERT statements'
+);
+
+is_deeply(
+   $dst_dbh->selectall_arrayref('SELECT * FROM test.test2 ORDER BY a, b'),
+   $test1_rows,
+   'Sync with Nibble, dst rows match src rows'
+);
+
+# Sync with GroupBy.
+$dst_dbh->do('TRUNCATE TABLE test.test2');
+@rows = ();
+$args{ChangeHandler} = new_ch();
+
+is_deeply(
+   { $syncer->sync_table(%args, plugins => [$sync_groupby]) },
+   {
+      DELETE    => 0,
+      INSERT    => 4,
+      REPLACE   => 0,
+      UPDATE    => 0,
+      ALGORITHM => 'GroupBy',
+   },
+   'Sync with GroupBy, 4 INSERTs'
+);
+
+is_deeply(
+   \@rows,
+   $inserts,
+   'Sync with GroupBy, ChangeHandler made INSERT statements'
+);
+
+is_deeply(
+   $dst_dbh->selectall_arrayref('SELECT * FROM test.test2 ORDER BY a, b'),
+   $test1_rows,
+   'Sync with GroupBy, dst rows match src rows'
+);
+
+# Sync with Stream.
+$dst_dbh->do('TRUNCATE TABLE test.test2');
+@rows = ();
+$args{ChangeHandler} = new_ch();
+
+is_deeply(
+   { $syncer->sync_table(%args, plugins => [$sync_stream]) },
+   {
+      DELETE    => 0,
+      INSERT    => 4,
+      REPLACE   => 0,
+      UPDATE    => 0,
+      ALGORITHM => 'Stream',
+   },
+   'Sync with Stream, 4 INSERTs'
+);
+
+is_deeply(
+   \@rows,
+   $inserts,
+   'Sync with Stream, ChangeHandler made INSERT statements'
+);
+
+is_deeply(
+   $dst_dbh->selectall_arrayref('SELECT * FROM test.test2 ORDER BY a, b'),
+   $test1_rows,
+   'Sync with Stream, dst rows match src rows'
+);
+
+# #############################################################################
+# Check that the plugins can resolve unique key violations.
+# #############################################################################
+
+make_plugins();
+
+$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test3'));
+
+$args{tbl_struct} = $tbl_struct;
+$args{cols}       = $tbl_struct->{cols};
+$src->{tbl} = 'test3';
+$dst->{tbl} = 'test4';
+
+@rows = ();
+$args{ChangeHandler} = new_ch();
+
+$syncer->sync_table(%args, plugins => [$sync_stream]);
+
+is_deeply(
+   $dst_dbh->selectall_arrayref('select * from test.test4 order by a', { Slice => {}} ),
+   [ { a => 1, b => 2 }, { a => 2, b => 1 } ],
+   'Resolves unique key violations with Stream'
+);
+
+
+@rows = ();
+$args{ChangeHandler} = new_ch();
+
+$syncer->sync_table(%args, plugins => [$sync_chunk]);
+
+is_deeply(
+   $dst_dbh->selectall_arrayref('select * from test.test4 order by a', { Slice => {}} ),
+   [ { a => 1, b => 2 }, { a => 2, b => 1 } ],
+   'Resolves unique key violations with Chunk' );
+
+# ###########################################################################
+# Test TableSyncGroupBy.
+# ###########################################################################
+
+$sb->load_file('master', 'samples/before-TableSyncGroupBy.sql');
+sleep 1;
+$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test1'));
+
+$args{tbl_struct} = $tbl_struct;
+$args{cols}       = $tbl_struct->{cols};
+$src->{tbl} = 'test1';
+$dst->{tbl} = 'test2';
+
+@rows = ();
+$args{ChangeHandler} = new_ch();
+
+$syncer->sync_table(%args, plugins => [$sync_groupby]);
+
+is_deeply(
+   $dst_dbh->selectall_arrayref('select * from test.test2 order by a, b, c', { Slice => {}} ),
    [
       { a => 1, b => 2, c => 3 },
       { a => 1, b => 2, c => 3 },
@@ -310,57 +466,10 @@ is_deeply($rows,
    ],
    'Table synced with GroupBy',
 );
-
-diag(`$mysql < samples/before-TableSyncChunk.sql`);
-
-$syncer->sync_table(
-   %args,
-   algorithm     => 'Nibble',
-   dst_db        => 'test',
-   dst_tbl       => 'test2',
-   src_db        => 'test',
-   src_tbl       => 'test1',
-);
-
-$cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
-is( $cnt, 4, 'Four rows in destination after Nibble' );
-
-diag(`$mysql < samples/before-TableSyncChunk.sql`);
-
-$syncer->sync_table(
-   %args,
-   algorithm     => 'Stream',
-   dst_db        => 'test',
-   dst_tbl       => 'test4',
-   src_db        => 'test',
-   src_tbl       => 'test3',
-);
-
-$rows = $dbh->selectall_arrayref(
-   'select * from test.test4 order by a', { Slice => {}} );
-is_deeply($rows,
-   [ { a => 1, b => 2 }, { a => 2, b => 1 } ],
-   'Resolves unique key violations with Stream' );
-
-diag(`$mysql < samples/before-TableSyncChunk.sql`);
-
-
-$syncer->sync_table(
-   %args,
-   algorithm     => 'Chunk',
-   dst_db        => 'test',
-   dst_tbl       => 'test4',
-   src_db        => 'test',
-   src_tbl       => 'test3',
-);
-
-$rows = $dbh->selectall_arrayref(
-   'select * from test.test4 order by a', { Slice => {}} );
-is_deeply($rows,
-   [ { a => 1, b => 2 }, { a => 2, b => 1 } ],
-   'Resolves unique key violations with Chunk' );
-
-diag(`$mysql < samples/before-TableSyncChunk.sql`);
+exit;
+# ###########################################################################
+# Test locking.
+# ###########################################################################
 
 $syncer->sync_table(
    %args,

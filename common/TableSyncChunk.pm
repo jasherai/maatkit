@@ -55,12 +55,12 @@ sub name {
 # to sync the given tbl_struct.  Else, returns nothing (false) if the table
 # cannot be synced.  Arguments:
 #   * tbl_struct    Return value of TableParser::parse()
-#   * col           (optional) Column name to chunk on
-#   * index         (optional) Index to use for chunking
-# If either col or index are given, then they are required so the return value
-# will only be true if they're among the possible chunkable columns.  If
-# neither is given, then the first (best) chunkable col and index are returned.
-# The return value should be passed back to prepare_to_sync().
+#   * chunk_col     (optional) Column name to chunk on
+#   * chunk_index   (optional) Index to use for chunking
+# If either chunk_col or chunk_index are given, then they are required so
+# the return value will only be true if they're among the possible chunkable
+# columns.  If neither is given, then the first (best) chunkable col and index
+# are returned.  The return value should be passed back to prepare_to_sync().
 sub can_sync {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(tbl_struct) ) {
@@ -81,23 +81,23 @@ sub can_sync {
    # Check if the requested chunk col and/or index are among the possible
    # columns found above.
    my $colno;
-   if ( $args{col} || $args{index} ) {
-      MKDEBUG && _d('Checking requested col', $args{col},
-         'and/or index', $args{index});
+   if ( $args{chunk_col} || $args{chunk_index} ) {
+      MKDEBUG && _d('Checking requested col', $args{chunk_col},
+         'and/or index', $args{chunk_index});
       for my $i ( 0..$#chunkable_cols ) {
-         if ( $args{col} ) {
-            next unless $chunkable_cols[$i]->{column} eq $args{col};
+         if ( $args{chunk_col} ) {
+            next unless $chunkable_cols[$i]->{column} eq $args{chunk_col};
          }
-         if ( $args{index} ) {
-            next unless $chunkable_cols[$i]->{index} eq $args{index};
+         if ( $args{chunk_index} ) {
+            next unless $chunkable_cols[$i]->{index} eq $args{chunk_index};
          }
          $colno = $i;
          last;
       }
 
       if ( !$colno ) {
-         MKDEBUG && _d('Cannot chunk on column', $args{col},
-            'and/or using index', $args{index});
+         MKDEBUG && _d('Cannot chunk on column', $args{chunk_col},
+            'and/or using index', $args{chunk_index});
          return;
       }
    }
@@ -107,23 +107,23 @@ sub can_sync {
 
    MKDEBUG && _d('Can chunk on column', $chunkable_cols[$colno]->{column},
       'using index', $chunkable_cols[$colno]->{index});
-   return {
+   return (
+      1,
       chunk_col   => $chunkable_cols[$colno]->{column},
       chunk_index => $chunkable_cols[$colno]->{index},
-   };
+   ),
 }
 
 sub prepare_to_sync {
    my ( $self, %args ) = @_;
-   my @required_args = qw(plugin_args dbh db tbl tbl_struct cols crc_col
-                          chunk_size ChangeHandler);
+   my @required_args = qw(dbh db tbl tbl_struct cols chunk_col
+                          chunk_size crc_col ChangeHandler);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $chunker  = $self->{TableChunker};
 
-   $self->{chunk_index}     = $args{plugin_args}->{chunk_index};
-   $self->{chunk_col}       = $args{plugin_args}->{chunk_col};
+   $self->{chunk_col}       = $args{chunk_col};
    $self->{crc_col}         = $args{crc_col};
    $self->{index_hint}      = $args{index_hint};
    $self->{buffer_in_mysql} = $args{buffer_in_mysql};
@@ -132,8 +132,6 @@ sub prepare_to_sync {
    $self->{ChangeHandler}->fetch_back($args{dbh});
 
    my @chunks;
-   # get_range_statistics() and calculate_chunks() expect this arg.
-   $args{chunk_col} = $self->{chunk_col};
    my %range_params = $chunker->get_range_statistics(%args);
    if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
       $args{chunk_size} = $chunker->size_to_rows(%args);

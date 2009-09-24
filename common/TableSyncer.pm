@@ -58,10 +58,10 @@ sub get_best_plugin {
    MKDEBUG && _d('Getting best plugin');
    foreach my $plugin ( @{$args{plugins}} ) {
       MKDEBUG && _d('Trying plugin', $plugin->name());
-      my $plugin_args = $plugin->can_sync(%args);
-      if ( $plugin_args ) {
-        MKDEBUG && _d('Can sync with', $plugin->name(), Dumper($plugin_args));
-        return $plugin, $plugin_args;
+      my ($can_sync, %plugin_args) = $plugin->can_sync(%args);
+      if ( $can_sync ) {
+        MKDEBUG && _d('Can sync with', $plugin->name(), Dumper(\%plugin_args));
+        return $plugin, %plugin_args;
       }
    }
    MKDEBUG && _d('No plugin can sync the table');
@@ -84,6 +84,7 @@ sub get_best_plugin {
 #   * dry_run         Prepare to sync but don't actually sync (default no)
 #   * chunk_col       Column name to chunk table on (default auto-choose)
 #   * chunk_index     Index name to use for chunking table (default auto-choose)
+#   * index_hint      Use FORCE/USE INDEX (chunk_index) (default yes)
 #   * buffer_in_mysql Use SQL_BUFFER_RESULT (default no)
 #   * transaction     locking
 #   * change_dbh      locking
@@ -101,6 +102,7 @@ sub sync_table {
    my ($plugins, $src, $dst, $tbl_struct, $cols, $chunk_size, $rd, $ch)
       = @args{@required_args};
 
+   $args{index_hint}    = 1 unless defined $args{index_hint};
    $args{replicate}   ||= 0;
    $args{lock}        ||= 0;
    $args{wait}        ||= 0;
@@ -113,7 +115,7 @@ sub sync_table {
    # ########################################################################
    # Get and prepare the first plugin that can sync this table.
    # ########################################################################
-   my ($plugin, $plugin_args) = $self->get_best_plugin(%args);
+   my ($plugin, %plugin_args) = $self->get_best_plugin(%args);
    die "No plugin can sync $src->{db}.$src->{tbl}" unless $plugin;
 
    # The row-level (state 2) checksums use __crc, so the table can't use that.
@@ -123,21 +125,29 @@ sub sync_table {
    }
    MKDEBUG && _d('CRC column:', $crc_col);
 
+   # Make an index hint for either the explicitly given chunk_index
+   # or the chunk_index chosen by the plugin if index_hint is true.
    my $index_hint;
+   my $hint = ($vp->version_ge($src->{dbh}, '4.0.9')
+               && $vp->version_ge($dst->{dbh}, '4.0.9') ? 'FORCE' : 'USE')
+            . ' INDEX';
    if ( $args{chunk_index} ) {
-      my $hint = ($vp->version_ge($src->{dbh}, '4.0.9')
-                  && $vp->version_ge($dst->{dbh}, '4.0.9')) ? 'FORCE' : 'USE';
+      MKDEBUG && _d('Using given chunk index for index hint');
       $index_hint = "$hint (" . $q->quote($args{chunk_index}) . ")";
+   }
+   elsif ( $plugin_args{chunk_index} && $args{index_hint} ) {
+      MKDEBUG && _d('Using chunk index chosen by plugin for index hint');
+      $index_hint = "$hint (" . $q->quote($plugin_args{chunk_index}) . ")";
    }
    MKDEBUG && _d('Index hint:', $index_hint);
 
    eval {
       $plugin->prepare_to_sync(
          %args,
+         %plugin_args,
          dbh         => $src->{dbh},
          db          => $src->{db},
          tbl         => $src->{tbl},
-         plugin_args => $plugin_args,
          crc_col     => $crc_col,
          index_hint  => $index_hint,
       );

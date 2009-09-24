@@ -60,6 +60,16 @@ sub name {
    return 'Nibble';
 }
 
+# Returns a hash (true) with a chunk_index that can be used to sync
+# the given tbl_struct.  Else, returns nothing (false) if the table
+# cannot be synced.  Arguments:
+#   * tbl_struct    Return value of TableParser::parse()
+#   * chunk_index   (optional) Index to use for chunking
+# If chunk_index is given, then it is required so the return value will
+# only be true if it's the best possible index.  If it's not given, then
+# the best possible index is returned.  The return value should be passed
+# back to prepare_to_sync().  -- nibble_index is the same as chunk_index:
+# both are used to select multiple rows at once in state 0.
 sub can_sync {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(tbl_struct) ) {
@@ -71,13 +81,13 @@ sub can_sync {
    my $nibble_index = $self->{TableParser}->find_best_index($args{tbl_struct});
    if ( $nibble_index ) {
       MKDEBUG && _d('Best nibble index:', Dumper($nibble_index));
-      if ( !$nibble_index->{is_unique} ) {
+      if ( !$args{tbl_struct}->{keys}->{$nibble_index}->{is_unique} ) {
          MKDEBUG && _d('Best nibble index is not unique');
          return;
       }
-      if ( $args{index} && $args{index} ne $nibble_index->{name} ) {
+      if ( $args{chunk_index} && $args{chunk_index} ne $nibble_index ) {
          MKDEBUG && _d('Best nibble index is not requested index',
-            $args{index});
+            $args{chunk_index});
          return;
       }
    }
@@ -86,16 +96,18 @@ sub can_sync {
       return;
    }
 
-   MKDEBUG && _d('Can nibble using index', $nibble_index->{name});
-   return {
-      index => $nibble_index->{name},
-   };
+   MKDEBUG && _d('Can nibble using index', $nibble_index);
+   return (
+      1,
+      chunk_index => $nibble_index,
+      key_cols    => $args{tbl_struct}->{keys}->{$nibble_index}->{cols},
+   );
 }
 
 sub prepare_to_sync {
    my ( $self, %args ) = @_;
-   my @required_args = qw(dbh db tbl tbl_struct index chunk_size crc_col
-                          ChangeHandler);
+   my @required_args = qw(dbh db tbl tbl_struct chunk_index key_cols chunk_size
+                          crc_col ChangeHandler);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -103,7 +115,7 @@ sub prepare_to_sync {
    $self->{dbh}             = $args{dbh};
    $self->{crc_col}         = $args{crc_col};
    $self->{index_hint}      = $args{index_hint};
-   $self->{key_cols}        = $args{tbl_struct}->{keys}->{$args{index}}->{cols};
+   $self->{key_cols}        = $args{key_cols};
    $self->{chunk_size}      = $self->{TableChunker}->size_to_rows(%args);
    $self->{buffer_in_mysql} = $args{buffer_in_mysql};
    $self->{ChangeHandler}   = $args{ChangeHandler};
@@ -112,7 +124,8 @@ sub prepare_to_sync {
 
    $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
       %args,
-      asc_only  => 1,
+      index    => $args{chunk_index},  # expects an index arg, not chunk_index
+      asc_only => 1,
    );
 
    $self->{nibble}            = 0;
@@ -160,19 +173,21 @@ sub get_sql {
          . join(', ', map { $q->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $q->quote(@args{qw(database table)})
+         . ' ' . ($self->{index_hint} ? $self->{index_hint} : '')
          . ' WHERE (' . $self->__get_boundaries(%args) . ')'
          . ($args{where} ? " AND ($args{where})" : '');
    }
    else {
-      # Selects the rows as a nibble.
+      # Selects the rows as a nibble (aka a chunk).
       my $where = $self->__get_boundaries(%args);
       return $self->{TableChunker}->inject_chunks(
-         database  => $args{database},
-         table     => $args{table},
-         chunks    => [$where],
-         chunk_num => 0,
-         query     => $self->{nibble_sql},
-         where     => [$args{where}],
+         database   => $args{database},
+         table      => $args{table},
+         chunks     => [$where],
+         chunk_num  => 0,
+         query      => $self->{nibble_sql},
+         index_hint => $self->{index_hint},
+         where      => [$args{where}],
       );
    }
 }
