@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 59;
+use Test::More tests => 60;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -245,11 +245,15 @@ like($output,   qr/test2/,    '--replicate honors --tables (4/4)');
 # #############################################################################
 # Issue 96: mk-table-sync: Nibbler infinite loop
 # #############################################################################
-# This is a work in progress.
-# diag(`/tmp/12345/use -D test < samples/issue_96.sql`);
-# sleep 1;
-# diag(`/tmp/12345/use -D test -e "DELETE FROM issue_96 WHERE 1 LIMIT 5"`);
-# $output = `../mk-table-sync h=127.1,P=12345 P=12346 --algorithm Nibble --chunk-size 2 --execute`;
+diag(`/tmp/12345/use -D test < ../../common/t/samples/issue_96.sql`);
+sleep 1;
+$output = `../mk-table-sync h=127.1,P=12345,D=issue_96,t=t h=127.1,P=12345,D=issue_96,t=t2 --algorithm Nibble --chunk-size 2 --print`;
+chomp $output;
+is(
+   $output,
+   "UPDATE `issue_96`.`t2` SET `from_city`='ta' WHERE `package_id`=4 AND `location`='CPR' LIMIT 1;",
+   'Sync nibbler infinite loop (issue 96)'
+);
 
 # #############################################################################
 # Issue 111: Make mk-table-sync require --print or --execute or --dry-run
