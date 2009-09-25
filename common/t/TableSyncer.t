@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 36;
+use Test::More tests => 41;
 
 # TableSyncer and its required modules:
 require "../TableSyncer.pm";
@@ -566,7 +566,53 @@ is(
 );
 
 # #############################################################################
+# Test check_permissions().
+# #############################################################################
+
+# Re-using issue_96.t from above.
+is(
+   $syncer->have_all_privs($src->{dbh}, 'issue_96', 't'),
+   1,
+   'Have all privs'
+);
+
+diag(`/tmp/12345/use -u root -e "CREATE USER 'bob'\@'\%' IDENTIFIED BY 'bob'"`);
+diag(`/tmp/12345/use -u root -e "GRANT select ON issue_96.t TO 'bob'\@'\%'"`);
+my $bob_dbh = DBI->connect(
+   "DBI:mysql:;host=127.0.0.1;port=12345", 'bob', 'bob',
+      { PrintError => 0, RaiseError => 1 });
+
+is(
+   $syncer->have_all_privs($bob_dbh, 'issue_96', 't'),
+   0,
+   "Don't have all privs, just select"
+);
+
+diag(`/tmp/12345/use -u root -e "GRANT insert ON issue_96.t TO 'bob'\@'\%'"`);
+is(
+   $syncer->have_all_privs($bob_dbh, 'issue_96', 't'),
+   0,
+   "Don't have all privs, just select and insert"
+);
+
+diag(`/tmp/12345/use -u root -e "GRANT update ON issue_96.t TO 'bob'\@'\%'"`);
+is(
+   $syncer->have_all_privs($bob_dbh, 'issue_96', 't'),
+   0,
+   "Don't have all privs, just select, insert and update"
+);
+
+diag(`/tmp/12345/use -u root -e "GRANT delete ON issue_96.t TO 'bob'\@'\%'"`);
+is(
+   $syncer->have_all_privs($bob_dbh, 'issue_96', 't'),
+   1,
+   "Bob got his privs"
+);
+
+diag(`/tmp/12345/use -u root -e "DROP USER 'bob'"`);
+
+# #############################################################################
 # Done.
 # #############################################################################
-# $sb->wipe_clean($dbh);
+$sb->wipe_clean($dbh);
 exit;

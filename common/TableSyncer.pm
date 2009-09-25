@@ -339,24 +339,6 @@ sub make_checksum_queries {
    return $chunk_sql, $row_sql;
 }
 
-# This query will check all needed privileges on the table without actually
-# changing anything in it.  We can't use REPLACE..SELECT because that doesn't
-# work inside of LOCK TABLES.
-sub check_permissions {
-   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
-   my $db_tbl = $quoter->quote($db, $tbl);
-   my $sql = "SHOW FULL COLUMNS FROM $db_tbl";
-   MKDEBUG && _d('Permissions check:', $sql);
-   my $cols = $dbh->selectall_arrayref($sql, {Slice => {}});
-   my ($hdr_name) = grep { m/privileges/i } keys %{$cols->[0]};
-   my $privs = $cols->[0]->{$hdr_name};
-   die "$privs does not include all needed privileges for $db_tbl"
-      unless $privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/;
-   $sql = "DELETE FROM $db_tbl LIMIT 0"; # FULL COLUMNS doesn't show all privs
-   MKDEBUG && _d('Permissions check:', $sql);
-   $dbh->do($sql);
-}
-
 sub lock_table {
    my ( $self, $dbh, $where, $db_tbl, $mode ) = @_;
    my $query = "LOCK TABLES $db_tbl $mode";
@@ -501,6 +483,34 @@ sub lock_and_wait {
    }
 
    return $result;
+}
+
+# This query will check all needed privileges on the table without actually
+# changing anything in it.  We can't use REPLACE..SELECT because that doesn't
+# work inside of LOCK TABLES.  Returns 1 if user has all needed privs to
+# sync table, else returns 0.
+sub have_all_privs {
+   my ( $self, $dbh, $db, $tbl ) = @_;
+   my $db_tbl = $self->{Quoter}->quote($db, $tbl);
+   my $sql    = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d('Permissions check:', $sql);
+   my $cols       = $dbh->selectall_arrayref($sql, {Slice => {}});
+   my ($hdr_name) = grep { m/privileges/i } keys %{$cols->[0]};
+   my $privs      = $cols->[0]->{$hdr_name};
+   $sql = "DELETE FROM $db_tbl LIMIT 0"; # FULL COLUMNS doesn't show all privs
+   MKDEBUG && _d('Permissions check:', $sql);
+   eval { $dbh->do($sql); };
+   my $can_delete = $EVAL_ERROR ? 0 : 1;
+
+   MKDEBUG && _d('User privs on', $db_tbl, ':', $privs,
+      ($can_delete ? 'delete' : ''));
+   if ( $privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/ 
+        && $can_delete ) {
+      MKDEBUG && _d('User has all privs');
+      return 1;
+   }
+   MKDEBUG && _d('User does not have all privs');
+   return 0;
 }
 
 sub _d {
