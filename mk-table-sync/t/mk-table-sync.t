@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 60;
+use Test::More tests => 62;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -533,6 +533,35 @@ is(
    $output,
    '',
    '--float-precision so no more diff (issue 410)'
+);
+
+# #############################################################################
+# Issue 616: mk-table-sync inserts NULL values instead of correct values
+# #############################################################################
+diag(`/tmp/12345/use -D test < ../../common/t/samples/issue_616.sql`);
+sleep 1;
+`../mk-table-sync --sync-to-master h=127.1,P=12346 --databases issue_616 --execute`;
+my $ok_r = [
+   [ 1, 'from master' ],
+   [11, 'from master' ],
+   [21, 'from master' ],
+   [31, 'from master' ],
+   [41, 'from master' ],
+   [51, 'from master' ],
+];
+
+$r = $master_dbh->selectall_arrayref('SELECT * FROM issue_616.t ORDER BY id');
+is_deeply(
+   $r,
+   $ok_r,
+   'Issue 616 synced on master'
+);
+      
+$r = $slave_dbh->selectall_arrayref('SELECT * FROM issue_616.t ORDER BY id');
+is_deeply(
+   $r,
+   $ok_r,
+   'Issue 616 synced on slave'
 );
 
 # #############################################################################
