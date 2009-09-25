@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 29;
+use Test::More tests => 36;
 
 # TableSyncer and its required modules:
 require "../TableSyncer.pm";
@@ -221,7 +221,7 @@ sub new_ch {
       dst_tbl => $dst->{tbl},
       actions => [ sub { push @rows, @_; $dst_dbh->do(@_); } ],
       replace => 0,
-      queue   => 0,
+      queue   => 1,
    );
 }
 
@@ -433,6 +433,68 @@ is_deeply(
    'Resolves unique key violations with Chunk' );
 
 # ###########################################################################
+# Test locking.
+# ###########################################################################
+
+make_plugins();
+
+$syncer->sync_table(%args, lock => 1);
+
+# The locks should be released.
+ok($src_dbh->do('select * from test.test4'), 'Cycle locks released');
+
+$syncer->sync_table(%args, lock => 2);
+
+# The locks should be released.
+ok($src_dbh->do('select * from test.test4'), 'Table locks released');
+
+$syncer->sync_table(%args, lock => 3);
+
+ok(
+   $dbh->do('replace into test.test3 select * from test.test3 limit 0'),
+   'Does not lock in level 3 locking'
+);
+
+eval {
+   $syncer->lock_and_wait(
+      %args,
+      lock        => 3,
+      lock_level  => 3,
+      replicate   => 0,
+      timeout_ok  => 1,
+      transaction => 0,
+      wait        => 60,
+   );
+};
+is($EVAL_ERROR, '', 'Locks in level 3');
+
+# See DBI man page.
+use POSIX ':signal_h';
+my $mask = POSIX::SigSet->new(SIGALRM);    # signals to mask in the handler
+my $action = POSIX::SigAction->new( sub { die "maatkit timeout" }, $mask, );
+my $oldaction = POSIX::SigAction->new();
+sigaction( SIGALRM, $action, $oldaction );
+
+throws_ok (
+   sub {
+      alarm 1;
+      $dbh->do('replace into test.test3 select * from test.test3 limit 0');
+   },
+   qr/maatkit timeout/,
+   "Level 3 lock NOT released",
+);
+
+# Kill the DBHs it in the right order: there's a connection waiting on
+# a lock.
+$src_dbh->disconnect();
+$dst_dbh->disconnect();
+$src_dbh = $sb->get_dbh_for('master');
+$dst_dbh = $sb->get_dbh_for('slave1');
+
+$src->{dbh} = $src_dbh;
+$dst->{dbh} = $dst_dbh;
+
+# ###########################################################################
 # Test TableSyncGroupBy.
 # ###########################################################################
 
@@ -466,127 +528,45 @@ is_deeply(
    ],
    'Table synced with GroupBy',
 );
-exit;
-# ###########################################################################
-# Test locking.
-# ###########################################################################
-
-$syncer->sync_table(
-   %args,
-   lock          => 1, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   algorithm     => 'Chunk',
-   dst_db        => 'test',
-   dst_tbl       => 'test4',
-   src_db        => 'test',
-   src_tbl       => 'test3',
-);
-
-# The locks should be released.
-ok($src_dbh->do('select * from test.test4'), 'cycle locks released');
-
-$syncer->sync_table(
-   %args,
-   lock          => 2, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   algorithm     => 'Chunk',
-   dst_db        => 'test',
-   dst_tbl       => 'test4',
-   src_db        => 'test',
-   src_tbl       => 'test3',
-);
-
-# The locks should be released.
-ok($src_dbh->do('select * from test.test4'), 'table locks released');
-
-$syncer->sync_table(
-   %args,
-   lock          => 3, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   algorithm     => 'Chunk',
-   dst_db        => 'test',
-   dst_tbl       => 'test4',
-   src_db        => 'test',
-   src_tbl       => 'test3',
-);
-
-ok($dbh->do('replace into test.test3 select * from test.test3 limit 0'),
-   'sync_table does not lock in level 3 locking');
-
-eval {
-   $syncer->lock_and_wait(
-      %args,
-      lock          => 3, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-      algorithm     => 'Chunk',
-      dst_db        => 'test',
-      dst_tbl       => 'test4',
-      src_db        => 'test',
-      src_tbl       => 'test3',
-      lock_level    => 3
-   );
-};
-is ($EVAL_ERROR, '', 'Locks in level 3');
-
-# See DBI man page.
-use POSIX ':signal_h';
-my $mask = POSIX::SigSet->new(SIGALRM);    # signals to mask in the handler
-my $action = POSIX::SigAction->new( sub { die "maatkit timeout" }, $mask, );
-my $oldaction = POSIX::SigAction->new();
-sigaction( SIGALRM, $action, $oldaction );
-
-throws_ok (
-   sub {
-      alarm 1;
-      $dbh->do('replace into test.test3 select * from test.test3 limit 0');
-   },
-   qr/maatkit timeout/,
-   "Level 3 lock NOT released",
-);
-
-
-# Kill the DBHs it in the right order: there's a connection waiting on
-# a lock.
-$src_dbh->disconnect;
-$dst_dbh->disconnect;
-$src_dbh = $sb->get_dbh_for('master');
-$dst_dbh = $sb->get_dbh_for('master');
-$args{src_dbh} = $src_dbh;
-$args{dst_dbh} = $dst_dbh;
 
 # #############################################################################
 # Issue 96: mk-table-sync: Nibbler infinite loop
 # #############################################################################
+
 $sb->load_file('master', 'samples/issue_96.sql');
-$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q, 'issue_96', 't'));
-@args{qw(tbl_struct cols)} = ($tbl_struct, $tbl_struct->{cols});
+sleep 1;
+$tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'issue_96','t'));
+
+$args{tbl_struct} = $tbl_struct;
+$args{cols}       = $tbl_struct->{cols};
+$src->{db} = $dst->{db} = 'issue_96';
+$src->{tbl} = 't';
+$dst->{tbl} = 't2';
+
+@rows = ();
+$args{ChangeHandler} = new_ch();
 
 # Make paranoid-sure that the tables differ.
-my $r1 = $dbh->selectall_arrayref('SELECT from_city FROM issue_96.t WHERE package_id=4');
-my $r2 = $dbh->selectall_arrayref('SELECT from_city FROM issue_96.t2 WHERE package_id=4');
+my $r1 = $src_dbh->selectall_arrayref('SELECT from_city FROM issue_96.t WHERE package_id=4');
+my $r2 = $dst_dbh->selectall_arrayref('SELECT from_city FROM issue_96.t2 WHERE package_id=4');
 is_deeply(
    [ $r1->[0]->[0], $r2->[0]->[0] ],
    [ 'ta',          'zz'          ],
    'Infinite loop table differs (issue 96)'
 );
 
-$syncer->sync_table(
-   %args,
-   algorithm     => 'Nibble',
-   dst_db        => 'issue_96',
-   dst_tbl       => 't2',
-   src_db        => 'issue_96',
-   src_tbl       => 't',
-);
+$syncer->sync_table(%args, chunk_size => 2, plugins => [$sync_nibble]);
 
-$r1 = $dbh->selectall_arrayref('SELECT from_city FROM issue_96.t WHERE package_id=4');
-$r2 = $dbh->selectall_arrayref('SELECT from_city FROM issue_96.t2 WHERE package_id=4');
+$r1 = $src_dbh->selectall_arrayref('SELECT from_city FROM issue_96.t WHERE package_id=4');
+$r2 = $dst_dbh->selectall_arrayref('SELECT from_city FROM issue_96.t2 WHERE package_id=4');
 is(
    $r1->[0]->[0],
    $r2->[0]->[0],
    'Sync infinite loop table (issue 96)'
 );
 
-# Remember to reset @args{qw(tbl_struct cols)} for new tests!
-
 # #############################################################################
 # Done.
 # #############################################################################
-$sb->wipe_clean($dbh);
+# $sb->wipe_clean($dbh);
 exit;

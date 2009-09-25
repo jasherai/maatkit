@@ -450,7 +450,7 @@ sub lock_and_wait {
       }
       else {
          $self->lock_table($src->{dbh}, 'source',
-            $self->{Quoter}->quote($args{src_db}, $args{src_tbl}),
+            $self->{Quoter}->quote($src->{db}, $src->{tbl}),
             $args{replicate} ? 'WRITE' : 'READ');
       }
    }
@@ -460,7 +460,7 @@ sub lock_and_wait {
       if ( $args{wait} ) {
          # Always use the misc_dbh dbh to check the master's position, because
          # the main dbh might be in use due to executing $src_sth.
-         $args{master_slave}->wait_for_master(
+         $self->{MasterSlave}->wait_for_master(
             $src->{misc_dbh}, $dst->{dbh}, $args{wait}, $args{timeout_ok});
       }
 
@@ -478,7 +478,7 @@ sub lock_and_wait {
          }
          elsif ( !$args{transaction} ) {
             $self->lock_table($dst->{dbh}, 'dest',
-               $self->{Quoter}->quote($args{dst_db}, $args{dst_tbl}),
+               $self->{Quoter}->quote($dst->{db}, $dst->{tbl}),
                $args{execute} ? 'WRITE' : 'READ');
          }
       }
