@@ -187,7 +187,8 @@ sub choose_hash_func {
    # integer.  CRC32 is an example.  In these cases no optimization or slicing
    # is necessary.
 sub optimize_xor {
-   my ( $self, $dbh, $func ) = @_;
+   my ( $self, %args ) = @_;
+   my ($dbh, $func) = @args{qw(dbh function)};
 
    die "$func never needs the BIT_XOR optimization"
       if $func =~ m/^(?:FNV1A_64|FNV_64|CRC32)$/i;

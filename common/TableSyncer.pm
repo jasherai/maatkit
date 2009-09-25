@@ -317,7 +317,10 @@ sub make_checksum_queries {
    my ($crc_type) = $checksum->get_crc_type($src->{dbh}, $src_func);
    my $opt_slice;
    if ( $src_algo eq 'BIT_XOR' && $crc_type !~ m/int$/ ) {
-      $opt_slice = $checksum->optimize_xor($src->{dbh}, $src_func);
+      $opt_slice = $checksum->optimize_xor(
+         dbh      => $src->{dbh},
+         function =>$src_func
+      );
    }
 
    my $chunk_sql = $checksum->make_checksum_query(
