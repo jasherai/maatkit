@@ -165,9 +165,9 @@ sub prepare_sync_cycle {
 # Optional args: where
 sub get_sql {
    my ( $self, %args ) = @_;
-   my $q = $self->{Quoter};
    if ( $self->{state} ) {
       # Selects the individual rows so that they can be compared.
+      my $q = $self->{Quoter};
       return 'SELECT /*rows in nibble*/ '
          . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
          . join(', ', map { $q->quote($_) } @{$self->key_cols()})
@@ -175,7 +175,8 @@ sub get_sql {
          . ' FROM ' . $q->quote(@args{qw(database table)})
          . ' ' . ($self->{index_hint} ? $self->{index_hint} : '')
          . ' WHERE (' . $self->__get_boundaries(%args) . ')'
-         . ($args{where} ? " AND ($args{where})" : '');
+         . ($args{where} ? " AND ($args{where})" : '')
+         . ' ORDER BY ' . join(', ', map {$q->quote($_) } @{$self->key_cols()});
    }
    else {
       # Selects the rows as a nibble (aka a chunk).

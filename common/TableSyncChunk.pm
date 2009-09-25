@@ -176,14 +176,16 @@ sub prepare_sync_cycle {
 sub get_sql {
    my ( $self, %args ) = @_;
    if ( $self->{state} ) {  # checksum a chunk of rows
-      return 'SELECT '
+      my $q = $self->{Quoter};
+      return 'SELECT /*rows in chunk*/ '
          . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
-         . join(', ', map { $self->{Quoter}->quote($_) } @{$self->key_cols()})
+         . join(', ', map { $q->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{Quoter}->quote(@args{qw(database table)})
          . ' '. ($self->{index_hint} || '')
          . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
-         . ($args{where} ? " AND ($args{where})" : '');
+         . ($args{where} ? " AND ($args{where})" : '')
+         . ' ORDER BY ' . join(', ', map {$q->quote($_) } @{$self->key_cols()});
    }
    else {  # checksum the rows
       return $self->{TableChunker}->inject_chunks(

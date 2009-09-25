@@ -160,7 +160,7 @@ like(
       database => 'test',
       table    => 'test1', 
    ),
-   qr/SELECT SQL_BUFFER_RESULT/,
+   qr/SELECT ..rows in chunk.. SQL_BUFFER_RESULT/,
    'Has SQL_BUFFER_RESULT',
 );
 
@@ -233,8 +233,9 @@ is(
       database => 'test',
       table    => 'test1',
    ),
-   "SELECT `a`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM "
-      . "`test`.`test1` USE INDEX (`PRIMARY`) WHERE (`a` < 3)",
+   "SELECT /*rows in chunk*/ `a`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM "
+      . "`test`.`test1` USE INDEX (`PRIMARY`) WHERE (`a` < 3)"
+      . " ORDER BY `a`",
    'SQL now working inside chunk'
 );
 ok($t->{state}, 'Still working inside chunk');
