@@ -79,13 +79,15 @@ sub get_best_plugin {
 #   * ChangeHandler   A ChangeHandler module
 # Optional arguments:
 #   * where           WHERE clause to restrict synced rows (default none)
-#   * replicate       If syncing via replication (default no)
+#   * changing_src    If making changes on src (default no)
+#   * replicate       Checksum table if syncing via replication (default no)
 #   * function        Crypto hash func for checksumming chunks (default CRC32)
 #   * dry_run         Prepare to sync but don't actually sync (default no)
 #   * chunk_col       Column name to chunk table on (default auto-choose)
 #   * chunk_index     Index name to use for chunking table (default auto-choose)
 #   * index_hint      Use FORCE/USE INDEX (chunk_index) (default yes)
-#   * buffer_in_mysql Use SQL_BUFFER_RESULT (default no)
+#   * buffer_in_mysql  Use SQL_BUFFER_RESULT (default no)
+#   * buffer_to_client Use mysql_use_result (default no)
 #   * transaction     locking
 #   * change_dbh      locking
 #   * lock            locking
@@ -103,7 +105,6 @@ sub sync_table {
       = @args{@required_args};
 
    $args{index_hint}    = 1 unless defined $args{index_hint};
-   $args{replicate}   ||= 0;
    $args{lock}        ||= 0;
    $args{wait}        ||= 0;
    $args{transaction} ||= 0;
@@ -215,20 +216,15 @@ sub sync_table {
       );
       if ( $args{transaction} ) {
          # TODO: update this for 2-way sync.
-         if ( $args{change_dbh} && $args{change_dbh} eq $src->{dbh} ) {
+         if ( $args{changing_src} ) {
             # Making changes on master which will replicate to the slave.
             $src_sql .= ' FOR UPDATE';
             $dst_sql .= ' LOCK IN SHARE MODE';
          }
-         elsif ( $args{change_dbh} ) {
+         else {
             # Making changes on the slave.
             $src_sql .= ' LOCK IN SHARE MODE';
             $dst_sql .= ' FOR UPDATE';
-         }
-         else {
-            # TODO: this doesn't really happen
-            $src_sql .= ' LOCK IN SHARE MODE';
-            $dst_sql .= ' LOCK IN SHARE MODE';
          }
       }
       $plugin->prepare_sync_cycle($src);
@@ -237,6 +233,10 @@ sub sync_table {
       MKDEBUG && _d('dst:', $dst_sql);
       my $src_sth = $src->{dbh}->prepare($src_sql);
       my $dst_sth = $dst->{dbh}->prepare($dst_sql);
+      if ( $args{buffer_to_client} ) {
+         $src_sth->{mysql_use_result} = 1;
+         $dst_sth->{mysql_use_result} = 1;
+      }
 
       # The first cycle should lock to begin work; after that, unlock only if
       # the plugin says it's OK (it may want to dig deeper on the rows it
@@ -434,7 +434,7 @@ sub lock_and_wait {
       else {
          $self->lock_table($src->{dbh}, 'source',
             $self->{Quoter}->quote($src->{db}, $src->{tbl}),
-            $args{replicate} ? 'WRITE' : 'READ');
+            $args{changing_src} ? 'WRITE' : 'READ');
       }
    }
 
@@ -447,11 +447,12 @@ sub lock_and_wait {
             $src->{misc_dbh}, $dst->{dbh}, $args{wait}, $args{timeout_ok});
       }
 
-      # Don't lock on destination if it's a replication slave, or the
-      # replication thread will not be able to make changes.
-      if ( $args{replicate} ) {
-         MKDEBUG
-            && _d('Not locking destination because syncing via replication');
+      # Don't lock the destination if we're making changes on the source
+      # (for sync-to-master and sync via replicate) else the destination
+      # won't be apply to make the changes.
+      if ( $args{changing_src} ) {
+         MKDEBUG && _d('Not locking destination because changing source ',
+            '(syncing via replication or sync-to-master)');
       }
       else {
          if ( $args{lock} == 3 ) {
@@ -473,7 +474,7 @@ sub lock_and_wait {
       if ( $args{src_sth}->{Active} ) {
          $args{src_sth}->finish();
       }
-      foreach my $dbh ( @args{qw(src_dbh dst_dbh misc_dbh)} ) {
+      foreach my $dbh ( $src->{dbh}, $dst->{dbh}, $src->{misc_dbh} ) {
          next unless $dbh;
          MKDEBUG && _d('Caught error, unlocking/committing on', $dbh);
          $dbh->do('UNLOCK TABLES');
