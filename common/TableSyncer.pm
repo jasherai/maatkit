@@ -355,8 +355,7 @@ sub lock_table {
 sub unlock {
    my ( $self, %args ) = @_;
 
-   foreach my $arg ( qw(src dst lock replicate timeout_ok transaction wait
-                        lock_level) ) {
+   foreach my $arg ( qw(src dst lock transaction lock_level) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $src = $args{src};
