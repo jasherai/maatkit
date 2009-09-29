@@ -319,11 +319,12 @@ sub make_checksum_queries {
    if ( $src_algo eq 'BIT_XOR' && $crc_type !~ m/int$/ ) {
       $opt_slice = $checksum->optimize_xor(
          dbh      => $src->{dbh},
-         function =>$src_func
+         function => $src_func
       );
    }
 
    my $chunk_sql = $checksum->make_checksum_query(
+      %args,
       db        => $src->{db},
       tbl       => $src->{tbl},
       algorithm => $src_algo,
@@ -331,12 +332,11 @@ sub make_checksum_queries {
       crc_wid   => $crc_wid,
       crc_type  => $crc_type,
       opt_slice => $opt_slice,
-      %args,
    );
    MKDEBUG && _d('Chunk sql:', $chunk_sql);
    my $row_sql = $checksum->make_row_checksum(
-      %args,
       function => $src_func,
+      %args,
    );
    MKDEBUG && _d('Row sql:', $row_sql);
    return $chunk_sql, $row_sql;
