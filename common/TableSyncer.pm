@@ -393,8 +393,7 @@ sub lock_and_wait {
    my ( $self, %args ) = @_;
    my $result = 0;
 
-   foreach my $arg ( qw(src dst lock replicate timeout_ok transaction wait
-                        lock_level) ) {
+   foreach my $arg ( qw(src dst lock lock_level) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $src = $args{src};

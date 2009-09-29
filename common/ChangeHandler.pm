@@ -31,10 +31,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 # Arguments:
 # * Quoter     Quoter object
-# * dst_db     Destination database
-# * dst_tbl    Destination table
 # * src_db     Source database
 # * src_tbl    Source table
+# * dst_db     Destination database
+# * dst_tbl    Destination table
 # * actions    arrayref of subroutines to call when handling a change.
 # * replace    Do UPDATE/INSERT as REPLACE.
 # * queue      Queue changes until process_changes is called with a greater

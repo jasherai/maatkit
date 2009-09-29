@@ -336,6 +336,7 @@ sub wait_for_master {
    MKDEBUG && _d('Waiting for slave to catch up to master');
    $ms ||= $self->get_master_status($master);
    if ( $ms ) {
+      $time = 60 unless defined $time;
       my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
       MKDEBUG && _d($slave, $query);
       ($result) = $slave->selectrow_array($query);
