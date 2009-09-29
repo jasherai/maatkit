@@ -37,7 +37,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # * dst_tbl    Destination table
 # * actions    arrayref of subroutines to call when handling a change.
 # * replace    Do UPDATE/INSERT as REPLACE.
-# * queue      Queue changes until process_changes is called with a greater
+# * queue      Queue changes until process_rows is called with a greater
 #              queue level.
 sub new {
    my ( $class, %args ) = @_;
