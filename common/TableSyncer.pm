@@ -335,8 +335,8 @@ sub make_checksum_queries {
    );
    MKDEBUG && _d('Chunk sql:', $chunk_sql);
    my $row_sql = $checksum->make_row_checksum(
-      function => $src_func,
       %args,
+      function => $src_func,
    );
    MKDEBUG && _d('Row sql:', $row_sql);
    return $chunk_sql, $row_sql;
