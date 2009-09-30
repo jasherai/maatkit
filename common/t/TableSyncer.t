@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 41;
+use Test::More tests => 42;
 
 # TableSyncer and its required modules:
 require "../TableSyncer.pm";
@@ -610,6 +610,26 @@ is(
 );
 
 diag(`/tmp/12345/use -u root -e "DROP USER 'bob'"`);
+
+# ###########################################################################
+# Test that the calback gives us the src and dst sql.
+# ###########################################################################
+
+# Re-using issue_96.t from above.  The tables are already in sync so there
+# should only be 1 sync cycle.
+@rows = ();
+$args{ChangeHandler} = new_ch();
+my @sqls;
+$syncer->sync_table(%args, chunk_size => 1000, plugins => [$sync_nibble],
+   callback => sub { push @sqls, @_; } );
+is_deeply(
+   \@sqls,
+   [
+      'SELECT /*issue_96.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS(\'#\', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`)))), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, \'0\'))) AS crc FROM `issue_96`.`t` FORCE INDEX (`package_id`) WHERE (1=1)',
+      'SELECT /*issue_96.t2:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS(\'#\', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`)))), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, \'0\'))) AS crc FROM `issue_96`.`t2` FORCE INDEX (`package_id`) WHERE (1=1)',
+   ],
+   'Callback gives src and dst sql'
+);
 
 # #############################################################################
 # Done.

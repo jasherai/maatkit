@@ -88,6 +88,7 @@ sub get_best_plugin {
 #   * index_hint      Use FORCE/USE INDEX (chunk_index) (default yes)
 #   * buffer_in_mysql  Use SQL_BUFFER_RESULT (default no)
 #   * buffer_to_client Use mysql_use_result (default no)
+#   * callback        Sub called before executing the sql (default none)
 #   * transaction     locking
 #   * change_dbh      locking
 #   * lock            locking
@@ -197,8 +198,9 @@ sub sync_table {
    }
 
    $self->lock_and_wait(%args, lock_level => 2);  # per-table lock
-
-   my $cycle = 0;
+   
+   my $callback = $args{callback};
+   my $cycle    = 0;
    while ( !$plugin->done() ) {
 
       # Do as much of the work as possible before opening a transaction or
@@ -231,6 +233,7 @@ sub sync_table {
       $plugin->prepare_sync_cycle($dst);
       MKDEBUG && _d('src:', $src_sql);
       MKDEBUG && _d('dst:', $dst_sql);
+      $callback->($src_sql, $dst_sql) if $callback;
       my $src_sth = $src->{dbh}->prepare($src_sql);
       my $dst_sth = $dst->{dbh}->prepare($dst_sql);
       if ( $args{buffer_to_client} ) {
