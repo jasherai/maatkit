@@ -8,7 +8,7 @@ snoop-to-tcpdump
 
 =head1 SYNOPSIS
 
-  snoop-to-tcpdump snoop-output.txt > tcpdump-output.txt
+  snoop -ta -r -x0 port 3306 | snoop-to-tcpdump > tcpdump-output.txt
 
 =head1 AUTHOR
 
