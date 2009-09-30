@@ -5237,8 +5237,9 @@ mk-table-checksum only reads information unless L<"--replicate"> is used.
 It make cause significant server load and lock tables while it is checksumming.
 
 At the time of this release, there are bugs which cause mk-table-checksum to
-crash, a bug which causes bad <"--where"> clauses with L<"--since">, and a
-bug which prevents L<"--chunk-size"> from being used.
+crash, a bug which causes bad <"--where"> clauses with L<"--since">, a
+bug which prevents L<"--chunk-size"> from being used, and a bug caused by
+invalid dates.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
