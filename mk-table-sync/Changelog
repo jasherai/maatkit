@@ -1,7 +1,18 @@
 Changelog for mk-table-sync:
 
-   * Added --float-precision (issue 410).
    * Fixed an infinite loop with the Nibble algorithm (issue 96).
+   * Fixed incorrect INSERT values (issue 616).
+   * Changed --algorithm to --algorithms and changed what it does.
+   * Changed --[no]slave-check to --[no]check-slave.
+   * Changed --with-triggers to --[no]check-triggers.
+   * Changed --buffer-results to --[no]buffer-to-client.
+   * Changed --no-use-index to --[no]index-hint.
+   * Added --[no]check-privileges.
+   * Added --chunk-index.
+   * Added --chunk-column.
+   * Added --float-precision (issue 410).
+   * Made --verbose cumulative.
+   * Master-master sync did not require --no-slave-check.
 
 2009-08-31: version 1.0.18
 

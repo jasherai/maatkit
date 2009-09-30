@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 62;
+use Test::More tests => 64;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -148,8 +148,9 @@ $ENV{MKDEBUG} = $dbg;
 # #############################################################################
 # Ensure that syncing master-master works OK
 # #############################################################################
+# Sometimes I skip this test if I'm running this script over and over.
 SKIP: {
-   skip "I'm impatient", 1 if 1;
+   skip "I'm impatient", 1 if 0;
 
    diag(`../../sandbox/make_master-master`);
    diag(`/tmp/12348/use -e 'CREATE DATABASE test'`);
@@ -602,6 +603,25 @@ is_deeply(
    $r,
    $ok_r,
    'Issue 616 synced on slave'
+);
+
+# #############################################################################
+# Issue 376: Permit specifying an index for mk-table-sync
+# #############################################################################
+diag(`/tmp/12345/use -D test < samples/issue_375.sql`);
+sleep 1;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_375 --print -v -v  --chunk-size 50 --chunk-index updated_at`;
+like(
+   $output,
+   qr/FROM `issue_375`.`t` FORCE INDEX \(`updated_at`\) WHERE \(`updated_at` < "2009-09-05 02:38:12"/,
+   '--chunk-index',
+);
+
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_375 --print -v -v  --chunk-size 50 --chunk-column updated_at`;
+like(
+   $output,
+   qr/FROM `issue_375`.`t` FORCE INDEX \(`updated_at`\) WHERE \(`updated_at` < "2009-09-05 02:38:12"/,
+   '--chunk-column',
 );
 
 # #############################################################################

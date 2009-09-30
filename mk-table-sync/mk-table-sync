@@ -3859,7 +3859,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 4765
+# TableSyncer package 4770
 # ###########################################################################
 package TableSyncer;
 
@@ -3985,8 +3985,9 @@ sub sync_table {
    }
 
    $self->lock_and_wait(%args, lock_level => 2);  # per-table lock
-
-   my $cycle = 0;
+   
+   my $callback = $args{callback};
+   my $cycle    = 0;
    while ( !$plugin->done() ) {
 
       MKDEBUG && _d('Beginning sync cycle', $cycle);
@@ -4014,6 +4015,7 @@ sub sync_table {
       $plugin->prepare_sync_cycle($dst);
       MKDEBUG && _d('src:', $src_sql);
       MKDEBUG && _d('dst:', $dst_sql);
+      $callback->($src_sql, $dst_sql) if $callback;
       my $src_sth = $src->{dbh}->prepare($src_sql);
       my $dst_sth = $dst->{dbh}->prepare($dst_sql);
       if ( $args{buffer_to_client} ) {
@@ -6214,6 +6216,13 @@ sub sync_a_table {
          !$ignore_columns->{lc $_};
       } @{$o->get('columns') || $tbl_struct->{cols}};
 
+      # --print --verbose --verbose is the magic formula for having
+      # all src/dst sql printed so we can see the chunk/row sql.
+      my $callback;
+      if ( $o->get('print') && $o->get('verbose') >= 2 ) {
+         $callback = \&print_sql;
+      }
+
       # get_change_dbh() may die if, for example, the destination is
       # not a slave.  Perhaps its work should be part of can_sync()?
       my $change_dbh = get_change_dbh(tbl_struct => $tbl_struct, %args);
@@ -6240,6 +6249,7 @@ sub sync_a_table {
          RowDiff           => $rd,
          ChangeHandler     => $ch,
          transaction       => $use_txn,
+         callback          => $callback,
          where             => $args{where} || $o->get('where'),
          buffer_in_mysql   => $o->get('buffer-in-mysql'),
          buffer_to_client  => $o->get('buffer-to-client'),
@@ -6441,7 +6451,7 @@ sub ok_to_sync {
    };
    die $EVAL_ERROR if $EVAL_ERROR;
 
-   # This doesn't work when syncing different table names.
+   # This doesn't work at the moment when syncing different table names.
    # Check that src.db.tbl has the exact same schema as dst.db.tbl.
    # if ( $o->get('check-schema') && ($src_tbl_ddl ne $dst_tbl_ddl) ) {
    #   die "Source and destination tables have different schemas";
@@ -6500,6 +6510,15 @@ sub disconnect {
          MKDEBUG && _d('Disconnected dbh', $dbh);
       }
    }
+   return;
+}
+
+# This is passed as the callback for TableSyncer::sync_table()
+# if --print --verbose --verbose is specified.
+sub print_sql {
+   my ( $src_sql, $dst_sql ) = @_;
+   print "# $src_sql\n" if $src_sql;
+   print "# $dst_sql\n" if $dst_sql;
    return;
 }
 
@@ -6645,11 +6664,21 @@ If you specify the L<"--verbose"> option, you'll see information about the
 differences between the tables.  There is one row per table.  Each server is
 printed separately.  For example,
 
-   # Syncing D=test,t=test2
+   # Syncing h=host1,D=test,t=test1
    # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
-   #      0       0      2      0 Chunk     2    test.test1
+   #      0       0      3      0 Chunk     2    test.test1
 
-This table required 2 C<UPDATE> statements to synchronize.
+Table test.test1 on host1 required 3 C<INSERT> statements to synchronize
+and it used the Chunk algorithm (see L<"ALGORITMS">).  Because differences were
+found, its L<"EXIT STATUS"> was 2.
+
+If you specify the L<"--print"> option, you'll see the actual SQL statements
+that the script uses to synchronize the table if L<"--execute"> is also
+specified.
+
+If you want to see the SQL statements that mk-table-sync is using to select
+chunks, nibbles, rows, etc., then specify L<"--print"> once and L<"--verbose">
+twice.  Be careful though: this can print a lot of SQL statements.
 
 There are cases where no combination of C<INSERT>, C<UPDATE> or C<DELETE>
 statements can resolve differences without violating some unique key.  For
@@ -6857,12 +6886,6 @@ default: yes
 
 Check that user has all necessary privileges on source and destination table.
 
-=item --[no]check-schema
-
-default: yes
-
-Check that source and destination table schemas are identical.
-
 =item --[no]check-slave
 
 default: yes
@@ -7049,14 +7072,16 @@ Table names may be qualified with the database name.
 
 default: yes
 
-Add FORCE/USE INDEX hint to checksum queries.
+Add FORCE/USE INDEX hints to the chunk and row queries.
 
-By default C<mk-table-sync> adds an USE INDEX hint to each SQL statement
-for the Chunk algorithm to coerce MySQL into using the index for the column
-by which a table will be chunked. 
+By default C<mk-table-sync> adds a FORCE/USE INDEX hint to each SQL statement
+to coerce MySQL into using the index chosen by the sync algorithm or specified
+by L<"--chunk-index">.  This is usually a good thing, but in rare cases the
+index may not be the best for the query so you can suppress the index hint
+by specifying C<--no-index-hint> and let MySQL choose the index.
 
-The Nibble algorithm always uses a FORCE/USE INDEX hint.  The GroupBy and Stream
-algorithms never use an index hint.
+This does not affect the queries printed by L<"--print">; it only affects the
+chunk and row queries that C<mk-table-sync> uses to select and compare rows.
 
 =item --lock
 
@@ -7286,7 +7311,7 @@ User for login if not current user.
 
 =item --verbose
 
-short form: -v
+short form: -v; cumulative: yes
 
 Print results of sync operations.
 
