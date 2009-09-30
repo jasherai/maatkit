@@ -4,7 +4,7 @@ Changelog for mk-upgrade:
    * CHECKSUM TABLE did not always work.
    * Added --single-host.
    * Added --only-failed-queries.
-   * Added --pid.
+   * Added --pid (issue 391).
 
 2009-08-31: version 0.9.1
 

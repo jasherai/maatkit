@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Added --pid (issue 391).
+
 2009-08-31: version 0.9.9
 
    * LOCK and UNLOCK TABLES were not distilled (issue 563).

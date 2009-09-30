@@ -5,6 +5,8 @@ mk-duplicate-key-checker
 mk-fifo-split
 mk-find
 mk-heartbeat
+mk-kill
+mk-loadavg
 mk-log-player
 mk-parallel-dump
 mk-parallel-restore

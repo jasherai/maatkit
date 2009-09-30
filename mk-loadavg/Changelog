@@ -1,15 +1,3 @@
 Changelog for mk-loadavg:
 
-   * --info processlist crashed on NULL values (issue 575).
-   * The script crashed immediately on Windows (issue 531).
-   * Removed the --print long option.  Use --print-load-avg instead.
-   * Removed the --incstatus long option.  Use --interval instead.
-   * Removed the --time long option.  Use --run-time instead.
-   * Removed the --askpass long option.  Use --ask-pass instead.
-   * Removed the -s short option.  Use --sleep instead.
-   * Removed the -t short option.  Use --run-time instead.
-   * Added the --config option for issue 231.
-   * Added the --log option for issue 241.
-   * Added options --daemonize, --stop, --sentinel and --pid.
-   * Converted script to runnable module (issue 315).
    * Initial release.
