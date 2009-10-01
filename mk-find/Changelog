@@ -1,5 +1,7 @@
 Changelog for mk-find:
 
+   * Command line options did not override config file options (issue 617).
+
 2009-08-31: version 0.9.19
 
    * No tables were printed if no tests were given (issue 549).

@@ -1,5 +1,7 @@
 Changelog for mk-log-player:
 
+   * Command line options did not override config file options (issue 617).
+
 2009-08-31: version 1.0.1
 
    * Added --filter for --split (issue 571).

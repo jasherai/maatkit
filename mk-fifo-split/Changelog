@@ -1,5 +1,7 @@
 Changelog for mk-fifo-split:
 
+   * Command line options did not override config file options (issue 617).
+
 2009-07-31: version 1.0.5
 
    * Added RISKS section to POD (issue 538).

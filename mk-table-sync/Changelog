@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Command line options did not override config file options (issue 617).
+
 2009-10-01: version 1.0.20
 
    * --replicate did not work.

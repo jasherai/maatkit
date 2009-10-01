@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Command line options did not override config file options (issue 617).
+
 2009-08-31: version 1.2.8
 
    * --arg-table was not used to determine algorithm (issue 509).

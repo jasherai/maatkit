@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Command line options did not override config file options (issue 617).
+
 2009-09-30: version 0.9.10
 
    * Added --pid (issue 391).
