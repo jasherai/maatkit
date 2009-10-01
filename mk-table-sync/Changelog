@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * --replicate did not work.
+
 2009-09-30: version 1.0.19
 
    * Fixed an infinite loop with the Nibble algorithm (issue 96).
