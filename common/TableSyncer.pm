@@ -335,7 +335,8 @@ sub make_checksum_queries {
       crc_wid   => $crc_wid,
       crc_type  => $crc_type,
       opt_slice => $opt_slice,
-   );
+      replicate => undef, # replicate means something different to this sub
+   );                     # than what we use it for; do not pass it!
    MKDEBUG && _d('Chunk sql:', $chunk_sql);
    my $row_sql = $checksum->make_row_checksum(
       %args,
