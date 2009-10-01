@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 64;
+use Test::More tests => 65;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -623,6 +623,36 @@ like(
    qr/FROM `issue_375`.`t` FORCE INDEX \(`updated_at`\) WHERE \(`updated_at` < "2009-09-05 02:38:12"/,
    '--chunk-column',
 );
+
+# #############################################################################
+# Issue 627: Results for mk-table-sync --replicate may be incorrect
+# #############################################################################
+$sb->wipe_clean($master_dbh);  # just for good measure
+diag(`/tmp/12345/use < samples/issue_375.sql`);
+sleep 1;
+
+# Make the table differ.
+# (10, '2009-09-03 14:18:00', 'k'),    -> (10, '2009-09-03 14:18:00', 'z'),
+# (100, '2009-09-06 15:01:23', 'cv');  -> (100, '2009-09-06 15:01:23', 'zz');
+$slave_dbh->do('UPDATE issue_375.t SET foo="z" WHERE id=10');
+$slave_dbh->do('UPDATE issue_375.t SET foo="zz" WHERE id=100');
+
+# Checksum and replicate.
+diag(`../../mk-table-checksum/mk-table-checksum --create-replicate-table --replicate issue_375.checksum h=127.1,P=12345 -d issue_375 -t t > /dev/null`);
+diag(`../../mk-table-checksum/mk-table-checksum --replicate issue_375.checksum h=127.1,P=12345  --replicate-check 1 > /dev/null`);
+
+# And now sync using the replicated checksum results/differences.
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 --replicate issue_375.checksum --print`;
+is(
+   $output,
+   "REPLACE INTO `issue_375`.`t`(`foo`, `id`, `updated_at`) VALUES ('k', 10, '2009-09-03 14:18:00');
+REPLACE INTO `issue_375`.`t`(`foo`, `id`, `updated_at`) VALUES ('cv', 100, '2009-09-06 15:01:23');
+",
+   'Simple --replicate'
+);
+
+# Note how the columns are out of order (tbl order is: id, updated_at, foo).
+# This is issue http://code.google.com/p/maatkit/issues/detail?id=371
 
 # #############################################################################
 # Done
