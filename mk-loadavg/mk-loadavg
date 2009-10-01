@@ -3673,12 +3673,12 @@ vmstat command for L<"--watch"> Server:vmstat:...
 
 The vmstat output should look like:
 
-procs -----------memory---------- ---swap-- -----io---- -system-- ----cpu----
-r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa
-0  0      0 590380 143756 571852    0    0     6     9  228  340  4  1 94  1
-0  0      0 590400 143764 571852    0    0     0    28  751  818  4  2 90  3
+ procs -----------memory---------- ---swap-- -----io---- -system-- ----cpu----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa
+ 0  0      0 590380 143756 571852    0    0     6     9  228  340  4  1 94  1
+ 0  0      0 590400 143764 571852    0    0     0    28  751  818  4  2 90  3
 
-The 2nd line from the top needs to be column headers for subsequent lines.
+The second line from the top needs to be column headers for subsequent lines.
 Values are taken from the last line.
 
 =item --watch
