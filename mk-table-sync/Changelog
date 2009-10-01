@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2009-10-01: version 1.0.20
+
    * --replicate did not work.
 
 2009-09-30: version 1.0.19
