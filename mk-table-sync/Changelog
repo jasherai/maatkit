@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2009-09-30: version 1.0.19
+
    * Fixed an infinite loop with the Nibble algorithm (issue 96).
    * Fixed incorrect INSERT values (issue 616).
    * Changed --algorithm to --algorithms and changed what it does.

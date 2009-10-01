@@ -1,5 +1,7 @@
 Changelog for mk-upgrade:
 
+2009-09-30: version 0.9.2
+
    * Tables from some multi-line queries could not be parsed.
    * CHECKSUM TABLE did not always work.
    * Added --single-host.

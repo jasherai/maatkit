@@ -1,5 +1,7 @@
 Changelog for mk-heartbeat:
 
+2009-09-30: version 1.0.18
+
    * Added --pid (issue 391).
 
 2009-08-31: version 1.0.17

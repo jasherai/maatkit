@@ -1,5 +1,7 @@
 Changelog for mk-deadlock-logger:
 
+2009-09-30: version 1.0.17
+
    * Added --pid (issue 391).
 
 2009-07-31: version 1.0.16
