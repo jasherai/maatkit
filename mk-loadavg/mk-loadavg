@@ -25,7 +25,7 @@ use warnings FATAL => 'all';
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", (q$Revision: 4650 $ =~ m/(\d+)/g, 0));
+our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # OptionParser package 4489
@@ -2464,7 +2464,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 4299 $Revision: 4299 $
+# Transformers package 4299 $Revision$
 # ###########################################################################
 
 # Transformers - Common transformation and beautification subroutines
@@ -3849,6 +3849,6 @@ Baron Schwartz, Daniel Nichter
 
 =head1 VERSION
 
-This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision: 4650 $.
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 =cut
