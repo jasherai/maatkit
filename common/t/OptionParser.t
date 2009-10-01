@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 137;
+use Test::More tests => 138;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1864,6 +1864,25 @@ is_deeply(
    },
    'Vals from "defaults to" DSN take precedence over defaults (issue 248)'
 );
+
+
+# #############################################################################
+#  Issue 617: Command line options do no override config file options
+# #############################################################################
+diag(`echo "iterations=4" > ~/.OptionParser.t.conf`);
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dp           => $dp,
+);
+$o->get_specs('../../mk-query-digest/mk-query-digest');
+@ARGV = (qw(--iterations 9));
+$o->get_opts();
+is(
+   $o->get('iterations'),
+   9,
+   'Cmd line opt overrides conf (issue 617)'
+);
+diag(`rm -rf ~/.OptionParser.t.conf`);
 
 # #############################################################################
 # Done.

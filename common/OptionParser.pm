@@ -461,7 +461,7 @@ sub get_opts {
          # can't be opened, but the built-in defaults are to be ignored if they
          # can't be opened.
          eval {
-            push @ARGV, $self->_read_config_file($filename);
+            push @extra_args, $self->_read_config_file($filename);
          };
          if ( $EVAL_ERROR ) {
             if ( $self->got('config') ) {
