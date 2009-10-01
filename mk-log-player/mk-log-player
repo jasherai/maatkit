@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 4489
+# OptionParser package 4792
 # ###########################################################################
 package OptionParser;
 
@@ -403,7 +403,7 @@ sub get_opts {
       my @extra_args;
       foreach my $filename ( split(',', $self->get('config')) ) {
          eval {
-            push @ARGV, $self->_read_config_file($filename);
+            push @extra_args, $self->_read_config_file($filename);
          };
          if ( $EVAL_ERROR ) {
             if ( $self->got('config') ) {
