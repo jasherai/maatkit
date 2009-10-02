@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 require "../WatchStatus.pm";
 require "../DSNParser.pm";
@@ -176,6 +176,19 @@ SKIP: {
       'Slave status ok (online)'
    );
 };
+
+# ###########################################################################
+# Test parsing params.
+# ###########################################################################
+my $param = 'status:Threads_connected:>:16';
+eval{
+   WatchStatus::parse_params($param);
+};
+is(
+   $EVAL_ERROR,
+   '',
+   "Parses param: $param"
+);
 
 # #############################################################################
 # Done.
