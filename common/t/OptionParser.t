@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 138;
+use Test::More tests => 141;
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
@@ -1883,6 +1883,41 @@ is(
    'Cmd line opt overrides conf (issue 617)'
 );
 diag(`rm -rf ~/.OptionParser.t.conf`);
+
+# #############################################################################
+#  Issue 623: --since +N does not work in mk-parallel-dump
+# #############################################################################
+
+# time type opts need to allow leading +/- so things like mk-parallel-dump
+# --since +N can work.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dp           => $dp,
+);
+$o->get_specs('../../mk-parallel-dump/mk-parallel-dump');
+@ARGV = (qw(--since +9));
+$o->get_opts();
+is(
+   $o->get('since'),
+   '+9',
+   '+N time value'
+);
+
+@ARGV = (qw(--since -7));
+$o->get_opts();
+is(
+   $o->get('since'),
+   '-7',
+   '-N time value'
+);
+
+@ARGV = (qw(--since +1m));
+$o->get_opts();
+is(
+   $o->get('since'),
+   '+60',
+   '+N time value with suffix'
+);
 
 # #############################################################################
 # Done.

@@ -585,7 +585,7 @@ sub _validate_type {
 
    if ( $val && $opt->{type} eq 'm' ) {  # type time
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
-      my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+      my ( $prefix, $num, $suffix ) = $val =~ m/([+-]?)(\d+)([a-z])?$/;
       # The suffix defaults to 's' unless otherwise specified.
       if ( !$suffix ) {
          my ( $s ) = $opt->{desc} =~ m/\(suffix (.)\)/;
@@ -598,7 +598,7 @@ sub _validate_type {
               : $suffix eq 'm' ? $num * 60       # Minutes
               : $suffix eq 'h' ? $num * 3600     # Hours
               :                  $num * 86400;   # Days
-         $opt->{value} = $val;
+         $opt->{value} = ($prefix || '') . $val;
          MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
       }
       else {
