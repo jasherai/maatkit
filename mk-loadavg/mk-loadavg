@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 4792
+# OptionParser package 4805
 # ###########################################################################
 package OptionParser;
 
@@ -523,7 +523,7 @@ sub _validate_type {
 
    if ( $val && $opt->{type} eq 'm' ) {  # type time
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a time value');
-      my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+      my ( $prefix, $num, $suffix ) = $val =~ m/([+-]?)(\d+)([a-z])?$/;
       if ( !$suffix ) {
          my ( $s ) = $opt->{desc} =~ m/\(suffix (.)\)/;
          $suffix = $s || 's';
@@ -535,7 +535,7 @@ sub _validate_type {
               : $suffix eq 'm' ? $num * 60       # Minutes
               : $suffix eq 'h' ? $num * 3600     # Hours
               :                  $num * 86400;   # Days
-         $opt->{value} = $val;
+         $opt->{value} = ($prefix || '') . $val;
          MKDEBUG && _d('Setting option', $opt->{long}, 'to', $val);
       }
       else {
@@ -3044,7 +3044,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# WatchServer package 4799
+# WatchServer package 4811
 # ###########################################################################
 package WatchServer;
 
@@ -3709,7 +3709,7 @@ Show version and exit.
 
 =item --vmstat
 
-type: string; default: vmstat; group: Watch
+type: string; default: vmstat 1 2; group: Watch
 
 vmstat command for L<"--watch"> Server:vmstat:...
 
@@ -3723,9 +3723,8 @@ The vmstat output should look like:
 The second line from the top needs to be column headers for subsequent lines.
 Values are taken from the last line.
 
-You may want to specify C<--vmstat 'vmstat 1 2'> to get current values because
-the default is to simply run C<vmstat> which returns average values since
-last reboot.
+The default, C<vmstat 1 2>,  gets current values.  Running just C<vmstat>
+would get average values since last reboot.
 
 =item --watch
 
