@@ -26,6 +26,8 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+sub needs_dbh { return 1; }
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(params dbh) ) {
