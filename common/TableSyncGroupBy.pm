@@ -64,6 +64,8 @@ sub prepare_to_sync {
    }
    MKDEBUG && _d('COUNT column will be named', $self->{count_col});
 
+   $self->{done} = 0;
+
    return;
 }
 

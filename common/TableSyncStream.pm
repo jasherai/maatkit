@@ -54,6 +54,9 @@ sub prepare_to_sync {
    $self->{cols}            = $args{cols};
    $self->{buffer_in_mysql} = $args{buffer_in_mysql};
    $self->{ChangeHandler}   = $args{ChangeHandler};
+
+   $self->{done}  = 0;
+
    return;
 }
 
