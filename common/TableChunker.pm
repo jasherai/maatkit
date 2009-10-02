@@ -274,8 +274,8 @@ sub get_first_chunkable_column {
    foreach my $arg ( qw(tbl_struct) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($exact, $cols) = $self->find_chunk_columns(%args);
-   return ( $cols->[0]->{column}, $cols->[0]->{index} );
+   my ($exact, @cols) = $self->find_chunk_columns(%args);
+   return ( $cols[0]->{column}, $cols[0]->{index} );
 }
 
 # Convert a size in rows or bytes to a number of rows in the table, using SHOW
