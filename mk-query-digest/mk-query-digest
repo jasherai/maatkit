@@ -8604,6 +8604,12 @@ together as if they were one server.
 If you're analyzing traffic for a MySQL server that is not running on port
 3306, see L<"--watch-server">.
 
+Also note that mk-query-digest may fail to report the database for queries
+when parsing tcpdump output.  The database is discovered only in the initial
+connect events for a new client or when <USE db> is executed.  If the tcpdump
+output contains neither of these, then mk-query-digest cannot discover the
+database.
+
 =item memcached
 
 Similar to tcpdump but expected that the tcpdump output is memcached packets
