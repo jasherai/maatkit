@@ -26,8 +26,6 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-sub needs_dbh { return 0; }
-
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(params) ) {
@@ -96,6 +94,14 @@ sub parse_params {
       or die "Error compiling subroutine code:\n$code\n$EVAL_ERROR";
 
    return $ok_sub;
+}
+
+sub uses_dbh {
+   return 0;
+}
+
+sub set_dbh {
+   return;
 }
 
 sub set_callbacks {

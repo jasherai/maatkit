@@ -26,11 +26,9 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-sub needs_dbh { return 1; }
-
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(params dbh) ) {
+   foreach my $arg ( qw(params) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -109,6 +107,15 @@ sub parse_params {
    $args{ProcesslistAggregator} = $pla;
 
    return $ok_sub, %args;
+}
+
+sub uses_dbh {
+   return 1;
+}
+
+sub set_dbh {
+   my ( $self, $dbh ) = @_;
+   $self->{dbh} = $dbh;
 }
 
 sub set_callbacks {
