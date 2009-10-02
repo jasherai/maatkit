@@ -3723,6 +3723,10 @@ The vmstat output should look like:
 The second line from the top needs to be column headers for subsequent lines.
 Values are taken from the last line.
 
+You may want to specify C<--vmstat 'vmstat 1 2'> to get current values because
+the default is to simply run C<vmstat> which returns average values since
+last reboot.
+
 =item --watch
 
 type: string; group: Watch
@@ -3820,6 +3824,8 @@ Examples:
   --watch Server:loadavg:5:>:4.00
   --watch Server:vmstat:swpd:>:0
   --watch Server:vmstat:free:=:0
+
+See L<"--vmstat">.
 
 =back
 
