@@ -32,17 +32,17 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   my $ok_sub;
+   my $check_sub;
    my %extra_args;
    eval {
-      ($ok_sub, %extra_args) = parse_params($args{params});
+      ($check_sub, %extra_args) = parse_params($args{params});
    };
    die "Error parsing parameters $args{params}: $EVAL_ERROR" if $EVAL_ERROR;
 
    my $self = {
       %extra_args,
       %args,
-      ok_sub    => $ok_sub,
+      check_sub => $check_sub,
       callbacks => {
          show_status        => \&_show_status,
          show_innodb_status => \&_show_innodb_status,
@@ -83,7 +83,7 @@ sub parse_params {
    # Make the subroutine.
    my $code = join("\n", @lines);
    MKDEBUG && _d('OK sub:', @lines);
-   my $ok_sub = eval $code
+   my $check_sub = eval $code
       or die "Error compiling subroutine code:\n$code\n$EVAL_ERROR";
 
    # If getting InnoDB stats, we will need an InnoDBStatusParser obj.
@@ -101,7 +101,7 @@ sub parse_params {
       $args{InnoDBStatusParser} = $innodb_status_parser;
    }
 
-   return $ok_sub, %args;
+   return $check_sub, %args;
 }
 
 sub uses_dbh {
@@ -124,9 +124,9 @@ sub set_callbacks {
    return;
 }
 
-sub ok {
+sub check {
    my ( $self, %args ) = @_;
-   return $self->{ok_sub}->(@_);
+   return $self->{check_sub}->(@_);
 }
 
 # Returns all of SHOW STATUS or just the status for var if given.

@@ -55,7 +55,7 @@ $status = {
 };
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'Uptime ok'
 );
@@ -68,7 +68,7 @@ $status = {
 };
 
 is(
-   $w->ok(),
+   $w->check(),
    0,
    'Uptime not ok'
 );
@@ -86,7 +86,7 @@ $w->set_callbacks( show_innodb_status => \&show_innodb_status );
 $status = load_file('samples/is001.txt');
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'InnoDB status ok'
 );
@@ -99,7 +99,7 @@ $w = new WatchStatus(
 $w->set_callbacks( show_innodb_status => \&show_innodb_status );
 
 is(
-   $w->ok(),
+   $w->check(),
    0,
    'InnoDB status not ok'
 );
@@ -118,7 +118,7 @@ $status = {
 };
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'Slave status ok'
 );
@@ -128,7 +128,7 @@ $status = {
 };
 
 is(
-   $w->ok(),
+   $w->check(),
    0,
    'Slave status not ok'
 );
@@ -150,7 +150,7 @@ SKIP: {
       dbh    => $dbh,
    );
    is(
-      $w->ok(),
+      $w->check(),
       1,
       'Status ok (online)'
    );
@@ -161,7 +161,7 @@ SKIP: {
       InnoDBStatusParser => $is,
    );
    is(
-      $w->ok(),
+      $w->check(),
       1,
       'InnoDB status ok (online)'
    );
@@ -171,7 +171,7 @@ SKIP: {
       dbh    => $dbh,
    );
    is(
-      $w->ok(),
+      $w->check(),
       1,
       'Slave status ok (online)'
    );

@@ -86,7 +86,7 @@ my $w = new WatchServer(
 $w->set_callbacks( uptime => \&get_uptime );
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'Loadavg 1 min'
 );
@@ -97,7 +97,7 @@ $w = new WatchServer(
 $w->set_callbacks( uptime => \&get_uptime );
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'Loadavg 5 min'
 );
@@ -108,7 +108,7 @@ $w = new WatchServer(
 $w->set_callbacks( uptime => \&get_uptime );
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'Loadavg 15 min'
 );
@@ -125,7 +125,7 @@ $w = new WatchServer(
 $w->set_callbacks( uptime => \&get_vmstat );
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'vmstat free'
 );
@@ -136,7 +136,7 @@ $w = new WatchServer(
 $w->set_callbacks( uptime => \&get_vmstat );
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'vmstat swpd'
 );
@@ -159,7 +159,7 @@ $w = new WatchServer(
 );
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'Loadavg 15 min > 0.00 (live)'
 );
@@ -170,7 +170,7 @@ $w = new WatchServer(
 );
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'vmstat cache > 1 (live)'
 );

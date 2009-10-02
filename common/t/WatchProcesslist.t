@@ -33,7 +33,7 @@ my $w = new WatchProcesslist(
 $w->set_callbacks( show_processlist => \&show_processlist );
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'Processlist locked count ok'
 );
@@ -46,7 +46,7 @@ $w = new WatchProcesslist(
 $w->set_callbacks( show_processlist => \&show_processlist );
 
 is(
-   $w->ok(),
+   $w->check(),
    0,
    'Processlist locked count not ok'
 );
@@ -59,7 +59,7 @@ $w = new WatchProcesslist(
 $w->set_callbacks( show_processlist => \&show_processlist );
 
 is(
-   $w->ok(),
+   $w->check(),
    1,
    'Processlist db time ok'
 );
@@ -83,7 +83,7 @@ SKIP: {
    );
 
    is(
-      $w->ok(),
+      $w->check(),
       1,
       'Processlist count Binlog Dump count ok'
    );
