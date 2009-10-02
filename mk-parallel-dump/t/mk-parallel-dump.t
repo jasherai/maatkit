@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 37;
+use Test::More tests => 38;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -235,6 +235,16 @@ like(
    'Dies if PID file already exists (issue 391)'
 );
 `rm -rf /tmp/mk-script.pid`;
+
+# #############################################################################
+#
+# #############################################################################
+$output = `$cmd --since +123 --dry-run 2>&1`;
+unlike(
+   $output,
+   qr/Use of uninitialized value/,
+   '--since +N (issue 623)'
+);
 
 # #############################################################################
 # Done.
