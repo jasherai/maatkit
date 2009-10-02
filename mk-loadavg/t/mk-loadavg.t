@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 require '../mk-loadavg';
 require '../../common/Sandbox.pm';
@@ -53,9 +53,9 @@ like(
 # #############################################################################
 diag(`rm -rf /tmp/mk-loadavg-test`);
 mk_loadavg::main('-F', $cnf, qw(--watch Status:status:Uptime:<:1),
-   '--execute-command', 'echo hi > /tmp/mk-loadavg-test && sleep 2',
+   '--execute-command', 'echo hi > /tmp/mk-loadavg-test',
    qw(--sleep 1 --run-time 1));
-sleep 1;
+
 ok(
    -f '/tmp/mk-loadavg-test',
    '--execute-command'
@@ -72,9 +72,9 @@ like(
    'Watch an InnoDB status value'
 );
 
-# #########################################################################
+# ###########################################################################
 # Issue 391: Add --pid option to all scripts
-# #########################################################################
+# ###########################################################################
 `touch /tmp/mk-script.pid`;
 $output = `$cmd --watch 'Server:loadavg:1:>:0' --pid /tmp/mk-script.pid 2>&1`;
 like(
@@ -83,6 +83,22 @@ like(
    'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
 );
 `rm -rf /tmp/mk-script.pid`;
+
+
+# #############################################################################
+# Issue 622: mk-loadavg requires a database connection
+# #############################################################################
+diag(`rm -rf /tmp/mk-loadavg-test`);
+mk_loadavg::main(qw(--watch Server:vmstat:bi:<:0),
+   '--execute-command', 'echo hi > /tmp/mk-loadavg-test',
+   qw(--sleep 1 --run-time 1));
+
+ok(
+   -f '/tmp/mk-loadavg-test',
+   "Doesn't always need a dbh (issue 622)"
+);
+
+diag(`rm -rf /tmp/mk-loadavg-test`);
 
 # #############################################################################
 # Done.

@@ -2685,7 +2685,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# WatchStatus package 4696
+# WatchStatus package 4796
 # ###########################################################################
 package WatchStatus;
 
@@ -2698,7 +2698,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(params dbh) ) {
+   foreach my $arg ( qw(params) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -2764,6 +2764,15 @@ sub parse_params {
    }
 
    return $ok_sub, %args;
+}
+
+sub uses_dbh {
+   return 1;
+}
+
+sub set_dbh {
+   my ( $self, $dbh ) = @_;
+   $self->{dbh} = $dbh;
 }
 
 sub set_callbacks {
@@ -2892,7 +2901,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# WatchProcesslist package 4696
+# WatchProcesslist package 4796
 # ###########################################################################
 package WatchProcesslist;
 
@@ -2905,7 +2914,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(params dbh) ) {
+   foreach my $arg ( qw(params) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -2979,6 +2988,15 @@ sub parse_params {
    return $ok_sub, %args;
 }
 
+sub uses_dbh {
+   return 1;
+}
+
+sub set_dbh {
+   my ( $self, $dbh ) = @_;
+   $self->{dbh} = $dbh;
+}
+
 sub set_callbacks {
    my ( $self, %callbacks ) = @_;
    foreach my $func ( keys %callbacks ) {
@@ -3026,7 +3044,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# WatchServer package 4698
+# WatchServer package 4796
 # ###########################################################################
 package WatchServer;
 
@@ -3102,6 +3120,14 @@ sub parse_params {
       or die "Error compiling subroutine code:\n$code\n$EVAL_ERROR";
 
    return $ok_sub;
+}
+
+sub uses_dbh {
+   return 0;
+}
+
+sub set_dbh {
+   return;
 }
 
 sub set_callbacks {
@@ -3249,20 +3275,12 @@ sub main {
    }
 
    # ########################################################################
-   # Connect and go to work.
-   # ########################################################################
-   if ( $o->get('ask-pass') ) {
-      $o->set('passowrd', OptionParser::prompt_noecho("Enter password: "));
-   }
-   my $dsn = $dp->parse_options($o);
-   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1, });
-   $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
-
-   # ########################################################################
    # Parse --watch and load the Watch* modules.
    # ########################################################################
    my @plugins = parse_watch($o->get('watch'));
    my @watches;
+   my $dsn;
+   my $dbh;
    foreach my $plugin ( @plugins ) {
       my $module = "Watch" . ($plugin->[0] || '');
       my $params = $plugin->[1];
@@ -3271,10 +3289,21 @@ sub main {
       eval {
          $watch = $module->new(
             params => $params,
-            dbh    => $dbh,
          );
       };
       die "Failed to load --watch $module: $EVAL_ERROR" if $EVAL_ERROR;
+
+      if ( $watch->uses_dbh() ) {
+         if ( !$dbh ) {
+            if ( $o->get('ask-pass') ) {
+               $o->set('passowrd', OptionParser::prompt_noecho("Enter password: "));
+            }
+            $dsn = $dp->parse_options($o);
+            $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit => 1});
+            $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
+         }
+         $watch->set_dbh($dbh);
+      }
 
       # Set any callbacks.
       if ( (my $vmstat = $o->get('vmstat')) && $module eq 'WatchServer' ) {
@@ -3283,6 +3312,9 @@ sub main {
 
       push @watches, { name => "$plugin->[0]:$plugin->[1]", module => $watch, };
    }
+
+   # In case no watch module used a dbh, set this manually.
+   $dsn ||= { h => 'localhost' };
 
    # Daemonize only after connecting and doing --ask-pass.
    my $daemon;
@@ -3314,7 +3346,7 @@ sub main {
       watches => \@watches,
    );
 
-   $dp->disconnect($dbh);
+   $dp->disconnect($dbh) if $dbh;
    return 0;
 }
 
@@ -3336,11 +3368,10 @@ sub parse_watch {
 
 sub watch_server {
    my ( %args ) = @_;
-   foreach my $arg ( qw(dsn dbh o dp vp) ) {
+   foreach my $arg ( qw(dsn o dp vp) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $dsn     = $args{dsn};
-   my $dbh     = $args{dbh};
    my $o       = $args{o};
    my $dp      = $args{dp};
    my $vp      = $args{vp};
