@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 43;
+use Test::More tests => 44;
 
 use List::Util qw(max);
 
@@ -538,6 +538,17 @@ is_deeply(
    \@dbs_tbls,
    [],
    "Doesn't die on broken table"
+);
+
+# #############################################################################
+# Issue 623: --since +N does not work in mk-parallel-dump
+# #############################################################################
+
+# This is really a problem in MySQLFind::_test_date();
+is(
+   $f->_test_date({foo=>123}, 'foo', '123', $dbh),
+   '',
+   '_test_date() with no + or - on test'
 );
 
 # #############################################################################

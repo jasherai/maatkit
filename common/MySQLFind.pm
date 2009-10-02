@@ -268,10 +268,11 @@ sub _test_date {
    MKDEBUG && _d($sql);
    ($self->{timestamp}->{$dbh}->{$num}) ||= $dbh->selectrow_array($sql);
    my $time = $self->{timestamp}->{$dbh}->{$num};
-   return 
-         ( $equality eq '-' && $table->{$prop} gt $time )
-      || ( $equality eq '+' && $table->{$prop} lt $time )
-      || (                     $table->{$prop} eq $time );
+   if ( $equality ) {
+      return ($equality eq '-' && $table->{$prop} gt $time)
+          || ($equality eq '+' && $table->{$prop} lt $time);
+   }
+   return $table->{$prop} eq $time;
 }
 
 sub _d {
