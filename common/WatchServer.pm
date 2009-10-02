@@ -138,7 +138,7 @@ sub _get_val_from_loadavg {
 }
 
 sub _vmstat {
-   return `vmstat 1 2`;
+   return `vmstat`;
 }
 
 # Parses vmstat output like:
