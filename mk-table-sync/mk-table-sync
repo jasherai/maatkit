@@ -1307,7 +1307,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 4743
+# TableSyncStream package 4802
 # ###########################################################################
 package TableSyncStream;
 
@@ -1344,6 +1344,9 @@ sub prepare_to_sync {
    $self->{cols}            = $args{cols};
    $self->{buffer_in_mysql} = $args{buffer_in_mysql};
    $self->{ChangeHandler}   = $args{ChangeHandler};
+
+   $self->{done}  = 0;
+
    return;
 }
 
@@ -3713,7 +3716,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncGroupBy package 4741
+# TableSyncGroupBy package 4802
 # ###########################################################################
 package TableSyncGroupBy;
 
@@ -3757,6 +3760,8 @@ sub prepare_to_sync {
       $self->{count_col} = "_$self->{count_col}";
    }
    MKDEBUG && _d('COUNT column will be named', $self->{count_col});
+
+   $self->{done} = 0;
 
    return;
 }

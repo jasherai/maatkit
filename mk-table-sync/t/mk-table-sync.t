@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 65;
+use Test::More tests => 67;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -535,6 +535,10 @@ SKIP: {
       [[1],[3]],
       'do-replicate-db is in sync after sync'
    );
+
+   $dbh3->disconnect();
+   diag(`/tmp/12348/stop`);
+   diag(`rm -rf /tmp/12348/`);
 };
 
 # #############################################################################
@@ -655,17 +659,49 @@ REPLACE INTO `issue_375`.`t`(`foo`, `id`, `updated_at`) VALUES ('cv', 100, '2009
 # This is issue http://code.google.com/p/maatkit/issues/detail?id=371
 
 # #############################################################################
+# Issue 631: mk-table-sync GroupBy and Stream fail
+# #############################################################################
+diag(`/tmp/12345/use < samples/issue_631.sql`);
+
+$output = `../mk-table-sync h=127.1,P=12345,D=d1,t=t h=127.1,P=12345,D=d2,t=t h=127.1,P=12345,D=d3,t=t --print -v --algorithms GroupBy`;
+is(
+   $output,
+"# Syncing D=d2,P=12345,h=127.1,t=t
+# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
+INSERT INTO `d2`.`t`(`x`) VALUES (1);
+#      0       0      1      0 GroupBy   2    d1.t
+# Syncing D=d3,P=12345,h=127.1,t=t
+# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
+INSERT INTO `d3`.`t`(`x`) VALUES (1);
+INSERT INTO `d3`.`t`(`x`) VALUES (2);
+#      0       0      2      0 GroupBy   2    d1.t
+",
+   'GroupBy can sync issue 631'
+);
+
+$output = `../mk-table-sync h=127.1,P=12345,D=d1,t=t h=127.1,P=12345,D=d2,t=t h=127.1,P=12345,D=d3,t=t --print -v --algorithms Stream`;
+is(
+   $output,
+"# Syncing D=d2,P=12345,h=127.1,t=t
+# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
+INSERT INTO `d2`.`t`(`x`) VALUES (1);
+#      0       0      1      0 Stream    2    d1.t
+# Syncing D=d3,P=12345,h=127.1,t=t
+# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
+INSERT INTO `d3`.`t`(`x`) VALUES (1);
+INSERT INTO `d3`.`t`(`x`) VALUES (2);
+#      0       0      2      0 Stream    2    d1.t
+",
+   'Stream can sync issue 631'
+);
+
+# #############################################################################
 # Done
 # #############################################################################
 if ( $dbh2 ) {
    $dbh2->disconnect();
    diag(`/tmp/12347/stop`);
    diag(`rm -rf /tmp/12347/`);
-}
-if ( $dbh3 ) {
-   $dbh3->disconnect();
-   diag(`/tmp/12348/stop`);
-   diag(`rm -rf /tmp/12348/`);
 }
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
