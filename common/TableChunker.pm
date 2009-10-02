@@ -270,8 +270,11 @@ sub calculate_chunks {
 }
 
 sub get_first_chunkable_column {
-   my ( $self, $table, $opts ) = @_;
-   my ($exact, $cols) = $self->find_chunk_columns($table, $opts);
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(tbl_struct) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($exact, $cols) = $self->find_chunk_columns(%args);
    return ( $cols->[0]->{column}, $cols->[0]->{index} );
 }
 
