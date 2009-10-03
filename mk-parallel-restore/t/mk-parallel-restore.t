@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 33;
+use Test::More tests => 34;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -291,9 +291,9 @@ like(
    '--threads overrides /proc/cpuinfo (issue 534)'
 );
 
-# #########################################################################
+# ###########################################################################
 # Issue 391: Add --pid option to all scripts
-# #########################################################################
+# ###########################################################################
 `touch /tmp/mk-script.pid`;
 $output = `$cmd -D test /tmp/default/ --pid /tmp/mk-script.pid 2>&1`;
 like(
@@ -302,6 +302,21 @@ like(
    'Dies if PID file already exists (issue 391)'
 );
 `rm -rf /tmp/mk-script.pid`;
+
+# #############################################################################
+#  Issue 624: mk-parallel-dump --databases does not filter restored databases
+# #############################################################################
+$dbh->do('DROP DATABASE IF EXISTS issue_624');
+$dbh->do('CREATE DATABASE issue_624');
+$dbh->do('USE issue_624');
+
+$output = `$cmd samples/issue_624/ -D issue_624 -d d2`;
+
+is_deeply(
+   $dbh->selectall_arrayref('SELECT * FROM issue_624.t2'),
+   [ [4],[5],[6] ],
+   '--databases filters restored dbs (issue 624)'
+);
 
 # #############################################################################
 # Done.

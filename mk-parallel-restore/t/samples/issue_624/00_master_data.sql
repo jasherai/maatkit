@@ -1,0 +1,4 @@
+-- file mysql-bin.000002
+-- position 2606
+-- CHUNK d1 t1 0 1=1
+-- CHUNK d2 t2 0 1=1
