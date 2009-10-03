@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 103;
+use Test::More tests => 104;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -916,6 +916,25 @@ like(
    'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
 );
 `rm -rf /tmp/mk-script.pid`;
+
+# #############################################################################
+# Issue 611: EXPLAIN PARTITIONS in mk-query-digest if partitions are used
+# #############################################################################
+require '../../common/VersionParser.pm';
+my $vp = new VersionParser();
+SKIP: {
+   skip 'MySQL sandbox version not >= 5.1', 1
+      unless $dbh1 && $vp->version_ge($dbh1, '5.1.0');
+
+   diag(`/tmp/12345/use < samples/issue_611.sql`);
+
+   $output = `../mk-query-digest samples/slow-issue-611.txt --explain h=127.1,P=12345 2>&1`;
+   like(
+      $output,
+      qr/partitions: p\d/,
+      'EXPLAIN /*!50100 PARTITIONS */ (issue 611)'
+   );
+};
 
 # #############################################################################
 # Done.
