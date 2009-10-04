@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 15;
 
 require "../ChangeHandler.pm";
 require "../Quoter.pm";
@@ -27,8 +27,9 @@ throws_ok(
 );
 
 my @rows;
+my $q  = new Quoter();
 my $ch = new ChangeHandler(
-   Quoter  => new Quoter(),
+   Quoter  => $q,
    dst_db  => 'test',
    dst_tbl => 'foo',
    src_db  => 'test',
@@ -118,7 +119,82 @@ SKIP: {
 }
 
 # #############################################################################
+# Issue 371: Make mk-table-sync preserve column order in SQL
+# #############################################################################
+my $row = {
+   id  => 1,
+   foo => 'foo',
+   bar => 'bar',
+};
+my $tbl_struct = {
+   col_posn => { id=>0, foo=>1, bar=>2 },
+};
+$ch = new ChangeHandler(
+   Quoter     => $q,
+   dst_db     => 'test',
+   dst_tbl    => 'issue_371',
+   src_db     => 'test',
+   src_tbl    => 'issue_371',
+   actions    => [ sub { push @rows, @_ } ],
+   replace    => 0,
+   queue      => 0,
+   tbl_struct => $tbl_struct,
+);
+
+is(
+   $ch->make_INSERT($row, [qw(id foo bar)]),
+   "INSERT INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES (1, 'foo', 'bar')",
+   'make_INSERT() preserves column order'
+);
+
+is(
+   $ch->make_REPLACE($row, [qw(id foo bar)]),
+   "REPLACE INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES (1, 'foo', 'bar')",
+   'make_REPLACE() preserves column order'
+);
+
+is(
+   $ch->make_UPDATE($row, [qw(id foo)]),
+   "UPDATE `test`.`issue_371` SET `bar`='bar' WHERE `id`=1 AND `foo`='foo' LIMIT 1",
+   'make_UPDATE() preserves column order'
+);
+
+is(
+   $ch->make_DELETE($row, [qw(id foo bar)]),
+   "DELETE FROM `test`.`issue_371` WHERE `id`=1 AND `foo`='foo' AND `bar`='bar' LIMIT 1",
+   'make_DELETE() preserves column order'
+);
+
+SKIP: {
+   skip 'Cannot connect to sandbox master', 3 unless $dbh;
+
+   $dbh->do('DROP TABLE IF EXISTS test.issue_371');
+   $dbh->do('CREATE TABLE test.issue_371 (id INT, foo varchar(16), bar char)');
+   $dbh->do('INSERT INTO test.issue_371 VALUES (1,"foo","a"),(2,"bar","b")');
+
+   $ch->fetch_back($dbh);
+
+   is(
+      $ch->make_INSERT($row, [qw(id foo)]),
+      "INSERT INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES (1, 'foo', 'a')",
+      'make_INSERT() preserves column order, with fetch-back'
+   );
+
+   is(
+      $ch->make_REPLACE($row, [qw(id foo)]),
+      "REPLACE INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES (1, 'foo', 'a')",
+      'make_REPLACE() preserves column order, with fetch-back'
+   );
+
+   is(
+      $ch->make_UPDATE($row, [qw(id foo)]),
+      "UPDATE `test`.`issue_371` SET `bar`='a' WHERE `id`=1 AND `foo`='foo' LIMIT 1",
+      'make_UPDATE() preserves column order, with fetch-back'
+   );
+};
+
+# #############################################################################
 # Done.
 # #############################################################################
-$sb->wipe_clean($dbh);
+$sb->wipe_clean($dbh) if $dbh;
 exit;

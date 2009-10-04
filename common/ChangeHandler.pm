@@ -39,6 +39,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # * replace    Do UPDATE/INSERT as REPLACE.
 # * queue      Queue changes until process_rows is called with a greater
 #              queue level.
+# * tbl_struct (optional) Used to sort columns
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(Quoter dst_db dst_tbl src_db src_tbl replace queue) ) {
@@ -163,21 +164,22 @@ sub make_UPDATE {
    }
    my %in_where = map { $_ => 1 } @$cols;
    my $where = $self->make_where_clause($row, $cols);
+   my @cols;
    if ( my $dbh = $self->{fetch_back} ) {
       my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
       MKDEBUG && _d('Fetching data for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
-      $cols = [sort keys %$res];
+      @cols = $self->sort_cols($res);
    }
    else {
-      $cols = [ sort keys %$row ];
+      @cols = $self->sort_cols($row);
    }
    return "UPDATE $self->{dst_db_tbl} SET "
       . join(', ', map {
             $self->{Quoter}->quote($_)
             . '=' .  $self->{Quoter}->quote_val($row->{$_})
-         } grep { !$in_where{$_} } @$cols)
+         } grep { !$in_where{$_} } @cols)
       . " WHERE $where LIMIT 1";
 }
 
@@ -198,14 +200,14 @@ sub make_REPLACE {
 
 sub make_row {
    my ( $self, $verb, $row, $cols ) = @_;
-   my @cols = sort keys %$row;
+   my @cols = $self->sort_cols($row);
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
       my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
       MKDEBUG && _d('Fetching data for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
-      @cols = sort keys %$res;
+      @cols = $self->sort_cols($res);
    }
    return "$verb INTO $self->{dst_db_tbl}("
       . join(', ', map { $self->{Quoter}->quote($_) } @cols)
@@ -227,6 +229,19 @@ sub make_where_clause {
 sub get_changes {
    my ( $self ) = @_;
    return %{$self->{changes}};
+}
+
+sub sort_cols {
+   my ( $self, $row ) = @_;
+   my @cols;
+   if ( $self->{tbl_struct} ) { 
+      my $pos = $self->{tbl_struct}->{col_posn};
+      @cols = sort { $pos->{$a} <=> $pos->{$b} } keys %$row;
+   }
+   else {
+      @cols = sort keys %$row;
+   }
+   return @cols;
 }
 
 sub _d {

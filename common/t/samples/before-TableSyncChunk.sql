@@ -1,6 +1,6 @@
 use test;
 
-drop table if exists test1,test2,test3,test4,test5;
+drop table if exists test1,test2,test3,test4,test5,test6;
 
 create table test1(
    a int not null,
