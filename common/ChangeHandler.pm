@@ -200,7 +200,7 @@ sub make_REPLACE {
 
 sub make_row {
    my ( $self, $verb, $row, $cols ) = @_;
-   my @cols = $self->sort_cols($row);
+   my @cols; 
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
       my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
@@ -208,6 +208,9 @@ sub make_row {
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       @cols = $self->sort_cols($res);
+   }
+   else {
+      @cols = $self->sort_cols($row);
    }
    return "$verb INTO $self->{dst_db_tbl}("
       . join(', ', map { $self->{Quoter}->quote($_) } @cols)
@@ -236,7 +239,21 @@ sub sort_cols {
    my @cols;
    if ( $self->{tbl_struct} ) { 
       my $pos = $self->{tbl_struct}->{col_posn};
-      @cols = sort { $pos->{$a} <=> $pos->{$b} } keys %$row;
+      my @not_in_tbl;
+      @cols = sort {
+            $pos->{$a} <=> $pos->{$b}
+         }
+         grep {
+            if ( !defined $pos->{$_} ) {
+               push @not_in_tbl, $_;
+               0;
+            }
+            else {
+               1;
+            }
+         }
+         keys %$row;
+      push @cols, @not_in_tbl if @not_in_tbl;
    }
    else {
       @cols = sort keys %$row;

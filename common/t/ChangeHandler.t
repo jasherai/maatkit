@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 15;
+use Test::More tests => 18;
 
 require "../ChangeHandler.pm";
 require "../Quoter.pm";
@@ -164,6 +164,29 @@ is(
    "DELETE FROM `test`.`issue_371` WHERE `id`=1 AND `foo`='foo' AND `bar`='bar' LIMIT 1",
    'make_DELETE() preserves column order'
 );
+
+# Test what happens if the row has a column that not in the tbl struct.
+$row->{other_col} = 'zzz';
+
+is(
+   $ch->make_INSERT($row, [qw(id foo bar)]),
+   "INSERT INTO `test`.`issue_371`(`id`, `foo`, `bar`, `other_col`) VALUES (1, 'foo', 'bar', 'zzz')",
+   'make_INSERT() preserves column order, with col not in tbl'
+);
+
+is(
+   $ch->make_REPLACE($row, [qw(id foo bar)]),
+   "REPLACE INTO `test`.`issue_371`(`id`, `foo`, `bar`, `other_col`) VALUES (1, 'foo', 'bar', 'zzz')",
+   'make_REPLACE() preserves column order, with col not in tbl'
+);
+
+is(
+   $ch->make_UPDATE($row, [qw(id foo)]),
+   "UPDATE `test`.`issue_371` SET `bar`='bar', `other_col`='zzz' WHERE `id`=1 AND `foo`='foo' LIMIT 1",
+   'make_UPDATE() preserves column order, with col not in tbl'
+);
+
+delete $row->{other_col};
 
 SKIP: {
    skip 'Cannot connect to sandbox master', 3 unless $dbh;
