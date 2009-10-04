@@ -2184,7 +2184,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 4764
+# ChangeHandler package 4818
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2312,21 +2312,22 @@ sub make_UPDATE {
    }
    my %in_where = map { $_ => 1 } @$cols;
    my $where = $self->make_where_clause($row, $cols);
+   my @cols;
    if ( my $dbh = $self->{fetch_back} ) {
       my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
       MKDEBUG && _d('Fetching data for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
-      $cols = [sort keys %$res];
+      @cols = $self->sort_cols($res);
    }
    else {
-      $cols = [ sort keys %$row ];
+      @cols = $self->sort_cols($row);
    }
    return "UPDATE $self->{dst_db_tbl} SET "
       . join(', ', map {
             $self->{Quoter}->quote($_)
             . '=' .  $self->{Quoter}->quote_val($row->{$_})
-         } grep { !$in_where{$_} } @$cols)
+         } grep { !$in_where{$_} } @cols)
       . " WHERE $where LIMIT 1";
 }
 
@@ -2347,14 +2348,17 @@ sub make_REPLACE {
 
 sub make_row {
    my ( $self, $verb, $row, $cols ) = @_;
-   my @cols = sort keys %$row;
+   my @cols; 
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
       my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
       MKDEBUG && _d('Fetching data for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
-      @cols = sort keys %$res;
+      @cols = $self->sort_cols($res);
+   }
+   else {
+      @cols = $self->sort_cols($row);
    }
    return "$verb INTO $self->{dst_db_tbl}("
       . join(', ', map { $self->{Quoter}->quote($_) } @cols)
@@ -2378,6 +2382,33 @@ sub get_changes {
    return %{$self->{changes}};
 }
 
+sub sort_cols {
+   my ( $self, $row ) = @_;
+   my @cols;
+   if ( $self->{tbl_struct} ) { 
+      my $pos = $self->{tbl_struct}->{col_posn};
+      my @not_in_tbl;
+      @cols = sort {
+            $pos->{$a} <=> $pos->{$b}
+         }
+         grep {
+            if ( !defined $pos->{$_} ) {
+               push @not_in_tbl, $_;
+               0;
+            }
+            else {
+               1;
+            }
+         }
+         keys %$row;
+      push @cols, @not_in_tbl if @not_in_tbl;
+   }
+   else {
+      @cols = sort keys %$row;
+   }
+   return @cols;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -2393,7 +2424,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 4742
+# TableChunker package 4807
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2594,9 +2625,12 @@ sub calculate_chunks {
 }
 
 sub get_first_chunkable_column {
-   my ( $self, $table, $opts ) = @_;
-   my ($exact, $cols) = $self->find_chunk_columns($table, $opts);
-   return ( $cols->[0]->{column}, $cols->[0]->{index} );
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(tbl_struct) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($exact, @cols) = $self->find_chunk_columns(%args);
+   return ( $cols[0]->{column}, $cols[0]->{index} );
 }
 
 sub size_to_rows {
@@ -4281,7 +4315,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 4162
+# MySQLFind package 4804
 # ###########################################################################
 package MySQLFind;
 
@@ -4481,10 +4515,11 @@ sub _test_date {
    MKDEBUG && _d($sql);
    ($self->{timestamp}->{$dbh}->{$num}) ||= $dbh->selectrow_array($sql);
    my $time = $self->{timestamp}->{$dbh}->{$num};
-   return 
-         ( $equality eq '-' && $table->{$prop} gt $time )
-      || ( $equality eq '+' && $table->{$prop} lt $time )
-      || (                     $table->{$prop} eq $time );
+   if ( $equality ) {
+      return ($equality eq '-' && $table->{$prop} gt $time)
+          || ($equality eq '+' && $table->{$prop} lt $time);
+   }
+   return $table->{$prop} eq $time;
 }
 
 sub _d {
@@ -6236,15 +6271,16 @@ sub sync_a_table {
 
       my $rd = new RowDiff(dbh => $src->{misc_dbh});
       my $ch = new ChangeHandler(
-         src_db    => $src->{db},
-         src_tbl   => $src->{tbl},
-         dst_db    => $dst->{db},
-         dst_tbl   => $dst->{tbl}, 
-         queue     => $o->get('buffer-to-client') ? 1 : 0,
-         replace   => $o->get('replace') || $o->get('replicate')
-                      || $o->get('sync-to-master') || 0,
-         actions   => $actions,
-         Quoter    => $args{Quoter},
+         src_db     => $src->{db},
+         src_tbl    => $src->{tbl},
+         dst_db     => $dst->{db},
+         dst_tbl    => $dst->{tbl}, 
+         tbl_struct => $tbl_struct,
+         queue      => $o->get('buffer-to-client') ? 1 : 0,
+         replace    => $o->get('replace') || $o->get('replicate')
+                       || $o->get('sync-to-master') || 0,
+         actions    => $actions,
+         Quoter     => $args{Quoter},
       );
 
       %status = $syncer->sync_table(

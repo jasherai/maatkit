@@ -564,9 +564,10 @@ $slave_dbh->do('update test.fl set d = 2.0000013 where id = 1');
 # The columns really are different at this point so we should
 # get a REPLACE without using --float-precision.
 $output = `../mk-table-sync --sync-to-master h=127.1,P=12346,D=test,t=fl --print 2>&1`;
-like(
+is(
    $output,
-   qr/REPLACE INTO `test`.`fl`\(`d`, `f`, `id`\) VALUES \('2.0000012'/,
+   "REPLACE INTO `test`.`fl`(`id`, `f`, `d`) VALUES (1, '1.0000011921', '2.0000012');
+",
    'No --float-precision so double col diff at high precision (issue 410)'
 );
 
@@ -649,8 +650,8 @@ diag(`../../mk-table-checksum/mk-table-checksum --replicate issue_375.checksum h
 $output = `../mk-table-sync --sync-to-master h=127.1,P=12346 --replicate issue_375.checksum --print`;
 is(
    $output,
-   "REPLACE INTO `issue_375`.`t`(`foo`, `id`, `updated_at`) VALUES ('k', 10, '2009-09-03 14:18:00');
-REPLACE INTO `issue_375`.`t`(`foo`, `id`, `updated_at`) VALUES ('cv', 100, '2009-09-06 15:01:23');
+   "REPLACE INTO `issue_375`.`t`(`id`, `updated_at`, `foo`) VALUES (10, '2009-09-03 14:18:00', 'k');
+REPLACE INTO `issue_375`.`t`(`id`, `updated_at`, `foo`) VALUES (100, '2009-09-06 15:01:23', 'cv');
 ",
    'Simple --replicate'
 );
