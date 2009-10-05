@@ -296,8 +296,8 @@ sub get_dbh {
                }
             }
 
-            if ( $self->prop('setvars') ) {
-               $sql = "SET " . $self->prop('setvars');
+            if ( $self->prop('set-vars') ) {
+               $sql = "SET " . $self->prop('set-vars');
                MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }

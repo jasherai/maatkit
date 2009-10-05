@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 25;
+use Test::More tests => 26;
 
 require "../DSNParser.pm";
 require '../OptionParser.pm';
@@ -372,6 +372,40 @@ SKIP: {
       qr/SELECT \* FROM doesnt.exist WHERE foo = 1/,
       'Includes SQL in error message (issue 93)'
    );
+};
+
+
+# #############################################################################
+# Issue 597: mk-slave-prefetch ignores --set-vars
+# #############################################################################
+
+# This affects all scripts because prop() doesn't match what get_dbh() does.
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $dbh;
+   $dbh->do('SET @@global.wait_timeout=1');
+
+   # This dbh is going to timeout too during this test so close
+   # it now else we'll get an error.
+   $dbh->disconnect();
+
+   $dp = new DSNParser();
+   $dp->prop('set-vars', 'wait_timeout=1000');
+   $d  = $dp->parse('h=127.0.0.1,P=12345,A=utf8');
+   my $dbh2 = $dp->get_dbh($dp->get_cxn_params($d), {});
+   sleep 2;
+   eval {
+      $dbh2->do('SELECT DATABASE()');
+   };
+   is(
+      $EVAL_ERROR,
+      '',
+      'SET vars (issue 597)'
+   );
+   $dbh2->disconnect();
+
+   # Have to reconnect $dbh since it timedout too.
+   $dbh = $dp->get_dbh($dp->get_cxn_params($d), {});
+   $dbh->do('SET @@global.wait_timeout=28800');
 };
 
 # #############################################################################
