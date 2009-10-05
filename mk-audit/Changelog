@@ -1,5 +1,7 @@
 Changelog for mk-audit:
 
+   * --set-vars did not work (issue 597).
+
 2009-08-31: version 0.9.10
 
    * The script crashed if mysql.proc is missing (issue 187).

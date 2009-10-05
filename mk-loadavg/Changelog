@@ -1,5 +1,6 @@
 Changelog for mk-loadavg:
 
+   * --set-vars did not work (issue 597).
    * Actions were not triggered properly (issue 621).
    * A database connection was required when not need (issue 622).
    * Changed default vmstat command to "vmstat 1 2" (issue 621).

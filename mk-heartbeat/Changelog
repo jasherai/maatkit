@@ -1,5 +1,7 @@
 Changelog for mk-heartbeat:
 
+   * --set-vars did not work (issue 597).
+
 2009-09-30: version 1.0.18
 
    * Added --pid (issue 391).
