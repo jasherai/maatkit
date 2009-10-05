@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 4103
+# DSNParser package 4820
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -269,8 +269,8 @@ sub get_dbh {
                }
             }
 
-            if ( $self->prop('setvars') ) {
-               $sql = "SET " . $self->prop('setvars');
+            if ( $self->prop('set-vars') ) {
+               $sql = "SET " . $self->prop('set-vars');
                MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
