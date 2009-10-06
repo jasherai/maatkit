@@ -89,7 +89,7 @@ sub new {
 # Recognized properties:
 # * dbidriver: which DBI driver to use; assumes mysql, supports Pg.
 # * required:  which parts are required (hashref).
-# * setvars:   a list of variables to set after connecting
+# * set-vars:  a list of variables to set after connecting
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
