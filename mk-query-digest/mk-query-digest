@@ -6317,6 +6317,8 @@ sub main {
    $o->get_specs();
    $o->get_opts();
 
+   $dp->prop('set-vars', $o->get('set-vars'));
+
    # Frequently used options.
    my $review_dsn = $o->get('review'); 
    my @groupby    = @{$o->get('group-by')};

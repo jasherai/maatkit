@@ -3698,7 +3698,7 @@ sub main {
    $o->get_specs();
    $o->get_opts();
 
-   $dp->prop('setvars', $o->get('set-vars'));
+   $dp->prop('set-vars', $o->get('set-vars'));
 
    # This list contains all the command-line arguments that can be overridden
    # by a table that contains arguments for each table to be checksummed.

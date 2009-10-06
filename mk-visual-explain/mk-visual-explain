@@ -2107,7 +2107,7 @@ sub main {
    my $rows;
 
    if ( $o->got('connect') ) { # Connect to the database.
-      $dp->prop('setvars', $o->get('set-vars'));
+      $dp->prop('set-vars', $o->get('set-vars'));
 
       if ( $o->got('ask-pass') && !$o->got('password') ) {
          $o->set('password', OptionParser::prompt_noecho("Enter password: "));

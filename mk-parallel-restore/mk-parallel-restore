@@ -1742,7 +1742,7 @@ sub main {
    $o->get_specs();
    $o->get_opts();
 
-   $dp->prop('setvars', $o->get('set-vars'));
+   $dp->prop('set-vars', $o->get('set-vars'));
 
    $o->set('threads', max(2, MaatkitCommon::get_number_of_cpus()))
       unless $o->got('threads');

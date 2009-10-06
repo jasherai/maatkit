@@ -2166,7 +2166,7 @@ sub main {
 
    my $dp = new DSNParser;
    $dp->prop('dbidriver', $o->get('dbi-driver'));
-   $dp->prop('setvars', $o->get('set-vars'));
+   $dp->prop('set-vars', $o->get('set-vars'));
    my $dsn = $dp->parse_options($o);
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
    my $sth = $dbh->prepare($o->get('update') ? $update_sql : $select_sql);

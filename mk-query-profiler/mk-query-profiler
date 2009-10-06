@@ -1468,7 +1468,7 @@ sub main {
    $o->get_specs();
    $o->get_opts();
 
-   $dp->prop('setvars', $o->get('set-vars'));
+   $dp->prop('set-vars', $o->get('set-vars'));
 
    $o->set('verbose', min(2, $o->get('verbose')));
 

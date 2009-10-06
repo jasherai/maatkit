@@ -1406,7 +1406,7 @@ sub main {
    $o->get_opts();
 
    my $dp = new DSNParser();
-   $dp->prop('setvars', $o->get('set-vars'));
+   $dp->prop('set-vars', $o->get('set-vars'));
 
    $o->usage_or_errors();
 

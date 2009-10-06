@@ -3079,7 +3079,7 @@ sub main {
       $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
    my $dp = new DSNParser;
-   $dp->prop('setvars', $o->get('set-vars'));
+   $dp->prop('set-vars', $o->get('set-vars'));
    my $dsn = $dp->parse_options($o);
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit=>1});
 
