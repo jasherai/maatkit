@@ -1,0 +1,12 @@
+#!/bin/sh
+
+# This scripts updates a single module in all scripts.
+# Example: ./update-one-module OptionParser
+# That causes OptionParser to be updated in all scripts
+# which have an out-of-date version of the module.
+
+set -e
+
+for FILE in `ls ../mk-*/mk-* | cut -d'/' -f 2`; do
+   ./update-modules $FILE $1
+done
