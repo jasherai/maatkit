@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 25;
+use Test::More tests => 27;
 
 require '../DSNParser.pm';
 require '../Sandbox.pm';
@@ -377,6 +377,46 @@ is(
    $sql,
    "SELECT /*nibble boundary 0*/ `package_id`,`location`,`from_city` FROM `issue_96`.`t` FORCE INDEX(`package_id`) ORDER BY `package_id`,`location` LIMIT 1, 1",
    'Boundary SQL has ORDER BY key columns'
+);
+
+# #############################################################################
+# Issue 560: mk-table-sync generates impossible WHERE
+# #############################################################################
+$sb->load_file('master', '../../mk-table-sync/t/samples/issue_560.sql');
+$tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_560', 'buddy_list'));
+my (undef, %plugin_args) = $t->can_sync(tbl_struct => $tbl_struct);
+$t->prepare_to_sync(
+   ChangeHandler  => $ch,
+   cols           => $tbl_struct->{cols},
+   dbh            => $dbh,
+   db             => 'issue_560',
+   tbl            => 'buddy_list',
+   tbl_struct     => $tbl_struct,
+   chunk_size     => 100,
+   crc_col        => '__crc_col',
+   %plugin_args,
+   replicate      => 'issue_560.checksum',
+);
+
+is(
+   $t->get_sql(
+      where    => 'player_id > 1 AND player_id <= 9',
+      database => 'issue_560',
+      table    => 'buddy_list', 
+   ),
+   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((player_id > 1 AND player_id <= 9))",
+   'Use only --replicate chunk boundary (chunk sql)'
+);
+
+$t->{state} = 2;
+is(
+   $t->get_sql(
+      where    => 'player_id > 1 AND player_id <= 9',
+      database => 'issue_560',
+      table    => 'buddy_list', 
+   ),
+   "SELECT /*rows in nibble*/ `player_id`, `buddy_id`, SHA1(CONCAT_WS('#', `a`, `b`, `c`)) AS __crc_col FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (player_id > 1 AND player_id <= 9) ORDER BY `player_id`, `buddy_id`",
+   'Use only --replicate chunk boundary (row sql)'
 );
 
 # #############################################################################

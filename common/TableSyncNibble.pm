@@ -122,11 +122,18 @@ sub prepare_to_sync {
 
    $self->{ChangeHandler}->fetch_back($args{dbh});
 
-   $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
-      %args,
-      index    => $args{chunk_index},  # expects an index arg, not chunk_index
-      asc_only => 1,
-   );
+   if ( !$args{replicate} ) {
+      $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
+         %args,
+         index    => $args{chunk_index}, # expects an index arg, not chunk_index
+         asc_only => 1,
+      );
+   }
+   else {
+      # See http://code.google.com/p/maatkit/issues/detail?id=560
+      MKDEBUG && _d('Using --replicate boundary instead of nibble boundaries');
+      $self->{sel_stmt} = undef;
+   }
 
    $self->{nibble}            = 0;
    $self->{cached_row}        = undef;
@@ -184,11 +191,11 @@ sub get_sql {
       return $self->{TableChunker}->inject_chunks(
          database   => $args{database},
          table      => $args{table},
-         chunks     => [$where],
+         chunks     => [ $where ],
          chunk_num  => 0,
          query      => $self->{nibble_sql},
          index_hint => $self->{index_hint},
-         where      => [$args{where}],
+         where      => [ $args{where} ],
       );
    }
 }
@@ -210,6 +217,12 @@ sub __get_boundaries {
    my ( $self, %args ) = @_;
    my $q = $self->{Quoter};
    my $s = $self->{sel_stmt};
+
+   if ( !$s ) {
+      MKDEBUG && _d('No sel_stmt so WHERE clause 1=1 (for --replicate)');
+      return '1=1';
+   }
+
    my $lb;   # Lower boundary part of WHERE
    my $ub;   # Upper boundary part of WHERE
    my $row;  # Next upper boundary row or cached_row
