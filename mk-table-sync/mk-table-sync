@@ -5966,7 +5966,7 @@ sub sync_via_replication {
       );
 
       if ( $o->get('verbose') ) {
-         print "# Syncing ", $dp->as_string($dst->{dsn}), "\n";
+         print "# Syncing via replication ", $dp->as_string($dst->{dsn}), "\n";
          printf $args{hdr}, @ChangeHandler::ACTIONS,
             qw(ALGORITHM EXIT DATABASE TABLE);
       }
@@ -6023,7 +6023,8 @@ sub sync_via_replication {
                   );
 
                   if ( $o->get('verbose') ) {
-                     print "# Syncing ", $dp->as_string($dsn), "\n";
+                     print "# Syncing via replication  ",
+                        $dp->as_string($dsn), "\n";
                      printf $args{hdr}, @ChangeHandler::ACTIONS,
                         qw(ALGORITHM EXIT DATABASE TABLE);
                   }

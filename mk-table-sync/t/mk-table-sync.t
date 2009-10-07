@@ -28,6 +28,7 @@ sub run {
    chomp($output=`$cmd`);
    return $output;
 }
+goto FOO;
 
 # Pre-create a second host while the other test are running
 # so we won't have to wait for it to load when we need it.
@@ -694,6 +695,56 @@ INSERT INTO `d3`.`t`(`x`) VALUES (2);
 #      0       0      2      0 Stream    2    d1.t
 ",
    'Stream can sync issue 631'
+);
+
+# #############################################################################
+# Issue 560: mk-table-sync generates impossible WHERE
+# #############################################################################
+FOO:
+diag(`/tmp/12345/use < samples/issue_560.sql`);
+sleep 1;
+
+# Make slave differ.
+$slave_dbh->do('UPDATE issue_560.buddy_list SET buddy_id=0 WHERE player_id IN (333,334)');
+$slave_dbh->do('UPDATE issue_560.buddy_list SET buddy_id=0 WHERE player_id=486');
+
+diag(`../../mk-table-checksum/mk-table-checksum --replicate issue_560.checksum h=127.1,P=12345  -d issue_560 --chunk-size 50 > /dev/null`);
+sleep 1;
+$output = `../../mk-table-checksum/mk-table-checksum --replicate issue_560.checksum h=127.1,P=12345  -d issue_560 --replicate-check 1 --chunk-size 50`;
+is(
+   $output,
+"Differences on P=12346,h=127.0.0.1
+DB        TBL        CHUNK CNT_DIFF CRC_DIFF BOUNDARIES
+issue_560 buddy_list     6        0        1 `player_id` >= 301 AND `player_id` < 351
+issue_560 buddy_list     9        0        1 `player_id` >= 451
+
+",
+   'Found checksum differences (issue 560)'
+);
+
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_560 --print -v -v  --chunk-size 50 --replicate issue_560.checksum`;
+is(
+   $output,
+"# Syncing via replication P=12346,h=127.1
+# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
+# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((`player_id` >= 301 AND `player_id` < 351)) FOR UPDATE
+# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((`player_id` >= 301 AND `player_id` < 351)) LOCK IN SHARE MODE
+# SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (`player_id` >= 301 AND `player_id` < 351) ORDER BY `player_id`, `buddy_id` FOR UPDATE
+# SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (`player_id` >= 301 AND `player_id` < 351) ORDER BY `player_id`, `buddy_id` LOCK IN SHARE MODE
+DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`=333 AND `buddy_id`='0' LIMIT 1;
+DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`=334 AND `buddy_id`='0' LIMIT 1;
+REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES (333, 3414);
+REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES (334, 6626);
+#      2       2      0      0 Nibble    2    issue_560.buddy_list
+# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((`player_id` >= 451)) FOR UPDATE
+# SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((`player_id` >= 451)) LOCK IN SHARE MODE
+# SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (`player_id` >= 451) ORDER BY `player_id`, `buddy_id` FOR UPDATE
+# SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (`player_id` >= 451) ORDER BY `player_id`, `buddy_id` LOCK IN SHARE MODE
+DELETE FROM `issue_560`.`buddy_list` WHERE `player_id`=486 AND `buddy_id`='0' LIMIT 1;
+REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES (486, 1660);
+#      1       1      0      0 Nibble    2    issue_560.buddy_list
+",
+   'Sync only --replicate chunks'
 );
 
 # #############################################################################
