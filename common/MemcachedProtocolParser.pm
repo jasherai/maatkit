@@ -257,11 +257,15 @@ sub _packet_from_client {
       }
       elsif ( $cmd eq 'get' ) {
          ($key) = @vals;
+         if ( $val ) {
+            MKDEBUG && _d('Multiple cmds:', $val);
+            $val = undef;
+         }
       }
       elsif ( $cmd eq 'delete' ) {
          ($key) = @vals; # TODO: handle the <queue_time>
          if ( $val ) {
-            MKDEBUG && _d('Multiple delete:', $val);
+            MKDEBUG && _d('Multiple cmds:', $val);
             $val = undef;
          }
       }

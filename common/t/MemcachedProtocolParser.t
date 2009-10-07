@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 26;
 
 require "../MemcachedProtocolParser.pm";
 require "../TcpdumpParser.pm";
@@ -348,6 +348,8 @@ run_test({
 # #############################################################################
 # Issue 544: memcached parse error
 # #############################################################################
+
+# Multiple delete in one packet.
 $protocol = new MemcachedProtocolParser();
 run_test({
    file   => 'samples/memc_tcpdump014.txt',
@@ -363,6 +365,27 @@ run_test({
          pos_in_log  => 0,
          res         => 'NOT_FOUND',
          val         => ''
+      },
+   ],
+});
+
+# Multiple mixed commands: get delete delete
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump015.txt',
+   result => [
+      {  ts          => '2009-10-06 10:31:56.330709',
+         Query_time  => '0.000013',
+         bytes       => 0,
+         cmd         => 'get',
+         exptime     => 0,
+         flags       => 0,
+         host        => '10.0.0.5',
+         key         => 'ABBBBBBBBBBBBBBBBBBBBBC',
+         pos_in_log  => 0,
+         res         => 'NOT_FOUND',
+         
+         val => ''
       },
    ],
 });
