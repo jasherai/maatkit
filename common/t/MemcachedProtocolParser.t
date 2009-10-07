@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 24;
 
 require "../MemcachedProtocolParser.pm";
 require "../TcpdumpParser.pm";
@@ -341,6 +341,28 @@ run_test({
          res           => 'STORED',
          Query_time    => sprintf('%.6f', .229299 - .229179),
          pos_in_log    => 638,
+      },
+   ],
+});
+
+# #############################################################################
+# Issue 544: memcached parse error
+# #############################################################################
+$protocol = new MemcachedProtocolParser();
+run_test({
+   file   => 'samples/memc_tcpdump014.txt',
+   result => [
+      {  ts          => '2009-10-06 10:31:56.323538',
+         Query_time  => '0.000024',
+         bytes       => 0,
+         cmd         => 'delete',
+         exptime     => 0,
+         flags       => 0,
+         host        => '10.0.0.5',
+         key         => 'ABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBC',
+         pos_in_log  => 0,
+         res         => 'NOT_FOUND',
+         val         => ''
       },
    ],
 });

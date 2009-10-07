@@ -149,6 +149,8 @@ sub _packet_from_server {
       # Split up the first line into its parts.
       my @vals = $line1 =~ m/(\S+)/g;
       $session->{res} = shift @vals;
+      MKDEBUG && _d('Result of last', $session->{cmd}, 'cmd:', $session->{res});
+
       if ( $session->{cmd} eq 'incr' || $session->{cmd} eq 'decr' ) {
          MKDEBUG && _d('It is an incr or decr');
          if ( $session->{res} !~ m/\D/ ) { # It's an integer, not an error
@@ -187,7 +189,7 @@ sub _packet_from_server {
       elsif ( $session->{res} !~ m/STORED|DELETED|NOT_FOUND/ ) {
          # Not really sure what else would get us here... want to make a note
          # and not have an uncaught condition.
-         MKDEBUG && _d("Session result:", $session->{res});
+         MKDEBUG && _d('Unknown result');
       }
    }
    else { # Should be 'partial recv'
@@ -211,8 +213,8 @@ sub _packet_from_server {
       }
    }
 
-   my $event = make_event($session, $packet);
    MKDEBUG && _d('Creating event, deleting session');
+   my $event = make_event($session, $packet);
    delete $self->{sessions}->{$session->{client}}; # memcached is stateless!
    $session->{raw_packets} = []; # Avoid keeping forever
    return $event;
@@ -258,6 +260,10 @@ sub _packet_from_client {
       }
       elsif ( $cmd eq 'delete' ) {
          ($key) = @vals; # TODO: handle the <queue_time>
+         if ( $val ) {
+            MKDEBUG && _d('Multiple delete:', $val);
+            $val = undef;
+         }
       }
       elsif ( $cmd eq 'incr' || $cmd eq 'decr' ) {
          ($key) = @vals;
