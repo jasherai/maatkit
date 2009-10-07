@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 67;
+use Test::More tests => 71;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -28,7 +28,6 @@ sub run {
    chomp($output=`$cmd`);
    return $output;
 }
-goto FOO;
 
 # Pre-create a second host while the other test are running
 # so we won't have to wait for it to load when we need it.
@@ -502,12 +501,24 @@ SKIP: {
 
    # This slave is new so it doesn't have the dbs and tbls
    # created above.  We create some so that the current db
-   # will change they get checked.  It should stop at something
-   # other than onlythisdb.
+   # will change as they get checked.  It should stop at
+   # something other than onlythisdb.  Since SHOW DATABSES
+   # returns sorted, test should be checked after onlythisdb.
    $sb->wipe_clean($master_dbh);
-   diag(`/tmp/12345/use -e 'CREATE DATABASE test'`);
-   diag(`/tmp/12345/use < samples/issue_560.sql`);
+   $master_dbh->do('DROP DATABASE IF EXISTS test');
+   $master_dbh->do('CREATE DATABASE test');
+   $master_dbh->do('CREATE TABLE test.foo (i INT, UNIQUE INDEX (i))');
+   $master_dbh->do('INSERT INTO test.foo VALUES (1),(2),(9)');
    diag(`/tmp/12345/use < samples/issue_533.sql`);
+   sleep 1;
+
+   # My box acts weird so I double check that this is ok.
+   my $r = $dbh3->selectrow_arrayref('SHOW TABLES FROM test');
+   is_deeply(
+      $r,
+      ['foo'],
+      'Slave has other db.tbl'
+   );
 
    # Stop the slave, add replicate-do-db to its config, and restart it.
    $dbh3->disconnect();
@@ -521,20 +532,30 @@ SKIP: {
    # is set.
    $master_dbh->do('USE test');
    $master_dbh->do('DELETE FROM onlythisdb.t WHERE i = 2');
-   my $r = $dbh3->selectall_arrayref('SELECT * FROM onlythisdb.t');
+   $dbh3->do('INSERT INTO test.foo VALUES (5)');
+   sleep 1;
+
+   $r = $dbh3->selectall_arrayref('SELECT * FROM onlythisdb.t');
    is_deeply(
       $r,
       [[1],[2],[3]],
       'do-replicate-db is out of sync before sync'
    );
 
-   diag(`../mk-table-sync h=127.1,P=12348 --sync-to-master --execute --no-check-triggers --ignore-databases sakila,mysql --ignore-tables buddy_list 2>&1`);
+   diag(`../mk-table-sync h=127.1,P=12348 --sync-to-master --execute --no-check-triggers --ignore-databases sakila,mysql 2>&1`);
 
    $r = $dbh3->selectall_arrayref('SELECT * FROM onlythisdb.t');
    is_deeply(
       $r,
       [[1],[3]],
       'do-replicate-db is in sync after sync'
+   );
+
+   $r = $dbh3->selectall_arrayref('SELECT * FROM test.foo');
+   is_deeply(
+      $r,
+      [[1],[2],[5],[9]],
+      'db not allowed by do-replicate-db was not synced'
    );
 
    $dbh3->disconnect();
@@ -700,7 +721,6 @@ INSERT INTO `d3`.`t`(`x`) VALUES (2);
 # #############################################################################
 # Issue 560: mk-table-sync generates impossible WHERE
 # #############################################################################
-FOO:
 diag(`/tmp/12345/use < samples/issue_560.sql`);
 sleep 1;
 

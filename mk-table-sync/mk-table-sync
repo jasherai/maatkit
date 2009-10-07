@@ -3267,13 +3267,19 @@ sub prepare_to_sync {
    $self->{ChangeHandler}->fetch_back($args{dbh});
 
    my @chunks;
-   my %range_params = $chunker->get_range_statistics(%args);
-   if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
-      $args{chunk_size} = $chunker->size_to_rows(%args);
-      @chunks = $chunker->calculate_chunks(%args, %range_params);
+   if ( !$args{replicate} ) {
+      my %range_params = $chunker->get_range_statistics(%args);
+      if ( !grep { !defined $range_params{$_} } qw(min max rows_in_range) ) {
+         $args{chunk_size} = $chunker->size_to_rows(%args);
+         @chunks = $chunker->calculate_chunks(%args, %range_params);
+      }
+      else {
+         MKDEBUG && _d('No range statistics; using single chunk 1=1');
+         @chunks = '1=1';
+      }
    }
    else {
-      MKDEBUG && _d('No range statistics; using single chunk 1=1');
+      MKDEBUG && _d('Using --replicate boundary instead of chunks');
       @chunks = '1=1';
    }
 
@@ -3503,11 +3509,17 @@ sub prepare_to_sync {
 
    $self->{ChangeHandler}->fetch_back($args{dbh});
 
-   $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
-      %args,
-      index    => $args{chunk_index},  # expects an index arg, not chunk_index
-      asc_only => 1,
-   );
+   if ( !$args{replicate} ) {
+      $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
+         %args,
+         index    => $args{chunk_index}, # expects an index arg, not chunk_index
+         asc_only => 1,
+      );
+   }
+   else {
+      MKDEBUG && _d('Using --replicate boundary instead of nibble boundaries');
+      $self->{sel_stmt} = undef;
+   }
 
    $self->{nibble}            = 0;
    $self->{cached_row}        = undef;
@@ -3558,11 +3570,11 @@ sub get_sql {
       return $self->{TableChunker}->inject_chunks(
          database   => $args{database},
          table      => $args{table},
-         chunks     => [$where],
+         chunks     => [ $where ],
          chunk_num  => 0,
          query      => $self->{nibble_sql},
          index_hint => $self->{index_hint},
-         where      => [$args{where}],
+         where      => [ $args{where} ],
       );
    }
 }
@@ -3571,6 +3583,12 @@ sub __get_boundaries {
    my ( $self, %args ) = @_;
    my $q = $self->{Quoter};
    my $s = $self->{sel_stmt};
+
+   if ( !$s ) {
+      MKDEBUG && _d('No sel_stmt so WHERE clause 1=1 (for --replicate)');
+      return '1=1';
+   }
+
    my $lb;   # Lower boundary part of WHERE
    my $ub;   # Upper boundary part of WHERE
    my $row;  # Next upper boundary row or cached_row
@@ -3971,18 +3989,23 @@ sub sync_table {
    MKDEBUG && _d('CRC column:', $crc_col);
 
    my $index_hint;
-   my $hint = ($vp->version_ge($src->{dbh}, '4.0.9')
-               && $vp->version_ge($dst->{dbh}, '4.0.9') ? 'FORCE' : 'USE')
-            . ' INDEX';
-   if ( $args{chunk_index} ) {
-      MKDEBUG && _d('Using given chunk index for index hint');
-      $index_hint = "$hint (" . $q->quote($args{chunk_index}) . ")";
+   if ( !$args{replicate} ) {
+      my $hint = ($vp->version_ge($src->{dbh}, '4.0.9')
+                  && $vp->version_ge($dst->{dbh}, '4.0.9') ? 'FORCE' : 'USE')
+               . ' INDEX';
+      if ( $args{chunk_index} ) {
+         MKDEBUG && _d('Using given chunk index for index hint');
+         $index_hint = "$hint (" . $q->quote($args{chunk_index}) . ")";
+      }
+      elsif ( $plugin_args{chunk_index} && $args{index_hint} ) {
+         MKDEBUG && _d('Using chunk index chosen by plugin for index hint');
+         $index_hint = "$hint (" . $q->quote($plugin_args{chunk_index}) . ")";
+      }
+      MKDEBUG && _d('Index hint:', $index_hint);
    }
-   elsif ( $plugin_args{chunk_index} && $args{index_hint} ) {
-      MKDEBUG && _d('Using chunk index chosen by plugin for index hint');
-      $index_hint = "$hint (" . $q->quote($plugin_args{chunk_index}) . ")";
+   else {
+      MKDEBUG && _d('No index hint for --replicate');
    }
-   MKDEBUG && _d('Index hint:', $index_hint);
 
    eval {
       $plugin->prepare_to_sync(
