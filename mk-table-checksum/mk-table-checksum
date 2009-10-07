@@ -4704,7 +4704,7 @@ sub check_repl_table {
       if ( $EVAL_ERROR =~ m/' doesn't exist/ ) {
          if ( $o->get('create-replicate-table') ) {
             create_repl_table(%args)
-               or die "--create-replicate-tabled failed to create "
+               or die "--create-replicate-table failed to create "
                   . $replicate_table;
          }
          else {
