@@ -494,6 +494,30 @@ SKIP: {
    $sb->wipe_clean($dbh2);
 };
 
+# ###########################################################################
+# Test the custom plugin gt_n.
+# ###########################################################################
+diag(`/tmp/12345/use < samples/gt_n.sql`);
+my $sql = 'select status, count(*) from gt_n.t1 group by status';
+is_deeply(
+   $dbh->selectall_arrayref($sql),
+   [
+      [qw(bad 6)],
+      [qw(ok 12)],
+   ],
+   'gt_n.t has 12 ok before archive'
+);
+
+diag(`../mk-archiver --where '1=1' --purge --source h=127.1,P=12345,D=gt_n,t=t1,m=gt_n 2>&1`);
+
+is_deeply(
+   $dbh->selectall_arrayref($sql),
+   [
+      [qw(ok 5)],
+   ],
+   'gt_n.t has max 5 ok after archive'
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
