@@ -7,9 +7,7 @@ CREATE TABLE t1 (
    index (status)
 );
 
-CREATE TABLE t2 LIKE t1;
-
--- 12 ok, 6 bad
+-- 12 ok, 7 bad
 INSERT INTO t1 VALUES
    (null, 'ok'),
    (null, 'bad'),
@@ -28,25 +26,5 @@ INSERT INTO t1 VALUES
    (null, 'ok'),
    (null, 'ok'),
    (null, 'ok'),
-   (null, 'ok');
-
--- 4 ok, 14 bad
-INSERT INTO t2 VALUES
-   (null, 'bad'),
-   (null, 'bad'),
    (null, 'ok'),
-   (null, 'bad'),
-   (null, 'ok'),
-   (null, 'bad'),
-   (null, 'bad'),
-   (null, 'ok'),
-   (null, 'ok'),
-   (null, 'bad'),
-   (null, 'bad'),
-   (null, 'bad'),
-   (null, 'bad'),
-   (null, 'bad'),
-   (null, 'bad'),
-   (null, 'bad'),
-   (null, 'bad'),
    (null, 'bad');
