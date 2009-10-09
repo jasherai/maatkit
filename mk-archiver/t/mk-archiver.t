@@ -502,7 +502,7 @@ my $sql = 'select status, count(*) from gt_n.t1 group by status';
 is_deeply(
    $dbh->selectall_arrayref($sql),
    [
-      [qw(bad 6)],
+      [qw(bad 7)],
       [qw(ok 12)],
    ],
    'gt_n.t has 12 ok before archive'
@@ -513,6 +513,7 @@ diag(`../mk-archiver --where '1=1' --purge --source h=127.1,P=12345,D=gt_n,t=t1,
 is_deeply(
    $dbh->selectall_arrayref($sql),
    [
+      [qw(bad 1)],
       [qw(ok 5)],
    ],
    'gt_n.t has max 5 ok after archive'
