@@ -3347,6 +3347,25 @@ sub main {
             if $chunk->{C} == 0;
          $chunk->{time} = time;
 
+         # Lock the table if --lock-tables and this is the first chunk
+         # of the table.  It will be unlocked after the table's last chunk.
+         # Do this here, not in a child, so the lock holds during all
+         # chunks (each child makes a new connection to MySQL so if the
+         # child that does this chunk acquires the lock, it will be lost
+         # when it exits).
+         if ( $chunk->{C} == 0
+              && $o->get('lock-tables')
+              && !$o->get('dry-run') ) {
+            my $db_tbl = $q->quote($chunk->{D}, $chunk->{N});
+            my $sql    = "LOCK TABLES $db_tbl READ";
+            MKDEBUG && _d($sql);
+            eval {
+               $dbh->do($sql);
+            };
+            # Some day we'll skip the table and all its chunk if this fails.
+            warn $EVAL_ERROR if $EVAL_ERROR;
+         }
+
          my $pid = fork();
          die "Can't fork: $OS_ERROR" unless defined $pid;
          if ( $pid ) {              # I'm the parent
@@ -3367,12 +3386,24 @@ sub main {
 
       # Possibly wait for child.
       my $reaped = 0;
-      foreach my $kid ( keys %exited_children ) {
-         my $chunk = $kids{$kid};
+      foreach my $pid ( keys %exited_children ) {
+         my $chunk = $kids{$pid};
+
+         if ( $chunk->{last_chunk_in_tbl}
+              && $o->get('lock-tables')
+              && !$o->get('dry-run') ) {
+            my $db_tbl = $q->quote($chunk->{D}, $chunk->{N});
+            my $sql    = "UNLOCK TABLES";
+            MKDEBUG && _d($sql);
+            eval {
+               $dbh->do($sql);
+            };
+            warn $EVAL_ERROR if $EVAL_ERROR;
+         }
 
          report_stats(
             chunk       => $chunk,
-            kid         => $exited_children{$kid},
+            kid         => $exited_children{$pid},
             stat_totals => \%stat_totals,
             stats_for   => \%stats_for,
             chunk_fmt   => $chunk_fmt,
@@ -3381,15 +3412,15 @@ sub main {
             %common_modules,
          );
 
-         delete $kids{$kid};
-         delete $exited_children{$kid};
+         $done  += $chunk->{Z} || 0;
          $reaped = 1;
-         $done += $chunk->{Z} || 0;
+         delete $kids{$pid};
+         delete $exited_children{$pid};
 
          if ( $o->get('progress') ) {
             my $pct = $done / $bytes;
             my $now = time();
-            my $remaining = ($now - $start) / $pct;
+            my $remaining = ($now - $start) / ($pct || 1);
             info($o, 1, sprintf("done: %s/%s %6.2f%% %s remain (%s)",
                   shorten($done),
                   shorten($bytes),
@@ -3485,12 +3516,13 @@ sub chunk_tables {
          my $chunkno = 0;
          push @chunks, map {
             my $chunk = {
-               D      => $_->{D},     # Database name
-               N      => $_->{N},     # Table name
-               W      => $_->{W},     # WHERE clause
-               E      => $_->{E},     # Storage engine
-               C      => $chunkno++,  # Chunk number
-               L      => $cols,       # SELECT list
+               D      => $_->{D},      # Database name
+               N      => $_->{N},      # Table name
+               W      => $_->{W},      # WHERE clause
+               E      => $_->{E},      # Storage engine
+               C      => $chunkno++,   # Chunk number
+               L      => $cols,        # SELECT list
+               Z      => $tbl->{size},
             };
             $chunk->{first_tbl_in_db} = 1
                if $chunkno == 1 && ($new_db || $tblno == 0);
