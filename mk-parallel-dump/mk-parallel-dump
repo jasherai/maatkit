@@ -2979,7 +2979,8 @@ use List::Util qw(max sum);
 use POSIX;
 use Time::HiRes qw(time);
 use Data::Dumper;
-$Data::Dumper::Indent    = 0;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 Transformers->import( qw(shorten secs_to_time ts) );
@@ -3019,20 +3020,12 @@ sub main {
    $o->set('gzip', 0) if $OSNAME eq 'MSWin32';
 
    if ( !$o->get('help') ) {
-      if ( $o->get('default-set') && !$o->get('sets') ) {
-         $o->save_error("--default-set has no effect without --sets");
-      }
-
       if ( !$o->get('threads') ) {
          $o->save_error("You must specify --threads");
       }
 
       if ( !$o->get('help') && $o->get('lossless-floats') && !$o->get('tab') ) {
          $o->save_error("--losslessfp requires --tab");
-      }
-
-      if ( $o->get('sets') && !$o->get('set-table') ) {
-         $o->save_error("--sets requires --set-table");
       }
 
       if ( $o->get('tab') && @ARGV ) {
@@ -3089,15 +3082,14 @@ sub main {
    # ########################################################################
    # Decide on options to mysqldump.
    # ########################################################################
-   if ( !@ARGV && !$o->get('tab') ) {
+   if ( !$o->get('tab') ) {
       # Choose sensible defaults.  Inspect mysqldump --help to see what
       # options it accepts.  Add --no-data by default, but then remove it
       # for the ordinary mysqldump commands.  This is used to implement
       # --ignore-engines.
       my $help = `mysqldump --help`;
-      if ( $CHILD_ERROR ) {
-         return 1;
-      }
+      return 1 if $CHILD_ERROR;
+
       $help =~ s/\A.*?\n----//s;
       my %is_opt = map { $_ => 1 } $help =~ m/^(\w[a-z_-]+)/gm;
       my %skip   = map { $_ => 1 } qw(lock-all-tables lock-tables triggers);
@@ -3130,22 +3122,14 @@ sub main {
          qw( %D %N ),
       );
       if ( $o->get('chunk-size') ) {
-         push @mysqldump_args_nodata, qw( --where %W );
-      }
-      if ( $o->get('gzip') ) {
-         push @mysqldump_args_nodata,
-            qw( | gzip --force --fast --stdout - > ),
-            filename($o->get('base-dir'), '%S', '%D', '%N.%6C.sql.gz');
+         push @mysqldump_args_nodata, qw(--where %W);
       }
       else {
          push @mysqldump_args_nodata,
             qw(--result-file),
-            filename($o->get('base-dir'), '%S', '%D', '%N.%6C.sql');
+            filename($o->get('base-dir'), '%D', '%N.%6C.sql');
       }
       @mysqldump_args = grep { $_ !~ m/no-data/ } @mysqldump_args_nodata;
-   }
-   else {
-      @mysqldump_args = @ARGV;
    }
    MKDEBUG && _d('Args for mysqldump:', join(', ', @mysqldump_args));
 
@@ -3156,21 +3140,6 @@ sub main {
    my $dbh                  = $dp->get_dbh($dp->get_cxn_params($dsn));
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref() 
-   my $has_triggers         = VersionParser->new()->version_ge($dbh, '5.0.10');
-
-   # This signal handler will do nothing but wake up the sleeping parent process
-   # and record the exit status and time of the child that exited (as a side
-   # effect of not discarding the signal).
-   my %exited_children;
-   $SIG{CHLD} = sub {
-      my $kid;
-      while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
-         MKDEBUG && _d('Process', $kid, 'exited with', $CHILD_ERROR);
-         # Must right-shift to get the actual exit status of the child.
-         $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
-         $exited_children{$kid}->{exit_time}   = time();
-      }
-   };
 
    # ########################################################################
    # Stop the slave if desired.
@@ -3198,62 +3167,24 @@ sub main {
    }
 
    # ########################################################################
-   # Iterate over "sets" of tables.
+   # Make common modules.
    # ########################################################################
    my $q  = new Quoter();
    my $tp = new TableParser();
    my $du = new MySQLDump();
    my $tc = new TableChunker(Quoter => $q, MySQLDump => $du);
    my %common_modules = (
-      o  => $o,
-      dp => $dp,
-      q  => $q,
-      tp => $tp,
-      tc => $tc,
-      du => $du,
+      OptionParser => $o,
+      DSNParser    => $dp,
+      Quoter       => $q,
+      TableParser  => $tp,
+      TableChunker => $tc,
+      MySQLDump    => $du,
    );
 
-   my %tables_in_sets;
-   my %tables_for_set;
-   my %stats_for_set;
-   my %tables_for;
-   my @views;
-   my @sets_to_do = $o->get('sets') ? unique(@{$o->get('sets')}) : ();
-
-   # Fetch backup sets from the database.
-   my $backedup_sth;
-   if ( $o->get('sets') ) {
-      my $since   = $o->get('since');
-      my $set_tbl = $o->get('set-table'); 
-      foreach my $set ( @sets_to_do ) {
-         die "'default' is a reserved set; don't use it\n"
-            if lc $set eq 'default'; 
-         my $sql = "SELECT `db`, `tbl` "
-                 . "FROM $set_tbl "
-                 . "WHERE `setname` = '$set' "
-                 . ($since
-                    ? "AND `ts` <= DATE_SUB(NOW(), INTERVAL $since SECOND) "
-                    : '')
-                 . "ORDER BY `priority`, `db`, `tbl`";
-         MKDEBUG && _d($sql);
-         my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
-         foreach my $row ( @$result ) {
-            MKDEBUG && _d("Set", $set, "contains",
-               $row->{db} , ".", $row->{tbl});
-            $stats_for_set{$set}->{tables}++;
-            $tables_in_sets{$row->{db}}->{$row->{tbl}}++;
-            push @{$tables_for_set{$set}}, [ $row->{db}, $row->{tbl} ];
-         }
-      }
-      if ( $since ) {
-         $backedup_sth = $dbh->prepare(
-            "UPDATE $set_tbl AS `mysql_parallel_dump_writable` "
-           . "SET `ts` = NOW() WHERE `setname` = ? AND `db` = ? AND `tbl` = ?");
-      }
-   }
-
-   my %databases_for;
-
+   # ########################################################################
+   # Find each db.tbl to dump.
+   # ######################################################################## 
    my %findspec = (
       quoter => $q,
       dumper => $du,
@@ -3271,375 +3202,235 @@ sub main {
          views  => 0,
       },
    );
-   if ( $o->get('since') && !$o->get('sets') ) {
-      push @{$findspec{tables}->{status}}, { Update_time => $o->get('since') };
-   }
-   my $f = new MySQLFind(%findspec);
+   my $finder = new MySQLFind(%findspec);
 
-   # Do all databases and tables in a 'default' set, possibly excluding those
-   # that have been included in named sets above.  Or, if --set-per-database is
-   # specified, place each into its own set.
-   if ( !$o->get('sets') || $o->get('default-set') ) {
-      foreach my $database ( $f->find_databases($dbh) ) {
-         my $set = $o->get('set-per-database') ? $database : 'default';
-         push @{$databases_for{$set}}, $database;
-         push @sets_to_do, $set;
-      }
-      @sets_to_do = unique(@sets_to_do);
-   }
+   my @tbls;
+   my $bytes  = 0;  # for progress
+   my $done   = 0;  # for progress
+   my $maxdb  = 0;  # for report
+   my $maxtbl = 0;  # for report
+   foreach my $db ( $finder->find_databases($dbh) ) {
+      foreach my $tbl ( $finder->find_tables($dbh, database => $db) ) {
+         my $tbl_struct = $tp->parse(
+            $du->get_create_table($dbh, $q, $db, $tbl));
 
-   # ########################################################################
-   # Do each backup set.
-   # ########################################################################
-   SET:
-   foreach my $set ( @sets_to_do ) {
-
-      if ( !$o->get('sets') || $o->get('default-set') ) { # Must fetch tables.
-         foreach my $database ( @{$databases_for{$set}} ) {
-            if ( !$tables_for{$database} ) {
-               my @tables = $f->find_tables($dbh, database => $database);
-               foreach my $table ( @tables ) {
-                  push @{$tables_for{$database}}, $table;
-               }
-               push @views,
-                  map { [ $database, $_ ] }
-                     $f->find_views($dbh, database => $database);
-            } 
-            TABLE:
-            foreach my $table ( @{$tables_for{$database}} ) {
-               # Skip if in another set
-               if ( !$tables_in_sets{$database}->{$table} ) {
-                  $stats_for_set{$set}->{tables}++;
-                  $tables_in_sets{$database}->{$table}++;
-                  push @{$tables_for_set{$set}}, [ $database, $table ];
+         # Get table size.
+         my $size = 0;
+         if ( $o->get('biggest-first') || $o->get('progress') ) {
+            foreach my $tbl_stat ( $du->get_table_status($dbh, $q, $db) ) {
+               if ( $tbl_stat->{name} eq $tbl ) {
+                  $size   = $tbl_stat->{data_length};
+                  $bytes += $tbl_stat->{data_length};
                }
             }
          }
-      }
 
-      if ( !$tables_for_set{$set} || !@{$tables_for_set{$set}} ) {
-         info($o, 2, "No tables to do for set $set");
-         next SET;
-      }
-      my $start = time();
-      my $stats = $stats_for_set{$set};
+         push @tbls, {
+            db         => $db,
+            tbl        => $tbl,
+            tbl_struct => $tbl_struct,
+            size       => $size,
+         };
 
-      # #####################################################################
-      # Lock tables if needed.  Cycle until there are none to lock or we get
-      # the lock (some tables could have been dropped between the time we got
-      # the list and now).
-      # #####################################################################
-      if ( $o->get('lock-tables') && !$o->get('dry-run') ) {
-         my @to_lock;
-         my $done;
-         do {
-            @to_lock = unique(
-               map { $q->quote(@$_) . " READ" } @{$tables_for_set{$set}} );
-            if ( $backedup_sth ) {
-               push @to_lock,
-                  $o->get('set-table')
-                  . " AS `mysql_parallel_dump_writable` WRITE";
-            }
-            eval {
-               my $sql = 'LOCK TABLES ' . join(', ', @to_lock);
-               MKDEBUG && _d('At time', time(), $sql);
-               $dbh->do($sql);
-               MKDEBUG && _d('At time', time(), 'lock succeeded');
-               $done = 1;
-            };
-            if ( $EVAL_ERROR ) {
-               MKDEBUG && _d($EVAL_ERROR);
-               my $err = mysql_error_msg($EVAL_ERROR);
-               my ($db, $tbl) = $err =~ m/Table '([^.]+)\.([^.]+)' doesn't exist/;
-               if ( $db && $tbl ) {
-                  MKDEBUG && _d('Removing table', $db, '.', $tbl,
-                     'from set', $set);
-                  # Remove the nonexistent table and try again.
-                  $tables_for_set{$set} = [
-                     grep { $_->[0] ne $db || $_->[1] ne $tbl }
-                     @{$tables_for_set{$set}}
-                  ];
-                  info($o, 0, $err);
-               }
-               else {
-                  die "Cannot lock tables: $err";
-               }
-            }
-         } while ( @to_lock && !$done );
+         $maxdb  = length $db  if length $db  > $maxdb;
+         $maxtbl = length $tbl if length $tbl > $maxtbl;
       }
+   }
 
-      # #####################################################################
-      # Flush logs.
-      # #####################################################################
-      if ( $o->get('flush-log') && !$o->get('dry-run') ) {
-         my $sql = 'FLUSH LOGS';
-         MKDEBUG && _d($sql);
-         $dbh->do($sql);
+   # ########################################################################
+   # Sort the tables biggest-first.
+   # ########################################################################
+   if ( $o->get('biggest-first') ) {
+      @tbls = sort { $b->{size} <=> $a->{size} } @tbls;
+   }
+   MKDEBUG && _d("Found tables\n",
+      join("\n", map { join ' ', @{$_}{qw(db tbl size)} } @tbls));
+
+   # ########################################################################
+   # Chunk each table which by default means just one chunk, 1=1, unless
+   # --chunk-size is specified.  Do this after sorting the tables so chunks
+   # for the biggest tables will be done first.
+   # ########################################################################
+   my %stat_totals;  # for all dbs and tbls
+   my %stats_for;    # for each db and tbl
+   my @chunks = chunk_tables(
+      tbls        => \@tbls,
+      dbh         => $dbh,
+      stat_totals => \%stat_totals,
+      stats_for   => \%stats_for,
+      %common_modules,
+   );
+   # Need this for final results because @chunks gets shifted.
+   my $n_chunks = scalar @chunks;
+
+   # ########################################################################
+   # Flush logs and get binlog pos.
+   # ########################################################################
+   if ( $o->get('flush-log') && !$o->get('dry-run') ) {
+      my $sql = 'FLUSH LOGS';
+      MKDEBUG && _d($sql);
+      $dbh->do($sql);
+   }
+   dump_binlog_pos(
+      dbh    => $dbh,
+      chunks => \@chunks,
+      %common_modules,
+   ) if $o->get('bin-log-position') && !$o->get('dry-run');
+
+   # #####################################################################
+   # Design the format for printing out.
+   # #####################################################################
+   $maxdb = length 'DATABASE' if $maxdb < length 'DATABASE';
+   my $format = "%-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
+   info($o, 2, sprintf($format, qw(DATABASE TABLE CHUNK TIME STATUS THREADS)));
+   my $result_fmt = '%s: %5d tables, %5d chunks, '
+                  . '%5d successes, %2d failures, '
+                  . '%6.2f wall-clock time, %6.2f dump time';
+
+   # #####################################################################
+   # Assign the work to child processes.  Initially just start --threads
+   # number of children.  Each child that exits will trigger a new one to
+   # start after that.  This is really a terrible hack -- I wish Perl had
+   # decent threading support so I could just queue work for a fixed pool
+   # of worker threads!
+   # #####################################################################
+   
+   # This signal handler will do nothing but wake up the sleeping parent process
+   # and record the exit status and time of the child that exited (as a side
+   # effect of not discarding the signal).
+   my %kids;
+   my %exited_children;
+   $SIG{CHLD} = sub {
+      my $kid;
+      while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
+         MKDEBUG && _d('Process', $kid, 'exited with', $CHILD_ERROR);
+         # Must right-shift to get the actual exit status of the child.
+         $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
+         $exited_children{$kid}->{exit_time}   = time();
       }
+   };
 
-      my @work_to_do;
-      foreach my $db_tbl ( @{$tables_for_set{$set}} ) {
-         MKDEBUG && _d('Doing', $db_tbl->[0], $db_tbl->[1]);
-         my $i      = 0;
-         my @chunks;
-         # get_chunks() will die on broken tables.
+   my $start = time();
+   while ( @chunks || %kids ) {
+      # Wait for the MySQL server to become responsive.
+      my $tries = 0;
+      while ( !$dbh->ping && $tries++ < $o->get('wait') ) {
+         sleep(1);
          eval {
-            @chunks = get_chunks(
-               set => $set,
-               db  => $db_tbl->[0],
-               tbl => $db_tbl->[1],
-               dbh => $dbh,
-               %common_modules,
-            );
+            $dbh = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
          };
          if ( $EVAL_ERROR ) {
-            MKDEBUG && _d('Error getting chunks:', $EVAL_ERROR);
-            $stats_for_set{$set}->{failure}++;
+            info($o, 0, 'Waiting: ' . scalar(localtime)
+               . ' ' . mysql_error_msg($EVAL_ERROR));
+         }
+      }
+      if ( $tries >= $o->get('wait') ) {
+         die "Too many retries, exiting.\n";
+      }
+
+      # Start a new child process.
+      while ( @chunks && (keys %kids < $o->get('threads')) ) {
+         my $chunk = shift @chunks;
+
+         if ( $chunk->{first_tbl_in_db} ) {
+            $stats_for{$chunk->{D}}->{time} = time;
+         }
+
+         # See if this chunk has already been done.
+         my $file = filename($o->get('base-dir'),
+            interp($chunk, '%D', '%N.%6C'));
+         if ( -f "$file.sql" ) {
+            info($o, 2, "$file is already done, skipping");
+            $done += $chunk->{Z} || 0;
             next;
          }
 
-         my $cols   = join(', ', get_columns(
-               db  => $db_tbl->[0],
-               tbl => $db_tbl->[1],
-               dbh => $dbh,
-               %common_modules)
-         );
-
-         foreach my $chunk ( @chunks ) {
-            my $todo = {
-               D => $chunk->{D}, # Database name
-               N => $chunk->{N}, # Table name
-               S => $chunk->{S}, # Set name
-               C => $i++,        # Chunk number
-               W => $chunk->{W}, # WHERE clause
-               E => $chunk->{E}, # Storage engine
-               L => $cols,       # SELECT list
-            };
-            MKDEBUG && _d(Dumper($todo));
-            push @work_to_do, $todo;
-            $stats_for_set{$set}->{chunks}++;
+         $chunk->{time} = time;
+         my $pid = fork();
+         die "Can't fork: $OS_ERROR" unless defined $pid;
+         if ( $pid ) {              # I'm the parent
+            $kids{$pid} = $chunk;
+         }
+         else {                     # I'm the child
+            $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
+            MKDEBUG && _d('Start PID', $PID);
+            my $exit_status = dump_chunk(
+               chunk => $chunk,
+               file  => $file,
+               %common_modules,
+            );
+            MKDEBUG && _d('End PID', $PID, 'exit status', $exit_status);
+            exit $exit_status;
          }
       }
 
-      # #####################################################################
-      # Get the master position.
-      # #####################################################################
-      if ( $o->get('bin-log-position') && !$o->get('dry-run') ) {
-         my $filename = filename($o->get('base-dir'),
-            $set, '00_master_data.sql');
-         makedir($filename) unless $o->get('dry-run');
-         MKDEBUG && _d('Writing to', $filename);
-         open my $file, ">", $filename or die $OS_ERROR;
-         my %wanted = map { $_ => 1 }
-            qw(file position master_host master_port master_log_file
-            read_master_log_pos relay_log_file relay_log_pos
-            relay_master_log_file exec_master_log_pos);
+      # Possibly wait for child.
+      my $reaped = 0;
+      foreach my $kid ( keys %exited_children ) {
+         my $chunk       = $kids{$kid};
+         my $exit_status = $exited_children{$kid}->{exit_status};
+         my $dump_time   = $exited_children{$kid}->{exit_time} - $chunk->{time};
 
-         my ( $master_pos, $slave_pos );
-         eval {
-            my $sql = 'SHOW MASTER STATUS';
-            MKDEBUG && _d($sql);
-            $master_pos = $dbh->selectrow_hashref($sql);
-         };
-         eval {
-            my $sql = 'SHOW SLAVE STATUS';
-            MKDEBUG && _d($sql);
-            $slave_pos = $dbh->selectrow_hashref($sql);
-            print {$file} "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
-               . "MASTER_LOG_FILE='$slave_pos->{relay_master_log_file}', "
-               . "MASTER_LOG_POS=$slave_pos->{exec_master_log_pos}\n"
-               or die $OS_ERROR;
-         };
-         my %hash;
-         foreach my $thing ( $master_pos, $slave_pos ) {
-            next unless $thing;
-            foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
-               print $file "-- $key $thing->{$key}\n"
-                  or die $OS_ERROR;
-            }
+            info($o, 2, sprintf($format, @{$chunk}{qw(D N C)},
+               sprintf('%.2f', $dump_time), $exit_status, scalar(keys %kids)));
+         if ( $chunk->{last_tbl_in_db} ) {
+            # Last table in this db.
+            my $db    = $chunk->{D};
+            my $stats = $stats_for{$db}->{tables};
+            my $n_chunks;
+            my $success;
+            my $failure;
+            map {
+                  $n_chunks += $stats->{$_}->{chunks}  || 0;
+                  $success  += $stats->{$_}->{success} || 0;
+                  $failure  += $stats->{$_}->{failure} || 0;
+            } keys %$stats;
+            info($o, 1, sprintf($result_fmt, $db,
+                  scalar keys %$stats,
+                  $n_chunks,
+                  $success,
+                  $failure,
+                  0,
+                  time - $stats_for{$db}->{time},
+               )
+            );
          }
 
-         # Put the details of the chunks into the file.
-         foreach my $chunk ( @work_to_do ) {
-            print $file "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n"
-               or die $OS_ERROR;
-         }
+         $stat_totals{ $exit_status ? 'failure' : 'success' }++;
+         $stat_totals{dump_time} += $dump_time;
+         delete $kids{$kid};
+         delete $exited_children{$kid};
+         $reaped = 1;
+         $done += $chunk->{Z} || 0;
 
-         close $file or die $OS_ERROR;
-      }
-
-      # #####################################################################
-      # Design the format for printing out.
-      # #####################################################################
-      my ( $maxdb, $maxtbl, $maxset );
-      $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
-      $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
-      $maxset = max(3, length($set));
-      my $format = "%-${maxset}s %-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
-      info($o, 2, sprintf($format, qw(SET DATABASE TABLE CHUNK TIME STATUS THREADS)));
-
-      # #####################################################################
-      # If we need the size for any reason, get it now.
-      # #####################################################################
-      my $bytes = 0;  # For progress, use $start variable
-      my $done  = 0;  # Also for progress measurements
-      if ( ($o->get('biggest-first') && !$o->get('set-table'))
-           || $o->get('progress') ) {
-         foreach my $todo ( @work_to_do ) {
-            foreach my $stat ( $du->get_table_status($dbh, $q, $todo->{D}) ) {
-               if ( $stat->{name} eq $todo->{N} ) {
-                  $todo->{Z}  = $stat->{data_length};
-                  $bytes     += $stat->{data_length};
-               }
-            }
+         if ( $o->get('progress') ) {
+            my $pct = $done / $bytes;
+            my $now = time();
+            my $remaining = ($now - $start) / $pct;
+            info($o, 1, sprintf("done: %s/%s %6.2f%% %s remain (%s)",
+                  shorten($done),
+                  shorten($bytes),
+                  $pct * 100,
+                  secs_to_time($remaining),
+                  ts($now + $remaining))
+            );
          }
       }
 
-      # #####################################################################
-      # Sort the tables biggest-first.
-      # #####################################################################
-      if ( $o->get('biggest-first') && !$o->get('set-table') ) {
-         @work_to_do = reverse sort { $a->{Z} <=> $b->{Z} } @work_to_do;
+      if ( !$reaped ) {
+         # Don't busy-wait.  But don't wait forever either, as a child
+         # may exit and signal while we're not sleeping, so if we sleep
+         # forever we may not get the signal.
+         MKDEBUG && _d('No children reaped, sleeping');
+         sleep 1;
       }
+   } # while chunks or kids
 
-      # #####################################################################
-      # Assign the work to child processes.  Initially just start --threads
-      # number of children.  Each child that exits will trigger a new one to
-      # start after that.  This is really a terrible hack -- I wish Perl had
-      # decent threading support so I could just queue work for a fixed pool
-      # of worker threads!
-      # #####################################################################
-      my %kids;
-      while ( @work_to_do || %kids ) {
-
-         # Wait for the MySQL server to become responsive.
-         my $tries = 0;
-         while ( !$dbh->ping && $tries++ < $o->get('wait') ) {
-            sleep(1);
-            eval {
-               $dbh = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
-            };
-            if ( $EVAL_ERROR ) {
-               info($o, 0, 'Waiting: ' . scalar(localtime)
-                  . ' ' . mysql_error_msg($EVAL_ERROR));
-            }
-         }
-         if ( $tries >= $o->get('wait') ) {
-            die "Too many retries, exiting.\n";
-         }
-
-         # Start a new child process.
-         while ( @work_to_do && $o->get('threads') > keys %kids ) {
-            my $todo = shift @work_to_do;
-
-            # See if this $todo has already been done.
-            my $filename  = filename($o->get('base-dir'),
-               interp($todo, '%S', '%D', '%N.%6C'));
-            if ( -f "$filename.sql" || -f "$filename.sql.gz" ) {
-               info($o, 2, "$filename is already done, skipping");
-               $done += $todo->{Z} || 0;
-               next;
-            }
-
-            $todo->{time} = time;
-            my $pid = fork();
-            die "Can't fork: $OS_ERROR" unless defined $pid;
-            if ( $pid ) {              # I'm the parent
-               $kids{$pid} = $todo;
-            }
-            else {                     # I'm the child
-               $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
-               MKDEBUG && _d("PID", $PID, "got", Dumper($todo));
-               my $exit_status = 0;
-               $exit_status = do_table(
-                  $todo,
-                  $filename,
-                  $has_triggers,
-                  %common_modules,
-               ) || $exit_status;
-               exit($exit_status);
-            }
-         }
-
-         # Possibly wait for child.
-         my $reaped = 0;
-         foreach my $kid ( keys %exited_children ) {
-            my $status = $exited_children{$kid};
-            my $todo   = $kids{$kid};
-            my $stat   = $status->{exit_status};
-            if ( !$o->get('dry-run') && !$stat && $backedup_sth ) {
-               $backedup_sth->execute(@{$todo}{qw(S D N)});
-            }
-            my $time = $status->{exit_time} - $todo->{time};
-            info($o, 2, sprintf($format, @{$todo}{qw(S D N C)},
-               sprintf('%.2f', $time), $stat, scalar(keys %kids)));
-            $stats->{ $stat ? 'failure' : 'success' }++;
-            $stats->{time} += $time;
-            delete $kids{$kid};
-            delete $exited_children{$kid};
-            $reaped = 1;
-            $done += $todo->{Z} || 0;
-
-            if ( $o->get('progress') ) {
-               my $pct = $done / $bytes;
-               my $now = time();
-               my $remaining = ($now - $start) / $pct;
-               info($o, 1, sprintf("done: %s/%s %6.2f%% %s remain (%s)",
-                     shorten($done),
-                     shorten($bytes),
-                     $pct * 100,
-                     secs_to_time($remaining),
-                     ts($now + $remaining))
-               );
-            }
-         }
-
-         if ( !$reaped ) {
-            # Don't busy-wait.  But don't wait forever either, as a child
-            # may exit and signal while we're not sleeping, so if we sleep
-            # forever we may not get the signal.
-            MKDEBUG && _d('No children reaped, sleeping');
-            sleep(1);
-         }
-      }
-
-      if ( $o->get('lock-tables') && !$o->get('dry-run') ) {
-         my $sql = 'UNLOCK TABLES';
-         MKDEBUG && _d($sql);
-         $dbh->do($sql);
-         $dbh->commit();
-      }
-
-      $stats->{wallclock} = time() - $start;
-      info($o, 1, sprintf( (@sets_to_do ? '%12s:          ' : '%s:')
-                      . '%5d tables, %5d chunks, %5d successes, %2d failures, '
-                      . '%6.2f wall-clock time, %6.2f dump time',
-                      $set, map { $stats->{$_} || 0 }
-                         qw(tables chunks success failure wallclock time) 
-                      ));
-   }
-
-   # ########################################################################
-   # Dump views now.
-   # ########################################################################
-   if ( @views && !@ARGV && !$o->get('dry-run') ) {
-      my $filename = filename($o->get('base-dir'), 'default', '00_views');
-      my $fspec = $o->get('gzip')
-         ? "| gzip --force --fast > $filename.sql.gz"
-         : "> $filename.sql";
-      makedir($filename) unless $o->get('dry-run');
-      open my $file, $fspec or die $OS_ERROR;
-      print {$file} $MySQLDump::before or die $OS_ERROR;
-      foreach my $view ( @views ) {
-         print {$file} "USE $view->[0];\n",
-            $du->dump($dbh, $q, @$view, 'table') or die $OS_ERROR;
-      }
-      foreach my $view ( @views ) {
-         print {$file} "USE $view->[0];\n",
-            $du->dump($dbh, $q, @$view, 'view') or die $OS_ERROR;
-      }
-      print {$file} $MySQLDump::after or die $OS_ERROR;
-      close $file or die $OS_ERROR;
+   if ( $o->get('lock-tables') && !$o->get('dry-run') ) {
+      my $sql = 'UNLOCK TABLES';
+      MKDEBUG && _d($sql);
+      $dbh->do($sql);
+      $dbh->commit();
    }
 
    if ( !$o->get('dry-run') ) {
@@ -3660,21 +3451,17 @@ sub main {
    $dbh->commit();
    $dbh->disconnect();
 
-   if ( @sets_to_do > 1 ) {
-      info($o, 1, sprintf(
-         'Final result: %2d sets, %5d tables, %5d chunks, '
-         . '%5d successes, %2d failures, '
-         . '%6.2f wall-clock time, %6.2f dump time',
-         scalar(@sets_to_do),
-            map {
-               my $thing = $_;
-               sum(0, map { $_->{$thing} || 0 } values %stats_for_set);
-            } qw(tables chunks success failure wallclock time)
-         ));
-   }
+   $stat_totals{wallclock} = time() - $start;
+   info($o, 1, sprintf($result_fmt, 'Final results',
+         scalar @tbls,
+         $n_chunks,
+         map { $stat_totals{$_} || 0 }
+            qw(success failure wallclock dump_time),
+      )
+   );
 
    # Exit status is 1 if there were any failures.
-   return ( sum(0, map { $_->{failure} || 0 } values %stats_for_set) ? 1 : 0 );
+   return $stat_totals{failure} ? 1 : 0;
 }
 
 # ############################################################################
@@ -3687,128 +3474,187 @@ sub mysql_error_msg {
    return $text;
 }
 
+sub chunk_tables {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh tbls stat_totals stats_for OptionParser
+                          Quoter TableChunker);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $tbls, $stat_totals, $stats_for) = @args{@required_args};
+
+   my %seen_db;
+   my $last_db  = '';
+   my $n_tables = scalar @$tbls - 1;
+   my @chunks;
+   for my $tblno ( 0..$n_tables ) {
+      my $tbl  = $tbls->[$tblno];
+      my $cols = join(', ', get_columns(tbl_struct=>$tbl->{tbl_struct}, %args));
+
+      # @chunks is a continuous list of db.tbl.chunk.  To report per-db
+      # and per-tbl info we need to know the first and last table in each
+      # db and the first and last chunk in each table.
+      my $new_db = $last_db && $tbl->{db} ne $last_db ? 1 : 0;
+      $last_db   = $tbl->{db};
+
+      eval {
+         my $chunkno = 0;
+         push @chunks, map {
+            my $chunk = {
+               D      => $_->{D},     # Database name
+               N      => $_->{N},     # Table name
+               W      => $_->{W},     # WHERE clause
+               E      => $_->{E},     # Storage engine
+               C      => $chunkno++,  # Chunk number
+               L      => $cols,       # SELECT list
+            };
+            $chunk->{first_tbl_in_db} = 1
+               if $chunkno == 1 && ($new_db || $tblno == 0);
+            $chunk;
+         } get_chunks(tbl => $tbl, %args);
+
+         $stats_for->{$tbl->{db}}->{tables}->{$tbl->{tbl}}->{chunks} = $chunkno;
+
+         # The last chunk (-1) is the last one for this table.
+         $chunks[-1]->{last_chunk_in_tbl} = 1;  
+
+         # If this table uses a new db, then previous chunk's table (-2)
+         # was the last table in its db.
+         $chunks[-2]->{last_tbl_in_db} = 1 if $new_db;
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d('Error getting chunks for', $tbl->{db}, '.', $tbl->{tbl},
+            ':', $EVAL_ERROR);
+         $stat_totals->{failure}++;
+         $stats_for->{$tbl->{db}}->{$tbl->{tbl}}->{failure}++;
+         next;
+      }
+   }
+
+   # First chunk is always first table.
+   $chunks[0]->{first_tbl_in_db} = 1;
+
+   # Last chunk is always last table.
+   $chunks[-1]->{last_tbl_in_db} = 1;
+
+   return @chunks;
+}
+
 # Decides on a SELECT list.  For FLOAT and DOUBLE, if lossless floating point
 # dumps are desired, wrap the column with REPLACE(FORMAT(col, 17), ',', '').
 sub get_columns {
    my ( %args ) = @_;
-   foreach my $arg ( qw(db tbl dbh q o tp du) ) {
+   my @required_args = qw(tbl_struct OptionParser Quoter);
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $o  = $args{o};
-   my $q  = $args{q};
-   my $tp = $args{tp};
-   my $du = $args{du};
+   my ($tbl_struct, $o, $q) = @args{@required_args};
 
    return '*' unless $o->get('lossless-floats');
 
-   my $table = $tp->parse(
-      $du->get_create_table($args{dbh}, $q, $args{db}, $args{tbl}));
    my @cols = map {
-      $table->{type_for}->{$_} =~ m/float|double/
+      $tbl_struct->{type_for}->{$_} =~ m/float|double/
          ? sprintf("REPLACE(FORMAT(%s, 17), ',', '')", $q->quote($_))
          : $q->quote($_)
-   } @{$table->{cols}};
+   } @{$tbl_struct->{cols}};
    return @cols;
 }
 
 sub get_chunks {
    my ( %args ) = @_;
-   foreach my $arg ( qw(db tbl set dbh o tp du q tc) ) {
+   my @required_args = qw(tbl dbh OptionParser TableChunker);
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $o   = $args{o};
-   my $q   = $args{q};
-   my $tp  = $args{tp};
-   my $du  = $args{du};
-   my $tc  = $args{tc};
-   my $db  = $args{db};
-   my $tbl = $args{tbl};
-   my $set = $args{set};
-   my $dbh = $args{dbh};
-
-   my $table = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl))
-      or die $EVAL_ERROR;
+   my (undef, $dbh, $o, $tc) = @args{@required_args};
+   my $db         = $args{tbl}->{db};
+   my $tbl        = $args{tbl}->{tbl};
+   my $tbl_struct = $args{tbl}->{tbl_struct};
 
    # Decide where to store the file of chunks, which is important for resuming a
    # dump -- the precalculated chunks must be used, not re-calculated, or
    # resuming might go awry.
-   my $hashref    = { S => $set, D => $db, N => $tbl };
    my $chunkfile = filename($o->get('base-dir'),
-      interp($hashref, '%S', '%D', '%N.chunks'));
+      interp({D => $db, N => $tbl}, '%D', '%N.chunks'));
    makedir($chunkfile) unless $o->get('dry-run');
 
-   if ( !$o->get('dry-run') && -f $chunkfile ) {
+   # Resume dump by reading chunk boundaries from chunk file
+   # if it already exists.
+   if ( $o->get('resume') && -f $chunkfile ) {
       MKDEBUG && _d('Chunk file', $chunkfile, 'exists, using it');
       open my $fh, "<", $chunkfile or die "Can't open $chunkfile: $OS_ERROR";
-      my @todo;
+      my @chunks;
       while ( my $where = <$fh> ) {
          chomp $where;
-         push @todo, {
+         push @chunks, {
             D => $db,
             N => $tbl,
-            S => $set,
             W => $where,
-            E => $table->{engine},
+            E => $tbl_struct->{engine},
          };
       };
       close $fh or die "Can't close $chunkfile: $OS_ERROR";
-      return @todo;
+      return @chunks;
    }
+
+   # By default we can't/don't chunk because --chunk-size has no default
+   # value so each table is one big chunk (1=1).
    my $cant_chunk = {
       D => $db,
       N => $tbl,
-      S => $set,
       W => '1=1',
-      E => $table->{engine},
+      E => $tbl_struct->{engine},
    };
    return $cant_chunk unless $o->get('chunk-size');
 
-   my $rows_per_chunk = $tc->size_to_rows(
-      dbh        => $dbh,
-      db         => $db,
-      tbl        => $tbl,
-      chunk_size => $o->get('chunk-size')
-   );
-
-   # Get the chunk column candidates
-   my ($col, undef)   = $tc->get_first_chunkable_column(tbl_struct=>$table);
+   # Check that this table can be chunked.
+   my ($col, undef)  = $tc->get_first_chunkable_column(tbl_struct=>$tbl_struct);
    return $cant_chunk unless $col;
-   my %params = $tc->get_range_statistics(
+   my %range_stats = $tc->get_range_statistics(
       dbh       => $dbh,
       db        => $db,
       tbl       => $tbl,
       chunk_col => $col
    );
    return $cant_chunk
-      if grep { !defined $params{$_} } qw(min max rows_in_range);
+      if grep { !defined $range_stats{$_} } qw(min max rows_in_range);
 
-   my @chunks = $tc->calculate_chunks(
+   # Get chunk boundaries (WHERE clauses).
+   my $rows_per_chunk = $tc->size_to_rows(
       dbh        => $dbh,
-      tbl_struct => $table,
+      db         => $db,
+      tbl        => $tbl,
+      chunk_size => $o->get('chunk-size'),
+   );
+   my @chunk_boundaries = $tc->calculate_chunks(
+      dbh        => $dbh,
+      tbl_struct => $tbl_struct,
       chunk_col  => $col,
       chunk_size => $rows_per_chunk,
-      %params,
+      %range_stats,
    );
+
+   # Write chunk boundaries to the chunk file.
    my $fh;
    if ( !$o->get('dry-run') ) {
       open $fh, ">", $chunkfile or die "Can't open $chunkfile: $OS_ERROR";
    }
-   my @todo = map {
+   my @chunks = map {
       if ( !$o->get('dry-run') ) {
          print $fh $_, "\n" or die "Can't print to $chunkfile: $OS_ERROR";
       }
       {
          D => $db,
          N => $tbl,
-         S => $set,
          W => $_,
-         E => $table->{engine},
+         E => $tbl_struct->{engine},
       }
-   } @chunks;
+   } @chunk_boundaries;
    if ( !$o->get('dry-run') ) {
       close $fh or die "Can't close $chunkfile: $OS_ERROR";
    }
-   return @todo;
+
+   return @chunks;
 }
 
 # Prints a message.
@@ -3819,135 +3665,92 @@ sub info {
    }
 }
 
-sub unique {
-   my %seen;
-   grep { !$seen{$_}++ } @_;
-}
-
 # Interpolates % directives from a db/tbl hashref.
 sub interp {
-   my ( $todo, @strings ) = @_;
+   my ( $chunk, @strings ) = @_;
    map {
-      $_ =~ s/%(\d+)?([SDNCW])/$1 ? sprintf("%0$1d", $todo->{$2})
-                                  : $todo->{$2}/ge
+      $_ =~ s/%(\d+)?([SDNCW])/$1 ? sprintf("%0$1d", $chunk->{$2})
+                                  : $chunk->{$2}/ge
    } @strings;
    return @strings;
 }
 
-# Actually dumps a table.
-sub do_table {
-   my ( $todo, $filename, $has_triggers, %args ) = @_;
-   foreach my $arg ( qw(o q dp du) ) {
+# Dump a chunk of a table.  By default, each table is a single chunk (1=1).
+sub dump_chunk {
+   my ( %args ) = @_;
+   my @required_args = qw(chunk file DSNParser OptionParser Quoter MySQLDump);
+   foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $o   = $args{o};
-   my $dp  = $args{dp};
-   my $du  = $args{du};
-   my $q   = $args{q};
+   my ($chunk, $file, $dp, $o, $q, $du) = @args{@required_args};
+
+   MKDEBUG && $chunk->{C} == 0 && _d('Dumping', Dumper($chunk));
+
+   # TODO: LOCK TABLES
 
    my $exit_status = 0;
-   my $D         = $q->quote($todo->{D});
-   my $N         = $q->quote($todo->{N});
+   if ( $o->get('tab') ) {  # dump via SELECT INTO OUTFILE
+      my $dbh = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
 
-   MKDEBUG && $todo->{C} == 0 && _d('Dumping', $D, '.', $N);
+      makedir($file) unless $o->get('dry-run');
 
-   # Since we're forked we need to create our own DBH.  Not doing so leads to
-   # re-using the parent's (global) DBH, which leads to really hard-to-find bugs
-   # with forking and zombies.  Bleh.
-   my $localdbh  = undef;
+      my $D = $q->quote($chunk->{D});
+      my $N = $q->quote($chunk->{N});
 
-   if ( $todo->{C} == 0 && $has_triggers && !$o->get('dry-run') ) {
-      makedir($filename) unless $o->get('dry-run');
-      $localdbh ||= $dp->get_dbh( $dp->get_cxn_params($dp->parse_options($o)) );
-      my $trg = $du->dump($localdbh, $q, $todo->{D}, $todo->{N}, 'triggers');
-      if ( $trg ) {
-         MKDEBUG && _d('Table has triggers');
-         my $fspec = $o->get('gzip')
-            ? "| gzip --force --fast > $filename.trg.gz"
-            : "> $filename.trg";
-         open my $file, $fspec or die "Cannot open $fspec: $OS_ERROR";
-         print {$file} $trg    or die "Cannot print to $fspec: $OS_ERROR";
-         close $file           or die "Cannot close $fspec: $OS_ERROR";
-      }
-      else {
-         MKDEBUG && _d('Table does not have triggers');
-      }
-   }
-
-   # Dump via SELECT INTO OUTFILE.
-   if ( $o->get('tab') ) {
-      $localdbh ||= $dp->get_dbh( $dp->get_cxn_params($dp->parse_options($o)) );
-
-      makedir($filename) unless $o->get('dry-run');
-
-      # Dump the schema before the first chunk.
-      if ( !$o->get('dry-run') && $todo->{C} == 0 ) {
-         # Table definition.
-         my $ddl = $du->dump($localdbh, $q, $todo->{D}, $todo->{N}, 'table');
+      # Dump the schema/table def before the first chunk.
+      if ( $chunk->{C} == 0 && !$o->get('dry-run') ) {
+         my $ddl = $du->dump($dbh, $q, $chunk->{D}, $chunk->{N}, 'table');
          if ( $ddl ) {
-            my $fspec = $o->get('gzip')
-               ? "| gzip --force --fast > $filename.sql.gz"
-               : "> $filename.sql";
-            open my $file, $fspec or die "Couldn't open $fspec: $OS_ERROR";
-            print {$file} $ddl    or die "Couldn't print to $fspec: $OS_ERROR";
-            close $file           or die "Couldn't close $fspec: $OS_ERROR";
+            my $fspec = "> $file.sql";
+            open my $fh, $fspec or die "Can't open $file: $OS_ERROR";
+            print $fh $ddl      or die "Can't print to $file: $OS_ERROR";
+            close $fh           or die "Can't close $file: $OS_ERROR";
          }
       }
 
       # Dump the data.
-      if ( !$o->get('ignore-engines')->{$todo->{E}} ) { # Don't dump data for these engines...
+      if ( !$o->get('ignore-engines')->{$chunk->{E}} ) {
          my $sql
            = $o->get('csv')
-           ?    "SELECT $todo->{L} INTO OUTFILE '$filename.txt' "
+           ?    "SELECT $chunk->{L} INTO OUTFILE '$file.txt' "
               . "FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\\"' "
-              . "LINES TERMINATED BY '\\n' FROM $D.$N WHERE $todo->{W}"
-           :    "SELECT $todo->{L} INTO OUTFILE '$filename.txt' "
-              . "FROM $D.$N WHERE $todo->{W}";
+              . "LINES TERMINATED BY '\\n' FROM $D.$N WHERE $chunk->{W}"
+           :    "SELECT $chunk->{L} INTO OUTFILE '$file.txt' "
+              . "FROM $D.$N WHERE $chunk->{W}";
          if ( $o->get('dry-run') ) {
             print $sql, "\n";
          }
          else {
             eval {
-               $localdbh->do($sql);
+               $dbh->do($sql);
             };
             if ( $EVAL_ERROR ) {
                die mysql_error_msg($EVAL_ERROR) . "\n";
             }
          }
-         if ( $o->get('gzip') ) {
-            $exit_status = system_call($o,
-               'gzip', '--force', '--fast', "$filename.txt");
-         }
       }
       else {
          MKDEBUG && _d('Ignoring table because of --ignore-engines');
       }
-   }
-   else {
-      # It's either a custom command, or it's a regular SQL dump and we're going
-      # to dump data.
-
-      # If the user left the options alone, we can predict the filename and
-      # directory naming convention, and ensure the directories exist.
-      # Otherwise the user must ensure the directories exist.
-      if ( !@ARGV ) {
-         makedir(interp($todo, filename($o->get('base-dir'),
-            '%S', '%D', '%N.%6C.sql'))) unless $o->get('dry-run');
-      }
+      
+      $dbh->disconnect();
+   }  # --tab/SELECT INTO OUTFILE
+   else {  # dump via mysqldump
+      makedir(interp($chunk, filename($o->get('base-dir'),
+         '%D', '%N.%6C.sql'))) unless $o->get('dry-run');
 
       my @args
-         = $o->get('ignore-engines')->{$todo->{E}} ? @mysqldump_args_nodata : @mysqldump_args;
+         = $o->get('ignore-engines')->{$chunk->{E}} ? @mysqldump_args_nodata
+                                                    : @mysqldump_args;
       # Do a DROP/CREATE only for the first chunk.
-      if ( !@ARGV && $todo->{C} == 0 ) {
+      if ( $chunk->{C} == 0 ) {
          @args = grep { $_ !~ m/--no-create-info/ } @args;
       }
+      @args = map { interp($chunk, $_) } @args;
 
-      @args = map { interp($todo, $_) } @args;
-
-      $exit_status = system_call( $o, @args ) || $exit_status;
+      $exit_status = system_call($o, @args);
    }
-
-   $localdbh->disconnect() if $localdbh;
+ 
    return $exit_status;
 }
 
@@ -4012,6 +3815,58 @@ sub system_call {
    return $exit_status;
 }
 
+sub dump_binlog_pos {
+   my ( %args ) = @_;
+   my @required_args = qw(dbh chunks OptionParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $chunks, $o) = @args{@required_args};
+
+   my $file = filename($o->get('base-dir'), 'default', '00_master_data.sql');
+   makedir($file) unless $o->get('dry-run');
+   MKDEBUG && _d('Writing to', $file);
+   open my $fh, ">", $file or die $OS_ERROR;
+   my %wanted = map { $_ => 1 }
+      qw(file position master_host master_port master_log_file
+      read_master_log_pos relay_log_file relay_log_pos
+      relay_master_log_file exec_master_log_pos);
+
+   my ( $master_pos, $slave_pos );
+   eval {
+      my $sql = 'SHOW MASTER STATUS';
+      MKDEBUG && _d($sql);
+      $master_pos = $dbh->selectrow_hashref($sql);
+   };
+   eval {
+      my $sql = 'SHOW SLAVE STATUS';
+      MKDEBUG && _d($sql);
+      $slave_pos = $dbh->selectrow_hashref($sql);
+      print $fh "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
+         . "MASTER_LOG_FILE='$slave_pos->{relay_master_log_file}', "
+         . "MASTER_LOG_POS=$slave_pos->{exec_master_log_pos}\n"
+         or die $OS_ERROR;
+   };
+
+   foreach my $thing ( $master_pos, $slave_pos ) {
+      next unless $thing;
+      foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
+         print $fh "-- $key $thing->{$key}\n"
+            or die $OS_ERROR;
+      }
+   }
+
+   # Put the details of the chunks into the file.
+   foreach my $chunk ( @$chunks ) {
+      print $fh "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n"
+         or die $OS_ERROR;
+   }
+
+   close $fh or die $OS_ERROR;
+
+   return;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -4035,13 +3890,12 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-parallel-dump - Dump sets of MySQL tables in parallel.
+mk-parallel-dump - Dump MySQL tables in parallel.
 
 =head1 SYNOPSIS
 
   mk-parallel-dump
   mk-parallel-dump --tab --base-dir /path/to/backups/
-  mk-parallel-dump --sets order,profile,session --set-table meta.backupset
 
 =head1 RISKS
 
@@ -4076,8 +3930,7 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 mk-parallel-dump connects to a MySQL server, finds database and table names,
 and dumps them in parallel for speed.  It can be used in several pre-packaged
 ways, or as a generic wrapper to call some program in parallel, passing it
-parameters for each table.  It supports backup sets and dumping only tables that
-have changed since the last dump.
+parameters for each table.
 
 To dump all tables to gzipped files in the current directory, each database with
 its own directory, with a global read lock, flushing and recording binary log
@@ -4156,43 +4009,6 @@ file has been created, it skips the table or chunk that would have created the
 file.  This makes dumps resumable.  If you don't want this behavior, and instead
 you want a full dump, then move away the old files.
 
-=head1 BACKUP SETS
-
-Backup sets are groups of logically related tables you want to backup together.
-You specify a set by inserting the table names into a table in the MySQL server
-from which you're dumping, and then naming it in the L<"--sets"> option.
-mk-parallel-dump always works a set at a time; if you don't specify a set, it
-auto-discovers tables, filters them with the various command-line options
-(L<"--databases">, etc) and considers them the default set.
-
-The table that stores backup sets should have at least these columns: setname,
-priority, db, tbl.  The following is a suggested table structure:
-
-  CREATE TABLE backupset (
-    setname  CHAR(10)  NOT NULL,
-    priority INT       NOT NULL DEFAULT 0,
-    db       CHAR(64)  NOT NULL,
-    tbl      CHAR(64)  NOT NULL,
-    ts       TIMESTAMP NOT NULL,
-    PRIMARY KEY(setname, db, tbl),
-    KEY(setname, priority, db, tbl)
-  );
-
-Entries are ordered by priority, db, and tbl.  Priority 0 tables are dumped
-first, not last.  If it looks like tables are dumped in the wrong order, it's
-probably because they're being dumped asynchronously.  The output is printed
-when the dump finishes, not when it starts.
-
-If you specify L<"--since">, mk-parallel-dump expects the C<ts> column to
-exist, and will update the column to the current date and time when it
-successfully dumps a table.
-
-Don't use C<default> as a set name.  It is used when you don't specify any
-sets and when you want all tables not explicitly assigned to a set to be
-dumped (see L<"--[no]default-set">).
-
-Set names may contain only lowercase letters, numbers, and underscores.
-
 =head1 CHUNKS
 
 mk-parallel-dump can break your tables into chunks when dumping, and put
@@ -4232,7 +4048,6 @@ are as follows:
 
   MACRO  MEANING
   =====  =================
-  %S     The backup set
   %D     The database name
   %N     The table name
   %C     The chunk number
@@ -4314,8 +4129,6 @@ dumping and restoring.
 
 L<"--lock-tables"> and L<"--[no]flush-lock"> are mutually exclusive.
 
-L<"--sets"> and L<"--set-per-database"> are mutually exclusive.
-
 =over
 
 =item --ask-pass
@@ -4361,7 +4174,7 @@ Dump the master/slave position.
 
 Dump binary log positions from both C<SHOW MASTER STATUS> and C<SHOW SLAVE
 STATUS>, whichever can be retrieved from the server.  The data is dumped to a
-file named F<00_master_data.sql>.  This is done for each backup set.
+file named F<00_master_data.sql>.
 
 The file also contains details of each table dumped, including the WHERE clauses
 used to dump it in chunks.
@@ -4419,14 +4232,6 @@ type: string
 
 Dump only databases whose names match this Perl regex.
 
-=item --[no]default-set
-
-When L<"--sets"> given, dump tables not in any set.
-
-The result will be a C<default> set consisting of tables not explicitly
-included
-in any set.
-
 =item --defaults-file
 
 short form: -F; type: string
@@ -4442,32 +4247,16 @@ Print commands instead of executing them.
 
 Use C<FLUSH TABLES WITH READ LOCK>.
 
-This is enabled by default unless you're dumping sets (see L<"--sets">).  This
-lock is taken once, at the beginning of the whole process, and is never
-released.  If you want to lock only the tables you're dumping, use
-L<"--lock-tables">.  
+This is enabled by default.  The lock is taken once, at the beginning of the
+whole process and is released after all tables have been dumped.  If you want
+to lock only the tables you're dumping, use L<"--lock-tables">.  
 
 =item --flush-log
 
 Execute C<FLUSH LOGS> when getting binlog positions.
 
-This is done for each backup set.  This option is NOT enabled by default because
-it causes the MySQL server to rotate its error log, potentially overwriting
-error messages.
-
-=item --[no]gzip
-
-default: yes
-
-Compress files with gzip.
-
-This is enabled by default unless your platform is Win32.  By default, this
-causes the standard SQL dumps to be piped to gzip's C<STDIN> and the result is
-redirected to the destination file.  If this option isn't enabled, by default
-C<mysqldump>'s C<--result-file> parameter is used to direct the dump to the
-destination file.  When using L<"--tab">, this option causes gzip to be called
-separately on each resulting file after it is dumped (because C<SELECT INTO
-OUTFILE> cannot be directed to a pipe).
+This option is NOT enabled by default because it causes the MySQL server to
+rotate its error log, potentially overwriting error messages.
 
 =item --help
 
@@ -4507,8 +4296,8 @@ Table names may be qualified with the database name.
 Use C<LOCK TABLES> (disables L<"--[no]flush-lock">).
 
 Disables L<"--[no]flush-lock"> (unless it was explicitly set) and locks tables
-with C<LOCK TABLES READ>.  Enabled by default when L<"--sets"> is specified.
-The lock is taken and released with every set of tables dumped.
+with C<LOCK TABLES READ>.  The lock is taken and released for every table as
+it is dumped.
 
 =item --lossless-floats
 
@@ -4561,21 +4350,11 @@ short form: -q
 
 Quiet output; disables L<"--verbose">.
 
-=item --set-per-database
+=item --[no]resume
 
-Dump each database as a separate set.
+default: yes
 
-Each set is named the same as the database.  Implies L<"--lock-tables">.
-
-=item --set-table
-
-type: string
-
-The database.table in which backup sets are kept.
-
-As mentioned earlier, you can manually specify the ordering of tables in a
-backup set.  Therefore L<"--[no]biggest-first"> has no effect when this option
-is given.
+Resume dumps.
 
 =item --set-vars
 
@@ -4583,37 +4362,6 @@ type: string; default: wait_timeout=10000
 
 Set these MySQL variables.  Immediately after connecting to MySQL, this string
 will be appended to SET and executed.
-
-=item --sets
-
-type: array
-
-Dump this comma-separated list of backup sets.
-
-Requires L<"--set-table">.  See L<"BACKUP SETS">.  The special C<default> set
-is reserved; don't use it as a set name.
-
-=item --since
-
-type: time
-
-Dump only tables modified since this long ago, or not dumped since this long
-ago.
-
-Specifies how 'old' a table must be before mk-parallel-dump will consider it.
-
-When L<"--sets"> is not specified, mk-parallel-dump uses C<SHOW TABLE STATUS>
-instead of C<SHOW TABLES> to get a list of tables in each database, and compares
-the time to the C<Update_time> column in the output.  If the C<Update_time>
-column is not C<NULL> and is older than the specified interval ago, it will not
-be dumped.  Thus, it means "dump tables that have changed since X amount of
-time" (presumably the last regular backup).  This means the table will always be
-dumped if it uses InnoDB or another storage engine that doesn't report the
-C<Update_time>.
-
-When L<"--sets"> is specified, the L<"--set-table"> table determines when a
-table was last dumped, and the meaning of L<"--since"> reverses; it becomes
-"dump tables not dumped in X amount of time."
 
 =item --socket
 
