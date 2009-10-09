@@ -3124,11 +3124,11 @@ sub main {
       if ( $o->get('chunk-size') ) {
          push @mysqldump_args_nodata, qw(--where %W);
       }
-      else {
+
          push @mysqldump_args_nodata,
             qw(--result-file),
             filename($o->get('base-dir'), '%D', '%N.%6C.sql');
-      }
+
       @mysqldump_args = grep { $_ !~ m/no-data/ } @mysqldump_args_nodata;
    }
    MKDEBUG && _d('Args for mysqldump:', join(', ', @mysqldump_args));
@@ -3281,11 +3281,10 @@ sub main {
    # Design the format for printing out.
    # #####################################################################
    $maxdb = length 'DATABASE' if $maxdb < length 'DATABASE';
-   my $format = "%-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
-   info($o, 2, sprintf($format, qw(DATABASE TABLE CHUNK TIME STATUS THREADS)));
-   my $result_fmt = '%s: %5d tables, %5d chunks, '
-                  . '%5d successes, %2d failures, '
-                  . '%6.2f wall-clock time, %6.2f dump time';
+   my $chunk_fmt = "%-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
+   info($o, 3, sprintf($chunk_fmt, qw(DATABASE TABLE CHUNK TIME STATUS THREADS)));
+   my $summary_fmt = '%s: %5d tables, %5d chunks, %2d failures, '
+                   . '%6.2f wall-clock time, %6.2f dump time';
 
    # #####################################################################
    # Assign the work to child processes.  Initially just start --threads
@@ -3332,10 +3331,6 @@ sub main {
       while ( @chunks && (keys %kids < $o->get('threads')) ) {
          my $chunk = shift @chunks;
 
-         if ( $chunk->{first_tbl_in_db} ) {
-            $stats_for{$chunk->{D}}->{time} = time;
-         }
-
          # See if this chunk has already been done.
          my $file = filename($o->get('base-dir'),
             interp($chunk, '%D', '%N.%6C'));
@@ -3345,7 +3340,13 @@ sub main {
             next;
          }
 
+         # Set start time for database, table and chunk.
+         $stats_for{$chunk->{D}}->{time} = time
+            if $chunk->{first_tbl_in_db};
+         $stats_for{$chunk->{D}}->{tables}->{$chunk->{N}}->{time} = time
+            if $chunk->{C} == 0;
          $chunk->{time} = time;
+
          my $pid = fork();
          die "Can't fork: $OS_ERROR" unless defined $pid;
          if ( $pid ) {              # I'm the parent
@@ -3367,37 +3368,19 @@ sub main {
       # Possibly wait for child.
       my $reaped = 0;
       foreach my $kid ( keys %exited_children ) {
-         my $chunk       = $kids{$kid};
-         my $exit_status = $exited_children{$kid}->{exit_status};
-         my $dump_time   = $exited_children{$kid}->{exit_time} - $chunk->{time};
+         my $chunk = $kids{$kid};
 
-            info($o, 2, sprintf($format, @{$chunk}{qw(D N C)},
-               sprintf('%.2f', $dump_time), $exit_status, scalar(keys %kids)));
-         if ( $chunk->{last_tbl_in_db} ) {
-            # Last table in this db.
-            my $db    = $chunk->{D};
-            my $stats = $stats_for{$db}->{tables};
-            my $n_chunks;
-            my $success;
-            my $failure;
-            map {
-                  $n_chunks += $stats->{$_}->{chunks}  || 0;
-                  $success  += $stats->{$_}->{success} || 0;
-                  $failure  += $stats->{$_}->{failure} || 0;
-            } keys %$stats;
-            info($o, 1, sprintf($result_fmt, $db,
-                  scalar keys %$stats,
-                  $n_chunks,
-                  $success,
-                  $failure,
-                  0,
-                  time - $stats_for{$db}->{time},
-               )
-            );
-         }
+         report_stats(
+            chunk       => $chunk,
+            kid         => $exited_children{$kid},
+            stat_totals => \%stat_totals,
+            stats_for   => \%stats_for,
+            chunk_fmt   => $chunk_fmt,
+            summary_fmt => $summary_fmt,
+            threads     => scalar keys %kids,
+            %common_modules,
+         );
 
-         $stat_totals{ $exit_status ? 'failure' : 'success' }++;
-         $stat_totals{dump_time} += $dump_time;
          delete $kids{$kid};
          delete $exited_children{$kid};
          $reaped = 1;
@@ -3452,16 +3435,17 @@ sub main {
    $dbh->disconnect();
 
    $stat_totals{wallclock} = time() - $start;
-   info($o, 1, sprintf($result_fmt, 'Final results',
+   info($o, 1, sprintf($summary_fmt,
+         'Final results',
          scalar @tbls,
          $n_chunks,
          map { $stat_totals{$_} || 0 }
-            qw(success failure wallclock dump_time),
+            qw(failure wallclock dump_time),
       )
    );
 
    # Exit status is 1 if there were any failures.
-   return $stat_totals{failure} ? 1 : 0;
+   return $stat_totals{failures} ? 1 : 0;
 }
 
 # ############################################################################
@@ -3514,6 +3498,7 @@ sub chunk_tables {
          } get_chunks(tbl => $tbl, %args);
 
          $stats_for->{$tbl->{db}}->{tables}->{$tbl->{tbl}}->{chunks} = $chunkno;
+         $stats_for->{$tbl->{db}}->{chunks} += $chunkno;
 
          # The last chunk (-1) is the last one for this table.
          $chunks[-1]->{last_chunk_in_tbl} = 1;  
@@ -3530,9 +3515,6 @@ sub chunk_tables {
          next;
       }
    }
-
-   # First chunk is always first table.
-   $chunks[0]->{first_tbl_in_db} = 1;
 
    # Last chunk is always last table.
    $chunks[-1]->{last_tbl_in_db} = 1;
@@ -3863,6 +3845,73 @@ sub dump_binlog_pos {
    }
 
    close $fh or die $OS_ERROR;
+
+   return;
+}
+
+sub report_stats {
+   my ( %args ) = @_;
+   my @required_args = qw(chunk kid threads stat_totals stats_for
+                          chunk_fmt summary_fmt OptionParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($chunk, $kid, $threads, $stat_totals, $stats_for, $chunk_fmt,
+       $summary_fmt, $o)
+      = @args{@required_args};
+
+   # Exit status and dump time for this chunk.
+   my $exit_status = $kid->{exit_status};
+   my $dump_time   = $kid->{exit_time} - $chunk->{time};
+
+   # Update stat totals (global stats).
+   $stat_totals->{failure}++ if $exit_status;
+   $stat_totals->{dump_time} += $dump_time;
+
+   # Update database and table stats.
+   my $db        = $chunk->{D};
+   my $tbl       = $chunk->{N};
+   my $db_stats  = $stats_for->{$db};
+   my $tbl_stats = $stats_for->{$db}->{tables}->{$tbl};
+   foreach my $stats ( $db_stats, $tbl_stats ) {
+      $stats->{failures}++ if $exit_status;
+      $stats->{dump_time} += $dump_time;
+   }
+
+   # Report completed chunk.
+   info($o, 3, sprintf(
+      $chunk_fmt,
+      @{$chunk}{qw(D N C)},
+      sprintf('%.2f', $dump_time),
+      $exit_status,
+      $threads)
+   );
+
+   # Report completed table.
+   if ( $chunk->{last_chunk_in_tbl} ) {
+      info($o, 2, sprintf($summary_fmt,
+            "Table $tbl",
+            1,
+            $tbl_stats->{chunks},
+            $tbl_stats->{failures} || 0,
+            time - $tbl_stats->{time},
+            $tbl_stats->{dump_time},
+         )
+      );
+   }
+
+   # Report completed database.
+   if ( $chunk->{last_tbl_in_db} ) {
+      info($o, 1, sprintf($summary_fmt,
+            "Database $db",
+            scalar keys %{$db_stats->{tables}},
+            $db_stats->{chunks},
+            $db_stats->{failures} || 0,
+            time - $db_stats->{time},
+            $db_stats->{dump_time},
+         )
+      );
+   }
 
    return;
 }
