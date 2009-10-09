@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 114;
+use Test::More tests => 116;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
