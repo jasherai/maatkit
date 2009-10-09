@@ -3205,19 +3205,41 @@ sub main {
    my $finder = new MySQLFind(%findspec);
 
    my @tbls;
+   my %stat_totals;  # for all dbs and tbls
+   my %stats_for;    # for each db and tbl
    my $bytes  = 0;  # for progress
    my $done   = 0;  # for progress
    my $maxdb  = 0;  # for report
    my $maxtbl = 0;  # for report
    foreach my $db ( $finder->find_databases($dbh) ) {
+      TABLE:
       foreach my $tbl ( $finder->find_tables($dbh, database => $db) ) {
-         my $tbl_struct = $tp->parse(
-            $du->get_create_table($dbh, $q, $db, $tbl));
+         my $tbl_struct;
+         eval {
+            $tbl_struct = $tp->parse(
+               $du->get_create_table($dbh, $q, $db, $tbl));
+         };
+         if ( !$tbl_struct ) {
+            MKDEBUG && _d('Error getting table def');
+            $stats_for{$db}->{failures}++;
+            $stat_totals{failures}++;
+            next TABLE;
+         }
 
          # Get table size.
          my $size = 0;
          if ( $o->get('biggest-first') || $o->get('progress') ) {
-            foreach my $tbl_stat ( $du->get_table_status($dbh, $q, $db) ) {
+            my @tbl_stats;
+            eval {
+               @tbl_stats = $du->get_table_status($dbh, $q, $db);
+            };
+            if ( $EVAL_ERROR ) {
+               MKDEBUG && _d('Error getting table status', $EVAL_ERROR);
+               $stats_for{$db}->{failures}++;
+               $stat_totals{failures}++;
+               next TABLE;
+            }
+            foreach my $tbl_stat ( @tbl_stats ) {
                if ( $tbl_stat->{name} eq $tbl ) {
                   $size   = $tbl_stat->{data_length};
                   $bytes += $tbl_stat->{data_length};
@@ -3251,8 +3273,6 @@ sub main {
    # --chunk-size is specified.  Do this after sorting the tables so chunks
    # for the biggest tables will be done first.
    # ########################################################################
-   my %stat_totals;  # for all dbs and tbls
-   my %stats_for;    # for each db and tbl
    my @chunks = chunk_tables(
       tbls        => \@tbls,
       dbh         => $dbh,
@@ -3471,7 +3491,7 @@ sub main {
          scalar @tbls,
          $n_chunks,
          map { $stat_totals{$_} || 0 }
-            qw(failure wallclock dump_time),
+            qw(failures wallclock dump_time),
       )
    );
 
@@ -3497,6 +3517,11 @@ sub chunk_tables {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($dbh, $tbls, $stat_totals, $stats_for) = @args{@required_args};
+
+   if ( scalar @$tbls == 0 ) {
+      MKDEBUG && _d('No tables to chunk');
+      return ();
+   }
 
    my %seen_db;
    my $last_db  = '';
