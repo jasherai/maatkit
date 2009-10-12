@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 34;
+use Test::More tests => 36;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -103,7 +103,29 @@ SKIP: {
    $output = `MKDEBUG=1 $cmd --base-dir $basedir -d sakila 2>&1 | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$4}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
    unlike($output, qr/disorder/, 'Tables dumped biggest-first by default');   
    diag(`rm -rf $basedir`);
-}
+
+   # #########################################################################
+   # Issue 495: mk-parallel-dump: permit to disable resuming behavior
+   # #########################################################################
+   diag(`$cmd --base-dir $basedir -d sakila -t film,actor > /dev/null`);
+   $output = `$cmd --base-dir $basedir -d sakila -t film,actor --no-resume -v 2>&1`;
+   like(
+      $output,
+      qr/0 skipped,/,
+      '--no-resume (no chunks)'
+   );
+
+   diag(`rm -rf $basedir`);
+   diag(`$cmd --base-dir $basedir -d sakila -t film,actor --chunk-size 100 > /dev/null`);
+   $output = `$cmd --base-dir $basedir -d sakila -t film,actor --no-resume -v --chunk-size 100 2>&1`;
+   like(
+      $output,
+      qr/0 skipped,/,
+      '--no-resume (with chunks)'
+   );
+};
+
+diag(`rm -rf $basedir`);
 
 # #############################################################################
 # Issue 223: mk-parallel-dump includes trig definitions into each chunk file

@@ -3303,7 +3303,7 @@ sub main {
    $maxdb = length 'DATABASE' if $maxdb < length 'DATABASE';
    my $chunk_fmt = "%-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
    info($o, 3, sprintf($chunk_fmt, qw(DATABASE TABLE CHUNK TIME STATUS THREADS)));
-   my $summary_fmt = '%s: %5d tables, %5d chunks, %2d failures, '
+   my $summary_fmt = '%s: %5d tables, %5d chunks, %2d failures, %5d skipped,'
                    . '%6.2f wall-clock time, %6.2f dump time';
 
    # #####################################################################
@@ -3350,22 +3350,28 @@ sub main {
       # Start a new child process.
       while ( @chunks && (keys %kids < $o->get('threads')) ) {
          my $chunk = shift @chunks;
-
-         # See if this chunk has already been done.
-         my $file = filename($o->get('base-dir'),
+         my $file  = filename($o->get('base-dir'),
             interp($chunk, '%D', '%N.%6C'));
-         if ( -f "$file.sql" ) {
-            info($o, 2, "$file is already done, skipping");
-            $done += $chunk->{Z} || 0;
-            next;
-         }
 
-         # Set start time for database, table and chunk.
+         # Set start time for database, table and chunk.  Do this before
+         # possibly skipping the chunk so report_stats() doesn't die due
+         # to a db or tbl not having a time value.
          $stats_for{$chunk->{D}}->{time} = time
             if $chunk->{first_tbl_in_db};
          $stats_for{$chunk->{D}}->{tables}->{$chunk->{N}}->{time} = time
             if $chunk->{C} == 0;
          $chunk->{time} = time;
+
+         # See if this chunk has already been done.
+         if ( $o->get('resume') && -f "$file.sql" ) {
+            info($o, 2, "$file is already done, skipping");
+            $done += $chunk->{Z} || 0;
+            $stat_totals{skipped}++;
+            $stats_for{$chunk->{D}}->{skipped}++;
+            $stats_for{$chunk->{D}}->{tables}->{$chunk->{N}}->{skipped}++;
+            $chunk->{skipped}++;
+            next;
+         }
 
          # Lock the table if --lock-tables and this is the first chunk
          # of the table.  It will be unlocked after the table's last chunk.
@@ -3491,7 +3497,7 @@ sub main {
          scalar @tbls,
          $n_chunks,
          map { $stat_totals{$_} || 0 }
-            qw(failures wallclock dump_time),
+            qw(failures skipped wallclock dump_time),
       )
    );
 
@@ -3951,6 +3957,7 @@ sub report_stats {
             1,
             $tbl_stats->{chunks},
             $tbl_stats->{failures} || 0,
+            $tbl_stats->{skipped}  || 0,
             time - $tbl_stats->{time},
             $tbl_stats->{dump_time},
          )
@@ -3964,6 +3971,7 @@ sub report_stats {
             scalar keys %{$db_stats->{tables}},
             $db_stats->{chunks},
             $db_stats->{failures} || 0,
+            $db_stats->{skipped}  || 0,
             time - $db_stats->{time},
             $db_stats->{dump_time},
          )
