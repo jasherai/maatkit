@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 38;
+use Test::More tests => 34;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -139,25 +139,27 @@ ok(
 # #############################################################################
 
 # This test relies on issue_223.sql loaded above which creates test.t1.
-
-# There should be 56 rows total, so --chunk-size 28 should make 2 chunks.
-# And since the range of vals is 1..999, those chunks will be
-# < 500 and >= 500. Furthermore, the top 2 vals are 100 and 999,
+# There are 55 rows and we add 1 more (999) for 56 total.  So --chunk-size 28
+# should make 2 chunks.  And since the range of vals is 1..999, those chunks
+# will be < 500 and >= 500.  Furthermore, the top 2 vals are 100 and 999,
 # so the 2nd chunk should contain only 999.
-diag(`rm -rf /tmp/default/`);
+diag(`rm -rf /tmp/test`);
+$dbh->do('insert into test.t1 values (999)');
 diag(`$cmd --base-dir /tmp/ --csv --chunk-size 28 -d test -t t1 > /dev/null`);
 
 $output = `wc -l /tmp/test/t1.000000.txt`;
-like($output, qr/55/, 'First chunk of csv dump (issue 275)');
+like($output, qr/^55/, 'First chunk of csv dump (issue 275)');
 
-$output = `wc -l /tmp/test/t1.000001.txt`;
+$output = `cat /tmp/test/t1.000001.txt`;
 is($output, "999\n", 'Second chunk of csv dump (issue 275)');
 
+$output = `cat /tmp/test/t1.chunks`;
+is($output, "`a` < 500\n`a` >= 500\n", 'Chunks of csv dump (issue 275)');
 
 # #############################################################################
 # Issue 170: mk-parallel-dump dies when table-status Data_length is NULL
 # #############################################################################
-diag(`rm -rf /tmp/default/`);
+diag(`rm -rf /tmp/test/`);
 diag(`cp samples/broken_tbl.frm /tmp/12345/data/test/broken_tbl.frm`);
 $output = `$cmd --base-dir /tmp/ -d test 2>&1`;
 like(
