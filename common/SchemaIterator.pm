@@ -54,9 +54,56 @@ sub new {
 #   --ignore-databases  List of databases to ignore
 #   --ignore-tables     List of tables to ignore
 #   --ignore-engines    List of engines to ignore 
+# The filter returns true if the schema object is allowed.
 sub make_filter {
    my ( $self, $o ) = @_;
-   return;
+   my @lines = (
+      'sub {',
+      '   my ( $dbh, $db, $tbl ) = @_;',
+      '   my $engine = "";',
+   );
+
+   # If filtering by engines, the filter sub will need to SHOW TABLE STATUS
+   # to get the table's engine if a table was given.
+   if ( $o->get('engines') || $o->get('ignore-engines') ) {
+   }
+
+   my %var_for = (
+      databases          => '$db',
+      'ignore-databases' => '$db',
+      tables             => '$tbl',
+      'ignore-tables'    => '$tbl',
+      engines            => '$engine',
+      'ignore-engines'   => '$engine',
+   );
+   # qw() the filter objs manually instead of doing keys %filter_objs so
+   # that they're checked in this order which will make the filter more
+   # efficient (i.e. don't check the engine for a bunch of tables if the
+   # database is rejected).
+   foreach my $obj (
+      qw(databases ignore-databases tables ignore-tables engines ignore-engines)
+   ) {
+      next unless $o->has($obj);
+      if ( my $objs = $o->get($obj) ) {
+         next unless scalar keys %$objs;
+         MKDEBUG && _d('Making', $obj, 'filter');
+         my $cond = $obj =~ m/^ignore/ ? 'if' : 'unless';
+         push @lines,
+            "return 0 $cond $var_for{$obj} && (",
+               join(' || ', map { "$var_for{$obj} eq '$_'" } keys %$objs),
+            ');',
+      }
+   }
+
+   push @lines, 'return 1; }';
+
+   # Make the subroutine.
+   my $code = join("\n", @lines);
+   MKDEBUG && _d('filter sub:', @lines);
+   my $filter_sub= eval $code
+      or die "Error compiling subroutine code:\n$code\n$EVAL_ERROR";
+
+   return $filter_sub;
 }
 
 # Required args:
@@ -65,14 +112,14 @@ sub make_filter {
 # Can die: no
 # set_filter() sets the filter sub that get_db_itr() and get_tbl_itr()
 # use to filter the schema objects they find.  If no filter sub is set
-# then every possible schema object is returned by the iterators.
+# then every possible schema object is returned by the iterators.  The
+# filter should return true if the schema object is allowed.
 sub set_filter {
    my ( $self, $filter_sub ) = @_;
    $self->{filter} = $filter_sub;
    MKDEBUG && _d('Set filter sub');
    return;
 }
-
 
 # Required args:
 #   * dbh  dbh: an active dbh
@@ -82,7 +129,25 @@ sub set_filter {
 # according to any set filters, when called successively.
 sub get_db_itr {
    my ( $self, $dbh ) = @_;
-   return;
+   my $filter = $self->{filter};
+   my @dbs;
+   eval {
+      my $sql = 'SHOW DATABASES';
+      MKDEBUG && _d($sql);
+      @dbs = map {
+         $_->[0]
+      }
+      grep {
+         my $ok = $filter ? $filter->($dbh, $_->[0], undef) : 1;
+         $ok;
+      }
+      @{ $dbh->selectall_arrayref($sql) };
+      MKDEBUG && _d('Found', scalar @dbs, 'databases');
+   };
+   MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+   return sub {
+      return shift @dbs;
+   };
 }
 
 # Required args:
@@ -94,7 +159,30 @@ sub get_db_itr {
 # in the given db, according to any set filters, when called successively.
 sub get_tbl_itr {
    my ( $self, $dbh, $db ) = @_;
-   return;
+   my $filter = $self->{filter};
+   my @tbls;
+   if ( $db ) {
+      eval {
+         my $sql = 'SHOW TABLES FROM ' . $self->{Quoter}->quote($db);
+         MKDEBUG && _d($sql);
+         @tbls = map {
+            $_->[0]
+         }
+         grep {
+            my $ok = $filter ? $filter->($dbh, $db, $_->[0]) : 1;
+            $ok;
+         }
+         @{ $dbh->selectall_arrayref($sql) };
+         MKDEBUG && _d('Found', scalar @tbls, 'tables in', $db);
+      };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+   }
+   else {
+      MKDEBUG && _d('No db given so no tables');
+   }
+   return sub {
+      return shift @tbls;
+   };
 }
 
 sub _d {
