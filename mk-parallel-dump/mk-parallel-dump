@@ -3000,7 +3000,7 @@ sub main {
    my $dp = new DSNParser();
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION]... [-- [EXTERNAL_OPTION]...]',
+      prompt      => '[OPTION]...',
       description => q{dumps sets of MySQL tables simultaneously via }
                    . q{mysqldump or SELECT INTO OUTFILE.},
    );
@@ -3017,19 +3017,13 @@ sub main {
    # ########################################################################
    $o->set('base-dir', File::Spec->rel2abs($o->get('base-dir')));
 
-   $o->set('gzip', 0) if $OSNAME eq 'MSWin32';
-
    if ( !$o->get('help') ) {
       if ( !$o->get('threads') ) {
          $o->save_error("You must specify --threads");
       }
 
       if ( !$o->get('help') && $o->get('lossless-floats') && !$o->get('tab') ) {
-         $o->save_error("--losslessfp requires --tab");
-      }
-
-      if ( $o->get('tab') && @ARGV ) {
-         $o->save_error("Unused arguments: @ARGV");
+         $o->save_error("--lossless-floats requires --tab");
       }
    }
 
@@ -3188,6 +3182,7 @@ sub main {
    my %findspec = (
       quoter => $q,
       dumper => $du,
+      parser => $tp,
       databases => {
          permit => $o->get('databases'),
          reject => $o->get('ignore-databases'),
@@ -3199,6 +3194,8 @@ sub main {
          regexp => $o->get('tables-regex'),
       },
       engines => {
+         permit => $o->get('engines'),
+         reject => $o->get('ignore-engines'),
          views  => 0,
       },
    );
@@ -3243,6 +3240,7 @@ sub main {
                if ( $tbl_stat->{name} eq $tbl ) {
                   $size   = $tbl_stat->{data_length};
                   $bytes += $tbl_stat->{data_length};
+                  last;
                }
             }
          }
@@ -3265,6 +3263,7 @@ sub main {
    if ( $o->get('biggest-first') ) {
       @tbls = sort { $b->{size} <=> $a->{size} } @tbls;
    }
+   # Exclude tbl_struct from this debug else the output may be enormous.
    MKDEBUG && _d("Found tables\n",
       join("\n", map { join ' ', @{$_}{qw(db tbl size)} } @tbls));
 
@@ -3466,18 +3465,15 @@ sub main {
       }
    } # while chunks or kids
 
-   if ( $o->get('lock-tables') && !$o->get('dry-run') ) {
-      my $sql = 'UNLOCK TABLES';
-      MKDEBUG && _d($sql);
-      $dbh->do($sql);
-      $dbh->commit();
-   }
-
+   # ########################################################################
+   # Unlock tables possibly locked with FLUSH TABLES WITH READ LOCK.
+   # ########################################################################
    if ( !$o->get('dry-run') ) {
       my $sql = 'UNLOCK TABLES';
       MKDEBUG && _d($sql);
       $dbh->do($sql);
    }
+   $dbh->commit();
 
    # ########################################################################
    # Restart the slave if desired.
@@ -3488,7 +3484,6 @@ sub main {
       $dbh->do($sql);
    }
 
-   $dbh->commit();
    $dbh->disconnect();
 
    $stat_totals{wallclock} = time() - $start;
@@ -3530,45 +3525,46 @@ sub chunk_tables {
    }
 
    my %seen_db;
+   my %last_tbl;
    my $last_db  = '';
    my $n_tables = scalar @$tbls - 1;
+   my $chunkno  = 0;
    my @chunks;
    for my $tblno ( 0..$n_tables ) {
       my $tbl  = $tbls->[$tblno];
       my $cols = join(', ', get_columns(tbl_struct=>$tbl->{tbl_struct}, %args));
-
-      # @chunks is a continuous list of db.tbl.chunk.  To report per-db
-      # and per-tbl info we need to know the first and last table in each
-      # db and the first and last chunk in each table.
-      my $new_db = $last_db && $tbl->{db} ne $last_db ? 1 : 0;
-      $last_db   = $tbl->{db};
-
       eval {
-         my $chunkno = 0;
+         my $i = 0;
          push @chunks, map {
             my $chunk = {
                D      => $_->{D},      # Database name
                N      => $_->{N},      # Table name
                W      => $_->{W},      # WHERE clause
                E      => $_->{E},      # Storage engine
-               C      => $chunkno++,   # Chunk number
+               C      => $i++,         # Chunk number for this table
                L      => $cols,        # SELECT list
                Z      => $tbl->{size},
             };
-            $chunk->{first_tbl_in_db} = 1
-               if $chunkno == 1 && ($new_db || $tblno == 0);
-            $chunk;
+            
+            # @chunks is a continuous list of db.tbl.chunk.  To report per-db
+            # and per-tbl info we need to know the first and last table in each
+            # db and the first and last chunk in each table.  So...
+            # this chunk is the first in this db if this db has never
+            # been seen before, and...
+            $chunk->{first_tbl_in_db} = 1 if !$seen_db{$chunk->{D}}++;
+            # keep track of the last chunk where a table was seen in this db.
+            $last_tbl{$chunk->{D}} = $chunkno;
+
+            $chunkno++;
+            $chunk;  # save the chunk
          } get_chunks(tbl => $tbl, %args);
 
-         $stats_for->{$tbl->{db}}->{tables}->{$tbl->{tbl}}->{chunks} = $chunkno;
-         $stats_for->{$tbl->{db}}->{chunks} += $chunkno;
+         # Save the number of chunks for this table and database.
+         $stats_for->{$tbl->{db}}->{tables}->{$tbl->{tbl}}->{chunks} = $i;
+         $stats_for->{$tbl->{db}}->{chunks} += $i;
 
          # The last chunk (-1) is the last one for this table.
          $chunks[-1]->{last_chunk_in_tbl} = 1;  
-
-         # If this table uses a new db, then previous chunk's table (-2)
-         # was the last table in its db.
-         $chunks[-2]->{last_tbl_in_db} = 1 if $new_db;
       };
       if ( $EVAL_ERROR ) {
          MKDEBUG && _d('Error getting chunks for', $tbl->{db}, '.', $tbl->{tbl},
@@ -3579,8 +3575,8 @@ sub chunk_tables {
       }
    }
 
-   # Last chunk is always last table.
-   $chunks[-1]->{last_tbl_in_db} = 1;
+   # Set last tables in each unique database.
+   map { $chunks[$_]->{last_tbl_in_db} = 1; } values %last_tbl;
 
    return @chunks;
 }
@@ -3731,8 +3727,6 @@ sub dump_chunk {
 
    MKDEBUG && $chunk->{C} == 0 && _d('Dumping', Dumper($chunk));
 
-   # TODO: LOCK TABLES
-
    my $exit_status = 0;
    if ( $o->get('tab') ) {  # dump via SELECT INTO OUTFILE
       my $dbh = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
@@ -3754,39 +3748,32 @@ sub dump_chunk {
       }
 
       # Dump the data.
-      if ( !$o->get('ignore-engines')->{$chunk->{E}} ) {
-         my $sql
-           = $o->get('csv')
-           ?    "SELECT $chunk->{L} INTO OUTFILE '$file.txt' "
-              . "FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\\"' "
-              . "LINES TERMINATED BY '\\n' FROM $D.$N WHERE $chunk->{W}"
-           :    "SELECT $chunk->{L} INTO OUTFILE '$file.txt' "
-              . "FROM $D.$N WHERE $chunk->{W}";
-         if ( $o->get('dry-run') ) {
-            print $sql, "\n";
-         }
-         else {
-            eval {
-               $dbh->do($sql);
-            };
-            if ( $EVAL_ERROR ) {
-               die mysql_error_msg($EVAL_ERROR) . "\n";
-            }
-         }
+      my $sql
+        = $o->get('csv')
+        ?    "SELECT $chunk->{L} INTO OUTFILE '$file.txt' "
+           . "FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\\"' "
+           . "LINES TERMINATED BY '\\n' FROM $D.$N WHERE $chunk->{W}"
+        :    "SELECT $chunk->{L} INTO OUTFILE '$file.txt' "
+           . "FROM $D.$N WHERE $chunk->{W}";
+      if ( $o->get('dry-run') ) {
+         print $sql, "\n";
       }
       else {
-         MKDEBUG && _d('Ignoring table because of --ignore-engines');
+         eval {
+            $dbh->do($sql);
+         };
+         if ( $EVAL_ERROR ) {
+            die mysql_error_msg($EVAL_ERROR) . "\n";
+         }
       }
-      
+
       $dbh->disconnect();
    }  # --tab/SELECT INTO OUTFILE
    else {  # dump via mysqldump
       makedir(interp($chunk, filename($o->get('base-dir'),
          '%D', '%N.%6C.sql'))) unless $o->get('dry-run');
 
-      my @args
-         = $o->get('ignore-engines')->{$chunk->{E}} ? @mysqldump_args_nodata
-                                                    : @mysqldump_args;
+      my @args = @mysqldump_args;
       # Do a DROP/CREATE only for the first chunk.
       if ( $chunk->{C} == 0 ) {
          @args = grep { $_ !~ m/--no-create-info/ } @args;
@@ -4321,6 +4308,12 @@ pathname.
 
 Print commands instead of executing them.
 
+=item --engines
+
+short form: -e; type: hash
+
+Dump only tables that use this comma-separated list of storage engines.
+
 =item --[no]flush-lock
 
 Use C<FLUSH TABLES WITH READ LOCK>.
@@ -4356,7 +4349,7 @@ Ignore this comma-separated list of databases.
 
 type: Hash; default: FEDERATED,MRG_MyISAM
 
-Dump no data for this comma-separated list of storage engines.
+Do not dump tables that use this comma-separated list of storage engines.
 
 The schema file will be dumped as usual.  This prevents dumping data for
 Federated tables and Merge tables.

@@ -3,9 +3,9 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 36;
+use Test::More tests => 43;
 
-require '../../common/DSNParser.pm';
+require '../mk-parallel-dump';
 require '../../common/Sandbox.pm';
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -22,6 +22,160 @@ my $output;
 my $basedir = '/tmp/dump/';
 diag(`rm -rf $basedir`);
 
+use File::Find;
+sub get_files {
+   my ( $dir ) = @_;
+   my @files;
+   find sub {
+      
+      return if -d;
+      push @files, $File::Find::name;
+   }, $dir;
+   return \@files;
+}
+
+# ###########################################################################
+# Test chunk_tables().
+# ###########################################################################
+
+# We want to make sure that it sets first_tbl_in_db, last_tbl_in_db, and
+# last_chunk_in_tbl correctly.
+my $q = new Quoter();
+my $o = new OptionParser(
+   description => 'mk-parallel-dump',
+);
+$o->get_specs('../mk-parallel-dump');
+@ARGV = qw(--no-resume);
+$o->get_opts();
+
+my @tbls = (
+   {
+      tbl        => 't1',
+      db         => 'd1',
+      tbl_struct => {},
+      size       => '12345',
+   },
+   {
+      tbl        => 't2',
+      db         => 'd1',
+      tbl_struct => {},
+      size       => '1234',
+   },
+   {
+      tbl        => 't3',
+      db         => 'd1',
+      tbl_struct => {},
+      size       => '123',
+   },
+);
+
+my %args = (
+   dbh          => 1,  # not needed
+   tbls         => \@tbls,
+   stat_totals  => {},
+   stats_for    => {},
+   OptionParser => $o,
+   Quoter       => $q,
+   TableChunker => 1,  # not needed
+);
+
+my $chunks = [
+   {
+    C => 0,
+    D => 'd1',
+    E => undef,
+    L => '*',
+    N => 't1',
+    W => '1=1',
+    Z => '12345',
+    first_tbl_in_db => 1,
+    last_chunk_in_tbl => 1
+   },
+   {
+    C => 0,
+    D => 'd1',
+    E => undef,
+    L => '*',
+    N => 't2',
+    W => '1=1',
+    Z => '1234',
+    last_chunk_in_tbl => 1
+   },
+   {
+    C => 0,
+    D => 'd1',
+    E => undef,
+    L => '*',
+    N => 't3',
+    W => '1=1',
+    Z => '123',
+    last_chunk_in_tbl => 1,
+    last_tbl_in_db => 1
+   },
+];
+
+is_deeply(
+   [ mk_parallel_dump::chunk_tables(%args) ],
+   $chunks,
+   'chunk_tables(), 1 db with 3 tables'
+);
+
+# Add another db to the tables.
+push @tbls, {
+   tbl        => 't1',
+   db         => 'd2',
+   tbl_struct => {},
+   size       => '120',
+};
+push @$chunks, {
+    C => 0,
+    D => 'd2',
+    E => undef,
+    L => '*',
+    N => 't1',
+    W => '1=1',
+    Z => '120',
+    last_chunk_in_tbl => 1,
+    first_tbl_in_db   => 1,
+    last_tbl_in_db    => 1,
+};
+
+is_deeply(
+   [ mk_parallel_dump::chunk_tables(%args) ],
+   $chunks,
+   'chunk_tables(), 2 dbs'
+);
+
+# Now confuse it by adding another table, t4, from db1.  This can happen if
+# t4 is smaller than db2.t1 because the tables are sorted by size.
+push @tbls, {
+   tbl        => 't4',
+   db         => 'd1',
+   tbl_struct => {},
+   size       => '100',
+};
+push @$chunks, {
+    C => 0,
+    D => 'd1',
+    E => undef,
+    L => '*',
+    N => 't4',
+    W => '1=1',
+    Z => '100',
+    last_chunk_in_tbl => 1,
+    last_tbl_in_db    => 1,
+};
+delete $chunks->[2]->{last_tbl_in_db};
+
+is_deeply(
+   [ mk_parallel_dump::chunk_tables(%args) ],
+   $chunks,
+   'chunk_tables(), 2 dbs mixed'
+);
+
+# ###########################################################################
+# Test actual dumping.
+# ###########################################################################
 SKIP: {
    skip 'Sandbox master does not have the sakila database', 24
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
@@ -41,18 +195,13 @@ SKIP: {
    `$mysql -e 'insert into foo.bar(a) values(123)'`;
    `$mysql -e 'create table foo.mrg(a int) engine=merge union=(foo.bar)'`;
    $output = `$cmd --chunk-size 100 --base-dir $basedir --tab -d foo`;
-   ok(-f "$basedir/foo/mrg.000000.sql", 'Merge table was dumped');
-   $output = `zgrep 123 $basedir/foo/mrg.000000.sql`;
-   chomp $output;
-   ok(!-f "$basedir/foo/mrg.000000.txt",
-      'No tab-delim file found, so no data dumped');
+   ok(!-f "$basedir/foo/mrg.000000.sql", 'Merge table not dumped by default with --tab');
+   ok(!-f "$basedir/foo/mrg.000000.txt", 'No tab-delim file found, so no data dumped');
 
    # And again, without --tab
+   diag(`rm -rf $basedir`);
    $output = `$cmd --chunk-size 100 --base-dir $basedir -d foo`;
-   ok(-f "$basedir/foo/mrg.000000.sql", 'Merge table was dumped');
-   $output = `zgrep 123 $basedir/foo/mrg.000000.sql`;
-   chomp $output;
-   is($output, '', '123 is not in the dumped file, so no data dumped');
+   ok(!-f "$basedir/foo/mrg.000000.sql", 'Merge table not dumped by default');
    `$mysql -e 'drop database if exists foo'`;
    diag(`rm -rf $basedir`);
 
@@ -123,6 +272,63 @@ SKIP: {
       qr/0 skipped,/,
       '--no-resume (with chunks)'
    );
+
+   # #########################################################################
+   # Issue 573: 'mk-parallel-dump --progress --ignore-engine MyISAM' Reports
+   # progress incorrectly
+   # #########################################################################
+   # For this issue we'll also test the filters in general, specially
+   # the engine filters as they were previously treated specially.
+   # sakila is mostly InnoDB tables so load some MyISAM tables.
+   diag(`/tmp/12345/use < ../../mk-table-sync/t/samples/issue_560.sql`);
+   diag(`/tmp/12345/use < ../../mk-table-sync/t/samples/issue_375.sql`);
+   diag(`rm -rf $basedir`);
+
+   # film_text is the only non-InnoDB table (it's MyISAM).
+   $output = `$cmd --base-dir $basedir -d sakila --ignore-engines InnoDB 2>&1`;
+   like(
+      $output,
+      qr/^Database sakila:\s+1 tables,/,
+      '--ignore-engines InnoDB'
+   );
+   # Make very sure that it dumped only film_text.
+   is_deeply(
+      get_files($basedir),
+      [
+         "${basedir}sakila/film_text.000000.sql",
+         "${basedir}default/00_master_data.sql",
+      ],
+      '--ignore-engines InnoDB dumped files'
+   );
+
+   diag(`rm -rf $basedir`);
+
+   $output = `$cmd --base-dir $basedir -d sakila --ignore-engines InnoDB --tab 2>&1`;
+   like(
+      $output,
+      qr/^Database sakila:\s+1 tables,/,
+      '--ignore-engines InnoDB --tab'
+   );
+   is_deeply(
+      get_files($basedir),
+      [
+         "${basedir}sakila/film_text.000000.txt",
+         "${basedir}sakila/film_text.000000.sql",
+         "${basedir}default/00_master_data.sql",
+      ],
+      '--ignore-engines InnoDB --tab dumped files'
+   );
+
+   diag(`rm -rf $basedir`);
+
+   # Only issue_560.buddy_list is InnoDB so only its size should be used
+   # to calculate --progress.
+   $output = `$cmd --base-dir $basedir -d issue_375,issue_560 --ignore-engines MyISAM --progress 2>&1 | grep done`;
+   like(
+      $output,
+      qr/^done: 16\.00k\/16\.00k 100\.00% 00:00 remain/,
+      "--progress doesn't count skipped tables (issue 573)"
+   ); 
 };
 
 diag(`rm -rf $basedir`);
