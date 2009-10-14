@@ -32,7 +32,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(Quoter) ) {
+   foreach my $arg ( qw(Quoter VersionParser) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
@@ -147,7 +147,13 @@ sub set_filter {
 # get_db_itr() returns an iterator which returns the next db found,
 # according to any set filters, when called successively.
 sub get_db_itr {
-   my ( $self, $dbh ) = @_;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh) = @args{@required_args};
+
    my $filter = $self->{filter};
    my @dbs;
    eval {
@@ -170,25 +176,45 @@ sub get_db_itr {
 }
 
 # Required args:
-#   * dbh  dbh: an active dbh
-#   * db   scalar: database name
+#   * dbh    dbh: an active dbh
+#   * db     scalar: database name
+# Optional args:
+#   * views  bool: Permit/return views (default no)
 # Returns: itr
 # Can die: no
 # get_tbl_itr() returns an iterator which returns the next table found,
 # in the given db, according to any set filters, when called successively.
 sub get_tbl_itr {
-   my ( $self, $dbh, $db ) = @_;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $views) = @args{@required_args, 'views'};
+
+   if ( $views ) {
+      # NOTE: Views are actually available in 5.0.1 but "FULL" in
+      # SHOW FULL TABLES was not added until 5.0.2.  So 5.0.1 is an
+      # edge case that we ignore.  If >=5.0.2 SHOW FULL TABLES will
+      # allow us to easily see views; else MySQL doesn't support views.
+      $views = 0 unless $self->{VersionParser}->version_ge($dbh, '5.0.2');
+   }
+
    my $filter = $self->{filter};
    my @tbls;
    if ( $db ) {
       eval {
-         my $sql = 'SHOW TABLES FROM ' . $self->{Quoter}->quote($db);
+         my $sql = 'SHOW /*!50002 FULL*/ TABLES FROM '
+                 . $self->{Quoter}->quote($db);
          MKDEBUG && _d($sql);
          @tbls = map {
             $_->[0]
          }
          grep {
             my $ok = $filter ? $filter->($dbh, $db, $_->[0]) : 1;
+            if ( !$views ) {
+               $ok = 0 if ($_->[1] || '') eq 'VIEW';
+            }
             $ok;
          }
          @{ $dbh->selectall_arrayref($sql) };
