@@ -3337,7 +3337,7 @@ sub main {
             ? '#  --execute-command ' . $o->get('execute-command') . "\n" : '')
       . ($o->get('and')
             ? '#  --and' . "\n" : '')
-      . '#  --sleep ' . $o->get('sleep')
+      . '#  --interval ' . $o->get('interval')
    );
    watch_server(
       dsn => $dsn,
@@ -3420,8 +3420,8 @@ sub watch_server {
          }
       }
 
-      _log($o, 'Sleeping ' . $o->get('sleep'));
-      sleep($o->get('sleep'));
+      _log($o, 'Sleeping ' . $o->get('interval'));
+      sleep $o->get('interval');
    }
 
    _log($o, 'Done watching server ' . $dp->as_string($dsn));
@@ -3530,10 +3530,10 @@ is exceeded.  One or more items can be watched including MySQL status values
 from SHOW STATUS, SHOW INNODB STATUS and SHOW SLAVE STATUS, the three system
 load averages from C<uptime>, and values from C<vmstat>.  Watched items and
 their threshold values are specified by L<"--watch">.  Every item is checked
-at intervals (see L<"--sleep">).  By default, if any one item's check returns
-true, then the L<"--execute-command"> is executed.  Specifying L<"--and">
-requires that every item's check returns true before L<"--execute-command">
-is executed.
+at intervals (see L<"--interval">).  By default, if any one item's check returns
+true (i.e. its threshold is exceeded), then L<"--execute-command"> is executed.
+Specifying L<"--and"> requires that every item has exceeded its threshold before
+L<"--execute-command"> is executed.
 
 =head1 OUTPUT
 
@@ -3556,11 +3556,11 @@ were multiple servers to monitor.
 
 group: Action
 
-Trigger the actions only when all L<"--watch"> items fail.
+Trigger the actions only when all L<"--watch"> items exceed their thresholds.
 
 The default is to trigger the actions when any one of the watched items
-fails its test.  This option requires all watched items to fail before
-any action is triggered.
+exceeds its threshold.  This option requires that all watched items exceed
+their thresholds before any action is triggered.
 
 =item --ask-pass
 
@@ -3604,14 +3604,24 @@ pathname.
 
 type: string; group: Action
 
-Execute this command when a watched item exceeds its threshold value.
+Execute this command when watched items exceed their threshold values
 
-This command will be executed when an item specified by L<"--watch"> exceeds
-its threshold value (fails its test).  After the command is executed,
-mk-loadavg has no control over it, so the command is responsible for its own
-info gathering, logging, interval, etc.  The command is excuted each time a
-watched fails, so be careful that the command behaves well when multiple
-instances are ran. No information from mk-loadavg is passed to the command.
+This command will be executed every time a L<"--watch"> item (or all items if
+L<"--and"> is specified) exceeds its threshold.  For example, if you specify
+C<--watch Server:vmstat:swpd:\>:0>, then this command will be executed
+when the server begins to swap and it will be executed again at each
+L<"--interval"> so long as the server is still swapping.
+
+After the command is executed, mk-loadavg has no control over it, so it is
+responsible for its own info gathering, logging, interval, etc.  Since the
+command is spawned from mk-loadavg, its STDOUT, STDERR and STDIN are closed
+so it doesn't interfere with mk-loadavg.  Therefore, the command must redirect
+its output to files or some other destination.  For example, if you
+specify C<--execute-command 'echo Hello'>, you will not see "Hello" printed
+anywhere (neither to screen nor L<"--log">) because STDOUT is closed for
+the command.
+
+No information from mk-loadavg is passed to the command.
 
 See also L<"--and">.
 
@@ -3625,11 +3635,19 @@ short form: -h; type: string
 
 Connect to host.
 
+=item --interval
+
+type: time; default: 60s; group: Watch
+
+How long to sleep between each check.
+
 =item --log
 
 type: string
 
 Print all output to this file when daemonized.
+
+Output from L<"--execute-command"> is not printed to this file.
 
 =item --password
 
@@ -3675,12 +3693,6 @@ type: string; default: wait_timeout=10000
 Set these MySQL variables.  Immediately after connecting to MySQL, this string
 will be appended to SET and executed.
 
-=item --sleep
-
-type: time; default: 60s; group: Watch
-
-How long to sleep between each check.
-
 =item --socket
 
 short form: -S; type: string
@@ -3704,7 +3716,8 @@ short form: -v
 Print information to STDOUT about what is being done.
 
 This can be used as a heartbeat to see that mk-loadavg is still
-properly watching all its values.
+properly watching all its values.  If L<"--log"> is specified, this information
+will be printed to that file instead.
 
 =item --version
 
@@ -3733,7 +3746,7 @@ would get average values since last reboot.
 
 type: string; group: Watch
 
-A comma-separated of watched items and what triggers them (required).
+A comma-separated list of watched items and their thresholds (required).
 
 Each watched item is string of arguments separated by colons (like arg:arg).
 Each argument defines the watch item: what particular value is watched and how
@@ -3751,6 +3764,16 @@ causes the WatchStatus module to be loaded.  The second and subsequent
 arguments are passed to the WatchStatus module which parses them.  Each
 watch module requires different arguments.  The watch modules included
 in mk-loadavg and what arguments they require are listed below.
+
+This is a common error when specify L<"--watch"> on the commnad line:
+
+   mk-loadavg --watch Server:vmstat:swpd:>:0
+
+   Failed to load --watch WatchServer: Error parsing parameters vmstat:swpd:: No comparison parameter; expected >, < or = at ./mk-loadavg line 3100.
+
+The C<E<gt>> and other special characters need to be escaped:
+
+   mk-loadavg --watch Server:vmstat:swpd:\>:0
 
 =over
 
@@ -3862,8 +3885,7 @@ installed in any reasonably new version of Perl.
 
 =head1 BUGS
 
-For a list of known bugs see:
-L<http://code.google.com/p/maatkit/issues/list?&q=tool=mk_loadavg%20type=Defect>.
+For a list of known bugs see L<http://www.maatkit.org/bugs/mk-loadavg>.
 
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to

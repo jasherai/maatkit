@@ -41,7 +41,7 @@ is_deeply(
    'parse_watch()'
 );
 
-my $output = `$cmd --watch 'Server:loadavg:1:>:0' -v  --sleep 1 --run-time 1s`;
+my $output = `$cmd --watch 'Server:loadavg:1:>:0' -v  --interval 1 --run-time 1s`;
 like(
    $output,
    qr/Checking Server:loadavg:1:>:0/,
@@ -54,7 +54,7 @@ like(
 diag(`rm -rf /tmp/mk-loadavg-test`);
 mk_loadavg::main('-F', $cnf, qw(--watch Status:status:Uptime:>:1),
    '--execute-command', 'echo hi > /tmp/mk-loadavg-test',
-   qw(--sleep 1 --run-time 1));
+   qw(--interval 1 --run-time 1));
 
 ok(
    -f '/tmp/mk-loadavg-test',
@@ -67,7 +67,7 @@ diag(`rm -rf /tmp/mk-loadavg-test`);
 # Issue 516: Add mk-loadavg metrics for InnoDB status info
 # #############################################################################
 like(
-   output(qw(-F /tmp/12345/my.sandbox.cnf --watch Status:innodb:Innodb_data_fsyncs:>:1 -v --run-time 1 --sleep 1)),
+   output(qw(-F /tmp/12345/my.sandbox.cnf --watch Status:innodb:Innodb_data_fsyncs:>:1 -v --run-time 1 --interval 1)),
    qr/Checking Status:innodb:Innodb_data_fsyncs:>:1\n.+FAIL/,
    'Watch an InnoDB status value'
 );
@@ -91,7 +91,7 @@ like(
 diag(`rm -rf /tmp/mk-loadavg-test`);
 mk_loadavg::main(qw(--watch Server:vmstat:buff:>:0),
    '--execute-command', 'echo hi > /tmp/mk-loadavg-test',
-   qw(--sleep 1 --run-time 1));
+   qw(--interval 1 --run-time 1));
 
 ok(
    -f '/tmp/mk-loadavg-test',
@@ -105,7 +105,7 @@ diag(`rm -rf /tmp/mk-loadavg-test`);
 # Issue 621: mk-loadavg doesn't watch vmstat correctly
 # #############################################################################
 diag(`rm -rf /tmp/mk-loadavg-out.txt`);
-`$cmd --watch 'Status:status:Uptime:>:1' --sleep 1 --run-time 1s --execute-command "echo Ok > /tmp/mk-loadavg-out.txt"`;
+`$cmd --watch 'Status:status:Uptime:>:1' --interval 1 --run-time 1s --execute-command "echo Ok > /tmp/mk-loadavg-out.txt"`;
 chomp($output = `cat /tmp/mk-loadavg-out.txt`);
 like(
    $output,
