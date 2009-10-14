@@ -32,7 +32,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(Quoter VersionParser) ) {
+   foreach my $arg ( qw(Quoter) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
@@ -62,6 +62,9 @@ sub make_filter {
       '   my ( $dbh, $db, $tbl ) = @_;',
       '   my $engine = undef;',
    );
+
+   # Filter schema objs in this order: db, tbl, engine.  It's not efficient
+   # to check the table if, for example, the database isn't allowed.
 
    my @permit_dbs = _make_filter('unless', '$db', $o->get('databases'))
       if $o->has('databases');
@@ -95,7 +98,6 @@ sub make_filter {
             '      };',
             '      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);',
             '      MKDEBUG && _d($tbl, "uses engine", $engine);',
-            '      $engine ||= "";',
          @permit_engs = _make_filter('unless', '$engine', $o->get('engines'))
             if $o->has('engines');
          @reject_engs = _make_filter('if', '$engine', $o->get('ignore-engines'))
@@ -192,14 +194,6 @@ sub get_tbl_itr {
    }
    my ($dbh, $db, $views) = @args{@required_args, 'views'};
 
-   if ( $views ) {
-      # NOTE: Views are actually available in 5.0.1 but "FULL" in
-      # SHOW FULL TABLES was not added until 5.0.2.  So 5.0.1 is an
-      # edge case that we ignore.  If >=5.0.2 SHOW FULL TABLES will
-      # allow us to easily see views; else MySQL doesn't support views.
-      $views = 0 unless $self->{VersionParser}->version_ge($dbh, '5.0.2');
-   }
-
    my $filter = $self->{filter};
    my @tbls;
    if ( $db ) {
@@ -213,7 +207,14 @@ sub get_tbl_itr {
          grep {
             my $ok = $filter ? $filter->($dbh, $db, $_->[0]) : 1;
             if ( !$views ) {
-               $ok = 0 if ($_->[1] || '') eq 'VIEW';
+               # We don't want views therefore we have to check the table
+               # type.  Views are actually available in 5.0.1 but "FULL"
+               # in SHOW FULL TABLES was not added until 5.0.2.  So 5.0.1
+               # is an edge case that we ignore.  If >=5.0.2 then there
+               # might be views and $_->[1] will be Table_type and we check
+               # as normal.  Else, there cannot be views so we default
+               # $_->[1] to 'VIEW' so that every table passes.
+               $ok = 0 if ($_->[1] || 'VIEW') eq 'VIEW';
             }
             $ok;
          }

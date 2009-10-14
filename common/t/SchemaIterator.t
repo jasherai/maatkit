@@ -12,7 +12,6 @@ require "../Quoter.pm";
 require "../DSNParser.pm";
 require "../Sandbox.pm";
 require "../OptionParser.pm";
-require "../VersionParser.pm";
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -22,7 +21,6 @@ $Data::Dumper::Quotekeys = 0;
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $q   = new Quoter();
-my $vp  = new VersionParser();
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
@@ -30,7 +28,6 @@ my $dbh = $sb->get_dbh_for('master')
 
 my $si = new SchemaIterator(
    Quoter        => $q,
-   VersionParser => $vp,
 );
 isa_ok($si, 'SchemaIterator');
 
