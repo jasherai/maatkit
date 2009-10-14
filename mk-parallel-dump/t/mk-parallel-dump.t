@@ -38,8 +38,7 @@ sub get_files {
 # Test chunk_tables().
 # ###########################################################################
 
-# We want to make sure that it sets first_tbl_in_db, last_tbl_in_db, and
-# last_chunk_in_tbl correctly.
+# Make sure that it sets first_tbl_in_db and last_chunk_in_tbl correctly.
 my $q = new Quoter();
 my $o = new OptionParser(
    description => 'mk-parallel-dump',
@@ -110,7 +109,6 @@ my $chunks = [
     W => '1=1',
     Z => '123',
     last_chunk_in_tbl => 1,
-    last_tbl_in_db => 1
    },
 ];
 
@@ -137,7 +135,6 @@ push @$chunks, {
     Z => '120',
     last_chunk_in_tbl => 1,
     first_tbl_in_db   => 1,
-    last_tbl_in_db    => 1,
 };
 
 is_deeply(
@@ -163,9 +160,7 @@ push @$chunks, {
     W => '1=1',
     Z => '100',
     last_chunk_in_tbl => 1,
-    last_tbl_in_db    => 1,
 };
-delete $chunks->[2]->{last_tbl_in_db};
 
 is_deeply(
    [ mk_parallel_dump::chunk_tables(%args) ],

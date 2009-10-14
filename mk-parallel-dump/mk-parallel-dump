@@ -3486,7 +3486,6 @@ sub chunk_tables {
    }
 
    my %seen_db;
-   my %last_tbl;
    my $last_db  = '';
    my $n_tables = scalar @$tbls - 1;
    my $chunkno  = 0;
@@ -3508,23 +3507,30 @@ sub chunk_tables {
             };
             
             # @chunks is a continuous list of db.tbl.chunk.  To report per-db
-            # and per-tbl info we need to know the first and last table in each
-            # db and the first and last chunk in each table.  So...
-            # this chunk is the first in this db if this db has never
-            # been seen before, and...
+            # and per-tbl info we need to know the first table in each db
+            # and the number of chunks in each db and table.  So, this chunk
+            # is the first in this db if this db has never been seen before,
+            # and...
             $chunk->{first_tbl_in_db} = 1 if !$seen_db{$chunk->{D}}++;
-            # keep track of the last chunk where a table was seen in this db.
-            $last_tbl{$chunk->{D}} = $chunkno;
 
             $chunkno++;
             $chunk;  # save the chunk
          } get_chunks(tbl => $tbl, %args);
 
-         # Save the number of chunks for this table and database.
+         # ...save the number of chunk in each db and table.  These values
+         # are decremented so we can reliably know when a table and db are
+         # fully done (when there's no more chunks left).
+         $stats_for->{$tbl->{db}}->{tables}->{$tbl->{tbl}}->{chunks_left} += $i;
+         $stats_for->{$tbl->{db}}->{chunks_left} += $i;
+
+         # Save the number of chunks again.  These values aren't modified;
+         # they for status reports (see report_stats()).
          $stats_for->{$tbl->{db}}->{tables}->{$tbl->{tbl}}->{chunks} = $i;
          $stats_for->{$tbl->{db}}->{chunks} += $i;
 
-         # The last chunk (-1) is the last one for this table.
+         # last_chunk_in_tbl is used to tell us when we can unlock the
+         # table if using --lock-tables.  The last chunk (-1) is the last
+         # one for this table.
          $chunks[-1]->{last_chunk_in_tbl} = 1;  
       };
       if ( $EVAL_ERROR ) {
@@ -3535,9 +3541,6 @@ sub chunk_tables {
          next;
       }
    }
-
-   # Set last tables in each unique database.
-   map { $chunks[$_]->{last_tbl_in_db} = 1; } values %last_tbl;
 
    return @chunks;
 }
@@ -3888,6 +3891,7 @@ sub report_stats {
    foreach my $stats ( $db_stats, $tbl_stats ) {
       $stats->{failures}++ if $exit_status;
       $stats->{dump_time} += $dump_time;
+      $stats->{chunks_left} -= 1;
    }
 
    # Report completed chunk.
@@ -3900,7 +3904,7 @@ sub report_stats {
    );
 
    # Report completed table.
-   if ( $chunk->{last_chunk_in_tbl} ) {
+   if ( !$tbl_stats->{chunks_left} ) {
       info($o, 2, sprintf($summary_fmt,
             "Table $tbl",
             1,
@@ -3914,7 +3918,7 @@ sub report_stats {
    }
 
    # Report completed database.
-   if ( $chunk->{last_tbl_in_db} ) {
+   if ( !$db_stats->{chunks_left} ) {
       info($o, 1, sprintf($summary_fmt,
             "Database $db",
             scalar keys %{$db_stats->{tables}},
