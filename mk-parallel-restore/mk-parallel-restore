@@ -1818,21 +1818,6 @@ sub main {
    if ( $o->get('ask-pass') ) {
       $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
-
-   # TODO: issue 504
-   my @conn_params;
-   @conn_params = (
-      [qw(--defaults-file F)],
-      [qw(--host          h)],
-      [qw(--password      p)],
-      [qw(--port          P)],
-      [qw(--socket        S)],
-      [qw(--user          u)],
-   );
-   @conn_params = map  { "$_->[0]='".$o->get($_->[1])."'"; }
-                  grep { $o->got($_->[1]); }
-                  @conn_params;
-
    my $dbh = get_cxn(o=>$o, dp=>$dp);
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
@@ -1847,7 +1832,7 @@ sub main {
    my %size_for_file;
    my %chunks_for_table;
    my %stats;
-   my $known_filetypes = 'sql|txt|csv|trg';
+   my $known_filetypes = 'sql|txt|csv';
    my $bytes = 0; # For progress measurements
 
    {
@@ -1878,7 +1863,7 @@ sub main {
                      && ( !$tables || exists($tables->{$tbl}) )
                      && ( !$tables_regex || $tbl =~ m/$tables_regex/ ) )
                   {
-                     if ( filetype($file) !~ m/sql|trg/ && !$o->get('tab') ) {
+                     if ( filetype($file) !~ m/sql/ && !$o->get('tab') ) {
                         die "$filename isn't a SQL file and you didn't tell me "
                            . "to load tab-delimited files.  Maybe you should "
                            . "specify the --tab option.\n";
@@ -1913,11 +1898,7 @@ sub main {
                   }
                }
             }
-            elsif ( $filename =~ m/00_views.sql/ ) {
-               $stats{files}++;
-               push @view_files, $filename;
-            }
-            elsif ( ! -d $filename && $filename !~ m/00_master_data.sql/ ) {
+            elsif ( !-d $filename && $filename !~ m/00_master_data.sql/ ) {
                info($o, 1, "Skipping file $filename");
             }
          },
@@ -1979,9 +1960,9 @@ sub main {
    }
 
    # #########################################################################
-   # Assign the work to child processes.  Initially just start --numthreads
-   # number of children.  Each child that exits will trigger a new one to start
-   # after that.
+   # Assign the work to child processes.  Initially just start --threads
+   # number of children.  Each child that exits will trigger a new one to
+   # start after that.
    # #########################################################################
    my %common_modules = (
       o  => $o,
@@ -2030,7 +2011,6 @@ sub main {
                files       => $files_for_table{$todo->{D}}->{$todo->{N}},
                file_size   => \%size_for_file,
                tbl_chunks  => \%chunks_for_table,
-               conn_params => \@conn_params,
                %common_modules,
             ) || $exit_status;
             exit($exit_status);
@@ -2074,17 +2054,6 @@ sub main {
    # because all children are supposed to be done at this point.
    print_progress_report($o, $done, undef, $bytes, $start)
       if $o->get('progress');
-
-   # Load views.
-   foreach my $file ( @view_files ) {
-      my $exit_status = do_sql_file(
-         dbh  => $dbh,
-         file => $file,
-         type => 'views',
-         %common_modules,
-      );
-      $stats{ $exit_status ? 'failure' : 'success' }++;
-   }
 
    $stats{wallclock} = time() - $start;
 
@@ -2150,22 +2119,16 @@ sub do_table {
    my $file_size  = $args{file_size};
 
    my $exit_status  = 0;
-   my $trigger_file = undef; # TODO: issue 504
 
    # Sort files.  If it's a --tab, this will result in the following load
    # order:
    # * sql     (drop and create table)
    # * txt/csv (load data into table)
-   # * trg     (create triggers)
    # Later we'll do the views from the 00_views file, after all tables are
    # recreated.
    @files = sort {
       my $a_type = filetype($a);
       my $b_type = filetype($b);
-      # TODO: issue 504
-      if ( $a_type eq 'trg' || $b_type eq 'trg' ) {
-         $trigger_file = $a_type eq 'trg' ? $a : $b;
-      }
       (index($file_types, $a_type) <=> index($file_types, $b_type))
          || ($a cmp $b);
    } @files;
@@ -2183,24 +2146,6 @@ sub do_table {
       );
    }
 
-   # TODO: issue 504
-   my $set_bin_log_fh;
-   my $set_bin_log_file;
-   if ( $trigger_file ) {
-      $set_bin_log_fh   = new File::Temp();
-      $set_bin_log_file = $set_bin_log_fh->filename;
-      my $bin_log       = $o->get('bin-log') ? 1 : 0;
-      `echo 'SET SQL_LOG_BIN=$bin_log;' > $set_bin_log_file`; 
-      if ( $trigger_file =~ m/\.gz/ ) {
-         # gzipping the file changes its name so File::Temp will no longer
-         # be able to automatically unlink the file for us. Thus, we have
-         # to do it manually, as you'll see below.
-         `gzip $set_bin_log_file`;
-         $set_bin_log_file .= '.gz';
-      }
-      MKDEBUG && _d("set bin log file:", $set_bin_log_file);
-   }
-
    foreach my $file ( @files ) {
 
       # skip_finished_chunks() undefs files which are already restored
@@ -2214,19 +2159,6 @@ sub do_table {
             type => 'tables',
             %args,
          );
-      }
-      elsif ( filetype($file) eq 'trg' ) {
-         my $decompress = $o->get('decompress');
-         # TODO: issue 504
-         my @args = (
-            ($file =~ m/\.gz/ ? "$decompress" : 'cat'),
-            qq{'$set_bin_log_file'},
-            qq{'$file'},
-            qw(| mysql),
-            @{$args{conn_params}},
-            $db
-         );
-         $exit_status = system_call($o, @args) || $exit_status;
       }
       else {
          if ( $file =~ m/\.gz$/ ) {
@@ -2317,7 +2249,6 @@ sub do_table {
          }
          else {
             unlink $fifo if $fifo;
-            unlink $set_bin_log_file if $set_bin_log_file;
             die "I don't understand how to load file $file\n";
          }
       }
@@ -2336,7 +2267,6 @@ sub do_table {
       unlink $fifo;
    }
 
-   unlink $set_bin_log_file if $set_bin_log_file;
    $dbh->disconnect() if $dbh;
    return $exit_status;
 }
@@ -2548,7 +2478,7 @@ sub print_progress_report {
 
 sub filetype {
    my ( $filename ) = @_;
-   my ( $type ) = $filename =~ m/\.(sql|txt|csv|trg)(?:\.\d+)?(?:\.gz)?$/;
+   my ( $type ) = $filename =~ m/\.(sql|txt|csv)(?:\.\d+)?(?:\.gz)?$/;
    return $type || '';
 }
 
@@ -2663,7 +2593,6 @@ like the following:
   dir/tbl.sql
   dir/tbl.txt
   dir/tbl.csv
-  dir/tbl.trg
 
 It is also happy with files that look like this, where C<EXT> is one of the
 extensions just listed.
@@ -2675,12 +2604,8 @@ By default, it loads C<SQL> files first, if they exist, then loads C<CSV> or
 C<TXT> files next, in order of the numbers in the filename extension as just
 shown.  This makes it easy for you to reload a table's definition followed by
 its data, in case you dumped them into separate files (as happens with
-C<mysqldump>'s C<--tab> option).  It loads C<TRG> files, which create
-triggers, last.  Creating the triggers before loading data might keep the data
-from being restored correctly.  Files that are named 00_views.sql are loaded
-even later, after all the parallel restores are finished; dependencies among
-views and tables make them hard to restore one at a time.  See
-L<mk-parallel-dump> for details on how data is dumped.
+C<mysqldump>'s C<--tab> option).  See L<mk-parallel-dump> for details on how
+data is dumped.
 
 Exit status is 0 if everything went well, 1 if any files failed, and any
 other value indicates an internal error.
