@@ -2741,7 +2741,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 4858
+# SchemaIterator package 4862
 # ###########################################################################
 package SchemaIterator;
 
@@ -2805,8 +2805,7 @@ sub make_filter {
             '              . " LIKE \'$tbl\'";',
             '      MKDEBUG && _d($sql);',
             '      eval {',
-            '         my $stats = $dbh->selectrow_hashref($sql);',
-            '         $engine   = $stats->{Engine} || $stats->{engine};',
+            '         $engine = $dbh->selectrow_hashref($sql)->{engine};',
             '      };',
             '      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);',
             '      MKDEBUG && _d($tbl, "uses engine", $engine);',
