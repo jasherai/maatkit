@@ -3239,6 +3239,8 @@ $OUTPUT_AUTOFLUSH = 1;
 
 my $oktorun = 1;
 
+$SIG{CHLD} = 'IGNORE';
+
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
@@ -3443,10 +3445,11 @@ sub exec_cmd {
 
    # child
    POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
-   my $retval = system($cmd);
-   $retval = $retval >> 8;
-   MKDEBUG && _d('child exit status:', $retval);
-   exit $retval;
+   open STDOUT, '>/dev/null';
+   open STDERR, '>&STDOUT';
+   open STDIN,  '/dev/null';
+   exec $cmd;
+   exit;
 }
 
 # Catches signals for exiting gracefully.

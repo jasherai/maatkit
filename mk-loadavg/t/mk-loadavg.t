@@ -104,21 +104,19 @@ diag(`rm -rf /tmp/mk-loadavg-test`);
 # #############################################################################
 # Issue 621: mk-loadavg doesn't watch vmstat correctly
 # #############################################################################
-$output = `$cmd --watch 'Status:status:Uptime:>:1' --sleep 1 --run-time 1s --execute-command "echo Ok"`;
+diag(`rm -rf /tmp/mk-loadavg-out.txt`);
+`$cmd --watch 'Status:status:Uptime:>:1' --sleep 1 --run-time 1s --execute-command "echo Ok > /tmp/mk-loadavg-out.txt"`;
+chomp($output = `cat /tmp/mk-loadavg-out.txt`);
 like(
    $output,
    qr/Ok/,
    'Action triggered when watched item check is true'
 );
 
+diag(`rm -rf /tmp/mk-loadavg-out.txt`);
+
 # #############################################################################
 # Done.
 # #############################################################################
-
-# wipe_clean is causing an error:
-#   DBD::mysql::db selectcol_arrayref failed: MySQL server has gone away
-#   at ../../common/Sandbox.pm line 142.
-# It's somehow due to the issue 515 test and the forked process.
-eval { $sb->wipe_clean($dbh); };
-
+$sb->wipe_clean($dbh);
 exit;
