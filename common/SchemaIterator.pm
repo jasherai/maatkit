@@ -94,8 +94,7 @@ sub make_filter {
             '              . " LIKE \'$tbl\'";',
             '      MKDEBUG && _d($sql);',
             '      eval {',
-            '         my $stats = $dbh->selectrow_hashref($sql);',
-            '         $engine   = $stats->{Engine} || $stats->{engine};',
+            '         $engine = $dbh->selectrow_hashref($sql)->{engine};',
             '      };',
             '      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);',
             '      MKDEBUG && _d($tbl, "uses engine", $engine);',
@@ -187,6 +186,8 @@ sub get_db_itr {
 # Can die: no
 # get_tbl_itr() returns an iterator which returns the next table found,
 # in the given db, according to any set filters, when called successively.
+# Make sure $dbh->{FetchHashKeyName} = 'NAME_lc' was set, else engine
+# filters won't work.
 sub get_tbl_itr {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh db);

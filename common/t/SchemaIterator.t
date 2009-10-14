@@ -25,6 +25,7 @@ my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
+$dbh->{FetchHashKeyName} = 'NAME_lc';
 
 my $si = new SchemaIterator(
    Quoter        => $q,
