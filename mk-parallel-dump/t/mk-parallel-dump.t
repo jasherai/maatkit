@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 43;
+use Test::More tests => 44;
 
 require '../mk-parallel-dump';
 require '../../common/Sandbox.pm';
@@ -245,14 +245,6 @@ SKIP: {
    unlike($output, qr/CREATE TABLE/i, 'second chunk has no CREATE TABLE');
    diag(`rm -rf $basedir`);
 
-
-   # ##########################################################################
-   # Issue 31: Make mk-parallel-dump and mk-parallel-restore do biggest-first
-   ############################################################################
-   $output = `MKDEBUG=1 $cmd --base-dir $basedir -d sakila 2>&1 | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$4}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
-   unlike($output, qr/disorder/, 'Tables dumped biggest-first by default');   
-   diag(`rm -rf $basedir`);
-
    # #########################################################################
    # Issue 495: mk-parallel-dump: permit to disable resuming behavior
    # #########################################################################
@@ -330,6 +322,40 @@ SKIP: {
       "--progress doesn't count skipped tables (issue 573)"
    ); 
 };
+
+diag(`rm -rf $basedir`);
+
+# ##########################################################################
+# Issue 31: Make mk-parallel-dump and mk-parallel-restore do biggest-first
+############################################################################
+$sb->load_file('master', 'samples/issue_31.sql');
+# Tables in order of size: t4 t1 t3 t3
+
+# These two tests may fail because the children are printing to the same
+# STDOUT so sometimes the prints get out of order.  If you run the test again,
+# it'll probably pass.
+
+$output = `$cmd --base-dir $basedir -d issue_31 --dry-run 2>&1 | grep 'result\-file'`;
+is(
+   $output,
+"mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t4 --result-file '/tmp/dump/issue_31/t4.000000.sql'
+mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t1 --result-file '/tmp/dump/issue_31/t1.000000.sql'
+mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t3 --result-file '/tmp/dump/issue_31/t3.000000.sql'
+mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t2 --result-file '/tmp/dump/issue_31/t2.000000.sql'
+",
+   'Dumps largest tables first'
+);
+
+$output = `$cmd --base-dir $basedir -d issue_31 --tab --dry-run 2>&1 | grep SELECT`;
+is(
+   $output,
+"SELECT * INTO OUTFILE '/tmp/dump/issue_31/t4.000000.txt' FROM `issue_31`.`t4` WHERE 1=1
+SELECT * INTO OUTFILE '/tmp/dump/issue_31/t1.000000.txt' FROM `issue_31`.`t1` WHERE 1=1
+SELECT * INTO OUTFILE '/tmp/dump/issue_31/t3.000000.txt' FROM `issue_31`.`t3` WHERE 1=1
+SELECT * INTO OUTFILE '/tmp/dump/issue_31/t2.000000.txt' FROM `issue_31`.`t2` WHERE 1=1
+",
+   'Dumps largest tables first with --tab'
+);
 
 diag(`rm -rf $basedir`);
 

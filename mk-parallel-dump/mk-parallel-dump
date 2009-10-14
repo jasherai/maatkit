@@ -3157,7 +3157,6 @@ sub main {
       Quoter => $q,
    );
    $si->set_filter($si->make_filter($o));
-   my $next_db = $si->get_db_itr(dbh => $dbh);
 
    my @tbls;
    my %stat_totals;  # for all dbs and tbls
@@ -3166,6 +3165,9 @@ sub main {
    my $done   = 0;  # for progress
    my $maxdb  = 0;  # for report
    my $maxtbl = 0;  # for report
+
+   my $next_db = $si->get_db_itr(dbh => $dbh);
+   DATABASE:
    while ( my $db = $next_db->() ) {
       MKDEBUG && _d('Getting tables from', $db);
       my $next_tbl = $si->get_tbl_itr(
@@ -3193,7 +3195,7 @@ sub main {
          if ( $o->get('biggest-first') || $o->get('progress') ) {
             my @tbl_stats;
             eval {
-               @tbl_stats = $du->get_table_status($dbh, $q, $db);
+               @tbl_stats = $du->get_table_status($dbh, $q, $db, $tbl);
             };
             if ( $EVAL_ERROR ) {
                MKDEBUG && _d('Error getting table status', $EVAL_ERROR);
@@ -3201,13 +3203,8 @@ sub main {
                $stat_totals{failures}++;
                next TABLE;
             }
-            foreach my $tbl_stat ( @tbl_stats ) {
-               if ( $tbl_stat->{name} eq $tbl ) {
-                  $size   = $tbl_stat->{data_length};
-                  $bytes += $tbl_stat->{data_length};
-                  last;
-               }
-            }
+            $size   = $tbl_stats[0]->{data_length} || 0;
+            $bytes += $tbl_stats[0]->{data_length} || 0;
          }
 
          push @tbls, {
@@ -3681,7 +3678,8 @@ sub interp {
    return @strings;
 }
 
-# Dump a chunk of a table.  By default, each table is a single chunk (1=1).
+# Dump a chunk of a table.  Each table is a single chunk (1=1) unless
+# --chunk-size is specified.
 sub dump_chunk {
    my ( %args ) = @_;
    my @required_args = qw(chunk file DSNParser OptionParser Quoter MySQLDump);
