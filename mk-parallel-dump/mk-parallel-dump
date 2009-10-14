@@ -28,228 +28,6 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# MySQLFind package 4804
-# ###########################################################################
-package MySQLFind;
-
-use strict;
-use warnings FATAL => 'all';
-
-use English qw(-no_match_vars);
-use Data::Dumper;
-$Data::Dumper::Indent    = 0;
-$Data::Dumper::Quotekeys = 0;
-
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-
-sub new {
-   my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dumper quoter) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   die "Do not pass me a dbh argument" if $args{dbh};
-   my $self = bless \%args, $class;
-   $self->{need_engine}
-      = (   $self->{engines}->{permit}
-         || $self->{engines}->{reject}
-         || $self->{engines}->{regexp} ? 1 : 0);
-   die "I need a parser argument"
-      if $self->{need_engine} && !defined $args{parser};
-   MKDEBUG && _d('Need engine:', $self->{need_engine} ? 'yes' : 'no');
-   $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
-   $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
-   if ( $args{useddl} ) {
-      MKDEBUG && _d('Will prefer DDL');
-   }
-   return $self;
-}
-
-sub init_timestamp {
-   my ( $self, $dbh ) = @_;
-   return if $self->{timestamp}->{$dbh}->{now};
-   my $sql = 'SELECT CURRENT_TIMESTAMP';
-   MKDEBUG && _d($sql);
-   ($self->{timestamp}->{$dbh}->{now}) = $dbh->selectrow_array($sql);
-   MKDEBUG && _d('Current timestamp:', $self->{timestamp}->{$dbh}->{now});
-}
-
-sub find_databases {
-   my ( $self, $dbh ) = @_;
-   return grep {
-      $_ !~ m/^(information_schema|lost\+found)$/i
-   }  $self->_filter('databases', sub { $_[0] },
-         $self->{dumper}->get_databases(
-            $dbh,
-            $self->{quoter},
-            $self->{databases}->{like}));
-}
-
-sub find_tables {
-   my ( $self, $dbh, %args ) = @_; 
-
-   my @tables
-      = $self->_filter('tables', sub { $_[0]->{name} },
-         $self->_fetch_tbl_list($dbh, %args));
-
-   my %broken_table;
-
-   if ( $self->{need_engine} ) {
-      foreach my $tbl ( @tables ) {
-         next if $tbl->{engine};
-         my ( $tbl_name ) = $tbl->{name} =~ m/\.(.+)$/;
-         my $struct = $self->{parser}->parse(
-            $self->{dumper}->get_create_table(
-               $dbh, $self->{quoter}, $args{database}, $tbl_name));
-         $broken_table{$tbl_name} = 1 unless $struct;
-         $tbl->{engine} = $struct->{engine};
-      }
-      @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
-   }
-
-   for my $i ( 0..$#tables ) {
-      $tables[$i]->{name} =~ s/^[^.]*\.//;
-      
-      if ( $broken_table{$tables[$i]->{name}} ) {
-         MKDEBUG && _d('Removing broken table:', $tables[$i]->{name});
-         delete $tables[$i];
-      }
-   }
-
-   foreach my $crit ( @{$self->{tables}->{status}} ) {
-      my ($key, $test) = %$crit;
-      @tables
-         = grep {
-            $self->_test_date($_, $key, $test, $dbh)
-         } @tables;
-   }
-
-   return map { $_->{name} } @tables;
-}
-
-sub find_views {
-   my ( $self, $dbh, %args ) = @_;
-   my @tables = $self->_fetch_tbl_list($dbh, %args);
-   @tables = grep { $_->{engine} eq 'VIEW' } @tables;
-   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
-   return map { $_->{name} } @tables;
-}
-
-sub _use_db {
-   my ( $self, $dbh, $new ) = @_;
-   if ( !$new ) {
-      MKDEBUG && _d('No new DB to use');
-      return;
-   }
-   my $sql = 'SELECT DATABASE()';
-   MKDEBUG && _d($sql);
-   my $curr = $dbh->selectrow_array($sql);
-   if ( $curr && $new && $curr eq $new ) {
-      MKDEBUG && _d('Current and new DB are the same');
-      return $curr;
-   }
-   $sql = 'USE ' . $self->{quoter}->quote($new);
-   MKDEBUG && _d($sql);
-   $dbh->do($sql);
-   return $curr;
-}
-
-sub _fetch_tbl_list {
-   my ( $self, $dbh, %args ) = @_;
-   die "database is required" unless $args{database};
-
-   my $curr_db = $self->_use_db($dbh, $args{database});
-
-   my @tables;
-   if ( scalar @{$self->{tables}->{status}} ) {
-      @tables = $self->{dumper}->get_table_status(
-         $dbh,
-         $self->{quoter},
-         $args{database},
-         $self->{tables}->{like});
-   }
-   else {
-      @tables = $self->{dumper}->get_table_list(
-         $dbh,
-         $self->{quoter},
-         $args{database},
-         $self->{tables}->{like});
-   }
-
-   @tables = map {
-      my %hash = %$_;
-      $hash{name} = join('.', $args{database}, $hash{name});
-      \%hash;
-   }
-   grep {
-      ( $self->{engines}->{views} || ($_->{engine} ne 'VIEW') )
-   } @tables;
-
-   $self->_use_db($dbh, $curr_db);
-
-   return @tables;
-}
-
-sub _filter {
-   my ( $self, $thing, $sub, @vals ) = @_;
-   MKDEBUG && _d('Filtering', $thing, 'list on', Dumper($self->{$thing}));
-   my $permit = $self->{$thing}->{permit};
-   my $reject = $self->{$thing}->{reject};
-   my $regexp = $self->{$thing}->{regexp};
-   return grep {
-      my $val = $sub->($_);
-      $val = '' unless defined $val;
-      if ( $thing eq 'tables' ) {
-         (my $tbl = $val) =~ s/^.*\.//;
-         ( !$reject || (!$reject->{$val} && !$reject->{$tbl}) )
-            && ( !$permit || $permit->{$val} || $permit->{$tbl} )
-            && ( !$regexp || $val =~ m/$regexp/ )
-      }
-      else {
-         ( !$reject || !$reject->{$val} )
-            && ( !$permit || $permit->{$val} )
-            && ( !$regexp || $val =~ m/$regexp/ )
-      }
-   } @vals;
-}
-
-sub _test_date {
-   my ( $self, $table, $prop, $test, $dbh ) = @_;
-   $prop = lc $prop;
-   if ( !defined $table->{$prop} ) {
-      MKDEBUG && _d($prop, 'is not defined');
-      return $self->{nullpass};
-   }
-   my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
-   die "Invalid date test $test for $prop" unless defined $num;
-   $self->init_timestamp($dbh);
-   my $sql = "SELECT DATE_SUB('$self->{timestamp}->{$dbh}->{now}', "
-           . "INTERVAL $num SECOND)";
-   MKDEBUG && _d($sql);
-   ($self->{timestamp}->{$dbh}->{$num}) ||= $dbh->selectrow_array($sql);
-   my $time = $self->{timestamp}->{$dbh}->{$num};
-   if ( $equality ) {
-      return ($equality eq '-' && $table->{$prop} gt $time)
-          || ($equality eq '+' && $table->{$prop} lt $time);
-   }
-   return $table->{$prop} eq $time;
-}
-
-sub _d {
-   my ($package, undef, $line) = caller 0;
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-        map { defined $_ ? $_ : 'undef' }
-        @_;
-   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-}
-
-1;
-
-# ###########################################################################
-# End MySQLFind package
-# ###########################################################################
-
-# ###########################################################################
 # DSNParser package 4823
 # ###########################################################################
 use strict;
@@ -2963,6 +2741,202 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# SchemaIterator package 4858
+# ###########################################################################
+package SchemaIterator;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(Quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+      %args,
+      filter => undef,
+   };
+   return bless $self, $class;
+}
+
+sub make_filter {
+   my ( $self, $o ) = @_;
+   my @lines = (
+      'sub {',
+      '   my ( $dbh, $db, $tbl ) = @_;',
+      '   my $engine = undef;',
+   );
+
+
+   my @permit_dbs = _make_filter('unless', '$db', $o->get('databases'))
+      if $o->has('databases');
+   my @reject_dbs = _make_filter('if', '$db', $o->get('ignore-databases'))
+      if $o->has('ignore-databases');
+   if ( @permit_dbs || @reject_dbs ) {
+      push @lines,
+         '   if ( $db ) {',
+            (@permit_dbs ? @permit_dbs : ()),
+            (@reject_dbs ? @reject_dbs : ()),
+         '   }';
+   }
+
+   if ( $o->get('tables') || $o->get('ignore-tables') ) {
+      my @permit_tbls = _make_filter('unless', '$tbl', $o->get('tables'))
+         if $o->has('tables');
+      my @reject_tbls = _make_filter('if', '$tbl', $o->get('ignore-tables'))
+         if $o->has('ignore-tables');
+
+      my @get_eng;
+      my @permit_engs;
+      my @reject_engs;
+      if ( $o->get('engines') || $o->get('ignore-engines') ) {
+         push @get_eng,
+            '      my $sql = "SHOW TABLE STATUS "',
+            '              . ($db ? "FROM `$db`" : "")',
+            '              . " LIKE \'$tbl\'";',
+            '      MKDEBUG && _d($sql);',
+            '      eval {',
+            '         my $stats = $dbh->selectrow_hashref($sql);',
+            '         $engine   = $stats->{Engine} || $stats->{engine};',
+            '      };',
+            '      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);',
+            '      MKDEBUG && _d($tbl, "uses engine", $engine);',
+         @permit_engs = _make_filter('unless', '$engine', $o->get('engines'))
+            if $o->has('engines');
+         @reject_engs = _make_filter('if', '$engine', $o->get('ignore-engines'))
+            if $o->has('ignore-engines');
+      }
+
+      if ( @permit_tbls || @reject_tbls || @permit_engs || @reject_engs ) {
+         push @lines,
+            '   if ( $tbl ) {',
+               (@permit_tbls ? @permit_tbls : ()),
+               (@reject_tbls ? @reject_tbls : ()),
+               (@get_eng     ? @get_eng     : ()),
+               (@permit_engs ? @permit_engs : ()),
+               (@reject_engs ? @reject_engs : ()),
+            '   }';
+      }
+   }
+
+   push @lines, '   return 1;',  '}';
+
+   my $code = join("\n", @lines);
+   MKDEBUG && _d('filter sub:', $code);
+   my $filter_sub= eval $code
+      or die "Error compiling subroutine code:\n$code\n$EVAL_ERROR";
+
+   return $filter_sub;
+}
+
+sub set_filter {
+   my ( $self, $filter_sub ) = @_;
+   $self->{filter} = $filter_sub;
+   MKDEBUG && _d('Set filter sub');
+   return;
+}
+
+sub get_db_itr {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh) = @args{@required_args};
+
+   my $filter = $self->{filter};
+   my @dbs;
+   eval {
+      my $sql = 'SHOW DATABASES';
+      MKDEBUG && _d($sql);
+      @dbs = map {
+         $_->[0]
+      }
+      grep {
+         my $ok = $filter ? $filter->($dbh, $_->[0], undef) : 1;
+         $ok;
+      }
+      @{ $dbh->selectall_arrayref($sql) };
+      MKDEBUG && _d('Found', scalar @dbs, 'databases');
+   };
+   MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+   return sub {
+      return shift @dbs;
+   };
+}
+
+sub get_tbl_itr {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $views) = @args{@required_args, 'views'};
+
+   my $filter = $self->{filter};
+   my @tbls;
+   if ( $db ) {
+      eval {
+         my $sql = 'SHOW /*!50002 FULL*/ TABLES FROM '
+                 . $self->{Quoter}->quote($db);
+         MKDEBUG && _d($sql);
+         @tbls = map {
+            $_->[0]
+         }
+         grep {
+            my $ok = $filter ? $filter->($dbh, $db, $_->[0]) : 1;
+            if ( !$views ) {
+               $ok = 0 if ($_->[1] || 'VIEW') eq 'VIEW';
+            }
+            $ok;
+         }
+         @{ $dbh->selectall_arrayref($sql) };
+         MKDEBUG && _d('Found', scalar @tbls, 'tables in', $db);
+      };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+   }
+   else {
+      MKDEBUG && _d('No db given so no tables');
+   }
+   return sub {
+      return shift @tbls;
+   };
+}
+
+sub _make_filter {
+   my ( $cond, $var_name, $objs ) = @_;
+   my @lines;
+   if ( scalar keys %$objs ) {
+      my $test = join(' || ', map { "$var_name eq '$_'" } keys %$objs);
+      push @lines, "      return 0 $cond $var_name && ($test);",
+   }
+   return @lines;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SchemaIterator package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -3179,27 +3153,11 @@ sub main {
    # ########################################################################
    # Find each db.tbl to dump.
    # ######################################################################## 
-   my %findspec = (
-      quoter => $q,
-      dumper => $du,
-      parser => $tp,
-      databases => {
-         permit => $o->get('databases'),
-         reject => $o->get('ignore-databases'),
-         regexp => $o->get('databases-regex'),
-      },
-      tables => {
-         permit => $o->get('tables'),
-         reject => $o->get('ignore-tables'),
-         regexp => $o->get('tables-regex'),
-      },
-      engines => {
-         permit => $o->get('engines'),
-         reject => $o->get('ignore-engines'),
-         views  => 0,
-      },
+   my $si = new SchemaIterator(
+      Quoter => $q,
    );
-   my $finder = new MySQLFind(%findspec);
+   $si->set_filter($si->make_filter($o));
+   my $next_db = $si->get_db_itr(dbh => $dbh);
 
    my @tbls;
    my %stat_totals;  # for all dbs and tbls
@@ -3208,9 +3166,16 @@ sub main {
    my $done   = 0;  # for progress
    my $maxdb  = 0;  # for report
    my $maxtbl = 0;  # for report
-   foreach my $db ( $finder->find_databases($dbh) ) {
+   while ( my $db = $next_db->() ) {
+      MKDEBUG && _d('Getting tables from', $db);
+      my $next_tbl = $si->get_tbl_itr(
+         dbh   => $dbh,
+         db    => $db,
+         views => 0,
+      );
       TABLE:
-      foreach my $tbl ( $finder->find_tables($dbh, database => $db) ) {
+      while ( my $tbl = $next_tbl->() ) {
+         MKDEBUG && _d('Getting table', $tbl);
          my $tbl_struct;
          eval {
             $tbl_struct = $tp->parse(
@@ -3254,8 +3219,8 @@ sub main {
 
          $maxdb  = length $db  if length $db  > $maxdb;
          $maxtbl = length $tbl if length $tbl > $maxtbl;
-      }
-   }
+      } # next table
+   } # next database
 
    # ########################################################################
    # Sort the tables biggest-first.
