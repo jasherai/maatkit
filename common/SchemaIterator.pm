@@ -60,46 +60,65 @@ sub make_filter {
    my @lines = (
       'sub {',
       '   my ( $dbh, $db, $tbl ) = @_;',
-      '   my $engine = "";',
+      '   my $engine = undef;',
    );
 
-   # If filtering by engines, the filter sub will need to SHOW TABLE STATUS
-   # to get the table's engine if a table was given.
-   if ( $o->get('engines') || $o->get('ignore-engines') ) {
+   my @permit_dbs = _make_filter('unless', '$db', $o->get('databases'))
+      if $o->has('databases');
+   my @reject_dbs = _make_filter('if', '$db', $o->get('ignore-databases'))
+      if $o->has('ignore-databases');
+   if ( @permit_dbs || @reject_dbs ) {
+      push @lines,
+         '   if ( $db ) {',
+            (@permit_dbs ? @permit_dbs : ()),
+            (@reject_dbs ? @reject_dbs : ()),
+         '   }';
    }
 
-   my %var_for = (
-      databases          => '$db',
-      'ignore-databases' => '$db',
-      tables             => '$tbl',
-      'ignore-tables'    => '$tbl',
-      engines            => '$engine',
-      'ignore-engines'   => '$engine',
-   );
-   # qw() the filter objs manually instead of doing keys %filter_objs so
-   # that they're checked in this order which will make the filter more
-   # efficient (i.e. don't check the engine for a bunch of tables if the
-   # database is rejected).
-   foreach my $obj (
-      qw(databases ignore-databases tables ignore-tables engines ignore-engines)
-   ) {
-      next unless $o->has($obj);
-      if ( my $objs = $o->get($obj) ) {
-         next unless scalar keys %$objs;
-         MKDEBUG && _d('Making', $obj, 'filter');
-         my $cond = $obj =~ m/^ignore/ ? 'if' : 'unless';
+   if ( $o->get('tables') || $o->get('ignore-tables') ) {
+      my @permit_tbls = _make_filter('unless', '$tbl', $o->get('tables'))
+         if $o->has('tables');
+      my @reject_tbls = _make_filter('if', '$tbl', $o->get('ignore-tables'))
+         if $o->has('ignore-tables');
+
+      my @get_eng;
+      my @permit_engs;
+      my @reject_engs;
+      if ( $o->get('engines') || $o->get('ignore-engines') ) {
+         push @get_eng,
+            '      my $sql = "SHOW TABLE STATUS "',
+            '              . ($db ? "FROM `$db`" : "")',
+            '              . " LIKE \'$tbl\'";',
+            '      MKDEBUG && _d($sql);',
+            '      eval {',
+            '         ($engine) = $dbh->selectrow_hashref($sql)->{Engine};',
+            '      };',
+            '      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);',
+            '      MKDEBUG && _d($tbl, "uses engine", $engine);',
+            '      $engine ||= "";',
+         @permit_engs = _make_filter('unless', '$engine', $o->get('engines'))
+            if $o->has('engines');
+         @reject_engs = _make_filter('if', '$engine', $o->get('ignore-engines'))
+            if $o->has('ignore-engines');
+      }
+
+      if ( @permit_tbls || @reject_tbls || @permit_engs || @reject_engs ) {
          push @lines,
-            "return 0 $cond $var_for{$obj} && (",
-               join(' || ', map { "$var_for{$obj} eq '$_'" } keys %$objs),
-            ');',
+            '   if ( $tbl ) {',
+               (@permit_tbls ? @permit_tbls : ()),
+               (@reject_tbls ? @reject_tbls : ()),
+               (@get_eng     ? @get_eng     : ()),
+               (@permit_engs ? @permit_engs : ()),
+               (@reject_engs ? @reject_engs : ()),
+            '   }';
       }
    }
 
-   push @lines, 'return 1; }';
+   push @lines, '   return 1;',  '}';
 
    # Make the subroutine.
    my $code = join("\n", @lines);
-   MKDEBUG && _d('filter sub:', @lines);
+   MKDEBUG && _d('filter sub:', $code);
    my $filter_sub= eval $code
       or die "Error compiling subroutine code:\n$code\n$EVAL_ERROR";
 
@@ -183,6 +202,16 @@ sub get_tbl_itr {
    return sub {
       return shift @tbls;
    };
+}
+
+sub _make_filter {
+   my ( $cond, $var_name, $objs ) = @_;
+   my @lines;
+   if ( scalar keys %$objs ) {
+      my $test = join(' || ', map { "$var_name eq '$_'" } keys %$objs);
+      push @lines, "      return 0 $cond $var_name && ($test);",
+   }
+   return @lines;
 }
 
 sub _d {

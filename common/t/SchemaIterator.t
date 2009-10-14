@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 17;
+use Test::More tests => 20;
 
 use List::Util qw(max);
 
@@ -118,6 +118,7 @@ is_deeply(
    \@dbs,
    'Database not filtered',
 );
+
 $next_tbl = $si->get_tbl_itr($dbh, 'd1');
 is_deeply(
    get_all($next_tbl),
@@ -202,6 +203,38 @@ is_deeply(
    get_all($next_tbl),
    ['t2'],
    '--databases and --ignore-tables'
+);
+
+# Filter by engines, which requires extra work: SHOW TABLE STATUS.
+@ARGV=qw(--engines InnoDB);
+$o->get_opts();
+$filter = $si->make_filter($o);
+$si->set_filter($filter);
+
+$next_db = $si->get_db_itr($dbh);
+is_deeply(
+   get_all($next_db),
+   \@dbs,
+   '--engines does not affect databases'
+);
+
+$next_tbl = $si->get_tbl_itr($dbh, 'd1');
+is_deeply(
+   get_all($next_tbl),
+   ['t2'],
+   '--engines'
+);
+
+@ARGV=qw(--ignore-engines MEMORY);
+$o->get_opts();
+$filter = $si->make_filter($o);
+$si->set_filter($filter);
+
+$next_tbl = $si->get_tbl_itr($dbh, 'd1');
+is_deeply(
+   get_all($next_tbl),
+   [qw(t1 t2)],
+   '--ignore-engines'
 );
 
 # #############################################################################
