@@ -329,7 +329,7 @@ diag(`rm -rf $basedir`);
 # Issue 31: Make mk-parallel-dump and mk-parallel-restore do biggest-first
 ############################################################################
 $sb->load_file('master', 'samples/issue_31.sql');
-# Tables in order of size: t4 t1 t3 t3
+# Tables in order of size: t4 t1 t3 t2
 
 # These two tests may fail because the children are printing to the same
 # STDOUT so sometimes the prints get out of order.  If you run the test again,
