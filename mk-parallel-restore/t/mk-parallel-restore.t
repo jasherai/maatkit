@@ -326,8 +326,56 @@ is_deeply(
 );
 
 # #############################################################################
+# Issue 506: mk-parallel-restore might cause a slave error when checking if
+# table exists
+# #############################################################################
+
+
+SKIP: {
+   skip 'Cannot connect to sandbox slave', 1 unless $slave_dbh;
+
+   $sb->load_file('master', 'samples/issue_506.sql');
+   sleep 1;
+
+   diag(`rm -rf $basedir`);
+   `../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d issue_506 --chunk-size 5`;
+   $dbh->do('TRUNCATE TABLE issue_506.t');
+   sleep 1;
+   $slave_dbh->do('DROP TABLE issue_506.t');
+
+   is_deeply(
+      $slave_dbh->selectall_arrayref('show tables from issue_506'),
+      [],
+      'Table does not exist on slave (issue 506)'
+   );
+
+   is_deeply(
+      $slave_dbh->selectrow_hashref('show slave status')->{Last_Error},
+      '',
+      'No slave error yet (issue 506)'
+   );
+
+   `$cmd $basedir/issue_506`;
+
+   ok(
+      $slave_dbh->selectrow_hashref('show slave status')->{Last_Error},
+      'Slave error (issue 506)'
+   );
+
+   $slave_dbh->do('stop slave');
+   $slave_dbh->do('set global SQL_SLAVE_SKIP_COUNTER=1');
+   $slave_dbh->do('start slave');
+
+   is_deeply(
+      $slave_dbh->selectrow_hashref('show slave status')->{Last_Error},
+      '',
+      'No slave error (issue 506)'
+   );
+};
+
+# #############################################################################
 # Done.
 # #############################################################################
-`rm -rf $basedir/`;
-$sb->wipe_clean($dbh);
+# `rm -rf $basedir/`;
+# $sb->wipe_clean($dbh);
 exit;
