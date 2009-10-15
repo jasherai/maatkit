@@ -65,6 +65,14 @@ sub split_unquote {
    return ($db, $tbl);
 }
 
+# Escapes LIKE wildcard % and _.
+sub literal_like {
+   my ( $self, $like ) = @_;
+   return unless $like;
+   $like =~ s/([%_])/\\$1/g;
+   return $like;
+}
+
 1;
 
 # ###########################################################################
