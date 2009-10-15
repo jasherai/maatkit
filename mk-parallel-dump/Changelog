@@ -1,5 +1,12 @@
 Changelog for mk-parallel-dump:
 
+   * Removed sets and all set-related options (issue 637).
+   * Removed --since (issue 636).
+   * Removed dump file compression and --[no]gzip (issue 639).
+   * Removed ability to "write your own command line" (issue 638).
+   * Removed ability to dump triggers and views (issue 316).
+   * Added --[no]resume (issue 495).
+   * --progress did not respect --ignore-engines (issue 573).
    * --set-vars did not work (issue 597).
    * Command line options did not override config file options (issue 617).
 
