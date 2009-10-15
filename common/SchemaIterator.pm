@@ -114,9 +114,10 @@ sub make_filter {
             '      };',
             '      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);',
             '      MKDEBUG && _d($tbl, "uses engine", $engine);',
-         @permit_engs = _make_filter('unless', '$engine', $o->get('engines'))
+            '      $engine = lc $engine if $engine;',
+         @permit_engs = _make_filter('unless', '$engine', $o->get('engines'), 1)
             if $o->has('engines');
-         @reject_engs = _make_filter('if', '$engine', $o->get('ignore-engines'))
+         @reject_engs = _make_filter('if', '$engine', $o->get('ignore-engines'), 1)
             if $o->has('ignore-engines');
       }
 
@@ -251,11 +252,21 @@ sub get_tbl_itr {
    };
 }
 
+# Required args:
+#   * cond      scalar: condition for check, "if" or "unless"
+#   * var_name  scalar: literal var name to compare to obj values
+#   * objs      hashref: object values (as the hash keys)
+# Optional args:
+#   * lc  bool: lowercase object values
+# Returns: scalar
+# Can die: no
+# _make_filter() return a test condtion like "$var eq 'foo' || $var eq 'bar'".
 sub _make_filter {
-   my ( $cond, $var_name, $objs ) = @_;
+   my ( $cond, $var_name, $objs, $lc ) = @_;
    my @lines;
    if ( scalar keys %$objs ) {
-      my $test = join(' || ', map { "$var_name eq '$_'" } keys %$objs);
+      my $test = join(' || ',
+         map { "$var_name eq '" . ($lc ? lc $_ : $_) ."'" } keys %$objs);
       push @lines, "      return 0 $cond $var_name && ($test);",
    }
    return @lines;

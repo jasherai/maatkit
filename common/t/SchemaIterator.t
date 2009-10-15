@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 26;
 
 use List::Util qw(max);
 
@@ -260,6 +260,32 @@ SKIP: {
       'Table itr returns views if specified'
    );
 };
+
+# ###########################################################################
+# Make sure --engine filter is case-insensitive.
+# ###########################################################################
+
+# In MySQL 5.0 it's "MRG_MyISAM" but in 5.1 it's "MRG_MYISAM".  SiLlY.
+
+@ARGV=qw(--engines InNoDb);
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+$next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
+is_deeply(
+   get_all($next_tbl),
+   ['t2'],
+   '--engines is case-insensitive'
+);
+
+@ARGV=qw(--ignore-engines InNoDb);
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+$next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
+is_deeply(
+   get_all($next_tbl),
+   ['t1','t3'],
+   '--ignore-engines is case-insensitive'
+);
 
 # ###########################################################################
 # Filter by regex.
