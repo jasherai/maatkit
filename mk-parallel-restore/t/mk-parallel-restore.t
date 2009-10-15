@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 35;
+use Test::More tests => 39;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -193,7 +193,7 @@ like($output, qr/Restoring from chunk 0 because table `test`.`issue_30` does not
 
 my $slave_dbh = $sb->get_dbh_for('slave1');
 SKIP: {
-   skip 'Cannot connect to sandbox slave', 2 unless $slave_dbh;
+   skip 'Cannot connect to sandbox slave', 10 unless $slave_dbh;
 
    `../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --tab`;
 
@@ -275,8 +275,14 @@ SKIP: {
 # Issue 406: Use of uninitialized value in concatenation (.) or string at
 # ./mk-parallel-restore line 1808
 # #############################################################################
+
+# This test restores a dump of test.issue_30 done in the above SKIP block.
+# So if that block was skipped, we need to dump the table ourselves.
+`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25` unless $slave_dbh;
+
 $sb->load_file('master', 'samples/issue_30.sql');
 $output = `MKDEBUG=1 $cmd -D test $basedir 2>&1`;
+
 unlike(
    $output,
    qr/uninitialized value/,
@@ -329,10 +335,8 @@ is_deeply(
 # Issue 506: mk-parallel-restore might cause a slave error when checking if
 # table exists
 # #############################################################################
-
-
 SKIP: {
-   skip 'Cannot connect to sandbox slave', 1 unless $slave_dbh;
+   skip 'Cannot connect to sandbox slave', 4 unless $slave_dbh;
 
    $sb->load_file('master', 'samples/issue_506.sql');
    sleep 1;
@@ -349,17 +353,18 @@ SKIP: {
       'Table does not exist on slave (issue 506)'
    );
 
-   is_deeply(
+   is(
       $slave_dbh->selectrow_hashref('show slave status')->{Last_Error},
       '',
-      'No slave error yet (issue 506)'
+      'No slave error before restore (issue 506)'
    );
 
    `$cmd $basedir/issue_506`;
 
-   ok(
+   is(
       $slave_dbh->selectrow_hashref('show slave status')->{Last_Error},
-      'Slave error (issue 506)'
+      '',
+      'No slave error after restore (issue 506)'
    );
 
    $slave_dbh->do('stop slave');

@@ -1700,6 +1700,349 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# TableParser package 4872
+# ###########################################################################
+package TableParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw(Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
+}
+
+
+sub parse {
+   my ( $self, $ddl, $opts ) = @_;
+   return unless $ddl;
+   if ( ref $ddl eq 'ARRAY' ) {
+      if ( lc $ddl->[0] eq 'table' ) {
+         $ddl = $ddl->[1];
+      }
+      else {
+         return {
+            engine => 'VIEW',
+         };
+      }
+   }
+
+   if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
+      die "Cannot parse table definition; is ANSI quoting "
+         . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+   }
+
+   $ddl =~ s/(`[^`]+`)/\L$1/g;
+
+   my $engine = $self->get_engine($ddl);
+
+   my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
+   my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
+   MKDEBUG && _d('Columns:', join(', ', @cols));
+
+   my %def_for;
+   @def_for{@cols} = @defs;
+
+   my (@nums, @null);
+   my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
+   foreach my $col ( @cols ) {
+      my $def = $def_for{$col};
+      my ( $type ) = $def =~ m/`[^`]+`\s([a-z]+)/;
+      die "Can't determine column type for $def" unless $type;
+      $type_for{$col} = $type;
+      if ( $type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ) {
+         push @nums, $col;
+         $is_numeric{$col} = 1;
+      }
+      if ( $def !~ m/NOT NULL/ ) {
+         push @null, $col;
+         $is_nullable{$col} = 1;
+      }
+      $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
+   }
+
+   my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
+
+   return {
+      cols           => \@cols,
+      col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
+      is_col         => { map { $_ => 1 } @cols },
+      null_cols      => \@null,
+      is_nullable    => \%is_nullable,
+      is_autoinc     => \%is_autoinc,
+      clustered_key  => $clustered_key,
+      keys           => $keys,
+      defs           => \%def_for,
+      numeric_cols   => \@nums,
+      is_numeric     => \%is_numeric,
+      engine         => $engine,
+      type_for       => \%type_for,
+   };
+}
+
+sub sort_indexes {
+   my ( $self, $tbl ) = @_;
+
+   my @indexes
+      = sort {
+         (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
+         || ( !$tbl->{keys}->{$a}->{is_unique} <=> !$tbl->{keys}->{$b}->{is_unique} )
+         || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
+         || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
+      }
+      grep {
+         $tbl->{keys}->{$_}->{type} eq 'BTREE'
+      }
+      sort keys %{$tbl->{keys}};
+
+   MKDEBUG && _d('Indexes sorted best-first:', join(', ', @indexes));
+   return @indexes;
+}
+
+sub find_best_index {
+   my ( $self, $tbl, $index ) = @_;
+   my $best;
+   if ( $index ) {
+      ($best) = grep { uc $_ eq uc $index } keys %{$tbl->{keys}};
+   }
+   if ( !$best ) {
+      if ( $index ) {
+         die "Index '$index' does not exist in table";
+      }
+      else {
+         ($best) = $self->sort_indexes($tbl);
+      }
+   }
+   MKDEBUG && _d('Best index found is', $best);
+   return $best;
+}
+
+sub find_possible_keys {
+   my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
+   return () unless $where;
+   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($database, $table)
+      . ' WHERE ' . $where;
+   MKDEBUG && _d($sql);
+   my $expl = $dbh->selectrow_hashref($sql);
+   $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
+   if ( $expl->{possible_keys} ) {
+      MKDEBUG && _d('possible_keys =', $expl->{possible_keys});
+      my @candidates = split(',', $expl->{possible_keys});
+      my %possible   = map { $_ => 1 } @candidates;
+      if ( $expl->{key} ) {
+         MKDEBUG && _d('MySQL chose', $expl->{key});
+         unshift @candidates, grep { $possible{$_} } split(',', $expl->{key});
+         MKDEBUG && _d('Before deduping:', join(', ', @candidates));
+         my %seen;
+         @candidates = grep { !$seen{$_}++ } @candidates;
+      }
+      MKDEBUG && _d('Final list:', join(', ', @candidates));
+      return @candidates;
+   }
+   else {
+      MKDEBUG && _d('No keys in possible_keys');
+      return ();
+   }
+}
+
+sub check_table {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbl) = @args{@required_args};
+   my $q      = $self->{Quoter};
+   my $db_tbl = $q->quote($db, $tbl);
+   MKDEBUG && _d('Checking', $db_tbl);
+
+   my $sql = "SHOW TABLES FROM " . $q->quote($db) . " LIKE '$tbl'";
+   MKDEBUG && _d($sql);
+   my $row;
+   eval {
+      $row = $dbh->selectrow_arrayref($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
+   }
+   if ( !$row->[0] ) {
+      MKDEBUG && _d('Table does not exist');
+      return 0;
+   }
+
+   MKDEBUG && _d('Table exists; no privs to check');
+   return 1 unless $args{all_privs};
+
+   $sql = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d($sql);
+   eval {
+      $row = $dbh->selectrow_hashref($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
+   }
+   if ( !scalar keys %$row ) {
+      MKDEBUG && _d('Table has no columns:', Dumper($row));
+      return 0;
+   }
+   my $privs = $row->{privileges} || $row->{Privileges};
+
+   $sql = "DELETE FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d($sql);
+   eval {
+      $dbh->do($sql);
+   };
+   my $can_delete = $EVAL_ERROR ? 0 : 1;
+
+   MKDEBUG && _d('User privs on', $db_tbl, ':', $privs,
+      ($can_delete ? 'delete' : ''));
+
+   if ( !($privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/
+          && $can_delete) ) {
+      MKDEBUG && _d('User does not have all privs');
+      return 0;
+   }
+
+   MKDEBUG && _d('User has all privs');
+   return 1;
+}
+
+sub get_engine {
+   my ( $self, $ddl, $opts ) = @_;
+   my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
+   MKDEBUG && _d('Storage engine:', $engine);
+   return $engine || undef;
+}
+
+sub get_keys {
+   my ( $self, $ddl, $opts, $is_nullable ) = @_;
+   my $engine        = $self->get_engine($ddl);
+   my $keys          = {};
+   my $clustered_key = undef;
+
+   KEY:
+   foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
+
+      next KEY if $key =~ m/FOREIGN/;
+
+      MKDEBUG && _d('Parsed key:', $key);
+
+      if ( $engine !~ m/MEMORY|HEAP/ ) {
+         $key =~ s/USING HASH/USING BTREE/;
+      }
+
+      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
+      $type = $type || $special || 'BTREE';
+      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
+         && $engine =~ m/HEAP|MEMORY/i )
+      {
+         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
+      }
+
+      my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
+      my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
+      my @cols;
+      my @col_prefixes;
+      foreach my $col_def ( split(',', $cols) ) {
+         my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
+         push @cols, $name;
+         push @col_prefixes, $prefix;
+      }
+      $name =~ s/`//g;
+
+      MKDEBUG && _d('Key', $name, 'cols:', join(', ', @cols));
+
+      $keys->{$name} = {
+         name         => $name,
+         type         => $type,
+         colnames     => $cols,
+         cols         => \@cols,
+         col_prefixes => \@col_prefixes,
+         is_unique    => $unique,
+         is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
+         is_col       => { map { $_ => 1 } @cols },
+      };
+
+      if ( $engine =~ m/InnoDB/i && !$clustered_key ) {
+         my $this_key = $keys->{$name};
+         if ( $this_key->{name} eq 'PRIMARY' ) {
+            $clustered_key = 'PRIMARY';
+         }
+         elsif ( $this_key->{is_unique} && !$this_key->{is_nullable} ) {
+            $clustered_key = $this_key->{name};
+         }
+         MKDEBUG && $clustered_key && _d('This key is the clustered key');
+      }
+   }
+
+   return $keys, $clustered_key;
+}
+
+sub get_fks {
+   my ( $self, $ddl, $opts ) = @_;
+   my $fks = {};
+
+   foreach my $fk (
+      $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg )
+   {
+      my ( $name ) = $fk =~ m/CONSTRAINT `(.*?)`/;
+      my ( $cols ) = $fk =~ m/FOREIGN KEY \(([^\)]+)\)/;
+      my ( $parent, $parent_cols ) = $fk =~ m/REFERENCES (\S+) \(([^\)]+)\)/;
+
+      if ( $parent !~ m/\./ && $opts->{database} ) {
+         $parent = "`$opts->{database}`.$parent";
+      }
+
+      $fks->{$name} = {
+         name           => $name,
+         colnames       => $cols,
+         cols           => [ map { s/[ `]+//g; $_; } split(',', $cols) ],
+         parent_tbl     => $parent,
+         parent_colnames=> $parent_cols,
+         parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
+      };
+   }
+
+   return $fks;
+}
+
+sub remove_auto_increment {
+   my ( $self, $ddl ) = @_;
+   $ddl =~ s/(^\).*?) AUTO_INCREMENT=\d+\b/$1/m;
+   return $ddl;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableParser package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -1811,6 +2154,19 @@ sub main {
       $daemon = new Daemon(o=>$o);
       $daemon->make_PID_file();
    }
+   
+
+   # ########################################################################
+   # Make common modules.
+   # ########################################################################
+   my $q  = new Quoter();
+   my $tp = new TableParser(Quoter => $q);
+   my %common_modules = (
+      o  => $o,
+      dp => $dp,
+      q  => $q,
+      tp => $tp,
+   );
 
    # ########################################################################
    # Connect.
@@ -1911,7 +2267,6 @@ sub main {
    # Canonicalize table list in the order they were discovered, filtering out
    # tables that should not be done.
    # ########################################################################
-   my $q = new Quoter();
    {
       my %seen;
       @tables_to_do = grep { !$seen{$_->{D}}->{$_->{N}}++ } @tables_to_do;
@@ -1964,11 +2319,6 @@ sub main {
    # number of children.  Each child that exits will trigger a new one to
    # start after that.
    # #########################################################################
-   my %common_modules = (
-      o  => $o,
-      dp => $dp,
-      q  => $q,
-   );
    my $start = time();
    my $done  = 0; # For progress measurements. 
 
@@ -2108,7 +2458,7 @@ sub info {
 # Actually restores a table.
 sub do_table {
    my ( %args ) = @_;
-   foreach my $arg ( qw(file_types db tbl files o dp file_size) ) {
+   foreach my $arg ( qw(file_types db tbl files o dp file_size tp) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $file_types = $args{file_types};
@@ -2343,7 +2693,7 @@ sub do_sql_file {
 # keep --progress accurate.
 sub skip_finished_chunks {
    my ( $files, %args ) = @_;
-   foreach my $arg ( qw(dbh db tbl tbl_chunks file_size o dp q) ) {
+   foreach my $arg ( qw(dbh db tbl tbl_chunks file_size o dp q tp) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $db        = $args{db};
@@ -2353,6 +2703,7 @@ sub skip_finished_chunks {
    my $chunks    = $args{tbl_chunks}->{$db}->{$tbl};
    my $q         = $args{q};
    my $dbh       = $args{dbh};
+   my $tp        = $args{tp};
 
    my $db_tbl = $q->quote($db, $tbl);
 
@@ -2374,10 +2725,7 @@ sub skip_finished_chunks {
    # First check that the table exists (issue 221).
    # If not, then we resume from chunk 0 which will contain
    # the create table def.
-   eval {
-      $dbh->do("REPLACE INTO $db_tbl SELECT * FROM $db_tbl LIMIT 0");
-   };
-   if ( !$EVAL_ERROR ) {
+   if ( $tp->check_table(dbh=>$dbh, db=>$db, tbl=>$tbl) ) {
       # Table exists, so figure out the first missing chunk.
       foreach my $chunk ( @$chunks ) {
          my $select_chunk   = "SELECT 1 FROM $db_tbl WHERE ( $chunk ) LIMIT 1";
