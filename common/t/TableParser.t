@@ -3,14 +3,17 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 29;
+use Test::More tests => 32;
 
-use DBI;
 require "../TableParser.pm";
 require "../Quoter.pm";
-
-my $tp = new TableParser();
-my $q  = new Quoter();
+require '../DSNParser.pm';
+require '../Sandbox.pm';
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
+my $q   = new Quoter();
+my $tp  = new TableParser(Quoter=>$q);
 my $tbl;
 
 sub throws_ok {
@@ -510,15 +513,12 @@ is_deeply(
 # #############################################################################
 # Sandbox tests
 # #############################################################################
-require '../DSNParser.pm';
-require '../Sandbox.pm';
-my $dp = new DSNParser();
-my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-
-my $dbh = $sb->get_dbh_for('master');
 SKIP: {
-   skip 'Cannot connect to sandbox master', 5 unless $dbh;
-   $sb->create_dbs($dbh, [qw(test)]);
+   skip 'Cannot connect to sandbox master', 6 unless $dbh;
+
+   $dbh->do('drop database if exists test');
+   $dbh->do('create database test');
+   $dbh->do('create table test.t (i int)');
 
    # msandbox user does not have GRANT privs.
    my $root_dbh = DBI->connect(
@@ -527,16 +527,67 @@ SKIP: {
    $root_dbh->do("GRANT SELECT ON test.* TO 'user'\@'\%'");
    $root_dbh->do('FLUSH PRIVILEGES');
    $root_dbh->disconnect();
+
    my $user_dbh = DBI->connect(
       "DBI:mysql:host=127.0.0.1;port=12345", 'user', undef,
       { PrintError => 0, RaiseError => 1 });
-   is($tp->table_exists($user_dbh, 'mysql', 'db', $q, 1), '0', 'table_exists but no insert privs');
-   $user_dbh->disconnect();
+   ok(
+      $tp->check_table(
+         dbh => $dbh,
+         db  => 'mysql',
+         tbl => 'db',
+      ),
+      'Table exists'
+   );
+   ok(
+      !$tp->check_table(
+         dbh => $dbh,
+         db  => 'mysql',
+         tbl => 'blahbleh',
+      ),
+      'Table does not exist'
+   );
+   ok(
+      !$tp->check_table(
+         dbh => $user_dbh,
+         db  => 'mysql',
+         tbl => 'db',
+      ),
+      "Table exists but user can't see it"
+   );
+   ok(
+      !$tp->check_table(
+         dbh => $user_dbh,
+         db  => 'mysql',
+         tbl => 'blahbleh',
+      ),
+      "Table does not exist and user can't see it"
+   );
+   ok(
+      $tp->check_table(
+         dbh       => $dbh,
+         db        => 'test',
+         tbl       => 't',
+         all_privs => 1,
+      ),
+      "Table exists and user has full privs"
+   );
+   ok(
+      !$tp->check_table(
+         dbh       => $user_dbh,
+         db        => 'test',
+         tbl       => 't',
+         all_privs => 1,
+      ),
+      "Table exists but user doesn't have full privs"
+   );
 
-   # The following tests require that you manually load the
-   # sakila db into the sandbox master. TODO: there is no need for this :-(
-   skip 'Sandbox master does not have the sakila database', 4
-      unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
+   $user_dbh->disconnect();
+};
+
+SKIP: {
+   skip 'Sandbox master does not have the sakila database', 2
+      unless $dbh && @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
    is_deeply(
       [$tp->find_possible_keys(
          $dbh, 'sakila', 'film_actor', $q, 'film_id > 990  and actor_id > 1')],
@@ -549,11 +600,7 @@ SKIP: {
       [qw(idx_fk_film_id PRIMARY)],
       'Best index for WHERE clause with sort_union'
    );
-   is($tp->table_exists($dbh, 'sakila', 'film_actor', $q), '1', 'table_exists returns true when the table exists');
-   is($tp->table_exists($dbh, 'sakila', 'foo', $q), '0', 'table_exists returns false when the table does not exist');
-
-   $sb->wipe_clean($dbh);
-}
+};
 
 # #############################################################################
 # Issue 109: Test schema changes in 5.1
@@ -676,4 +723,5 @@ is(
 # #############################################################################
 # Done.
 # #############################################################################
+$sb->wipe_clean($dbh) if $dbh;
 exit;
