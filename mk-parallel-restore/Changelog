@@ -1,5 +1,6 @@
 Changelog for mk-parallel-restore:
 
+   * Removed ability to restore triggers and views (issue 316).
    * --set-vars did not work (issue 597).
    * --databases did not work with --database (issue 624).
    * Command line options did not override config file options (issue 617).
