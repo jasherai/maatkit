@@ -172,7 +172,7 @@ is_deeply(
 # Test actual dumping.
 # ###########################################################################
 SKIP: {
-   skip 'Sandbox master does not have the sakila database', 24
+   skip 'Sandbox master does not have the sakila database', 29
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
    $output = `$cmd --chunk-size 100 --base-dir $basedir --tab -d sakila -t film`;

@@ -1201,19 +1201,29 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4397
+# TableParser package 4875
 # ###########################################################################
 package TableParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+
 sub new {
-   my ( $class ) = @_;
-   return bless {}, $class;
+   my ( $class, %args ) = @_;
+   my @required_args = qw(Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 
@@ -1349,27 +1359,69 @@ sub find_possible_keys {
    }
 }
 
-sub table_exists {
-   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
-   my $result = 0;
+sub check_table {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbl) = @args{@required_args};
+   my $q      = $self->{Quoter};
    my $db_tbl = $q->quote($db, $tbl);
-   my $sql    = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d('Checking', $db_tbl);
+
+   my $literal_tbl = $q->literal_like($tbl);
+   my $sql = "SHOW TABLES FROM " . $q->quote($db) . " LIKE '$literal_tbl'";
+   MKDEBUG && _d($sql);
+   my $row;
+   eval {
+      $row = $dbh->selectrow_arrayref($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
+   }
+   if ( !$row->[0] || $row->[0] ne $tbl ) {
+      MKDEBUG && _d('Table does not exist');
+      return 0;
+   }
+
+   MKDEBUG && _d('Table exists; no privs to check');
+   return 1 unless $args{all_privs};
+
+   $sql = "SHOW FULL COLUMNS FROM $db_tbl";
    MKDEBUG && _d($sql);
    eval {
-      my $sth = $dbh->prepare($sql);
-      $sth->execute();
-      my @columns = @{$sth->fetchall_arrayref({})};
-      if ( $can_insert ) {
-         $result = grep { ($_->{Privileges} || '') =~ m/insert/ } @columns;
-      }
-      else {
-         $result = 1;
-      }
+      $row = $dbh->selectrow_hashref($sql);
    };
-   if ( MKDEBUG && $EVAL_ERROR ) {
-      _d($EVAL_ERROR);
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
    }
-   return $result;
+   if ( !scalar keys %$row ) {
+      MKDEBUG && _d('Table has no columns:', Dumper($row));
+      return 0;
+   }
+   my $privs = $row->{privileges} || $row->{Privileges};
+
+   $sql = "DELETE FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d($sql);
+   eval {
+      $dbh->do($sql);
+   };
+   my $can_delete = $EVAL_ERROR ? 0 : 1;
+
+   MKDEBUG && _d('User privs on', $db_tbl, ':', $privs,
+      ($can_delete ? 'delete' : ''));
+
+   if ( !($privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/
+          && $can_delete) ) {
+      MKDEBUG && _d('User does not have all privs');
+      return 0;
+   }
+
+   MKDEBUG && _d('User has all privs');
+   return 1;
 }
 
 sub get_engine {
@@ -2241,7 +2293,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 3186
+# Quoter package 4874
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2289,6 +2341,13 @@ sub split_unquote {
       $db  = $default_db;
    }
    return ($db, $tbl);
+}
+
+sub literal_like {
+   my ( $self, $like ) = @_;
+   return unless $like;
+   $like =~ s/([%_])/\\$1/g;
+   return $like;
 }
 
 1;
@@ -2741,7 +2800,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 4862
+# SchemaIterator package 4876
 # ###########################################################################
 package SchemaIterator;
 
@@ -2781,11 +2840,16 @@ sub make_filter {
       if $o->has('databases');
    my @reject_dbs = _make_filter('if', '$db', $o->get('ignore-databases'))
       if $o->has('ignore-databases');
-   if ( @permit_dbs || @reject_dbs ) {
+   my @dbs_regex;
+   if ( $o->has('databases-regex') && (my $p = $o->get('databases-regex')) ) {
+      push @dbs_regex, "      return 0 unless \$db && (\$db =~ m/$p/o);";
+   }
+   if ( @permit_dbs || @reject_dbs || @dbs_regex ) {
       push @lines,
          '   if ( $db ) {',
             (@permit_dbs ? @permit_dbs : ()),
             (@reject_dbs ? @reject_dbs : ()),
+            (@dbs_regex  ? @dbs_regex  : ()),
          '   }';
    }
 
@@ -2794,6 +2858,10 @@ sub make_filter {
          if $o->has('tables');
       my @reject_tbls = _make_filter('if', '$tbl', $o->get('ignore-tables'))
          if $o->has('ignore-tables');
+      my @tbls_regex;
+      if ( $o->has('tables-regex') && (my $p = $o->get('tables-regex')) ) {
+         push @tbls_regex, "      return 0 unless \$tbl && (\$tbl =~ m/$p/o);";
+      }
 
       my @get_eng;
       my @permit_engs;
@@ -2809,17 +2877,20 @@ sub make_filter {
             '      };',
             '      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);',
             '      MKDEBUG && _d($tbl, "uses engine", $engine);',
-         @permit_engs = _make_filter('unless', '$engine', $o->get('engines'))
+            '      $engine = lc $engine if $engine;',
+         @permit_engs = _make_filter('unless', '$engine', $o->get('engines'), 1)
             if $o->has('engines');
-         @reject_engs = _make_filter('if', '$engine', $o->get('ignore-engines'))
+         @reject_engs = _make_filter('if', '$engine', $o->get('ignore-engines'), 1)
             if $o->has('ignore-engines');
       }
 
-      if ( @permit_tbls || @reject_tbls || @permit_engs || @reject_engs ) {
+      if ( @permit_tbls || @reject_tbls || @tbls_regex
+           || @permit_engs || @reject_engs ) {
          push @lines,
             '   if ( $tbl ) {',
                (@permit_tbls ? @permit_tbls : ()),
                (@reject_tbls ? @reject_tbls : ()),
+               (@tbls_regex  ? @tbls_regex  : ()),
                (@get_eng     ? @get_eng     : ()),
                (@permit_engs ? @permit_engs : ()),
                (@reject_engs ? @reject_engs : ()),
@@ -2912,10 +2983,11 @@ sub get_tbl_itr {
 }
 
 sub _make_filter {
-   my ( $cond, $var_name, $objs ) = @_;
+   my ( $cond, $var_name, $objs, $lc ) = @_;
    my @lines;
    if ( scalar keys %$objs ) {
-      my $test = join(' || ', map { "$var_name eq '$_'" } keys %$objs);
+      my $test = join(' || ',
+         map { "$var_name eq '" . ($lc ? lc $_ : $_) ."'" } keys %$objs);
       push @lines, "      return 0 $cond $var_name && ($test);",
    }
    return @lines;
@@ -3137,7 +3209,7 @@ sub main {
    # Make common modules.
    # ########################################################################
    my $q  = new Quoter();
-   my $tp = new TableParser();
+   my $tp = new TableParser(Quoter => $q);
    my $du = new MySQLDump();
    my $tc = new TableChunker(Quoter => $q, MySQLDump => $du);
    my %common_modules = (
