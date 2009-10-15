@@ -326,11 +326,7 @@ diag(`rm -rf $basedir`);
 $sb->load_file('master', 'samples/issue_31.sql');
 # Tables in order of size: t4 t1 t3 t2
 
-# These two tests may fail because the children are printing to the same
-# STDOUT so sometimes the prints get out of order.  If you run the test again,
-# it'll probably pass.
-
-$output = `$cmd --base-dir $basedir -d issue_31 --dry-run 2>&1 | grep 'result\-file'`;
+$output = `$cmd --base-dir $basedir -d issue_31 --dry-run --threads 1 2>&1 | grep 'result\-file'`;
 is(
    $output,
 "mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t4 --result-file '/tmp/dump/issue_31/t4.000000.sql'
@@ -341,7 +337,7 @@ mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables -
    'Dumps largest tables first'
 );
 
-$output = `$cmd --base-dir $basedir -d issue_31 --tab --dry-run 2>&1 | grep SELECT`;
+$output = `$cmd --base-dir $basedir -d issue_31 --tab --dry-run --threads 1 2>&1 | grep SELECT`;
 is(
    $output,
 "SELECT * INTO OUTFILE '/tmp/dump/issue_31/t4.000000.txt' FROM `issue_31`.`t4` WHERE 1=1
