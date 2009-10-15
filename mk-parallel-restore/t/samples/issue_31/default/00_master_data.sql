@@ -1,0 +1,6 @@
+-- file mysql-bin.000001
+-- position 107405528
+-- CHUNK issue_31 t4 0 1=1
+-- CHUNK issue_31 t1 0 1=1
+-- CHUNK issue_31 t3 0 1=1
+-- CHUNK issue_31 t2 0 1=1

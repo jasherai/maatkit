@@ -2061,7 +2061,9 @@ use List::Util qw(max sum);
 use POSIX;
 use Time::HiRes qw(time);
 use Data::Dumper;
-$Data::Dumper::Indent = 1;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -2311,7 +2313,7 @@ sub main {
    }
 
    if ( $o->get('biggest-first') ) {
-      @tables_to_do = reverse sort { $a->{Z} <=> $b->{Z} } @tables_to_do;
+      @tables_to_do = sort { $b->{Z} <=> $a->{Z} } @tables_to_do;
    }
 
    # #########################################################################
@@ -2474,8 +2476,6 @@ sub do_table {
    # order:
    # * sql     (drop and create table)
    # * txt/csv (load data into table)
-   # Later we'll do the views from the 00_views file, after all tables are
-   # recreated.
    @files = sort {
       my $a_type = filetype($a);
       my $b_type = filetype($b);

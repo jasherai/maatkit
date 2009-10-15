@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 41;
+use Test::More tests => 40;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -60,40 +60,55 @@ like($output, qr/1 files,     1 successes,  0 failures/, 'restored');
 $output = `$mysql -N -e 'select count(*) from mk_parallel_restore_bar.bar'`;
 is($output + 0, 0, 'Loaded mk_parallel_restore_bar.bar');
 
+# #############################################################################
+# Issue 31: Make mk-parallel-dump and mk-parallel-restore do biggest-first
+# #############################################################################
 
-SKIP: {
-   skip 'Sandbox master does not have the sakila database', 5
-      unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
+# Tables in order of size: t4 t1 t3 t2
 
-   diag(`rm -rf $basedir`);
-   $output = `perl ../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d sakila -t film,film_actor,payment,rental`;
-   like($output, qr/0 failures/, 'Dumped sakila tables');
+$output = `$cmd samples/issue_31 --create-databases --dry-run --threads 1 2>&1 | grep 'Dumping data for table'`;
+is(
+   $output,
+"-- Dumping data for table `t4`
+-- Dumping data for table `t1`
+-- Dumping data for table `t3`
+-- Dumping data for table `t2`
+",
+   "Restores largest tables first by default (issue 31)"
+);
 
-   $output = `MKDEBUG=1 $cmd -D test $basedir 2>&1 | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$4}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
-   unlike($output, qr/disorder/, 'Tables restored biggest-first by default');   
+# Do it again with > 1 arg to test that it does NOT restore largest first.
+# It should restore the tables in the given order.
+$output = `$cmd --create-databases --dry-run --threads 1 samples/issue_31/issue_31/t1.000000.sql samples/issue_31/issue_31/t2.000000.sql samples/issue_31/issue_31/t3.000000.sql samples/issue_31/issue_31/t4.000000.sql 2>&1 | grep 'Dumping data for table'`;
+is(
+   $output,
+"-- Dumping data for table `t1`
+-- Dumping data for table `t2`
+-- Dumping data for table `t3`
+-- Dumping data for table `t4`
+",
+   "Restores tables in given order (issue 31)"
+);
 
-   `$mysql -e 'DROP TABLE test.film_actor, test.film, test.payment, test.rental'`;
+# And yet again, but this time test that a given order of tables is
+# ignored if --biggest-first is explicitly given
+$output = `$cmd --biggest-first --create-databases --dry-run --threads 1 samples/issue_31/issue_31/t1.000000.sql samples/issue_31/issue_31/t2.000000.sql samples/issue_31/issue_31/t3.000000.sql samples/issue_31/issue_31/t4.000000.sql 2>&1 | grep 'Dumping data for table'`;
+is(
+   $output,
+"-- Dumping data for table `t4`
+-- Dumping data for table `t1`
+-- Dumping data for table `t3`
+-- Dumping data for table `t2`
+",
+   "Given order overriden by explicit --biggest-first (issue 31)"
+);
 
-   # Do it all again with > 1 arg in order to test that it does NOT
-   # sort by biggest-first, as explained by Baron in issue 31 comment 1.
-   $output = `MKDEBUG=1 $cmd -D test $basedir/sakila/payment.000000.sql $basedir/sakila/film.000000.sql $basedir/sakila/rental.000000.sql $basedir/sakila/film_actor.000000.sql 2>&1 | grep -A 6 ' got ' | grep 'N => ' | awk '{print \$4}' | cut -f1 -d',' 2>&1`;
-   like($output, qr/'payment'\n'film'\n'rental'\n'film_actor'/, 'Tables restored in given order');
-
-   `$mysql -e 'DROP TABLE test.film_actor, test.film, test.payment, test.rental'`;
-
-   # And yet again, but this time test that a given order of tables is
-   # ignored if --biggest-first is explicitly given
-   $output = `MKDEBUG=1 $cmd -D test --biggest-first $basedir/sakila/payment.000000.sql $basedir/sakila/film.000000.sql $basedir/sakila/rental.000000.sql $basedir/sakila/film_actor.000000.sql 2>&1 | grep -A 6 ' got ' |  grep 'Z => ' | awk '{print \$4}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
-   unlike($output, qr/disorder/, 'Explicit --biggest-first overrides given table order');
-
-   `$mysql -e 'DROP TABLE test.film_actor, test.film, test.payment, test.rental'`;
-
-   # And again, because I've yet to better optimize these tests...
-   # This time we're just making sure reporting progress by bytes.
-   # This is kind of a contrived test, but it's better than nothing.
-   $output = `../mk-parallel-restore -F $cnf --progress --dry-run $basedir`;
-   like($output, qr/done: [\d\.]+[Mk]\/[\d\.]+[Mk]/, 'Reporting progress by bytes');
-};
+# #############################################################################
+# Test --progress.
+# #############################################################################
+# This is kind of a contrived test, but it's better than nothing.
+$output = `$cmd samples/issue_31 --progress --dry-run`;
+like($output, qr/done: [\d\.]+[Mk]\/[\d\.]+[Mk]/, 'Reporting progress by bytes');
 
 # #############################################################################
 # Issue 30: Add resume functionality to mk-parallel-restore
