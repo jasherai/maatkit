@@ -230,7 +230,8 @@ sub check_table {
    my $db_tbl = $q->quote($db, $tbl);
    MKDEBUG && _d('Checking', $db_tbl);
 
-   my $sql = "SHOW TABLES FROM " . $q->quote($db) . " LIKE '$tbl'";
+   my $literal_tbl = $q->literal_like($tbl);
+   my $sql = "SHOW TABLES FROM " . $q->quote($db) . " LIKE '$literal_tbl'";
    MKDEBUG && _d($sql);
    my $row;
    eval {
@@ -240,7 +241,7 @@ sub check_table {
       MKDEBUG && _d($EVAL_ERROR);
       return 0;
    }
-   if ( !$row->[0] ) {
+   if ( !$row->[0] || $row->[0] ne $tbl ) {
       MKDEBUG && _d('Table does not exist');
       return 0;
    }

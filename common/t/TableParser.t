@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 32;
+use Test::More tests => 34;
 
 require "../TableParser.pm";
 require "../Quoter.pm";
@@ -514,11 +514,9 @@ is_deeply(
 # Sandbox tests
 # #############################################################################
 SKIP: {
-   skip 'Cannot connect to sandbox master', 6 unless $dbh;
+   skip 'Cannot connect to sandbox master', 8 unless $dbh;
 
-   $dbh->do('drop database if exists test');
-   $dbh->do('create database test');
-   $dbh->do('create table test.t (i int)');
+   $sb->load_file('master', 'samples/check_table.sql');
 
    # msandbox user does not have GRANT privs.
    my $root_dbh = DBI->connect(
@@ -580,6 +578,23 @@ SKIP: {
          all_privs => 1,
       ),
       "Table exists but user doesn't have full privs"
+   );
+
+   ok(
+      $tp->check_table(
+         dbh => $dbh,
+         db  => 'test',
+         tbl => 't_',
+      ),
+      'Table t_ exists'
+   );
+   ok(
+      $tp->check_table(
+         dbh => $dbh,
+         db  => 'test',
+         tbl => 't%_',
+      ),
+      'Table t%_ exists'
    );
 
    $user_dbh->disconnect();
