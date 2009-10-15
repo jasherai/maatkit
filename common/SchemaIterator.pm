@@ -49,12 +49,19 @@ sub new {
 # make_filter() uses an OptionParser obj and the following standard filter
 # options to make a filter sub suitable for set_filter():
 #   --databases -d      List of allowed databases
-#   --tables    -t      List of allowed tables
-#   --engines   -e      List of allowed engines
 #   --ignore-databases  List of databases to ignore
+#   --databases-regex   List of allowed databases that match pattern
+#   --tables    -t      List of allowed tables
 #   --ignore-tables     List of tables to ignore
+#   --tables-regex      List of allowed tables that match pattern
+#   --engines   -e      List of allowed engines
 #   --ignore-engines    List of engines to ignore 
-# The filter returns true if the schema object is allowed.
+# The filters in the sub are created in that order for efficiency.  For
+# example, the table filters are not checked if the database doesn't first
+# pass its filters.  Each filter is only created if specified.  Since the
+# database and tables are given separately we no longer have to worry about
+# splitting db.tbl to match db and/or tbl.  The filter returns true if the
+# schema object is allowed.
 sub make_filter {
    my ( $self, $o ) = @_;
    my @lines = (
@@ -70,11 +77,16 @@ sub make_filter {
       if $o->has('databases');
    my @reject_dbs = _make_filter('if', '$db', $o->get('ignore-databases'))
       if $o->has('ignore-databases');
-   if ( @permit_dbs || @reject_dbs ) {
+   my @dbs_regex;
+   if ( $o->has('databases-regex') && (my $p = $o->get('databases-regex')) ) {
+      push @dbs_regex, "      return 0 unless \$db && (\$db =~ m/$p/o);";
+   }
+   if ( @permit_dbs || @reject_dbs || @dbs_regex ) {
       push @lines,
          '   if ( $db ) {',
             (@permit_dbs ? @permit_dbs : ()),
             (@reject_dbs ? @reject_dbs : ()),
+            (@dbs_regex  ? @dbs_regex  : ()),
          '   }';
    }
 
@@ -83,6 +95,10 @@ sub make_filter {
          if $o->has('tables');
       my @reject_tbls = _make_filter('if', '$tbl', $o->get('ignore-tables'))
          if $o->has('ignore-tables');
+      my @tbls_regex;
+      if ( $o->has('tables-regex') && (my $p = $o->get('tables-regex')) ) {
+         push @tbls_regex, "      return 0 unless \$tbl && (\$tbl =~ m/$p/o);";
+      }
 
       my @get_eng;
       my @permit_engs;
@@ -104,11 +120,13 @@ sub make_filter {
             if $o->has('ignore-engines');
       }
 
-      if ( @permit_tbls || @reject_tbls || @permit_engs || @reject_engs ) {
+      if ( @permit_tbls || @reject_tbls || @tbls_regex
+           || @permit_engs || @reject_engs ) {
          push @lines,
             '   if ( $tbl ) {',
                (@permit_tbls ? @permit_tbls : ()),
                (@reject_tbls ? @reject_tbls : ()),
+               (@tbls_regex  ? @tbls_regex  : ()),
                (@get_eng     ? @get_eng     : ()),
                (@permit_engs ? @permit_engs : ()),
                (@reject_engs ? @reject_engs : ()),

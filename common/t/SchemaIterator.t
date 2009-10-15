@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 24;
 
 use List::Util qw(max);
 
@@ -130,8 +130,7 @@ is_deeply(
 # Filter by --databases (-d).
 @ARGV=qw(--d d1);
 $o->get_opts();
-$filter = $si->make_filter($o);
-$si->set_filter($filter);
+$si->set_filter($si->make_filter($o));
 
 $next_db = $si->get_db_itr(dbh=>$dbh);
 is_deeply(
@@ -150,8 +149,7 @@ is_deeply(
 # Filter by --databases (-d) and --tables (-t).
 @ARGV=qw(-d d1 -t t2);
 $o->get_opts();
-$filter = $si->make_filter($o);
-$si->set_filter($filter);
+$si->set_filter($si->make_filter($o));
 
 $next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
 is_deeply(
@@ -163,8 +161,7 @@ is_deeply(
 # Ignore some dbs and tbls.
 @ARGV=('--ignore-databases', 'mysql,sakila,information_schema,d1,d3');
 $o->get_opts();
-$filter = $si->make_filter($o);
-$si->set_filter($filter);
+$si->set_filter($si->make_filter($o));
 
 $next_db = $si->get_db_itr(dbh=>$dbh);
 is_deeply(
@@ -183,8 +180,7 @@ is_deeply(
 @ARGV=('--ignore-databases', 'mysql,sakila,information_schema,d2,d3',
        '--ignore-tables', 't1,t2');
 $o->get_opts();
-$filter = $si->make_filter($o);
-$si->set_filter($filter);
+$si->set_filter($si->make_filter($o));
 
 $next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
 is_deeply(
@@ -196,8 +192,7 @@ is_deeply(
 # Select some dbs but ignore some tables.
 @ARGV=('-d', 'd1', '--ignore-tables', 't1,t3');
 $o->get_opts();
-$filter = $si->make_filter($o);
-$si->set_filter($filter);
+$si->set_filter($si->make_filter($o));
 
 $next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
 is_deeply(
@@ -209,8 +204,7 @@ is_deeply(
 # Filter by engines, which requires extra work: SHOW TABLE STATUS.
 @ARGV=qw(--engines InnoDB);
 $o->get_opts();
-$filter = $si->make_filter($o);
-$si->set_filter($filter);
+$si->set_filter($si->make_filter($o));
 
 $next_db = $si->get_db_itr(dbh=>$dbh);
 is_deeply(
@@ -228,8 +222,7 @@ is_deeply(
 
 @ARGV=qw(--ignore-engines MEMORY);
 $o->get_opts();
-$filter = $si->make_filter($o);
-$si->set_filter($filter);
+$si->set_filter($si->make_filter($o));
 
 $next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
 is_deeply(
@@ -238,6 +231,9 @@ is_deeply(
    '--ignore-engines'
 );
 
+# ###########################################################################
+# Filter views.
+# ###########################################################################
 SKIP: {
    skip 'Sandbox master does not have the sakila database', 2
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
@@ -248,8 +244,7 @@ SKIP: {
 
    @ARGV=();
    $o->get_opts();
-   $filter = $si->make_filter($o);
-   $si->set_filter($filter);
+   $si->set_filter($si->make_filter($o));
 
    $next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'sakila');
    is_deeply(
@@ -265,6 +260,27 @@ SKIP: {
       'Table itr returns views if specified'
    );
 };
+
+# ###########################################################################
+# Filter by regex.
+# ###########################################################################
+@ARGV=qw(--databases-regex d[13] --tables-regex t[^3]);
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+
+$next_db = $si->get_db_itr(dbh=>$dbh);
+is_deeply(
+   get_all($next_db),
+   [qw(d1 d3)],
+   '--databases-regex'
+);
+
+$next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
+is_deeply(
+   get_all($next_tbl),
+   ['t1','t2'],
+   '--tables-regex'
+);
 
 # #############################################################################
 # Done.
