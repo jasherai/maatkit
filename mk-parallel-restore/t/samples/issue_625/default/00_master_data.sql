@@ -1,0 +1,3 @@
+-- file mysql-bin.000001
+-- position 382
+-- CHUNK issue_625 t 0 1=1
