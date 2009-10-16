@@ -10,6 +10,7 @@ Changelog for mk-parallel-dump:
    * Added --mysqldump.
    * --progress did not respect --ignore-engines (issue 573).
    * --set-vars did not work (issue 597).
+   * Changed output format of --verbose and --progress.
    * Command line options did not override config file options (issue 617).
 
 2009-07-31: version 1.0.17
