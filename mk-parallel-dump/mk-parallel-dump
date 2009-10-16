@@ -3847,7 +3847,6 @@ sub filename {
 # quotes, and everything else with single quotes. 
 sub make_shell_command {
    my @cmd  = @_;
-   my $exec = shift @cmd;  # Don't quote executable.
    my $char = $OSNAME =~ m/MSWin/ ? q{"} : q{'};
    map {
       # Don't quote every argument.  We need at least the > and | not to be
@@ -3859,14 +3858,13 @@ sub make_shell_command {
          $_;
       }
    } @cmd;
-   unshift @cmd, $exec;
-   return @cmd;
 }
 
 sub system_call {
    my ( $o, @cmd ) = @_;
    my $exit_status = 0;
-   my $cmd         = join(' ', make_shell_command(@cmd));
+   my $exec = shift @cmd;  # Don't quote the executable.
+   my $cmd  = "$exec " . join(' ', make_shell_command(@cmd));
    if ( $o->get('dry-run') ) {
       print $cmd, "\n";
    }
