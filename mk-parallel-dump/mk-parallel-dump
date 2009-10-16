@@ -3327,7 +3327,7 @@ sub main {
    my $db_tbl_width = $maxdb + (($o->get('verbose')||0) > 1 ? $maxtbl : 0) + 1;
    $db_tbl_width    = 14 if $db_tbl_width < 14;
    my $fmt = "%5s %5s %5s %8s %-${db_tbl_width}s %-s";
-   info($o, 1, sprintf($fmt,
+   info($o, 0, sprintf($fmt,
       qw(CHUNK TIME EXIT SKIPPED DATABASE.TABLE),
       ($o->get('progress') ? 'PROGRESS' : ''))
    );
@@ -3524,7 +3524,7 @@ sub main {
                         qw(databases tables chunks));
    }
 
-   info($o, 1, sprintf($fmt,
+   info($o, 0, sprintf($fmt,
          'all',
          sprintf('%.2f', $stat_totals{wallclock}),
          $stat_totals{exit} || 0,
@@ -3799,7 +3799,7 @@ sub dump_chunk {
         :    "SELECT $chunk->{L} INTO OUTFILE '$file.txt' "
            . "FROM $D.$N WHERE $chunk->{W}";
       if ( $o->get('dry-run') ) {
-         print $sql, "\n";
+         print $sql, "\n" unless $o->get('quiet');
       }
       else {
          eval {
@@ -3891,7 +3891,7 @@ sub system_call {
    my $exec = shift @cmd;  # Don't quote the executable.
    my $cmd  = "$exec " . join(' ', make_shell_command(@cmd));
    if ( $o->get('dry-run') ) {
-      print $cmd, "\n";
+      print $cmd, "\n" unless $o->get('quiet');
    }
    else {
       MKDEBUG && _d($cmd);
@@ -3982,7 +3982,7 @@ sub report_stats {
    }
 
    # Report completed chunk.
-   info($o, 3, sprintf($fmt,
+   info($o, 2, sprintf($fmt,
       $chunk->{C},
       sprintf('%.2f', $chunk->{time}),
       $exit_status,
@@ -3993,7 +3993,7 @@ sub report_stats {
 
    # Report completed table.
    if ( !$tbl_stats->{chunks_left} ) {
-      info($o, 2, sprintf($fmt,
+      info($o, 1, sprintf($fmt,
          'tbl',
          sprintf('%.2f', time - $tbl_stats->{start_time}),
          $tbl_stats->{exit} || 0,
@@ -4005,7 +4005,7 @@ sub report_stats {
 
    # Report completed database.
    if ( !$db_stats->{chunks_left} ) {
-      info($o, 1, sprintf($fmt,
+      info($o, 0, sprintf($fmt,
             'db',
             sprintf('%.2f', time - $db_stats->{start_time}),
             $db_stats->{exit} || 0,
@@ -4201,27 +4201,88 @@ only useful for C<%C>).
 
 =head1 OUTPUT
 
-Output depends on verbosity.  When L<"--dry-run"> is given, output includes
-commands that would be executed.
+Output depends on L<"--verbose">, L<"--progress">, L<"--dry-run"> and
+L<"--quiet">.  If L<"--dry-run"> is specified mk-parallel-dump prints the
+commands or SQL statements that it would use to dump data but it does not
+actually dump any data.  If L<"--quiet"> is specified there is no output;
+this overrides all other out-affecting options.
 
-When L<"--verbose"> is 0, there is normally no output unless there's an error.
+The default output is:
 
-When L<"--verbose"> is 1, there is one line of output for each backup set,
-showing the set, how many tables and chunks were dumped with what status, how
-much time elapsed, and how much time the parallel dump jobs added up to.  A
-final line shows sums for all sets, unless there is only one set.
+  CHUNK  TIME  EXIT  SKIPPED DATABASE.TABLE 
+     db  0.28     0        0 sakila         
+    all  0.28     0        0 -
 
-When L<"--verbose"> is 2, there is also one line of output for each table.
-Each line is printed when a forked "child" process ends and is removed from
-the list of children.  The output shows the backup set, database, table,
-seconds spent dumping, the exit status of the forked dump process, and number
-of current processes (including the one just reaped; so this typically shows
-"how many are running in parallel").  A status of 0 indicates success:
+If L<"--verbose"> is not specified then one line is printed for each database
+when it finishes dumping, as signified by "db" in the CHUNK column.  If you
+specify L<"--progress"> a PROGRESS column is added after DATABASE.TABLE, like:
 
-  SET     DATABASE TABLE         TIME STATUS THREADS
-  default mysql    db               0      0       4
-  default mysql    columns_priv     0      0       4
-  default mysql    help_category    0      0       3
+  CHUNK  TIME  EXIT  SKIPPED DATABASE.TABLE PROGRESS
+     db  0.28     0        0 sakila         4.10M/4.10M 100.00% ETA ... 00:00 (2009-10-16T15:37:49)
+    all  0.28     0        0 -              done at 2009-10-16T15:37:48, 1 databases, 16 tables, 16 chunks
+
+The CHUNK column shows "db", "tbl" or a number if L<"--chunk-size"> was
+specified along with a high enough L<"--verbose">.  mk-parallel-dump treats
+evrything as a chunk.  If L<"--chunk-size"> is not specified, then each table is
+one big chunk and each database is a chunk (of all its tables).  Thus, there is
+output for numbered table chunks (L<"--chunk-size">), tables and databases.
+Table chunks summarize the results of their L<"--chunk-size"> chunks.  Database
+chunks summarize the results of their tables.  This will become more clear
+when we look at higher levels of verbosity.
+
+The TIME column shows the wallclock time that the chunk took to finish dumping.
+If CHUNK is "db" or "tbl", this time is the total wallclock time that the
+database or table took to dump.
+
+The EXIT column shows the exit status of the chunk.  EXIT codes are:
+
+   EXIT  MEANING
+   ====  ==================
+   0     Success, no errors
+   1     Internal error
+
+The SKIPPED column shows how many chunks were skipped.  These are not
+errors.  Chunks are skipped if the dump can be resumed.  See L<"--[no]resume">.
+
+The DATABASE.TABLE column shows to which table the chunk belongs.  For
+"db" chunks, this shows just the database.  Chunks usually finish dumping
+out of order, so the output is unsorted and random.  Chunks are printed when
+they complete, so with higher verbosity you may see a chunk for db1.table_1,
+then a chunk for db2.table_2, then another chunk for db1.table_1, then the "db"
+chunk summary for db2.
+
+If L<"--progress"> is specified, the PROGRESS column prints information about
+the amount of data dumped so far, the amount of data left to dump, and an ETA
+which tries to predict when everything will be finished dumping.  Sometimes
+the ETA is very accurate, other times it can be significantly off.
+
+The final line of the output is special: it summaries all chunks (all table
+chunks, tables and databases).  In older versions of mk-parallel-dump this
+was called the "final results."
+
+If you specify L<"--verbose"> once the output includes "tbl" CHUNKS:
+
+  CHUNK  TIME  EXIT  SKIPPED DATABASE.TABLE 
+    tbl  0.07     0        0 sakila.payment 
+    tbl  0.08     0        0 sakila.rental  
+    tbl  0.03     0        0 sakila.film    
+     db  0.28     0        0 sakila         
+    all  0.28     0        0 -
+
+And if you specify L<"--verbose"> twice the ouput includes the chunks for
+L<"--chunk-size"> if you also specify L<"--chunk-size">:
+
+  CHUNK  TIME  EXIT  SKIPPED DATABASE.TABLE       
+      0  0.03     0        0 sakila.payment       
+      1  0.03     0        0 sakila.payment      
+    tbl  0.10     0        0 sakila.payment
+      0  0.01     0        1 sakila.store         
+    tbl  0.02     0        1 sakila.store         
+     db  0.20     0        1 sakila               
+    all  0.21     0        1 -               
+
+The output shows that C<sakila.payment> was dumped in two chunks and
+C<sakila.store> was dumped in one chunk but this chunk was skipped.
 
 =head1 SPEED OF PARALLEL DUMPS
 
@@ -4588,7 +4649,7 @@ User for login if not current user.
 
 =item --verbose
 
-short form: -v; cumulative: yes; default: 1
+short form: -v; cumulative: yes
 
 Be verbose; can specify multiple times.
 
