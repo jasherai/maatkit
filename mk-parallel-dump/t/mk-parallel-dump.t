@@ -175,8 +175,8 @@ SKIP: {
    skip 'Sandbox master does not have the sakila database', 29
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
-   $output = `$cmd --chunk-size 100 --base-dir $basedir --tab -d sakila -t film`;
-   my ($tbl, $chunk) = $output =~ m/Final results:\s+(\d+) tables,\s+(\d+) chunks/;
+   $output = `$cmd --chunk-size 100 --base-dir $basedir --tab -d sakila -t film --progress`;
+   my ($tbl, $chunk) = $output =~ m/(\d+) tables,\s+(\d+) chunks/;
    is($tbl, 1, 'One table dumped');
    ok($chunk >= 5 && $chunk <= 15, 'Got some chunks');
    ok(-s "$basedir/sakila/film.000005.txt", 'chunk 5 exists');
@@ -247,7 +247,7 @@ SKIP: {
    $output = `$cmd --base-dir $basedir -d sakila -t film,actor --no-resume -v 2>&1`;
    like(
       $output,
-      qr/0 skipped,/,
+      qr/all\s+\S+\s+0\s+0\s+\-/,
       '--no-resume (no chunks)'
    );
 
@@ -256,7 +256,7 @@ SKIP: {
    $output = `$cmd --base-dir $basedir -d sakila -t film,actor --no-resume -v --chunk-size 100 2>&1`;
    like(
       $output,
-      qr/0 skipped,/,
+      qr/all\s+\S+\s+0\s+0\s+\-/,
       '--no-resume (with chunks)'
    );
 
@@ -272,12 +272,13 @@ SKIP: {
    diag(`rm -rf $basedir`);
 
    # film_text is the only non-InnoDB table (it's MyISAM).
-   $output = `$cmd --base-dir $basedir -d sakila --ignore-engines InnoDB 2>&1`;
+   $output = `$cmd --base-dir $basedir -d sakila --ignore-engines InnoDB --progress`;
    like(
       $output,
-      qr/^Database sakila:\s+1 tables,/,
+      qr/1 databases, 1 tables, 1 chunks/,
       '--ignore-engines InnoDB'
    );
+
    # Make very sure that it dumped only film_text.
    is_deeply(
       get_files($basedir),
@@ -290,10 +291,10 @@ SKIP: {
 
    diag(`rm -rf $basedir`);
 
-   $output = `$cmd --base-dir $basedir -d sakila --ignore-engines InnoDB --tab 2>&1`;
+   $output = `$cmd --base-dir $basedir -d sakila --ignore-engines InnoDB --tab --progress`;
    like(
       $output,
-      qr/^Database sakila:\s+1 tables,/,
+      qr/1 databases, 1 tables, 1 chunks/,
       '--ignore-engines InnoDB --tab'
    );
    is_deeply(
@@ -310,10 +311,10 @@ SKIP: {
 
    # Only issue_560.buddy_list is InnoDB so only its size should be used
    # to calculate --progress.
-   $output = `$cmd --base-dir $basedir -d issue_375,issue_560 --ignore-engines MyISAM --progress 2>&1 | grep done`;
+   $output = `$cmd --base-dir $basedir -d issue_375,issue_560 --ignore-engines MyISAM --progress`;
    like(
       $output,
-      qr/^done: 16\.00k\/16\.00k 100\.00% 00:00 remain/,
+      qr/16\.00k\/16\.00k 100\.00% ETA 00:00/,
       "--progress doesn't count skipped tables (issue 573)"
    ); 
 };
@@ -417,7 +418,7 @@ diag(`cp samples/broken_tbl.frm /tmp/12345/data/test/broken_tbl.frm`);
 $output = `$cmd --base-dir $basedir -d test 2>&1`;
 like(
    $output,
-   qr/\d tables,\s+\d chunks,\s+1 failures/,
+   qr/all\s+\S+\s+1\s+0\s+\-/,
    'Runs but does not die on broken table'
 );
 diag(`rm -rf /tmp/12345/data/test/broken_tbl.frm`);
