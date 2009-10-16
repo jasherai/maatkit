@@ -2199,6 +2199,7 @@ sub main {
    my $databases_regex = $o->get('databases-regex');
    my $tables          = $o->get('tables');
    my $tables_regex    = $o->get('tables-regex');
+   my %has_tables;
 
    # Find directories and files and save them.
    File::Find::find(
@@ -2226,6 +2227,38 @@ sub main {
                            . "to load tab-delimited files.  Maybe you should "
                            . "specify the --tab option.\n";
                      }
+
+                     if ( $o->get('only-empty-databases') ) {
+                        if ( defined $has_tables{$restore_db}
+                             && $has_tables{$restore_db} ) {
+                           info($o, 1, "Skipping file $filename because "
+                              . "database $restore_db is not empty");
+                           return;
+                        }
+
+                        my $tbls;
+                        eval {
+                           my $sql = "SHOW TABLES FROM ".$q->quote($restore_db);
+                           MKDEBUG && _d($sql);
+                           $tbls = $dbh->selectall_arrayref($sql);
+                        };
+                        if ( $EVAL_ERROR ) {
+                           # An error may indicate that the db doesn't exist.
+                           MKDEBUG && _d($EVAL_ERROR);
+                           $has_tables{$restore_db} = 0;
+                        }
+                        else {
+                           $has_tables{$restore_db} = scalar @$tbls;
+                           MKDEBUG && _d($restore_db, 'has',
+                              $has_tables{$restore_db}, 'tables');
+                           if ( $has_tables{$restore_db} ) {
+                              info($o, 1, "Skipping file $filename because "
+                                 . "database $restore_db is not empty");
+                              return;
+                           }
+                        }
+                     }
+
                      $stats{files}++;
                      push @{$files_for_table{$restore_db}->{$tbl}}, $filename;
                      my $size = -s $filename; # For progress measurements
@@ -3181,6 +3214,21 @@ Lock tables before C<LOAD DATA INFILE>.
 =item --[no]no-auto-value-on-0
 
 Set SQL C<NO_AUTO_VALUE_ON_ZERO> before C<LOAD DATA INFILE>.
+
+=item --only-empty-databases
+
+Restore only to empty databases.
+
+By default mk-parallel-restore will restore tables into a database so long
+as it exists (or is created by L<"--create-databases">).  This option is
+a safety feature that prevents any tables from being restored into a database
+that already has tables even if those tables are the same ones being restored.
+If you specify this option, every database must have zero tables.
+
+This implicitly disables L<"--[no]resume">.  L<"--create-databases"> will work
+if the database doesn't already exist and it creates it.
+
+The databases are checked after all filters (L<"--databases">, etc.)
 
 =item --password
 

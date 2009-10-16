@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 42;
+use Test::More tests => 46;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -434,6 +434,39 @@ is_deeply(
    $dbh->selectall_arrayref('select * from issue_625.t'),
    [[1],[2],[3]],
    'Restore older mysqldump, data restored (issue 625)'
+);
+
+# #############################################################################
+# Issue 300: restore only to empty databases
+# #############################################################################
+# This test re-uses issue_625 restored above.
+
+$dbh->do('truncate table issue_625.t');
+$output = `$cmd --only-empty-databases samples/issue_625`;
+
+is_deeply(
+   $dbh->selectall_arrayref('select * from issue_625.t'),
+   [],
+   'Did not restore non-empty database (issue 300)',
+);
+like(
+   $output,
+   qr/database issue_625 is not empty/,
+   'Says file was skipped because database is not empty (issue 300)'
+);
+like(
+   $output,
+   qr/0\s+files/,
+   'Zero files restored (issue 300)'
+);
+
+$dbh->do('drop database if exists issue_625');
+$output = `$cmd --create-databases --only-empty-databases samples/issue_625`;
+
+is_deeply(
+   $dbh->selectall_arrayref('select * from issue_625.t'),
+   [[1],[2],[3]],
+   '--create-databases --only-empty-databases (issue 300)',
 );
 
 # #############################################################################
