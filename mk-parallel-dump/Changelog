@@ -6,6 +6,7 @@ Changelog for mk-parallel-dump:
    * Removed ability to "write your own command line" (issue 638).
    * Removed ability to dump triggers and views (issue 316).
    * Added --[no]resume (issue 495).
+   * Added --mysqldump.
    * --progress did not respect --ignore-engines (issue 573).
    * --set-vars did not work (issue 597).
    * Command line options did not override config file options (issue 617).

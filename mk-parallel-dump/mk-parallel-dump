@@ -3034,7 +3034,6 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 # Global variables.
 my @mysqldump_args;
-my @mysqldump_args_nodata;
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -3123,17 +3122,16 @@ sub main {
    # ########################################################################
    if ( !$o->get('tab') ) {
       # Choose sensible defaults.  Inspect mysqldump --help to see what
-      # options it accepts.  Add --no-data by default, but then remove it
-      # for the ordinary mysqldump commands.  This is used to implement
-      # --ignore-engines.
-      my $help = `mysqldump --help`;
+      # options it accepts.
+      my $mysqldump = $o->get('mysqldump');
+      my $help      = `$mysqldump --help`;
       return 1 if $CHILD_ERROR;
 
       $help =~ s/\A.*?\n----//s;
       my %is_opt = map { $_ => 1 } $help =~ m/^(\w[a-z_-]+)/gm;
       my %skip   = map { $_ => 1 } qw(lock-all-tables lock-tables triggers);
-      @mysqldump_args_nodata = (
-         qw(mysqldump),
+      @mysqldump_args = (
+         $mysqldump,
          @conn_params,
          (
             map  { $skip{$_} ? "--skip-$_" : "--$_" }
@@ -3147,7 +3145,6 @@ sub main {
                comments
                complete-insert
                create-options
-               no-data
                disable-keys
                extended-insert
                quick
@@ -3155,20 +3152,16 @@ sub main {
                set-charset
                triggers
                tz-utc
-               no-create-info
             )
          ),
-         qw( %D %N ),
+         "'\%D' '\%N'",
       );
       if ( $o->get('chunk-size') ) {
-         push @mysqldump_args_nodata, qw(--where %W);
+         push @mysqldump_args, qw(--where %W);
       }
-
-         push @mysqldump_args_nodata,
-            qw(--result-file),
-            filename($o->get('base-dir'), '%D', '%N.%6C.sql');
-
-      @mysqldump_args = grep { $_ !~ m/no-data/ } @mysqldump_args_nodata;
+      push @mysqldump_args,
+         qw(--result-file),
+         filename($o->get('base-dir'), "'\%D'", "'\%N.%6C.sql'");
    }
    MKDEBUG && _d('Args for mysqldump:', join(', ', @mysqldump_args));
 
@@ -3812,8 +3805,8 @@ sub dump_chunk {
 
       my @args = @mysqldump_args;
       # Do a DROP/CREATE only for the first chunk.
-      if ( $chunk->{C} == 0 ) {
-         @args = grep { $_ !~ m/--no-create-info/ } @args;
+      if ( $chunk->{C} > 0 ) {
+         push @args, '--no-create-info';
       }
       @args = map { interp($chunk, $_) } @args;
 
@@ -3853,7 +3846,8 @@ sub filename {
 # This tries to be a 99% solution by quoting Windows arguments with double
 # quotes, and everything else with single quotes. 
 sub make_shell_command {
-   my @cmd = @_;
+   my @cmd  = @_;
+   my $exec = shift @cmd;  # Don't quote executable.
    my $char = $OSNAME =~ m/MSWin/ ? q{"} : q{'};
    map {
       # Don't quote every argument.  We need at least the > and | not to be
@@ -3865,6 +3859,8 @@ sub make_shell_command {
          $_;
       }
    } @cmd;
+   unshift @cmd, $exec;
+   return @cmd;
 }
 
 sub system_call {
@@ -3875,6 +3871,7 @@ sub system_call {
       print $cmd, "\n";
    }
    else {
+      MKDEBUG && _d($cmd);
       $exit_status = system($cmd);
       # Must right-shift to get the actual exit status of the command.
       # Otherwise the upstream exit() call that's about to happen will get a
@@ -4418,6 +4415,16 @@ and reloading in most cases.  (I shamelessly stole this technique from them.  I
 don't know enough about floating-point math to have an opinion).
 
 This works only with L<"--tab">.
+
+=item --mysqldump
+
+type: string; default: mysqldump
+
+Command for mysqldump.
+
+The mysqldump executable in your PATH environment variable is used by default.
+This option allows you to specify the mysqldump command in case it is not
+in your PATH or you want to use something else.
 
 =item --password
 
