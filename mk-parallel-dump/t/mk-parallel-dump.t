@@ -327,13 +327,23 @@ $sb->load_file('master', 'samples/issue_31.sql');
 # Tables in order of size: t4 t1 t3 t2
 
 $output = `$cmd --base-dir $basedir -d issue_31 --dry-run --threads 1 2>&1 | grep 'result\-file'`;
-is(
-   $output,
-"mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t4 --result-file '/tmp/dump/issue_31/t4.000000.sql'
-mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t1 --result-file '/tmp/dump/issue_31/t1.000000.sql'
-mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t3 --result-file '/tmp/dump/issue_31/t3.000000.sql'
-mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t2 --result-file '/tmp/dump/issue_31/t2.000000.sql'
-",
+# There will be several lines like:
+# mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t4 --result-file '/tmp/dump/issue_31/t4.000000.sql'
+# These vary from system to system due to varying mysqldump.  All we really
+# need is the last arg: the table name.
+@tbls = map {
+   my @args = split(/\s+/, $_);
+   $args[-1];
+} split(/\n/, $output);
+
+is_deeply(
+   \@tbls,
+   [
+      "/tmp/dump/'issue_31'/'t4.000000.sql'",
+      "/tmp/dump/'issue_31'/'t1.000000.sql'",
+      "/tmp/dump/'issue_31'/'t3.000000.sql'",
+      "/tmp/dump/'issue_31'/'t2.000000.sql'",
+   ],
    'Dumps largest tables first'
 );
 
@@ -431,7 +441,7 @@ $dbh->do('USE test');
 $dbh->do('CREATE TABLE `issue 446` (i int)');
 $dbh->do('INSERT INTO test.`issue 446` VALUES (1),(2),(3)');
 
-`$cmd --base-dir $basedir --ignore-databases sakila --databases test --tables 'issue 446' 2>&1`;
+`$cmd --base-dir $basedir --ignore-databases sakila --databases test --tables 'issue 446'`;
 ok(
    -f "$basedir/test/issue 446.000000.sql",
    'Dumped table with space in name (issue 446)'

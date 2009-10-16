@@ -3154,7 +3154,8 @@ sub main {
                tz-utc
             )
          ),
-         "'\%D' '\%N'",
+         "'\%D'",
+         "'\%N'",
       );
       if ( $o->get('chunk-size') ) {
          push @mysqldump_args, qw(--where %W);
@@ -3848,10 +3849,22 @@ sub filename {
 sub make_shell_command {
    my @cmd  = @_;
    my $char = $OSNAME =~ m/MSWin/ ? q{"} : q{'};
+   # Modify @cmd in-place and return.  If you modify @cmd outside of this
+   # map you'll need to assign its results to a new array and return that.
    map {
       # Don't quote every argument.  We need at least the > and | not to be
       # quoted for normal operation, and option names should not be quoted.
-      if ( $_ =~ m/[^a-z0-9_.><|-]/ ) {
+      if ( $_ =~ m/['"]/ ) {
+         # Don't quote already quoted args.  This can cause problems on
+         # some shells.  E.g.:
+         #   --result-file '/tmp/dump/'test'/'issue 446.000000.sql''
+         # is interpreted as 3 args:
+         #   /tmp/dump/'test'/
+         #   issue
+         #   446.000000.sql
+         $_;
+      }
+      elsif ( $_ =~ m/[^a-z0-9_.><|-]/ ) {
          $char . $_ . $char;
       }
       else {
