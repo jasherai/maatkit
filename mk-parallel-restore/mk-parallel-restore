@@ -2666,6 +2666,7 @@ sub do_sql_file {
    }
 
    while ( my $sql = <$fh> ) {
+      next if $sql =~ m/^$/;  # issue 625
       if ( $o->get('dry-run') ) {
          print $sql;
       }

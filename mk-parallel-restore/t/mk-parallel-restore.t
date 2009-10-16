@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 40;
+use Test::More tests => 42;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -417,6 +417,23 @@ is_deeply(
    $dbh->selectall_arrayref('show tables from issue_506'),
    [],
    'Table was not restored into DSN D database'
+);
+
+# #############################################################################
+# Issue 625: mk-parallel-restore throws errors for files restored by some
+# versions of mysqldump
+# #############################################################################
+$output = `$cmd --create-databases samples/issue_625`;
+
+like(
+   $output,
+   qr/0\s+failures,/,
+   'Restore older mysqldump, no failure (issue 625)'
+);
+is_deeply(
+   $dbh->selectall_arrayref('select * from issue_625.t'),
+   [[1],[2],[3]],
+   'Restore older mysqldump, data restored (issue 625)'
 );
 
 # #############################################################################

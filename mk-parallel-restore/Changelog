@@ -1,5 +1,6 @@
 Changelog for mk-parallel-restore:
 
+   * Older versions of mysqldump caused "Query was empty" errors (issue 625).
    * Tool caused a slave error in some cases (issue 506).
    * Removed ability to restore triggers and views (issue 316).
    * --set-vars did not work (issue 597).
