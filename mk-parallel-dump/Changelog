@@ -5,6 +5,7 @@ Changelog for mk-parallel-dump:
    * Removed dump file compression and --[no]gzip (issue 639).
    * Removed ability to "write your own command line" (issue 638).
    * Removed ability to dump triggers and views (issue 316).
+   * Did not dump tables with spaces in their names (issue 446).
    * Added --[no]resume (issue 495).
    * Added --mysqldump.
    * --progress did not respect --ignore-engines (issue 573).
