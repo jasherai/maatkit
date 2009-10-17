@@ -3020,7 +3020,7 @@ package mk_parallel_dump;
 use English qw(-no_match_vars);
 use File::Basename qw(dirname);
 use File::Spec;
-use List::Util qw(max sum);
+use List::Util qw(max);
 use POSIX;
 use Time::HiRes qw(time);
 use Data::Dumper;
@@ -3249,6 +3249,13 @@ sub main {
                $du->get_create_table($dbh, $q, $db, $tbl));
          };
          if ( !$tbl_struct ) {
+            # If this happens errors will be printed to STDERR so the
+            # user knows what table is broken.  The errors are like:
+            # Failed to SHOW CREATE TABLE `test`.`broken_tbl`.  The table
+            # may be damaged.
+            # Error: DBD::mysql::db selectrow_hashref failed: Incorrect
+            # information in file: './test/broken_tbl.frm' [for Statement
+            # "SHOW CREATE TABLE `test`.`broken_tbl`"] at ...
             MKDEBUG && _d('Error getting table def');
             $stats_for{$db}->{exit} = 1;
             $stat_totals{exit} = 1;
@@ -3279,6 +3286,7 @@ sub main {
             size       => $size,
          };
 
+         # For $fmt below.
          $maxdb  = length $db  if length $db  > $maxdb;
          $maxtbl = length $tbl if length $tbl > $maxtbl;
       } # next table
@@ -3425,6 +3433,7 @@ sub main {
                $dbh->do($sql);
             };
             # Some day we'll skip the table and all its chunk if this fails.
+            # Issue 649: Handle lock contentions in mk-parallel-dump
             warn $EVAL_ERROR if $EVAL_ERROR;
          }
 
@@ -3465,10 +3474,8 @@ sub main {
             warn $EVAL_ERROR if $EVAL_ERROR;
          }
 
-         $done  += $chunk->{Z} || 0;
-
+         $done += $chunk->{Z} || 0;
          my $progress = update_progress($o, $start, $bytes, $done);
-
          report_stats(
             chunk       => $chunk,
             stat_totals => \%stat_totals,
@@ -3477,7 +3484,6 @@ sub main {
             progress    => $progress,
             %common_modules,
          );
-
 
          $reaped = 1;
          delete $kids{$pid};
@@ -3515,7 +3521,6 @@ sub main {
    $dbh->disconnect();
 
    $stat_totals{wallclock} = time() - $start;
-
    my $progress = '';
    if ( $o->get('progress') ) {
       $progress = 'done at ' . ts(time) .', '
@@ -3523,7 +3528,6 @@ sub main {
                      map { "$stat_totals{counts}->{$_} $_" }
                         qw(databases tables chunks));
    }
-
    info($o, 0, sprintf($fmt,
          'all',
          sprintf('%.2f', $stat_totals{wallclock}),
@@ -3901,6 +3905,7 @@ sub system_call {
       # larger value than it likes, and will just report zero to waitpid().
       $exit_status = $exit_status >> 8;
    }
+   MKDEBUG && _d('Exit status', $exit_status);
    return $exit_status;
 }
 
