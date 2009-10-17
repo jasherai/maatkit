@@ -3432,8 +3432,7 @@ sub main {
             eval {
                $dbh->do($sql);
             };
-            # Some day we'll skip the table and all its chunk if this fails.
-            # Issue 649: Handle lock contentions in mk-parallel-dump
+            # This shouldn't happen.
             warn $EVAL_ERROR if $EVAL_ERROR;
          }
 
