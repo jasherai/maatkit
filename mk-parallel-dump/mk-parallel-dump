@@ -4243,7 +4243,11 @@ The EXIT column shows the exit status of the chunk.  EXIT codes are:
    EXIT  MEANING
    ====  ==================
    0     Success, no errors
-   1     Internal error
+   > 0   Error
+
+Any non-zero exit signifies an error.  The cause of errors are usually
+printed to STDERR.  The exit code for non-L<"--tab"> dumps is the actual exit
+code of mysqldump.
 
 The SKIPPED column shows how many chunks were skipped.  These are not
 errors.  Chunks are skipped if the dump can be resumed.  See L<"--[no]resume">.
