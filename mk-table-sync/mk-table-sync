@@ -6618,35 +6618,36 @@ B<WARNING>: back up your data before you use this tool.  See L<"RISKS">.
 
 To sync db.tbl1 from host1 to host2:
 
-   mk-table-sync --execute u=user,p=pass,h=host1,D=db,t=tbl host2
+ mk-table-sync --execute u=user,p=pass,h=host1,D=db,t=tbl host2
 
 Sync all tables in host1 to host2 and host3:
 
-   mk-table-sync --execute host1 host2 host3
+ mk-table-sync --execute host1 host2 host3
 
 Resolve differences L<mk-table-checksum> found on this master's slaves:
 
-   mk-table-sync --execute --replicate test.checksum master1
+ mk-table-sync --execute --replicate test.checksum master1
 
 Make slave1 have the same data as its replication master:
 
-   mk-table-sync --execute --sync-to-master slave1
+ mk-table-sync --execute --sync-to-master slave1
 
 Ditto, resolving differences L<mk-table-checksum> found:
 
-   mk-table-sync --execute --sync-to-master --replicate test.checksum slave1
+ mk-table-sync --execute --sync-to-master \
+   --replicate test.checksum slave1
 
 Sync server2 in a master-master replication configuration, where server2's copy
 of db1.tbl1 is known or suspected to be incorrect:
 
-   mk-table-sync --execute --sync-to-master h=server2,D=db1,t=tbl1
+ mk-table-sync --execute --sync-to-master h=server2,D=db1,t=tbl1
 
 Note that in the master-master configuration, the following will NOT do what you
 want, because it will make changes directly on server2, which will then flow
 through replication and change server1's data:
 
-   # Don't do this in a master-master setup!
-   mk-table-sync --execute h=server1,D=db1,t=tbl1 h=server2
+ # Don't do this in a master-master setup!
+ mk-table-sync --execute h=server1,D=db1,t=tbl1 h=server2
 
 =head1 RISKS
 
@@ -7442,8 +7443,7 @@ installed in any reasonably new version of Perl.
 
 =head1 BUGS
 
-For a list of known bugs see:
-L<http://code.google.com/p/maatkit/issues/list?&q=tool=mk_table_sync%20type=Defect>.
+For a list of known bugs see: L<http://www.maatkit.org/bugs/mk-table-sync>.
 
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
@@ -7495,7 +7495,7 @@ This existing literature mostly addressed how to find the differences between
 the tables, not how to resolve them once found.  I needed a tool that would not
 only find them efficiently, but would then resolve them.  I first began thinking
 about how to improve the technique further with my article
-L<http://www.xaprb.com/blog/2007/03/05/an-algorithm-to-find-and-resolve-data-differences-between-mysql-tables/>,
+L<http://tinyurl.com/mysql-data-diff-algorithm>,
 where I discussed a number of problems with the Maxia/Coelho "bottom-up"
 algorithm.  After writing that article, I began to write this tool.  I wanted to
 actually implement their algorithm with some improvements so I was sure I
@@ -7514,7 +7514,7 @@ also my own work.
 Another tool that can synchronize tables is the SQLyog Job Agent from webyog.
 Thanks to Rohit Nadhani, SJA's author, for the conversations about the general
 techniques.  There is a comparison of mk-table-sync and SJA at
-L<http://www.xaprb.com/blog/2007/04/05/mysql-table-sync-vs-sqlyog-job-agent/>
+L<http://tinyurl.com/maatkit-vs-sqlyog>
 
 Thanks to the following people and organizations for helping in many ways:
 
