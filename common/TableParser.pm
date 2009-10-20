@@ -311,6 +311,7 @@ sub get_engine {
 #       is_unique    => 1 if the col is UNIQUE or PRIMARY
 #       is_nullable  => true (> 0) if one or more col can be NULL
 #       is_col       => hashref with key for each col=>1
+#       ddl          => original key def string
 #     },
 #   },
 #   'PRIMARY',   # clustered key
@@ -328,7 +329,8 @@ sub get_keys {
       # If you want foreign keys, use get_fks() below.
       next KEY if $key =~ m/FOREIGN/;
 
-      MKDEBUG && _d('Parsed key:', $key);
+      my $key_ddl = $key;
+      MKDEBUG && _d('Parsed key:', $key_ddl);
 
       # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
       # will report its index as USING HASH even when this is not supported.
@@ -372,6 +374,7 @@ sub get_keys {
          is_unique    => $unique,
          is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
          is_col       => { map { $_ => 1 } @cols },
+         ddl          => $key_ddl,
       };
 
       # Find clustered key (issue 295).
@@ -426,6 +429,27 @@ sub remove_auto_increment {
    my ( $self, $ddl ) = @_;
    $ddl =~ s/(^\).*?) AUTO_INCREMENT=\d+\b/$1/m;
    return $ddl;
+}
+
+sub remove_secondary_indexes {
+   my ( $self, $ddl ) = @_;
+   my $tbl_struct    = $self->parse($ddl);
+   my $clustered_key = $tbl_struct->{clustered_key};
+   my @sec_indexes   = map {
+      my $key_def = $_->{ddl};
+      # Escape ( ) in the key def so Perl treats them literally.
+      $key_def =~ s/([\(\)])/\\$1/g;
+      $ddl =~ s/\s+$key_def//;
+      $_->{ddl};
+   }
+   grep { $_->{name} ne $clustered_key }
+   values %{$tbl_struct->{keys}};
+   MKDEBUG && _d('Secondary indexes:', Dumper(\@sec_indexes));
+
+   my $sec_indexes_ddl = join(' ', @sec_indexes);
+   $sec_indexes_ddl =~ s/,$//;
+
+   return $ddl, $sec_indexes_ddl, $tbl_struct;
 }
 
 sub _d {

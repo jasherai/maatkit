@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 34;
+use Test::More tests => 36;
 
 require "../TableParser.pm";
 require "../Quoter.pm";
@@ -84,6 +84,7 @@ is_deeply(
             colnames => '`a`(10),`b`(20)',
             cols => [ 'a', 'b' ],
             col_prefixes => [ 10, 20 ],
+            ddl => 'KEY `prefix_idx` (`a`(10),`b`(20)),',
          },
          mix_idx => {
             is_unique => 0,
@@ -97,6 +98,7 @@ is_deeply(
             colnames => '`a`,`b`(20)',
             cols => [ 'a', 'b' ],
             col_prefixes => [ undef, 20 ],
+            ddl => 'KEY `mix_idx` (`a`,`b`(20))',
          },
       },
       defs           => {
@@ -185,6 +187,7 @@ is_deeply(
             is_unique    => 1,
             type         => 'BTREE',
             name         => 'PRIMARY',
+            ddl          => 'PRIMARY KEY  (`film_id`),',
          },
          idx_title => {
             colnames     => '`title`',
@@ -195,6 +198,7 @@ is_deeply(
             is_unique    => 0,
             type         => 'BTREE',
             name         => 'idx_title',
+            ddl          => 'KEY `idx_title` (`title`),',
          },
          idx_fk_language_id => {
             colnames     => '`language_id`',
@@ -205,6 +209,7 @@ is_deeply(
             is_nullable  => 0,
             type         => 'BTREE',
             name         => 'idx_fk_language_id',
+            ddl          => 'KEY `idx_fk_language_id` (`language_id`),',
          },
          idx_fk_original_language_id => {
             colnames     => '`original_language_id`',
@@ -215,6 +220,7 @@ is_deeply(
             is_nullable  => 1,
             type         => 'BTREE',
             name         => 'idx_fk_original_language_id',
+            ddl          => 'KEY `idx_fk_original_language_id` (`original_language_id`),',
          },
       },
       defs => {
@@ -336,7 +342,8 @@ is_deeply(
             'col_prefixes' => [ undef ],
             'is_nullable'  => 0,
             'colnames'     => '`sort_order`',
-            'cols'         => [ 'sort_order' ]
+            'cols'         => [ 'sort_order' ],
+            ddl            => 'KEY `sort_order` (`sort_order`)',
          },
          'PRIMARY' => {
             'is_unique' => 1,
@@ -351,7 +358,8 @@ is_deeply(
             'colnames' =>
                '`pfk-source_instrument_id`,`pfk-related_instrument_id`',
             'cols' =>
-               [ 'pfk-source_instrument_id', 'pfk-related_instrument_id' ]
+               [ 'pfk-source_instrument_id', 'pfk-related_instrument_id' ],
+            ddl => 'PRIMARY KEY  (`pfk-source_instrument_id`,`pfk-related_instrument_id`),',
          }
       },
       'defs' => {
@@ -402,6 +410,7 @@ is_deeply(
             col_prefixes => [undef],
             is_nullable  => 0,
             colnames     => '`id`',
+            ddl          => 'PRIMARY KEY (`id`)',
          }
       },
       defs => { id => '  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT' },
@@ -433,6 +442,7 @@ is_deeply(
             is_unique    => 0,
             type         => 'BTREE',
             name         => 'mykey',
+            ddl          => 'KEY `mykey` (`a`,`b`,`mixedcol`)',
          },
       },
       defs         => {
@@ -508,6 +518,42 @@ is_deeply(
       }
    },
    'two fks (issue 331)'
+);
+
+# #############################################################################
+# Test remove_secondary_indexes().
+# #############################################################################
+my $ddl = load_file('samples/sakila.film.sql');
+my ($new_ddl, $indexes) = $tp->remove_secondary_indexes($ddl);
+
+is(
+   $new_ddl,
+"CREATE TABLE `film` (
+  `film_id` smallint(5) unsigned NOT NULL auto_increment,
+  `title` varchar(255) NOT NULL,
+  `description` text,
+  `release_year` year(4) default NULL,
+  `language_id` tinyint(3) unsigned NOT NULL,
+  `original_language_id` tinyint(3) unsigned default NULL,
+  `rental_duration` tinyint(3) unsigned NOT NULL default '3',
+  `rental_rate` decimal(4,2) NOT NULL default '4.99',
+  `length` smallint(5) unsigned default NULL,
+  `replacement_cost` decimal(5,2) NOT NULL default '19.99',
+  `rating` enum('G','PG','PG-13','R','NC-17') default 'G',
+  `special_features` set('Trailers','Commentaries','Deleted Scenes','Behind the Scenes') default NULL,
+  `last_update` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
+  PRIMARY KEY  (`film_id`),
+  CONSTRAINT `fk_film_language` FOREIGN KEY (`language_id`) REFERENCES `language` (`language_id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_film_language_original` FOREIGN KEY (`original_language_id`) REFERENCES `language` (`language_id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+",
+   'remove_secondary_indexes() new table ddl'
+);
+
+is(
+   $indexes,
+   'KEY `idx_fk_original_language_id` (`original_language_id`), KEY `idx_fk_language_id` (`language_id`), KEY `idx_title` (`title`)',
+   'remove_secondary_indexes() secondary indexes ddl'
 );
 
 # #############################################################################
@@ -727,7 +773,7 @@ is(
 # #############################################################################
 
 # Make sure get_keys() gets a clustered index that's not the primary key.
-my $ddl = load_file('samples/non_pk_ck.sql');
+$ddl = load_file('samples/non_pk_ck.sql');
 my (undef, $ck) = $tp->get_keys($ddl, {}, {i=>0,j=>1});
 is(
    $ck,
