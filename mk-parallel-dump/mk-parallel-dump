@@ -3137,21 +3137,11 @@ sub main {
             map  { $skip{$_} ? "--skip-$_" : "--$_" }
             grep { $is_opt{$_} }
             qw(
+               compact
+               triggers
+               no-create-info
                lock-all-tables
                lock-tables
-               add-drop-table
-               add-locks
-               allow-keywords
-               comments
-               complete-insert
-               create-options
-               disable-keys
-               extended-insert
-               quick
-               quote-names
-               set-charset
-               triggers
-               tz-utc
             )
          ),
          "'\%D'",
@@ -3204,7 +3194,7 @@ sub main {
    # ########################################################################
    my $q  = new Quoter();
    my $tp = new TableParser(Quoter => $q);
-   my $du = new MySQLDump();
+   my $du = new MySQLDump(cache => 0);
    my $tc = new TableChunker(Quoter => $q, MySQLDump => $du);
    my %common_modules = (
       OptionParser => $o,
@@ -3323,11 +3313,13 @@ sub main {
       MKDEBUG && _d($sql);
       $dbh->do($sql);
    }
-   dump_binlog_pos(
-      dbh    => $dbh,
-      chunks => \@chunks,
-      %common_modules,
-   ) if $o->get('bin-log-position') && !$o->get('dry-run');
+   if ( $o->get('bin-log-position') && !$o->get('dry-run') ) {
+      dump_binlog_pos(
+         dbh    => $dbh,
+         chunks => \@chunks,
+         %common_modules,
+      );
+   }
 
    # #####################################################################
    # Design the format for printing out.
@@ -3386,6 +3378,7 @@ sub main {
          my $chunk = shift @chunks;
          my $file  = filename($o->get('base-dir'),
             interp($chunk, '%D', '%N.%6C'));
+         makedir($file) unless $o->get('dry-run');
 
          # Set start time for database, table and chunk.  Do this before
          # possibly skipping the chunk so report_stats() doesn't die due
@@ -3770,28 +3763,33 @@ sub dump_chunk {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($chunk, $file, $dp, $o, $q, $du) = @args{@required_args};
+   my $D           = $q->quote($chunk->{D});
+   my $N           = $q->quote($chunk->{N});
+   my $exit_status = 0;
 
    MKDEBUG && $chunk->{C} == 0 && _d('Dumping', Dumper($chunk));
 
-   my $exit_status = 0;
-   if ( $o->get('tab') ) {  # dump via SELECT INTO OUTFILE
-      my $dbh = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
-
-      makedir($file) unless $o->get('dry-run');
-
-      my $D = $q->quote($chunk->{D});
-      my $N = $q->quote($chunk->{N});
-
-      # Dump the schema/table def before the first chunk.
-      if ( $chunk->{C} == 0 && !$o->get('dry-run') ) {
-         my $ddl = $du->dump($dbh, $q, $chunk->{D}, $chunk->{N}, 'table');
-         if ( $ddl ) {
-            my $fspec = "> $file.sql";
-            open my $fh, $fspec or die "Can't open $file: $OS_ERROR";
-            print $fh $ddl      or die "Can't print to $file: $OS_ERROR";
-            close $fh           or die "Can't close $file: $OS_ERROR";
-         }
+   # Dump SHOW CREATE TABLE  before the first chunk.
+   my $dbh;
+   if ( $chunk->{C} == 0 && !$o->get('dry-run') ) {
+      $dbh    = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
+      my $ddl = $dbh->selectrow_arrayref("SHOW CREATE TABLE $D.$N")->[1];
+      if ( $ddl ) {
+         my $fspec = '> ' . filename($o->get('base-dir'),
+            interp($chunk, '%D', '00_%N.sql'));
+         open my $fh, $fspec or die "Can't open $file: $OS_ERROR";
+         print $fh $ddl      or die "Can't print to $file: $OS_ERROR";
+         close $fh           or die "Can't close $file: $OS_ERROR";
       }
+      else {
+         warn "Failed to dump SHOW CREATE TABLE $D.$N";
+         $exit_status = 1;
+      }
+   }
+
+   if ( $o->get('tab') ) {  # dump via SELECT INTO OUTFILE
+
+      $dbh ||= $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
 
       # Dump the data.
       my $sql
@@ -3809,26 +3807,19 @@ sub dump_chunk {
             $dbh->do($sql);
          };
          if ( $EVAL_ERROR ) {
-            die mysql_error_msg($EVAL_ERROR) . "\n";
+            warn mysql_error_msg($EVAL_ERROR) . "\n";
+            $exit_status |= 1;
          }
       }
-
-      $dbh->disconnect();
    }  # --tab/SELECT INTO OUTFILE
    else {  # dump via mysqldump
-      makedir(interp($chunk, filename($o->get('base-dir'),
-         '%D', '%N.%6C.sql'))) unless $o->get('dry-run');
-
-      my @args = @mysqldump_args;
-      # Do a DROP/CREATE only for the first chunk.
-      if ( $chunk->{C} > 0 ) {
-         push @args, '--no-create-info';
-      }
-      @args = map { interp($chunk, $_) } @args;
-
-      $exit_status = system_call($o, @args);
+      # Interpolate D, N and C for mysqldump args.
+      my @args = map { interp($chunk, $_) } @mysqldump_args;
+      $exit_status |= system_call($o, @args);
    }
- 
+
+   $dbh->disconnect() if $dbh;
+
    return $exit_status;
 }
 
@@ -3916,7 +3907,7 @@ sub dump_binlog_pos {
    }
    my ($dbh, $chunks, $o) = @args{@required_args};
 
-   my $file = filename($o->get('base-dir'), 'default', '00_master_data.sql');
+   my $file = filename($o->get('base-dir'), '', '00_master_data.sql');
    makedir($file) unless $o->get('dry-run');
    MKDEBUG && _d('Writing to', $file);
    open my $fh, ">", $file or die $OS_ERROR;

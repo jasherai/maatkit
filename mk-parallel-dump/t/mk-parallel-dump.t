@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 47;
+use Test::More tests => 42;
 
 require '../mk-parallel-dump';
 require '../../common/Sandbox.pm';
@@ -27,10 +27,10 @@ sub get_files {
    my ( $dir ) = @_;
    my @files;
    find sub {
-      
       return if -d;
       push @files, $File::Find::name;
    }, $dir;
+   @files = sort @files;
    return \@files;
 }
 
@@ -180,7 +180,7 @@ SKIP: {
    is($tbl, 1, 'One table dumped');
    ok($chunk >= 5 && $chunk <= 15, 'Got some chunks');
    ok(-s "$basedir/sakila/film.000005.txt", 'chunk 5 exists');
-   ok(-s "$basedir/default/00_master_data.sql", 'master_data exists');
+   ok(-s "$basedir//00_master_data.sql", 'master_data exists');
    diag(`rm -rf $basedir`);
 
    # Fixes bug #1851461.
@@ -209,35 +209,26 @@ SKIP: {
 
    # Make sure subsequent chunks don't have DROP/CREATE in them (fixes bug
    # #1863949).
-   $output = `$cmd --chunk-size 100 --base-dir $basedir -d sakila -t film`;
-   ok(-f "$basedir/sakila/film.000000.sql", 'first chunk file exists');
-   ok(-f "$basedir/sakila/film.000001.sql", 'second chunk file exists');
-   $output = `grep -i 'DROP TABLE' $basedir/sakila/film.000000.sql`;
-   like($output, qr/DROP TABLE/i, 'first chunk has DROP TABLE');
-   $output = `grep -i 'DROP TABLE' $basedir/sakila/film.000001.sql`;
-   unlike($output, qr/DROP TABLE/i, 'second chunk has no DROP TABLE');
-   $output = `grep -i 'CREATE TABLE' $basedir/sakila/film.000000.sql`;
-   like($output, qr/CREATE TABLE/i, 'first chunk has CREATE TABLE');
-   $output = `grep -i 'CREATE TABLE' $basedir/sakila/film.000001.sql`;
-   unlike($output, qr/CREATE TABLE/i, 'second chunk has no CREATE TABLE');
-   diag(`rm -rf $basedir`);
+   $output = `$cmd --quiet --chunk-size 100 --base-dir $basedir -d sakila -t film`;
 
-   # But also make sure mysqldump gets the --no-create-info argument, not
-   # gzip...! (fixes bug #1866137)
-   $output = `$cmd --quiet --chunk-size 100 --base-dir $basedir -d sakila -t film 2>&1`;
-   is($output, '', 'There is no output');
-   ok(-f "$basedir/sakila/film.000000.sql", 'first chunk file exists');
-   ok(-f "$basedir/sakila/film.000001.sql", 'second chunk file exists');
-   $output = `zgrep -i 'DROP TABLE' $basedir/sakila/film.000000.sql`;
-   like($output, qr/DROP TABLE/i, 'first chunk has DROP TABLE');
-   $output = `zgrep -i 'DROP TABLE' $basedir/sakila/film.000001.sql`;
-   unlike($output, qr/DROP TABLE/i, 'second chunk has no DROP TABLE');
-   $output = `zgrep -i 'INSERT INTO' $basedir/sakila/film.000001.sql`;
-   like($output,   qr/INSERT INTO/i, 'second chunk does have data, though');
-   $output = `zgrep -i 'CREATE TABLE' $basedir/sakila/film.000000.sql`;
-   like($output, qr/CREATE TABLE/i, 'first chunk has CREATE TABLE');
-   $output = `zgrep -i 'CREATE TABLE' $basedir/sakila/film.000001.sql`;
-   unlike($output, qr/CREATE TABLE/i, 'second chunk has no CREATE TABLE');
+   is($output, '', 'No output with --quiet');
+
+   ok(-f "$basedir/sakila/00_film.sql", 'CREATE TABLE file exists');
+   ok(-f "$basedir/sakila/film.000000.sql", 'First chunk file exists');
+   ok(-f "$basedir/sakila/film.000001.sql", 'Second chunk file exists');
+
+   $output = `grep -i 'DROP TABLE' $basedir/sakila/film.000000.sql`;
+   is($output, '', 'First chunk does not have DROP TABLE');
+   $output = `grep -i 'DROP TABLE' $basedir/sakila/film.000001.sql`;
+   is($output, '', 'Second chunk does not have DROP TABLE');
+   
+   $output = `grep -i 'CREATE TABLE' $basedir/sakila/00_film.sql`;
+   like($output, qr/CREATE TABLE/i, 'CREATE TABLE file has CREATE TABLE');
+   $output = `grep -i 'CREATE TABLE' $basedir/sakila/film.000000.sql`;
+   is($output, '', 'First chunk does not have CREATE TABLE');
+   $output = `grep -i 'CREATE TABLE' $basedir/sakila/film.000001.sql`;
+   is($output, '', 'Second chunk does not have CREATE TABLE');
+
    diag(`rm -rf $basedir`);
 
    # #########################################################################
@@ -283,8 +274,9 @@ SKIP: {
    is_deeply(
       get_files($basedir),
       [
+         "${basedir}00_master_data.sql",
+         "${basedir}sakila/00_film_text.sql",
          "${basedir}sakila/film_text.000000.sql",
-         "${basedir}default/00_master_data.sql",
       ],
       '--ignore-engines InnoDB dumped files'
    );
@@ -300,9 +292,9 @@ SKIP: {
    is_deeply(
       get_files($basedir),
       [
+         "${basedir}00_master_data.sql",
+         "${basedir}sakila/00_film_text.sql",
          "${basedir}sakila/film_text.000000.txt",
-         "${basedir}sakila/film_text.000000.sql",
-         "${basedir}default/00_master_data.sql",
       ],
       '--ignore-engines InnoDB --tab dumped files'
    );
