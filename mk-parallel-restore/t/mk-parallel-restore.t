@@ -296,7 +296,7 @@ SKIP: {
 `../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25` unless $slave_dbh;
 
 $sb->load_file('master', 'samples/issue_30.sql');
-$output = `MKDEBUG=1 $cmd -D test $basedir 2>&1`;
+$output = `$cmd -D test $basedir 2>&1`;
 
 unlike(
    $output,
@@ -305,7 +305,7 @@ unlike(
 );
 like(
    $output,
-   qr/1 tables,\s+3 files,\s+1 successes,\s+0 failures/,
+   qr/1 tables,\s+4 files,\s+1 successes,\s+0 failures/,
    'Restoring table that already exists (issue 406)'
 );
 

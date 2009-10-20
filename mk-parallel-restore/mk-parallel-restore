@@ -863,7 +863,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 3186
+# Quoter package 4874
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -911,6 +911,13 @@ sub split_unquote {
       $db  = $default_db;
    }
    return ($db, $tbl);
+}
+
+sub literal_like {
+   my ( $self, $like ) = @_;
+   return unless $like;
+   $like =~ s/([%_])/\\$1/g;
+   return $like;
 }
 
 1;
@@ -1700,7 +1707,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4872
+# TableParser package 4901
 # ###########################################################################
 package TableParser;
 
@@ -1869,7 +1876,8 @@ sub check_table {
    my $db_tbl = $q->quote($db, $tbl);
    MKDEBUG && _d('Checking', $db_tbl);
 
-   my $sql = "SHOW TABLES FROM " . $q->quote($db) . " LIKE '$tbl'";
+   my $literal_tbl = $q->literal_like($tbl);
+   my $sql = "SHOW TABLES FROM " . $q->quote($db) . " LIKE '$literal_tbl'";
    MKDEBUG && _d($sql);
    my $row;
    eval {
@@ -1879,7 +1887,7 @@ sub check_table {
       MKDEBUG && _d($EVAL_ERROR);
       return 0;
    }
-   if ( !$row->[0] ) {
+   if ( !$row->[0] || $row->[0] ne $tbl ) {
       MKDEBUG && _d('Table does not exist');
       return 0;
    }
@@ -1940,7 +1948,8 @@ sub get_keys {
 
       next KEY if $key =~ m/FOREIGN/;
 
-      MKDEBUG && _d('Parsed key:', $key);
+      my $key_ddl = $key;
+      MKDEBUG && _d('Parsed key:', $key_ddl);
 
       if ( $engine !~ m/MEMORY|HEAP/ ) {
          $key =~ s/USING HASH/USING BTREE/;
@@ -1977,6 +1986,7 @@ sub get_keys {
          is_unique    => $unique,
          is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
          is_col       => { map { $_ => 1 } @cols },
+         ddl          => $key_ddl,
       };
 
       if ( $engine =~ m/InnoDB/i && !$clustered_key ) {
@@ -2026,6 +2036,26 @@ sub remove_auto_increment {
    my ( $self, $ddl ) = @_;
    $ddl =~ s/(^\).*?) AUTO_INCREMENT=\d+\b/$1/m;
    return $ddl;
+}
+
+sub remove_secondary_indexes {
+   my ( $self, $ddl ) = @_;
+   my $tbl_struct    = $self->parse($ddl);
+   my $clustered_key = $tbl_struct->{clustered_key};
+   my @sec_indexes   = map {
+      my $key_def = $_->{ddl};
+      $key_def =~ s/([\(\)])/\\$1/g;
+      $ddl =~ s/\s+$key_def//;
+      $_->{ddl};
+   }
+   grep { $_->{name} ne $clustered_key }
+   values %{$tbl_struct->{keys}};
+   MKDEBUG && _d('Secondary indexes:', Dumper(\@sec_indexes));
+
+   my $sec_indexes_ddl = join(' ', @sec_indexes);
+   $sec_indexes_ddl =~ s/,$//;
+
+   return $ddl, $sec_indexes_ddl, $tbl_struct;
 }
 
 sub _d {
@@ -2206,13 +2236,13 @@ sub main {
       {  no_chdir => 1,
          wanted   => sub {
             my ( $dir, $filename ) = ($File::Find::dir, $File::Find::name);
-            if ( -f $filename && $filename !~ m/00_(?:master|views)/ ) {
+            if ( -f $filename && $filename !~ m/00_master/ ) {
                my ($vol, $dirs, $file) = File::Spec->splitpath( $filename );
                if ( $file =~ m/\.(?:$known_filetypes)(?:\.\d+)?(?:\.gz)?$/ ) {
                   my @dirs       = grep { $_ } File::Spec->splitdir($dir);
                   my $db         = $dirs[-1];
                   my $restore_db = $o->get('database') || $dirs[-1];
-                  my ($tbl)      = $file =~ m/^([^.]+)/;
+                  my ($tbl)      = $file =~ m/^(?:\d\d_)?([^.]+)/;
 
                   if ( ( !$databases || exists($databases->{$db}) )
                      && ( !$databases_regex || $db =~ m/$databases_regex/ )
@@ -2504,6 +2534,9 @@ sub do_table {
    my $file_size  = $args{file_size};
 
    my $exit_status  = 0;
+   my $bytes_done   = 0;
+   my $dbh          = get_cxn(%args);
+   my ($fifo, $load_from, $loaded);
 
    # Sort files.  If it's a --tab, this will result in the following load
    # order:
@@ -2516,18 +2549,57 @@ sub do_table {
          || ($a cmp $b);
    } @files;
 
-   my $dbh = get_cxn(%args);
-   my ($fifo, $load_from, $loaded);
-   my $bytes_done = 0;
-
    if ( $o->get('resume') ) {
-      $dbh ||= get_cxn(%args);
       $bytes_done = skip_finished_chunks(
          \@files,
          dbh => $dbh,
          %args,
       );
    }
+
+   # Newer versions of mk-parallel-dump make the first file, called
+   # 00_TBL.sql, contain only CREATE TABLE.  Then table data begins
+   # with the second file.  Older versions of mk-parallel-dump put
+   # CREATE TABLE with the first chunk of table data in the first file.
+   # skip_finished_chunks() handles both versions and removes whatever
+   # file has CREATE TABLE if necessary.  So if there's a first file
+   # and it's from a new version dump, then we need to execute it to
+   # create the table.  Else, skip_finished_chunks() determined that
+   # the table already exists.
+   my $create_table = $files[0] && $files[0] =~ m/00_$tbl\.sql$/ ? shift @files                                                                  : undef;
+   MKDEBUG && _d('CREATE TABLE', $tbl, 'in', $create_table);
+   my $indexes_ddl;
+   if ( $create_table && $o->get('create-tables') ) {
+      MKDEBUG && _d('Creating table');
+      open my $fh, '<', $create_table
+         or die "Cannot open $create_table: $OS_ERROR";
+      my $table_ddl = do { local $/ = undef; <$fh> };
+      close $fh or warn "Cannot close $create_table: $OS_ERROR";
+
+      if ( $o->get('fast-index') ) {
+         ($table_ddl, $indexes_ddl)
+            = $args{tp}->remove_secondary_indexes($table_ddl);
+      }
+      
+      if ( $o->get('dry-run') ) {
+         print "$table_ddl\n";
+      }
+      else {
+         eval {
+            $dbh->do("USE `$db`");
+            $dbh->do('SET SQL_LOG_BIN=0') unless $o->get('bin-log');
+            $dbh->do("DROP TABLE IF EXISTS `$db`.`$tbl`")
+               if $o->get('drop-tables');
+            $dbh->do($table_ddl);
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d($EVAL_ERROR);
+            warn $EVAL_ERROR unless $o->get('quiet');
+         }
+      }
+      $bytes_done += $file_size->{$create_table};
+   }
+
 
    foreach my $file ( @files ) {
 
@@ -2536,7 +2608,7 @@ sub do_table {
 
       if ( filetype($file) eq 'sql' ) {
          $dbh ||= get_cxn(%args);
-         $exit_status = do_sql_file(
+         $exit_status |= do_sql_file(
             dbh  => $dbh,
             file => $file,
             type => 'tables',
@@ -2548,13 +2620,11 @@ sub do_table {
             if ( $o->get('fifo') ) {
                $fifo ||= makefifo($o);
                $exit_status
-                  = system_call($o, qq{gunzip --stdout '$file' > '$fifo' &})
-                     || $exit_status;
+                  |= system_call($o, qq{gunzip --stdout '$file' > '$fifo' &});
                $load_from = $fifo;
             }
             else {
-               $exit_status = system_call($o, qq{gunzip '$file'})
-                  || $exit_status;
+               $exit_status |= system_call($o, qq{gunzip '$file'});
                ( $load_from = $file ) =~ s/\.gz$//;
             }
          }
@@ -2643,6 +2713,18 @@ sub do_table {
       }
       if ( $o->get('lock-tables') ) {
          $dbh->do("LOCK TABLES `$db`.`$tbl` WRITE");
+      }
+   }
+
+   if ( $o->get('fast-index') && $indexes_ddl ) {
+      my $sql = "ALTER TABLE `$db`.`$tbl` ADD " . $indexes_ddl;
+      MKDEBUG && _d($sql);
+      if ( $o->get('dry-run') ) {
+         print "$sql\n";
+      }
+      else {
+         eval { $dbh->do($sql); };
+         warn $EVAL_ERROR if $EVAL_ERROR;
       }
    }
 
@@ -2792,7 +2874,15 @@ sub skip_finished_chunks {
          }
       }
 
-      foreach my $file ( @$files[0..($first_missing_chunk-1)] ) {
+      my $first_file = 0;
+      my $last_file  = $first_missing_chunk - 1;
+      if ( $files->[0] =~ m/00_$tbl\.sql$/ ) {
+         $first_file  = 1;
+         $last_file  += 1;
+         $files->[0]  = undef;
+      }
+      MKDEBUG && _d('First chunk file', $first_file, $files->[$first_file]);
+      foreach my $file ( @$files[$first_file..$last_file] ) {
          $bytes_done += $file_size->{$file};
          $file = undef;
       }
@@ -3104,6 +3194,14 @@ first option on the command line.
 
 Create databases if they don't exist.
 
+=item --[no]create-tables
+
+default: yes
+
+Create tables.
+
+See also L<"--[no]drop-tables">.
+
 =item --csv
 
 Files are in CSV format (implies L<"--tab">).
@@ -3152,9 +3250,19 @@ pathname.
 
 Execute C<ALTER TABLE DISABLE KEYS> before each table.
 
+=item --[no]drop-tables
+
+default: yes
+
+Execute C<DROP TABLE IF EXISTS> before creating each table.
+
 =item --dry-run
 
 Print commands instead of executing them.
+
+=item --fast-index
+
+Do fast index creation by restoring secondary indexes after data.
 
 =item --[no]fifo
 
