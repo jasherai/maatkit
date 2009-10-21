@@ -2355,7 +2355,8 @@ sub main {
          my %dbs;
          map { $dbs{ $_->{D} }++ } @tables_to_do;
          foreach my $db ( keys %dbs ) {
-            $dbh->do("CREATE DATABASE IF NOT EXISTS " . $q->quote($db));
+            _do($dbh, $o->get('dry-run'),
+               "CREATE DATABASE IF NOT EXISTS " . $q->quote($db));
          }
       }
    }
@@ -2547,6 +2548,7 @@ sub do_table {
    my $o          = $args{o};
    my $file_size  = $args{file_size};
 
+   my $dry_run      = $o->get('dry-run');
    my $exit_status  = 0;
    my $bytes_done   = 0;
    my $dbh          = get_cxn(%args);
@@ -2594,23 +2596,13 @@ sub do_table {
          ($table_ddl, $indexes_ddl)
             = $args{tp}->remove_secondary_indexes($table_ddl);
       }
-      
-      if ( $o->get('dry-run') ) {
-         print "$table_ddl\n";
-      }
-      else {
-         eval {
-            $dbh->do("USE `$db`");
-            $dbh->do('SET SQL_LOG_BIN=0') unless $o->get('bin-log');
-            $dbh->do("DROP TABLE IF EXISTS `$db`.`$tbl`")
-               if $o->get('drop-tables');
-            $dbh->do($table_ddl);
-         };
-         if ( $EVAL_ERROR ) {
-            MKDEBUG && _d($EVAL_ERROR);
-            warn $EVAL_ERROR unless $o->get('quiet');
-         }
-      }
+
+      my @sql;      
+      push @sql, "USE `$db`";
+      push @sql, 'SET SQL_LOG_BIN=0' unless $o->get('bin-log');
+      push @sql, "DROP TABLE IF EXISTS `$db`.`$tbl`" if $o->get('drop-tables');
+      push @sql, $table_ddl;
+      _do($dbh, $dry_run, @sql);
       $bytes_done += $file_size->{$create_table};
    }
 
@@ -2620,12 +2612,44 @@ sub do_table {
       # skip_finished_chunks() undefs files which are already restored
       next unless $file;
 
+      # Make sure dbh is connected (it should be).
+      $dbh ||= get_cxn(%args);
+
+      # Set options.
+      my @sql;
+      push @sql, "USE `$db`"; # For binary logging.
+      # First loop only.
+      if ( !$loaded++ ) {
+         push @sql, "LOCK TABLES `$db`.`$tbl` WRITE" if $o->get('lock-tables');
+         push @sql, "TRUNCATE TABLE `$db`.`$tbl`"    if $o->get('truncate');
+      }
+      # Every loop.
+      push @sql, "/*!40000 ALTER TABLE `$db`.`$tbl` DISABLE KEYS */"
+         if $o->get('disable-keys');
+
+      push @sql, '/*!40101 SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO" */'
+         if $o->get('no-auto-value-on-0');
+
+      push @sql, 'SET UNIQUE_CHECKS=0'
+         unless $o->get('unique-checks');
+
+      push @sql, 'SET FOREIGN_KEY_CHECKS=0'
+         unless $o->get('foreign-key-checks');
+
+      push @sql, 'SET SQL_LOG_BIN=0'
+         unless $o->get('bin-log');
+
+      if ( my $bibs = $o->get('bulk-insert-buffer-size') ) {
+         push @sql, "SET SESSION bulk_insert_buffer_size=$bibs";
+      }
+      _do($dbh, $dry_run, @sql);
+
+      # Restore the data.
       if ( filetype($file) eq 'sql' ) {
          $dbh ||= get_cxn(%args);
          $exit_status |= do_sql_file(
             dbh  => $dbh,
             file => $file,
-            type => 'tables',
             %args,
          );
       }
@@ -2666,44 +2690,10 @@ sub do_table {
          }
 
          if ( $sql ) {
-            if ( $o->get('dry-run') ) {
+            if ( $dry_run ) {
                print $sql, "\n";
             }
             else {
-
-               # First loop through.
-               if ( !$loaded++ ) {
-                  $dbh ||= get_cxn(%args);
-                  if ( $o->get('lock-tables') ) {
-                     $dbh->do("LOCK TABLES `$db`.`$tbl` WRITE");
-                  }
-                  if ( $o->get('truncate') ) {
-                     $dbh->do("TRUNCATE TABLE `$db`.`$tbl`");
-                  }
-               }
-
-               # Every loop through, set options.
-               $dbh ||= get_cxn(%args);
-               $dbh->do("USE `$db`"); # For binary logging.
-               if ( $o->get('disable-keys') ) {
-                  $dbh->do("/*!40000 ALTER TABLE `$db`.`$tbl` DISABLE KEYS */");
-               }
-               if ( $o->get('no-auto-value-on-0') ) {
-                  $dbh->do('/*!40101 SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO" */');
-               }
-               if ( !$o->get('unique-checks') ) {
-                  $dbh->do('SET UNIQUE_CHECKS=0');
-               }
-               if ( !$o->get('foreign-key-checks') ) {
-                  $dbh->do('SET FOREIGN_KEY_CHECKS=0');
-               }
-               if ( !$o->get('bin-log') ) {
-                  $dbh->do('SET SQL_LOG_BIN=0');
-               }
-               if ( my $bibs = $o->get('bulk-insert-buffer-size') ) {
-                  $dbh->do("SET SESSION bulk_insert_buffer_size=$bibs");
-               }
-
                eval {
                   $dbh->do($sql, {}, $load_from);
                   $dbh->commit() if $o->get('commit');
@@ -2718,35 +2708,27 @@ sub do_table {
             unlink $fifo if $fifo;
             die "I don't understand how to load file $file\n";
          }
+      } # .txt tab file
+   } # each file
+
+   if ( $dbh ) {
+      my @sql;
+      push @sql, "/*!40000 ALTER TABLE `$db`.`$tbl` ENABLE KEYS */"
+         if $o->get('disable-keys');
+      push @sql, 'UNLOCK TABLES'
+         if $o->get('lock-tables');
+
+      # Do InnoDB fast index creation.
+      if ( $o->get('fast-index') && $indexes_ddl ) {
+         push @sql, "ALTER TABLE `$db`.`$tbl` ADD $indexes_ddl";
       }
+
+      _do($dbh, $dry_run, @sql);
    }
 
-   if ( $dbh && $o->get('tab') ) {
-      if ( $o->get('disable-keys') ) {
-         $dbh->do("/*!40000 ALTER TABLE `$db`.`$tbl` ENABLE KEYS */");
-      }
-      if ( $o->get('lock-tables') ) {
-         $dbh->do("LOCK TABLES `$db`.`$tbl` WRITE");
-      }
-   }
-
-   if ( $o->get('fast-index') && $indexes_ddl ) {
-      my $sql = "ALTER TABLE `$db`.`$tbl` ADD " . $indexes_ddl;
-      MKDEBUG && _d($sql);
-      if ( $o->get('dry-run') ) {
-         print "$sql\n";
-      }
-      else {
-         eval { $dbh->do($sql); };
-         warn $EVAL_ERROR if $EVAL_ERROR;
-      }
-   }
-
-   if ( !$o->get('dry-run') && $fifo ) {
-      unlink $fifo;
-   }
-
+   unlink $fifo if $fifo && !$dry_run;
    $dbh->disconnect() if $dbh;
+
    return $exit_status;
 }
 
@@ -2757,43 +2739,32 @@ sub do_table {
 # status of older code).
 sub do_sql_file {
    my ( %args ) = @_;
-   foreach my $arg ( qw(o dbh file type) ) {
+   foreach my $arg ( qw(o dbh file) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   if ( $args{type} eq 'tables' ) {
-      die "I need a db and tbl argument for tables"
-         unless $args{db} && $args{tbl};
-   }
-   my $o   = $args{o};
-   my $dbh = $args{dbh};
+   my $o           = $args{o};
+   my $dbh         = $args{dbh};
+   my $file        = $args{file};
+   my $decompress  = $o->get('decompress');
+   my $exit_status = 0;
 
-   my $decompress = $o->get('decompress');
-
-   MKDEBUG && _d("Doing", $args{type}, "in", $args{file});
-
-   local $INPUT_RECORD_SEPARATOR = ";\n";
+   MKDEBUG && _d('Restoring', $file);
 
    my $fh;
-   if ( $args{file} =~ m/\.gz/ ) {
-      if ( !open $fh, '-|', "$decompress $args{file}" ) {
-         warn "Cannot zcat $args{file}: $OS_ERROR";
+   if ( $file =~ m/\.gz/ ) {
+      if ( !open $fh, '-|', "$decompress $file" ) {
+         warn "Cannot $decompress $file: $OS_ERROR";
          return 1;
       }
    }
    else {
       if ( !open $fh, '<', "$args{file}" ) {
-         warn "Cannot open $args{file}: $OS_ERROR";
+         warn "Cannot open $file: $OS_ERROR";
          return 1;
       }
    }
 
-   if ( !$o->get('dry-run') ) {
-      if ( $args{type} eq 'tables') {
-         $dbh->do("USE `$args{db}`");
-      }
-      $dbh->do('SET SQL_LOG_BIN=0') unless $o->get('bin-log');
-   }
-
+   local $INPUT_RECORD_SEPARATOR = ";\n";
    while ( my $sql = <$fh> ) {
       next if $sql =~ m/^$/;  # issue 625
       if ( $o->get('dry-run') ) {
@@ -2804,17 +2775,14 @@ sub do_sql_file {
             $dbh->do($sql);
          };
          if ( $EVAL_ERROR ) {
-            $dbh->disconnect();
-            warn mysql_error_msg($EVAL_ERROR)
-               . " while restoring $args{type} "
-               . $args{type} eq 'tables' ? "$args{db}.$args{tbl}" : '';
-            return 1;
+            warn mysql_error_msg($EVAL_ERROR) . " while restoring $file";
+            $exit_status |= 1;
          }
       } 
    }
 
    close $fh;
-   return 0;
+   return $exit_status;
 }
 
 # Undef files in $files_ref for which the rows in the corresponding
@@ -3004,6 +2972,27 @@ sub system_call {
       $exit_status = $exit_status >> 8;
    }
    return $exit_status;
+}
+
+# Executes $dbh->do() for each statement, unless $dry_run in which case
+# the statements are just printed.  This could be accomplished by subclassing
+# DBI, but this is the quick and easy solution.
+sub _do {
+   my ( $dbh, $dry_run, @statements ) = @_;
+   eval {
+      foreach my $sql ( @statements ) {
+         next unless $sql;
+         MKDEBUG && _d($sql);
+         if ( $dry_run ) {
+            print "$sql\n"
+         }
+         else {
+            $dbh->do($sql);
+         }
+      }
+   };
+   warn $EVAL_ERROR if $EVAL_ERROR;
+   return;
 }
 
 sub _d {
