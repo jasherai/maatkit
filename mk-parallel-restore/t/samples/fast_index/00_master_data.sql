@@ -1,0 +1,4 @@
+-- file mysql-bin.000001
+-- position 3274916
+-- CHUNK sakila store 0 1=1
+-- CHUNK sakila film_text 0 1=1

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 46;
+use Test::More tests => 49;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -467,6 +467,67 @@ is_deeply(
    $dbh->selectall_arrayref('select * from issue_625.t'),
    [[1],[2],[3]],
    '--create-databases --only-empty-databases (issue 300)',
+);
+
+# #############################################################################
+# Test --fast-index.
+# #############################################################################
+
+# While we're at it, we'll test that a pure restore is pure.
+$output = `$cmd samples/fast_index --dry-run --quiet -t store`;
+is(
+   $output,
+"CREATE TABLE `store` (
+  `store_id` tinyint(3) unsigned NOT NULL auto_increment,
+  `manager_staff_id` tinyint(3) unsigned NOT NULL,
+  `address_id` smallint(5) unsigned NOT NULL,
+  `last_update` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
+  PRIMARY KEY  (`store_id`),
+  UNIQUE KEY `idx_unique_manager` (`manager_staff_id`),
+  KEY `idx_fk_address_id` (`address_id`),
+  CONSTRAINT `fk_store_staff` FOREIGN KEY (`manager_staff_id`) REFERENCES `staff` (`staff_id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_store_address` FOREIGN KEY (`address_id`) REFERENCES `address` (`address_id`) ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8
+INSERT INTO `store` VALUES (1,1,1,'2006-02-15 11:57:12'),(2,2,2,'2006-02-15 11:57:12');
+",
+   'Pure restore'
+);
+
+# Now test --fast-index.
+$output = `$cmd samples/fast_index --dry-run --quiet -t store --fast-index`;
+is(
+   $output,
+"CREATE TABLE `store` (
+  `store_id` tinyint(3) unsigned NOT NULL auto_increment,
+  `manager_staff_id` tinyint(3) unsigned NOT NULL,
+  `address_id` smallint(5) unsigned NOT NULL,
+  `last_update` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
+  PRIMARY KEY  (`store_id`),
+  CONSTRAINT `fk_store_staff` FOREIGN KEY (`manager_staff_id`) REFERENCES `staff` (`staff_id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_store_address` FOREIGN KEY (`address_id`) REFERENCES `address` (`address_id`) ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8
+INSERT INTO `store` VALUES (1,1,1,'2006-02-15 11:57:12'),(2,2,2,'2006-02-15 11:57:12');
+ALTER TABLE `sakila`.`store` ADD KEY `idx_fk_address_id` (`address_id`), UNIQUE KEY `idx_unique_manager` (`manager_staff_id`)
+",
+   '--fast-index'
+);
+
+# This table should not be affected by --fast-index because it's not InnoDB.
+$output = `$cmd samples/fast_index --dry-run --quiet -t store --fast-index -t film_text`;
+is(
+   $output,
+"CREATE TABLE `film_text` (
+  `film_id` smallint(6) NOT NULL,
+  `title` varchar(255) NOT NULL,
+  `description` text,
+  PRIMARY KEY  (`film_id`),
+  KEY  (`title`),
+  FULLTEXT KEY `idx_title_description` (`title`,`description`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8
+
+INSERT INTO `film_text` VALUES (1,'ACADEMY DINOSAUR','A Epic Drama of a Feminist And a Mad Scientist who must Battle a Teacher in The Canadian Rockies');
+",
+   '--fast-index on non-InnoDB table'
 );
 
 # #############################################################################
