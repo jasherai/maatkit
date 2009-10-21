@@ -2561,6 +2561,12 @@ sub main {
          $du->get_create_table($dbh, $q, $table->{D}, $table->{t}));
    }
 
+   if ( $o->get('primary-key-only')
+        && !exists $src->{info}->{keys}->{PRIMARY} ) {
+      die "--primary-key-only was specified by the --source table "
+         . "$src->{db_tbl} does not have a PRIMARY KEY";
+   }
+
    if ( $dst && $o->get('check-columns') ) {
       my @not_in_src = grep {
          !$src->{info}->{is_col}->{$_}

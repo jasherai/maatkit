@@ -1,5 +1,6 @@
 Changelog for mk-archiver:
 
+   * --primary-key-only on table without a primary key caused error (issue 655).
    * --set-vars did not work (issue 597).
    * Command line options did not override config file options (issue 617).
 

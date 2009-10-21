@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 123;
+use Test::More tests => 125;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -582,6 +582,23 @@ is_deeply(
       [qw(4 4), "I'm out of ideas"],
    ],
    'test_archived.prod_details (res_fk plugin)'
+);
+
+# #############################################################################
+# Issue 655: Using --primary-key-only on a table without a primary key causes
+# perl error
+# #############################################################################
+$dbh->do('CREATE TABLE test.t (i int)');
+$output = `../mk-archiver --where 1=1 --source h=127.1,P=12345,D=test,t=t --purge --primary-key-only 2>&1`;
+unlike(
+   $output,
+   qr/undefined value/,
+   'No error using --primary-key-only on table without pk (issue 655)'
+);
+like(
+   $output,
+   qr/does not have a PRIMARY KEY/,
+   "Says that table doesn't have a pk (issue 655)"
 );
 
 # #############################################################################
