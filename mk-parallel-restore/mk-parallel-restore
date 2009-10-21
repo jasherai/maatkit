@@ -2162,10 +2162,7 @@ sub main {
       $o->save_error("You did not specify any files to restore");
    }
 
-   foreach my $opt ( qw(lock-tables truncate disable-keys no-auto-value-on-0
-                        unique-checks foreign-key-checks
-                        bulk-insert-buffer-size commit local ignore replace) )
-   {
+   foreach my $opt ( qw(bulk-insert-buffer-size commit local ignore replace) ) {
       if ( $o->got($opt) && !$o->get('tab') ) {
          $o->save_error("Option --$opt is ineffective without --tab or --csv");
       }
@@ -2556,7 +2553,7 @@ sub do_table {
    my $exit_status  = 0;
    my $bytes_done   = 0;
    my $dbh          = get_cxn(%args);
-   my ($fifo, $load_from, $loaded);
+   my ($fifo, $load_from);
 
    # Sort files.  If it's a --tab, this will result in the following load
    # order:
@@ -2588,13 +2585,18 @@ sub do_table {
    # the table already exists.
    my $create_table = $files[0] && $files[0] =~ m/00_$tbl\.sql$/ ? shift @files                                                                  : undef;
    MKDEBUG && _d('CREATE TABLE', $tbl, 'in', $create_table);
+   my $table_ddl;
    my $indexes_ddl;
+   my $engine = '';
    if ( $create_table && $o->get('create-tables') ) {
       MKDEBUG && _d('Creating table');
       open my $fh, '<', $create_table
          or die "Cannot open $create_table: $OS_ERROR";
-      my $table_ddl = do { local $/ = undef; <$fh> };
+      $table_ddl = do { local $/ = undef; <$fh> };
       close $fh or warn "Cannot close $create_table: $OS_ERROR";
+
+      # Don't let engine be undef.
+      $engine = $args{tp}->get_engine($table_ddl) || '';
 
       if ( $o->get('fast-index') ) {
          ($table_ddl, $indexes_ddl)
@@ -2610,6 +2612,10 @@ sub do_table {
       $bytes_done += $file_size->{$create_table};
    }
 
+   _do($dbh, $dry_run, "LOCK TABLES `$db`.`$tbl` WRITE")
+      if $o->get('lock-tables');
+   _do($dbh, $dry_run, "TRUNCATE TABLE `$db`.`$tbl`")
+      if $o->get('truncate');
 
    foreach my $file ( @files ) {
 
@@ -2619,17 +2625,27 @@ sub do_table {
       # Make sure dbh is connected (it should be).
       $dbh ||= get_cxn(%args);
 
+      # If restoring a new, "pure" dump, then $engine will already be set.
+      # Else, we're restoring an old dump in which the table won't be created
+      # until after the first file.  That means SHOW CREATE will fail on the
+      # first file, work on the second file, and then we can get the engine.
+      if ( !$engine ) {
+         MKDEBUG && _d('Getting table ddl and engine');
+         if ( !$dry_run ) {
+            eval {
+               $table_ddl = $dbh->selectall_arrayref("SHOW CREATE TABLE `$db`.`$tbl`")->[0]->[1];
+            };
+            MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+         }
+         $engine = $args{tp}->get_engine($table_ddl || '') || '';
+      }
+
       # Set options.
       my @sql;
       push @sql, "USE `$db`"; # For binary logging.
-      # First loop only.
-      if ( !$loaded++ ) {
-         push @sql, "LOCK TABLES `$db`.`$tbl` WRITE" if $o->get('lock-tables');
-         push @sql, "TRUNCATE TABLE `$db`.`$tbl`"    if $o->get('truncate');
-      }
-      # Every loop.
+
       push @sql, "/*!40000 ALTER TABLE `$db`.`$tbl` DISABLE KEYS */"
-         if $o->get('disable-keys');
+         if $o->get('disable-keys') && $engine eq 'MyISAM';
 
       push @sql, '/*!40101 SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO" */'
          if $o->get('no-auto-value-on-0');
@@ -2650,7 +2666,6 @@ sub do_table {
 
       # Restore the data.
       if ( filetype($file) eq 'sql' ) {
-         $dbh ||= get_cxn(%args);
          $exit_status |= do_sql_file(
             dbh  => $dbh,
             file => $file,
@@ -2718,7 +2733,7 @@ sub do_table {
    if ( $dbh ) {
       my @sql;
       push @sql, "/*!40000 ALTER TABLE `$db`.`$tbl` ENABLE KEYS */"
-         if $o->get('disable-keys');
+         if $o->get('disable-keys') && $engine eq 'MyISAM';
       push @sql, 'UNLOCK TABLES'
          if $o->get('lock-tables');
 
@@ -3255,7 +3270,11 @@ pathname.
 
 =item --[no]disable-keys
 
-Execute C<ALTER TABLE DISABLE KEYS> before each table.
+default: yes
+
+Execute C<ALTER TABLE DISABLE KEYS> before each MyISAM table.
+
+This option only works with MyISAM tables.
 
 =item --[no]drop-tables
 
@@ -3269,7 +3288,9 @@ Print commands instead of executing them.
 
 =item --fast-index
 
-Do fast index creation by restoring secondary indexes after data.
+Do InnoDB plugin fast index creation by restoring secondary indexes after data.
+
+This option only works with InnoDB tables and the InnoDB plugin.
 
 =item --[no]fifo
 
@@ -3328,7 +3349,9 @@ Lock tables before C<LOAD DATA INFILE>.
 
 =item --[no]no-auto-value-on-0
 
-Set SQL C<NO_AUTO_VALUE_ON_ZERO> before C<LOAD DATA INFILE>.
+default: yes
+
+Set SQL C<NO_AUTO_VALUE_ON_ZERO>.
 
 =item --only-empty-databases
 

@@ -4,12 +4,14 @@ Changelog for mk-parallel-restore:
    * Older versions of mysqldump caused "Query was empty" errors (issue 625).
    * Tool caused a slave error in some cases (issue 506).
    * --create-databases did not respect --no-bin-log.
+   * --set-vars did not work (issue 597).
+   * --databases did not work with --database (issue 624).
    * Added --fast-index for fast InnoDB index creation.
    * Added --only-empty-databases (issue 300).
    * Added --[no]create-tables.
    * Added --[no]drop-tables.
-   * --set-vars did not work (issue 597).
-   * --databases did not work with --database (issue 624).
+   * SQL_MODE=\"NO_AUTO_VALUE_ON_ZERO\" was not set by default.
+   * Tables were not explicitly unlocked.
    * Command line options did not override config file options (issue 617).
 
 2009-07-31: version 1.0.16
