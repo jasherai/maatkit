@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 36;
+use Test::More tests => 47;
 
 require "../TableParser.pm";
 require "../Quoter.pm";
@@ -458,6 +458,41 @@ is_deeply(
    'Mixed-case identifiers',
 );
 
+$tbl = $tp->parse( load_file('samples/one_key.sql') );
+is_deeply(
+   $tbl,
+   {  cols          => [qw(a b)],
+      col_posn      => { a => 0, b => 1 },
+      is_col        => { a => 1, b => 1 },
+      is_autoinc    => { a => 0, b => 0 },
+      null_cols     => [qw(b)],
+      is_nullable   => { b => 1 },
+      clustered_key => undef,
+      keys          => {
+         PRIMARY => {
+            colnames     => '`a`',
+            cols         => [qw(a)],
+            col_prefixes => [undef],
+            is_col       => { a => 1 },
+            is_nullable  => 0,
+            is_unique    => 1,
+            type         => 'BTREE',
+            name         => 'PRIMARY',
+            ddl          => 'PRIMARY KEY  (`a`)',
+         },
+      },
+      defs         => {
+         a => '  `a` int(11) NOT NULL',
+         b => '  `b` char(50) default NULL',
+      },
+      numeric_cols => [qw(a)],
+      is_numeric   => { a => 1 },
+      engine       => 'MyISAM',
+      type_for     => { a => 'int', b => 'char' },
+   },
+   'No clustered key on MyISAM table'
+);
+
 # #############################################################################
 # Test get_fks()
 # #############################################################################
@@ -523,11 +558,86 @@ is_deeply(
 # #############################################################################
 # Test remove_secondary_indexes().
 # #############################################################################
-my $ddl = load_file('samples/sakila.film.sql');
-my ($new_ddl, $indexes) = $tp->remove_secondary_indexes($ddl);
+sub test_rsi {
+   my ( $file, $des, $new_ddl, $indexes ) = @_;
+   my $ddl = load_file($file);
+   my ($got_new_ddl, $got_indexes) = $tp->remove_secondary_indexes($ddl);
+   is(
+      $indexes,
+      $got_indexes,
+      "$des - secondary indexes $file"
+   );
+   is(
+      $got_new_ddl,
+      $new_ddl,
+      "$des - new ddl $file"
+   );
+   return;
+}
 
-is(
-   $new_ddl,
+test_rsi(
+   'samples/t1.sql',
+   'MyISAM table, no indexes',
+"CREATE TABLE `t1` (
+  `a` int(11) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+",
+   undef
+);
+
+test_rsi(
+   'samples/one_key.sql',
+   'MyISAM table, one pk',
+"CREATE TABLE `t2` (
+  `a` int(11) NOT NULL,
+  `b` char(50) default NULL,
+  PRIMARY KEY  (`a`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+",
+   undef
+);
+
+test_rsi(
+   'samples/date.sql',
+   'one pk',
+"CREATE TABLE `checksum_test_5` (
+  `a` date NOT NULL,
+  `b` int(11) default NULL,
+  PRIMARY KEY  (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+",
+   undef
+);
+
+test_rsi(
+   'samples/auto-increment-actor.sql',
+   'pk, key (no trailing comma)',
+"CREATE TABLE `actor` (
+  `actor_id` smallint(5) unsigned NOT NULL auto_increment,
+  `first_name` varchar(45) NOT NULL,
+  `last_name` varchar(45) NOT NULL,
+  `last_update` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
+  PRIMARY KEY  (`actor_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=201 DEFAULT CHARSET=utf8;
+",
+   'KEY `idx_actor_last_name` (`last_name`)'
+);
+
+test_rsi(
+   'samples/one_fk.sql',
+   'key, fk, no clustered key',
+"CREATE TABLE `t1` (
+  `a` int(11) NOT NULL,
+  `b` char(50) default NULL,
+  CONSTRAINT `t1_ibfk_1` FOREIGN KEY (`a`) REFERENCES `t2` (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+",
+   'KEY `a` (`a`)',
+);
+
+test_rsi(
+   'samples/sakila.film.sql',
+   'pk, keys and fks',
 "CREATE TABLE `film` (
   `film_id` smallint(5) unsigned NOT NULL auto_increment,
   `title` varchar(255) NOT NULL,
@@ -547,13 +657,7 @@ is(
   CONSTRAINT `fk_film_language_original` FOREIGN KEY (`original_language_id`) REFERENCES `language` (`language_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8
 ",
-   'remove_secondary_indexes() new table ddl'
-);
-
-is(
-   $indexes,
-   'KEY `idx_fk_original_language_id` (`original_language_id`), KEY `idx_fk_language_id` (`language_id`), KEY `idx_title` (`title`)',
-   'remove_secondary_indexes() secondary indexes ddl'
+   'KEY `idx_fk_original_language_id` (`original_language_id`), KEY `idx_fk_language_id` (`language_id`), KEY `idx_title` (`title`)'
 );
 
 # #############################################################################
@@ -773,7 +877,7 @@ is(
 # #############################################################################
 
 # Make sure get_keys() gets a clustered index that's not the primary key.
-$ddl = load_file('samples/non_pk_ck.sql');
+my $ddl = load_file('samples/non_pk_ck.sql');
 my (undef, $ck) = $tp->get_keys($ddl, {}, {i=>0,j=>1});
 is(
    $ck,

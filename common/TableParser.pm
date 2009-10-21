@@ -433,21 +433,40 @@ sub remove_auto_increment {
 
 sub remove_secondary_indexes {
    my ( $self, $ddl ) = @_;
-   my $tbl_struct    = $self->parse($ddl);
-   my $clustered_key = $tbl_struct->{clustered_key};
-   my @sec_indexes   = map {
-      my $key_def = $_->{ddl};
-      # Escape ( ) in the key def so Perl treats them literally.
-      $key_def =~ s/([\(\)])/\\$1/g;
-      $ddl =~ s/\s+$key_def//;
-      $_->{ddl};
-   }
-   grep { $_->{name} ne $clustered_key }
-   values %{$tbl_struct->{keys}};
-   MKDEBUG && _d('Secondary indexes:', Dumper(\@sec_indexes));
+   my $sec_indexes_ddl;
+   my $tbl_struct = $self->parse($ddl);
 
-   my $sec_indexes_ddl = join(' ', @sec_indexes);
-   $sec_indexes_ddl =~ s/,$//;
+   if ( ($tbl_struct->{engine} || '') =~ m/InnoDB/i ) {
+      my $clustered_key = $tbl_struct->{clustered_key};
+      $clustered_key  ||= '';
+
+      my @sec_indexes   = map {
+         my $key_def = $_->{ddl};
+         # Escape ( ) in the key def so Perl treats them literally.
+         $key_def =~ s/([\(\)])/\\$1/g;
+         $ddl =~ s/\s+$key_def//;
+         $_->{ddl};
+      }
+      grep { $_->{name} ne $clustered_key }
+      values %{$tbl_struct->{keys}};
+      MKDEBUG && _d('Secondary indexes:', Dumper(\@sec_indexes));
+
+      if ( @sec_indexes ) {
+         $sec_indexes_ddl = join(' ', @sec_indexes);
+         $sec_indexes_ddl =~ s/,$//;
+      }
+
+      # Remove trailing comma on last key.  Cases like:
+      #   PK,
+      #   KEY,
+      # ) ENGINE=...
+      # will leave a trailing comma on PK.
+      $ddl =~ s/,(\n\) )/$1/s;
+   }
+   else {
+      MKDEBUG && _d('Not removing secondary indexes from',
+         $tbl_struct->{engine}, 'table');
+   }
 
    return $ddl, $sec_indexes_ddl, $tbl_struct;
 }
