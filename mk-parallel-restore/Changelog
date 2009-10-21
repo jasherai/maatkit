@@ -3,6 +3,7 @@ Changelog for mk-parallel-restore:
    * Removed ability to restore triggers and views (issue 316).
    * Older versions of mysqldump caused "Query was empty" errors (issue 625).
    * Tool caused a slave error in some cases (issue 506).
+   * --create-databases did not respect --no-bin-log.
    * Added --fast-index for fast InnoDB index creation.
    * Added --only-empty-databases (issue 300).
    * Added --[no]create-tables.

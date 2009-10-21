@@ -2224,6 +2224,10 @@ sub main {
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
 
+   # Turn off binary logging on the main dbh else some things
+   # like --create-databases will replicate.
+   _do($dbh, $o->get('dry-run'), 'SET SQL_LOG_BIN=0') unless $o->get('bin-log');
+
    # ########################################################################
    # Discover files to be restored.
    # ########################################################################

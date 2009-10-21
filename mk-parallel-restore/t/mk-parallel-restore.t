@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 49;
+use Test::More tests => 54;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -469,15 +469,47 @@ is_deeply(
    '--create-databases --only-empty-databases (issue 300)',
 );
 
+
 # #############################################################################
-# Test --fast-index.
+# Test that --create-databases won't replicate with --no-bin-log.
+# #############################################################################
+SKIP: {
+   skip 'Cannot connect to sandbox slave', 3 unless $slave_dbh;
+   $dbh->do('DROP DATABASE IF EXISTS issue_625');
+   sleep 1;
+
+   is_deeply(
+      $slave_dbh->selectall_arrayref("show databases like 'issue_625'"),
+      [],
+      "Database doesn't exist on slave"
+   );
+  
+   my $master_pos = $dbh->selectall_arrayref('SHOW MASTER STATUS')->[0]->[1];
+
+   `$cmd samples/issue_625 --create-databases --no-bin-log`;
+
+   is_deeply(
+      $slave_dbh->selectall_arrayref("show databases like 'issue_625'"),
+      [],
+      "Database still doesn't exist on slave"
+   );
+   is(
+      $dbh->selectall_arrayref('SHOW MASTER STATUS')->[0]->[1],
+      $master_pos,
+      "Bin log pos unchanged ($master_pos)"
+   );
+};
+
+# #############################################################################
+# Test "pure" restore and attendant options.
 # #############################################################################
 
-# While we're at it, we'll test that a pure restore is pure.
 $output = `$cmd samples/fast_index --dry-run --quiet -t store`;
 is(
    $output,
-"CREATE TABLE `store` (
+"USE `sakila`
+DROP TABLE IF EXISTS `sakila`.`store`
+CREATE TABLE `store` (
   `store_id` tinyint(3) unsigned NOT NULL auto_increment,
   `manager_staff_id` tinyint(3) unsigned NOT NULL,
   `address_id` smallint(5) unsigned NOT NULL,
@@ -488,16 +520,51 @@ is(
   CONSTRAINT `fk_store_staff` FOREIGN KEY (`manager_staff_id`) REFERENCES `staff` (`staff_id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_store_address` FOREIGN KEY (`address_id`) REFERENCES `address` (`address_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8
+USE `sakila`
 INSERT INTO `store` VALUES (1,1,1,'2006-02-15 11:57:12'),(2,2,2,'2006-02-15 11:57:12');
 ",
    'Pure restore'
 );
 
-# Now test --fast-index.
+$output = `$cmd samples/fast_index --dry-run --quiet -t store --no-drop-tables`;
+is(
+   $output,
+"USE `sakila`
+CREATE TABLE `store` (
+  `store_id` tinyint(3) unsigned NOT NULL auto_increment,
+  `manager_staff_id` tinyint(3) unsigned NOT NULL,
+  `address_id` smallint(5) unsigned NOT NULL,
+  `last_update` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
+  PRIMARY KEY  (`store_id`),
+  UNIQUE KEY `idx_unique_manager` (`manager_staff_id`),
+  KEY `idx_fk_address_id` (`address_id`),
+  CONSTRAINT `fk_store_staff` FOREIGN KEY (`manager_staff_id`) REFERENCES `staff` (`staff_id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_store_address` FOREIGN KEY (`address_id`) REFERENCES `address` (`address_id`) ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8
+USE `sakila`
+INSERT INTO `store` VALUES (1,1,1,'2006-02-15 11:57:12'),(2,2,2,'2006-02-15 11:57:12');
+",
+   '--no-drop-tables'
+);
+
+$output = `$cmd samples/fast_index --dry-run --quiet -t store --no-create-tables`;
+is(
+   $output,
+"USE `sakila`
+INSERT INTO `store` VALUES (1,1,1,'2006-02-15 11:57:12'),(2,2,2,'2006-02-15 11:57:12');
+",
+   '--no-create-tables'
+);
+
+# #############################################################################
+# Test --fast-index.
+# #############################################################################
 $output = `$cmd samples/fast_index --dry-run --quiet -t store --fast-index`;
 is(
    $output,
-"CREATE TABLE `store` (
+"USE `sakila`
+DROP TABLE IF EXISTS `sakila`.`store`
+CREATE TABLE `store` (
   `store_id` tinyint(3) unsigned NOT NULL auto_increment,
   `manager_staff_id` tinyint(3) unsigned NOT NULL,
   `address_id` smallint(5) unsigned NOT NULL,
@@ -506,6 +573,7 @@ is(
   CONSTRAINT `fk_store_staff` FOREIGN KEY (`manager_staff_id`) REFERENCES `staff` (`staff_id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_store_address` FOREIGN KEY (`address_id`) REFERENCES `address` (`address_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8
+USE `sakila`
 INSERT INTO `store` VALUES (1,1,1,'2006-02-15 11:57:12'),(2,2,2,'2006-02-15 11:57:12');
 ALTER TABLE `sakila`.`store` ADD KEY `idx_fk_address_id` (`address_id`), UNIQUE KEY `idx_unique_manager` (`manager_staff_id`)
 ",
@@ -516,7 +584,9 @@ ALTER TABLE `sakila`.`store` ADD KEY `idx_fk_address_id` (`address_id`), UNIQUE 
 $output = `$cmd samples/fast_index --dry-run --quiet -t store --fast-index -t film_text`;
 is(
    $output,
-"CREATE TABLE `film_text` (
+"USE `sakila`
+DROP TABLE IF EXISTS `sakila`.`film_text`
+CREATE TABLE `film_text` (
   `film_id` smallint(6) NOT NULL,
   `title` varchar(255) NOT NULL,
   `description` text,
@@ -525,6 +595,7 @@ is(
   FULLTEXT KEY `idx_title_description` (`title`,`description`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8
 
+USE `sakila`
 INSERT INTO `film_text` VALUES (1,'ACADEMY DINOSAUR','A Epic Drama of a Feminist And a Mad Scientist who must Battle a Teacher in The Canadian Rockies');
 ",
    '--fast-index on non-InnoDB table'
