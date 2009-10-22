@@ -6736,7 +6736,7 @@ printed separately.  For example,
    #      0       0      3      0 Chunk     2    test.test1
 
 Table test.test1 on host1 required 3 C<INSERT> statements to synchronize
-and it used the Chunk algorithm (see L<"ALGORITMS">).  Because differences were
+and it used the Chunk algorithm (see L<"ALGORITHMS">).  Because differences were
 found, its L<"EXIT STATUS"> was 2.
 
 If you specify the L<"--print"> option, you'll see the actual SQL statements
