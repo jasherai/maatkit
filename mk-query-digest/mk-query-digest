@@ -7323,7 +7323,7 @@ sub main {
                   "# ==== ================== ================ ======= ======",
                   "==== ====\n";
             foreach my $item (sort { $a->{rank} <=> $b->{rank} } @profiles) {
-               printf "# %4d 0x%16s %10.4f %4.1f%% %7d %10.6f %s\n",
+               printf "# %4d 0x%16s %10.4f %4.1f%% %7d %8.4f %s\n",
                   $item->{rank}, $item->{id}, $item->{r},
                   $item->{r} / ($total_r || 1) * 100,
                   $item->{cnt}, $item->{r} / $item->{cnt}, $item->{sample};
