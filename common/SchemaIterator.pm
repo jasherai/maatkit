@@ -180,14 +180,10 @@ sub get_db_itr {
    eval {
       my $sql = 'SHOW DATABASES';
       MKDEBUG && _d($sql);
-      @dbs = map {
-         $_->[0]
-      }
-      grep {
-         my $ok = $filter ? $filter->($dbh, $_->[0], undef) : 1;
+      @dbs =  grep {
+         my $ok = $filter ? $filter->($dbh, $_, undef) : 1;
          $ok;
-      }
-      @{ $dbh->selectall_arrayref($sql) };
+      } @{ $dbh->selectcol_arrayref($sql) };
       MKDEBUG && _d('Found', scalar @dbs, 'databases');
    };
    MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
@@ -226,16 +222,17 @@ sub get_tbl_itr {
             $_->[0]
          }
          grep {
-            my $ok = $filter ? $filter->($dbh, $db, $_->[0]) : 1;
+            my ($tbl, $type) = @$_;
+            my $ok = $filter ? $filter->($dbh, $db, $tbl) : 1;
             if ( !$views ) {
                # We don't want views therefore we have to check the table
                # type.  Views are actually available in 5.0.1 but "FULL"
                # in SHOW FULL TABLES was not added until 5.0.2.  So 5.0.1
                # is an edge case that we ignore.  If >=5.0.2 then there
-               # might be views and $_->[1] will be Table_type and we check
+               # might be views and $type will be Table_type and we check
                # as normal.  Else, there cannot be views so we default
-               # $_->[1] to 'VIEW' so that every table passes.
-               $ok = 0 if ($_->[1] || 'VIEW') eq 'VIEW';
+               # $type to 'VIEW' so that every table passes.
+               $ok = 0 if ($type || 'VIEW') eq 'VIEW';
             }
             $ok;
          }
