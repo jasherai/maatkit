@@ -76,5 +76,5 @@ SELECT * FROM blah WHERE something = 'important'\G
 
 # Rank Query ID           Response time    Calls   R/Call     Item
 # ==== ================== ================ ======= ========== ====
-#    1 0x727841EC88423713     0.0000  0.0%       1   0.000000 INSERT db.v
-#    2 0x9E892D4B16D7BFC2     0.0000  0.0%       1   0.000000 SELECT blah
+#    1 0x727841EC88423713     0.0000  0.0%       1   0.0000 INSERT db.v
+#    2 0x9E892D4B16D7BFC2     0.0000  0.0%       1   0.0000 SELECT blah

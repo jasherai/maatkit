@@ -30,7 +30,6 @@ select sleep(2) from n\G
 #            id: 1
 #   select_type: SIMPLE
 #         table: n
-#    partitions: NULL
 #          type: ALL
 # possible_keys: NULL
 #           key: NULL
