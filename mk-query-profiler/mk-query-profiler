@@ -2527,8 +2527,7 @@ You need Perl, DBI, DBD::mysql, and some core modules.
 
 =head1 BUGS
 
-For a list of known bugs see:
-L<http://code.google.com/p/maatkit/issues/list?&q=tool=mk_query_profiler%20type=Defect>.
+For list of known bugs see L<http://www.maatkit.org/bugs/mk-query-profiler>.
 
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to

@@ -8298,6 +8298,8 @@ reasonably new version of Perl.
 
 =head1 BUGS
 
+For list of known bugs see L<http://www.maatkit.org/bugs/mk-upgrade>.
+
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
 discuss Maatkit.
