@@ -221,8 +221,8 @@ sub _make_unrolled_loops {
    foreach my $i ( 0 .. $#attrs ) {
       # Access through array indexes, it's faster than hash lookups
       push @lines, (
-         '$class  = $temp->{"'  . $attrs[$i] . '"};',
-         '$global = $globs->{"' . $attrs[$i] . '"};',
+         '$class  = $temp->{\''  . $attrs[$i] . '\'};',
+         '$global = $globs->{\'' . $attrs[$i] . '\'};',
          $self->{unrolled_for}->{$attrs[$i]},
       );
    }
