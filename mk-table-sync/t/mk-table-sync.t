@@ -143,7 +143,7 @@ $output = run('test3', 'test4', '--algorithms Nibble --chunk-size 1k --print --v
 ok($output, 'Synced with Nibble and data-size chunksize');
 
 # Restore MKDEBUG env.
-$ENV{MKDEBUG} = $dbg;
+$ENV{MKDEBUG} = $dbg || 0;
 
 # #############################################################################
 # Ensure that syncing master-master works OK
