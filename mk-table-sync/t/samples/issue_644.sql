@@ -13,7 +13,7 @@ INSERT INTO issue_644.t VALUES
 ('0611743165-2521-n-greenview-ave', '14293130030002'),  -- first boundary
 ('0611743165-3001-z-greenview-ave', '14293130030003'),
 ('0611743165-2520-z-greenview-ave', '14293130030004'),
-('601940318', '14334230481014'),  -- lead back to first boundary
+('601940318', '14334230481014'),  -- leads back to first boundary
 ('600000500', '14334230481015'),
 ('600005000', '14334230481016'),
 ('601940320', '14334230481017');  -- never reached
