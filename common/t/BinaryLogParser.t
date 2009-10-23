@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 4;
+use Test::More tests => 6;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -272,6 +272,14 @@ run_test({
     ts => undef
   }
    ]
+});
+
+# #############################################################################
+# Issue 606: Unknown event type Rotate at ./mk-slave-prefetch
+# #############################################################################
+run_test({
+   file => 'samples/binlog006.txt',
+   result => [],
 });
 
 # #############################################################################

@@ -152,9 +152,17 @@ sub parse_event {
                   push @properties, 'Thread_id', $i, 'Query_time', $t,
                                     'error_code', $c;
                }
+               elsif ( $type eq 'Start:' ) {
+                  # These are lines like "#090722  7:21:41 server id 12345
+                  # end_log_pos 98 Start: binlog v 4, server v 5.0.82-log
+                  # created 090722  7:21:41 at startup".  They may or may
+                  # not have a statement after them (ROLLBACK can follow
+                  # this line), so we do not want to skip these types.
+                  MKDEBUG && _d("Binlog start");
+               }
                else {
-                  die "Unknown event type $type"
-                     unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+                  MKDEBUG && _d('Unknown event type:', $type);
+                  next EVENT;
                }
             }
             else {
