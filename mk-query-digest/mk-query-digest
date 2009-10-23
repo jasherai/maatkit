@@ -362,7 +362,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4874
+# Quoter package 4930
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -416,7 +416,7 @@ sub literal_like {
    my ( $self, $like ) = @_;
    return unless $like;
    $like =~ s/([%_])/\\$1/g;
-   return $like;
+   return "'$like'";
 }
 
 1;
@@ -4972,7 +4972,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4905
+# TableParser package 4931
 # ###########################################################################
 package TableParser;
 
@@ -5141,8 +5141,8 @@ sub check_table {
    my $db_tbl = $q->quote($db, $tbl);
    MKDEBUG && _d('Checking', $db_tbl);
 
-   my $literal_tbl = $q->literal_like($tbl);
-   my $sql = "SHOW TABLES FROM " . $q->quote($db) . " LIKE '$literal_tbl'";
+   my $sql = "SHOW TABLES FROM " . $q->quote($db)
+           . ' LIKE ' . $q->literal_like($tbl);
    MKDEBUG && _d($sql);
    my $row;
    eval {
@@ -6184,7 +6184,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 4277
+# BinaryLogParser package 4936
 # ###########################################################################
 package BinaryLogParser;
 
@@ -6299,9 +6299,12 @@ sub parse_event {
                   push @properties, 'Thread_id', $i, 'Query_time', $t,
                                     'error_code', $c;
                }
+               elsif ( $type eq 'Start:' ) {
+                  MKDEBUG && _d("Binlog start");
+               }
                else {
-                  die "Unknown event type $type"
-                     unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+                  MKDEBUG && _d('Unknown event type:', $type);
+                  next EVENT;
                }
             }
             else {
