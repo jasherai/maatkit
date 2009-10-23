@@ -73,9 +73,9 @@ is_deeply(
    'splits with a db',
 );
 
-is( $q->literal_like('foo'), 'foo', 'LIKE foo');
-is( $q->literal_like('foo_bar'), 'foo\_bar', 'LIKE foo_bar');
-is( $q->literal_like('foo%bar'), 'foo\%bar', 'LIKE foo%bar');
-is( $q->literal_like('v_b%a c_'), 'v\_b\%a c\_', 'LIKE v_b%a c_');
+is( $q->literal_like('foo'), "'foo'", 'LIKE foo');
+is( $q->literal_like('foo_bar'), "'foo\\_bar'", 'LIKE foo_bar');
+is( $q->literal_like('foo%bar'), "'foo\\%bar'", 'LIKE foo%bar');
+is( $q->literal_like('v_b%a c_'), "'v\\_b\\%a c\\_'", 'LIKE v_b%a c_');
 
 exit;

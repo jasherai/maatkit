@@ -70,7 +70,7 @@ sub literal_like {
    my ( $self, $like ) = @_;
    return unless $like;
    $like =~ s/([%_])/\\$1/g;
-   return $like;
+   return "'$like'";
 }
 
 1;
