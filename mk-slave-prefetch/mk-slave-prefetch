@@ -1252,7 +1252,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 4277
+# BinaryLogParser package 4936
 # ###########################################################################
 package BinaryLogParser;
 
@@ -1367,9 +1367,12 @@ sub parse_event {
                   push @properties, 'Thread_id', $i, 'Query_time', $t,
                                     'error_code', $c;
                }
+               elsif ( $type eq 'Start:' ) {
+                  MKDEBUG && _d("Binlog start");
+               }
                else {
-                  die "Unknown event type $type"
-                     unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+                  MKDEBUG && _d('Unknown event type:', $type);
+                  next EVENT;
                }
             }
             else {
@@ -2205,7 +2208,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4397 $Revision$
+# TableParser package 4931 $Revision$
 # ###########################################################################
 package TableParser;
 
@@ -2897,7 +2900,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 3186 $Revision$
+# Quoter package 4930 $Revision$
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3730,10 +3733,10 @@ sub main {
       };
    }
    if ( $o->get('secondary-indexes') ) {
-      my $tp  = new TableParser();
+      my $q   = new Quoter();
+      my $tp  = new TableParser(Quoter => $q);
       my $du  = new MySQLDump(cache => 0);
       my $qp  = new QueryParser();
-      my $q   = new Quoter();
 
       push @callbacks, sub {
          my ( %args ) = @_;

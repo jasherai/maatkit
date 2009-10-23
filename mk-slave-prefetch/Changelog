@@ -1,5 +1,6 @@
 Changelog for mk-slave-prefetch:
 
+   * Tool died on unknown binary log event types (issue 606).
    * --set-vars did not work (issue 597).
    * Command line options did not override config file options (issue 617).
 
