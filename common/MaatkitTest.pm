@@ -23,8 +23,9 @@ package MaatkitTest;
 
 use strict;
 use warnings FATAL => 'all';
-
 use English qw(-no_match_vars);
+use Test::More;
+use Time::HiRes qw(usleep);
 
 require Exporter;
 our @ISA         = qw(Exporter);
@@ -33,6 +34,7 @@ our @EXPORT      = qw();
 our @EXPORT_OK   = qw(
    output
    load_file
+   wait_until
 );
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -56,6 +58,21 @@ sub load_file {
    close $fh;
    chomp $contents if $args{chomp_contents};
    return $contents;
+}
+
+sub wait_until {
+   my ( $code, $t, $max_t ) = @_;
+   my $slept     = 0;
+   my $sleep_int = $t || .5;
+   $t     ||= .5;
+   $max_t ||= 5;
+   $t *= 1_000_000;
+   while ( $slept <= $max_t ) {
+      last if $code->();
+      usleep($t);
+      $slept += $sleep_int;
+   }
+   return;
 }
 
 1;
