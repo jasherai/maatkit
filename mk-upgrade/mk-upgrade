@@ -7917,17 +7917,14 @@ mk-upgrade - Execute SQL statements against two MySQL servers and compare the re
 
 =head1 SYNOPSIS
 
-Compare queries in slow.log on host1 to host2:
+Compare all queries in slow.log on host1 to host2:
 
    mk-upgrade h=host1 h=host2 slow.log
 
-Use mk-query-digest to parse tcpdump and compare queries:
+Use mk-query-digest to compare only 1 sample of each unique query:
 
-  mk-query-digest --type tcpdump --no-report --print tcpdump.txt \
+  mk-query-digest --no-report --print --sample 1 slow.log \
     | mk-upgrade h=host1 h=host2
-
-See L<mk-query-digest> for more information on how to gather and process TCP
-traffic from a MySQL server.
 
 =head1 RISKS
 
@@ -7960,12 +7957,22 @@ ranks the results.  This helps to test for bugs, changes in results, and
 performance regressions before an upgrade or configuration change.  The higher a
 query ranks, the greater its results differ.
 
-mk-upgrade reads logs in slow-log format.  You can use mk-query-digest to
-transform other input sources into a slow log using its C<--print --report ''>
-options.
+mk-upgrade reads queries from slowlogs.  You should use mk-query-digest to
+extract only one unique sample of each query from the original slowlog.  For
+example:
 
-Queries are not yet fingerprinted or aggregated.  Every query is
-executed, compared and ranked individually.
+  mk-query-digest --no-report --print --sample 1 slow.log \
+    | mk-upgrade h=host1 h=host2
+
+You can also use mk-query-digest to transform other input sources into a
+slowlog by its C<--print --no-report> options.  For example, to get queries
+from a tcpdump dump and then compare them with mk-audit:
+
+  mk-query-digest --no-report --print --sample 1 --type tcpdump dump.txt \
+    | mk-upgrade h=host1 h=host2
+
+Queries are not yet fingerprinted or aggregated.  Every query is executed,
+compared and ranked individually.
 
 =head1 OUTPUT
 
@@ -8053,7 +8060,7 @@ Discard events for which this Perl code doesn't return true.
 
 This option is a string of Perl code or a file containing Perl code that gets
 compiled into a subroutine with one argument: $event.  This is a hashref.
-If the given value is a readable file, then mk-query-digest reads the entire
+If the given value is a readable file, then mk-upgrade reads the entire
 file and uses its contents as the code.  The file should not contain
 a shebang (#!/usr/bin/perl) line.
 
@@ -8080,10 +8087,10 @@ filter.txt:
 
 Then specify C<--filter filter.txt> to read the code from filter.txt.
 
-If the filter code won't compile, mk-query-digest will die with an error.
+If the filter code won't compile, mk-upgrade will die with an error.
 If the filter code does compile, an error may still occur at runtime if the
 code tries to do something wrong (like pattern match an undefined value).
-mk-query-digest does not provide any safeguards so code carefully!
+mk-upgrade does not provide any safeguards so code carefully!
 
 An example filter that discards everything but SELECT statements:
 
