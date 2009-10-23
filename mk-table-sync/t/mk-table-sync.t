@@ -510,7 +510,7 @@ SKIP: {
    $master_dbh->do('CREATE TABLE test.foo (i INT, UNIQUE INDEX (i))');
    $master_dbh->do('INSERT INTO test.foo VALUES (1),(2),(9)');
    diag(`/tmp/12345/use < samples/issue_533.sql`);
-   sleep 5;
+   sleep 1;
 
    # My box acts weird so I double check that this is ok.
    my $r = $dbh3->selectrow_arrayref('SHOW TABLES FROM test');
