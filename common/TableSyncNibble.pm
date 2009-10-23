@@ -115,7 +115,7 @@ sub can_sync {
       MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
       if ( $table_status ) {
          my $n_rows   = $table_status->{Rows} || $table_status->{rows};
-         $small_table = 1 if $n_rows && $n_rows <= 100;
+         $small_table = 1 if defined $n_rows && $n_rows <= 100;
       }
    }
    MKDEBUG && _d('Small table:', $small_table);

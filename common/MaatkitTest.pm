@@ -68,9 +68,9 @@ sub wait_until {
    $max_t ||= 5;
    $t *= 1_000_000;
    while ( $slept <= $max_t ) {
-      last if $code->();
       usleep($t);
       $slept += $sleep_int;
+      return if $code->();
    }
    return;
 }
