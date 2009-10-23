@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * Nibble could fail to sync small tables (issue 634).
    * --set-vars did not work (issue 597).
    * Column order was not preserved in SQL statments (issue 371).
    * GroupBy and Stream algorithms did not reset after first table (issue 631).

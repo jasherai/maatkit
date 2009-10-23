@@ -864,7 +864,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 3186
+# Quoter package 4930
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -912,6 +912,13 @@ sub split_unquote {
       $db  = $default_db;
    }
    return ($db, $tbl);
+}
+
+sub literal_like {
+   my ( $self, $like ) = @_;
+   return unless $like;
+   $like =~ s/([%_])/\\$1/g;
+   return "'$like'";
 }
 
 1;
@@ -1422,19 +1429,29 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4397
+# TableParser package 4931
 # ###########################################################################
 package TableParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+
 sub new {
-   my ( $class ) = @_;
-   return bless {}, $class;
+   my ( $class, %args ) = @_;
+   my @required_args = qw(Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 
@@ -1570,27 +1587,69 @@ sub find_possible_keys {
    }
 }
 
-sub table_exists {
-   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
-   my $result = 0;
+sub check_table {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbl) = @args{@required_args};
+   my $q      = $self->{Quoter};
    my $db_tbl = $q->quote($db, $tbl);
-   my $sql    = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d('Checking', $db_tbl);
+
+   my $sql = "SHOW TABLES FROM " . $q->quote($db)
+           . ' LIKE ' . $q->literal_like($tbl);
+   MKDEBUG && _d($sql);
+   my $row;
+   eval {
+      $row = $dbh->selectrow_arrayref($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
+   }
+   if ( !$row->[0] || $row->[0] ne $tbl ) {
+      MKDEBUG && _d('Table does not exist');
+      return 0;
+   }
+
+   MKDEBUG && _d('Table exists; no privs to check');
+   return 1 unless $args{all_privs};
+
+   $sql = "SHOW FULL COLUMNS FROM $db_tbl";
    MKDEBUG && _d($sql);
    eval {
-      my $sth = $dbh->prepare($sql);
-      $sth->execute();
-      my @columns = @{$sth->fetchall_arrayref({})};
-      if ( $can_insert ) {
-         $result = grep { ($_->{Privileges} || '') =~ m/insert/ } @columns;
-      }
-      else {
-         $result = 1;
-      }
+      $row = $dbh->selectrow_hashref($sql);
    };
-   if ( MKDEBUG && $EVAL_ERROR ) {
-      _d($EVAL_ERROR);
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
    }
-   return $result;
+   if ( !scalar keys %$row ) {
+      MKDEBUG && _d('Table has no columns:', Dumper($row));
+      return 0;
+   }
+   my $privs = $row->{privileges} || $row->{Privileges};
+
+   $sql = "DELETE FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d($sql);
+   eval {
+      $dbh->do($sql);
+   };
+   my $can_delete = $EVAL_ERROR ? 0 : 1;
+
+   MKDEBUG && _d('User privs on', $db_tbl, ':', $privs,
+      ($can_delete ? 'delete' : ''));
+
+   if ( !($privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/
+          && $can_delete) ) {
+      MKDEBUG && _d('User does not have all privs');
+      return 0;
+   }
+
+   MKDEBUG && _d('User has all privs');
+   return 1;
 }
 
 sub get_engine {
@@ -1611,7 +1670,8 @@ sub get_keys {
 
       next KEY if $key =~ m/FOREIGN/;
 
-      MKDEBUG && _d('Parsed key:', $key);
+      my $key_ddl = $key;
+      MKDEBUG && _d('Parsed key:', $key_ddl);
 
       if ( $engine !~ m/MEMORY|HEAP/ ) {
          $key =~ s/USING HASH/USING BTREE/;
@@ -1648,6 +1708,7 @@ sub get_keys {
          is_unique    => $unique,
          is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
          is_col       => { map { $_ => 1 } @cols },
+         ddl          => $key_ddl,
       };
 
       if ( $engine =~ m/InnoDB/i && !$clustered_key ) {
@@ -1697,6 +1758,40 @@ sub remove_auto_increment {
    my ( $self, $ddl ) = @_;
    $ddl =~ s/(^\).*?) AUTO_INCREMENT=\d+\b/$1/m;
    return $ddl;
+}
+
+sub remove_secondary_indexes {
+   my ( $self, $ddl ) = @_;
+   my $sec_indexes_ddl;
+   my $tbl_struct = $self->parse($ddl);
+
+   if ( ($tbl_struct->{engine} || '') =~ m/InnoDB/i ) {
+      my $clustered_key = $tbl_struct->{clustered_key};
+      $clustered_key  ||= '';
+
+      my @sec_indexes   = map {
+         my $key_def = $_->{ddl};
+         $key_def =~ s/([\(\)])/\\$1/g;
+         $ddl =~ s/\s+$key_def//;
+         $_->{ddl};
+      }
+      grep { $_->{name} ne $clustered_key }
+      values %{$tbl_struct->{keys}};
+      MKDEBUG && _d('Secondary indexes:', Dumper(\@sec_indexes));
+
+      if ( @sec_indexes ) {
+         $sec_indexes_ddl = join(' ', @sec_indexes);
+         $sec_indexes_ddl =~ s/,$//;
+      }
+
+      $ddl =~ s/,(\n\) )/$1/s;
+   }
+   else {
+      MKDEBUG && _d('Not removing secondary indexes from',
+         $tbl_struct->{engine}, 'table');
+   }
+
+   return $ddl, $sec_indexes_ddl, $tbl_struct;
 }
 
 sub _d {
@@ -3430,7 +3525,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 4832
+# TableSyncNibble package 4934
 # ###########################################################################
 package TableSyncNibble;
 
@@ -3483,11 +3578,34 @@ sub can_sync {
       return;
    }
 
+   my $small_table = 0;
+   if ( $args{src} && $args{src}->{dbh} ) {
+      my $dbh = $args{src}->{dbh};
+      my $db  = $args{src}->{db};
+      my $tbl = $args{src}->{tbl};
+      my $table_status;
+      eval {
+         my $sql = "SHOW TABLE STATUS FROM `$db` LIKE "
+                 . $self->{Quoter}->literal_like($tbl);
+         MKDEBUG && _d($sql);
+         $table_status = $dbh->selectrow_hashref($sql);
+      };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+      if ( $table_status ) {
+         my $n_rows   = defined $table_status->{Rows} ? $table_status->{Rows}
+                      : defined $table_status->{rows} ? $table_status->{rows}
+                      : undef;
+         $small_table = 1 if defined $n_rows && $n_rows <= 100;
+      }
+   }
+   MKDEBUG && _d('Small table:', $small_table);
+
    MKDEBUG && _d('Can nibble using index', $nibble_index);
    return (
       1,
       chunk_index => $nibble_index,
       key_cols    => $args{tbl_struct}->{keys}->{$nibble_index}->{cols},
+      small_table => $small_table,
    );
 }
 
@@ -3505,6 +3623,7 @@ sub prepare_to_sync {
    $self->{key_cols}        = $args{key_cols};
    $self->{chunk_size}      = $self->{TableChunker}->size_to_rows(%args);
    $self->{buffer_in_mysql} = $args{buffer_in_mysql};
+   $self->{small_table}     = $args{small_table};
    $self->{ChangeHandler}   = $args{ChangeHandler};
 
    $self->{ChangeHandler}->fetch_back($args{dbh});
@@ -3607,13 +3726,13 @@ sub __get_boundaries {
       my $sql;
       ($sql, $lb) = $self->__make_boundary_sql(%args);  # $lb from outer scope!
 
-      if ( $self->{nibble} == 0 ) {
+      if ( $self->{nibble} == 0 && !$self->{small_table} ) {
          my $explain_index = $self->__get_explain_index($sql);
          if ( ($explain_index || '') ne $s->{index} ) {
-         die 'Cannot nibble table '.$q->quote($args{database}, $args{table})
-            . " because MySQL chose "
-            . ($explain_index ? "the `$explain_index`" : 'no') . ' index'
-            . " instead of the `$s->{index}` index";
+            die 'Cannot nibble table '.$q->quote($args{database}, $args{table})
+               . " because MySQL chose "
+               . ($explain_index ? "the `$explain_index`" : 'no') . ' index'
+               . " instead of the `$s->{index}` index";
          }
       }
 
@@ -5720,8 +5839,8 @@ sub main {
    # ########################################################################
    # Do the work.
    # ########################################################################
-   my $tp        = new TableParser();
    my $q         = new Quoter();
+   my $tp        = new TableParser( Quoter => $q );
    my $vp        = new VersionParser();
    my $ms        = new MasterSlave();
    my $du        = new MySQLDump( cache => 0 );

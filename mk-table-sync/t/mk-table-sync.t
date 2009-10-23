@@ -783,7 +783,7 @@ REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES (486, 1660
 # #############################################################################
 diag(`/tmp/12345/use < samples/issue_634.sql`);
 $slave_dbh->do('insert into issue_634.t values (1)');
-$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_634 --print --algorithms Nibble 2>&1`;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_634 --execute --algorithms Nibble 2>&1`;
 unlike(
    $output,
    qr/Cannot nibble/,
