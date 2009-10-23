@@ -5,6 +5,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 73;
 
+require '../../common/MaatkitTest.pm';
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
 my $output;
@@ -510,10 +511,20 @@ SKIP: {
    $master_dbh->do('CREATE TABLE test.foo (i INT, UNIQUE INDEX (i))');
    $master_dbh->do('INSERT INTO test.foo VALUES (1),(2),(9)');
    diag(`/tmp/12345/use < samples/issue_533.sql`);
-   sleep 1;
 
    # My box acts weird so I double check that this is ok.
-   my $r = $dbh3->selectrow_arrayref('SHOW TABLES FROM test');
+   my $r;
+   my $i = 0;
+   MaatkitTest::wait_until(
+      sub {
+         eval {
+            $r = $dbh3->selectrow_arrayref('SHOW TABLES FROM test');
+         };
+         return 1 if ($r->[0] || '') eq 'foo';
+         diag('Waiting for slave...') unless $i++;
+         return 0;
+      }
+   );
    is_deeply(
       $r,
       ['foo'],
