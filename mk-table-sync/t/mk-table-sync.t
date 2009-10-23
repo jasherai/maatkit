@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 71;
+use Test::More tests => 73;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -496,7 +496,7 @@ is(
 diag(`../../sandbox/make_slave 12348`);
 my $dbh3 = $sb->get_dbh_for('master1');
 SKIP: {
-   skip 'Cannot connect to second sandbox slave', 2
+   skip 'Cannot connect to second sandbox slave', 4
       unless $dbh3;
 
    # This slave is new so it doesn't have the dbs and tbls
@@ -510,7 +510,7 @@ SKIP: {
    $master_dbh->do('CREATE TABLE test.foo (i INT, UNIQUE INDEX (i))');
    $master_dbh->do('INSERT INTO test.foo VALUES (1),(2),(9)');
    diag(`/tmp/12345/use < samples/issue_533.sql`);
-   sleep 1;
+   sleep 5;
 
    # My box acts weird so I double check that this is ok.
    my $r = $dbh3->selectrow_arrayref('SHOW TABLES FROM test');
@@ -765,6 +765,23 @@ REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES (486, 1660
 #      1       1      0      0 Nibble    2    issue_560.buddy_list
 ",
    'Sync only --replicate chunks'
+);
+
+# #############################################################################
+# Issue 634: Cannot nibble table because MySQL chose no index
+# #############################################################################
+diag(`/tmp/12345/use < samples/issue_634.sql`);
+$slave_dbh->do('insert into issue_634.t values (1)');
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_634 --print --algorithms Nibble 2>&1`;
+unlike(
+   $output,
+   qr/Cannot nibble/,
+   "Doesn't say it can't nibble the 1-row table (issue 634)"
+);
+is_deeply(
+   $slave_dbh->selectall_arrayref('select * from issue_634.t'),
+   [],
+   '1-row table was synced (issue 634)'
 );
 
 # #############################################################################
