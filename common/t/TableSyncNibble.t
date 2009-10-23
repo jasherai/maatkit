@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 27;
+use Test::More tests => 30;
 
 require '../DSNParser.pm';
 require '../Sandbox.pm';
@@ -32,10 +32,10 @@ sub throws_ok {
 
 my $mysql = $sb->_use_for('master');
 
-my $ms = new MasterSlave();
-my $tp = new TableParser();
-my $du = new MySQLDump();
 my $q  = new Quoter();
+my $ms = new MasterSlave();
+my $tp = new TableParser(Quoter=>$q);
+my $du = new MySQLDump();
 my $vp = new VersionParser();
 
 my $nibbler = new TableNibbler(
@@ -355,7 +355,22 @@ $t->prepare_to_sync(
 
 # Test that we die if MySQL isn't using the chosen index (package_id)
 # for the boundary sql.
+
+my $sql = "SELECT /*nibble boundary 0*/ `package_id`,`location`,`from_city` FROM `issue_96`.`t` FORCE INDEX(`package_id`) ORDER BY `package_id`,`location` LIMIT 1, 1";
+is(
+   $t->__get_explain_index($sql),
+   'package_id',
+   '__get_explain_index()'
+);
+
 diag(`/tmp/12345/use -e 'ALTER TABLE issue_96.t DROP INDEX package_id'`);
+
+is(
+   $t->__get_explain_index($sql),
+   undef,
+   '__get_explain_index() for nonexistent index'
+);
+
 my %args2 = ( database=>'issue_96', table=>'t' );
 eval {
    $t->get_sql(database=>'issue_96', tbl=>'t', %args2);
@@ -369,7 +384,6 @@ like(
 # Restore the index, get the first sql boundary and check that it
 # has the proper ORDER BY clause which makes MySQL use the index.
 diag(`/tmp/12345/use -e 'ALTER TABLE issue_96.t ADD UNIQUE INDEX package_id (package_id,location);'`);
-my $sql;
 eval {
    ($sql,undef) = $t->__make_boundary_sql(%args2);
 };
@@ -377,6 +391,33 @@ is(
    $sql,
    "SELECT /*nibble boundary 0*/ `package_id`,`location`,`from_city` FROM `issue_96`.`t` FORCE INDEX(`package_id`) ORDER BY `package_id`,`location` LIMIT 1, 1",
    'Boundary SQL has ORDER BY key columns'
+);
+
+# If small_table is true, the index check should be skipped.
+diag(`/tmp/12345/use -e 'create table issue_96.t3 (i int, unique index (i))'`);
+diag(`/tmp/12345/use -e 'insert into issue_96.t3 values (1)'`);
+$tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_96', 't3'));
+$t->prepare_to_sync(
+   ChangeHandler  => $ch,
+   cols           => $tbl_struct->{cols},
+   dbh            => $dbh,
+   db             => 'issue_96',
+   tbl            => 't3',
+   tbl_struct     => $tbl_struct,
+   chunk_size     => 2,
+   chunk_index    => 'i',
+   crc_col        => '__crc_col',
+   index_hint     => 'FORCE INDEX(`i`)',
+   key_cols       => $tbl_struct->{keys}->{i}->{cols},
+   small_table    => 1,
+);
+eval {
+   $t->get_sql(database=>'issue_96', table=>'t3');
+};
+is(
+   $EVAL_ERROR,
+   '',
+   "Skips index check when small table (issue 634)"
 );
 
 # #############################################################################

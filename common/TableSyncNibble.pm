@@ -96,11 +96,36 @@ sub can_sync {
       return;
    }
 
+   # MySQL may choose to use no index for small tables because it's faster.
+   # However, this will cause __get_boundaries() to die with a "Cannot nibble
+   # table" error.  So we check if the table is small and if it is then we
+   # let MySQL do whatever it wants and let ORDER BY keep us safe.
+   my $small_table = 0;
+   if ( $args{src} && $args{src}->{dbh} ) {
+      my $dbh = $args{src}->{dbh};
+      my $db  = $args{src}->{db};
+      my $tbl = $args{src}->{tbl};
+      my $table_status;
+      eval {
+         my $sql = "SHOW TABLE STATUS FROM `$db` LIKE "
+                 . $self->{Quoter}->literal_like($tbl);
+         MKDEBUG && _d($sql);
+         $table_status = $dbh->selectrow_hashref($sql);
+      };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+      if ( $table_status ) {
+         my $n_rows   = $table_status->{Rows} || $table_status->{rows};
+         $small_table = 1 if $n_rows && $n_rows <= 100;
+      }
+   }
+   MKDEBUG && _d('Small table:', $small_table);
+
    MKDEBUG && _d('Can nibble using index', $nibble_index);
    return (
       1,
       chunk_index => $nibble_index,
       key_cols    => $args{tbl_struct}->{keys}->{$nibble_index}->{cols},
+      small_table => $small_table,
    );
 }
 
@@ -118,6 +143,7 @@ sub prepare_to_sync {
    $self->{key_cols}        = $args{key_cols};
    $self->{chunk_size}      = $self->{TableChunker}->size_to_rows(%args);
    $self->{buffer_in_mysql} = $args{buffer_in_mysql};
+   $self->{small_table}     = $args{small_table};
    $self->{ChangeHandler}   = $args{ChangeHandler};
 
    $self->{ChangeHandler}->fetch_back($args{dbh});
@@ -249,13 +275,13 @@ sub __get_boundaries {
       # Check that $sql will use the index chosen earlier in new().
       # Only do this for the first nibble.  I assume this will be safe
       # enough since the WHERE should use the same columns.
-      if ( $self->{nibble} == 0 ) {
+      if ( $self->{nibble} == 0 && !$self->{small_table} ) {
          my $explain_index = $self->__get_explain_index($sql);
          if ( ($explain_index || '') ne $s->{index} ) {
-         die 'Cannot nibble table '.$q->quote($args{database}, $args{table})
-            . " because MySQL chose "
-            . ($explain_index ? "the `$explain_index`" : 'no') . ' index'
-            . " instead of the `$s->{index}` index";
+            die 'Cannot nibble table '.$q->quote($args{database}, $args{table})
+               . " because MySQL chose "
+               . ($explain_index ? "the `$explain_index`" : 'no') . ' index'
+               . " instead of the `$s->{index}` index";
          }
       }
 

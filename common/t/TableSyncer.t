@@ -51,7 +51,8 @@ sub throws_ok {
    like( $EVAL_ERROR, $pat, $msg );
 }
 
-my $tp = new TableParser();
+my $q  = new Quoter();
+my $tp = new TableParser(Quoter=>$q);
 my $du = new MySQLDump( cache => 0 );
 my ($rows, $cnt);
 
@@ -82,7 +83,6 @@ throws_ok(
 
 my $rd       = new RowDiff(dbh=>$src_dbh);
 my $ms       = new MasterSlave();
-my $q        = new Quoter();
 my $vp       = new VersionParser();
 my $checksum = new TableChecksum(
    Quoter         => $q,
@@ -161,7 +161,7 @@ $tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test6'));
 );
 is_deeply(
    [ $plugin, \%plugin_args, ],
-   [ $sync_nibble, { chunk_index => 'a', key_cols => [qw(a)], } ],
+   [ $sync_nibble,{ chunk_index => 'a', key_cols => [qw(a)], small_table=>0 } ],
    'Best plugin Nibble'
 );
 
