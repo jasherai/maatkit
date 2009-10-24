@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 73;
+use Test::More tests => 74;
 
 require '../../common/MaatkitTest.pm';
 require '../../common/DSNParser.pm';
@@ -523,7 +523,9 @@ SKIP: {
          return 1 if ($r->[0] || '') eq 'foo';
          diag('Waiting for slave...') unless $i++;
          return 0;
-      }
+      },
+      0.5,
+      10,
    );
    is_deeply(
       $r,
@@ -793,6 +795,21 @@ is_deeply(
    $slave_dbh->selectall_arrayref('select * from issue_634.t'),
    [],
    '1-row table was synced (issue 634)'
+);
+
+# #############################################################################
+# Issue 644: Another possible infinite loop with mk-table-sync Nibble
+# #############################################################################
+diag(`/tmp/12345/use < samples/issue_644.sql`);
+sleep 1;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_644 --print --chunk-size 2 -v`;
+is(
+   $output,
+"# Syncing P=12346,h=127.1
+# DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
+#      0       0      0      0 Nibble    0    issue_644.t
+",
+   'Sync infinite loop (issue 644)'
 );
 
 # #############################################################################

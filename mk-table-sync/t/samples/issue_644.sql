@@ -4,7 +4,7 @@ USE issue_644;
 CREATE TABLE `t` (
   `legacy` varchar(255) default NULL,
   `new_one` varchar(255) default NULL,
-  UNIQUE KEY `index_legacy_urls_on_legacy` (`legacy`)
+  UNIQUE KEY `idx` (`legacy`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 INSERT INTO issue_644.t VALUES

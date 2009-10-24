@@ -864,7 +864,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4930
+# Quoter package 4943
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -889,18 +889,19 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, @vals ) = @_;
-   return join(', ',
-      map {
-         if ( defined $_ ) {
-            $_ =~ s/(['\\])/\\$1/g;
-            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
-         }
-         else {
-            'NULL';
-         }
-      } @vals
-   );
+   my ( $self, $val, $is_numeric ) = @_;
+
+   return 'NULL' unless defined $val;  # undef = NULL
+   return "''" if $val eq '';          # blank string = ''
+
+   if ( !defined $is_numeric ) {
+      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
+   }
+
+   return $val if $is_numeric;
+
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
 }
 
 sub split_unquote {
@@ -2279,7 +2280,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 4818
+# ChangeHandler package 4943
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2455,10 +2456,11 @@ sub make_row {
    else {
       @cols = $self->sort_cols($row);
    }
+   my $q = $self->{Quoter};
    return "$verb INTO $self->{dst_db_tbl}("
-      . join(', ', map { $self->{Quoter}->quote($_) } @cols)
+      . join(', ', map { $q->quote($_) } @cols)
       . ') VALUES ('
-      . $self->{Quoter}->quote_val( @{$row}{@cols} )
+      . join(', ', map { $q->quote_val($_) } @{$row}{@cols} )
       . ')';
 }
 
@@ -3525,7 +3527,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 4934
+# TableSyncNibble package 4945
 # ###########################################################################
 package TableSyncNibble;
 
@@ -3618,6 +3620,7 @@ sub prepare_to_sync {
    }
 
    $self->{dbh}             = $args{dbh};
+   $self->{tbl_struct}      = $args{tbl_struct};
    $self->{crc_col}         = $args{crc_col};
    $self->{index_hint}      = $args{index_hint};
    $self->{key_cols}        = $args{key_cols};
@@ -3743,7 +3746,7 @@ sub __get_boundaries {
    if ( $row ) {
       my $i = 0;
       $ub   = $s->{boundaries}->{'<='};
-      $ub   =~ s/\?/$q->quote_val($row->{$s->{scols}->[$i++]})/eg;
+      $ub   =~ s/\?/$q->quote_val($row->{$s->{scols}->[$i]}, $self->{tbl_struct}->{is_numeric}->{$s->{scols}->[$i++]} || 0)/eg;
    }
    else {
       MKDEBUG && _d('No upper boundary');
@@ -3774,7 +3777,7 @@ sub __make_boundary_sql {
       my $tmp = $self->{cached_row};
       my $i   = 0;
       $lb     = $s->{boundaries}->{'>'};
-      $lb     =~ s/\?/$q->quote_val($tmp->{$s->{scols}->[$i++]})/eg;
+      $lb     =~ s/\?/$q->quote_val($tmp->{$s->{scols}->[$i]}, $self->{tbl_struct}->{is_numeric}->{$s->{scols}->[$i++]} || 0)/eg;
       $sql   .= ' WHERE ' . $lb;
    }
    $sql .= " ORDER BY " . join(',', map { $q->quote($_) } @{$self->{key_cols}})
