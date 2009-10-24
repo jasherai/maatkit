@@ -140,6 +140,7 @@ sub prepare_to_sync {
    }
 
    $self->{dbh}             = $args{dbh};
+   $self->{tbl_struct}      = $args{tbl_struct};
    $self->{crc_col}         = $args{crc_col};
    $self->{index_hint}      = $args{index_hint};
    $self->{key_cols}        = $args{key_cols};
@@ -297,7 +298,7 @@ sub __get_boundaries {
       # any lower boundary the table rows should be > the lower boundary.)
       my $i = 0;
       $ub   = $s->{boundaries}->{'<='};
-      $ub   =~ s/\?/$q->quote_val($row->{$s->{scols}->[$i++]})/eg;
+      $ub   =~ s/\?/$self->quote_val($s->{scols}->[$i], $row->{$s->{scols}->[$i++]})/eg;
    }
    else {
       # This usually happens at the end of the table, after we've nibbled
@@ -340,7 +341,7 @@ sub __make_boundary_sql {
       my $tmp = $self->{cached_row};
       my $i   = 0;
       $lb     = $s->{boundaries}->{'>'};
-      $lb     =~ s/\?/$q->quote_val($tmp->{$s->{scols}->[$i++]})/eg;
+      $lb     =~ s/\?/$self->quote_val($s->{scols}->[$i], $tmp->{$s->{scols}->[$i++]})/eg;
       $sql   .= ' WHERE ' . $lb;
    }
    $sql .= " ORDER BY " . join(',', map { $q->quote($_) } @{$self->{key_cols}})
@@ -440,6 +441,14 @@ sub key_cols {
    }
    MKDEBUG && _d('State', $self->{state},',', 'key cols', join(', ', @cols));
    return \@cols;
+}
+
+sub quote_val {
+   my ( $self, $col, $val ) = @_;
+   if ( $self->{tbl_struct} ) {
+      return $val if $self->{tbl_struct}->{is_numeric}->{$col};
+   }
+   return $self->{Quoter}->quote_val($val);
 }
 
 sub _d {
