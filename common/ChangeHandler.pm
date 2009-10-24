@@ -212,10 +212,11 @@ sub make_row {
    else {
       @cols = $self->sort_cols($row);
    }
+   my $q = $self->{Quoter};
    return "$verb INTO $self->{dst_db_tbl}("
-      . join(', ', map { $self->{Quoter}->quote($_) } @cols)
+      . join(', ', map { $q->quote($_) } @cols)
       . ') VALUES ('
-      . $self->{Quoter}->quote_val( @{$row}{@cols} )
+      . join(', ', map { $q->quote_val($_) } @{$row}{@cols} )
       . ')';
 }
 

@@ -40,18 +40,22 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, @vals ) = @_;
-   return join(', ',
-      map {
-         if ( defined $_ ) {
-            $_ =~ s/(['\\])/\\$1/g;
-            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
-         }
-         else {
-            'NULL';
-         }
-      } @vals
-   );
+   my ( $self, $val, $is_numeric ) = @_;
+
+   return 'NULL' unless defined $val;  # undef = NULL
+   return "''" if $val eq '';          # blank string = ''
+
+   # Determine if val is numeric if it wasn't specified.
+   if ( !defined $is_numeric ) {
+      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
+   }
+
+   # Return numeric vals as-is, no quoting.
+   return $val if $is_numeric;
+
+   # Quote and return non-numeric vals.
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
 }
 
 sub split_unquote {
