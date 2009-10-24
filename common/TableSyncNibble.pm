@@ -298,7 +298,7 @@ sub __get_boundaries {
       # any lower boundary the table rows should be > the lower boundary.)
       my $i = 0;
       $ub   = $s->{boundaries}->{'<='};
-      $ub   =~ s/\?/$self->quote_val($s->{scols}->[$i], $row->{$s->{scols}->[$i++]})/eg;
+      $ub   =~ s/\?/$q->quote_val($row->{$s->{scols}->[$i]}, $self->{tbl_struct}->{is_numeric}->{$s->{scols}->[$i++]})/eg;
    }
    else {
       # This usually happens at the end of the table, after we've nibbled
@@ -341,7 +341,7 @@ sub __make_boundary_sql {
       my $tmp = $self->{cached_row};
       my $i   = 0;
       $lb     = $s->{boundaries}->{'>'};
-      $lb     =~ s/\?/$self->quote_val($s->{scols}->[$i], $tmp->{$s->{scols}->[$i++]})/eg;
+      $lb     =~ s/\?/$q->quote_val($tmp->{$s->{scols}->[$i]}, $self->{tbl_struct}->{is_numeric}->{$s->{scols}->[$i++]})/eg;
       $sql   .= ' WHERE ' . $lb;
    }
    $sql .= " ORDER BY " . join(',', map { $q->quote($_) } @{$self->{key_cols}})
@@ -441,14 +441,6 @@ sub key_cols {
    }
    MKDEBUG && _d('State', $self->{state},',', 'key cols', join(', ', @cols));
    return \@cols;
-}
-
-sub quote_val {
-   my ( $self, $col, $val ) = @_;
-   if ( $self->{tbl_struct} ) {
-      return $val if $self->{tbl_struct}->{is_numeric}->{$col};
-   }
-   return $self->{Quoter}->quote_val($val);
 }
 
 sub _d {
