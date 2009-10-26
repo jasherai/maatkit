@@ -1,5 +1,7 @@
 Changelog for mk-show-grants:
 
+   * Added ability to do --user foo for foo grants on all hosts (issue 551).
+   * Added --[no]header.
    * --set-vars did not work (issue 597).
    * Command line options did not override config file options (issue 617).
 

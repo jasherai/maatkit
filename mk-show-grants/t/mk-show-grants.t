@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 16;
+use Test::More tests => 17;
 
 require '../mk-show-grants';
 require '../../common/Sandbox.pm';
@@ -127,12 +127,28 @@ diag(`/tmp/12345/use -u root -e "GRANT USAGE ON *.* TO 'bob'\@'localhost'"`);
 diag(`/tmp/12345/use -u root -e "GRANT USAGE ON *.* TO 'bob'\@'192.168.1.1'"`);
 
 clear_output();
-mk_show_grants::main('-F', $cnf, qw(--only bob --no-timestamp));
-ok(
-   0,
-   '(issue 551)'
+mk_show_grants::main('-F', $cnf, qw(--only bob --no-header));
+is(
+   $output,
+"-- Grants for 'bob'\@'%'
+GRANT USAGE ON *.* TO 'bob'\@'%';
+-- Grants for 'bob'\@'192.168.1.1'
+GRANT USAGE ON *.* TO 'bob'\@'192.168.1.1';
+-- Grants for 'bob'\@'localhost'
+GRANT USAGE ON *.* TO 'bob'\@'localhost';
+",
+   '--only user gets grants for user on all hosts (issue 551)'
 );
-print STDERR $output;
+
+clear_output();
+mk_show_grants::main('-F', $cnf, qw(--only bob@192.168.1.1 --no-header));
+is(
+   $output,
+"-- Grants for 'bob'\@'192.168.1.1'
+GRANT USAGE ON *.* TO 'bob'\@'192.168.1.1';
+",
+   '--only user@host'
+);
 
 diag(`/tmp/12345/use -u root -e "DROP USER 'bob'\@'%'"`);
 diag(`/tmp/12345/use -u root -e "DROP USER 'bob'\@'localhost'"`);

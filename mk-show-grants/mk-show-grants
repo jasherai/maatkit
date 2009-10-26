@@ -1425,11 +1425,24 @@ sub main {
    # ########################################################################
    # Parse --only and --ignore users.
    # ######################################################################## 
+   my @all_hosts;
    if ( my $users = $o->get('only') ) {
       my @users = map {
          my ( $user, $host ) = parse_user($_);
          MKDEBUG && _d('Parsed only', $_, 'as user', $user, 'and host', $host);
          { User => $user, Host => $host };
+      }
+      grep {
+         if ( $_ !~ /\@/ ) {
+            # If the user does not have an @, then get all grants for
+            # the user on all hosts (issue 551).
+            MKDEBUG && _d('Will get all grants for', $_, 'on all hosts');
+            push @all_hosts, $_;
+            0;
+         }
+         else {
+            $_;
+         }
       }
       grep { $_ =~ m/\S/ }
       @$users;
@@ -1462,15 +1475,21 @@ sub main {
       "-- Grants dumped by mk-show-grants $VERSION",
       "-- Dumped from server " . ($dbh->{mysql_hostinfo} || '')
       . ($o->get('timestamp') ? ", MySQL $version at $ts" : ", MySQL $version"),
-      ), "\n";
+      ), "\n" if $o->get('header');
 
    my $users = $o->get('only') || $dbh->selectall_arrayref(
       'SELECT DISTINCT User, Host FROM mysql.user ORDER BY User, Host',
       { Slice => {} });
+   if ( scalar @all_hosts ) {
+      my $where = join(' OR ', map { "User='$_'" } @all_hosts);
+      my $sql   = "SELECT DISTINCT User, Host FROM mysql.user WHERE $where "
+                . "ORDER BY User, Host";
+      MKDEBUG && _d($sql);
+      push @$users, @{ $dbh->selectall_arrayref($sql, { Slice => {} }) };
+   }
    my $ignore_users = $o->get('ignore');
 
    my $exit_status = 0;
-
    USER:
    foreach my $u ( @$users ) {
       my $user_host = "'$u->{User}'\@'$u->{Host}'";
@@ -1742,6 +1761,19 @@ Add FLUSH PRIVILEGES after output.
 
 You might need this on pre-4.1.1 servers if you want to drop a user completely.
 
+=item --[no]header
+
+default: yes
+
+Print dump header.
+
+The header precedes the dumped grants.  It looks like:
+
+  -- Grants dumped by mk-show-grants 1.0.19
+  -- Dumped from server Localhost via UNIX socket, MySQL 5.0.82-log at 2009-10-26 10:01:04
+
+See also L<"--[no]timestamp">.
+
 =item --help
 
 Show help and exit.
@@ -1818,7 +1850,9 @@ Socket file to use for connection.
 
 default: yes
 
-Show dump timestamp.
+Add timestamp to the dump header.
+
+See also L<"--[no]header">.
 
 =item --user
 
