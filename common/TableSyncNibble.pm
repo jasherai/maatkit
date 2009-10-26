@@ -374,7 +374,8 @@ sub same_row {
          $self->{ChangeHandler}->change('UPDATE', $lr, $self->key_cols());
       }
    }
-   elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
+   elsif ( $lr->{cnt} != $rr->{cnt} || ($lr->{crc} || 0) ne ($rr->{crc} || 0) ) 
+   {
       MKDEBUG && _d('Rows:', Dumper($lr, $rr));
       MKDEBUG && _d('Will examine this nibble before moving to next');
       $self->{state} = 1; # Must examine this nibble row-by-row
