@@ -2221,7 +2221,7 @@ sub main {
    my $format = "%4ds [ " . join(", ", map { "%5.2fs" } @$frames) . " ]\n";
 
    my $now = time();
-   my $end = $now + ($o->get('time') || 0);    # When to exit
+   my $end = $now + ($o->get('run-time') || 0);    # When to exit
    MKDEBUG && _d('Will exit at', $end);
 
    # --monitor and --update run in a loop, but --check only checks once and
@@ -2240,7 +2240,7 @@ sub main {
    }
 
    # Quit if time is exceeded or sentinel exists.
-   while ( (!$o->get('time') || $now < $end) && !-f $sentinel ) {
+   while ( (!$o->get('run-time') || $now < $end) && !-f $sentinel ) {
       eval {
 
          my @now = gettimeofday();
@@ -2559,7 +2559,7 @@ pathname.
 
 type: string
 
-Print latest --monitor output to this file.
+Print latest L<"--monitor"> output to this file.
 
 When L<"--monitor"> is given, prints output to the specified file instead of to
 STDOUT.  The file is opened, truncated, and closed every interval, so it will
@@ -2748,7 +2748,7 @@ The table to use for the heartbeat.
 
 Don't specify database.table; use L<"--database"> to specify the database.
 
-=item --time
+=item --run-time
 
 type: time
 
