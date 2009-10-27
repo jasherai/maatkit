@@ -2344,6 +2344,7 @@ use English qw(-no_match_vars);
 use List::Util qw(max);
 use IO::File;
 use sigtrap qw(handler finish untrapped normal-signals);
+use Time::HiRes qw(gettimeofday sleep time);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
@@ -2486,16 +2487,15 @@ sub main {
    my $stat_start;
 
    if ( $o->get('statistics') ) {
-      require Time::HiRes;
-      my $start    = Time::HiRes::gettimeofday();
-      my $obs_cost = Time::HiRes::gettimeofday() - $start; # cost of observation
+      my $start    = gettimeofday();
+      my $obs_cost = gettimeofday() - $start; # cost of observation
 
       *trace = sub {
          my ( $thing, $sub ) = @_;
-         my $start = Time::HiRes::gettimeofday();
+         my $start = gettimeofday();
          $sub->();
          $statistics{$thing . '_time'}
-            += (Time::HiRes::gettimeofday() - $start - $obs_cost);
+            += (gettimeofday() - $start - $obs_cost);
          ++$statistics{$thing . '_count'};
          $stat_start ||= $start;
       }
@@ -2802,9 +2802,10 @@ sub main {
    # ########################################################################
    # Start archiving.
    # ########################################################################
-   my $start = time();
-   my $end   = $start + ($o->get('run-time') || 0); # When mk-archiver should exit
+   my $start   = time();
+   my $end     = $start + ($o->get('run-time') || 0); # When to exit
    my $now     = $start;
+   my $last_select_time;  # for --sleep-coef
    my $retries = $o->get('retries');
    printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT')
       if $o->get('progress') && !$quiet;
@@ -2813,7 +2814,9 @@ sub main {
 
    $get_sth = $get_first; # Later it may be assigned $get_next
    trace('select', sub {
+      my $select_start = time;
       $get_sth->execute;
+      $last_select_time = time - $select_start;
       $statistics{SELECT} += $get_sth->rows;
    });
    my $row = $get_sth->fetchrow_arrayref();
@@ -3025,15 +3028,20 @@ sub main {
          # This code is for normal operation AND bulk operation.
          # ###################################################################
          commit($o, 1) if $commit_each;
-         if( $o->get('sleep') ) {
+         if( my $sleep_time = $o->get('sleep') ) {
+            $sleep_time = $last_select_time * $o->get('sleep-coef')
+               if $o->get('sleep-coef');
+            MKDEBUG && _d('Sleeping', $sleep_time);
             trace('sleep', sub {
-               sleep($o->get('sleep'));
+               sleep($sleep_time);
             });
          }
          $get_sth = $get_next;
 
          trace('select', sub {
+            my $select_start = time;
             $get_next->execute(@{$lastrow}[@asc_slice]);
+            $last_select_time = time - $select_start;
             $statistics{SELECT} += $get_next->rows;
          });
 
@@ -3092,7 +3100,7 @@ sub main {
    }
 
    if ( !$quiet && $o->get('statistics') ) {
-      my $stat_stop  = Time::HiRes::gettimeofday();
+      my $stat_stop  = gettimeofday();
       my $stat_total = $stat_stop - $stat_start;
 
       my $total2 = 0;
@@ -3918,6 +3926,20 @@ flushed, before sleeping.  See L<"--txn-size"> to control that.
 
 If L<"--commit-each"> is specified, committing and flushing happens before
 sleeping.
+
+=item --sleep-coef
+
+type: float
+
+Calculate L<"--sleep"> as a multiple of the last SELECT time.
+
+If this option is specified, mk-archiver will sleep for the query time of the
+last SELECT multiplied by the specified coefficient.  This option is ignored
+if L<"--sleep"> is specified.
+
+This is a slightly more sophisticated way to throttle the SELECTs: sleep a
+varying amount of time between each SELECT, depending on how long the SELECTs
+are taking.
 
 =item --socket
 
