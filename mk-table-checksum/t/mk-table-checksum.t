@@ -6,14 +6,15 @@ use English qw(-no_match_vars);
 use Test::More tests => 102;
 use List::Util qw(sum);
 
-require '../../common/DSNParser.pm';
+require '../mk-table-checksum';
 require '../../common/Sandbox.pm';
+my $vp = new VersionParser();
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
 my $master_dbh = $sb->get_dbh_for('master');
 my $slave_dbh  = $sb->get_dbh_for('slave1');
-$slave_dbh->do('START SLAVE');
+# $slave_dbh->do('START SLAVE');
 
 eval { $master_dbh->do('DROP FUNCTION test.fnv_64'); };
 
@@ -55,41 +56,46 @@ like(
 $output = `$cmd --lock --slave-lag --function sha1 --checksum --algorithm ACCUM 2>&1`;
 like($output, qr/9c1c01dc3ac1445a500251fc34a15d3e75a849df/, 'Locks' );
 
-$output = `/tmp/12345/use -N -e 'select fnv_64(1)' 2>&1`;
-is($output + 0, -6320923009900088257, 'FNV_64(1)');
+SKIP: {
+   skip 'MySQL version < 4.1', 10
+      unless $vp->version_ge($master_dbh, '4.1.0');
 
-$output = `/tmp/12345/use -N -e 'select fnv_64("hello, world")' 2>&1`;
-is($output + 0, 6062351191941526764, 'FNV_64(hello, world)');
+   $output = `/tmp/12345/use -N -e 'select fnv_64(1)' 2>&1`;
+   is($output + 0, -6320923009900088257, 'FNV_64(1)');
 
-$output = `$cmd --function CRC32 --checksum --algorithm ACCUM 2>&1`;
-like($output, qr/00000001E9F5DC8E/, 'CRC32 ACCUM' );
+   $output = `/tmp/12345/use -N -e 'select fnv_64("hello, world")' 2>&1`;
+   is($output + 0, 6062351191941526764, 'FNV_64(hello, world)');
 
-$output = `$cmd --function FNV_64 --checksum --algorithm ACCUM 2>&1`;
-like($output, qr/DD2CD41DB91F2EAE/, 'FNV_64 ACCUM' );
+   $output = `$cmd --function CRC32 --checksum --algorithm ACCUM 2>&1`;
+   like($output, qr/00000001E9F5DC8E/, 'CRC32 ACCUM' );
 
-$output = `$cmd --function CRC32 --checksum --algorithm BIT_XOR 2>&1`;
-like($output, qr/83dcefb7/, 'CRC32 BIT_XOR' );
+   $output = `$cmd --function FNV_64 --checksum --algorithm ACCUM 2>&1`;
+   like($output, qr/DD2CD41DB91F2EAE/, 'FNV_64 ACCUM' );
 
-$output = `$cmd --function FNV_64 --checksum --algorithm BIT_XOR 2>&1`;
-like($output, qr/a84792031e4ff43f/, 'FNV_64 BIT_XOR' );
+   $output = `$cmd --function CRC32 --checksum --algorithm BIT_XOR 2>&1`;
+   like($output, qr/83dcefb7/, 'CRC32 BIT_XOR' );
 
-$output = `$cmd --function sha1 --checksum --algorithm ACCUM 2>&1`;
-like($output, qr/9c1c01dc3ac1445a500251fc34a15d3e75a849df/, 'SHA1 ACCUM' );
+   $output = `$cmd --function FNV_64 --checksum --algorithm BIT_XOR 2>&1`;
+   like($output, qr/a84792031e4ff43f/, 'FNV_64 BIT_XOR' );
 
-# same as sha1(1)
-$output = `$cmd --function sha1 --checksum --algorithm BIT_XOR 2>&1`;
-like($output, qr/356a192b7913b04c54574d18c28d46e6395428ab/, 'SHA1 BIT_XOR' );
+   $output = `$cmd --function sha1 --checksum --algorithm ACCUM 2>&1`;
+   like($output, qr/9c1c01dc3ac1445a500251fc34a15d3e75a849df/, 'SHA1 ACCUM' );
 
-# test that I get the same result with --no-optxor
-$output2 = `$cmd --function sha1 --no-optimize-xor --checksum --algorithm BIT_XOR 2>&1`;
-is($output, $output2, 'Same result with --no-optxor');
+   # same as sha1(1)
+   $output = `$cmd --function sha1 --checksum --algorithm BIT_XOR 2>&1`;
+   like($output, qr/356a192b7913b04c54574d18c28d46e6395428ab/, 'SHA1 BIT_XOR' );
+
+   # test that I get the same result with --no-optxor
+   $output2 = `$cmd --function sha1 --no-optimize-xor --checksum --algorithm BIT_XOR 2>&1`;
+   is($output, $output2, 'Same result with --no-optxor');
+
+   # same as sha1(1)
+   $output = `$cmd --checksum --function MD5 --algorithm BIT_XOR 2>&1`;
+   like($output, qr/c4ca4238a0b923820dcc509a6f75849b/, 'MD5 BIT_XOR' );
+};
 
 $output = `$cmd --checksum --function MD5 --algorithm ACCUM 2>&1`;
 like($output, qr/28c8edde3d61a0411511d3b1866f0636/, 'MD5 ACCUM' );
-
-# same as sha1(1)
-$output = `$cmd --checksum --function MD5 --algorithm BIT_XOR 2>&1`;
-like($output, qr/c4ca4238a0b923820dcc509a6f75849b/, 'MD5 BIT_XOR' );
 
 # Check --schema
 $output = `perl ../mk-table-checksum --tables checksum_test --checksum --schema h=127.1,P=12345 2>&1`;

@@ -5,7 +5,7 @@ CREATE TABLE `t` (
   `legacy` varchar(255) default NULL,
   `new_one` varchar(255) default NULL,
   UNIQUE KEY `idx` (`legacy`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB;
 
 INSERT INTO issue_644.t VALUES
 ('0611743165-2519-n-greenview-ave', '14293130030000'),

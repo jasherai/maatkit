@@ -6,9 +6,10 @@ use English qw(-no_match_vars);
 use Test::More tests => 74;
 
 require '../../common/MaatkitTest.pm';
-require '../../common/DSNParser.pm';
+require '../mk-table-sync';
 require '../../common/Sandbox.pm';
 my $output;
+my $vp = new VersionParser();
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master')
@@ -170,66 +171,74 @@ SKIP: {
 # #############################################################################
 # Issue 37: mk-table-sync should warn about triggers
 # #############################################################################
-$sb->load_file('master', 'samples/issue_37.sql');
-$sb->use('master', '-e "SET SQL_LOG_BIN=0; INSERT INTO test.issue_37 VALUES (1), (2);"');
+SKIP: {
+   skip 'MySQL version < 5.0.2 does not support triggers', 9
+      unless $vp->version_ge($master_dbh, '5.0-2');
+
+   $sb->load_file('master', 'samples/issue_37.sql');
+   $sb->use('master', '-e "SET SQL_LOG_BIN=0; INSERT INTO test.issue_37 VALUES (1), (2);"');
+   $sb->load_file('master', 'samples/checksum_tbl.sql');
+   `../../mk-table-checksum/mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum -d test 2>&1 > /dev/null`;
+
+   $output = `../mk-table-sync --no-check-slave --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 2>&1`;
+   like($output,
+      qr/Triggers are defined/,
+      'Die on trigger tbl write with one table (1/4, issue 37)'
+   );
+
+   $output = `../mk-table-sync --replicate test.checksum --sync-to-master --execute h=127.1,P=12346 -d test -t issue_37 2>&1`;
+   like($output,
+      qr/Triggers are defined/,
+      'Die on trigger tbl write with --replicate --sync-to-master (2/4, issue 37)'
+   );
+
+   $output = `../mk-table-sync --replicate test.checksum --execute h=127.1,P=12345 -d test -t issue_37 2>&1`;
+   like(
+      $output,
+      qr/Triggers are defined/,
+      'Die on trigger tbl write with --replicate (3/4, issue 37)'
+   );
+
+   $output = `../mk-table-sync --execute --ignore-databases mysql h=127.0.0.1,P=12345 h=127.1,P=12346 2>&1`;
+   like(
+      $output,
+      qr/Triggers are defined/,
+      'Die on trigger tbl write with no opts (4/4, issue 37)'
+   );
+
+   $output = `/tmp/12346/use -D test -e 'SELECT * FROM issue_37'`;
+   ok(
+      !$output,
+      'Table with trigger was not written'
+   );
+
+   $output = `../mk-table-sync --no-check-slave --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 --no-check-triggers 2>&1`;
+   unlike(
+      $output,
+      qr/Triggers are defined/,
+      'Writes to tbl with trigger with --no-check-triggers (issue 37)'
+   );
+
+   $output = `/tmp/12346/use -D test -e 'SELECT * FROM issue_37'`;
+   like(
+      $output, qr/a.+1.+2/ms,
+      'Table with trigger was written'
+   );
+
+   # ########################################################################
+   # Issue 8: Add --force-index parameter to mk-table-checksum and
+   # mk-table-sync
+   # ########################################################################
+   $sb->use('master', '-e \'INSERT INTO test.issue_37 VALUES (5), (6), (7), (8), (9);\'');
+
+   $output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 --algorithms Chunk --chunk-size 3 --no-check-slave --no-check-triggers --print 2>&1 | grep 'src: '`;
+   like($output, qr/FROM `test`\.`issue_37` FORCE INDEX \(`idx_a`\) WHERE/, 'Injects USE INDEX hint by default');
+
+   $output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 --algorithms Chunk --chunk-size 3 --no-check-slave --no-check-triggers --no-index-hint --print 2>&1 | grep 'src: '`;
+   like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --no-index-hint');
+};
+
 $sb->load_file('master', 'samples/checksum_tbl.sql');
-`../../mk-table-checksum/mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum -d test 2>&1 > /dev/null`;
-
-$output = `../mk-table-sync --no-check-slave --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 2>&1`;
-like($output,
-   qr/Triggers are defined/,
-   'Die on trigger tbl write with one table (1/4, issue 37)'
-);
-
-$output = `../mk-table-sync --replicate test.checksum --sync-to-master --execute h=127.1,P=12346 -d test -t issue_37 2>&1`;
-like($output,
-   qr/Triggers are defined/,
-   'Die on trigger tbl write with --replicate --sync-to-master (2/4, issue 37)'
-);
-
-$output = `../mk-table-sync --replicate test.checksum --execute h=127.1,P=12345 -d test -t issue_37 2>&1`;
-like(
-   $output,
-   qr/Triggers are defined/,
-   'Die on trigger tbl write with --replicate (3/4, issue 37)'
-);
-
-$output = `../mk-table-sync --execute --ignore-databases mysql h=127.0.0.1,P=12345 h=127.1,P=12346 2>&1`;
-like(
-   $output,
-   qr/Triggers are defined/,
-   'Die on trigger tbl write with no opts (4/4, issue 37)'
-);
-
-$output = `/tmp/12346/use -D test -e 'SELECT * FROM issue_37'`;
-ok(
-   !$output,
-   'Table with trigger was not written'
-);
-
-$output = `../mk-table-sync --no-check-slave --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 --no-check-triggers 2>&1`;
-unlike(
-   $output,
-   qr/Triggers are defined/,
-   'Writes to tbl with trigger with --no-check-triggers (issue 37)'
-);
-
-$output = `/tmp/12346/use -D test -e 'SELECT * FROM issue_37'`;
-like(
-   $output, qr/a.+1.+2/ms,
-   'Table with trigger was written'
-);
-
-# #############################################################################
-# Issue 8: Add --force-index parameter to mk-table-checksum and mk-table-sync
-# #############################################################################
-$sb->use('master', '-e \'INSERT INTO test.issue_37 VALUES (5), (6), (7), (8), (9);\'');
-
-$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 --algorithms Chunk --chunk-size 3 --no-check-slave --no-check-triggers --print 2>&1 | grep 'src: '`;
-like($output, qr/FROM `test`\.`issue_37` FORCE INDEX \(`idx_a`\) WHERE/, 'Injects USE INDEX hint by default');
-
-$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 --algorithms Chunk --chunk-size 3 --no-check-slave --no-check-triggers --no-index-hint --print 2>&1 | grep 'src: '`;
-like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --no-index-hint');
 
 # #############################################################################
 # Issue 22: mk-table-sync fails with uninitialized value at line 2330
@@ -458,36 +467,41 @@ SKIP: {
 # #############################################################################
 #  Issue 367: mk-table-sync incorrectly advises --ignore-triggers
 # #############################################################################
-$sb->load_file('master', 'samples/issue_367.sql');
+SKIP: {
+   skip 'MySQL version < 5.0.2 does not support triggers', 3
+      unless $vp->version_ge($master_dbh, '5.0-2');
 
-# Make slave db1.t1 and db2.t1 differ from master.
-$slave_dbh->do('INSERT INTO db1.t1 VALUES (9)');
-$slave_dbh->do('DELETE FROM db2.t1 WHERE i > 4');
+   $sb->load_file('master', 'samples/issue_367.sql');
 
-# Replicate checksum of db2.t1.
-$output = `../../mk-table-checksum/mk-table-checksum h=127.1,P=12345 --replicate db1.checksum --create-replicate-table --databases db1,db2 2>&1`;
-like(
-   $output,
-   qr/db2\s+t1\s+0\s+127\.1\s+MyISAM\s+5/,
-   'Replicated checksums (issue 367)'
-);
+   # Make slave db1.t1 and db2.t1 differ from master.
+   $slave_dbh->do('INSERT INTO db1.t1 VALUES (9)');
+   $slave_dbh->do('DELETE FROM db2.t1 WHERE i > 4');
 
-# Sync db2, which has no triggers, between master and slave using
-# --replicate which has entries for both db1 and db2.  db1 has a
-# trigger but since we also specify --databases db2, then db1 should
-# be ignored.
-$output = `../mk-table-sync h=127.1,P=12345  --databases db2 --replicate db1.checksum --execute 2>&1`;
-unlike(
-   $output,
-   qr/Cannot write to table with triggers/,
-   "Doesn't warn about trigger on db1 (issue 367)"
-);
-my $r = $slave_dbh->selectrow_array('SELECT * FROM db2.t1 WHERE i = 5');
-is(
-   $r,
-   '5',
-   'Syncs db2, ignores db1 with trigger (issue 367)'
-);
+   # Replicate checksum of db2.t1.
+   $output = `../../mk-table-checksum/mk-table-checksum h=127.1,P=12345 --replicate db1.checksum --create-replicate-table --databases db1,db2 2>&1`;
+   like(
+      $output,
+      qr/db2\s+t1\s+0\s+127\.1\s+MyISAM\s+5/,
+      'Replicated checksums (issue 367)'
+   );
+
+   # Sync db2, which has no triggers, between master and slave using
+   # --replicate which has entries for both db1 and db2.  db1 has a
+   # trigger but since we also specify --databases db2, then db1 should
+   # be ignored.
+   $output = `../mk-table-sync h=127.1,P=12345  --databases db2 --replicate db1.checksum --execute 2>&1`;
+   unlike(
+      $output,
+      qr/Cannot write to table with triggers/,
+      "Doesn't warn about trigger on db1 (issue 367)"
+   );
+   my $r = $slave_dbh->selectrow_array('SELECT * FROM db2.t1 WHERE i = 5');
+   is(
+      $r,
+      '5',
+      'Syncs db2, ignores db1 with trigger (issue 367)'
+   );
+};
 
 # #############################################################################
 # Issue 533: mk-table-sync does not work with replicate-do-db
@@ -525,7 +539,7 @@ SKIP: {
          return 0;
       },
       0.5,
-      10,
+      15,
    );
    is_deeply(
       $r,
@@ -631,7 +645,7 @@ my $ok_r = [
    [ 51, 'from master' ],
 ];
 
-$r = $master_dbh->selectall_arrayref('SELECT * FROM issue_616.t ORDER BY id');
+my $r = $master_dbh->selectall_arrayref('SELECT * FROM issue_616.t ORDER BY id');
 is_deeply(
    $r,
    $ok_r,

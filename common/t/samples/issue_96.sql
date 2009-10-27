@@ -7,7 +7,7 @@ CREATE TABLE `t` (
   `location` varchar(4) default NULL,
   `from_city` varchar(100) default NULL,
   UNIQUE KEY `package_id` (`package_id`,`location`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB;
 INSERT INTO t VALUES
    (1,'ABC','lo'),
    (NULL,'CHY','ch'),
@@ -24,7 +24,12 @@ INSERT INTO t VALUES
 
 -- For TableSyncer.t
 DROP TABLE IF EXISTS t2;
-CREATE TABLE t2 LIKE t;
+CREATE TABLE t2 (
+  `package_id` bigint(20) unsigned default NULL,
+  `location` varchar(4) default NULL,
+  `from_city` varchar(100) default NULL,
+  UNIQUE KEY `package_id` (`package_id`,`location`)
+) ENGINE=InnoDB;
 INSERT INTO t2 VALUES
    (1,'ABC','lo'),
    (NULL,'CHY','ch'),
