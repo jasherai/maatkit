@@ -1642,6 +1642,14 @@ sub main {
       my $cols  = join(',', map { $q->quote($_) } @cols);
       my $parms = join(',', map { '?' } @cols);
       $ins_sth  = $dest_dbh->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
+
+      if ( $o->get('create-dest-table') ) {
+         my $db_tbl = $q->quote($dest_dsn->{D}, $dest_dsn->{t});
+         my $sql    = $o->read_para_after(__FILE__, qr/MAGIC_dest_table/);
+         $sql       =~ s/deadlocks/IF NOT EXISTS $db_tbl/;
+         MKDEBUG && _d($sql);
+         $dest_dbh->do($sql);
+      }
    }
 
    # Daemonize only after (potentially) asking for passwords for --ask-pass.
@@ -2142,6 +2150,14 @@ type: Array
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
 
+=item --create-dest-table
+
+Create the table specified by L<"--dest">.
+
+Normally the L<"--dest"> table is expected to exist already.  This option
+causes mk-deadlock-logger to create the table automatically using the suggested
+table structure.
+
 =item --daemonize
 
 Fork to the background and detach from the shell.  POSIX operating systems only.
@@ -2166,8 +2182,8 @@ same server on which they happen.
 By default, whitespace in the query column is left intact;
 use L<"--[no]collapse"> if you want whitespace collapsed.
 
-The following table is suggested if you want to store all the information
-mk-deadlock-logger can extract about deadlocks:
+The following MAGIC_dest_table is suggested if you want to store all the
+information mk-deadlock-logger can extract about deadlocks:
 
  CREATE TABLE deadlocks (
    server char(20) NOT NULL,

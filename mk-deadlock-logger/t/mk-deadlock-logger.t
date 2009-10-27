@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 24;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -239,6 +239,23 @@ like(
    'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
 );
 `rm -rf /tmp/mk-script.pid`;
+
+# #############################################################################
+# Issue 386: Make mk-deadlock-logger auto-create the --dest table
+# #############################################################################
+is_deeply(
+   $dbh1->selectall_arrayref('show tables from `test` like "issue_386"'),
+   [],
+   'Deadlocks table does not exit (issue 386)'
+);
+
+`../mk-deadlock-logger --dest D=test,t=issue_386 h=127.1,P=12345 --run-time 1s --interval 1s --create-dest-table`;
+
+is_deeply(
+   $dbh1->selectall_arrayref('show tables from `test` like "issue_386"'),
+   [['issue_386']],
+   'Deadlocks table created with --create-dest-table (issue 386)'
+);
 
 # #############################################################################
 # Done.
