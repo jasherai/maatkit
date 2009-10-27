@@ -309,7 +309,8 @@ sub size_to_rows {
    my @status = $du->get_table_status($dbh, $q, $db);
    my ($status) = grep { $_->{name} eq $tbl } @status;
    my $avg_row_length = $status->{avg_row_length};
-   return $avg_row_length ? ceil($chunk_size / $avg_row_length) : undef;
+   my $n_rows = $avg_row_length ? ceil($chunk_size / $avg_row_length) : undef;
+   return wantarray ? ($n_rows, $avg_row_length) : $n_rows;
 }
 
 # Determine the range of values for the chunk_col column on this table.

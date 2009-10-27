@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 28;
+use Test::More tests => 29;
 
 require "../TableParser.pm";
 require "../TableChunker.pm";
@@ -18,7 +18,7 @@ my $dbh = $sb->get_dbh_for('master')
 $sb->create_dbs($dbh, ['test']);
 
 my $q  = new Quoter();
-my $p  = new TableParser();
+my $p  = new TableParser(Quoter => $q);
 my $du = new MySQLDump();
 my $c  = new TableChunker(Quoter => $q, MySQLDump => $du);
 my $t;
@@ -128,7 +128,7 @@ is(
 # Sandbox tests.
 # #############################################################################
 SKIP: {
-   skip 'Sandbox master does not have the sakila database', 19
+   skip 'Sandbox master does not have the sakila database', 20
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
    my @chunks;
@@ -464,6 +464,20 @@ SKIP: {
       chunk_size => '5k'
    );
    ok($size >= 20 && $size <= 30, 'Convert bytes to rows');
+
+   my $avg;
+   ($size, $avg) = $c->size_to_rows(
+      dbh        => $dbh,
+      db         => 'sakila',
+      tbl        => 'film',
+      chunk_size => '5k'
+   );
+   # This may fail because Rows and Avg_row_length can vary
+   # slightly for InnoDB tables.
+   ok(
+      $avg >= 185 && $avg <= 206,
+      'size_to_rows() returns average row length in list context'
+   );
 };
 
 # #############################################################################
