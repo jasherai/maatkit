@@ -306,8 +306,7 @@ sub size_to_rows {
          . "with optional suffix kMG";
    }
 
-   my @status = $du->get_table_status($dbh, $q, $db);
-   my ($status) = grep { $_->{name} eq $tbl } @status;
+   my ($status) = $du->get_table_status($dbh, $q, $db, $tbl);
    my $avg_row_length = $status->{avg_row_length};
    my $n_rows = $avg_row_length ? ceil($chunk_size / $avg_row_length) : undef;
    return wantarray ? ($n_rows, $avg_row_length) : $n_rows;
