@@ -1618,7 +1618,7 @@ sub main {
       my $statements = $event->{statements};
       return unless $statements;
 
-      print "# Query_id: $event->{Query_id}\n";
+      print "# Query_id: " . ($event->{Query_id} || 0) . "\n";
 
       foreach my $stmt ( @$statements ) {
          my $n_tables = 0;
