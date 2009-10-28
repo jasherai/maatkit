@@ -1201,7 +1201,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4905
+# TableParser package 4931
 # ###########################################################################
 package TableParser;
 
@@ -1370,8 +1370,8 @@ sub check_table {
    my $db_tbl = $q->quote($db, $tbl);
    MKDEBUG && _d('Checking', $db_tbl);
 
-   my $literal_tbl = $q->literal_like($tbl);
-   my $sql = "SHOW TABLES FROM " . $q->quote($db) . " LIKE '$literal_tbl'";
+   my $sql = "SHOW TABLES FROM " . $q->quote($db)
+           . ' LIKE ' . $q->literal_like($tbl);
    MKDEBUG && _d($sql);
    my $row;
    eval {
@@ -1937,7 +1937,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 4807
+# TableChunker package 4960
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2156,6 +2156,8 @@ sub size_to_rows {
    my $q  = $self->{Quoter};
    my $du = $self->{MySQLDump};
 
+   my ($n_rows, $avg_row_length);
+
    my ( $num, $suffix ) = $chunk_size =~ m/^(\d+)([MGk])?$/;
    if ( $suffix ) { # Convert to bytes.
       $chunk_size = $suffix eq 'k' ? $num * 1_024
@@ -2163,17 +2165,22 @@ sub size_to_rows {
                   :                  $num * 1_024 * 1_024 * 1_024;
    }
    elsif ( $num ) {
-      return $num;
+      $n_rows = $num;
    }
    else {
       die "Invalid chunk size $chunk_size; must be an integer "
          . "with optional suffix kMG";
    }
 
-   my @status = $du->get_table_status($dbh, $q, $db);
-   my ($status) = grep { $_->{name} eq $tbl } @status;
-   my $avg_row_length = $status->{avg_row_length};
-   return $avg_row_length ? ceil($chunk_size / $avg_row_length) : undef;
+   if ( $suffix || $args{avg_row_length} ) {
+      my ($status) = $du->get_table_status($dbh, $q, $db, $tbl);
+      $avg_row_length = $status->{avg_row_length};
+      if ( !defined $n_rows ) {
+         $n_rows = $avg_row_length ? ceil($chunk_size / $avg_row_length) : undef;
+      }
+   }
+
+   return wantarray ? ($n_rows, $avg_row_length) : $n_rows;
 }
 
 sub get_range_statistics {
@@ -2329,7 +2336,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4874
+# Quoter package 4943
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2354,18 +2361,19 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, @vals ) = @_;
-   return join(', ',
-      map {
-         if ( defined $_ ) {
-            $_ =~ s/(['\\])/\\$1/g;
-            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
-         }
-         else {
-            'NULL';
-         }
-      } @vals
-   );
+   my ( $self, $val, $is_numeric ) = @_;
+
+   return 'NULL' unless defined $val;  # undef = NULL
+   return "''" if $val eq '';          # blank string = ''
+
+   if ( !defined $is_numeric ) {
+      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
+   }
+
+   return $val if $is_numeric;
+
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
 }
 
 sub split_unquote {
@@ -2383,7 +2391,7 @@ sub literal_like {
    my ( $self, $like ) = @_;
    return unless $like;
    $like =~ s/([%_])/\\$1/g;
-   return $like;
+   return "'$like'";
 }
 
 1;
@@ -2836,7 +2844,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 4876
+# SchemaIterator package 4915
 # ###########################################################################
 package SchemaIterator;
 
@@ -2964,14 +2972,10 @@ sub get_db_itr {
    eval {
       my $sql = 'SHOW DATABASES';
       MKDEBUG && _d($sql);
-      @dbs = map {
-         $_->[0]
-      }
-      grep {
-         my $ok = $filter ? $filter->($dbh, $_->[0], undef) : 1;
+      @dbs =  grep {
+         my $ok = $filter ? $filter->($dbh, $_, undef) : 1;
          $ok;
-      }
-      @{ $dbh->selectall_arrayref($sql) };
+      } @{ $dbh->selectcol_arrayref($sql) };
       MKDEBUG && _d('Found', scalar @dbs, 'databases');
    };
    MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
@@ -2999,9 +3003,10 @@ sub get_tbl_itr {
             $_->[0]
          }
          grep {
-            my $ok = $filter ? $filter->($dbh, $db, $_->[0]) : 1;
+            my ($tbl, $type) = @$_;
+            my $ok = $filter ? $filter->($dbh, $db, $tbl) : 1;
             if ( !$views ) {
-               $ok = 0 if ($_->[1] || 'VIEW') eq 'VIEW';
+               $ok = 0 if ($type || 'VIEW') eq 'VIEW';
             }
             $ok;
          }
@@ -3604,15 +3609,15 @@ sub chunk_tables {
          my $i = 0;
          push @chunks, map {
             my $chunk = {
-               D      => $_->{D},      # Database name
-               N      => $_->{N},      # Table name
-               W      => $_->{W},      # WHERE clause
-               E      => $_->{E},      # Storage engine
-               C      => $i++,         # Chunk number for this table
-               L      => $cols,        # SELECT list
-               Z      => $tbl->{size},
+               D => $_->{D},  # Database name
+               N => $_->{N},  # Table name
+               W => $_->{W},  # WHERE clause
+               E => $_->{E},  # Storage engine
+               Z => $_->{Z},  # Chunk size
+               C => $i++,     # Chunk number for this table
+               L => $cols,    # SELECT list
             };
-            
+
             # @chunks is a continuous list of db.tbl.chunk.  To report per-db
             # and per-tbl info we need to know the first table in each db
             # and the number of chunks in each db and table.  So, this chunk
@@ -3707,6 +3712,7 @@ sub get_chunks {
             N => $tbl,
             W => $where,
             E => $tbl_struct->{engine},
+            Z => $args{tbl}->{size},
          };
       };
       close $fh or die "Can't close $chunkfile: $OS_ERROR";
@@ -3720,6 +3726,7 @@ sub get_chunks {
       N => $tbl,
       W => '1=1',
       E => $tbl_struct->{engine},
+      Z => $args{tbl}->{size},
    };
    return $cant_chunk unless $o->get('chunk-size');
 
@@ -3736,11 +3743,12 @@ sub get_chunks {
       if grep { !defined $range_stats{$_} } qw(min max rows_in_range);
 
    # Get chunk boundaries (WHERE clauses).
-   my $rows_per_chunk = $tc->size_to_rows(
-      dbh        => $dbh,
-      db         => $db,
-      tbl        => $tbl,
-      chunk_size => $o->get('chunk-size'),
+   my ($rows_per_chunk, $avg_row_len) = $tc->size_to_rows(
+      dbh            => $dbh,
+      db             => $db,
+      tbl            => $tbl,
+      chunk_size     => $o->get('chunk-size'),
+      avg_row_length => 1,  # always get avg row length
    );
    my @chunk_boundaries = $tc->calculate_chunks(
       dbh        => $dbh,
@@ -3749,6 +3757,9 @@ sub get_chunks {
       chunk_size => $rows_per_chunk,
       %range_stats,
    );
+   my $avg_chunk_size = $rows_per_chunk * $avg_row_len;
+   MKDEBUG && _d('Rows per chunk:', $rows_per_chunk,
+      'avg row len:', $avg_row_len, 'avg chunk size:', $avg_chunk_size);
 
    # Write chunk boundaries to the chunk file.
    my $fh;
@@ -3764,6 +3775,7 @@ sub get_chunks {
          N => $tbl,
          W => $_,
          E => $tbl_struct->{engine},
+         Z => $avg_chunk_size,
       }
    } @chunk_boundaries;
    if ( !$o->get('dry-run') ) {
@@ -4582,12 +4594,22 @@ Port number to use for connection.
 
 =item --progress
 
-Display progress messages.
+Display progress reports.
 
 Progress is displayed each time a table or chunk of a table finishes dumping.
-Progress is calculated by measuring the data size of each table, and assuming
-all bytes are created equal.  The output is the completed and total bytes, the
-percent completed, estimated time remaining, and estimated completion time.
+Progress is calculated by measuring the average data size of each full chunk
+and assuming all bytes are created equal.  The output is the completed and
+total bytes, the percent completed, estimated time remaining, and estimated
+completion time.  For example:
+
+  40.72k/112.00k  36.36% ETA 00:00 (2009-10-27T19:17:53)
+
+If L<"--chunk-size"> is not specified then each table is effectively one big
+chunk and the progress reports are pretty accurate.  When L<"--chunk-size">
+is specified the progress reports can be skewed because of averaging.
+
+Progress reports are inaccurate when a dump is resumed.  This is known issue
+and will be fixed in a later release.
 
 =item --quiet
 

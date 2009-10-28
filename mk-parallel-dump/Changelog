@@ -10,6 +10,7 @@ Changelog for mk-parallel-dump:
    * Added --[no]resume (issue 495).
    * Added --mysqldump.
    * --progress did not respect --ignore-engines (issue 573).
+   * --progress was incorrect with --chunk-size (issue 642).
    * --set-vars did not work (issue 597).
    * Changed output format of --verbose and --progress.
    * Command line options did not override config file options (issue 617).
