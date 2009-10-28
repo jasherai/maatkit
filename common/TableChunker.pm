@@ -292,6 +292,8 @@ sub size_to_rows {
    my $q  = $self->{Quoter};
    my $du = $self->{MySQLDump};
 
+   my ($n_rows, $avg_row_length);
+
    my ( $num, $suffix ) = $chunk_size =~ m/^(\d+)([MGk])?$/;
    if ( $suffix ) { # Convert to bytes.
       $chunk_size = $suffix eq 'k' ? $num * 1_024
@@ -299,16 +301,21 @@ sub size_to_rows {
                   :                  $num * 1_024 * 1_024 * 1_024;
    }
    elsif ( $num ) {
-      return $num;
+      $n_rows = $num;
    }
    else {
       die "Invalid chunk size $chunk_size; must be an integer "
          . "with optional suffix kMG";
    }
 
-   my ($status) = $du->get_table_status($dbh, $q, $db, $tbl);
-   my $avg_row_length = $status->{avg_row_length};
-   my $n_rows = $avg_row_length ? ceil($chunk_size / $avg_row_length) : undef;
+   if ( $suffix || $args{avg_row_length} ) {
+      my ($status) = $du->get_table_status($dbh, $q, $db, $tbl);
+      $avg_row_length = $status->{avg_row_length};
+      if ( !defined $n_rows ) {
+         $n_rows = $avg_row_length ? ceil($chunk_size / $avg_row_length) : undef;
+      }
+   }
+
    return wantarray ? ($n_rows, $avg_row_length) : $n_rows;
 }
 

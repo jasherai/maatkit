@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 29;
+use Test::More tests => 30;
 
 require "../TableParser.pm";
 require "../TableChunker.pm";
@@ -128,7 +128,7 @@ is(
 # Sandbox tests.
 # #############################################################################
 SKIP: {
-   skip 'Sandbox master does not have the sakila database', 20
+   skip 'Sandbox master does not have the sakila database', 21
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
    my @chunks;
@@ -477,6 +477,18 @@ SKIP: {
    ok(
       $avg >= 185 && $avg <= 206,
       'size_to_rows() returns average row length in list context'
+   );
+
+   ($size, $avg) = $c->size_to_rows(
+      dbh            => $dbh,
+      db             => 'sakila',
+      tbl            => 'film',
+      chunk_size     => 5,
+      avg_row_length => 1,
+   );
+   ok(
+      $size == 5 && ($avg >= 185 && $avg <= 206),
+      'size_to_rows() gets avg row length if asked'
    );
 };
 
