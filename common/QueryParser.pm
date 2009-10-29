@@ -251,6 +251,13 @@ sub split {
       # ...Re-attach verbs to their statements.
       for ( my $i = 0; $i <= $#split_statements; $i += 2 ) {
          push @statements, $split_statements[$i].$split_statements[$i+1];
+
+         # Variable-width negative look-behind assertions, (?<!), aren't
+         # fully supported so we split ON DUPLICATE KEY UPDATE.  This
+         # puts it back together.
+         if ( $statements[-2] && $statements[-2] =~ m/on duplicate key\s+$/ ) {
+            $statements[-2] .= pop @statements;
+         }
       }
    }
 

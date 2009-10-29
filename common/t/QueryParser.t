@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 126;
+use Test::More tests => 127;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -673,6 +673,14 @@ is_deeply(
    'split statements with comment blocks'
 );
 
+$sql = "insert into test1.tbl6 (day) values ('monday') on duplicate key update metric11 = metric11 + 1";
+is_deeply(
+   [ $qp->split($sql) ],
+   [
+      $sql,
+   ],
+   'split "on duplicate key"'
+);
 
 # #############################################################################
 # Test split_subquery().
