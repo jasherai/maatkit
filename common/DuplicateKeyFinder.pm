@@ -67,7 +67,7 @@ sub get_duplicate_keys {
    foreach my $key ( values %keys ) {
       # Save real columns before we potentially re-order them.  These are
       # columns we want to print if the key is a duplicate.
-      $key->{real_cols} = $key->{colnames}; 
+      $key->{real_cols} = [ @{$key->{cols}} ];
 
       # We use column lengths to compare keys.
       $key->{len_cols}  = length $key->{colnames};
@@ -190,9 +190,9 @@ sub get_duplicate_fks {
               && $i_pcols eq $j_pcols ) {
             my $dupe = {
                key               => $fks[$j]->{name},
-               cols              => $fks[$j]->{colnames},
+               cols              => [ @{$fks[$j]->{cols}} ],
                duplicate_of      => $fks[$i]->{name},
-               duplicate_of_cols => $fks[$i]->{colnames},
+               duplicate_of_cols => [ @{$fks[$i]->{cols}} ],
                reason            =>
                     "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{colnames}) "
                   . "REFERENCES $fks[$j]->{parent_tbl} "
@@ -403,7 +403,8 @@ sub remove_clustered_duplicates {
                dupe_type         => 'clustered',
                short_key         => $self->shorten_clustered_duplicate(
                                        $ck_cols,
-                                       $keys->[$i]->{real_cols}
+                                       join(',', map { "`$_`" }
+                                          @{$keys->[$i]->{real_cols}})
                                     ),
             };
             push @dupes, $dupe;
