@@ -255,7 +255,7 @@ sub split {
          # Variable-width negative look-behind assertions, (?<!), aren't
          # fully supported so we split ON DUPLICATE KEY UPDATE.  This
          # puts it back together.
-         if ( $statements[-2] && $statements[-2] =~ m/on duplicate key\s+$/ ) {
+         if ( $statements[-2] && $statements[-2] =~ m/on duplicate key\s+$/i ) {
             $statements[-2] .= pop @statements;
          }
       }
