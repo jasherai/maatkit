@@ -3876,7 +3876,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRanker package 4535
+# QueryRanker package 4970
 # ###########################################################################
 package QueryRanker;
 
@@ -3907,6 +3907,12 @@ sub new {
       %args,
    };
    return bless $self, $class;
+}
+
+sub set_ranker {
+   my ( $self, $res, $code ) = @_;
+   $self->{ranker_for}->{$res} = $code;
+   return;
 }
 
 sub rank_results {
@@ -6968,6 +6974,11 @@ sub main {
       TableSyncer   => $syncer,
    );
 
+   if ( !$o->get('compare-query-times') ) {
+      $qranker->set_ranker('Query_time',
+         sub { MKDEBUG && _d('Not comparing query times'); return 0; });
+   }
+
    # ########################################################################
    # Create QueryExecutor::exec() callbacks for each operation.
    # These subs return to QueryExecutor::exec(), not mk-upgrade.
@@ -8217,6 +8228,12 @@ difference can be detected.  Results for each comparison and each host are
 reported in the query's header (see L<"OUTPUT">).
 
 =over
+
+=item --[no]compare-query-times
+
+default: yes
+
+Compare query execution times.
 
 =item --[no]compare-results
 
