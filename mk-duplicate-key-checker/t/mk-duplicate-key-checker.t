@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 13;
+use Test::More tests => 14;
 
 require '../mk-duplicate-key-checker';
 require '../../common/Sandbox.pm';
@@ -82,6 +82,17 @@ like(
    'Dies if PID file already exists (issue 391)'
 );
 `rm -rf /tmp/mk-script.pid`;
+
+# #############################################################################
+# Issue 663: Index length prefix gives uninitialized value
+# #############################################################################
+`/tmp/12345/use < samples/issue_663.sql`;
+$output = `$cmd -d issue_663`;
+like(
+   $output,
+   qr/`xmlerror` text/,
+   'Prints dupe key with prefixed column (issue 663)'
+);
 
 # #############################################################################
 # Done.

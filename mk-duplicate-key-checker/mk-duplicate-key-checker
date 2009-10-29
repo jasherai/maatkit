@@ -77,7 +77,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 3186
+# Quoter package 4943
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -102,18 +102,19 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, @vals ) = @_;
-   return join(', ',
-      map {
-         if ( defined $_ ) {
-            $_ =~ s/(['\\])/\\$1/g;
-            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
-         }
-         else {
-            'NULL';
-         }
-      } @vals
-   );
+   my ( $self, $val, $is_numeric ) = @_;
+
+   return 'NULL' unless defined $val;  # undef = NULL
+   return "''" if $val eq '';          # blank string = ''
+
+   if ( !defined $is_numeric ) {
+      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
+   }
+
+   return $val if $is_numeric;
+
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
 }
 
 sub split_unquote {
@@ -127,6 +128,13 @@ sub split_unquote {
    return ($db, $tbl);
 }
 
+sub literal_like {
+   my ( $self, $like ) = @_;
+   return unless $like;
+   $like =~ s/([%_])/\\$1/g;
+   return "'$like'";
+}
+
 1;
 
 # ###########################################################################
@@ -134,19 +142,29 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4397
+# TableParser package 4931
 # ###########################################################################
 package TableParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+
 sub new {
-   my ( $class ) = @_;
-   return bless {}, $class;
+   my ( $class, %args ) = @_;
+   my @required_args = qw(Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 
@@ -282,27 +300,69 @@ sub find_possible_keys {
    }
 }
 
-sub table_exists {
-   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
-   my $result = 0;
+sub check_table {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbl) = @args{@required_args};
+   my $q      = $self->{Quoter};
    my $db_tbl = $q->quote($db, $tbl);
-   my $sql    = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d('Checking', $db_tbl);
+
+   my $sql = "SHOW TABLES FROM " . $q->quote($db)
+           . ' LIKE ' . $q->literal_like($tbl);
+   MKDEBUG && _d($sql);
+   my $row;
+   eval {
+      $row = $dbh->selectrow_arrayref($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
+   }
+   if ( !$row->[0] || $row->[0] ne $tbl ) {
+      MKDEBUG && _d('Table does not exist');
+      return 0;
+   }
+
+   MKDEBUG && _d('Table exists; no privs to check');
+   return 1 unless $args{all_privs};
+
+   $sql = "SHOW FULL COLUMNS FROM $db_tbl";
    MKDEBUG && _d($sql);
    eval {
-      my $sth = $dbh->prepare($sql);
-      $sth->execute();
-      my @columns = @{$sth->fetchall_arrayref({})};
-      if ( $can_insert ) {
-         $result = grep { ($_->{Privileges} || '') =~ m/insert/ } @columns;
-      }
-      else {
-         $result = 1;
-      }
+      $row = $dbh->selectrow_hashref($sql);
    };
-   if ( MKDEBUG && $EVAL_ERROR ) {
-      _d($EVAL_ERROR);
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
    }
-   return $result;
+   if ( !scalar keys %$row ) {
+      MKDEBUG && _d('Table has no columns:', Dumper($row));
+      return 0;
+   }
+   my $privs = $row->{privileges} || $row->{Privileges};
+
+   $sql = "DELETE FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d($sql);
+   eval {
+      $dbh->do($sql);
+   };
+   my $can_delete = $EVAL_ERROR ? 0 : 1;
+
+   MKDEBUG && _d('User privs on', $db_tbl, ':', $privs,
+      ($can_delete ? 'delete' : ''));
+
+   if ( !($privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/
+          && $can_delete) ) {
+      MKDEBUG && _d('User does not have all privs');
+      return 0;
+   }
+
+   MKDEBUG && _d('User has all privs');
+   return 1;
 }
 
 sub get_engine {
@@ -323,7 +383,8 @@ sub get_keys {
 
       next KEY if $key =~ m/FOREIGN/;
 
-      MKDEBUG && _d('Parsed key:', $key);
+      my $key_ddl = $key;
+      MKDEBUG && _d('Parsed key:', $key_ddl);
 
       if ( $engine !~ m/MEMORY|HEAP/ ) {
          $key =~ s/USING HASH/USING BTREE/;
@@ -360,6 +421,7 @@ sub get_keys {
          is_unique    => $unique,
          is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
          is_col       => { map { $_ => 1 } @cols },
+         ddl          => $key_ddl,
       };
 
       if ( $engine =~ m/InnoDB/i && !$clustered_key ) {
@@ -409,6 +471,40 @@ sub remove_auto_increment {
    my ( $self, $ddl ) = @_;
    $ddl =~ s/(^\).*?) AUTO_INCREMENT=\d+\b/$1/m;
    return $ddl;
+}
+
+sub remove_secondary_indexes {
+   my ( $self, $ddl ) = @_;
+   my $sec_indexes_ddl;
+   my $tbl_struct = $self->parse($ddl);
+
+   if ( ($tbl_struct->{engine} || '') =~ m/InnoDB/i ) {
+      my $clustered_key = $tbl_struct->{clustered_key};
+      $clustered_key  ||= '';
+
+      my @sec_indexes   = map {
+         my $key_def = $_->{ddl};
+         $key_def =~ s/([\(\)])/\\$1/g;
+         $ddl =~ s/\s+$key_def//;
+         $_->{ddl};
+      }
+      grep { $_->{name} ne $clustered_key }
+      values %{$tbl_struct->{keys}};
+      MKDEBUG && _d('Secondary indexes:', Dumper(\@sec_indexes));
+
+      if ( @sec_indexes ) {
+         $sec_indexes_ddl = join(' ', @sec_indexes);
+         $sec_indexes_ddl =~ s/,$//;
+      }
+
+      $ddl =~ s/,(\n\) )/$1/s;
+   }
+   else {
+      MKDEBUG && _d('Not removing secondary indexes from',
+         $tbl_struct->{engine}, 'table');
+   }
+
+   return $ddl, $sec_indexes_ddl, $tbl_struct;
 }
 
 sub _d {
@@ -733,7 +829,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 4162
+# MySQLFind package 4804
 # ###########################################################################
 package MySQLFind;
 
@@ -933,10 +1029,11 @@ sub _test_date {
    MKDEBUG && _d($sql);
    ($self->{timestamp}->{$dbh}->{$num}) ||= $dbh->selectrow_array($sql);
    my $time = $self->{timestamp}->{$dbh}->{$num};
-   return 
-         ( $equality eq '-' && $table->{$prop} gt $time )
-      || ( $equality eq '+' && $table->{$prop} lt $time )
-      || (                     $table->{$prop} eq $time );
+   if ( $equality ) {
+      return ($equality eq '-' && $table->{$prop} gt $time)
+          || ($equality eq '+' && $table->{$prop} lt $time);
+   }
+   return $table->{$prop} eq $time;
 }
 
 sub _d {
@@ -2257,7 +2354,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DuplicateKeyFinder package 4404
+# DuplicateKeyFinder package 4965
 # ###########################################################################
 package DuplicateKeyFinder;
 
@@ -2287,7 +2384,7 @@ sub get_duplicate_keys {
 
    KEY:
    foreach my $key ( values %keys ) {
-      $key->{real_cols} = $key->{colnames}; 
+      $key->{real_cols} = [ @{$key->{cols}} ];
 
       $key->{len_cols}  = length $key->{colnames};
 
@@ -2379,9 +2476,9 @@ sub get_duplicate_fks {
               && $i_pcols eq $j_pcols ) {
             my $dupe = {
                key               => $fks[$j]->{name},
-               cols              => $fks[$j]->{colnames},
+               cols              => [ @{$fks[$j]->{cols}} ],
                duplicate_of      => $fks[$i]->{name},
-               duplicate_of_cols => $fks[$i]->{colnames},
+               duplicate_of_cols => [ @{$fks[$i]->{cols}} ],
                reason            =>
                     "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{colnames}) "
                   . "REFERENCES $fks[$j]->{parent_tbl} "
@@ -2529,7 +2626,8 @@ sub remove_clustered_duplicates {
                dupe_type         => 'clustered',
                short_key         => $self->shorten_clustered_duplicate(
                                        $ck_cols,
-                                       $keys->[$i]->{real_cols}
+                                       join(',', map { "`$_`" }
+                                          @{$keys->[$i]->{real_cols}})
                                     ),
             };
             push @dupes, $dupe;
@@ -3039,7 +3137,7 @@ my %summary = ( 'Total Indexes' => 0 );
 my %seen_tbl;
 
 my $q  = new Quoter();
-my $tp = new TableParser();
+my $tp = new TableParser(Quoter => $q);
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -3144,6 +3242,7 @@ sub main {
             print_all_keys($fks,  $tbl_info) if $fks;
          }
          else {
+            MKDEBUG && _d('Getting duplicate keys on', $database, $table);
             $dk->get_duplicate_keys(
                $keys,
                clustered_key => $clustered_key,
@@ -3210,6 +3309,7 @@ sub print_duplicate_key {
    foreach my $arg ( qw(tbl_info dbh is_fk o ks) ) {
       die "I need a $arg argument" unless exists $args{$arg};
    }
+   MKDEBUG && _d('Printing duplicate key', $dupe->{key});
    my $db     = $args{tbl_info}->{db};
    my $tbl    = $args{tbl_info}->{tbl};
    my $dbh    = $args{dbh};
@@ -3228,11 +3328,9 @@ sub print_duplicate_key {
    print "# $dupe->{reason}\n";
 
    print "# Column types:\n";
-   my %seen_col;
-   my @cols = map { s/`//g; $_; }
-              grep { $_ if !$seen_col{$_}++; }
-              split(',', "$dupe->{cols},$dupe->{duplicate_of_cols}");
-   foreach my $col ( @cols ) {
+   my %seen;  # print each column only once
+   foreach my $col ( @{$dupe->{cols}}, @{$dupe->{duplicate_of_cols}} ) {
+      next if $seen{$col}++;
       MKDEBUG && _d('col', $col);
       print "#\t" . $struct->{defs}->{lc $col} . "\n";
    }
@@ -3260,7 +3358,7 @@ sub print_duplicate_key {
       $summary{'Total Duplicate Indexes'} += 1;
       my ($size, $chosen_key) = $ks->get_key_size(
          name        => $dupe->{key},
-         cols        => [ split(',', $dupe->{cols}) ],
+         cols        => $dupe->{cols},
          tbl_name    => $q->quote($db, $tbl),
          tbl_struct  => $struct,
          dbh         => $dbh,
