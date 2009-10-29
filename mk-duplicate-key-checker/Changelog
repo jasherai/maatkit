@@ -1,5 +1,6 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Printing duplicate key with prefixed column caused crash (issue 663).
    * --set-vars did not work (issue 597).
    * Command line options did not override config file options (issue 617).
 
