@@ -180,12 +180,8 @@ sub fingerprint {
    return $query;
 }
 
-# This is kind of like fingerprinting, but it super-fingerprints to something
-# that shows the query type and the tables/objects it accesses.
-sub distill {
-   my ( $self, $query, %args ) = @_;
-   my $qp = $args{qp} || $self->{QueryParser};
-   die "I need a qp argument" unless $qp;
+sub _distill_verbs {
+   my ( $self, $query ) = @_;
 
    # Special cases.
    $query =~ m/\A\s*call\s+(\S+)\(/i
@@ -208,12 +204,11 @@ sub distill {
    if ( $dds ) {
       my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
       $obj = uc $obj if $obj;
-      MKDEBUG && _d('Data def statment:', $dds, $obj);
+      MKDEBUG && _d('Data def statment:', $dds, 'obj:', $obj);
       my ($db_or_tbl)
          = $query =~ m/(?:TABLE|DATABASE)\s+($QueryParser::tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches db or table:', $db_or_tbl);
-      $obj .= ($db_or_tbl ? " $db_or_tbl" : '');
-      return uc($dds) . ($obj ? " $obj" : '');
+      return uc($dds . ($obj ? " $obj" : '')), $db_or_tbl;
    }
 
    # First, get the query type -- just extract all the verbs and collapse them
@@ -226,6 +221,14 @@ sub distill {
    my $verbs = join(q{ }, @verbs);
    $verbs =~ s/( UNION SELECT)+/ UNION/g;
 
+   return $verbs;
+}
+
+sub _distill_tables {
+   my ( $self, $query, $table, %args ) = @_;
+   my $qp = $args{qp} || $self->{QueryParser};
+   die "I need a qp argument" unless $qp;
+
    # "Fingerprint" the tables.
    my @tables = map {
       $_ =~ s/`//g;
@@ -233,13 +236,30 @@ sub distill {
       $_;
    } $qp->get_tables($query);
 
+   push @tables, $table if $table;
+
    # Collapse the table list
    @tables = do {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
    };
 
-   $query = join(q{ }, $verbs, @tables);
+   return @tables;
+}
+
+# This is kind of like fingerprinting, but it super-fingerprints to something
+# that shows the query type and the tables/objects it accesses.
+sub distill {
+   my ( $self, $query, %args ) = @_;
+
+   # _distill_verbs() may return a table if it's a special statement
+   # like TRUNCATE TABLE foo.  _distill_tables() handles some but not
+   # all special statements so we pass it this special table in case
+   # it's a statement it can't handle.  If it can handle it, it will
+   # eliminate any duplicate tables.
+   my ($verbs, $table)  = $self->_distill_verbs($query, %args);
+   my @tables           = $self->_distill_tables($query, $table, %args);
+   $query               = join(q{ }, $verbs, @tables);
    return $query;
 }
 

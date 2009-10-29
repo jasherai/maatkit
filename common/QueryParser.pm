@@ -224,7 +224,7 @@ sub get_aliases {
 sub split {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query = clean_query($query);
+   $query = $self->clean_query($query);
    MKDEBUG && _d('Splitting', $query);
 
    my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
@@ -256,7 +256,7 @@ sub split {
 }
 
 sub clean_query {
-   my ( $query ) = @_;
+   my ( $self, $query ) = @_;
    return unless $query;
    $query =~ s!/\*.*?\*/! !g;  # Remove /* comment blocks */
    $query =~ s/^\s+//;         # Remove leading spaces
@@ -268,7 +268,7 @@ sub clean_query {
 sub split_subquery {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query = clean_query($query);
+   $query = $self->clean_query($query);
    $query =~ s/;$//;
 
    my @subqueries;
@@ -330,6 +330,10 @@ sub split_subquery {
    }
 
    return $query, map { $_->{sql} } grep { defined $_ } @subqueries;
+}
+
+sub query_type {
+   my ( $self, $query ) = @_;
 }
 
 sub _d {

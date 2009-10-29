@@ -688,6 +688,60 @@ is_deeply(
 );
 
 # #############################################################################
+# Test query_type().
+# #############################################################################
+is(
+   'select * from foo where id=1',
+   {
+      type => 'select',
+      rw   => 'read',
+   },
+   'query_type() select'
+);
+is(
+   'insert into foo values (1, 2)',
+   {
+      type => 'insert',
+      rw   => 'read',
+   },
+   'query_type() select'
+);
+is(
+   'select * from foo where id=1',
+   {
+      type => 'select',
+      rw   => 'read',
+   },
+   'query_type() select'
+);
+is(
+   'select * from foo where id=1',
+   {
+      type => 'select',
+      rw   => 'read',
+   },
+   'query_type() select'
+);
+is(
+   'select * from foo where id=1',
+   {
+      type => 'select',
+      rw   => 'read',
+   },
+   'query_type() select'
+);
+is(
+   'select * from foo where id=1',
+   {
+      type => 'select',
+      rw   => 'read',
+   },
+   'query_type() select'
+);
+
+exit;
+
+# #############################################################################
 # Issue 563: Lock tables is not distilled
 # #############################################################################
 is_deeply(
