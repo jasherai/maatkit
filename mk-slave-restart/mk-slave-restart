@@ -2167,7 +2167,7 @@ sub main {
          # same --interval as this invocation.  Then remove the file and
          # continue.
          MKDEBUG && _d('Waiting for other instances to quit');
-         sleep($o->get('maxlength'));
+         sleep $o->get('max-sleep');
          MKDEBUG && _d('Unlinking', $sentinel);
          unlink $sentinel
             or die "Cannot unlink $sentinel: $OS_ERROR";
@@ -2713,6 +2713,9 @@ type: float; default: 64
 Maximum sleep seconds.
 
 The maximum time mk-slave-restart will sleep before polling the slave again.
+This is also the time that mk-slave-restart will wait for all other running
+instances to quit if both L<"--stop"> and L<"--monitor"> are specified.
+
 See L<"SLEEP">.
 
 =item --min-sleep

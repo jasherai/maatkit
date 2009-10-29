@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 13;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -80,9 +80,9 @@ unlike(
    '--error-text works (issue 459)'
 );
 
-# #########################################################################
+# ###########################################################################
 # Issue 391: Add --pid option to all scripts
-# #########################################################################
+# ###########################################################################
 `touch /tmp/mk-script.pid`;
 $output = `../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 --pid /tmp/mk-script.pid 2>&1`;
 like(
@@ -91,6 +91,16 @@ like(
    'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
 );
 `rm -rf /tmp/mk-script.pid`;
+
+# #############################################################################
+# Issue 662: Option maxlength does not exist
+# #############################################################################
+my $ret = system('../mk-slave-restart -h 127.0.0.1 -P 12346 --monitor --stop --max-sleep 1 --run-time 1 >/dev/null 2>&1');
+is(
+   $ret >> 8,
+   0,
+   "--monitor --stop doesn't cause error"
+);
 
 # #############################################################################
 # Done.
