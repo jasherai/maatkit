@@ -362,7 +362,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4930
+# Quoter package 4943
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -387,18 +387,19 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, @vals ) = @_;
-   return join(', ',
-      map {
-         if ( defined $_ ) {
-            $_ =~ s/(['\\])/\\$1/g;
-            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
-         }
-         else {
-            'NULL';
-         }
-      } @vals
-   );
+   my ( $self, $val, $is_numeric ) = @_;
+
+   return 'NULL' unless defined $val;  # undef = NULL
+   return "''" if $val eq '';          # blank string = ''
+
+   if ( !defined $is_numeric ) {
+      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
+   }
+
+   return $val if $is_numeric;
+
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
 }
 
 sub split_unquote {
@@ -1461,7 +1462,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 4569
+# QueryRewriter package 4969
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1587,10 +1588,8 @@ sub fingerprint {
    return $query;
 }
 
-sub distill {
-   my ( $self, $query, %args ) = @_;
-   my $qp = $args{qp} || $self->{QueryParser};
-   die "I need a qp argument" unless $qp;
+sub _distill_verbs {
+   my ( $self, $query ) = @_;
 
    $query =~ m/\A\s*call\s+(\S+)\(/i
       && return "CALL $1"; # Warning! $1 used, be careful.
@@ -1607,12 +1606,11 @@ sub distill {
    if ( $dds ) {
       my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
       $obj = uc $obj if $obj;
-      MKDEBUG && _d('Data def statment:', $dds, $obj);
+      MKDEBUG && _d('Data def statment:', $dds, 'obj:', $obj);
       my ($db_or_tbl)
          = $query =~ m/(?:TABLE|DATABASE)\s+($QueryParser::tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches db or table:', $db_or_tbl);
-      $obj .= ($db_or_tbl ? " $db_or_tbl" : '');
-      return uc($dds) . ($obj ? " $obj" : '');
+      return uc($dds . ($obj ? " $obj" : '')), $db_or_tbl;
    }
 
    my @verbs = $query =~ m/\b($verbs)\b/gio;
@@ -1623,18 +1621,36 @@ sub distill {
    my $verbs = join(q{ }, @verbs);
    $verbs =~ s/( UNION SELECT)+/ UNION/g;
 
+   return $verbs;
+}
+
+sub _distill_tables {
+   my ( $self, $query, $table, %args ) = @_;
+   my $qp = $args{QueryParser} || $self->{QueryParser};
+   die "I need a QueryParser argument" unless $qp;
+
    my @tables = map {
       $_ =~ s/`//g;
       $_ =~ s/(_?)[0-9]+/$1?/g;
       $_;
    } $qp->get_tables($query);
 
+   push @tables, $table if $table;
+
    @tables = do {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
    };
 
-   $query = join(q{ }, $verbs, @tables);
+   return @tables;
+}
+
+sub distill {
+   my ( $self, $query, %args ) = @_;
+
+   my ($verbs, $table)  = $self->_distill_verbs($query, %args);
+   my @tables           = $self->_distill_tables($query, $table, %args);
+   $query               = join(q{ }, $verbs, @tables);
    return $query;
 }
 
@@ -4407,7 +4423,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4704
+# QueryParser package 4969
 # ###########################################################################
 package QueryParser;
 
@@ -4430,6 +4446,8 @@ our $has_derived = qr{
    }xi;
 
 our $data_def_stmts = qr/(?:CREATE|ALTER|TRUNCATE|DROP|RENAME)/i;
+
+our $data_manip_stmts = qr/(?:INSERT|UPDATE|DELETE|REPLACE)/i;
 
 sub new {
    my ( $class ) = @_;
@@ -4552,7 +4570,7 @@ sub get_aliases {
 sub split {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query = clean_query($query);
+   $query = $self->clean_query($query);
    MKDEBUG && _d('Splitting', $query);
 
    my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
@@ -4574,7 +4592,7 @@ sub split {
 }
 
 sub clean_query {
-   my ( $query ) = @_;
+   my ( $self, $query ) = @_;
    return unless $query;
    $query =~ s!/\*.*?\*/! !g;  # Remove /* comment blocks */
    $query =~ s/^\s+//;         # Remove leading spaces
@@ -4586,7 +4604,7 @@ sub clean_query {
 sub split_subquery {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query = clean_query($query);
+   $query = $self->clean_query($query);
    $query =~ s/;$//;
 
    my @subqueries;
@@ -4648,6 +4666,24 @@ sub split_subquery {
    }
 
    return $query, map { $_->{sql} } grep { defined $_ } @subqueries;
+}
+
+sub query_type {
+   my ( $self, $query, $qr ) = @_;
+   my ($type, undef) = $qr->_distill_verbs($query);
+   my $rw;
+   if ( $type =~ m/^SELECT\b/ ) {
+      $rw = 'read';
+   }
+   elsif ( $type =~ m/^$data_manip_stmts\b/
+           || $type =~ m/^$data_def_stmts\b/  ) {
+      $rw = 'write'
+   }
+
+   return {
+      type => $type,
+      rw   => $rw,
+   }
 }
 
 sub _d {
@@ -7142,9 +7178,8 @@ sub main {
          my $explain_why
             = $expected_range
             && (@worst < $expected_range->[0] || @worst > $expected_range->[1]);
-
-
-         # Create a profile (issue 381).
+ 
+         my @table_access;
          my @profiles;
          my $total_r = 0;
 
@@ -7165,10 +7200,18 @@ sub main {
          # ##################################################################
          ITEM:
          foreach my $rank ( 1 .. @worst ) {
-            my $item       = $worst[$rank - 1]->[0];
-            my $stats      = $ea->results->{classes}->{$item};
-            my $sample     = $ea->results->{samples}->{$item};
-            my $samp_query = $sample->{arg} || '';
+            my $item          = $worst[$rank - 1]->[0];
+            my $stats         = $ea->results->{classes}->{$item};
+            my $sample        = $ea->results->{samples}->{$item};
+            my $samp_query    = $sample->{arg} || '';
+            my ($db_for_show) = $sample->{db} ? $sample->{db}
+                              : keys %{$stats->{db}->{unq}};
+
+            if ( $groupby eq 'fingerprint' ) {
+               # Shorten it if necessary (issue 216 and 292).
+               $samp_query = $qr->shorten($samp_query, $o->get('shorten'))
+                  if $o->get('shorten');
+            }
 
             # ###############################################################
             # Save the profile for this item.  It's printed later, maybe.
@@ -7184,6 +7227,20 @@ sub main {
             );
             $total_r += $profile{r};
             push @profiles, \%profile;
+
+            # ###############################################################
+            # Save table info for item.
+            # ###############################################################
+            my @tables;
+            if ( $o->get('for-explain') || $o->get('table-access') ){
+               @tables = extract_tables($samp_query, $db_for_show);
+               if ( $o->get('table-access') ) {
+                  push @table_access, {
+                     query  => $samp_query,
+                     tables => [ @tables ],
+                  };
+               }
+            }
 
             # ###############################################################
             # Prepare for --review and --review-history.
@@ -7251,17 +7308,7 @@ sub main {
                }
 
                if ( $groupby eq 'fingerprint' ) {
-                  # Shorten it if necessary (issue 216 and 292).
-                  $samp_query = $qr->shorten($samp_query, $o->get('shorten'))
-                     if $o->get('shorten');
-
-                  # Print out tables for the query, and if it's a SELECT
-                  # statement, print out its EXPLAIN...
-                  my ($db_for_show) = $sample->{db} ? $sample->{db}
-                                    : keys %{$stats->{db}->{unq}};
-                  if ( $o->get('for-explain') ) {
-                     print_tables(extract_tables($samp_query, $db_for_show));
-                  }
+                  print_tables(@tables) if $o->get('for-explain');
                   if ( $item =~ m/^(?:[\(\s]*select|insert|replace)/ ) {
                      if ( $item =~ m/^(?:insert|replace)/ ) { # No EXPLAIN
                         print $samp_query, "\\G\n";
@@ -7286,7 +7333,7 @@ sub main {
                else {
                   if ( $groupby eq 'tables' ) {
                      my ( $db, $tbl ) = $q->split_unquote($item);
-                     print_tables([$db, $tbl]); 
+                     print_tables( {db => $db, tbl => $tbl} );
                   }
                   print $item, "\n"; 
                }
@@ -7319,13 +7366,36 @@ sub main {
             $tl->report($tl->results(), sub { print @_ });
          }
 
+         # Print table access.
+         if ( $o->get('table-access') ) {
+            my %seen;
+            print "\n" if $o->get('report');
+            foreach my $item ( @table_access ) {
+               next unless scalar @{$item->{tables}};
+               my @access;
+               foreach my $tbl ( @{$item->{tables}} ) {
+                  next unless $tbl->{rw};
+                  my $db     = $tbl->{db}  ? "`$tbl->{db}`."  : '';
+                  my $access = "$tbl->{rw} $db`$tbl->{tbl}`";
+                  next if $o->get('unique-table-access') && $seen{$access}++;
+                  push @access, $access;
+               }
+
+               if ( @access ) {
+                  print "$item->{query}\n"
+                     unless $o->get('unique-table-access');
+                  print join("\n", @access), "\n";
+               }
+            }
+         }
+
          # Print profile (issue 381).
          if ( $o->get('report') && $o->get('report-format')->{profile} ) {
             print "\n# Rank Query ID           Response time    Calls   R/Call",
                   "     Item\n",
                   "# ==== ================== ================ ======= ======",
                   "==== ====\n";
-            foreach my $item (sort { $a->{rank} <=> $b->{rank} } @profiles) {
+            foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @profiles ) {
                printf "# %4d 0x%16s %10.4f %4.1f%% %7d %8.4f %s\n",
                   $item->{rank}, $item->{id}, $item->{r},
                   $item->{r} / ($total_r || 1) * 100,
@@ -7360,11 +7430,20 @@ sub extract_tables {
    my ( $query, $default_db ) = @_;
    my @tables;
    my %seen;
-   foreach my $db_tbl ( $qp->get_tables($query) ) {
-      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
-      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
-      push @tables, [ $db || $default_db, $tbl ];
+
+   foreach my $subquery ( $qp->split($query) ) {
+      foreach my $db_tbl ( $qp->get_tables($subquery) ) {
+         next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+         my ( $db, $tbl ) = $q->split_unquote($db_tbl, $default_db);
+         my $rw           = $qp->query_type($subquery, $qr)->{rw};
+         push @tables, {
+            db  => $db,
+            tbl => $tbl,
+            rw  => $rw,
+         };
+      }
    }
+
    return @tables;
 }
 
@@ -7373,12 +7452,13 @@ sub print_tables {
    my ( @tables ) = @_;
    return unless @tables;
    print "# Tables\n";
-   foreach my $db_tbl ( @tables ) {
-      my ( $db, $tbl ) = @$db_tbl;
-      print '#    SHOW TABLE STATUS',
+   foreach my $tbl ( @tables ) {
+      my ( $db, $tbl, $rw ) = @{$tbl}{qw(db tbl rw)};
+      $rw = $rw ? "/* $rw */" : '';
+      print "#    $rw SHOW TABLE STATUS",
          ($db ? " FROM `$db`" : ''), " LIKE '$tbl'\\G\n";
-      print "#    SHOW CREATE TABLE ",
-         $q->quote(grep { $_ } @$db_tbl), "\\G\n";
+      print "#    $rw SHOW CREATE TABLE ",
+         $q->quote(grep { $_ } ($db, $tbl)), "\\G\n";
    }
 }
 
@@ -8634,6 +8714,10 @@ short form: -S; type: string
 
 Socket file to use for connection.
 
+=item --table-access
+
+Print table access report.
+
 =item --tcpdump-errors
 
 type: string
@@ -8741,6 +8825,10 @@ instead of MySQL packets.  For example:
 memcached uses port 11211 by default.
 
 =back
+
+=item --unique-table-access
+
+Show only unique tables and no queries for L<"--table-access">.
 
 =item --until
 

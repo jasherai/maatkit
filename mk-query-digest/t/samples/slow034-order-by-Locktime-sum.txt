@@ -25,8 +25,8 @@
 #    1s
 #  10s+  ################################################################
 # Tables
-#    SHOW TABLE STATUS FROM `db3` LIKE 'forest'\G
-#    SHOW CREATE TABLE `db3`.`forest`\G
+#    /* write */ SHOW TABLE STATUS FROM `db3` LIKE 'forest'\G
+#    /* write */ SHOW CREATE TABLE `db3`.`forest`\G
 DELETE FROM forest WHERE animal = 'dead'\G
 # Converted for EXPLAIN
 # EXPLAIN
@@ -55,8 +55,8 @@ select * from  forest WHERE animal = 'dead'\G
 #    1s
 #  10s+
 # Tables
-#    SHOW TABLE STATUS FROM `db1` LIKE 'foo'\G
-#    SHOW CREATE TABLE `db1`.`foo`\G
+#    /* read */ SHOW TABLE STATUS FROM `db1` LIKE 'foo'\G
+#    /* read */ SHOW CREATE TABLE `db1`.`foo`\G
 # EXPLAIN
 SELECT * FROM foo\G
 
@@ -82,8 +82,8 @@ SELECT * FROM foo\G
 #    1s
 #  10s+
 # Tables
-#    SHOW TABLE STATUS FROM `db2` LIKE 'tbl'\G
-#    SHOW CREATE TABLE `db2`.`tbl`\G
+#    /* write */ SHOW TABLE STATUS FROM `db2` LIKE 'tbl'\G
+#    /* write */ SHOW CREATE TABLE `db2`.`tbl`\G
 INSERT INTO tbl VALUES ('a', 'b')\G
 
 # Query 4: 0 QPS, 0x concurrency, ID 0x1F9B2F47A843D460 at byte 327 ______
@@ -107,8 +107,8 @@ INSERT INTO tbl VALUES ('a', 'b')\G
 #    1s
 #  10s+
 # Tables
-#    SHOW TABLE STATUS FROM `db1` LIKE 'tbl'\G
-#    SHOW CREATE TABLE `db1`.`tbl`\G
+#    /* read */ SHOW TABLE STATUS FROM `db1` LIKE 'tbl'\G
+#    /* read */ SHOW CREATE TABLE `db1`.`tbl`\G
 # EXPLAIN
 SELECT id FROM tbl WHERE id = 1\G
 
@@ -136,8 +136,8 @@ SELECT id FROM tbl WHERE id = 1\G
 #    1s
 #  10s+
 # Tables
-#    SHOW TABLE STATUS FROM `db1` LIKE 'blah'\G
-#    SHOW CREATE TABLE `db1`.`blah`\G
+#    /* read */ SHOW TABLE STATUS FROM `db1` LIKE 'blah'\G
+#    /* read */ SHOW CREATE TABLE `db1`.`blah`\G
 # EXPLAIN
 SELECT COUNT(*) FROM blah WHERE col > 2\G
 

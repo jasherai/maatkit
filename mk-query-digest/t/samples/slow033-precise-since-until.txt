@@ -22,8 +22,8 @@
 #    1s
 #  10s+
 # Tables
-#    SHOW TABLE STATUS FROM `db2` LIKE 'bar'\G
-#    SHOW CREATE TABLE `db2`.`bar`\G
+#    /* read */ SHOW TABLE STATUS FROM `db2` LIKE 'bar'\G
+#    /* read */ SHOW CREATE TABLE `db2`.`bar`\G
 # EXPLAIN
 SELECT * FROM bar\G
 
@@ -37,6 +37,7 @@ SELECT * FROM bar\G
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
+# Databases              0
 # Time range 2009-07-26 11:19:28 to 2009-07-26 11:19:28
 # bytes         33      17      17      17      17      17       0      17
 # Query_time distribution
@@ -49,7 +50,7 @@ SELECT * FROM bar\G
 #    1s
 #  10s+
 # Tables
-#    SHOW TABLE STATUS LIKE 'foo'\G
-#    SHOW CREATE TABLE `foo`\G
+#    /* read */ SHOW TABLE STATUS LIKE 'foo'\G
+#    /* read */ SHOW CREATE TABLE `foo`\G
 # EXPLAIN
 SELECT * FROM foo\G

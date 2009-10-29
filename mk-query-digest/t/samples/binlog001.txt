@@ -30,12 +30,12 @@
 #    1s
 #  10s+  ################################################################
 # Tables
-#    SHOW TABLE STATUS FROM `test4` LIKE 'tbl9'\G
-#    SHOW CREATE TABLE `test4`.`tbl9`\G
-#    SHOW TABLE STATUS FROM `test3` LIKE 'tblo'\G
-#    SHOW CREATE TABLE `test3`.`tblo`\G
-#    SHOW TABLE STATUS FROM `test3` LIKE 'tbl2'\G
-#    SHOW CREATE TABLE `test3`.`tbl2`\G
+#    /* write */ SHOW TABLE STATUS FROM `test4` LIKE 'tbl9'\G
+#    /* write */ SHOW CREATE TABLE `test4`.`tbl9`\G
+#    /* read */ SHOW TABLE STATUS FROM `test3` LIKE 'tblo'\G
+#    /* read */ SHOW CREATE TABLE `test3`.`tblo`\G
+#    /* read */ SHOW TABLE STATUS FROM `test3` LIKE 'tbl2'\G
+#    /* read */ SHOW CREATE TABLE `test3`.`tbl2`\G
 replace into test4.tbl9(tbl5, day, todo, comment)
  select distinct o.tbl5, date(o.col3), 'misc', right('foo', 50)
       from test3.tblo as o
@@ -63,10 +63,10 @@ replace into test4.tbl9(tbl5, day, todo, comment)
 #    1s
 #  10s+  ################################################################
 # Tables
-#    SHOW TABLE STATUS FROM `test3` LIKE 'tblo'\G
-#    SHOW CREATE TABLE `test3`.`tblo`\G
-#    SHOW TABLE STATUS FROM `test3` LIKE 'tbl2'\G
-#    SHOW CREATE TABLE `test3`.`tbl2`\G
+#    /* write */ SHOW TABLE STATUS FROM `test3` LIKE 'tblo'\G
+#    /* write */ SHOW CREATE TABLE `test3`.`tblo`\G
+#    /* write */ SHOW TABLE STATUS FROM `test3` LIKE 'tbl2'\G
+#    /* write */ SHOW CREATE TABLE `test3`.`tbl2`\G
 update test3.tblo as o
          inner join test3.tbl2 as e on o.animal = e.animal and o.oid = e.oid
       set e.tblo = o.tblo,
@@ -96,10 +96,10 @@ select  e.tblo = o.tblo,
 #    1s
 #  10s+  ################################################################
 # Tables
-#    SHOW TABLE STATUS FROM `test3` LIKE 'tblo'\G
-#    SHOW CREATE TABLE `test3`.`tblo`\G
-#    SHOW TABLE STATUS FROM `test3` LIKE 'tbl2'\G
-#    SHOW CREATE TABLE `test3`.`tbl2`\G
+#    /* write */ SHOW TABLE STATUS FROM `test3` LIKE 'tblo'\G
+#    /* write */ SHOW CREATE TABLE `test3`.`tblo`\G
+#    /* write */ SHOW TABLE STATUS FROM `test3` LIKE 'tbl2'\G
+#    /* write */ SHOW CREATE TABLE `test3`.`tbl2`\G
 update test3.tblo as o inner join test3.tbl2 as e
  on o.animal = e.animal and o.oid = e.oid
       set o.tbl2 = e.tbl2,
@@ -115,6 +115,7 @@ select  o.tbl2 = e.tbl2,
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         16       1
 # Exec time     16  20664s  20664s  20664s  20664s  20664s       0  20664s
+# Databases              0
 # Time range 2007-12-07 12:02:50 to 2007-12-07 12:02:50
 # @@session    100       8       8       8       8       8       0       8
 # @@session    100       8       8       8       8       8       0       8
@@ -155,8 +156,8 @@ BEGIN\G
 #    1s
 #  10s+  ################################################################
 # Tables
-#    SHOW TABLE STATUS FROM `test2` LIKE 'tbl8'\G
-#    SHOW CREATE TABLE `test2`.`tbl8`\G
+#    /* write */ SHOW TABLE STATUS FROM `test2` LIKE 'tbl8'\G
+#    /* write */ SHOW CREATE TABLE `test2`.`tbl8`\G
 update test2.tbl8
       set last2metric1 = last1metric1, last2time = last1time,
          last1metric1 = last0metric1, last1time = last0time,
@@ -186,8 +187,10 @@ select  last2metric1 = last1metric1, last2time = last1time,
 #    1s
 #  10s+  ################################################################
 # Tables
-#    SHOW TABLE STATUS FROM `test1` LIKE 'tbl6'\G
-#    SHOW CREATE TABLE `test1`.`tbl6`\G
+#    /* write */ SHOW TABLE STATUS FROM `test1` LIKE 'tbl6'\G
+#    /* write */ SHOW CREATE TABLE `test1`.`tbl6`\G
+#    /* write */ SHOW TABLE STATUS FROM `test1` LIKE 'metric11'\G
+#    /* write */ SHOW CREATE TABLE `test1`.`metric11`\G
 insert into test1.tbl6
       (day, tbl5, misccol9type, misccol9, metric11, metric12, secs)
       values

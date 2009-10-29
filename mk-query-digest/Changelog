@@ -4,6 +4,8 @@ Changelog for mk-query-digest:
    * Binlogs could cause "unintended interpolation of string" error (issue 607).
    * --set-vars did not work (issue 597).
    * Added /*!50100 PARTITIONS */ for --explain (issue 611).
+   * Added --table-access (issue 661).
+   * Added --unique-table-access (issue 661).
    * Command line options did not override config file options (issue 617).
 
 2009-09-30: version 0.9.10

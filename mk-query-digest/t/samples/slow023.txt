@@ -21,8 +21,8 @@
 #    1s  ################################################################
 #  10s+
 # Tables
-#    SHOW TABLE STATUS LIKE 'X'\G
-#    SHOW CREATE TABLE `X`\G
+#    /* read */ SHOW TABLE STATUS LIKE 'X'\G
+#    /* read */ SHOW CREATE TABLE `X`\G
 # EXPLAIN
 /* SELECT count(*) FROM X instance */ select count(*) as A from X
 \G

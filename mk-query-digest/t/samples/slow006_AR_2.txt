@@ -29,7 +29,7 @@
 #   reviewed_on: 
 #      comments: 
 # Tables
-#    SHOW TABLE STATUS FROM `bar` LIKE 'bar_tbl'\G
-#    SHOW CREATE TABLE `bar`.`bar_tbl`\G
+#    /* read */ SHOW TABLE STATUS FROM `bar` LIKE 'bar_tbl'\G
+#    /* read */ SHOW CREATE TABLE `bar`.`bar_tbl`\G
 # EXPLAIN
 SELECT col FROM bar_tbl\G
