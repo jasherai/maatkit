@@ -4423,7 +4423,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4974
+# QueryParser package 4977
 # ###########################################################################
 package QueryParser;
 
@@ -4585,7 +4585,7 @@ sub split {
       for ( my $i = 0; $i <= $#split_statements; $i += 2 ) {
          push @statements, $split_statements[$i].$split_statements[$i+1];
 
-         if ( $statements[-2] && $statements[-2] =~ m/on duplicate key\s+$/ ) {
+         if ( $statements[-2] && $statements[-2] =~ m/on duplicate key\s+$/i ) {
             $statements[-2] .= pop @statements;
          }
       }
