@@ -63,6 +63,12 @@ sub new {
    return bless $self, $class;
 }
 
+sub set_ranker {
+   my ( $self, $res, $code ) = @_;
+   $self->{ranker_for}->{$res} = $code;
+   return;
+}
+
 # Ranks operation result differences.  @results is an array of operation
 # results for mulitple hosts returned from QueryExecutor::exec().  We only
 # compare the first host's results to all other hosts.  Usually, the first
