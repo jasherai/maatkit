@@ -226,8 +226,8 @@ sub _distill_verbs {
 
 sub _distill_tables {
    my ( $self, $query, $table, %args ) = @_;
-   my $qp = $args{qp} || $self->{QueryParser};
-   die "I need a qp argument" unless $qp;
+   my $qp = $args{QueryParser} || $self->{QueryParser};
+   die "I need a QueryParser argument" unless $qp;
 
    # "Fingerprint" the tables.
    my @tables = map {

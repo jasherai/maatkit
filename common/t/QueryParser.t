@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 116;
+use Test::More tests => 126;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -12,8 +12,8 @@ require '../QueryParser.pm';
 use Data::Dumper;
 $Data::Dumper::Indent=1;
 
-my $qr = new QueryRewriter;
 my $qp = new QueryParser;
+my $qr = new QueryRewriter(QueryParser => $qp);
 
 isa_ok($qp, 'QueryParser');
 
@@ -690,56 +690,86 @@ is_deeply(
 # #############################################################################
 # Test query_type().
 # #############################################################################
-is(
-   'select * from foo where id=1',
+is_deeply(
+   $qp->query_type('select * from foo where id=1', $qr),
    {
-      type => 'select',
+      type => 'SELECT',
       rw   => 'read',
    },
    'query_type() select'
 );
-is(
-   'insert into foo values (1, 2)',
+is_deeply(
+   $qp->query_type('/* haha! */ select * from foo where id=1', $qr),
    {
-      type => 'insert',
+      type => 'SELECT',
       rw   => 'read',
    },
-   'query_type() select'
+   'query_type() select with leading /* comment */'
 );
-is(
-   'select * from foo where id=1',
+is_deeply(
+   $qp->query_type('insert into foo values (1, 2)', $qr),
    {
-      type => 'select',
-      rw   => 'read',
+      type => 'INSERT',
+      rw   => 'write',
    },
-   'query_type() select'
+   'query_type() insert'
 );
-is(
-   'select * from foo where id=1',
+is_deeply(
+   $qp->query_type('delete from foo where bar=1', $qr),
    {
-      type => 'select',
-      rw   => 'read',
+      type => 'DELETE',
+      rw   => 'write',
    },
-   'query_type() select'
+   'query_type() delete'
 );
-is(
-   'select * from foo where id=1',
+is_deeply(
+   $qp->query_type('update foo set bar="foo" where 1', $qr),
    {
-      type => 'select',
-      rw   => 'read',
+      type => 'UPDATE',
+      rw   => 'write',
    },
-   'query_type() select'
+   'query_type() update'
 );
-is(
-   'select * from foo where id=1',
+is_deeply(
+   $qp->query_type('truncate table bar', $qr),
    {
-      type => 'select',
-      rw   => 'read',
+      type => 'TRUNCATE TABLE',
+      rw   => 'write',
    },
-   'query_type() select'
+   'query_type() truncate'
 );
-
-exit;
+is_deeply(
+   $qp->query_type('alter table foo add column (i int)', $qr),
+   {
+      type => 'ALTER TABLE',
+      rw   => 'write',
+   },
+   'query_type() alter'
+);
+is_deeply(
+   $qp->query_type('drop table foo', $qr),
+   {
+      type => 'DROP TABLE',
+      rw   => 'write',
+   },
+   'query_type() drop'
+);
+is_deeply(
+   $qp->query_type('show tables', $qr),
+   {
+      type => 'SHOW',
+      rw   => undef,
+   },
+   'query_type() show tables'
+);
+is_deeply(
+   $qp->query_type('show fields from foo', $qr),
+   {
+      type => 'SHOW',
+      rw   => undef,
+   },
+   'query_type() show fields'
+);
 
 # #############################################################################
 # Issue 563: Lock tables is not distilled

@@ -52,6 +52,10 @@ our $has_derived = qr{
 # We treat TRUNCATE as a dds but really it's a data manipulation statement.
 our $data_def_stmts = qr/(?:CREATE|ALTER|TRUNCATE|DROP|RENAME)/i;
 
+# http://dev.mysql.com/doc/refman/5.1/en/sql-syntax-data-manipulation.html
+# Data manipulation statements.
+our $data_manip_stmts = qr/(?:INSERT|UPDATE|DELETE|REPLACE)/i;
+
 sub new {
    my ( $class ) = @_;
    bless {}, $class;
@@ -333,7 +337,21 @@ sub split_subquery {
 }
 
 sub query_type {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, $qr ) = @_;
+   my ($type, undef) = $qr->_distill_verbs($query);
+   my $rw;
+   if ( $type =~ m/^SELECT\b/ ) {
+      $rw = 'read';
+   }
+   elsif ( $type =~ m/^$data_manip_stmts\b/
+           || $type =~ m/^$data_def_stmts\b/  ) {
+      $rw = 'write'
+   }
+
+   return {
+      type => $type,
+      rw   => $rw,
+   }
 }
 
 sub _d {
