@@ -189,8 +189,6 @@ select  last2metric1 = last1metric1, last2time = last1time,
 # Tables
 #    /* write */ SHOW TABLE STATUS FROM `test1` LIKE 'tbl6'\G
 #    /* write */ SHOW CREATE TABLE `test1`.`tbl6`\G
-#    /* write */ SHOW TABLE STATUS FROM `test1` LIKE 'metric11'\G
-#    /* write */ SHOW CREATE TABLE `test1`.`metric11`\G
 insert into test1.tbl6
       (day, tbl5, misccol9type, misccol9, metric11, metric12, secs)
       values
