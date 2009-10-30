@@ -53,17 +53,21 @@ sub header {
    my ($self) = @_;
 
    my ( $rss, $vsz, $user, $system ) = ( 0, 0, 0, 0 );
+   my $result = '';
    eval {
-      my $mem = `ps -o rss,vsz $PID`;
+      my $mem = `ps -o rss,vsz $PID 2>&1`;
       ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
+      ( $user, $system ) = times();
+      $result = sprintf "# %s user time, %s system time, %s rss, %s vsz\n",
+         micro_t( $user,   p_s => 1, p_ms => 1 ),
+         micro_t( $system, p_s => 1, p_ms => 1 ),
+         shorten( ($rss || 0) * 1_024 ),
+         shorten( ($vsz || 0) * 1_024 );
    };
-   ( $user, $system ) = times();
-
-   sprintf "# %s user time, %s system time, %s rss, %s vsz\n",
-      micro_t( $user,   p_s => 1, p_ms => 1 ),
-      micro_t( $system, p_s => 1, p_ms => 1 ),
-      shorten( $rss * 1_024 ),
-      shorten( $vsz * 1_024 );
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+   }
+   return $result;
 }
 
 # Print a report about the global statistics in the EventAggregator.  %opts is a
