@@ -1,0 +1,13 @@
+#!/bin/sh
+
+if [ -z "$1" ]; then
+   echo "Specify a port (e.g. 12346)"
+   exit 1;
+fi
+
+if [ ! -d /tmp/$1/ ]; then
+   echo "/tmp/$1/ does not exist"
+   exit 1;
+fi
+
+/tmp/$1/stop
