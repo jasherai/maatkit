@@ -12,7 +12,7 @@ rpm: dist
 	./rpm-build
 
 clean:
-	rm -rf release release-debian
+	rm -rf release release-debian release-rpm
 
 .PHONY: upload
 upload:
