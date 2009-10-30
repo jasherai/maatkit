@@ -345,7 +345,7 @@ sub make_row_checksum {
 # *   tbl         Table name
 # *   tbl_struct  Struct as returned by TableParser::parse()
 # *   algorithm   Any of @ALGOS
-# *   function    SHA1, MD5, etc
+# *   function    (optional) SHA1, MD5, etc
 # *   crc_wid     Width of the string returned by function
 # *   crc_type    Type of function's result
 # *   opt_slice   (optional) Which slice gets opt_xor (see make_xor_slices()).
@@ -356,12 +356,13 @@ sub make_row_checksum {
 # *   buffer      (optional) Adds SQL_BUFFER_RESULT.
 sub make_checksum_query {
    my ( $self, %args ) = @_;
-   my @required_args = qw(db tbl tbl_struct algorithm function crc_wid crc_type);
+   my @required_args = qw(db tbl tbl_struct algorithm crc_wid crc_type);
    foreach my $arg( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ( $db, $tbl, $tbl_struct, $algorithm,
-        $func, $crc_wid, $crc_type) = @args{@required_args};
+        $crc_wid, $crc_type) = @args{@required_args};
+   my $func = $args{function};
    my $q = $self->{Quoter};
    my $result;
 
