@@ -1,5 +1,7 @@
 Changelog for mk-upgrade:
 
+2009-10-30: version 0.9.3
+
    * Added --[no]compare-query-times.
    * --set-vars did not work (issue 597).
    * Command line options did not override config file options (issue 617).

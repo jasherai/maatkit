@@ -1,5 +1,7 @@
 Changelog for mk-audit:
 
+2009-10-30: version 0.9.11
+
    * --set-vars did not work (issue 597).
 
 2009-08-31: version 0.9.10

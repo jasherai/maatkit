@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2009-10-30: version 1.0.21
+
    * Fixed an infinite loop with the Nibble algorithm (issue 644).
    * Nibble could fail to sync small tables (issue 634).
    * --set-vars did not work (issue 597).

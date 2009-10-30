@@ -1,5 +1,7 @@
 Changelog for mk-loadavg:
 
+2009-10-30: version 0.9.1
+
    * --watch Processlist did not work.
    * Changed --sleep to --interval.
    * --execute-command created zombies/defunct processes (issue 643).

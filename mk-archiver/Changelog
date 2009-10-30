@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+2009-10-30: version 1.0.20
+
    * Added --sleep-coef (issue 540).
    * --primary-key-only on table without a primary key caused error (issue 655).
    * --set-vars did not work (issue 597).

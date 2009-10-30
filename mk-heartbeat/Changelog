@@ -1,5 +1,7 @@
 Changelog for mk-heartbeat:
 
+2009-10-30: version 1.0.19
+
    * Removed the --time long option.  Use --run-time instead.
    * --set-vars did not work (issue 597).
 

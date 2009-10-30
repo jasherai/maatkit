@@ -1,5 +1,7 @@
 Changelog for mk-visual-explain:
 
+2009-10-30: version 1.0.19
+
    * --set-vars did not work (issue 597).
    * Command line options did not override config file options (issue 617).
 

@@ -1,5 +1,7 @@
 Changelog for mk-show-grants:
 
+2009-10-30: version 1.0.20
+
    * Added ability to do --only foo for foo grants on all hosts (issue 551).
    * Added --[no]header.
    * --set-vars did not work (issue 597).

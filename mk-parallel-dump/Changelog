@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+2009-10-30: version 1.0.18
+
    * Removed sets and all set-related options (issue 637).
    * Removed --since (issue 636).
    * Removed dump file compression and --[no]gzip (issue 639).

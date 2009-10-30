@@ -1,5 +1,7 @@
 Changelog for mk-slave-restart:
 
+2009-10-30: version 1.0.18
+
    * --monitor --stop caused error Option maxlength does not exist (issue 662).
    * --set-vars did not work (issue 597).
    * Command line options did not override config file options (issue 617).
