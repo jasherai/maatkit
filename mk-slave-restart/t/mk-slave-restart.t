@@ -5,8 +5,9 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 13;
 
-require '../../common/DSNParser.pm';
+require '../mk-slave-restart';
 require '../../common/Sandbox.pm';
+require '../../common/MaatkitTest.pm';
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
@@ -17,7 +18,20 @@ my $slave_dbh  = $sb->get_dbh_for('slave1')
 
 $sb->create_dbs($master_dbh, ['test']);
 $master_dbh->do('CREATE TABLE test.t (a INT)');
-sleep 1; # wait for that CREATE TABLE to replicate
+my $i = 0;
+MaatkitTest::wait_until(
+   sub {
+      my $r;
+      eval {
+         $r = $slave_dbh->selectrow_arrayref('SHOW TABLES FROM test LIKE "t"');
+      };
+      return 1 if ($r->[0] || '') eq 't';
+      diag('Waiting for CREATE TABLE to replicate...') unless $i++;
+      return 0;
+   },
+   0.5,
+   30,
+);
 
 # Bust replication
 $slave_dbh->do('DROP TABLE test.t');
