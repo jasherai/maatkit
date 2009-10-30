@@ -2691,6 +2691,12 @@ the heartbeat table's timestamp.  The C<REPLACE> statement is a MySQL extension
 to SQL.  This option is useful when you don't know whether the table contains
 any rows or not.
 
+=item --run-time
+
+type: time
+
+Time to run before exiting.
+
 =item --sentinel
 
 type: string; default: /tmp/mk-heartbeat-sentinel
@@ -2756,12 +2762,6 @@ type: string; default: heartbeat
 The table to use for the heartbeat.
 
 Don't specify database.table; use L<"--database"> to specify the database.
-
-=item --run-time
-
-type: time
-
-Time to run before exiting.
 
 =item --update
 

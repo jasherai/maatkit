@@ -7193,14 +7193,6 @@ Print connection information and exit.
 Print out a list of hosts to which mk-table-sync will connect, with all
 the various connection options, and exit.
 
-=item --[no]foreign-key-checks
-
-default: yes
-
-Enable foreign key checks (C<SET FOREIGN_KEY_CHECKS=1>).
-
-Specifying C<--no-foreign-key-checks> will C<SET FOREIGN_KEY_CHECKS=0>.
-
 =item --float-precision
 
 type: int
@@ -7211,6 +7203,14 @@ If you specify this option, FLOAT and DOUBLE columns will be rounded to the
 specified number of digits after the decimal point for the checksum.  This can
 avoid mismatches due to different floating-point representations of
 the same values on different MySQL versions and hardware.
+
+=item --[no]foreign-key-checks
+
+default: yes
+
+Enable foreign key checks (C<SET FOREIGN_KEY_CHECKS=1>).
+
+Specifying C<--no-foreign-key-checks> will C<SET FOREIGN_KEY_CHECKS=0>.
 
 =item --function
 

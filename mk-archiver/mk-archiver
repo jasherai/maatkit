@@ -3871,21 +3871,6 @@ the daemonized instance.  The PID file is removed when the daemonized instance
 exits.  The program checks for the existence of the PID file when starting; if
 it exists and the process with the matching PID exists, the program exits.
 
-=item --port
-
-short form: -P; type: int
-
-Port number to use for connection.
-
-=item --primary-key-only
-
-Primary key columns only.
-
-A shortcut for specifying L<"--columns"> with the primary key columns.  This is
-an efficiency if you just want to purge rows; it avoids fetching the entire row,
-when only the primary key columns are needed for C<DELETE> statements.  See also
-L<"--purge">.
-
 =item --plugin
 
 type: string
@@ -3903,6 +3888,21 @@ accessing command-line options (example: C<$o->get('purge');>).
 
 The C<statistics(\%stats, $time)> method gets a hashref of the statistics
 collected by the archiving job, and the time the whole job started.
+
+=item --port
+
+short form: -P; type: int
+
+Port number to use for connection.
+
+=item --primary-key-only
+
+Primary key columns only.
+
+A shortcut for specifying L<"--columns"> with the primary key columns.  This is
+an efficiency if you just want to purge rows; it avoids fetching the entire row,
+when only the primary key columns are needed for C<DELETE> statements.  See also
+L<"--purge">.
 
 =item --progress
 

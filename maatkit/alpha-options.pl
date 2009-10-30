@@ -32,12 +32,19 @@ foreach my $prog ( @progs ) {
    close $fh;
 
    my @sorted = sort @opts;
+   my $fmt    = "%-20s %-20s\n";
    OPT:
    foreach my $opt( 0 .. $#sorted ) {
       if ( $sorted[$opt] ne $opts[$opt] ) {
-         print "$program has unsorted options\n";
-         map { printf "%-20s %-20s\n", $sorted[$_], $opts[$_] } (0 .. $#sorted);
+         printf "$program has unsorted options\n";
+         printf $fmt, 'CORRECT', 'ACTUAL';
+         printf $fmt, '=======', '======';
+         map { printf $fmt, $sorted[$_], $opts[$_]; }
+         grep { $sorted[$_] ne $opts[$_] }
+         (0 .. $#sorted);
+         print "\n";
          last OPT;
       }
+      
    }
 }

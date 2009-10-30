@@ -3091,6 +3091,12 @@ after this number are ignored, but sessions split before this number will
 continue to have their queries split even if those queries appear near the end
 of the log and after this number has been reached.
 
+=item --only-select
+
+group: Play
+
+Play only SELECT and USE queries; ignore all others.
+
 =item --password
 
 short form: -p; type: string; group: Play
@@ -3110,18 +3116,6 @@ the script dies; or, if there is no process running with that PID, then the
 script overwrites the file with its own PID and starts; else, if the file
 contains no PID, then the script dies.
 
-=item --port
-
-short form: -P; type: int; group: Play
-
-Port number to use for connection.
-
-=item --only-select
-
-group: Play
-
-Play only SELECT and USE queries; ignore all others.
-
 =item --play
 
 type: string; group: Play
@@ -3132,6 +3126,12 @@ The argument to play must be a commaxn-separated list of session files
 created by L<"--split"> or a directory.  If the argument is a directory,
 ALL files in that directory will be played.
 
+=item --port
+
+short form: -P; type: int; group: Play
+
+Port number to use for connection.
+
 =item --print
 
 group: Play
@@ -3141,6 +3141,10 @@ Print queries instead of playing them; requires L<"--play">.
 You must also specify L<"--play"> with L<"--print">.  Although the queries
 will not be executed, L<"--play"> is required to specify which session files to
 read.
+
+=item --quiet
+
+Do not print anything.
 
 =item --session-files
 
@@ -3161,9 +3165,6 @@ files may yield roughly eight 2G session files.
 
 See also L<"--max-sessions">.
 
-=item --quiet
-
-Do not print anything.
 
 =item --set-vars
 
