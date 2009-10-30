@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Gathering RSS and VSZ didn't work on Solaris (issue 619).
    * Tool died on unknown binary log event types (issue 606).
    * Binlogs could cause "unintended interpolation of string" error (issue 607).
    * --set-vars did not work (issue 597).
