@@ -7256,6 +7256,23 @@ sub main {
             }
 
             # ###############################################################
+            # Get tables for either --for-explain or --table-access.
+            # ###############################################################
+            my ($default_db) = $sample->{db}       ? $sample->{db}
+                             : $stats->{db}->{unq} ? keys %{$stats->{db}->{unq}}
+                             :                       undef;
+            my @tables;
+            if ( $o->get('for-explain') || $o->get('table-access') ){
+               @tables = extract_tables($samp_query, $default_db);
+               if ( $o->get('table-access') ) {
+                  push @table_access, {
+                     query  => $samp_query,
+                     tables => [ @tables ],
+                  };
+               }
+            }
+
+            # ###############################################################
             # Print the standard query analysis report.
             # ###############################################################
             if ( $o->get('report')
@@ -7288,22 +7305,6 @@ sub main {
                   }
                }
 
-            # ###############################################################
-            # Get tables for either --for-explain or --table-access.
-            # ###############################################################
-            my ($db_for_show) = $sample->{db} ? $sample->{db}
-                              : keys %{$stats->{db}->{unq}};
-            my @tables;
-            if ( $o->get('for-explain') || $o->get('table-access') ){
-               @tables = extract_tables($samp_query, $db_for_show);
-               if ( $o->get('table-access') ) {
-                  push @table_access, {
-                     query  => $samp_query,
-                     tables => [ @tables ],
-                  };
-               }
-            }
-
             if ( $groupby eq 'fingerprint' ) {
                # Shorten it if necessary (issue 216 and 292).
                $samp_query = $qr->shorten($samp_query, $o->get('shorten'))
@@ -7322,7 +7323,7 @@ sub main {
                      }
                      else {
                         print "# EXPLAIN\n$samp_query\\G\n"; 
-                        print_explain($ep_dbh, $samp_query, $db_for_show);
+                        print_explain($ep_dbh, $samp_query, $default_db);
                      }
                   }
                   else {
@@ -8725,6 +8726,27 @@ Socket file to use for connection.
 
 Print table access report.
 
+The table access report shows which tables each unique query accesses
+and if the access is a read or write.  This information is printed by default
+with L<"--[no]for-explain"> in the standard query report, like:
+
+  # Tables
+  #    /* write */ SHOW TABLE STATUS FROM `d` LIKE 'foo'\G
+  #    /* write */ SHOW CREATE TABLE `d`.`foo`\G
+  create table foo (i int)\G
+
+If you want to see only a table access report, specify this option and
+C<--no-report>.  Then only a table access report like this will be printed:
+
+  UPDATE tbl SET foo='bar' WHERE foo IS NULL
+  write `baz`.`tbl`
+  SELECT * FROM new_tbl WHERE d < '2009-01-01 12:12:10'
+  read `baz`.`new_tbl`
+  INSERT INTO tbl VALUES (1, 2, 3)
+  write `baz`.`tbl`
+
+See also L<"--unique-table-access">.
+
 =item --tcpdump-errors
 
 type: string
@@ -8835,7 +8857,24 @@ memcached uses port 11211 by default.
 
 =item --unique-table-access
 
-Show only unique tables and no queries for L<"--table-access">.
+Show only unique tables and no queries in the L<"--table-access"> report.
+
+If you simply want a list of all the unique tables that are accessed by all
+the queries, specify C<--no-report --table-access --unique-table-access>.
+The unique table access report looks like:
+
+  write `baz`.`tbl`
+  read `baz`.`new_tbl`
+  write `baz`.`tbl3`
+  write `db6`.`tbl6`
+
+If you pipe the output to L<sort>, the read and write tables will be grouped
+together and sorted alphabetically:
+
+  read `baz`.`new_tbl`
+  write `baz`.`tbl`
+  write `baz`.`tbl3`
+  write `db6`.`tbl6`
 
 =item --until
 
