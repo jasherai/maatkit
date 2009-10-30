@@ -1,7 +1,11 @@
 #!/usr/bin/perl
 
 # Purpose: bump version number of all tools.  With the --new option, only bumps
-# the version number of tools that have an "unfinished" Changelog.
+# the version number of tools that have an "unfinished" Changelog, i.e. those
+# that have had changes since last release.  Without --new, adds the comment
+# to every Changelog.  This script used to then svn commit, but it no longer
+# does this automatically--you should svn commit from /trunk after bumping the
+# version.
 
 use strict;
 use warnings FATAL => 'all';
@@ -9,8 +13,17 @@ use warnings FATAL => 'all';
 my $new = grep { m/--new/ } @ARGV;
 @ARGV = grep { $_ !~ m/--new/ } @ARGV;
 
-my $comment = shift @ARGV;
-die "Comment please?" unless $comment || $new;
+my $comment;
+if ( !$new ) {
+   $comment = shift @ARGV;
+   die "Please specify a comment to add to each Changelog.\n"
+      . "If you're doing a new release, then run bump-version --new.\n"
+      . "Remember to svn commit from trunk/ when done.\n"
+      unless $comment || $new;
+}
+else {
+   print "Bumping versions in Changelogs...\n";
+}
 
 my @packages = @ARGV;
 if ( !@packages ) {
@@ -43,3 +56,6 @@ foreach my $package ( @packages ) {
    # Add the version number
    `sed -i -e "2a \$(date +%F): version $pre$ver" ../$package/Changelog`;
 }
+
+print "Remember to svn commit from trunk/.\n";
+exit;
