@@ -8,7 +8,9 @@ bt-aggregate - Aggregate and print GDB backtraces.
 
 =head1 SYNOPSIS
 
-  bt-aggregate /path/to/backtrace
+  gdb -ex "set pagination 0" -ex "thread apply all bt" --batch \
+    -p $(pidof mysqld) > backtrace.txt
+  bt-aggregate backtrace.txt
 
 =head1 OPTIONS
 
