@@ -11,10 +11,10 @@ print `svn up ../../`;
 
 # Don't release if there are any uncommitted changes in the source.
 chomp ( my $svnst = `svn st ../` );
-#if ( $svnst =~ m/\S/ ) {
-#   print "Not releasing; you have uncommitted changes:\n$svnst\n";
-#   exit(1);
-#}
+if ( $svnst =~ m/\S/ ) {
+   print "Not releasing; you have uncommitted changes:\n$svnst\n";
+   exit(1);
+}
 
 # Don't release if we use the construct $#{@$array} anywhere
 chomp ( my $bad = `grep -r '#{' ../mk-*/mk-*` );
