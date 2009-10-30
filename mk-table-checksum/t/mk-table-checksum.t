@@ -60,23 +60,28 @@ SKIP: {
    skip 'MySQL version < 4.1', 10
       unless $vp->version_ge($master_dbh, '4.1.0');
 
-   $output = `/tmp/12345/use -N -e 'select fnv_64(1)' 2>&1`;
-   is($output + 0, -6320923009900088257, 'FNV_64(1)');
+   eval { $master_dbh->do('select fnv_64(1)') };
+   SKIP: {
+      skip 'No FNV_64 function installed', 5 if $EVAL_ERROR;
 
-   $output = `/tmp/12345/use -N -e 'select fnv_64("hello, world")' 2>&1`;
-   is($output + 0, 6062351191941526764, 'FNV_64(hello, world)');
+      $output = `/tmp/12345/use -N -e 'select fnv_64(1)' 2>&1`;
+      is($output + 0, -6320923009900088257, 'FNV_64(1)');
+
+      $output = `/tmp/12345/use -N -e 'select fnv_64("hello, world")' 2>&1`;
+      is($output + 0, 6062351191941526764, 'FNV_64(hello, world)');
+
+      $output = `$cmd --function FNV_64 --checksum --algorithm ACCUM 2>&1`;
+      like($output, qr/DD2CD41DB91F2EAE/, 'FNV_64 ACCUM' );
+
+      $output = `$cmd --function CRC32 --checksum --algorithm BIT_XOR 2>&1`;
+      like($output, qr/83dcefb7/, 'CRC32 BIT_XOR' );
+
+      $output = `$cmd --function FNV_64 --checksum --algorithm BIT_XOR 2>&1`;
+      like($output, qr/a84792031e4ff43f/, 'FNV_64 BIT_XOR' );
+   };
 
    $output = `$cmd --function CRC32 --checksum --algorithm ACCUM 2>&1`;
    like($output, qr/00000001E9F5DC8E/, 'CRC32 ACCUM' );
-
-   $output = `$cmd --function FNV_64 --checksum --algorithm ACCUM 2>&1`;
-   like($output, qr/DD2CD41DB91F2EAE/, 'FNV_64 ACCUM' );
-
-   $output = `$cmd --function CRC32 --checksum --algorithm BIT_XOR 2>&1`;
-   like($output, qr/83dcefb7/, 'CRC32 BIT_XOR' );
-
-   $output = `$cmd --function FNV_64 --checksum --algorithm BIT_XOR 2>&1`;
-   like($output, qr/a84792031e4ff43f/, 'FNV_64 BIT_XOR' );
 
    $output = `$cmd --function sha1 --checksum --algorithm ACCUM 2>&1`;
    like($output, qr/9c1c01dc3ac1445a500251fc34a15d3e75a849df/, 'SHA1 ACCUM' );
