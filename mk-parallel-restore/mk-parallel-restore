@@ -3059,9 +3059,8 @@ mk-parallel-restore writes and modifies data unless the L<"--dry-run"> option
 is used.  Restore operations may be replicated unless C<--no-bin-log> is
 given, so be careful when restoring on a master.  See L<"--[no]bin-log">.
 
-At the time of this release, there is a bug which may cause an error on slaves,
-a bug which prevents mk-parallel-restore from creating tables with foreign key
-constraints, and an unverified infinite loop when using L<"--[no]resume">.
+At the time of this release, we know of no bugs that could cause serious harm
+to users.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

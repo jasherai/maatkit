@@ -4084,9 +4084,8 @@ user.  Here is an example of how to grant the necessary privileges:
 If only L<"--print"> is given, then mk-slave-prefetch will only read and print
 information.
 
-At the time of this release, there are bugs parsing certain INSERT statements,
-a bug caused by Rotate events, a bug which causes MySQL's relay-log option to be
-ignored, and a bug that causes L<"--set-vars"> to be ignored.
+At the time of this release, there are bugs parsing certain INSERT statements
+and a bug which causes MySQL's relay-log option to be ignored.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

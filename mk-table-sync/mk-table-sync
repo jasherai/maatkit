@@ -6797,8 +6797,8 @@ L<"--execute">.
 Be careful when using mk-table-sync in any master-master setup.  Loss of
 data can occur if the script is not used correctly.
 
-At the time of this release, there is a bug that causes impossible WHERE
-clauses and a bug replicating DELETE statements.
+At the time of this release, there is a bug that causes invalid SQL when
+syncing columns with binary data.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

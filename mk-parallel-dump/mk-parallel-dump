@@ -4135,9 +4135,8 @@ If you use mk-parallel-dump to run C<mysqldump>, any --password (-p) used for
 C<mysqldump> will be visible to other users in C<ps>.  Use C<~/.my.cnf> instead
 to provide the password for C<mysqldump>.
 
-At the time of this release, there is a bug which prevents certain tables from
-being dumped and a bug which may cause mk-parallel-dump to wait forever for
-child processes to finish.
+At the time of this release, there is a bug which may cause mk-parallel-dump to
+wait forever for child processes to finish.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

@@ -7669,8 +7669,7 @@ usage.
 
 At the time of this release, there is a bug with L<"--processlist"> and
 delayed replication threads, a bug causing certain queries to not be
-rewritten correctly as a SELECT, a bug which causes crashes on Solaris and
-OpenBSD, and a bug which causes a repeated error message.
+rewritten correctly as a SELECT, and a bug which causes crashes on OpenBSD.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
