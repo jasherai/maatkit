@@ -55,7 +55,7 @@ sub header {
    my ( $rss, $vsz, $user, $system ) = ( 0, 0, 0, 0 );
    my $result = '';
    eval {
-      my $mem = `ps -o rss,vsz $PID 2>&1`;
+      my $mem = `ps -o rss,vsz -p $PID 2>&1`;
       ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
       ( $user, $system ) = times();
       $result = sprintf "# %s user time, %s system time, %s rss, %s vsz\n",
