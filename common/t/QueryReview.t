@@ -27,7 +27,7 @@ require '../OptionParser.pm';
 my $qr = new QueryRewriter();
 my $lp = new SlowLogParser;
 my $q  = new Quoter();
-my $tp = new TableParser();
+my $tp = new TableParser(Quoter => $q);
 my $du = new MySQLDump();
 my $opt_parser = new OptionParser( description => 'hi' );
 my $tbl_struct = $tp->parse(

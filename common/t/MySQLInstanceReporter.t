@@ -30,10 +30,10 @@ if ( !defined $msandbox_basedir || !-d $msandbox_basedir ) {
 my $cmd = "$msandbox_basedir/bin/mysqld --defaults-file=/tmp/12345/my.sandbox.cnf --basedir=/usr --datadir=/tmp/12345/data --pid-file=/tmp/12345/data/mysql_sandbox12345.pid --skip-external-locking --port=12345 --socket=/tmp/12345/mysql_sandbox12345.sock --long-query-time=3";
 
 my $mi = new MySQLInstance($cmd);
-my $tp = new TableParser();
+my $q  = new Quoter();
+my $tp = new TableParser(Quoter => $q);
 my $du = new MySQLDump();
 my $vp = new VersionParser();
-my $q  = new Quoter();
 my $sd = new SchemaDiscover(du=>$du, q=>$q, tp=>$tp, vp=>$vp);
 
 $mi->load_sys_vars($dbh);

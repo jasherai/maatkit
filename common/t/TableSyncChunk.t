@@ -42,9 +42,9 @@ my $mysql = $sb->_use_for('master');
 
 diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
-my $tp = new TableParser();
-my $du = new MySQLDump();
 my $q  = new Quoter();
+my $tp = new TableParser(Quoter => $q);
+my $du = new MySQLDump();
 my $vp = new VersionParser();
 my $ms = new MasterSlave();
 my $chunker    = new TableChunker( Quoter => $q, MySQLDump => $du );

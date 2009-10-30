@@ -83,7 +83,7 @@ my ( $d, $s );
 
 my $q  = new Quoter();
 my $du = new MySQLDump();
-my $tp = new TableParser();
+my $tp = new TableParser(Quoter => $q);
 my $dp = new DSNParser();
 
 # Connect to sandbox now to make sure it's running.

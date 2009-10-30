@@ -74,7 +74,7 @@ SKIP: {
    my $s  = new MockSync();
    my $q  = new Quoter();
    my $du = new MySQLDump();
-   my $tp = new TableParser();
+   my $tp = new TableParser(Quoter => $q);
    my $dp = new DSNParser();
 
    # Connect to sandbox now to make sure it's running.

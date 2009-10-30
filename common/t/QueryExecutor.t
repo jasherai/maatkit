@@ -178,8 +178,8 @@ is_deeply(
 # #############################################################################
 
 my $du = new MySQLDump();
-my $tp = new TableParser();
 my $q  = new Quoter();
+my $tp = new TableParser(Quoter => $q);
 my %modules = (
    MySQLDump   => $du,
    TableParser => $tp,

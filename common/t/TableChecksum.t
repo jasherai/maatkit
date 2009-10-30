@@ -18,9 +18,9 @@ my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 $sb->create_dbs($dbh, ['test']);
 
-my $tp = new TableParser();
-my $vp = new VersionParser();
 my $q  = new Quoter();
+my $tp = new TableParser(Quoter => $q);
+my $vp = new VersionParser();
 my $du = new MySQLDump();
 my $c  = new TableChecksum(Quoter=>$q, VersionParser=>$vp);
 

@@ -19,8 +19,8 @@ my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 my $q  = new Quoter();
-my $tp = new TableParser();
-my $ks = new KeySize(q=>$q);
+my $tp = new TableParser(Quoter => $q);
+my $ks = new KeySize(Quoter=>$q);
 
 my $tbl;
 my $struct;

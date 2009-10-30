@@ -17,7 +17,7 @@ require "../Sandbox.pm";
 my $f;
 my %found;
 my $q  = new Quoter();
-my $p  = new TableParser();
+my $p  = new TableParser(Quoter => $q);
 my $d  = new MySQLDump();
 my $dp = new DSNParser();
 

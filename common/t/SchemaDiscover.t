@@ -21,7 +21,7 @@ require '../VersionParser.pm';
 
 my $du = new MySQLDump();
 my $q  = new Quoter();
-my $tp = new TableParser();
+my $tp = new TableParser(Quoter => $q);
 my $vp = new VersionParser();
 
 my $sd = new SchemaDiscover(
