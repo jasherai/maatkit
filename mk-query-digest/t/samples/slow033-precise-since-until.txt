@@ -37,7 +37,6 @@ SELECT * FROM bar\G
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
-# Databases              0
 # Time range 2009-07-26 11:19:28 to 2009-07-26 11:19:28
 # bytes         33      17      17      17      17      17       0      17
 # Query_time distribution

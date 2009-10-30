@@ -226,7 +226,6 @@ VALUES ('', 'Exact')\G
 # Rows exam      0       0       0       0       0       0       0       0
 # Users                  1 [SQL_SLAVE]
 # Hosts                  1
-# Databases              0
 # Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
 # bytes          0       5       5       5       5       5       0       5
 # Merge pas      0       0       0       0       0       0       0       0

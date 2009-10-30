@@ -7212,14 +7212,6 @@ sub main {
             my $stats         = $ea->results->{classes}->{$item};
             my $sample        = $ea->results->{samples}->{$item};
             my $samp_query    = $sample->{arg} || '';
-            my ($db_for_show) = $sample->{db} ? $sample->{db}
-                              : keys %{$stats->{db}->{unq}};
-
-            if ( $groupby eq 'fingerprint' ) {
-               # Shorten it if necessary (issue 216 and 292).
-               $samp_query = $qr->shorten($samp_query, $o->get('shorten'))
-                  if $o->get('shorten');
-            }
 
             # ###############################################################
             # Save the profile for this item.  It's printed later, maybe.
@@ -7235,20 +7227,6 @@ sub main {
             );
             $total_r += $profile{r};
             push @profiles, \%profile;
-
-            # ###############################################################
-            # Save table info for item.
-            # ###############################################################
-            my @tables;
-            if ( $o->get('for-explain') || $o->get('table-access') ){
-               @tables = extract_tables($samp_query, $db_for_show);
-               if ( $o->get('table-access') ) {
-                  push @table_access, {
-                     query  => $samp_query,
-                     tables => [ @tables ],
-                  };
-               }
-            }
 
             # ###############################################################
             # Prepare for --review and --review-history.
@@ -7310,6 +7288,27 @@ sub main {
                   }
                }
 
+            # ###############################################################
+            # Get tables for either --for-explain or --table-access.
+            # ###############################################################
+            my ($db_for_show) = $sample->{db} ? $sample->{db}
+                              : keys %{$stats->{db}->{unq}};
+            my @tables;
+            if ( $o->get('for-explain') || $o->get('table-access') ){
+               @tables = extract_tables($samp_query, $db_for_show);
+               if ( $o->get('table-access') ) {
+                  push @table_access, {
+                     query  => $samp_query,
+                     tables => [ @tables ],
+                  };
+               }
+            }
+
+            if ( $groupby eq 'fingerprint' ) {
+               # Shorten it if necessary (issue 216 and 292).
+               $samp_query = $qr->shorten($samp_query, $o->get('shorten'))
+                  if $o->get('shorten');
+            }
                # Print the query fingerprint.
                if ( $groupby eq 'fingerprint' && $o->get('fingerprints') ) {
                   print "# Fingerprint\n#    $item\n";

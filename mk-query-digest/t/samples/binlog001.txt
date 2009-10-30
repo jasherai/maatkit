@@ -115,7 +115,6 @@ select  o.tbl2 = e.tbl2,
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         16       1
 # Exec time     16  20664s  20664s  20664s  20664s  20664s       0  20664s
-# Databases              0
 # Time range 2007-12-07 12:02:50 to 2007-12-07 12:02:50
 # @@session    100       8       8       8       8       8       0       8
 # @@session    100       8       8       8       8       8       0       8
