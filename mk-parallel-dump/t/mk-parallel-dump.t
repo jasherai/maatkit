@@ -474,12 +474,17 @@ SKIP: {
    # This test will fail if you're using an old version of mysqldump that
    # doesn't add "Dump completed" at the end.  And the next test will pass
    # when it shouldn't.
-   $output = `grep 'Dump completed' $basedir/sakila/actor.000000.sql`;
-   like(
-      $output,
-      qr/Dump completed/,
-      'Dump completed for good table (issue 15)'
-   );
+   SKIP: {
+      # New dump files no longer have any mysqldump fluff, so we'll need
+      # to conjure a new way to test this.
+      skip 'No longer valid with new dump files', 1 if 1;
+      $output = `grep 'Dump completed' $basedir/sakila/actor.000000.sql`;
+      like(
+         $output,
+         qr/Dump completed/,
+         'Dump completed for good table (issue 15)'
+      );
+   };
 
    $output = `grep 'Dump completed' $basedir/sakila/film_text.000000.sql`;
    is(
