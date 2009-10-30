@@ -863,7 +863,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4874
+# Quoter package 4943
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -888,18 +888,19 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, @vals ) = @_;
-   return join(', ',
-      map {
-         if ( defined $_ ) {
-            $_ =~ s/(['\\])/\\$1/g;
-            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
-         }
-         else {
-            'NULL';
-         }
-      } @vals
-   );
+   my ( $self, $val, $is_numeric ) = @_;
+
+   return 'NULL' unless defined $val;  # undef = NULL
+   return "''" if $val eq '';          # blank string = ''
+
+   if ( !defined $is_numeric ) {
+      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
+   }
+
+   return $val if $is_numeric;
+
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
 }
 
 sub split_unquote {
@@ -917,7 +918,7 @@ sub literal_like {
    my ( $self, $like ) = @_;
    return unless $like;
    $like =~ s/([%_])/\\$1/g;
-   return $like;
+   return "'$like'";
 }
 
 1;
@@ -1707,7 +1708,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4905
+# TableParser package 4931
 # ###########################################################################
 package TableParser;
 
@@ -1876,8 +1877,8 @@ sub check_table {
    my $db_tbl = $q->quote($db, $tbl);
    MKDEBUG && _d('Checking', $db_tbl);
 
-   my $literal_tbl = $q->literal_like($tbl);
-   my $sql = "SHOW TABLES FROM " . $q->quote($db) . " LIKE '$literal_tbl'";
+   my $sql = "SHOW TABLES FROM " . $q->quote($db)
+           . ' LIKE ' . $q->literal_like($tbl);
    MKDEBUG && _d($sql);
    my $row;
    eval {

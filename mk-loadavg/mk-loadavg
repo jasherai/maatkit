@@ -2703,22 +2703,15 @@ sub new {
    return bless $self, $class;
 }
 
-# Given an arrayref of processes ($proclist), returns an hashref of
-# time and counts aggregates for User, Host, db, Command and State.
-# See t/ProcesslistAggregator.t for examples.
-# The $proclist arg is usually the return val of:
-#    $dbh->selectall_arrayref('SHOW PROCESSLIST', { Slice => {} } );
 sub aggregate {
    my ( $self, $proclist ) = @_;
    my $aggregate = {};
    foreach my $proc ( @{$proclist} ) {
       foreach my $field ( keys %{ $proc } ) {
-         # Don't aggregate these fields.
          next if $field eq 'Id';
          next if $field eq 'Info';
          next if $field eq 'Time';
 
-         # Format the field's value a little.
          my $val  = $proc->{ $field };
             $val  = $self->{undef_val} if !defined $val;
             $val  = lc $val if ( $field eq 'Command' || $field eq 'State' );
@@ -2727,7 +2720,6 @@ sub aggregate {
          my $time = $proc->{Time};
             $time = 0 if $time eq 'NULL';
 
-         # Do this last or else $proc->{$field} won't match.
          $field = lc $field;
 
          $aggregate->{ $field }->{ $val }->{time}  += $time;

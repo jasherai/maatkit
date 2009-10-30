@@ -2521,7 +2521,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 4807
+# TableChunker package 4960
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2740,6 +2740,8 @@ sub size_to_rows {
    my $q  = $self->{Quoter};
    my $du = $self->{MySQLDump};
 
+   my ($n_rows, $avg_row_length);
+
    my ( $num, $suffix ) = $chunk_size =~ m/^(\d+)([MGk])?$/;
    if ( $suffix ) { # Convert to bytes.
       $chunk_size = $suffix eq 'k' ? $num * 1_024
@@ -2747,17 +2749,22 @@ sub size_to_rows {
                   :                  $num * 1_024 * 1_024 * 1_024;
    }
    elsif ( $num ) {
-      return $num;
+      $n_rows = $num;
    }
    else {
       die "Invalid chunk size $chunk_size; must be an integer "
          . "with optional suffix kMG";
    }
 
-   my @status = $du->get_table_status($dbh, $q, $db);
-   my ($status) = grep { $_->{name} eq $tbl } @status;
-   my $avg_row_length = $status->{avg_row_length};
-   return $avg_row_length ? ceil($chunk_size / $avg_row_length) : undef;
+   if ( $suffix || $args{avg_row_length} ) {
+      my ($status) = $du->get_table_status($dbh, $q, $db, $tbl);
+      $avg_row_length = $status->{avg_row_length};
+      if ( !defined $n_rows ) {
+         $n_rows = $avg_row_length ? ceil($chunk_size / $avg_row_length) : undef;
+      }
+   }
+
+   return wantarray ? ($n_rows, $avg_row_length) : $n_rows;
 }
 
 sub get_range_statistics {
@@ -2913,7 +2920,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 4757
+# TableChecksum package 4996
 # ###########################################################################
 package TableChecksum;
 
@@ -3181,12 +3188,13 @@ sub make_row_checksum {
 
 sub make_checksum_query {
    my ( $self, %args ) = @_;
-   my @required_args = qw(db tbl tbl_struct algorithm function crc_wid crc_type);
+   my @required_args = qw(db tbl tbl_struct algorithm crc_wid crc_type);
    foreach my $arg( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ( $db, $tbl, $tbl_struct, $algorithm,
-        $func, $crc_wid, $crc_type) = @args{@required_args};
+        $crc_wid, $crc_type) = @args{@required_args};
+   my $func = $args{function};
    my $q = $self->{Quoter};
    my $result;
 

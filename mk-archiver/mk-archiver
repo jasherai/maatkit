@@ -864,19 +864,29 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4397
+# TableParser package 4931
 # ###########################################################################
 package TableParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+
 sub new {
-   my ( $class ) = @_;
-   return bless {}, $class;
+   my ( $class, %args ) = @_;
+   my @required_args = qw(Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 
@@ -1012,27 +1022,69 @@ sub find_possible_keys {
    }
 }
 
-sub table_exists {
-   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
-   my $result = 0;
+sub check_table {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbl) = @args{@required_args};
+   my $q      = $self->{Quoter};
    my $db_tbl = $q->quote($db, $tbl);
-   my $sql    = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d('Checking', $db_tbl);
+
+   my $sql = "SHOW TABLES FROM " . $q->quote($db)
+           . ' LIKE ' . $q->literal_like($tbl);
+   MKDEBUG && _d($sql);
+   my $row;
+   eval {
+      $row = $dbh->selectrow_arrayref($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
+   }
+   if ( !$row->[0] || $row->[0] ne $tbl ) {
+      MKDEBUG && _d('Table does not exist');
+      return 0;
+   }
+
+   MKDEBUG && _d('Table exists; no privs to check');
+   return 1 unless $args{all_privs};
+
+   $sql = "SHOW FULL COLUMNS FROM $db_tbl";
    MKDEBUG && _d($sql);
    eval {
-      my $sth = $dbh->prepare($sql);
-      $sth->execute();
-      my @columns = @{$sth->fetchall_arrayref({})};
-      if ( $can_insert ) {
-         $result = grep { ($_->{Privileges} || '') =~ m/insert/ } @columns;
-      }
-      else {
-         $result = 1;
-      }
+      $row = $dbh->selectrow_hashref($sql);
    };
-   if ( MKDEBUG && $EVAL_ERROR ) {
-      _d($EVAL_ERROR);
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
    }
-   return $result;
+   if ( !scalar keys %$row ) {
+      MKDEBUG && _d('Table has no columns:', Dumper($row));
+      return 0;
+   }
+   my $privs = $row->{privileges} || $row->{Privileges};
+
+   $sql = "DELETE FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d($sql);
+   eval {
+      $dbh->do($sql);
+   };
+   my $can_delete = $EVAL_ERROR ? 0 : 1;
+
+   MKDEBUG && _d('User privs on', $db_tbl, ':', $privs,
+      ($can_delete ? 'delete' : ''));
+
+   if ( !($privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/
+          && $can_delete) ) {
+      MKDEBUG && _d('User does not have all privs');
+      return 0;
+   }
+
+   MKDEBUG && _d('User has all privs');
+   return 1;
 }
 
 sub get_engine {
@@ -1053,7 +1105,8 @@ sub get_keys {
 
       next KEY if $key =~ m/FOREIGN/;
 
-      MKDEBUG && _d('Parsed key:', $key);
+      my $key_ddl = $key;
+      MKDEBUG && _d('Parsed key:', $key_ddl);
 
       if ( $engine !~ m/MEMORY|HEAP/ ) {
          $key =~ s/USING HASH/USING BTREE/;
@@ -1090,6 +1143,7 @@ sub get_keys {
          is_unique    => $unique,
          is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
          is_col       => { map { $_ => 1 } @cols },
+         ddl          => $key_ddl,
       };
 
       if ( $engine =~ m/InnoDB/i && !$clustered_key ) {
@@ -1139,6 +1193,40 @@ sub remove_auto_increment {
    my ( $self, $ddl ) = @_;
    $ddl =~ s/(^\).*?) AUTO_INCREMENT=\d+\b/$1/m;
    return $ddl;
+}
+
+sub remove_secondary_indexes {
+   my ( $self, $ddl ) = @_;
+   my $sec_indexes_ddl;
+   my $tbl_struct = $self->parse($ddl);
+
+   if ( ($tbl_struct->{engine} || '') =~ m/InnoDB/i ) {
+      my $clustered_key = $tbl_struct->{clustered_key};
+      $clustered_key  ||= '';
+
+      my @sec_indexes   = map {
+         my $key_def = $_->{ddl};
+         $key_def =~ s/([\(\)])/\\$1/g;
+         $ddl =~ s/\s+$key_def//;
+         $_->{ddl};
+      }
+      grep { $_->{name} ne $clustered_key }
+      values %{$tbl_struct->{keys}};
+      MKDEBUG && _d('Secondary indexes:', Dumper(\@sec_indexes));
+
+      if ( @sec_indexes ) {
+         $sec_indexes_ddl = join(' ', @sec_indexes);
+         $sec_indexes_ddl =~ s/,$//;
+      }
+
+      $ddl =~ s/,(\n\) )/$1/s;
+   }
+   else {
+      MKDEBUG && _d('Not removing secondary indexes from',
+         $tbl_struct->{engine}, 'table');
+   }
+
+   return $ddl, $sec_indexes_ddl, $tbl_struct;
 }
 
 sub _d {
@@ -1542,7 +1630,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 3186
+# Quoter package 4943
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1567,18 +1655,19 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, @vals ) = @_;
-   return join(', ',
-      map {
-         if ( defined $_ ) {
-            $_ =~ s/(['\\])/\\$1/g;
-            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
-         }
-         else {
-            'NULL';
-         }
-      } @vals
-   );
+   my ( $self, $val, $is_numeric ) = @_;
+
+   return 'NULL' unless defined $val;  # undef = NULL
+   return "''" if $val eq '';          # blank string = ''
+
+   if ( !defined $is_numeric ) {
+      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
+   }
+
+   return $val if $is_numeric;
+
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
 }
 
 sub split_unquote {
@@ -1592,6 +1681,13 @@ sub split_unquote {
    return ($db, $tbl);
 }
 
+sub literal_like {
+   my ( $self, $like ) = @_;
+   return unless $like;
+   $like =~ s/([%_])/\\$1/g;
+   return "'$like'";
+}
+
 1;
 
 # ###########################################################################
@@ -1599,7 +1695,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 4610
+# TableNibbler package 4734
 # ###########################################################################
 package TableNibbler;
 
@@ -1611,26 +1707,35 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   return bless {}, shift;
+   my ( $class, %args ) = @_;
+   my @required_args = qw(TableParser Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 sub generate_asc_stmt {
    my ( $self, %args ) = @_;
+   my @required_args = qw(tbl_struct index);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my ($tbl_struct, $index) = @args{@required_args};
+   my @cols = $args{cols}  ? @{$args{cols}} : @{$tbl_struct->{cols}};
+   my $q    = $self->{Quoter};
 
-   my $tbl  = $args{tbl};
-   my @cols = $args{cols} ? @{$args{cols}} : @{$tbl->{cols}};
-   my $q    = $args{quoter};
+   die "Index '$index' does not exist in table"
+      unless exists $tbl_struct->{keys}->{$index};
 
-   my @asc_cols;
+   my @asc_cols = @{$tbl_struct->{keys}->{$index}->{cols}};
    my @asc_slice;
 
-   my $index = $args{parser}->find_best_index($tbl, $args{index});
-   die "Cannot find an ascendable index in table" unless $index;
-
-   @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
+   @asc_cols = @{$tbl_struct->{keys}->{$index}->{cols}};
    MKDEBUG && _d('Will ascend index', $index);
    MKDEBUG && _d('Will ascend columns', join(', ', @asc_cols));
-   if ( $args{ascfirst} ) {
+   if ( $args{asc_first} ) {
       @asc_cols = $asc_cols[0];
       MKDEBUG && _d('Ascending only first column');
    }
@@ -1661,11 +1766,11 @@ sub generate_asc_stmt {
             slice       => \@asc_slice,
             cols        => \@cols,
             quoter      => $q,
-            is_nullable => $tbl->{is_nullable},
+            is_nullable => $tbl_struct->{is_nullable},
          );
          $asc_stmt->{boundaries}->{$cmp} = $cmp_where->{where};
       }
-      my $cmp = $args{asconly} ? '>' : '>=';
+      my $cmp = $args{asc_only} ? '>' : '>=';
       $asc_stmt->{where} = $asc_stmt->{boundaries}->{$cmp};
       $asc_stmt->{slice} = $cmp_where->{slice};
       $asc_stmt->{scols} = $cmp_where->{scols};
@@ -1676,15 +1781,14 @@ sub generate_asc_stmt {
 
 sub generate_cmp_where {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(type slice cols quoter is_nullable) ) {
+   foreach my $arg ( qw(type slice cols is_nullable) ) {
       die "I need a $arg arg" unless defined $args{$arg};
    }
-
    my @slice       = @{$args{slice}};
    my @cols        = @{$args{cols}};
-   my $q           = $args{quoter};
    my $is_nullable = $args{is_nullable};
    my $type        = $args{type};
+   my $q           = $self->{Quoter};
 
    (my $cmp = $type) =~ s/=//;
 
@@ -1748,14 +1852,15 @@ sub generate_cmp_where {
 sub generate_del_stmt {
    my ( $self, %args ) = @_;
 
-   my $tbl  = $args{tbl};
+   my $tbl  = $args{tbl_struct};
    my @cols = $args{cols} ? @{$args{cols}} : ();
-   my $q    = $args{quoter};
+   my $tp   = $self->{TableParser};
+   my $q    = $self->{Quoter};
 
    my @del_cols;
    my @del_slice;
 
-   my $index = $args{parser}->find_best_index($tbl, $args{index});
+   my $index = $tp->find_best_index($tbl, $args{index});
    die "Cannot find an ascendable index in table" unless $index;
 
    if ( $index ) {
@@ -2511,7 +2616,7 @@ sub main {
    # Inspect DB servers and tables.
    # ########################################################################
 
-   my $tp = new TableParser();
+   my $tp = new TableParser(Quoter => $q);
    my $du = new MySQLDump();
    foreach my $table ( grep { $_ } ($src, $dst) ) {
       my $ac = !$txnsize && !$commit_each;
@@ -2604,7 +2709,10 @@ sub main {
    # Design SQL statements.
    # ########################################################################
    my $dbh = $src->{dbh};
-   my $nibbler = new TableNibbler;
+   my $nibbler = new TableNibbler(
+      TableParser => $tp,
+      Quoter      => $q,
+   );
    my ($first_sql, $next_sql, $del_sql, $ins_sql);
    my ($sel_stmt, $ins_stmt, $del_stmt);
    my (@asc_slice, @sel_slice, @del_slice, @bulkdel_slice, @ins_slice);
@@ -2614,25 +2722,21 @@ sub main {
    MKDEBUG && _d("sel cols: " . @sel_cols);
 
    $del_stmt = $nibbler->generate_del_stmt(
-      parser => $tp,
-      tbl    => $src->{info},
-      cols   => \@sel_cols,
-      quoter => $q,
-      index  => $src->{i},
+      tbl_struct => $src->{info},
+      cols       => \@sel_cols,
+      index      => $src->{i},
    );
    @del_slice = @{$del_stmt->{slice}};
 
    # Generate statement for ascending index, if desired
    if ( !$o->get('no-ascend') ) {
       $sel_stmt = $nibbler->generate_asc_stmt(
-         parser   => $tp,
-         tbl      => $src->{info},
-         cols     => $del_stmt->{cols},
-         index    => $del_stmt->{index},
-         ascfirst => $o->get('ascend-first'),
-         quoter   => $q,
+         tbl_struct => $src->{info},
+         cols       => $del_stmt->{cols},
+         index      => $del_stmt->{index},
+         asc_first  => $o->get('ascend-first'),
          # Might prevent rows in the source from being deleted.
-         asconly  => $src->{m} || $o->get('no-delete'),
+         asc_only   => $src->{m} || $o->get('no-delete'),
       );
    }
    else {
@@ -2702,12 +2806,10 @@ sub main {
       # Unless, of course, it's a bulk DELETE, in which case the 500 rows have
       # already been INSERT-ed.
       my $asc_stmt = $nibbler->generate_asc_stmt(
-         parser   => $tp,
-         tbl      => $src->{info},
-         cols     => $del_stmt->{cols},
-         index    => $del_stmt->{index},
-         ascfirst => 0,
-         quoter   => $q,
+         tbl_struct => $src->{info},
+         cols       => $del_stmt->{cols},
+         index      => $del_stmt->{index},
+         asc_first  => 0,
       );
       $del_sql = 'DELETE'
          . ($o->get('low-priority-delete') ? ' LOW_PRIORITY' : '')

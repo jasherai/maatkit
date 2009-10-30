@@ -539,7 +539,7 @@ SKIP: {
          return 0;
       },
       0.5,
-      15,
+      30,
    );
    is_deeply(
       $r,

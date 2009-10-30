@@ -1034,7 +1034,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 4277
+# BinaryLogParser package 4936
 # ###########################################################################
 package BinaryLogParser;
 
@@ -1149,9 +1149,12 @@ sub parse_event {
                   push @properties, 'Thread_id', $i, 'Query_time', $t,
                                     'error_code', $c;
                }
+               elsif ( $type eq 'Start:' ) {
+                  MKDEBUG && _d("Binlog start");
+               }
                else {
-                  die "Unknown event type $type"
-                     unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+                  MKDEBUG && _d('Unknown event type:', $type);
+                  next EVENT;
                }
             }
             else {
@@ -1221,7 +1224,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 4569
+# QueryRewriter package 4969
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1347,10 +1350,8 @@ sub fingerprint {
    return $query;
 }
 
-sub distill {
-   my ( $self, $query, %args ) = @_;
-   my $qp = $args{qp} || $self->{QueryParser};
-   die "I need a qp argument" unless $qp;
+sub _distill_verbs {
+   my ( $self, $query ) = @_;
 
    $query =~ m/\A\s*call\s+(\S+)\(/i
       && return "CALL $1"; # Warning! $1 used, be careful.
@@ -1367,12 +1368,11 @@ sub distill {
    if ( $dds ) {
       my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
       $obj = uc $obj if $obj;
-      MKDEBUG && _d('Data def statment:', $dds, $obj);
+      MKDEBUG && _d('Data def statment:', $dds, 'obj:', $obj);
       my ($db_or_tbl)
          = $query =~ m/(?:TABLE|DATABASE)\s+($QueryParser::tbl_ident)(\s+.*)?/i;
       MKDEBUG && _d('Matches db or table:', $db_or_tbl);
-      $obj .= ($db_or_tbl ? " $db_or_tbl" : '');
-      return uc($dds) . ($obj ? " $obj" : '');
+      return uc($dds . ($obj ? " $obj" : '')), $db_or_tbl;
    }
 
    my @verbs = $query =~ m/\b($verbs)\b/gio;
@@ -1383,18 +1383,36 @@ sub distill {
    my $verbs = join(q{ }, @verbs);
    $verbs =~ s/( UNION SELECT)+/ UNION/g;
 
+   return $verbs;
+}
+
+sub _distill_tables {
+   my ( $self, $query, $table, %args ) = @_;
+   my $qp = $args{QueryParser} || $self->{QueryParser};
+   die "I need a QueryParser argument" unless $qp;
+
    my @tables = map {
       $_ =~ s/`//g;
       $_ =~ s/(_?)[0-9]+/$1?/g;
       $_;
    } $qp->get_tables($query);
 
+   push @tables, $table if $table;
+
    @tables = do {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
    };
 
-   $query = join(q{ }, $verbs, @tables);
+   return @tables;
+}
+
+sub distill {
+   my ( $self, $query, %args ) = @_;
+
+   my ($verbs, $table)  = $self->_distill_verbs($query, %args);
+   my @tables           = $self->_distill_tables($query, $table, %args);
+   $query               = join(q{ }, $verbs, @tables);
    return $query;
 }
 
