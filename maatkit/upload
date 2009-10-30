@@ -15,4 +15,4 @@ VER=`grep Revision packlist | head -n 1 | awk '{print $2}'`
    -u baron.schwartz -l Featured release-debian/maatkit_$VER-1_all.deb;
 
 ./googlecode_upload.py -p maatkit -s ".rpm release $VER" \
-   -u baron.schwartz -l Featured release-rpm/RPMS/noarch/maatkit-$VER-1.noarch.rpm;
+   -u baron.schwartz -l Featured release-rpm/maatkit-$VER-1.noarch.rpm;

@@ -27,7 +27,10 @@ rpmbuild --define "_topdir $RELEASE_DIR" -ta ../$RELEASE_TAR
 
 # Copy RPM package to release-rpm directory
 if [ ! -f $RELEASE_DIR/RPMS/noarch/maatkit-$VERSION-1.noarch.rpm ]; then
-   echo "RPM was not built"
+   echo "RPM was not built."
+   echo "$RELEASE_DIR/RPMS/noarch/maatkit-$VERSION-1.noarch.rpm doesn't exist."
+else
+   cp $RELEASE_DIR/RPMS/noarch/maatkit-$VERSION-1.noarch.rpm .
 fi
 
 cd ..
