@@ -435,7 +435,7 @@ unlike($output, qr/Chunk size is too small/, 'Unsigned bigint chunks (issue 47)'
 # the index that we told it to.
 
 $output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -d test -t issue_47 --algorithm ACCUM 2>&1 | grep 'SQL for chunk 0:'`;
-like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47` USE INDEX \(`idx`\) WHERE/, 'Injects correct USE INDEX by default');
+like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47` (?:FORCE|USE) INDEX \(`idx`\) WHERE/, 'Injects correct USE INDEX by default');
 
 $output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -d test -t issue_47 --algorithm ACCUM --no-use-index 2>&1 | grep 'SQL for chunk 0:'`;
 like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not inject USE INDEX with --no-use-index');
