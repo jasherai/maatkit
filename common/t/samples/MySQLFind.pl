@@ -16,7 +16,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 my $dp  = new DSNParser();
 my $q   = new Quoter();
 my $du  = new MySQLDump( cache => 0 );
-my $tp  = new TableParser();
+my $tp  = new TableParser(Quoter => $q);
 my $dbh = $dp->get_dbh($dp->get_cxn_params({h=>127.1,P=>12345}));
 
 my $finder = new MySQLFind(

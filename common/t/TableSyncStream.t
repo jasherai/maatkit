@@ -70,7 +70,8 @@ is(
    'Got SQL OK',
 );
 
-is( $t->done, undef, 'Not done yet' );
+# Changed from undef to 0 due to r4802.
+is( $t->done, 0, 'Not done yet' );
 
 my $d = new RowDiff( dbh => 1 );
 $d->compare_sets(

@@ -41,7 +41,7 @@ $myi->load_status_vals($dbh);
 my $vp = new VersionParser();
 my $d  = new MySQLDump();
 my $q  = new Quoter();
-my $t  = new TableParser();
+my $t  = new TableParser(Quoter=>$q);
 my $sd = new SchemaDiscover(
    du  => $d,
    q   => $q,

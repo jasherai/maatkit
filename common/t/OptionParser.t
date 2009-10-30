@@ -1888,33 +1888,32 @@ diag(`rm -rf ~/.OptionParser.t.conf`);
 #  Issue 623: --since +N does not work in mk-parallel-dump
 # #############################################################################
 
-# time type opts need to allow leading +/- so things like mk-parallel-dump
-# --since +N can work.
+# time type opts need to allow leading +/-
 $o = new OptionParser(
    description  => 'parses command line options.',
    dp           => $dp,
 );
-$o->get_specs('../../mk-parallel-dump/mk-parallel-dump');
-@ARGV = (qw(--since +9));
+$o->get_specs('../../mk-query-digest/mk-query-digest');
+@ARGV = (qw(--run-time +9));
 $o->get_opts();
 is(
-   $o->get('since'),
+   $o->get('run-time'),
    '+9',
    '+N time value'
 );
 
-@ARGV = (qw(--since -7));
+@ARGV = (qw(--run-time -7));
 $o->get_opts();
 is(
-   $o->get('since'),
+   $o->get('run-time'),
    '-7',
    '-N time value'
 );
 
-@ARGV = (qw(--since +1m));
+@ARGV = (qw(--run-time +1m));
 $o->get_opts();
 is(
-   $o->get('since'),
+   $o->get('run-time'),
    '+60',
    '+N time value with suffix'
 );
