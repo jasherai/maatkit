@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 7;
 
 require '../mk-slave-move';
 require '../../common/Sandbox.pm';
@@ -77,4 +77,19 @@ like(
 # Stop and remove slave2.
 diag(`/tmp/12347/stop`);
 diag(`rm -rf /tmp/12347`);
+
+# Make sure the sandbox slave is still running.
+eval { $slave_1_dbh->do('start slave'); };
+sleep 1;
+is_deeply(
+   $slave_1_dbh->selectrow_hashref('show slave status')->{Slave_IO_Running},
+   'Yes',
+   'Sandbox slave IO running'
+);
+is_deeply(
+   $slave_1_dbh->selectrow_hashref('show slave status')->{Slave_SQL_Running},
+   'Yes',
+   'Sandbox slave SQL running'
+);
+
 exit;
