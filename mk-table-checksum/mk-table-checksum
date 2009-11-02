@@ -4818,39 +4818,48 @@ sub verify_checksum_compat {
 # Returns fetch and update statement handles.
 sub check_repl_table {
    my ( %args ) = @_;
-   foreach my $arg ( qw(o dbh) ) {
+   foreach my $arg ( qw(o dbh tp q) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $o   = $args{o};
    my $dbh = $args{dbh};
+   my $tp  = $args{tp};
+   my $q   = $args{q};
 
    my $replicate_table = $o->get('replicate');
    return unless $replicate_table;
 
    # Check that the replicate table exists and that we can access it.
-   my $sql = "REPLACE INTO $replicate_table "
-           . "SELECT * FROM $replicate_table LIMIT 0";
-   MKDEBUG && _d($dbh, $sql);
-   eval {
-      $dbh->do($sql);
-   };
-   if ( $EVAL_ERROR ) {
-      # Replicate table does not exist.
-      if ( $EVAL_ERROR =~ m/' doesn't exist/ ) {
-         if ( $o->get('create-replicate-table') ) {
-            create_repl_table(%args)
-               or die "--create-replicate-table failed to create "
-                  . $replicate_table;
-         }
-         else {
-            die  "--replicate table $replicate_table does not exist; "
-               . "read the documentation or use --create-replicate-table "
-               . "to create it.";
-         }
+   my ($db, $tbl) = $q->split_unquote($replicate_table);
+   my $tbl_exists = $tp->check_table(
+      dbh => $dbh,
+      db  => $db,
+      tbl => $tbl,
+   );
+
+   if ( !$tbl_exists ) {
+      if ( $o->get('create-replicate-table') ) {
+         create_repl_table(%args)
+            or die "--create-replicate-table failed to create "
+               . $replicate_table;
       }
       else {
-         die $EVAL_ERROR;
+         die  "--replicate table $replicate_table does not exist; "
+            . "read the documentation or use --create-replicate-table "
+            . "to create it.";
       }
+   }
+   else {
+      MKDEBUG && _d('--replicate table', $replicate_table, 'already exists');
+      # Check it again but this time check the privs.
+      my $have_tbl_privs = $tp->check_table(
+         dbh       => $dbh,
+         db        => $db,
+         tbl       => $tbl,
+         all_privs => 1,
+      );
+      die "User does not have all necessary privileges on $replicate_table"
+         unless $have_tbl_privs;
    }
 
    # Clean out the replicate table globally.
