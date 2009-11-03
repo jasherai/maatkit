@@ -15,7 +15,7 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# CompareResults package $Revision: 4970 $
+# CompareResults package $Revision$
 # ###########################################################################
 package CompareResults;
 
@@ -76,8 +76,8 @@ sub before_execute {
 
       # Wrap the original query so when it's executed its results get
       # put in tmp table.
-      $event->{query} = $self->{tmp_tbl_wrap};
-      MKDEBUG && _d('Wrapped query:', $event->{query});
+      $event->{arg} = $self->{wrap} . $event->{arg};
+      MKDEBUG && _d('Wrapped query:', $event->{arg});
    }
 
    return $event;
@@ -145,7 +145,7 @@ sub after_execute {
    my ($event) = @args{@required_args};
 
    if ( $self->{method} eq 'checksum' ) {
-      $event->{arg} =~ s/^$self->{tmp_tbl_wrap}//;
+      $event->{arg} =~ s/^$self->{wrap}//;
       MKDEBUG && _d('Unwrapped query:', $event->{query});
 
       $event = $self->_checksum_results(%args);
@@ -173,7 +173,7 @@ sub _checksum_results {
 
       $sql = "CHECKSUM TABLE $tmp_tbl";
       MKDEBUG && _d($sql);
-      ($tbl_checksum) = @{ $dbh->selectcol_arrayref($sql) };
+      $tbl_checksum = $dbh->selectrow_arrayref($sql)->[1];
    };
    if ( $EVAL_ERROR ) {
       MKDEBUG && _d('Error counting rows or checksumming', $tmp_tbl, ':',
