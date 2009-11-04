@@ -12,8 +12,9 @@ CREATE TABLE col_types_1 (
    dt DATETIME,
    ts TIMESTAMP,
    c  char,
+   c2 char(15) not null,
    v  varchar(32),
    t  text
 );
-INSERT INTO col_types_1 VALUES (NULL, 1, 3.14, 5.08, NOW(), NOW(), 'c', 'hello world', 'this is text');
+INSERT INTO col_types_1 VALUES (NULL, 1, 3.14, 5.08, NOW(), NOW(), 'c', 'c2', 'hello world', 'this is text');
 

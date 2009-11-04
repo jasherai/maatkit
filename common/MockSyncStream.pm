@@ -115,8 +115,10 @@ sub get_result_set_struct {
       $struct->{is_nullable}->{$col} = $nullable[$i];
       $struct->{is_numeric}->{$col} 
          = ($type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ? 1 : 0);
-      $struct->{precision}->{$col}
-         = ($type =~ m/(?:float|double|decimal)/ ? "($p[$i],$s[$i])" : undef);
+      $struct->{size}->{$col}
+         = ($type =~ m/(?:float|double|decimal)/)   ? "($p[$i],$s[$i])"
+         : ($type =~ m/(?:char|varchar)/ && $p[$i]) ? "($p[$i])"
+         :                                            undef;
    }
 
    return $struct;
