@@ -34,7 +34,7 @@ $Data::Dumper::Quotekeys = 0;
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw(method base-dir QueryParser MySQLDump TableParser
-                          TableSyncer plugins Quoter);
+                          TableSyncer plugins Quoter get_id);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -710,20 +710,57 @@ sub add_source_indexes {
    return;
 }
 
-# TODO:
 sub report {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(events hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
    return unless keys %{$self->{diffs}};
+
    foreach my $diff ( qw(checksums) ) {
       my $report = "_report_diff_$diff";
-      $self->$report();
+      $self->$report(%args);
    }
 }
 
 sub _report_diff_checksums {
-   my ( $self ) = @_;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(events hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($events, $hosts) = @args{@required_args};
+   my $get_id = $self->{get_id};
+
    return unless keys %{$self->{diffs}->{checksums}};
-   print Dumper($self->{diffs}->{checksums});
+   my ($sample_item) = keys %{$self->{diffs}->{checksums}};
+
+   my $report = new ReportFormatter();
+   $report->set_title('Checksum differences');
+   $report->set_columns(
+      {
+         name        => 'Query ID',
+         fixed_width => (length $get_id->($sample_item)) + 2,  # +2 for '-N'
+      },
+      map {
+         my $col = { name => $_->{name} };
+         $col;
+      } @$hosts
+   );
+
+   my $diff_checksums = $self->{diffs}->{checksums};
+   foreach my $item ( sort keys %$diff_checksums ) {
+      map {
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            @{$diff_checksums->{$item}->{$_}} );
+      } sort { $a <=> $b } keys %{$diff_checksums->{$item}};
+   }
+
+   $report->print();
+
    return;
 }
 

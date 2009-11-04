@@ -19,9 +19,11 @@ require '../MockSth.pm';
 require '../Outfile.pm';
 require '../RowDiff.pm';
 require '../ChangeHandler.pm';
-require '../CompareResults.pm';
+require '../ReportFormatter.pm';
+require '../Transformers.pm';
 require '../MaatkitTest.pm';
 require '../Sandbox.pm';
+require '../CompareResults.pm';
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -36,6 +38,8 @@ my $dbh2 = $sb->get_dbh_for('slave1')
    or BAIL_OUT('Cannot connect to sandbox slave1');
 
 $sb->create_dbs($dbh1, ['test']);
+
+Transformers->import(qw(make_checksum));
 
 my $vp = new VersionParser();
 my $q  = new Quoter();
@@ -85,6 +89,23 @@ sub proc {
    }
 };
 
+sub get_id {
+   return make_checksum(@_);
+}
+
+sub test_report {
+   my $output = '';
+   open my $fh, '>', \$output or die $OS_ERROR;
+   select $fh;
+   $cr->report(
+      events => \@events,
+      hosts  => $hosts,
+   );
+   close $fh;
+   select STDOUT;
+   return $output;
+}
+
 # #############################################################################
 # Test the checksum method.
 # #############################################################################
@@ -95,6 +116,7 @@ $cr = new CompareResults(
    method     => 'checksum',
    'base-dir' => '/dev/null',  # not used with checksum method
    plugins    => [$plugin],
+   get_id     => \&get_id,
    %modules,
 );
 
@@ -262,12 +284,25 @@ is_deeply(
       hosts  => $hosts,
    ) ],
    [
-      different_row_counts => 1,
-      different_checksums  => 1,
+      different_row_counts    => 1,
+      different_checksums     => 1,
       different_column_counts => 0,
       different_column_types  => 0,
    ],
    'checksum: compare, different checksums and row counts'
+);
+
+my $report = <<EOF;
+# Checksum differences
+# Query ID           master    slave     
+# ================== ========= ==========
+# D2D386B840D3BEEA-1 $events[0]->{checksum} $events[1]->{checksum}
+EOF
+
+is(
+   test_report(),
+   $report,
+   'checksum: report'
 );
 
 # #############################################################################
@@ -283,6 +318,7 @@ $cr = new CompareResults(
    method     => 'rows',
    'base-dir' => $tmpdir,
    plugins    => [$plugin],
+   get_id     => \&get_id,
    %modules,
 );
 
