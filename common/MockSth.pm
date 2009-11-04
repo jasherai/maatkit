@@ -14,11 +14,14 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
+# ###########################################################################
+# MockSty package $Revision$
+# ###########################################################################
+package MockSth;
+
 use strict;
 use warnings FATAL => 'all';
-
-# A package to mock up a $sth.
-package MockSth;
+use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -28,6 +31,7 @@ sub new {
       cursor => 0,
       Active => scalar(@rows),
       rows   => \@rows,
+      NAME   => [],
    };
    return bless $self, $class;
 }
@@ -60,4 +64,15 @@ sub fetchall_arrayref {
    return $rows;
 }
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
 1;
+# ###########################################################################
+# End MockSth package
+# ###########################################################################
