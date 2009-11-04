@@ -32,6 +32,13 @@ sub new {
    return bless $self, $class;
 }
 
+sub reset {
+   my ( $self ) = @_;
+   $self->{cursor} = 0;
+   $self->{Active} = scalar @{$self->{rows}},
+   return;
+}
+
 sub fetchrow_hashref {
    my ( $self ) = @_;
    my $row;
@@ -40,6 +47,17 @@ sub fetchrow_hashref {
    }
    $self->{Active} = $self->{cursor} < @{$self->{rows}};
    return $row;
+}
+
+sub fetchall_arrayref {
+   my ( $self ) = @_;
+   my $rows = [];
+   if ( $self->{cursor} < @{$self->{rows}} ) {
+      @$rows = $self->{rows}->[ $self->{cursor}..(@{$self->{rows}} - 1) ];
+      $self->{cursor} = @{$self->{rows}};
+   }
+   $self->{Active} = $self->{cursor} < @{$self->{rows}};
+   return $rows;
 }
 
 1;
