@@ -26,6 +26,11 @@ use Time::HiRes qw(time);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw(method base-dir QueryParser MySQLDump TableParser
@@ -259,22 +264,22 @@ sub _compare_rows {
       my $not_in_left  = sub {
          my ( $rr ) = @_;
          $no_diff = 0;
-         $right_outfile = write_to_outfile(
+         $right_outfile = $self->write_to_outfile(
             side    => 'right',
             sth     => $right,
             row     => $rr,
-            outfile => $outfile,
+            Outfile => $outfile,
          );
          return;
       };
       my $not_in_right = sub {
          my ( $lr ) = @_;
          $no_diff = 0;
-         $left_outfile = write_to_outfile(
+         $left_outfile = $self->write_to_outfile(
             side    => 'left',
             sth     => $left,
             row     => $lr,
-            outfile => $outfile,
+            Outfile => $outfile,
          );
          return;
       };
@@ -513,7 +518,7 @@ sub write_to_outfile {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ( $side, $sth, $row, $outfile ) = @args{@required_args};
+   my ( $side, $row, $sth, $outfile ) = @args{@required_args};
    my ( $fh, $file ) = $self->open_outfile(%args);
 
    # Write this one row.

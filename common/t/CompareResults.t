@@ -3,9 +3,8 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 16;
+use Test::More tests => 31;
 
-require '../CompareResults.pm';
 require '../Quoter.pm';
 require '../MySQLDump.pm';
 require '../TableParser.pm';
@@ -15,6 +14,10 @@ require '../TableSyncer.pm';
 require '../TableChecksum.pm';
 require '../VersionParser.pm';
 require '../TableSyncGroupBy.pm';
+require '../MockSyncStream.pm';
+require '../Outfile.pm';
+require '../RowDiff.pm';
+require '../CompareResults.pm';
 require '../MaatkitTest.pm';
 require '../Sandbox.pm';
 
@@ -38,6 +41,7 @@ my $qp = new QueryParser();
 my $du = new MySQLDump(cache => 0);
 my $tp = new TableParser(Quoter => $q);
 my $tc = new TableChecksum(Quoter => $q, VersionParser => $vp);
+my $of = new Outfile();
 my $ts = new TableSyncer(
    Quoter        => $q,
    VersionParser => $vp,
@@ -51,12 +55,13 @@ my %modules = (
    TableSyncer   => $ts,
    QueryParser   => $qp,
    MySQLDump     => $du,
+   Outfile       => $of,
 );
 
 my $plugin = new TableSyncGroupBy(Quoter => $q);
 
 my $cr;
-my $event;
+my @events;
 my $i;
 
 # #############################################################################
@@ -74,9 +79,16 @@ $cr = new CompareResults(
 
 isa_ok($cr, 'CompareResults');
 
-$event = {
-   arg => 'select * from test.t',
-};
+@events = (
+   {
+      arg => 'select * from test.t',
+   },
+   {
+      arg       => $events[0]->{arg},
+      row_count => 3,
+      checksum  => 251493421,
+   },
+);
 
 $i = 0;
 MaatkitTest::wait_until(
@@ -96,97 +108,263 @@ MaatkitTest::wait_until(
 is_deeply(
    $dbh1->selectrow_arrayref('SHOW TABLES FROM test LIKE "dropme"'),
    ['dropme'],
-   'Temp table exists'
+   'checksum: temp table exists'
 );
 
-$event = $cr->before_execute(
-   event    => $event,
+$events[0] = $cr->before_execute(
+   event    => $events[0],
    dbh      => $dbh1,
    tmp_tbl  => 'test.dropme',
 );
 
 is(
-   $event->{arg},
+   $events[0]->{arg},
    'CREATE TEMPORARY TABLE test.dropme AS select * from test.t',
-   'before_execute() wraps query in CREATE TEMPORARY TABLE'
+   'checksum: before_execute() wraps query in CREATE TEMPORARY TABLE'
 );
 
 is_deeply(
    $dbh1->selectall_arrayref('SHOW TABLES FROM test LIKE "dropme"'),
    [],
-   'before_execute() drops temp table'
+   'checksum: before_execute() drops temp table'
 );
 
 ok(
-   !exists $event->{Query_time},
-   "Query_time doesn't exist before execute()"
+   !exists $events[0]->{Query_time},
+   "checksum: Query_time doesn't exist before execute()"
 );
 
-$event = $cr->execute(
-   event => $event,
+$events[0] = $cr->execute(
+   event => $events[0],
    dbh   => $dbh1,
 );
 
 ok(
-   exists $event->{Query_time},
-   "Query_time exists after exectue()"
+   exists $events[0]->{Query_time},
+   "checksum: Query_time exists after exectue()"
 );
 
 like(
-   $event->{Query_time},
+   $events[0]->{Query_time},
    qr/^[\d.]+$/,
-   "Query_time is a number ($event->{Query_time})"
+   "checksum: Query_time is a number ($events[0]->{Query_time})"
 );
 
 is(
-   $event->{arg},
+   $events[0]->{arg},
    'CREATE TEMPORARY TABLE test.dropme AS select * from test.t',
-   "execute() doesn't unwrap query"
+   "checksum: execute() doesn't unwrap query"
 );
 
 is_deeply(
    $dbh1->selectall_arrayref('select * from test.dropme'),
    [[1],[2],[3]],
-   'Result set selected into the temp table'
+   'checksum: Result set selected into the temp table'
 );
 
 ok(
-   !exists $event->{row_count},
-   "row_count doesn't exist before after_execute()"
+   !exists $events[0]->{row_count},
+   "checksum: row_count doesn't exist before after_execute()"
 );
 
 ok(
-   !exists $event->{checksum},
-   "checksum doesn't exist before after_execute()"
+   !exists $events[0]->{checksum},
+   "checksum: checksum doesn't exist before after_execute()"
 );
 
-$event = $cr->after_execute(
-   event => $event,
+$events[0] = $cr->after_execute(
+   event => $events[0],
    dbh   => $dbh1,
 );
 
 is(
-   $event->{arg},
+   $events[0]->{arg},
    'select * from test.t',
-   'after_execute() unwrapped query'
+   'checksum: after_execute() unwrapped query'
 );
 
 is(
-   $event->{row_count},
+   $events[0]->{row_count},
    3,
-   "Correct row_count after after_execute()"
+   "checksum: correct row_count after after_execute()"
 );
 
 is(
-   $event->{checksum},
+   $events[0]->{checksum},
    '251493421',
-   "Correct checksum after after_execute()"
+   "checksum: correct checksum after after_execute()"
 );
 
 is_deeply(
    $dbh1->selectall_arrayref('SHOW TABLES FROM test LIKE "dropme"'),
    [],
-   'after_execute() drops temp table'
+   'checksum: after_execute() drops temp table'
+);
+
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+   ) ],
+   [
+      checksum_diffs  => 0,
+      row_count_diffs => 0,
+   ],
+   'checksum: compare, no differences'
+);
+
+$events[1]->{row_count} = 1;
+
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+   ) ],
+   [
+      checksum_diffs  => 0,
+      row_count_diffs => 1,
+   ],
+   'checksum: compare, different row counts'
+);
+
+$events[1]->{checksum} = 251493420;
+
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+   ) ],
+   [
+      checksum_diffs  => 1,
+      row_count_diffs => 1,
+   ],
+   'checksum: compare, different checksums'
+);
+
+# #############################################################################
+# Test the rows method.
+# #############################################################################
+
+my $tmpdir = '/tmp/mk-upgrade-res';
+
+diag(`/tmp/12345/use < samples/compare-results.sql`);
+diag(`rm -rf $tmpdir; mkdir $tmpdir`);
+
+$cr = new CompareResults(
+   method     => 'rows',
+   'base-dir' => $tmpdir,
+   plugins    => [$plugin],
+   %modules,
+);
+
+isa_ok($cr, 'CompareResults');
+
+@events = (
+   {
+      arg => 'select * from test.t',
+   },
+);
+
+$i = 0;
+MaatkitTest::wait_until(
+   sub {
+      my $r;
+      eval {
+         $r = $dbh1->selectrow_arrayref('SHOW TABLES FROM test LIKE "dropme"');
+      };
+      return 1 if ($r->[0] || '') eq 'dropme';
+      diag('Waiting for CREATE TABLE...') unless $i++;
+      return 0;
+   },
+   0.5,
+   30,
+);
+
+is_deeply(
+   $dbh1->selectrow_arrayref('SHOW TABLES FROM test LIKE "dropme"'),
+   ['dropme'],
+   'rows: temp table exists'
+);
+
+$events[0] = $cr->before_execute(
+   event    => $events[0],
+   dbh      => $dbh1,
+   tmp_tbl  => 'test.dropme',
+);
+
+is(
+   $events[0]->{arg},
+   'select * from test.t',
+   'rows: before_execute() does not wrap query'
+);
+
+is_deeply(
+   $dbh1->selectrow_arrayref('SHOW TABLES FROM test LIKE "dropme"'),
+   ['dropme'],
+   "rows: before_execute() doesn't drop temp table"
+);
+
+ok(
+   !exists $events[0]->{Query_time},
+   "rows: Query_time doesn't exist before execute()"
+);
+
+ok(
+   !exists $events[0]->{results_sth},
+   "rows: results_sth doesn't exist before execute()"
+);
+
+$events[0] = $cr->execute(
+   event => $events[0],
+   dbh   => $dbh1,
+);
+
+ok(
+   exists $events[0]->{Query_time},
+   "rows: query_time exists after exectue()"
+);
+
+ok(
+   exists $events[0]->{results_sth},
+   "rows: results_sth exists after exectue()"
+);
+
+like(
+   $events[0]->{Query_time},
+   qr/^[\d.]+$/,
+   "rows: Query_time is a number ($events[0]->{Query_time})"
+);
+
+ok(
+   !exists $events[0]->{row_count},
+   "rows: row_count doesn't exist before after_execute()"
+);
+
+is_deeply(
+   $cr->after_execute(event=>$events[0]),
+   $events[0],
+   "rows: after_execute() doesn't modify the event"
+);
+
+# Table test.t should have already replicated to the slave.
+$events[1] = {
+   arg => $events[0]->{arg},
+};
+$events[1] = $cr->execute(
+   event    => $events[1],
+   dbh      => $dbh2,
+);
+
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+      hosts  => [
+         { dbh => $dbh1 },
+         { dbh => $dbh2 },
+      ],
+   ) ],
+   [
+      row_data_diffs  => 0,
+      row_count_diffs => 0,
+   ],
+   'rows: compare, no differences'
 );
 
 # #############################################################################
