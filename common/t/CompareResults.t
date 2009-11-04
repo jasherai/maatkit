@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 34;
+use Test::More tests => 38;
 
 require '../Quoter.pm';
 require '../MySQLDump.pm';
@@ -68,6 +68,7 @@ my $plugin = new TableSyncGroupBy(Quoter => $q);
 
 my $cr;
 my $i;
+my $report;
 my @events;
 my $hosts = [
    { dbh => $dbh1, name => 'master' },
@@ -97,10 +98,7 @@ sub test_report {
    my $output = '';
    open my $fh, '>', \$output or die $OS_ERROR;
    select $fh;
-   $cr->report(
-      events => \@events,
-      hosts  => $hosts,
-   );
+   $cr->report(hosts  => $hosts);
    close $fh;
    select STDOUT;
    return $output;
@@ -292,7 +290,7 @@ is_deeply(
    'checksum: compare, different checksums and row counts'
 );
 
-my $report = <<EOF;
+$report = <<EOF;
 # Checksum differences
 # Query ID           master    slave     
 # ================== ========= ==========
@@ -453,6 +451,56 @@ is_deeply(
       different_column_types  => 0,
    ],
    'rows: compare, different row counts'
+);
+
+# Use test.t2 and make a column value differ.
+@events = (
+   {
+      arg => 'select * from test.t2',
+      db  => 'test',
+   },
+   {
+      arg => 'select * from test.t2',
+      db  => 'test',
+   },
+);
+
+$dbh2->do('update test.t2 set c="should be c" where i=3');
+
+is_deeply(
+   $dbh2->selectrow_arrayref('select c from test.t2 where i=3'),
+   ['should be c'],
+   'rows: column value is different'
+);
+
+proc('before_execute', tmp_tbl => 'test.dropme');
+proc('execute');
+
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+      hosts  => $hosts,
+   ) ],
+   [
+      different_row_counts    => 0,
+      different_column_values => 1,
+      different_column_counts => 0,
+      different_column_types  => 0,
+   ],
+   'rows: compare, different column values'
+);
+
+$report = <<EOF;
+# Column value differences
+# Query ID           Column master slave      
+# ================== ====== ====== ===========
+# CFC309761E9131C5-0 c      c      should be c
+EOF
+
+is(
+   test_report(),
+   $report,
+   'rows: report'
 );
 
 # #############################################################################

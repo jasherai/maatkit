@@ -271,6 +271,7 @@ sub _compare_rows {
 
    my $n_events = scalar @$events;
    my $event0   = $events->[0]; 
+   my $item     = $event0->{fingerprint} || $event0->{arg};
    my $dbh      = $hosts->[0]->{dbh};  # doesn't matter which one
 
    my $res_struct = MockSyncStream::get_result_set_struct($dbh,
@@ -282,6 +283,7 @@ sub _compare_rows {
    my @event0_rows      = @{ $event0->{results_sth}->fetchall_arrayref({}) };
    $event0->{row_count} = scalar @event0_rows;
    my $left = new MockSth(@event0_rows);
+   $left->{NAME} = [ @{$event0->{results_sth}->{NAME}} ];
 
    EVENT:
    foreach my $i ( 1..($n_events-1) ) {
@@ -366,7 +368,7 @@ sub _compare_rows {
          (undef, $right_outfile) = $self->open_outfile(side => 'right');
       }
 
-      $different_column_values += $self->diff_rows(
+      my @diff_rows = $self->diff_rows(
          left_dbh        => $hosts->[0]->{dbh},
          left_outfile    => $left_outfile,
          right_dbh       => $hosts->[$i]->{dbh},
@@ -376,6 +378,12 @@ sub _compare_rows {
          db              => $args{tmp_db} || $event0->{db},
          max_differences => $args{max_differences},
       );
+
+      if ( scalar @diff_rows ) { 
+         $different_column_values++;
+         $self->{diffs}->{col_vals}->{$item}->{$event0->{sampleno} || 0}
+            = \@diff_rows;
+      }
    }
 
    return (
@@ -465,7 +473,7 @@ sub diff_rows {
       my ( $lr, $rr ) = @_;
       if ( $l_r[LEFT] && $l_r[RIGHT] ) {
          MKDEBUG && _d('Saving different row');
-         push @different_rows, [@l_r, $last_diff_col[$last_diff]];
+         push @different_rows, $last_diff_col[$last_diff];
          $n_diff++;
       }
       elsif ( $l_r[LEFT] ) {
@@ -573,10 +581,7 @@ sub diff_rows {
       $same_row->() if $l_r[LEFT] || $l_r[RIGHT];  # save remaining rows
    }
 
-   # $self->{missing_rows}   = \@missing_rows;
-   # $self->{different_rows} = \@different_rows;
-
-   return scalar @different_rows;
+   return @different_rows;
 }
 
 # Writes the current row and all remaining rows to an outfile.
@@ -625,8 +630,8 @@ sub make_table_ddl {
                  map {
                     my $name = $_;
                     my $type = $struct->{type_for}->{$_};
-                    my $prec = $struct->{precision}->{$_} || '';
-                    "  `$name` $type$prec,";
+                    my $size = $struct->{size}->{$_} || '';
+                    "  `$name` $type$size,";
                  } @{$struct->{cols}}))
            . ')';
    # The last column will be like "`i` integer,)" which is invalid.
@@ -712,42 +717,50 @@ sub add_source_indexes {
 
 sub report {
    my ( $self, %args ) = @_;
-   my @required_args = qw(events hosts);
+   my @required_args = qw(hosts);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   my ($hosts) = @args{@required_args};
 
    return unless keys %{$self->{diffs}};
 
-   foreach my $diff ( qw(checksums) ) {
+   # These columns are common to all the reports; make them just once.
+   my $query_id_col = {
+      name        => 'Query ID',
+      fixed_width => 18,
+   };
+   my @host_cols = map {
+      my $col = { name => $_->{name} };
+      $col;
+   } @$hosts;
+
+   foreach my $diff ( qw(checksums col_vals) ) {
       my $report = "_report_diff_$diff";
-      $self->$report(%args);
+      $self->$report(
+         query_id_col => $query_id_col,
+         host_cols    => \@host_cols,
+         %args
+      );
    }
 }
 
 sub _report_diff_checksums {
    my ( $self, %args ) = @_;
-   my @required_args = qw(events hosts);
+   my @required_args = qw(query_id_col host_cols);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($events, $hosts) = @args{@required_args};
+
    my $get_id = $self->{get_id};
 
    return unless keys %{$self->{diffs}->{checksums}};
-   my ($sample_item) = keys %{$self->{diffs}->{checksums}};
 
    my $report = new ReportFormatter();
    $report->set_title('Checksum differences');
    $report->set_columns(
-      {
-         name        => 'Query ID',
-         fixed_width => (length $get_id->($sample_item)) + 2,  # +2 for '-N'
-      },
-      map {
-         my $col = { name => $_->{name} };
-         $col;
-      } @$hosts
+      $args{query_id_col},
+      @{$args{host_cols}},
    );
 
    my $diff_checksums = $self->{diffs}->{checksums};
@@ -755,8 +768,46 @@ sub _report_diff_checksums {
       map {
          $report->add_line(
             $get_id->($item) . '-' . $_,
-            @{$diff_checksums->{$item}->{$_}} );
+            @{$diff_checksums->{$item}->{$_}},
+         );
       } sort { $a <=> $b } keys %{$diff_checksums->{$item}};
+   }
+
+   $report->print();
+
+   return;
+}
+
+sub _report_diff_col_vals {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col host_cols);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{col_vals}};
+
+   my $report = new ReportFormatter();
+   $report->set_title('Column value differences');
+   $report->set_columns(
+      $args{query_id_col},
+      {
+         name => 'Column'
+      },
+      @{$args{host_cols}},
+   );
+   my $diff_col_vals = $self->{diffs}->{col_vals};
+   foreach my $item ( sort keys %$diff_col_vals ) {
+      foreach my $sampleno (sort {$a <=> $b} keys %{$diff_col_vals->{$item}}) {
+         map {
+            $report->add_line(
+               $get_id->($item) . '-' . $sampleno,
+               @$_,
+            );
+         } @{$diff_col_vals->{$item}->{$sampleno}};
+      }
    }
 
    $report->print();
