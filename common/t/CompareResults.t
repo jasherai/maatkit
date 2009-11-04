@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 31;
+use Test::More tests => 34;
 
 require '../Quoter.pm';
 require '../MySQLDump.pm';
@@ -15,8 +15,10 @@ require '../TableChecksum.pm';
 require '../VersionParser.pm';
 require '../TableSyncGroupBy.pm';
 require '../MockSyncStream.pm';
+require '../MockSth.pm';
 require '../Outfile.pm';
 require '../RowDiff.pm';
+require '../ChangeHandler.pm';
 require '../CompareResults.pm';
 require '../MaatkitTest.pm';
 require '../Sandbox.pm';
@@ -61,8 +63,27 @@ my %modules = (
 my $plugin = new TableSyncGroupBy(Quoter => $q);
 
 my $cr;
-my @events;
 my $i;
+my @events;
+my $hosts = [
+   { dbh => $dbh1, name => 'master' },
+   { dbh => $dbh2, name => 'slave'  },
+];
+
+sub proc {
+   my ( $when, %args ) = @_;
+   die "I don't know when $when is"
+      unless $when eq 'before_execute'
+          || $when eq 'execute'
+          || $when eq 'after_execute';
+   for my $i ( 0..$#events ) {
+      $events[$i] = $cr->$when(
+         event    => $events[$i],
+         dbh      => $hosts->[$i]->{dbh},
+         %args,
+      );
+   }
+};
 
 # #############################################################################
 # Test the checksum method.
@@ -81,12 +102,14 @@ isa_ok($cr, 'CompareResults');
 
 @events = (
    {
-      arg => 'select * from test.t',
+      arg         => 'select * from test.t where i>0',
+      fingerprint => 'select * from test.t where i>?',
+      sampleno    => 1,
    },
    {
-      arg       => $events[0]->{arg},
-      row_count => 3,
-      checksum  => 251493421,
+      arg         => 'select * from test.t where i>0',
+      fingerprint => 'select * from test.t where i>?',
+      sampleno    => 1,
    },
 );
 
@@ -111,15 +134,11 @@ is_deeply(
    'checksum: temp table exists'
 );
 
-$events[0] = $cr->before_execute(
-   event    => $events[0],
-   dbh      => $dbh1,
-   tmp_tbl  => 'test.dropme',
-);
+proc('before_execute', tmp_tbl => 'test.dropme');
 
 is(
    $events[0]->{arg},
-   'CREATE TEMPORARY TABLE test.dropme AS select * from test.t',
+   'CREATE TEMPORARY TABLE test.dropme AS select * from test.t where i>0',
    'checksum: before_execute() wraps query in CREATE TEMPORARY TABLE'
 );
 
@@ -134,10 +153,7 @@ ok(
    "checksum: Query_time doesn't exist before execute()"
 );
 
-$events[0] = $cr->execute(
-   event => $events[0],
-   dbh   => $dbh1,
-);
+proc('execute');
 
 ok(
    exists $events[0]->{Query_time},
@@ -152,7 +168,7 @@ like(
 
 is(
    $events[0]->{arg},
-   'CREATE TEMPORARY TABLE test.dropme AS select * from test.t',
+   'CREATE TEMPORARY TABLE test.dropme AS select * from test.t where i>0',
    "checksum: execute() doesn't unwrap query"
 );
 
@@ -172,15 +188,32 @@ ok(
    "checksum: checksum doesn't exist before after_execute()"
 );
 
-$events[0] = $cr->after_execute(
-   event => $events[0],
-   dbh   => $dbh1,
-);
+proc('after_execute');
 
 is(
    $events[0]->{arg},
-   'select * from test.t',
+   'select * from test.t where i>0',
    'checksum: after_execute() unwrapped query'
+);
+
+is_deeply(
+   $dbh1->selectall_arrayref('SHOW TABLES FROM test LIKE "dropme"'),
+   [],
+   'checksum: after_execute() drops temp table'
+);
+
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+      hosts  => $hosts,
+   ) ],
+   [
+      different_row_counts    => 0,
+      different_checksums     => 0,
+      different_column_counts => 0,
+      different_column_types  => 0,
+   ],
+   'checksum: compare, no differences'
 );
 
 is(
@@ -195,47 +228,46 @@ is(
    "checksum: correct checksum after after_execute()"
 );
 
-is_deeply(
-   $dbh1->selectall_arrayref('SHOW TABLES FROM test LIKE "dropme"'),
-   [],
-   'checksum: after_execute() drops temp table'
-);
+# Make checksums differ.
+$dbh2->do('update test.t set i = 99 where i=1');
+
+proc('before_execute', tmp_tbl => 'test.dropme');
+proc('execute');
+proc('after_execute');
 
 is_deeply(
    [ $cr->compare(
       events => \@events,
+      hosts  => $hosts,
    ) ],
    [
-      checksum_diffs  => 0,
-      row_count_diffs => 0,
+      different_row_counts    => 0,
+      different_checksums     => 1,
+      different_column_counts => 0,
+      different_column_types  => 0,
    ],
-   'checksum: compare, no differences'
+   'checksum: compare, different checksums' 
 );
 
-$events[1]->{row_count} = 1;
+# Make row counts differ, too.
+$dbh2->do('insert into test.t values (4)');
+
+proc('before_execute', tmp_tbl => 'test.dropme');
+proc('execute');
+proc('after_execute');
 
 is_deeply(
    [ $cr->compare(
       events => \@events,
+      hosts  => $hosts,
    ) ],
    [
-      checksum_diffs  => 0,
-      row_count_diffs => 1,
+      different_row_counts => 1,
+      different_checksums  => 1,
+      different_column_counts => 0,
+      different_column_types  => 0,
    ],
-   'checksum: compare, different row counts'
-);
-
-$events[1]->{checksum} = 251493420;
-
-is_deeply(
-   [ $cr->compare(
-      events => \@events,
-   ) ],
-   [
-      checksum_diffs  => 1,
-      row_count_diffs => 1,
-   ],
-   'checksum: compare, different checksums'
+   'checksum: compare, different checksums and row counts'
 );
 
 # #############################################################################
@@ -259,6 +291,11 @@ isa_ok($cr, 'CompareResults');
 @events = (
    {
       arg => 'select * from test.t',
+      db  => 'test',
+   },
+   {
+      arg => 'select * from test.t',
+      db  => 'test',
    },
 );
 
@@ -283,11 +320,7 @@ is_deeply(
    'rows: temp table exists'
 );
 
-$events[0] = $cr->before_execute(
-   event    => $events[0],
-   dbh      => $dbh1,
-   tmp_tbl  => 'test.dropme',
-);
+proc('before_execute', tmp_tbl => 'test.dropme');
 
 is(
    $events[0]->{arg},
@@ -311,10 +344,7 @@ ok(
    "rows: results_sth doesn't exist before execute()"
 );
 
-$events[0] = $cr->execute(
-   event => $events[0],
-   dbh   => $dbh1,
-);
+proc('execute');
 
 ok(
    exists $events[0]->{Query_time},
@@ -343,28 +373,50 @@ is_deeply(
    "rows: after_execute() doesn't modify the event"
 );
 
-# Table test.t should have already replicated to the slave.
-$events[1] = {
-   arg => $events[0]->{arg},
-};
-$events[1] = $cr->execute(
-   event    => $events[1],
-   dbh      => $dbh2,
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+      hosts  => $hosts,
+   ) ],
+   [
+      different_row_counts    => 0,
+      different_column_values => 0,
+      different_column_counts => 0,
+      different_column_types  => 0,
+   ],
+   'rows: compare, no differences'
 );
+
+is(
+   $events[0]->{row_count},
+   3,
+   "rows: compare() sets row_count"
+);
+
+is(
+   $events[1]->{row_count},
+   3,
+   "rows: compare() sets row_count"
+);
+
+# Make the result set differ.
+$dbh2->do('insert into test.t values (5)');
+
+proc('before_execute', tmp_tbl => 'test.dropme');
+proc('execute');
 
 is_deeply(
    [ $cr->compare(
       events => \@events,
-      hosts  => [
-         { dbh => $dbh1 },
-         { dbh => $dbh2 },
-      ],
+      hosts  => $hosts,
    ) ],
    [
-      row_data_diffs  => 0,
-      row_count_diffs => 0,
+      different_row_counts    => 1,
+      different_column_values => 0,
+      different_column_counts => 0,
+      different_column_types  => 0,
    ],
-   'rows: compare, no differences'
+   'rows: compare, different row counts'
 );
 
 # #############################################################################

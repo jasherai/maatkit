@@ -42,6 +42,7 @@ sub new {
       %args,
       tmp_tbl => '',
       wrap    => '',
+      diffs   => {},
    };
    return bless $self, $class;
 }
@@ -151,12 +152,67 @@ sub after_execute {
 
    if ( $self->{method} eq 'checksum' ) {
       $event->{arg} =~ s/^$self->{wrap}//;
-      MKDEBUG && _d('Unwrapped query:', $event->{query});
-
-      $event = $self->_checksum_results(%args);
+      MKDEBUG && _d('Unwrapped query:', $event->{arg}); 
    }
 
    return $event;
+}
+
+sub compare {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(events hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   $self->{diffs} = {};
+   my ($events, $hosts) = @args{@required_args};
+   return $self->{method} eq 'rows' ? $self->_compare_rows(%args)
+                                    : $self->_compare_checksums(%args);
+}
+
+sub _compare_checksums {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(events hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($events, $hosts) = @args{@required_args};
+
+   my $event0 = $self->_checksum_results(
+      event => $events->[0],
+      dbh   => $hosts->[0]->{dbh},
+   );
+
+   my $different_row_counts    = 0;
+   my $different_column_counts = 0; # TODO
+   my $different_column_types  = 0; # TODO
+   my $different_checksums     = 0;
+
+   my $n_events = scalar @$events;
+   foreach my $i ( 1..($n_events-1) ) {
+      my $event = $self->_checksum_results(
+         event => $events->[$i],
+         dbh   => $hosts->[$i]->{dbh},
+      );
+
+      $different_checksums++
+         if ($event0->{checksum} || 0) != ($event->{checksum} || 0);
+      $different_row_counts++
+         if ($event0->{row_count} || 0) != ($event->{row_count} || 0);
+   }
+
+   my $item = $event0->{fingerprint} || $event0->{arg};
+   if ( $different_checksums ) {
+      $self->{diffs}->{checksums}->{$item}->{$event0->{sampleno} || 0}
+         = [ map { $_->{checksum} } @$events ];
+   }
+
+   return (
+      different_row_counts    => $different_row_counts,
+      different_checksums     => $different_checksums,
+      different_column_counts => $different_column_counts,
+      different_column_types  => $different_column_types,
+   );
 }
 
 sub _checksum_results {
@@ -200,38 +256,6 @@ sub _checksum_results {
    return $event;
 }
 
-sub compare {
-   my ( $self, %args ) = @_;
-   return $self->{method} eq 'rows' ? $self->_compare_rows(%args)
-                                    : $self->_compare_checksums(%args);
-}
-
-sub _compare_checksums {
-   my ( $self, %args ) = @_;
-   my @required_args = qw(events);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   my ($events) = @args{@required_args};
-   my $checksum_diffs  = 0;
-   my $row_count_diffs = 0;
-   my $n_events        = scalar @$events;
-   my $event0          = $events->[0];
-
-   foreach my $i ( 1..($n_events-1) ) {
-      my $event = $events->[$i];
-      $checksum_diffs++
-         if ($event0->{checksum} || '') ne ($event->{checksum} || '');
-      $row_count_diffs++
-         if ($event0->{row_count} || 0) ne ($event->{row_count} || 0);
-   }
-
-   return (
-      checksum_diffs  => $checksum_diffs,
-      row_count_diffs => $row_count_diffs,
-   );
-}
-
 sub _compare_rows {
    my ( $self, %args ) = @_;
    my @required_args = qw(events hosts);
@@ -240,31 +264,47 @@ sub _compare_rows {
    }
    my ($events, $hosts) = @args{@required_args};
 
-   my $row_data_diffs  = 0;
-   my $col_type_diffs  = 0;
-   my $row_count_diffs = 0;
-   my $n_events        = scalar @$events;
-   my $event0          = $events->[0];
-   my $left            = $event0->{results_sth};
-   my $dbh             = $hosts->[0]->{dbh};  # doesn't matter which one
-   my $res_struct      = MockSyncStream::get_result_set_struct($dbh, $left);
+   my $different_row_counts    = 0;
+   my $different_column_counts = 0; # TODO
+   my $different_column_types  = 0; # TODO
+   my $different_column_values = 0;
+
+   my $n_events = scalar @$events;
+   my $event0   = $events->[0]; 
+   my $dbh      = $hosts->[0]->{dbh};  # doesn't matter which one
+
+   my $res_struct = MockSyncStream::get_result_set_struct($dbh,
+      $event0->{results_sth});
    MKDEBUG && _d('Result set struct:', Dumper($res_struct));
 
+   # Use a mock sth so we don't have to re-execute event0 sth to compare
+   # it to the 3rd and subsequent events.
+   my @event0_rows      = @{ $event0->{results_sth}->fetchall_arrayref({}) };
+   $event0->{row_count} = scalar @event0_rows;
+   my $left = new MockSth(@event0_rows);
+
+   EVENT:
    foreach my $i ( 1..($n_events-1) ) {
       my $event = $events->[$i];
       my $right = $event->{results_sth};
+
+      $event->{row_count} = 0;
 
       # Identical rows are ignored.  Once a difference on either side is found,
       # we gobble the remaining rows in that sth and print them to an outfile.
       # This short circuits RowDiff::compare_sets() which is what we want to do.
       my $no_diff      = 1;  # results are identical; this catches 0 row results
       my $outfile      = new Outfile();
-      my ($left_outfile, $right_outfile);
-      my $same_row     = sub { return; };  # ignore/discard identical rows
+      my ($left_outfile, $right_outfile, $n_rows);
+      my $same_row     = sub {
+            $event->{row_count}++;  # Keep track of this event's row_count.
+            return;
+      };
       my $not_in_left  = sub {
          my ( $rr ) = @_;
          $no_diff = 0;
-         $right_outfile = $self->write_to_outfile(
+         # $n_rows will be added later to this event's row_count.
+         ($right_outfile, $n_rows) = $self->write_to_outfile(
             side    => 'right',
             sth     => $right,
             row     => $rr,
@@ -275,12 +315,13 @@ sub _compare_rows {
       my $not_in_right = sub {
          my ( $lr ) = @_;
          $no_diff = 0;
-         $left_outfile = $self->write_to_outfile(
+         # left is event0 so we don't need $n_rows back.
+         ($left_outfile, undef) = $self->write_to_outfile(
             side    => 'left',
             sth     => $left,
             row     => $lr,
             Outfile => $outfile,
-         );
+         ); 
          return;
       };
 
@@ -301,36 +342,61 @@ sub _compare_rows {
          tbl    => $res_struct,
       );
 
-      next if $no_diff;
+      # Add number of rows written to outfile to this event's row_count.
+      # $n_rows will be undef if there were no differences; row_count will
+      # still be correct in this case because we kept track of it in $same_row.
+      $event->{row_count} += $n_rows || 0;
+
+      $different_row_counts++ if $event0->{row_count} != $event->{row_count};
+      $left->reset();
+      next EVENT if $no_diff;
 
       # The result sets differ, so now we must begin the difficult
       # work: finding and determining the nature of those differences.
       MKDEBUG && _d('Result sets are different');
-      $row_data_diffs += $self->diff_rows(
-         left_dbh      => $hosts->[0]->{dbh},
-         left_outfile  => $left_outfile,
-         right_dbh     => $hosts->[$i]->{dbh},
-         right_outfile => $right_outfile,
-         res_struct    => $res_struct,
-         query         => $event0->{arg},
+
+
+      # Make sure both outfiles are created, else diff_rows() will die.
+      if ( !$left_outfile ) {
+         MKDEBUG && _d('Right has extra rows not in left');
+         (undef, $left_outfile) = $self->open_outfile(side => 'left');
+      }
+      if ( !$right_outfile ) {
+         MKDEBUG && _d('Left has extra rows not in right');
+         (undef, $right_outfile) = $self->open_outfile(side => 'right');
+      }
+
+      $different_column_values += $self->diff_rows(
+         left_dbh        => $hosts->[0]->{dbh},
+         left_outfile    => $left_outfile,
+         right_dbh       => $hosts->[$i]->{dbh},
+         right_outfile   => $right_outfile,
+         res_struct      => $res_struct,
+         query           => $event0->{arg},
+         db              => $args{tmp_db} || $event0->{db},
+         max_differences => $args{max_differences},
       );
    }
 
    return (
-      row_data_diffs    => $row_data_diffs,
-      # column_type_diffs => $col_type_diffs,
-      row_count_diffs   => $row_count_diffs,
+      different_row_counts    => $different_row_counts,
+      different_column_values => $different_column_values,
+      different_column_counts => $different_column_counts,
+      different_column_types  => $different_column_types,
    );
 }
 
 # Required args:
-#   * left        hashref: left result set dbh and outfile
-#   * right       hashref: right result set dbh and outfile
-#   * res_struct  hashref: result set structure
-#   * db          scalar: database to use for creating temp tables
-#   * query       scalar: query, parsed for indexes
+#   * left_dbh       scalar: active dbh for left
+#   * left_outfile   scalar: outfile name for left
+#   * right_dbh      scalar: active dbh for right
+#   * right_outfile  scalar: outfile name for right
+#   * res_struct     hashref: result set structure
+#   * db             scalar: database to use for creating temp tables
+#   * query          scalar: query, parsed for indexes
 # Optional args:
-#   * max_differences  scalar: stop after this many differences are found
+#   * max-differences  scalar: stop after this many differences are found
+#   * float-precision  scalar: round float, double, decimal types to N places
 # Returns: scalar
 # Can die: no
 # diff_rows() loads and compares two result sets and returns the number of
@@ -338,11 +404,14 @@ sub _compare_rows {
 # differences.
 sub diff_rows {
    my ( $self, %args ) = @_;
-   my @required_args = qw(left right res_struct db query);
+   my @required_args = qw(left_dbh left_outfile right_dbh right_outfile
+                          res_struct db query);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($left, $right, $res_struct, $db, $query) = @args{@required_args};
+   my ($left_dbh, $left_outfile, $right_dbh, $right_outfile, $res_struct,
+       $db, $query)
+      = @args{@required_args};
 
    # First thing, make two temps tables into which the outfiles can
    # be loaded.  This requires that we make a CREATE TABLE statement
@@ -351,18 +420,18 @@ sub diff_rows {
    my $right_tbl = "`$db`.`mk_upgrade_right`";
    my $table_ddl = $self->make_table_ddl($res_struct);
 
-   $left->{dbh}->do("DROP TABLE IF EXISTS $left_tbl");
-   $left->{dbh}->do("CREATE TABLE $left_tbl $table_ddl");
-   $left->{dbh}->do("LOAD DATA LOCAL INFILE '$left->{outfile}' "
+   $left_dbh->do("DROP TABLE IF EXISTS $left_tbl");
+   $left_dbh->do("CREATE TABLE $left_tbl $table_ddl");
+   $left_dbh->do("LOAD DATA LOCAL INFILE '$left_outfile' "
       . "INTO TABLE $left_tbl");
 
-   $right->{dbh}->do("DROP TABLE IF EXISTS $right_tbl");
-   $right->{dbh}->do("CREATE TABLE $right_tbl $table_ddl");
-   $right->{dbh}->do("LOAD DATA LOCAL INFILE '$right->{outfile}' "
+   $right_dbh->do("DROP TABLE IF EXISTS $right_tbl");
+   $right_dbh->do("CREATE TABLE $right_tbl $table_ddl");
+   $right_dbh->do("LOAD DATA LOCAL INFILE '$right_outfile' "
       . "INTO TABLE $right_tbl");
 
-   MKDEBUG && _d('Loaded', $left->{outfile}, 'into table', $left_tbl, 'and',
-      $right->{outfile}, 'into table', $right_tbl);
+   MKDEBUG && _d('Loaded', $left_outfile, 'into table', $left_tbl, 'and',
+      $right_outfile, 'into table', $right_tbl);
 
    # Now we need to get all indexes from all tables used by the query
    # and add them to the temp tbl.  Some indexes may be invalid, dupes,
@@ -370,15 +439,15 @@ sub diff_rows {
    $self->add_source_indexes(
       %args,
       dsts      => [
-         { dbh => $left->{dbh},  tbl => $left_tbl  },
-         { dbh => $right->{dbh}, tbl => $right_tbl },
+         { dbh => $left_dbh,  tbl => $left_tbl  },
+         { dbh => $right_dbh, tbl => $right_tbl },
       ],
    );
 
    # Create a RowDiff with callbacks that will do what we want when rows and
    # columns differ.  This RowDiff is passed to TableSyncer which calls it.
    # TODO: explain how these callbacks work together.
-   my $max_diff = $args{max_differenes} || 1_000;
+   my $max_diff = $args{'max-differences'} || 1_000;  # 1k=sanity/safety
    my $n_diff   = 0;
    my @missing_rows;
    my @different_rows;
@@ -457,7 +526,7 @@ sub diff_rows {
    };
 
    my $rd = new RowDiff(
-      dbh          => $left->{dbh},
+      dbh          => $left_dbh,
       key_cmp      => $key_cmp,
       same_row     => $same_row,
       not_in_left  => $not_in_left,
@@ -484,12 +553,12 @@ sub diff_rows {
    $self->{TableSyncer}->sync_table(
       plugins       => $self->{plugins},
       src           => {
-         dbh => $left->{dbh},
+         dbh => $left_dbh,
          db  => $db,
          tbl => 'mk_upgrade_left',
       },
       dst           => {
-         dbh => $right->{dbh},
+         dbh => $right_dbh,
          db  => $db,
          tbl => 'mk_upgrade_right',
       },
@@ -504,10 +573,10 @@ sub diff_rows {
       $same_row->() if $l_r[LEFT] || $l_r[RIGHT];  # save remaining rows
    }
 
-   $self->{missing_rows}   = \@missing_rows;
-   $self->{different_rows} = \@different_rows;
+   # $self->{missing_rows}   = \@missing_rows;
+   # $self->{different_rows} = \@different_rows;
 
-   return $n_diff;
+   return scalar @different_rows;
 }
 
 # Writes the current row and all remaining rows to an outfile.
@@ -525,11 +594,14 @@ sub write_to_outfile {
    $outfile->write($fh, [ MockSyncStream::as_arrayref($sth, $row) ]);
 
    # Get and write all remaining rows.
-   my $remaing_rows = $sth->fetchall_arrayref();
-   $outfile->write($fh, $remaing_rows);
+   my $remaining_rows = $sth->fetchall_arrayref();
+   $outfile->write($fh, $remaining_rows);
+
+   my $n_rows = 1 + @$remaining_rows;
+   MKDEBUG && _d('Wrote', $n_rows, 'rows');
 
    close $fh or warn "Cannot close $file: $OS_ERROR";
-   return $file;
+   return $file, $n_rows;
 }
 
 sub open_outfile {
@@ -576,11 +648,11 @@ sub make_table_ddl {
 # add to $args{struct}->{keys} the keys that it was able to add.
 sub add_source_indexes {
    my ( $self, %args ) = @_;
-   my @required_args = qw(query dsts default_db);
+   my @required_args = qw(query dsts db);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($query, $dsts, $default_db) = @args{@required_args};
+   my ($query, $dsts) = @args{@required_args};
 
    my $qp = $self->{QueryParser};
    my $tp = $self->{TableParser};
@@ -590,7 +662,7 @@ sub add_source_indexes {
    my @src_tbls = $qp->get_tables($query);
    my @keys;
    foreach my $db_tbl ( @src_tbls ) {
-      my ($db, $tbl) = $q->split_unquote($db_tbl, $default_db);
+      my ($db, $tbl) = $q->split_unquote($db_tbl, $args{db});
       if ( $db ) {
          my $tbl_struct;
          eval {
@@ -638,29 +710,20 @@ sub add_source_indexes {
    return;
 }
 
-sub print_row_differences {
-   my ( $host1_results ) = @_;
-   my $missing = $host1_results->{get_row_sths}->{missing_rows};
-   my $diff    = $host1_results->{get_row_sths}->{different_rows};
-   if ( @$missing ) {
-      print "MISSING ROWS: ";
-      print "\n\n";
-      for my $i ( 0..(scalar @$missing - 1) ) {
-         print $i+1, '. Missing on host',
-            ($missing->[$i]->[0] ? "2: ".Dumper($missing->[$i]->[0])
-                                 : "1: ".Dumper($missing->[$i]->[1])
-            ),
-      }
-      print "\n";
+# TODO:
+sub report {
+   my ( $self ) = @_;
+   return unless keys %{$self->{diffs}};
+   foreach my $diff ( qw(checksums) ) {
+      my $report = "_report_diff_$diff";
+      $self->$report();
    }
-   if ( @$diff ) {
-      print "DIFFERENT ROWS: ";
-      print "\n\n";
-      for my $i ( 0..(scalar @$diff - 1) ) {
-         print $i+1, '. ', Dumper($diff->[$i]);
-      }
-      print "\n";
-   }
+}
+
+sub _report_diff_checksums {
+   my ( $self ) = @_;
+   return unless keys %{$self->{diffs}->{checksums}};
+   print Dumper($self->{diffs}->{checksums});
    return;
 }
 
