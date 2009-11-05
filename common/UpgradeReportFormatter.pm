@@ -68,11 +68,12 @@ sub event_report {
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
 
-   # Differences report.
+   # Differences report.  This relies on a sampleno attrib in each class
+   # since all other attributes (except maybe Query_time) are optional.
    my $class = $meta_stats->{classes}->{$where};
    push @result,
       '# Found ' . ($class->{differences}->{sum} || 0)
-      . ' differences in ' . $class->{arg}->{cnt} . " samples:\n";
+      . ' differences in ' . $class->{sampleno}->{cnt} . " samples:\n";
 
    my $fmt = "# %-15s %d\n";
    my @diffs = grep { $_ =~ m/^different_/ } keys %$class;

@@ -85,18 +85,21 @@ $meta_events = [
       differences          => 0,
       different_row_counts => 0,
       different_checksums  => 0,
+      sampleno             => 1,
    },
    {
       arg => "SELECT id FROM users WHERE name='bar'",
       differences          => 0,
       different_row_counts => 0,
       different_checksums  => 0,
+      sampleno             => 2,
    },
    {
       arg => "SELECT id FROM users WHERE name='bar'",
       differences          => 1,
       different_row_counts => 1,
       different_checksums  => 0,
+      sampleno             => 3,
    },
 ];
 
