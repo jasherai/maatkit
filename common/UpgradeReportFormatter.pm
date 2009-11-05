@@ -24,7 +24,7 @@ package UpgradeReportFormatter;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-Transformers->import(qw(make_checksum));
+Transformers->import(qw(make_checksum percentage_of shorten micro_t));
 
 use constant MKDEBUG           => $ENV{MKDEBUG};
 use constant LINE_LENGTH       => 74;
@@ -49,22 +49,14 @@ sub new {
 
 sub event_report {
    my ( $self, %args ) = @_;
-   my @required_args = qw(where rank worst meta_ea host_eas);
+   my @required_args = qw(where rank worst meta_ea hosts);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($where, $rank, $worst, $meta_ea, $eas) = @args{@required_args};
+   my ($where, $rank, $worst, $meta_ea, $hosts) = @args{@required_args};
    my $meta_stats = $meta_ea->results;
    my @result;
 
-   # Does the data exist?  Is there a sample event?
-#   my $store = $stats->{classes}->{$where};
-#   return "# No such event $where\n" unless $store;
-#   my $sample = $stats->{samples}->{$where};
-
-   # Pick the first attribute to get counts
-#   my $global_cnt = $stats->{globals}->{$worst}->{cnt};
-#   my $class_cnt  = $store->{$worst}->{cnt};
 
    # First line
    my $line = sprintf(
@@ -89,6 +81,67 @@ sub event_report {
          sprintf $fmt, '  ' . make_label($diff), $class->{$diff}->{sum};
    }
 
+   # Side-by-side hosts report.
+   my $report = new ReportFormatter(
+      underline_header => 0,
+      line_prefix      => '',
+   );
+   $report->set_columns(
+      { name => '' },
+      map { { name => $_->{name}, right_justify => 1 } } @$hosts,
+   );
+   # Bool values.
+   foreach my $thing ( qw(Errors Warnings) ) {
+      my @vals = $thing;
+      foreach my $host ( @$hosts ) {
+         my $ea    = $host->{ea};
+         my $stats = $ea->results->{classes}->{$where};
+         if ( $stats && $stats->{$thing} ) {
+            push @vals, shorten($stats->{$thing}->{sum}, d=>1_000, p=>0)
+         }
+         else {
+            push @vals, 0;
+         }
+      }
+      $report->add_line(@vals);
+   }
+   # Fully aggregated numeric values.
+   foreach my $thing ( qw(Query_time row_count) ) {
+      my @vals;
+
+      foreach my $host ( @$hosts ) {
+         my $ea    = $host->{ea};
+         my $stats = $ea->results->{classes}->{$where};
+         if ( $stats && $stats->{$thing} ) {
+            my $vals = $stats->{$thing};
+            my $func = $thing =~ m/time$/ ? \&micro_t : \&shorten;
+            my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
+            my @n = (
+               @{$vals}{qw(sum min max)},
+               $vals->{sum} / $vals->{cnt},
+               @{$metrics}{qw(pct_95 stddev median)},
+            );
+            @n = map { defined $_ ? $func->($_) : '' } @n;
+            push @vals, \@n;
+         }
+         else {
+            push @vals, undef;
+         }
+      }
+
+      if ( scalar @vals && grep { defined } @vals ) {
+         $report->add_line($thing, map { '' } @$hosts);
+         my @metrics = qw(sum min max avg pct_95 stddev median);
+         for my $i ( 0..$#metrics ) {
+            my @n = '  ' . $metrics[$i];
+            push @n, map { $_ && defined $_->[$i] ? $_->[$i] : '' } @vals;
+            $report->add_line(@n);
+         }
+      }
+   }
+
+   push @result, $report->get_report();
+
    return join("\n", map { s/\s+$//; $_ } @result) . "\n";
 }
 
@@ -100,18 +153,6 @@ sub make_label {
    $val =~ s/_/ /g;
 
    return $val;
-}
-
-# Does pretty-printing for bool (Yes/No) attributes like QC_Hit.
-sub format_bool_attrib {
-   my ( $stats ) = @_;
-   # Since the value is either 1 or 0, the sum is the number of
-   # all true events and the number of false events is the total
-   # number of events minus those that were true.
-   my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
-   # my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
-   my $n_true = '(' . shorten($stats->{sum}, d=>1_000, p=>0) . ')';
-   return $p_true, $n_true;
 }
 
 # Does pretty-printing for lists of strings like users, hosts, db.

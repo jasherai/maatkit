@@ -59,6 +59,7 @@ $events1 = [
       Query_time    => '8.000652',
       pos_in_log    => 1,
       db            => 'test1',
+      Errors        => 'No',
    },
    {
       cmd  => 'Query',
@@ -66,6 +67,7 @@ $events1 = [
       Query_time    => '1.001943',
       pos_in_log    => 2,
       db            => 'test1',
+      Errors        => 'Yes',
    },
    {
       cmd           => 'Query',
@@ -73,6 +75,7 @@ $events1 = [
       Query_time    => '1.000682',
       pos_in_log    => 5,
       db            => 'test1',
+      Errors        => 'No',
    },
 ];
 $events2 = $events1;
@@ -102,13 +105,25 @@ $expected = <<EOF;
 Found 1 differences in 3 samples:
   checksums     0
   row counts    1
+           host1 host2
+Errors         1     1
+Warnings       0     0
+Query_time            
+  sum        10s   10s
+  min         1s    1s
+  max         8s    8s
+  avg         3s    3s
+  pct_95      8s    8s
+  stddev      3s    3s
+  median   992ms 992ms
 EOF
 
 aggregate();
 
 $result = $urf->event_report(
    meta_ea  => $meta_ea,
-   host_eas => [$ea1, $ea2],
+   hosts    => [ {name=>'host1', ea=>$ea1},
+                 {name=>'host2', ea=>$ea2} ],
    where   => 'select id from users where name=?',
    rank    => 1,
    worst   => 'differences',

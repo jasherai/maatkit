@@ -14,16 +14,6 @@ require '../ReportFormatter.pm';
 
 my $rf;
 
-sub test_print {
-   my $output = '';
-   open my $fh, '>', \$output or die $OS_ERROR;
-   select $fh;
-   $rf->print();
-   close $fh;
-   select STDOUT;
-   return $output;
-}
-
 $rf = new ReportFormatter();
 
 isa_ok($rf, 'ReportFormatter');
@@ -47,7 +37,7 @@ $rf->add_line(qw(0x3A99CC42AEDCCFCD-1  ABC12345  ADD12345));
 $rf->add_line(qw(0x234DDDAC43820481-3  0007C99B  BB008171));
 
 is(
-   test_print(),
+   $rf->get_report(),
 "# Checksum differences
 # Query ID             db-1.foo.com 123.123.123.123
 # ==================== ============ ===============

@@ -38,6 +38,8 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
+      underline_header => 1,
+      line_prefix      => '# ',
       %args,
    };
    return bless $self, $class;
@@ -53,7 +55,7 @@ sub set_columns {
    my ( $self, @cols ) = @_;
    push @{$self->{cols}}, map {
       my $col = $_;
-      die "Column does not have a name" unless $col->{name};
+      die "Column does not have a name" unless defined $col->{name};
       if ( $col->{fixed_wdith} && $col->{fixed_width} < length $col->{name} ) {
          die "Fixed width is less than the column name";
       }
@@ -95,35 +97,33 @@ sub add_line {
    return;
 }
 
-sub print {
-   my ( $self, $fh ) = @_;
+sub get_report {
+   my ( $self ) = @_;
+   my @lines;
+   my $p = $self->{line_prefix} || '';
 
-   $fh ||= *STDOUT;
-
-   print "# $self->{title}\n" if $self->{title};
-
-   my $fmt = '# '
-           . join(' ',
-               map {
-                  my $col = $_;
-                  my $col_fmt = '%'
-                              . ($col->{right_justify} ? '' : '-')
-                              . "$col->{max_val_width}"
-                              . 's';
-                  $col_fmt;
-               } @{$self->{cols}}
-            )
-          . "\n";
+   my $fmt = $p . join(' ',
+      map {
+         my $col = $_;
+         my $col_fmt = '%'
+                     . ($col->{right_justify} ? '' : '-')
+                     . "$col->{max_val_width}"
+                     . 's';
+         $col_fmt;
+      } @{$self->{cols}}
+   );
    MKDEBUG && _d('Format:', $fmt);
 
-   printf $fmt, map { $_->{name} } @{$self->{cols}};
-   printf $fmt, map { '=' x $_->{max_val_width} } @{$self->{cols}};
+   push @lines, sprintf "${p}$self->{title}" if $self->{title};
+   push @lines, sprintf $fmt, map { $_->{name} } @{$self->{cols}};
+   push @lines, sprintf $fmt, map { '=' x $_->{max_val_width} } @{$self->{cols}}
+      if $self->{underline_header};
 
    foreach my $line ( @{$self->{lines}} ) {
-      printf $fmt, @$line;
+      push @lines, sprintf $fmt, @$line;
    }
 
-   return;
+   return join("\n", @lines) . "\n";
 }
 
 sub _d {
