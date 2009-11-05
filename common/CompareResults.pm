@@ -56,8 +56,9 @@ sub new {
 #   * event  hashref: an event
 #   * dbh    scalar: active dbh
 # Optional args:
-#   * db          scalar: database name to create temp table in
-#   * temp-table  scalar: temp table name
+#   * db             scalar: database name to create temp table in unless...
+#   * temp-database  scalar: ...temp db name is given
+#   * temp-table     scalar: temp table name
 # Returns: hashref
 # Can die: yes
 # before_execute() drops the temp table if the method is checksum.
@@ -77,6 +78,7 @@ sub before_execute {
 
    if ( $self->{method} eq 'checksum' ) {
       my ($db, $tmp_tbl) = @args{qw(db temp-table)};
+      $db = $args{'temp-database'} if $args{'temp-database'};
       die "Cannot checksum results without a database"
          unless $db;
 
