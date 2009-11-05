@@ -781,14 +781,17 @@ sub report {
       $col;
    } @$hosts;
 
+   my @reports;
    foreach my $diff ( qw(checksums col_vals) ) {
       my $report = "_report_diff_$diff";
-      $self->$report(
+      push @reports, $self->$report(
          query_id_col => $query_id_col,
          host_cols    => \@host_cols,
          %args
       );
    }
+
+   return join("\n", @reports);
 }
 
 sub _report_diff_checksums {
@@ -819,9 +822,7 @@ sub _report_diff_checksums {
       } sort { $a <=> $b } keys %{$diff_checksums->{$item}};
    }
 
-   $report->print();
-
-   return;
+   return $report->get_report();
 }
 
 sub _report_diff_col_vals {
@@ -856,9 +857,7 @@ sub _report_diff_col_vals {
       }
    }
 
-   $report->print();
-
-   return;
+   return $report->get_report();
 }
 
 sub _d {

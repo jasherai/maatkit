@@ -94,16 +94,6 @@ sub get_id {
    return make_checksum(@_);
 }
 
-sub test_report {
-   my $output = '';
-   open my $fh, '>', \$output or die $OS_ERROR;
-   select $fh;
-   $cr->report(hosts  => $hosts);
-   close $fh;
-   select STDOUT;
-   return $output;
-}
-
 # #############################################################################
 # Test the checksum method.
 # #############################################################################
@@ -298,7 +288,7 @@ $report = <<EOF;
 EOF
 
 is(
-   test_report(),
+   $cr->report(hosts => $hosts),
    $report,
    'checksum: report'
 );
@@ -498,7 +488,7 @@ $report = <<EOF;
 EOF
 
 is(
-   test_report(),
+   $cr->report(hosts => $hosts),
    $report,
    'rows: report'
 );
