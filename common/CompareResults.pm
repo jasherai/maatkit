@@ -184,6 +184,7 @@ sub after_execute {
       die "Failed to restore original query" unless $event->{original_arg};
 
       $event->{arg} = $event->{original_arg};
+      delete $event->{original_arg};
       MKDEBUG && _d('Unwrapped query');
    }
 
@@ -224,32 +225,29 @@ sub _compare_checksums {
    }
    my ($events, $hosts) = @args{@required_args};
 
-   my $event0 = $self->_checksum_results(
-      event => $events->[0],
-      dbh   => $hosts->[0]->{dbh},
-   );
-
    my $different_row_counts    = 0;
    my $different_column_counts = 0; # TODO
    my $different_column_types  = 0; # TODO
    my $different_checksums     = 0;
 
    my $n_events = scalar @$events;
-   foreach my $i ( 1..($n_events-1) ) {
-      my $event = $self->_checksum_results(
+   foreach my $i ( 0..($n_events-1) ) {
+      $events->[$i] = $self->_checksum_results(
          event => $events->[$i],
          dbh   => $hosts->[$i]->{dbh},
       );
-
-      $different_checksums++
-         if ($event0->{checksum} || 0) != ($event->{checksum} || 0);
-      $different_row_counts++
-         if ($event0->{row_count} || 0) != ($event->{row_count} || 0);
+      
+      if ( $i ) {
+         $different_checksums++
+            if ($events->[0]->{checksum} || 0) != ($events->[$i]->{checksum} || 0);
+         $different_row_counts++
+            if ($events->[0]->{row_count} || 0) != ($events->[$i]->{row_count} || 0);
+      }
    }
 
-   my $item = $event0->{fingerprint} || $event0->{arg};
+   my $item = $events->[0]->{fingerprint} || $events->[0]->{arg};
    if ( $different_checksums ) {
-      $self->{diffs}->{checksums}->{$item}->{$event0->{sampleno} || 0}
+      $self->{diffs}->{checksums}->{$item}->{$events->[0]->{sampleno} || 0}
          = [ map { $_->{checksum} } @$events ];
    }
 
