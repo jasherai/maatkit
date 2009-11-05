@@ -154,11 +154,11 @@ is_deeply(
    'checksum: temp table exists'
 );
 
-proc('before_execute', tmp_tbl => 'test.dropme');
+proc('before_execute', db=>'test', 'temp-table'=>'dropme');
 
 is(
    $events[0]->{arg},
-   'CREATE TEMPORARY TABLE test.dropme AS select * from test.t where i>0',
+   'CREATE TEMPORARY TABLE `test`.`dropme` AS select * from test.t where i>0',
    'checksum: before_execute() wraps query in CREATE TEMPORARY TABLE'
 );
 
@@ -188,7 +188,7 @@ like(
 
 is(
    $events[0]->{arg},
-   'CREATE TEMPORARY TABLE test.dropme AS select * from test.t where i>0',
+   'CREATE TEMPORARY TABLE `test`.`dropme` AS select * from test.t where i>0',
    "checksum: execute() doesn't unwrap query"
 );
 
@@ -251,7 +251,7 @@ is(
 # Make checksums differ.
 $dbh2->do('update test.t set i = 99 where i=1');
 
-proc('before_execute', tmp_tbl => 'test.dropme');
+proc('before_execute', db=>'test', 'temp-table'=>'dropme');
 proc('execute');
 proc('after_execute');
 
@@ -272,7 +272,7 @@ is_deeply(
 # Make row counts differ, too.
 $dbh2->do('insert into test.t values (4)');
 
-proc('before_execute', tmp_tbl => 'test.dropme');
+proc('before_execute', db=>'test', 'temp-table'=>'dropme');
 proc('execute');
 proc('after_execute');
 
@@ -354,12 +354,12 @@ is_deeply(
    'rows: temp table exists'
 );
 
-proc('before_execute', tmp_tbl => 'test.dropme');
+proc('before_execute');
 
 is(
    $events[0]->{arg},
    'select * from test.t',
-   'rows: before_execute() does not wrap query'
+   "rows: before_execute() doesn't wrap query and doesn't require tmp table"
 );
 
 is_deeply(
@@ -436,7 +436,7 @@ is(
 # Make the result set differ.
 $dbh2->do('insert into test.t values (5)');
 
-proc('before_execute', tmp_tbl => 'test.dropme');
+proc('before_execute');
 proc('execute');
 
 is_deeply(
@@ -473,7 +473,7 @@ is_deeply(
    'rows: column value is different'
 );
 
-proc('before_execute', tmp_tbl => 'test.dropme');
+proc('before_execute');
 proc('execute');
 
 is_deeply(

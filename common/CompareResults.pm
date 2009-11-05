@@ -31,48 +31,56 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
+# Required args:
+#   * method     scalar: "checksum" or "rows"
+#   * base-dir   scalar: dir used by rows method to write outfiles
+#   * plugins    arrayref: TableSync* plugins used by rows method
+#   * get_id     coderef: used by report() to trf query to its ID
+#   * common modules
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(method base-dir QueryParser MySQLDump TableParser
-                          TableSyncer plugins Quoter get_id);
+   my @required_args = qw(method base-dir plugins get_id
+                          QueryParser MySQLDump TableParser TableSyncer Quoter);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
       %args,
-      tmp_tbl => '',
-      wrap    => '',
+      tmp_tbl => '',  # for checksum method
       diffs   => {},
    };
    return bless $self, $class;
 }
 
-sub attributes {
-   my ( $self ) = @_;
-   return qw(
-      Query_time
-      row_count
-      different_row_counts
-      different_column_counts
-      different_column_types
-      different_checksums
-   );
-}
-
+# Required args:
+#   * event  hashref: an event
+#   * dbh    scalar: active dbh
+# Optional args:
+#   * db          scalar: database name to create temp table in
+#   * temp-table  scalar: temp table name
+# Returns: hashref
+# Can die: yes
+# before_execute() drops the temp table if the method is checksum.
+# db and temp-table are required for the checksum method, but optional
+# for the rows method.
 sub before_execute {
    my ( $self, %args ) = @_;
-   my @required_args = qw(event dbh tmp_tbl);
+   my @required_args = qw(event dbh);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($event, $dbh, $tmp_tbl) = @args{@required_args};
+   my ($event, $dbh) = @args{@required_args};
    my $sql;
 
-   # Clear previous tmp tbl and tmp tbl wrap.
+   # Clear previous tmp tbl.
    $self->{tmp_tbl} = '';
-   $self->{wrap}    = '';
 
    if ( $self->{method} eq 'checksum' ) {
+      my ($db, $tmp_tbl) = @args{qw(db temp-table)};
+      die "Cannot checksum results without a database"
+         unless $db;
+
+      $tmp_tbl = $self->{Quoter}->quote($db, $tmp_tbl);
       eval {
          $sql = "DROP TABLE IF EXISTS $tmp_tbl";
          MKDEBUG && _d($sql);
@@ -82,25 +90,33 @@ sub before_execute {
          MKDEBUG && _d($sql);
          $dbh->do($sql);
       };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d('Error dropping table', $tmp_tbl, ':', $EVAL_ERROR);
-         return;
-      }
+      die "Failed to drop temporary table $tmp_tbl: $EVAL_ERROR"
+         if $EVAL_ERROR;
 
-      # Save this tmp tbl and wrap; used later in after_execute()
-      # and checksum_results().
+      # Save the tmp tbl; it's used later in _compare_checksums().
       $self->{tmp_tbl} = $tmp_tbl; 
-      $self->{wrap}    = "CREATE TEMPORARY TABLE $tmp_tbl AS ";
 
       # Wrap the original query so when it's executed its results get
       # put in tmp table.
-      $event->{arg} = $self->{wrap} . $event->{arg};
+      $event->{original_arg} = $event->{arg};
+      $event->{arg} = "CREATE TEMPORARY TABLE $tmp_tbl AS $event->{arg}";
       MKDEBUG && _d('Wrapped query:', $event->{arg});
    }
 
    return $event;
 }
 
+# Required args:
+#   * event  hashref: an event
+#   * dbh    scalar: active dbh
+# Returns: hashref
+# Can die: yes
+# execute() executes the event's query.  Any prep work should have
+# been done in before_execute().  For the checksum method, this simply
+# executes the wrapped query.  For the rows method, this gets/saves
+# a statement handle for the results in the event which is processed
+# later in compare().  Both methods add the Query_time attrib to the
+# event.
 sub execute {
    my ( $self, %args ) = @_;
    my @required_args = qw(event dbh);
@@ -111,17 +127,14 @@ sub execute {
    my $query         = $event->{arg};
    my ( $start, $end, $query_time );
 
+   MKDEBUG && _d('Executing query');
    $event->{Query_time} = 0;
-
    if ( $self->{method} eq 'rows' ) {
       my $sth;
       eval {
          $sth = $dbh->prepare($query);
       };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d('Error on prepare:', $EVAL_ERROR);
-         return;
-      }
+      die "Failed to prepare query: $EVAL_ERROR" if $EVAL_ERROR;
 
       eval {
          $start = time();
@@ -129,10 +142,7 @@ sub execute {
          $end   = time();
          $query_time = sprintf '%.6f', $end - $start;
       };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d('Error executing query:', $EVAL_ERROR);
-         return;
-      }
+      die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
 
       $event->{results_sth} = $sth;
    }
@@ -143,10 +153,7 @@ sub execute {
          $end   = time();
          $query_time = sprintf '%.6f', $end - $start;
       };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d('Error executing query:', $EVAL_ERROR);
-         return;
-      }
+      die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
    }
 
    $event->{Query_time} = $query_time;
@@ -154,6 +161,14 @@ sub execute {
    return $event;
 }
 
+# Required args:
+#   * event  hashref: an event
+# Optional args:
+#   * dbh    scalar: active dbh
+# Returns: hashref
+# Can die: yes
+# after_execute() does any post-execution cleanup.  The results should
+# not be compared here; no anaylytics here, save that for compare().
 sub after_execute {
    my ( $self, %args ) = @_;
    my @required_args = qw(event);
@@ -163,13 +178,30 @@ sub after_execute {
    my ($event) = @args{@required_args};
 
    if ( $self->{method} eq 'checksum' ) {
-      $event->{arg} =~ s/^$self->{wrap}//;
-      MKDEBUG && _d('Unwrapped query:', $event->{arg}); 
+      # This shouldn't happen, unless before_execute() isn't called.
+      die "Failed to restore original query" unless $event->{original_arg};
+
+      $event->{arg} = $event->{original_arg};
+      MKDEBUG && _d('Unwrapped query');
    }
 
    return $event;
 }
 
+# Required args:
+#   * events  arrayref: events
+#   * hosts   arrayref: hosts hashrefs with at least a dbh key
+# Returns: array
+# Can die: yes
+# compare() compares events that have been run through before_execute(),
+# execute() and after_execute().  The checksum method primarily compares
+# the checksum attribs saved in the events.  The rows method uses the
+# result statement handles saved in the events to compare rows and column
+# values.  Each method returns an array of key => value pairs which the
+# caller should aggregate into a meta-event that represents differences
+# compare() has found in these events.  Only a "summary" of differences is
+# returned.  Specific differences are saved internally and are reported
+# by calling report() later.
 sub compare {
    my ( $self, %args ) = @_;
    my @required_args = qw(events hosts);
