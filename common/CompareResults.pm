@@ -47,6 +47,24 @@ sub new {
    return bless $self, $class;
 }
 
+sub attributes {
+   my ( $self ) = @_;
+   return qw(
+      Query_time
+      row_count
+   );
+}
+
+sub meta_attributes {
+   my ( $self ) = @_;
+   return qw(
+      different_row_counts
+      different_column_counts
+      different_column_types
+      different_checksums
+   );
+}
+
 sub before_execute {
    my ( $self, %args ) = @_;
    my @required_args = qw(event dbh tmp_tbl);
