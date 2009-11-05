@@ -102,20 +102,20 @@ $meta_events = [
 
 $expected = <<EOF;
 # Query 1: ID 0x82860EDA9A88FCC5 at byte 0 _______________________________
-Found 1 differences in 3 samples:
-  checksums     0
-  row counts    1
-           host1 host2
-Errors         1     1
-Warnings       0     0
-Query_time            
-  sum        10s   10s
-  min         1s    1s
-  max         8s    8s
-  avg         3s    3s
-  pct_95      8s    8s
-  stddev      3s    3s
-  median   992ms 992ms
+# Found 1 differences in 3 samples:
+#   checksums     0
+#   row counts    1
+#            host1 host2
+# Errors         1     1
+# Warnings       0     0
+# Query_time            
+#   sum        10s   10s
+#   min         1s    1s
+#   max         8s    8s
+#   avg         3s    3s
+#   pct_95      8s    8s
+#   stddev      3s    3s
+#   median   992ms 992ms
 EOF
 
 aggregate();

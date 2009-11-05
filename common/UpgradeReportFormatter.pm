@@ -71,10 +71,10 @@ sub event_report {
    # Differences report.
    my $class = $meta_stats->{classes}->{$where};
    push @result,
-      'Found ' . ($class->{differences}->{sum} || 0)
+      '# Found ' . ($class->{differences}->{sum} || 0)
       . ' differences in ' . $class->{arg}->{cnt} . " samples:\n";
 
-   my $fmt = "%-15s %d\n";
+   my $fmt = "# %-15s %d\n";
    my @diffs = grep { $_ =~ m/^different_/ } keys %$class;
    foreach my $diff ( sort @diffs ) {
       push @result,
@@ -84,7 +84,6 @@ sub event_report {
    # Side-by-side hosts report.
    my $report = new ReportFormatter(
       underline_header => 0,
-      line_prefix      => '',
    );
    $report->set_columns(
       { name => '' },
