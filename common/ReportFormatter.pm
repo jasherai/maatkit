@@ -38,8 +38,10 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
-      underline_header => 1,
-      line_prefix      => '# ',
+      underline_header  => 1,
+      line_prefix        => '# ',
+      line_width         => 78,
+      truncate_underline => 1,
       %args,
    };
    return bless $self, $class;
@@ -56,7 +58,7 @@ sub set_columns {
    push @{$self->{cols}}, map {
       my $col = $_;
       die "Column does not have a name" unless defined $col->{name};
-      if ( $col->{fixed_wdith} && $col->{fixed_width} < length $col->{name} ) {
+      if ( $col->{fixed_wdith} && $col->{fixed_width} < length $col->{name} ) { 
          die "Fixed width is less than the column name";
       }
       $col->{min_val_width} = length $col->{name};
@@ -102,22 +104,43 @@ sub get_report {
    my @lines;
    my $p = $self->{line_prefix} || '';
 
-   my $fmt = $p . join(' ',
-      map {
-         my $col = $_;
-         my $col_fmt = '%'
-                     . ($col->{right_justify} ? '' : '-')
-                     . "$col->{max_val_width}"
-                     . 's';
-         $col_fmt;
-      } @{$self->{cols}}
-   );
+   my $n_cols = scalar @{$self->{cols}} - 1;
+
+   my $fmt = $p;
+   my @col_fmts;
+   for my $i ( 0..($n_cols-1) ) {
+      my $col = $self->{cols}->[$i];
+      my $col_fmt = '%'
+                  . ($col->{right_justify} ? '' : '-')
+                  . "$col->{max_val_width}"
+                  . 's';
+      push @col_fmts, $col_fmt;
+   }
+   push @col_fmts,
+      '%' . ($self->{cols}->[-1]->{right_justify} ? '' : '-') . 's';
+   $fmt .= join(' ', @col_fmts);
    MKDEBUG && _d('Format:', $fmt);
 
    push @lines, sprintf "${p}$self->{title}" if $self->{title};
+
    push @lines, sprintf $fmt, map { $_->{name} } @{$self->{cols}};
-   push @lines, sprintf $fmt, map { '=' x $_->{max_val_width} } @{$self->{cols}}
-      if $self->{underline_header};
+
+   if ( $self->{underline_header} ) {
+      my $underline_len = 0;
+      my @underlines = map {
+         my $underline = '=' x $_->{max_val_width};
+         $underline_len += length $underline;
+         $underline;
+      } @{$self->{cols}};
+      $underline_len += (scalar @underlines) - 1;
+      if ( $self->{truncate_underline}
+           && (2 + $underline_len) > $self->{line_width} ) {
+         my $over = $self->{line_width} - (2 + $underline_len);
+         $underlines[-1] = substr($underlines[-1], 0, $over);
+      }
+
+      push @lines, sprintf $fmt, @underlines;
+   }
 
    foreach my $line ( @{$self->{lines}} ) {
       push @lines, sprintf $fmt, @$line;

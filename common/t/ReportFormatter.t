@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 1;
+use Test::More tests => 4;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -41,10 +41,28 @@ is(
 "# Checksum differences
 # Query ID             db-1.foo.com 123.123.123.123
 # ==================== ============ ===============
-# 0x3A99CC42AEDCCFCD-1 ABC12345     ADD12345       
-# 0x234DDDAC43820481-3 0007C99B     BB008171       
+# 0x3A99CC42AEDCCFCD-1 ABC12345     ADD12345
+# 0x234DDDAC43820481-3 0007C99B     BB008171
 ",
    'Basic report'
+);
+
+$rf = new ReportFormatter();
+$rf->set_title('Truncate underline');
+$rf->set_columns(
+   { name => 'col1' },
+   { name => 'col2' },
+);
+$rf->add_line('short', 'long long long long long long long long long long long long long long long long long long');
+
+is(
+   $rf->get_report(),
+"# Truncate underline
+# col1  col2
+# ===== ======================================================================
+# short long long long long long long long long long long long long long long long long long long
+",
+   'Truncate header underlining to line width'
 );
 
 # #############################################################################
