@@ -27,10 +27,12 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, @rows ) = @_;
+   my $n_rows = scalar @rows;
    my $self = {
       cursor => 0,
-      Active => scalar(@rows),
+      Active => $n_rows,
       rows   => \@rows,
+      n_rows => $n_rows,
       NAME   => [],
    };
    return bless $self, $class;
@@ -39,29 +41,32 @@ sub new {
 sub reset {
    my ( $self ) = @_;
    $self->{cursor} = 0;
-   $self->{Active} = scalar @{$self->{rows}},
+   $self->{Active} = $self->{n_rows};
    return;
 }
 
 sub fetchrow_hashref {
    my ( $self ) = @_;
    my $row;
-   if ( $self->{cursor} < @{$self->{rows}} ) {
+   if ( $self->{cursor} < $self->{n_rows} ) {
       $row = $self->{rows}->[$self->{cursor}++];
    }
-   $self->{Active} = $self->{cursor} < @{$self->{rows}};
+   $self->{Active} = $self->{cursor} < $self->{n_rows};
    return $row;
 }
 
 sub fetchall_arrayref {
    my ( $self ) = @_;
-   my $rows = [];
-   if ( $self->{cursor} < @{$self->{rows}} ) {
-      @$rows = $self->{rows}->[ $self->{cursor}..(@{$self->{rows}} - 1) ];
-      $self->{cursor} = @{$self->{rows}};
+   my @rows;
+   if ( $self->{cursor} < $self->{n_rows} ) {
+      my @cols = @{$self->{NAME}};
+      die "Cannot fetchall_arrayref() unless NAME is set" unless @cols;
+      @rows =  map { [ @{$_}{@cols} ] }
+         @{$self->{rows}}[ $self->{cursor}..($self->{n_rows} - 1) ];
+      $self->{cursor} = $self->{n_rows};
    }
-   $self->{Active} = $self->{cursor} < @{$self->{rows}};
-   return $rows;
+   $self->{Active} = $self->{cursor} < $self->{n_rows};
+   return \@rows;
 }
 
 sub _d {

@@ -432,6 +432,7 @@ sub _compare_rows {
       }
 
       my @diff_rows = $self->diff_rows(
+         %args,             # for options like max-different-rows
          left_dbh        => $hosts->[0]->{dbh},
          left_outfile    => $left_outfile,
          right_dbh       => $hosts->[$i]->{dbh},
@@ -439,7 +440,6 @@ sub _compare_rows {
          res_struct      => $res_struct,
          query           => $event0->{arg},
          db              => $args{tmp_db} || $event0->{db},
-         max_differences => $args{max_differences},
       );
 
       # Save differences.
@@ -467,8 +467,9 @@ sub _compare_rows {
 #   * db             scalar: database to use for creating temp tables
 #   * query          scalar: query, parsed for indexes
 # Optional args:
-#   * max-differences  scalar: stop after this many differences are found
-#   * float-precision  scalar: round float, double, decimal types to N places
+#   * add-indexes         scalar: add indexes from source tables to tmp tbl
+#   * max-different-rows  scalar: stop after this many differences are found
+#   * float-precision     scalar: round float, double, decimal types to N places
 # Returns: scalar
 # Can die: no
 # diff_rows() loads and compares two result sets and returns the number of
@@ -508,20 +509,22 @@ sub diff_rows {
    # Now we need to get all indexes from all tables used by the query
    # and add them to the temp tbl.  Some indexes may be invalid, dupes,
    # or generally useless, but we'll let the sync algo decide that later.
-   $self->add_source_indexes(
-      %args,
-      dsts      => [
-         { dbh => $left_dbh,  tbl => $left_tbl  },
-         { dbh => $right_dbh, tbl => $right_tbl },
-      ],
-   );
+   if ( $args{'add-indexes'} ) {
+      $self->add_indexes(
+         %args,
+         dsts      => [
+            { dbh => $left_dbh,  tbl => $left_tbl  },
+            { dbh => $right_dbh, tbl => $right_tbl },
+         ],
+      );
+   }
 
    # Create a RowDiff with callbacks that will do what we want when rows and
    # columns differ.  This RowDiff is passed to TableSyncer which calls it.
    # TODO: explain how these callbacks work together.
-   my $max_diff = $args{'max-differences'} || 1_000;  # 1k=sanity/safety
+   my $max_diff = $args{'max-different-rows'} || 1_000;  # 1k=sanity/safety
    my $n_diff   = 0;
-   my @missing_rows;
+   my @missing_rows;  # not currently saved; row counts show missing rows
    my @different_rows;
    use constant LEFT  => 0;
    use constant RIGHT => 1;
@@ -542,12 +545,12 @@ sub diff_rows {
       }
       elsif ( $l_r[LEFT] ) {
          MKDEBUG && _d('Saving not in right row');
-         push @missing_rows, [$l_r[LEFT], undef];
+         # push @missing_rows, [$l_r[LEFT], undef];
          $n_diff++;
       }
       elsif ( $l_r[RIGHT] ) {
          MKDEBUG && _d('Saving not in left row');
-         push @missing_rows, [undef, $l_r[RIGHT]];
+         # push @missing_rows, [undef, $l_r[RIGHT]];
          $n_diff++;
       }
       else {
@@ -715,7 +718,7 @@ sub make_table_ddl {
 #   ],
 # For the moment, the sub returns nothing.  In the future, it should
 # add to $args{struct}->{keys} the keys that it was able to add.
-sub add_source_indexes {
+sub add_indexes {
    my ( $self, %args ) = @_;
    my @required_args = qw(query dsts db);
    foreach my $arg ( @required_args ) {
@@ -760,7 +763,7 @@ sub add_source_indexes {
    for my $dst ( @$dsts ) {
       foreach my $key ( @keys ) {
          my $def = $key->[0];
-         my $sql = "ALTER TABLE `$dst->{tbl}` ADD $key->[0]";
+         my $sql = "ALTER TABLE $dst->{tbl} ADD $key->[0]";
          MKDEBUG && _d($sql);
          eval {
             $dst->{dbh}->do($sql);

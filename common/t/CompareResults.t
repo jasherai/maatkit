@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 40;
+use Test::More tests => 46;
 
 require '../Quoter.pm';
 require '../MySQLDump.pm';
@@ -498,6 +498,12 @@ is_deeply(
    'rows: compare, different column values'
 );
 
+is_deeply(
+   $dbh1->selectall_arrayref('show indexes from test.mk_upgrade_left'),
+   [],
+   'Did not add indexes'
+);
+
 $report = <<EOF;
 # Column value differences
 # Query ID           Column master slave      
@@ -523,6 +529,63 @@ is_deeply(
       3 => 'select * from test.t2'
    },
    'rows: samples'
+);
+
+# Test max-different-rows.
+$cr->reset();
+$dbh2->do('update test.t2 set c="should be a" where i=1');
+$dbh2->do('update test.t2 set c="should be b" where i=2');
+proc('before_execute');
+proc('execute');
+
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+      hosts  => $hosts,
+      'max-different-rows' => 1,
+      'add-indexes'        => 1,
+   ) ],
+   [
+      different_row_counts    => 0,
+      different_column_values => 1,
+      different_column_counts => 0,
+      different_column_types  => 0,
+   ],
+   'rows: compare, stop at max-different-rows'
+);
+
+is_deeply(
+   $dbh1->selectall_arrayref('show indexes from test.mk_upgrade_left'),
+   [['mk_upgrade_left','0','i','1','i','A',undef,undef, undef,'YES','BTREE','']],
+   'Added indexes'
+);
+
+$report = <<EOF;
+# Column value differences
+# Query ID           Column master slave      
+# ================== ====== ====== ===========
+# CFC309761E9131C5-3 c      a      should be a
+EOF
+
+is(
+   $cr->report(hosts => $hosts),
+   $report,
+   'rows: report max-different-rows'
+);
+
+# Double check that outfiles have correct contents.
+my @outfile = split(/[\t\n]+/, `cat /tmp/mk-upgrade-res/left-outfile.txt`);
+is_deeply(
+	\@outfile,
+	[qw(1 a 2 b 3 c)],
+   'Left outfile'
+);
+
+@outfile = split(/[\t\n]+/, `cat /tmp/mk-upgrade-res/right-outfile.txt`);
+is_deeply(
+	\@outfile,
+	['1', 'should be a', '2', 'should be b', '3', 'should be c'],
+   'Right outfile'
 );
 
 # #############################################################################
