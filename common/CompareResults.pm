@@ -48,6 +48,7 @@ sub new {
       %args,
       tmp_tbl => '',  # for checksum method
       diffs   => {},
+      samples => {},
    };
    return bless $self, $class;
 }
@@ -211,7 +212,6 @@ sub compare {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   $self->{diffs} = {};
    my ($events, $hosts) = @args{@required_args};
    return $self->{method} eq 'rows' ? $self->_compare_rows(%args)
                                     : $self->_compare_checksums(%args);
@@ -245,10 +245,13 @@ sub _compare_checksums {
       }
    }
 
+   # Save differences.
    my $item = $events->[0]->{fingerprint} || $events->[0]->{arg};
    if ( $different_checksums ) {
-      $self->{diffs}->{checksums}->{$item}->{$events->[0]->{sampleno} || 0}
+      my $sampleno = $events->[0]->{sampleno} || 0;
+      $self->{diffs}->{checksums}->{$item}->{$sampleno}
          = [ map { $_->{checksum} } @$events ];
+      $self->{samples}->{$item}->{$sampleno} = $events->[0]->{arg};
    }
 
    return (
@@ -423,10 +426,12 @@ sub _compare_rows {
          max_differences => $args{max_differences},
       );
 
+      # Save differences.
       if ( scalar @diff_rows ) { 
          $different_column_values++;
-         $self->{diffs}->{col_vals}->{$item}->{$event0->{sampleno} || 0}
-            = \@diff_rows;
+         my $sampleno = $event0->{sampleno} || 0;
+         $self->{diffs}->{col_vals}->{$item}->{$sampleno} = \@diff_rows;
+         $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
       }
    }
 
@@ -815,7 +820,7 @@ sub _report_diff_checksums {
       map {
          $report->add_line(
             $get_id->($item) . '-' . $_,
-            @{$diff_checksums->{$item}->{$_}},
+            @{$diff_checksums->{$item}->{$_}}[0,1],
          );
       } sort { $a <=> $b } keys %{$diff_checksums->{$item}};
    }
@@ -856,6 +861,24 @@ sub _report_diff_col_vals {
    }
 
    return $report->get_report();
+}
+
+sub samples {
+   my ( $self, $item ) = @_;
+   return unless $item;
+   my @samples;
+   foreach my $sampleno ( keys %{$self->{samples}->{$item}} ) {
+      push @samples, $sampleno, $self->{samples}->{$item}->{$sampleno};
+   }
+   return @samples;
+}
+
+sub reset {
+   my ( $self ) = @_;
+   $self->{tmp_tbl} = '';
+   $self->{diffs}   = {};
+   $self->{samples} = {};
+   return;
 }
 
 sub _d {

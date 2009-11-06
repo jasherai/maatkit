@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 38;
+use Test::More tests => 40;
 
 require '../Quoter.pm';
 require '../MySQLDump.pm';
@@ -293,6 +293,15 @@ is(
    'checksum: report'
 );
 
+my %samples = $cr->samples($events[0]->{fingerprint});
+is_deeply(
+   \%samples,
+   {
+      1 => 'select * from test.t where i>0',
+   },
+   'checksum: samples'
+);
+
 # #############################################################################
 # Test the rows method.
 # #############################################################################
@@ -446,12 +455,16 @@ is_deeply(
 # Use test.t2 and make a column value differ.
 @events = (
    {
-      arg => 'select * from test.t2',
-      db  => 'test',
+      arg         => 'select * from test.t2',
+      db          => 'test',
+      fingerprint => 'select * from test.t2',
+      sampleno    => 3,
    },
    {
-      arg => 'select * from test.t2',
-      db  => 'test',
+      arg         => 'select * from test.t2',
+      db          => 'test',
+      fingerprint => 'select * from test.t2',
+      sampleno    => 3,
    },
 );
 
@@ -484,13 +497,22 @@ $report = <<EOF;
 # Column value differences
 # Query ID           Column master slave      
 # ================== ====== ====== ===========
-# CFC309761E9131C5-0 c      c      should be c
+# CFC309761E9131C5-3 c      c      should be c
 EOF
 
 is(
    $cr->report(hosts => $hosts),
    $report,
    'rows: report'
+);
+
+%samples = $cr->samples($events[0]->{fingerprint});
+is_deeply(
+   \%samples,
+   {
+      3 => 'select * from test.t2'
+   },
+   'rows: samples'
 );
 
 # #############################################################################
