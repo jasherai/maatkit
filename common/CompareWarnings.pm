@@ -90,7 +90,7 @@ sub before_execute {
          MKDEBUG && _d($sql);
          $dbh->do($sql);
 
-         $sql = "CREATE TABLE $self->{tmp_tbl} (i int) $engine=MEMORY";
+         $sql = "CREATE TEMPORARY TABLE $self->{tmp_tbl} (i int) $engine=MEMORY";
          MKDEBUG && _d($sql);
          $dbh->do($sql);
 

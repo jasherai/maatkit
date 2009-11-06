@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 21;
 
 require '../Quoter.pm';
 require '../VersionParser.pm';
@@ -107,15 +107,9 @@ like(
 proc('before_execute', db=>'test');
 
 is_deeply(
-   $dbh1->selectrow_arrayref('show tables from `test` like "mk_upgrade_clear_warnings"'),
-   [qw(mk_upgrade_clear_warnings)],
-   'before_execute() creates its table'
-);
-
-is_deeply(
    $dbh1->selectrow_arrayref('select * from test.mk_upgrade_clear_warnings'),
    [qw(42)],
-   'Its table has a row'
+   'before_create() creates its temporary table'
 );
 
 proc('before_execute', db=>'test');
