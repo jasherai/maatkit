@@ -1,6 +1,7 @@
 File                           stmt   bran   cond    sub    pod   time  total
 ...common/BinaryLogParser.pm   91.9   86.4   83.3   87.5    n/a  100.0   89.7
 ...t/common/ChangeHandler.pm   82.6   59.4   55.6   88.9    n/a  100.0   78.0
+...mmon/CompareQueryTimes.pm   91.8   64.6   57.1   94.7    n/a  100.0   85.7
 .../common/CompareResults.pm   97.6   71.5   66.7  100.0    n/a  100.0   90.9
 ...common/CompareWarnings.pm   98.6   65.0   77.8  100.0    n/a  100.0   91.1
 ...atkit/common/DSNParser.pm   81.0   63.2   54.3   80.0    n/a  100.0   73.1

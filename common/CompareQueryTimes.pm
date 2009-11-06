@@ -24,93 +24,180 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
 
+Transformers->import(qw(micro_t));
+
 use constant MKDEBUG => $ENV{MKDEBUG};
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 # Significant percentage increase for each bucket.  For example,
 # 1us to 4us is a 300% increase, but in reality that is not significant.
 # But a 500% increase to 6us may be significant.  In the 1s+ range (last
 # bucket), since the time is already so bad, even a 20% increase (e.g. 1s
 # to 1.2s) is significant.
-# If you change these values, you'll need to update the threshold tests
-# in QueryRanker.t.
 my @bucket_threshold = qw(500 100  100   500 50   50    20 1   );
-my @bucket_labels    = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
+# my @bucket_labels  = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
+# Required args:
+#   * get_id  coderef: used by report() to trf query to its ID
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw();
+   my @required_args = qw(get_id);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
       %args,
+      diffs   => {},
+      samples => {},
    };
    return bless $self, $class;
 }
 
+# Required args:
+#   * event  hashref: an event
+#   * dbh    scalar: active dbh
+# Optional args:
+#   * db             scalar: database name to create temp table in unless...
+#   * temp-database  scalar: ...temp db name is given
+# Returns: hashref
+# Can die: yes
+# before_execute() selects from its special temp table to clear the warnings
+# if the module was created with the clear arg specified.  The temp table is
+# created if there's a db or temp db and the table doesn't exist yet.
 sub before_execute {
    my ( $self, %args ) = @_;
-   return;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   return $args{event};
 }
 
+# Required args:
+#   * event  hashref: an event
+#   * dbh    scalar: active dbh
+# Returns: hashref
+# Can die: yes
+# execute() executes the event's query if is hasn't already been executed. 
+# Any prep work should have been done in before_execute().  Adds Query_time
+# attrib to the event.
 sub execute {
    my ( $self, %args ) = @_;
-   return;
+   my @required_args = qw(event dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($event, $dbh) = @args{@required_args};
+
+   if ( exists $event->{Query_time} ) {
+      MKDEBUG && _d('Query already executed');
+      return $event;
+   }
+
+   MKDEBUG && _d('Executing query');
+   my $query = $event->{arg};
+   my ( $start, $end, $query_time );
+
+   $event->{Query_time} = 0;
+   eval {
+      $start = time();
+      $dbh->do($query);
+      $end   = time();
+      $query_time = sprintf '%.6f', $end - $start;
+   };
+   die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
+
+   $event->{Query_time} = $query_time;
+
+   return $event;
 }
 
+# Required args:
+#   * event  hashref: an event
+# Returns: hashref
+# Can die: yes
+# after_execute() gets any warnings from SHOW WARNINGS.
 sub after_execute {
    my ( $self, %args ) = @_;
-   return;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   return $args{event};
 }
 
+# Required args:
+#   * events  arrayref: events
+# Returns: array
+# Can die: yes
+# compare() compares events that have been run through before_execute(),
+# execute() and after_execute().  Only a "summary" of differences is
+# returned.  Specific differences are saved internally and are reported
+# by calling report() later.
 sub compare {
-   my ( $t1, $t2 ) = @_;
-   die "I need a t1 argument" unless defined $t1;
-   die "I need a t2 argument" unless defined $t2;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(events);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($events) = @args{@required_args};
 
-   MKDEBUG && _d('host1 query time:', $t1, 'host2 query time:', $t2);
+   my $different_query_times = 0;
 
-   my $t1_bucket = bucket_for($t1);
-   my $t2_bucket = bucket_for($t2);
+   my $event0   = $events->[0];
+   my $item     = $event0->{fingerprint} || $event0->{arg};
+   my $sampleno = $event0->{sampleno}    || 0;
+   my $t0       = $event0->{Query_time}  || 0;
+   my $b0       = bucket_for($t0);
 
-   # Times are in different buckets so they differ significantly.
-   if ( $t1_bucket != $t2_bucket ) {
-      my $rank_inc = 2 * abs($t1_bucket - $t2_bucket);
-      return $rank_inc, "Query times differ significantly: "
-         . "host1 in ".$bucket_labels[$t1_bucket]." range, "
-         . "host2 in ".$bucket_labels[$t2_bucket]." range (rank+2)";
+   my $n_events = scalar @$events;
+   foreach my $i ( 1..($n_events-1) ) {
+      my $event = $events->[$i];
+      my $t     = $event->{Query_time};
+      my $b     = bucket_for($t);
+
+      if ( $b0 != $b ) {
+         # Save differences.
+         my $diff = abs($t0 - $t);
+         $different_query_times++;
+         $self->{diffs}->{big}->{$item}->{$sampleno}
+            = [ micro_t($t0), micro_t($t), micro_t($diff) ];
+         $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+      }
+      else {
+         my $inc = percentage_increase($t0, $t);
+         if ( $inc >= $bucket_threshold[$b0] ) {
+            # Save differences.
+            $different_query_times++;
+            $self->{diffs}->{in_bucket}->{$item}->{$sampleno}
+               = [ micro_t($t0), micro_t($t), $inc, $bucket_threshold[$b0] ];
+            $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+         }
+      }
    }
 
-   # Times are in same bucket; check if they differ by that bucket's threshold.
-   my $inc = percentage_increase($t1, $t2);
-   if ( $inc >= $bucket_threshold[$t1_bucket] ) {
-      return 1, "Query time increase $inc\% exceeds "
-         . $bucket_threshold[$t1_bucket] . "\% increase threshold for "
-         . $bucket_labels[$t1_bucket] . " range (rank+1)";
-   }
-
-   return (0);  # No significant difference.
+   return (
+      different_query_times => $different_query_times,
+   );
 }
 
 sub bucket_for {
    my ( $val ) = @_;
    die "I need a val" unless defined $val;
    return 0 if $val == 0;
-   # The buckets are powers of ten.  Bucket 0 represents (0 <= val < 10us) 
-   # and 7 represents 10s and greater.  The powers are thus constrained to
-   # between -6 and 1.  Because these are used as array indexes, we shift
-   # up so it's non-negative, to get 0 - 7.
    my $bucket = floor(log($val) / log(10)) + 6;
    $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
    return $bucket;
 }
 
-# Returns the percentage increase between two values.
 sub percentage_increase {
    my ( $x, $y ) = @_;
    return 0 if $x == $y;
 
-   # Swap values if x > y to keep things simple.
    if ( $x > $y ) {
       my $z = $y;
          $y = $x;
@@ -118,11 +205,131 @@ sub percentage_increase {
    }
 
    if ( $x == 0 ) {
-      # TODO: increase from 0 to some value.  Is this defined mathematically?
       return 1000;  # This should trigger all buckets' thresholds.
    }
 
    return sprintf '%.2f', (($y - $x) / $x) * 100;
+}
+
+sub report {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($hosts) = @args{@required_args};
+
+   return unless keys %{$self->{diffs}};
+
+   # These columns are common to all the reports; make them just once.
+   my $query_id_col = {
+      name        => 'Query ID',
+      fixed_width => 18,
+   };
+   my @host_cols = map {
+      my $col = { name => $_->{name} };
+      $col;
+   } @$hosts;
+
+   my @reports;
+   foreach my $diff ( qw(big in_bucket) ) {
+      my $report = "_report_diff_$diff";
+      push @reports, $self->$report(
+         query_id_col => $query_id_col,
+         host_cols    => \@host_cols,
+         %args
+      );
+   }
+
+   return join("\n", @reports);
+}
+
+sub _report_diff_big {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{big}};
+
+   my $report = new ReportFormatter();
+   $report->set_title('Big query time differences');
+   $report->set_columns(
+      $args{query_id_col},
+      map {
+         my $col = { name => $_->{name}, right_justify => 1  };
+         $col;
+      } @{$args{hosts}},
+      { name => 'Difference', right_justify => 1 },
+   );
+
+   my $diff_big = $self->{diffs}->{big};
+   foreach my $item ( sort keys %$diff_big ) {
+      map {
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            @{$diff_big->{$item}->{$_}},
+         );
+      } sort { $a <=> $b } keys %{$diff_big->{$item}};
+   }
+
+   return $report->get_report();
+}
+
+sub _report_diff_in_bucket {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{in_bucket}};
+
+   my $report = new ReportFormatter();
+   $report->set_title('Significant query time differences');
+   $report->set_columns(
+      $args{query_id_col},
+      map {
+         my $col = { name => $_->{name}, right_justify => 1  };
+         $col;
+      } @{$args{hosts}},
+      { name => '%Increase',  right_justify => 1 },
+      { name => '%Threshold', right_justify => 1 },
+   );
+
+   my $diff_in_bucket = $self->{diffs}->{in_bucket};
+   foreach my $item ( sort keys %$diff_in_bucket ) {
+      map {
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            @{$diff_in_bucket->{$item}->{$_}},
+         );
+      } sort { $a <=> $b } keys %{$diff_in_bucket->{$item}};
+   }
+
+   return $report->get_report();
+}
+
+sub samples {
+   my ( $self, $item ) = @_;
+   return unless $item;
+   my @samples;
+   foreach my $sampleno ( keys %{$self->{samples}->{$item}} ) {
+      push @samples, $sampleno, $self->{samples}->{$item}->{$sampleno};
+   }
+   return @samples;
+}
+
+sub reset {
+   my ( $self ) = @_;
+   $self->{diffs}   = {};
+   $self->{samples} = {};
+   return;
 }
 
 sub _d {
