@@ -75,7 +75,7 @@ sub event_report {
       '# Found ' . ($class->{differences}->{sum} || 0)
       . ' differences in ' . $class->{sampleno}->{cnt} . " samples:\n";
 
-   my $fmt = "# %-15s %d\n";
+   my $fmt = "# %-17s %d\n";
    my @diffs = grep { $_ =~ m/^different_/ } keys %$class;
    foreach my $diff ( sort @diffs ) {
       push @result,
