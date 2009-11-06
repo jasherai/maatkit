@@ -86,6 +86,10 @@ sub before_execute {
       my $engine       = $vp->version_ge($dbh, '5.0.0') ? 'ENGINE' : 'TYPE';
 
       eval {
+         $sql = "DROP TEMPORARY TABLE IF EXISTS $self->{tmp_tbl}";
+         MKDEBUG && _d($sql);
+         $dbh->do($sql);
+
          $sql = "CREATE TABLE $self->{tmp_tbl} (i int) $engine=MEMORY";
          MKDEBUG && _d($sql);
          $dbh->do($sql);
