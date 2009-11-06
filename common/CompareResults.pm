@@ -246,11 +246,16 @@ sub _compare_checksums {
    }
 
    # Save differences.
-   my $item = $events->[0]->{fingerprint} || $events->[0]->{arg};
+   my $item     = $events->[0]->{fingerprint} || $events->[0]->{arg};
+   my $sampleno = $events->[0]->{sampleno} || 0;
    if ( $different_checksums ) {
-      my $sampleno = $events->[0]->{sampleno} || 0;
       $self->{diffs}->{checksums}->{$item}->{$sampleno}
          = [ map { $_->{checksum} } @$events ];
+      $self->{samples}->{$item}->{$sampleno} = $events->[0]->{arg};
+   }
+   if ( $different_row_counts ) {
+      $self->{diffs}->{row_counts}->{$item}->{$sampleno}
+         = [ map { $_->{row_count} } @$events ];
       $self->{samples}->{$item}->{$sampleno} = $events->[0]->{arg};
    }
 
@@ -319,6 +324,7 @@ sub _compare_rows {
    my $n_events = scalar @$events;
    my $event0   = $events->[0]; 
    my $item     = $event0->{fingerprint} || $event0->{arg};
+   my $sampleno = $event0->{sampleno} || 0;
    my $dbh      = $hosts->[0]->{dbh};  # doesn't matter which one
 
    my $res_struct = MockSyncStream::get_result_set_struct($dbh,
@@ -396,7 +402,17 @@ sub _compare_rows {
       # still be correct in this case because we kept track of it in $same_row.
       $event->{row_count} += $n_rows || 0;
 
+      MKDEBUG && _d('Left has', $event0->{row_count}, 'rows, right has',
+         $event->{row_count});
+
+      # Save differences.
       $different_row_counts++ if $event0->{row_count} != $event->{row_count};
+      if ( $different_row_counts ) {
+         $self->{diffs}->{row_counts}->{$item}->{$sampleno}
+            = [ $event0->{row_count}, $event->{row_count} ];
+         $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+      }
+
       $left->reset();
       next EVENT if $no_diff;
 
@@ -428,8 +444,7 @@ sub _compare_rows {
 
       # Save differences.
       if ( scalar @diff_rows ) { 
-         $different_column_values++;
-         my $sampleno = $event0->{sampleno} || 0;
+         $different_column_values++; 
          $self->{diffs}->{col_vals}->{$item}->{$sampleno} = \@diff_rows;
          $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
       }
@@ -785,7 +800,7 @@ sub report {
    } @$hosts;
 
    my @reports;
-   foreach my $diff ( qw(checksums col_vals) ) {
+   foreach my $diff ( qw(checksums col_vals row_counts) ) {
       my $report = "_report_diff_$diff";
       push @reports, $self->$report(
          query_id_col => $query_id_col,
@@ -858,6 +873,40 @@ sub _report_diff_col_vals {
             );
          } @{$diff_col_vals->{$item}->{$sampleno}};
       }
+   }
+
+   return $report->get_report();
+}
+
+sub _report_diff_row_counts {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{row_counts}};
+
+   my $report = new ReportFormatter();
+   $report->set_title('Row count differences');
+   $report->set_columns(
+      $args{query_id_col},
+      map {
+         my $col = { name => $_->{name}, right_justify => 1  };
+         $col;
+      } @{$args{hosts}},
+   );
+
+   my $diff_row_counts = $self->{diffs}->{row_counts};
+   foreach my $item ( sort keys %$diff_row_counts ) {
+      map {
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            @{$diff_row_counts->{$item}->{$_}}[0,1],
+         );
+      } sort { $a <=> $b } keys %{$diff_row_counts->{$item}};
    }
 
    return $report->get_report();

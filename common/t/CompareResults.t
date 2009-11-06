@@ -285,6 +285,11 @@ $report = <<EOF;
 # Query ID           master    slave     
 # ================== ========= ==========
 # D2D386B840D3BEEA-1 $events[0]->{checksum} $events[1]->{checksum}
+
+# Row count differences
+# Query ID           master slave
+# ================== ====== =====
+# D2D386B840D3BEEA-1      3     4
 EOF
 
 is(
@@ -498,6 +503,11 @@ $report = <<EOF;
 # Query ID           Column master slave      
 # ================== ====== ====== ===========
 # CFC309761E9131C5-3 c      c      should be c
+
+# Row count differences
+# Query ID           master slave
+# ================== ====== =====
+# B8B721D77EA1FD78-0      3     4
 EOF
 
 is(
