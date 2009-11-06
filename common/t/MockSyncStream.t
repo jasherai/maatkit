@@ -163,7 +163,7 @@ SKIP: {
          size => {
             id => undef,
             i  => undef,
-            f  => '(12,31)',
+            f  => '(31,12)',
             d  => '(7,2)',
             dt => undef,
             ts => undef,

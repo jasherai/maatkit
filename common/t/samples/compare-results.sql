@@ -16,3 +16,8 @@ CREATE TABLE t2 (
    c varchar(128)
 );
 INSERT INTO t2 VALUES (1,'a'),(2,'b'),(3,'c');
+
+CREATE TABLE t3 (
+   f float
+);
+INSERT INTO t3 VALUES (1.12345);

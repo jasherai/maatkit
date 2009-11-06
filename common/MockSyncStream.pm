@@ -116,7 +116,8 @@ sub get_result_set_struct {
       $struct->{is_numeric}->{$col} 
          = ($type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ? 1 : 0);
       $struct->{size}->{$col}
-         = ($type =~ m/(?:float|double|decimal)/)   ? "($p[$i],$s[$i])"
+         = ($type =~ m/(?:float|double)/)           ? "($s[$i],$p[$i])"
+         : ($type =~ m/(?:decimal)/)                ? "($p[$i],$s[$i])"
          : ($type =~ m/(?:char|varchar)/ && $p[$i]) ? "($p[$i])"
          :                                            undef;
    }

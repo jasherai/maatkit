@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 46;
+use Test::More tests => 51;
 
 require '../Quoter.pm';
 require '../MySQLDump.pm';
@@ -531,7 +531,9 @@ is_deeply(
    'rows: samples'
 );
 
+# #############################################################################
 # Test max-different-rows.
+# #############################################################################
 $cr->reset();
 $dbh2->do('update test.t2 set c="should be a" where i=1');
 $dbh2->do('update test.t2 set c="should be b" where i=2');
@@ -573,7 +575,12 @@ is(
    'rows: report max-different-rows'
 );
 
+# #############################################################################
 # Double check that outfiles have correct contents.
+# #############################################################################
+
+# This test uses the results from the max-different-rows test above.
+
 my @outfile = split(/[\t\n]+/, `cat /tmp/mk-upgrade-res/left-outfile.txt`);
 is_deeply(
 	\@outfile,
@@ -586,6 +593,108 @@ is_deeply(
 	\@outfile,
 	['1', 'should be a', '2', 'should be b', '3', 'should be c'],
    'Right outfile'
+);
+
+# #############################################################################
+# Test float-precision.
+# #############################################################################
+@events = (
+   {
+      arg         => 'select * from test.t3',
+      db          => 'test',
+      fingerprint => 'select * from test.t3',
+      sampleno    => 3,
+   },
+   {
+      arg         => 'select * from test.t3',
+      db          => 'test',
+      fingerprint => 'select * from test.t3',
+      sampleno    => 3,
+   },
+);
+
+$cr->reset();
+$dbh2->do('update test.t3 set f=1.12346 where 1');
+proc('before_execute');
+proc('execute');
+
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+      hosts  => $hosts,
+   ) ],
+   [
+      different_row_counts    => 0,
+      different_column_values => 1,
+      different_column_counts => 0,
+      different_column_types  => 0,
+   ],
+   'rows: compare, different without float-precision'
+);
+
+proc('before_execute');
+proc('execute');
+
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+      hosts  => $hosts,
+      'float-precision' => 3
+   ) ],
+   [
+      different_row_counts    => 0,
+      different_column_values => 0,
+      different_column_counts => 0,
+      different_column_types  => 0,
+   ],
+   'rows: compare, not different with float-precision'
+);
+
+# #############################################################################
+# Test when left has more rows than right.
+# #############################################################################
+$cr->reset();
+$dbh1->do('update test.t3 set f=0 where 1');
+$dbh1->do('SET SQL_LOG_BIN=0');
+$dbh1->do('insert into test.t3 values (2.0),(3.0)');
+$dbh1->do('SET SQL_LOG_BIN=1');
+
+my $left_n_rows = $dbh1->selectcol_arrayref('select count(*) from test.t3')->[0];
+my $right_n_rows = $dbh2->selectcol_arrayref('select count(*) from test.t3')->[0];
+ok(
+   $left_n_rows == 3 && $right_n_rows == 1,
+   'Left has extra rows'
+);
+
+proc('before_execute');
+proc('execute');
+
+is_deeply(
+   [ $cr->compare(
+      events => \@events,
+      hosts  => $hosts,
+      'float-precision' => 3
+   ) ],
+   [
+      different_row_counts    => 1,
+      different_column_values => 0,
+      different_column_counts => 0,
+      different_column_types  => 0,
+   ],
+   'rows: compare, left with more rows'
+);
+
+$report = <<EOF;
+# Row count differences
+# Query ID           master slave
+# ================== ====== =====
+# D56E6FABA26D1F1C-3      3     1
+EOF
+
+is(
+   $cr->report(hosts => $hosts),
+   $report,
+   'rows: report, left with more rows'
 );
 
 # #############################################################################
@@ -602,5 +711,6 @@ like(
    qr/Complete test coverage/,
    '_d() works'
 );
+diag(`rm -rf $tmpdir`);
 $sb->wipe_clean($dbh1);
 exit;
