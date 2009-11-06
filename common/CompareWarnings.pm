@@ -25,127 +25,400 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+# Required args:
+#   * clear   bool: clear warnings before each run
+#   * get_id  coderef: used by report() to trf query to its ID
+#   * common modules
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw();
+   my @required_args = qw(clear get_id Quoter VersionParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
       %args,
+      tmp_tbl => undef,  # tmp tbl used to clear warnings reliably
+      diffs   => {},
+      samples => {},
    };
    return bless $self, $class;
 }
 
+# Required args:
+#   * event  hashref: an event
+#   * dbh    scalar: active dbh
+# Optional args:
+#   * db             scalar: database name to create temp table in unless...
+#   * temp-database  scalar: ...temp db name is given
+# Returns: hashref
+# Can die: yes
+# before_execute() selects from its special temp table to clear the warnings
+# if the module was created with the clear arg specified.  The temp table is
+# created if there's a db or temp db and the table doesn't exist yet.
 sub before_execute {
    my ( $self, %args ) = @_;
-   my @required_args = qw();
+   my @required_args = qw(event dbh);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $dbh     = $args{dbh};
-   my $query   = $args{query};
-   my $qparser = $args{QueryParser};
-   my $error   = undef;
-   my $name    = 'clear_warnings';
-   MKDEBUG && _d($name);
+   my ($event, $dbh) = @args{@required_args};
+   my $sql;
 
-   # On some systems, MySQL doesn't always clear the warnings list
-   # after a good query.  This causes good queries to show warnings
-   # from previous bad queries.  A work-around/hack is to
-   # SELECT * FROM table LIMIT 0 which seems to always clear warnings.
-   my @tables = $qparser->get_tables($query);
-   if ( @tables ) {
-      MKDEBUG && _d('tables:', @tables);
-      my $sql = "SELECT * FROM $tables[0] LIMIT 0";
+   return $event unless $self->{clear};
+
+   if ( !$self->{tmp_tbl} ) {
+      MKDEBUG && _d('Creating temporary table');
+
+      my ($db, $tmp_tbl) = @args{qw(db temp-table)};
+      $db = $args{'temp-database'} if $args{'temp-database'};
+      die "Cannot clear warnings without a database"
+         unless $db;
+
+      my $q  = $self->{Quoter};
+      my $vp = $self->{VersionParser};
+
+      $self->{tmp_tbl} = $q->quote($db, 'mk_upgrade_clear_warnings');
+      my $engine       = $vp->version_ge($dbh, '5.0.0') ? 'ENGINE' : 'TYPE';
+
+      eval {
+         $sql = "CREATE TABLE $self->{tmp_tbl} (i int) $engine=MEMORY";
+         MKDEBUG && _d($sql);
+         $dbh->do($sql);
+
+         $sql = "INSERT INTO $self->{tmp_tbl} VALUES (42)";
+         MKDEBUG && _d($sql);
+         $dbh->do($sql);
+      };
+      die "Failed to create temporary table $self->{tmp_tbl}: $EVAL_ERROR"
+         if $EVAL_ERROR;
+   }
+
+   if ( $self->{tmp_tbl} ) {
+      $sql = "SELECT * FROM $self->{tmp_tbl}";
       MKDEBUG && _d($sql);
       eval {
          $dbh->do($sql);
       };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d('Error clearning warnings:', $EVAL_ERROR);
-         $error = $EVAL_ERROR;
-      }
+      die "Failed to select from temporary table $self->{tmp_tbl}: $EVAL_ERROR"
+         if $EVAL_ERROR;
    }
-   else {
-      $error = "Cannot clear warnings because the tables for this query cannot "
-         . "be parsed.";
-   }
+
+   return $event;
 }
 
+# Required args:
+#   * event  hashref: an event
+#   * dbh    scalar: active dbh
+# Returns: hashref
+# Can die: yes
+# execute() executes the event's query if is hasn't already been executed. 
+# Any prep work should have been done in before_execute().  Adds Query_time
+# attrib to the event.
 sub execute {
    my ( $self, %args ) = @_;
-   return;
-}
-
-sub after_execute {
-   my ( $self, %args ) = @_;
-   my @required_args = qw();
+   my @required_args = qw(event dbh);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($host, $vp) = @args{@required_args};
-   my $dbh         = $args{host}->{dbh};
-   MKDEBUG && _d($name);
+   my ($event, $dbh) = @args{@required_args};
+
+   if ( exists $event->{Query_time} ) {
+      MKDEBUG && _d('Query already executed');
+      return $event;
+   }
+
+   MKDEBUG && _d('Executing query');
+   my $query = $event->{arg};
+   my ( $start, $end, $query_time );
+
+   $event->{Query_time} = 0;
+   eval {
+      $start = time();
+      $dbh->do($query);
+      $end   = time();
+      $query_time = sprintf '%.6f', $end - $start;
+   };
+   die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
+
+   $event->{Query_time} = $query_time;
+
+   return $event;
+}
+
+# Required args:
+#   * event  hashref: an event
+#   * dbh    scalar: active dbh
+# Returns: hashref
+# Can die: yes
+# after_execute() gets any warnings from SHOW WARNINGS.
+sub after_execute {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($event, $dbh) = @args{@required_args};
 
    my $warnings;
    my $warning_count;
    eval {
       $warnings      = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
-      $warning_count = $dbh->selectall_arrayref('SELECT @@warning_count',
-         { Slice => {} });
+      $warning_count = $dbh->selectcol_arrayref('SELECT @@warning_count')->[0];
    };
-   if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('Error getting warnings:', $EVAL_ERROR);
-      $error = $EVAL_ERROR;
-   }
+   die "Failed to SHOW WARNINGS: $EVAL_ERROR"
+      if $EVAL_ERROR;
 
-   my $results = {
-      error => $error,
-      codes => $warnings,
-      count => $warning_count->[0]->{'@@warning_count'} || 0,
-   };
+   $event->{warning_count} = $warning_count || 0;
+   $event->{warnings}      = $warnings;
+
+   return $event;
 }
 
+# Required args:
+#   * events  arrayref: events
+# Returns: array
+# Can die: yes
+# compare() compares events that have been run through before_execute(),
+# execute() and after_execute().  Only a "summary" of differences is
+# returned.  Specific differences are saved internally and are reported
+# by calling report() later.
 sub compare {
-   my ( $warnings1, $warnings2 ) = @_;
-   die "I need a warnings1 argument" unless defined $warnings1;
-   die "I need a warnings2 argument" unless defined $warnings2;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(events);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($events) = @args{@required_args};
 
-   my %new_warnings;
-   my $rank_inc = 0;
-   my @reasons;
+   my $different_warning_counts = 0;
+   my $different_warnings       = 0;
+   my $different_warning_levels = 0;
 
-   foreach my $code ( keys %$warnings1 ) {
-      if ( exists $warnings2->{$code} ) {
-         if ( $warnings2->{$code}->{Level} ne $warnings1->{$code}->{Level} ) {
-            $rank_inc += 2;
-            push @reasons, "Error $code changes level: "
-               . $warnings1->{$code}->{Level} . " on host1, "
-               . $warnings2->{$code}->{Level} . " on host2 (rank+2)";
+   my $event0   = $events->[0];
+   my $item     = $event0->{fingerprint} || $event0->{arg};
+   my $sampleno = $event0->{sampleno} || 0;
+   my $w0       = $event0->{warnings};
+
+   my $n_events = scalar @$events;
+   foreach my $i ( 1..($n_events-1) ) {
+      my $event = $events->[$i];
+
+      if ( ($event0->{warning_count} || 0) != ($event->{warning_count} || 0) ) {
+         $different_warning_counts++;
+         $self->{diffs}->{warning_counts}->{$item}->{$sampleno}
+            = [ $event0->{warning_count} || 0, $event->{warning_count} || 0 ];
+         $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+      }
+
+      # Check the warnings on event0 against this event.
+      my $w = $event->{warnings};
+
+      # Neither event had warnings.
+      next if !$w0 && !$w;
+
+      my %new_warnings;
+      foreach my $code ( keys %$w0 ) {
+         if ( exists $w->{$code} ) {
+            if ( $w->{$code}->{Level} ne $w0->{$code}->{Level} ) {
+               # Save differences.
+               $different_warning_levels++;
+               $self->{diffs}->{levels}->{$item}->{$sampleno}
+                  = [ $code, $w0->{$code}->{Level}, $w->{$code}->{Level},
+                      $w->{$code}->{Message} ];
+               $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+            }
+            delete $w->{$code};
+         }
+         else {
+            # This warning code is on event0 but not on this event.
+
+            # Save differences.
+            $different_warnings++;
+            $self->{diffs}->{warnings}->{$item}->{$sampleno}
+               = [ 0, $code, $w0->{$code}->{Message} ];
+            $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
          }
       }
-      else {
-         MKDEBUG && _d('New warning on host1:', $code);
-         push @reasons, "Error $code on host1 is new (rank+3)";
-         %{ $new_warnings{$code} } = %{ $warnings1->{$code} };
+
+      # Any warning codes on this event not deleted above are new;
+      # i.e. they weren't on event0.
+      foreach my $code ( keys %$w ) {
+         # Save differences.
+         $different_warnings++;
+         $self->{diffs}->{warnings}->{$item}->{$sampleno}
+            = [ $i, $code, $w->{$code}->{Message} ];
+         $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
       }
+
+      # EventAggregator won't know what do with this hashref so delete it.
+      delete $event->{warnings};
+   }
+   delete $event0->{warnings};
+
+   return (
+      different_warning_counts => $different_warning_counts,
+      different_warnings       => $different_warnings,
+      different_warning_levels => $different_warning_levels,
+   );
+}
+
+sub report {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($hosts) = @args{@required_args};
+
+   return unless keys %{$self->{diffs}};
+
+   # These columns are common to all the reports; make them just once.
+   my $query_id_col = {
+      name        => 'Query ID',
+      fixed_width => 18,
+   };
+   my @host_cols = map {
+      my $col = { name => $_->{name} };
+      $col;
+   } @$hosts;
+
+   my @reports;
+   foreach my $diff ( qw(warnings levels warning_counts) ) {
+      my $report = "_report_diff_$diff";
+      push @reports, $self->$report(
+         query_id_col => $query_id_col,
+         host_cols    => \@host_cols,
+         %args
+      );
    }
 
-   foreach my $code ( keys %$warnings2 ) {
-      if ( !exists $warnings1->{$code} && !exists $new_warnings{$code} ) {
-         MKDEBUG && _d('New warning on host2:', $code);
-         push @reasons, "Error $code on host2 is new (rank+3)";
-         %{ $new_warnings{$code} } = %{ $warnings2->{$code} };
-      }
+   return join("\n", @reports);
+}
+
+sub _report_diff_warnings {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
 
-   $rank_inc += 3 * scalar keys %new_warnings;
+   my $get_id = $self->{get_id};
 
-   # TODO: if we ever want to see the new warnings, we'll just have to
-   #       modify this sub a litte.  %new_warnings is a placeholder for now.
+   return unless keys %{$self->{diffs}->{warnings}};
 
-   return $rank_inc, @reasons;
+   my $report = new ReportFormatter(long_last_column => 1);
+   $report->set_title('New warnings');
+   $report->set_columns(
+      $args{query_id_col},
+      { name => 'Host', },
+      { name => 'Code', right_justify => 1 },
+      { name => 'Message' },
+   );
+
+   my $diff_warnings = $self->{diffs}->{warnings};
+   foreach my $item ( sort keys %$diff_warnings ) {
+      map {
+         my ($hostno, $code, $message) = @{$diff_warnings->{$item}->{$_}};
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            $args{hosts}->[$hostno]->{name}, $code, $message,
+         );
+      } sort { $a <=> $b } keys %{$diff_warnings->{$item}};
+   }
+
+   return $report->get_report();
+}
+
+sub _report_diff_levels {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{levels}};
+
+   my $report = new ReportFormatter(long_last_column => 1);
+   $report->set_title('Warning level differences');
+   $report->set_columns(
+      $args{query_id_col},
+      { name => 'Code', right_justify => 1 },
+      map {
+         my $col = { name => $_->{name}, right_justify => 1  };
+         $col;
+      } @{$args{hosts}},
+      { name => 'Message' },
+   );
+
+   my $diff_levels = $self->{diffs}->{levels};
+   foreach my $item ( sort keys %$diff_levels ) {
+      map {
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            @{$diff_levels->{$item}->{$_}},
+         );
+      } sort { $a <=> $b } keys %{$diff_levels->{$item}};
+   }
+
+   return $report->get_report();
+}
+
+sub _report_diff_warning_counts {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{warning_counts}};
+
+   my $report = new ReportFormatter();
+   $report->set_title('Warning count differences');
+   $report->set_columns(
+      $args{query_id_col},
+      map {
+         my $col = { name => $_->{name}, right_justify => 1  };
+         $col;
+      } @{$args{hosts}},
+   );
+
+   my $diff_warning_counts = $self->{diffs}->{warning_counts};
+   foreach my $item ( sort keys %$diff_warning_counts ) {
+      map {
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            @{$diff_warning_counts->{$item}->{$_}},
+         );
+      } sort { $a <=> $b } keys %{$diff_warning_counts->{$item}};
+   }
+
+   return $report->get_report();
+}
+
+sub samples {
+   my ( $self, $item ) = @_;
+   return unless $item;
+   my @samples;
+   foreach my $sampleno ( keys %{$self->{samples}->{$item}} ) {
+      push @samples, $sampleno, $self->{samples}->{$item}->{$sampleno};
+   }
+   return @samples;
+}
+
+sub reset {
+   my ( $self ) = @_;
+   $self->{diffs}   = {};
+   $self->{samples} = {};
+   return;
 }
 
 sub _d {

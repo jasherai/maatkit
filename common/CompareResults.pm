@@ -130,6 +130,10 @@ sub execute {
    my $query         = $event->{arg};
    my ( $start, $end, $query_time );
 
+   # Other modules should only execute the query if Query_time does not
+   # already exist.  This module requires special execution so we always
+   # execute.
+
    MKDEBUG && _d('Executing query');
    $event->{Query_time} = 0;
    if ( $self->{method} eq 'rows' ) {
@@ -838,7 +842,7 @@ sub _report_diff_checksums {
       map {
          $report->add_line(
             $get_id->($item) . '-' . $_,
-            @{$diff_checksums->{$item}->{$_}}[0,1],
+            @{$diff_checksums->{$item}->{$_}},
          );
       } sort { $a <=> $b } keys %{$diff_checksums->{$item}};
    }
@@ -907,7 +911,7 @@ sub _report_diff_row_counts {
       map {
          $report->add_line(
             $get_id->($item) . '-' . $_,
-            @{$diff_row_counts->{$item}->{$_}}[0,1],
+            @{$diff_row_counts->{$item}->{$_}},
          );
       } sort { $a <=> $b } keys %{$diff_row_counts->{$item}};
    }
