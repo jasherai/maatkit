@@ -41,13 +41,15 @@ is(
 "# Checksum differences
 # Query ID             db-1.foo.com 123.123.123.123
 # ==================== ============ ===============
-# 0x3A99CC42AEDCCFCD-1 ABC12345     ADD12345
-# 0x234DDDAC43820481-3 0007C99B     BB008171
+# 0x3A99CC42AEDCCFCD-1 ABC12345     ADD12345       
+# 0x234DDDAC43820481-3 0007C99B     BB008171       
 ",
    'Basic report'
 );
 
-$rf = new ReportFormatter();
+$rf = new ReportFormatter(
+   long_last_column => 1,
+);
 $rf->set_title('Truncate underline');
 $rf->set_columns(
    { name => 'col1' },

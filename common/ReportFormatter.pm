@@ -104,11 +104,12 @@ sub get_report {
    my @lines;
    my $p = $self->{line_prefix} || '';
 
-   my $n_cols = scalar @{$self->{cols}} - 1;
+   my $n_cols = scalar @{$self->{cols}}
+              - ($self->{long_last_column} ? 2 : 1);
 
    my $fmt = $p;
    my @col_fmts;
-   for my $i ( 0..($n_cols-1) ) {
+   for my $i ( 0..$n_cols ) {
       my $col = $self->{cols}->[$i];
       my $col_fmt = '%'
                   . ($col->{right_justify} ? '' : '-')
@@ -116,8 +117,9 @@ sub get_report {
                   . 's';
       push @col_fmts, $col_fmt;
    }
-   push @col_fmts,
-      '%' . ($self->{cols}->[-1]->{right_justify} ? '' : '-') . 's';
+   if ( $self->{long_last_column} ) {
+      push @col_fmts, '%s';
+   }
    $fmt .= join(' ', @col_fmts);
    MKDEBUG && _d('Format:', $fmt);
 
