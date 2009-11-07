@@ -106,8 +106,8 @@ $meta_events = [
 $expected = <<EOF;
 # Query 1: ID 0x82860EDA9A88FCC5 at byte 0 _______________________________
 # Found 1 differences in 3 samples:
-#   checksums     0
-#   row counts    1
+#   checksums       0
+#   row counts      1
 #            host1 host2
 # Errors         1     1
 # Warnings       0     0

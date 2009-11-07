@@ -111,7 +111,7 @@ sub event_report {
 
       foreach my $host ( @$hosts ) {
          my $ea    = $host->{ea};
-         my $stats = $ea->results->{globals};
+         my $stats = $ea->results->{classes}->{$where};
          if ( $stats && $stats->{$thing} ) {
             my $vals = $stats->{$thing};
             my $func = $thing =~ m/time$/ ? \&micro_t : \&shorten;
