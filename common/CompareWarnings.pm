@@ -31,18 +31,19 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 # Required args:
-#   * clear   bool: clear warnings before each run
 #   * get_id  coderef: used by report() to trf query to its ID
 #   * common modules
+# Optional args:
+#   * clear-warnings        bool: clear warnings before each run
+#   * clear-warnings-table  scalar: table to select from to clear warnings
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(clear get_id Quoter VersionParser);
+   my @required_args = qw(get_id Quoter QueryParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
       %args,
-      tmp_tbl => undef,  # tmp tbl used to clear warnings reliably
       diffs   => {},
       samples => {},
    };
@@ -69,47 +70,40 @@ sub before_execute {
    my ($event, $dbh) = @args{@required_args};
    my $sql;
 
-   return $event unless $self->{clear};
+   return $event unless $self->{'clear-warnings'};
 
-   if ( !$self->{tmp_tbl} ) {
-      MKDEBUG && _d('Creating temporary table');
-
-      my ($db, $tmp_tbl) = @args{qw(db temp-table)};
-      $db = $args{'temp-database'} if $args{'temp-database'};
-      die "Cannot clear warnings without a database"
-         unless $db;
-
-      my $q  = $self->{Quoter};
-      my $vp = $self->{VersionParser};
-
-      $self->{tmp_tbl} = $q->quote($db, 'mk_upgrade_clear_warnings');
-      my $engine       = $vp->version_ge($dbh, '5.0.0') ? 'ENGINE' : 'TYPE';
-
-      eval {
-         $sql = "DROP TEMPORARY TABLE IF EXISTS $self->{tmp_tbl}";
-         MKDEBUG && _d($sql);
-         $dbh->do($sql);
-
-         $sql = "CREATE TEMPORARY TABLE $self->{tmp_tbl} (i int) $engine=MEMORY";
-         MKDEBUG && _d($sql);
-         $dbh->do($sql);
-
-         $sql = "INSERT INTO $self->{tmp_tbl} VALUES (42)";
-         MKDEBUG && _d($sql);
-         $dbh->do($sql);
-      };
-      die "Failed to create temporary table $self->{tmp_tbl}: $EVAL_ERROR"
-         if $EVAL_ERROR;
-   }
-
-   if ( $self->{tmp_tbl} ) {
-      $sql = "SELECT * FROM $self->{tmp_tbl}";
+   if ( my $tbl = $self->{'clear-warnings-table'} ) {
+      $sql = "SELECT * FROM $tbl LIMIT 1";
       MKDEBUG && _d($sql);
       eval {
          $dbh->do($sql);
       };
-      die "Failed to select from temporary table $self->{tmp_tbl}: $EVAL_ERROR"
+      die "Failed to SELECT from clear warnings table: $EVAL_ERROR"
          if $EVAL_ERROR;
+   }
+   else {
+      my $q    = $self->{Quoter};
+      my $qp   = $self->{QueryParser};
+      my @tbls = $qp->get_tables($event->{arg});
+      my $ok   = 0;
+      TABLE:
+      foreach my $tbl ( @tbls ) {
+         $sql = "SELECT * FROM $tbl LIMIT 1";
+         MKDEBUG && _d($sql);
+         eval {
+            $dbh->do($sql);
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d('Failed to clear warnings');
+         }
+         else {
+            MKDEBUG && _d('Cleared warnings');
+            $ok = 1;
+            last TABLE;
+         }
+      }
+      die "Failed to clear warnings"
+         unless $ok;
    }
 
    return $event;

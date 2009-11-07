@@ -3,10 +3,10 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 21;
+use Test::More tests => 20;
 
 require '../Quoter.pm';
-require '../VersionParser.pm';
+require '../QueryParser.pm';
 require '../ReportFormatter.pm';
 require '../Transformers.pm';
 require '../DSNParser.pm';
@@ -23,18 +23,16 @@ my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
-my $dbh2 = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
 
 $sb->create_dbs($dbh1, ['test']);
 
 Transformers->import(qw(make_checksum));
 
-my $vp = new VersionParser();
 my $q  = new Quoter();
+my $qp = new QueryParser();
 my %modules = (
-   VersionParser => $vp,
-   Quoter        => $q,
+   Quoter      => $q,
+   QueryParser => $qp,
 );
 
 my $cw;
@@ -70,14 +68,6 @@ sub get_id {
 
 diag(`/tmp/12345/use < samples/compare-warnings.sql`);
 
-$cw = new CompareWarnings(
-   clear  => 1,
-   get_id => \&get_id,
-   %modules,
-);
-
-isa_ok($cw, 'CompareWarnings');
-
 @events = (
    {
       arg         => 'select * from test.t',
@@ -91,34 +81,48 @@ isa_ok($cw, 'CompareWarnings');
    },
 );
 
+$cw = new CompareWarnings(
+   'clear-warnings'       => 1,
+   'clear-warnings-table' => 'mysql.bad',
+   get_id => \&get_id,
+   %modules,
+);
+
+isa_ok($cw, 'CompareWarnings');
+
 eval {
    $cw->before_execute(
       event => $events[0],
-      dbh   => 1,
+      dbh   => $dbh1,
    );
 };
 
 like(
    $EVAL_ERROR,
-   qr/Cannot clear warnings without a database/,
-   "Can't clear warnings without a db"
+   qr/^Failed/,
+   "Can't clear warnings with bad table"
+);
+
+$cw = new CompareWarnings(
+   'clear-warnings' => 1,
+   get_id => \&get_id,
+   %modules,
+);
+
+eval {
+   $cw->before_execute(
+      event => { arg => 'select * from bad.db' },
+      dbh   => $dbh1,
+   );
+};
+
+like(
+   $EVAL_ERROR,
+   qr/^Failed/,
+   "Can't clear warnings with query with bad tables"
 );
 
 proc('before_execute', db=>'test');
-
-is_deeply(
-   $dbh1->selectrow_arrayref('select * from test.mk_upgrade_clear_warnings'),
-   [qw(42)],
-   'before_create() creates its temporary table'
-);
-
-proc('before_execute', db=>'test');
-
-is_deeply(
-   $dbh1->selectall_arrayref('select * from test.mk_upgrade_clear_warnings'),
-   [[qw(42)]],
-   "before_execute() doesn't recreate its table"
-);
 
 $events[0]->{Query_time} = 123;
 proc('execute');
