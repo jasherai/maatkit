@@ -429,7 +429,10 @@ sub _compare_rows {
       }
 
       $left->reset();
-      next EVENT if $no_diff;
+      if ( $no_diff ) {
+         delete $event->{results_sth};
+         next EVENT;
+      }
 
       # The result sets differ, so now we must begin the difficult
       # work: finding and determining the nature of those differences.
@@ -463,7 +466,10 @@ sub _compare_rows {
          $self->{diffs}->{col_vals}->{$item}->{$sampleno} = \@diff_rows;
          $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
       }
+
+      delete $event->{results_sth};
    }
+   delete $event0->{results_sth};
 
    return (
       different_row_counts    => $different_row_counts,
