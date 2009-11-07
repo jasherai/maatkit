@@ -6691,7 +6691,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# UpgradeReportFormatter package 5062
+# UpgradeReportFormatter package 5070
 # ###########################################################################
 
 
@@ -6780,7 +6780,7 @@ sub event_report {
 
       foreach my $host ( @$hosts ) {
          my $ea    = $host->{ea};
-         my $stats = $ea->results->{globals};
+         my $stats = $ea->results->{classes}->{$where};
          if ( $stats && $stats->{$thing} ) {
             my $vals = $stats->{$thing};
             my $func = $thing =~ m/time$/ ? \&micro_t : \&shorten;
@@ -6875,7 +6875,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareResults package 5060
+# CompareResults package 5069
 # ###########################################################################
 package CompareResults;
 
@@ -6900,7 +6900,6 @@ sub new {
    }
    my $self = {
       %args,
-      tmp_tbl => '',  # for checksum method
       diffs   => {},
       samples => {},
    };
@@ -6915,8 +6914,6 @@ sub before_execute {
    }
    my ($event, $dbh) = @args{@required_args};
    my $sql;
-
-   $self->{tmp_tbl} = '';
 
    if ( $self->{method} eq 'checksum' ) {
       my ($db, $tmp_tbl) = @args{qw(db temp-table)};
@@ -6937,11 +6934,11 @@ sub before_execute {
       die "Failed to drop temporary table $tmp_tbl: $EVAL_ERROR"
          if $EVAL_ERROR;
 
-      $self->{tmp_tbl} = $tmp_tbl; 
+      $event->{tmp_tbl} = $tmp_tbl; 
 
-      $event->{original_arg} = $event->{arg};
-      $event->{arg} = "CREATE TEMPORARY TABLE $tmp_tbl AS $event->{arg}";
-      MKDEBUG && _d('Wrapped query:', $event->{arg});
+      $event->{wrapped_query}
+         = "CREATE TEMPORARY TABLE $tmp_tbl AS $event->{arg}";
+      MKDEBUG && _d('Wrapped query:', $event->{wrapped_query});
    }
 
    return $event;
@@ -6954,13 +6951,13 @@ sub execute {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($event, $dbh) = @args{@required_args};
-   my $query         = $event->{arg};
    my ( $start, $end, $query_time );
 
 
    MKDEBUG && _d('Executing query');
    $event->{Query_time} = 0;
    if ( $self->{method} eq 'rows' ) {
+      my $query = $event->{arg};
       my $sth;
       eval {
          $sth = $dbh->prepare($query);
@@ -6978,13 +6975,19 @@ sub execute {
       $event->{results_sth} = $sth;
    }
    else {
+      die "No wrapped query" unless $event->{wrapped_query};
+      my $query = $event->{wrapped_query};
       eval {
          $start = time();
          $dbh->do($query);
          $end   = time();
          $query_time = sprintf '%.6f', $end - $start;
       };
-      die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
+      if ( $EVAL_ERROR ) {
+         delete $event->{wrapped_query};
+         delete $event->{tmp_tbl};
+         die "Failed to execute query: $EVAL_ERROR";
+      }
    }
 
    $event->{Query_time} = $query_time;
@@ -6998,17 +7001,7 @@ sub after_execute {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($event) = @args{@required_args};
-
-   if ( $self->{method} eq 'checksum' ) {
-      die "Failed to restore original query" unless $event->{original_arg};
-
-      $event->{arg} = $event->{original_arg};
-      delete $event->{original_arg};
-      MKDEBUG && _d('Unwrapped query');
-   }
-
-   return $event;
+   return $args{event};
 }
 
 sub compare {
@@ -7041,14 +7034,20 @@ sub _compare_checksums {
          event => $events->[$i],
          dbh   => $hosts->[$i]->{dbh},
       );
-      
       if ( $i ) {
-         $different_checksums++
-            if ($events->[0]->{checksum} || 0) != ($events->[$i]->{checksum} || 0);
-         $different_row_counts++
-            if ($events->[0]->{row_count} || 0) != ($events->[$i]->{row_count} || 0);
+         if ( ($events->[0]->{checksum} || 0)
+              != ($events->[$i]->{checksum}||0) ) {
+            $different_checksums++;
+         }
+         if ( ($events->[0]->{row_count} || 0)
+              != ($events->[$i]->{row_count} || 0) ) {
+            $different_row_counts++
+         }
+
+         delete $events->[$i]->{wrapped_query};
       }
    }
+   delete $events->[0]->{wrapped_query};
 
    my $item     = $events->[0]->{fingerprint} || $events->[0]->{arg};
    my $sampleno = $events->[0]->{sampleno} || 0;
@@ -7078,36 +7077,38 @@ sub _checksum_results {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($event, $dbh) = @args{@required_args};
-   my $tmp_tbl       = $self->{tmp_tbl};
-   my $sql;
 
+   my $sql;
    my $n_rows       = 0;
    my $tbl_checksum = 0;
-   eval {
-      $sql = "SELECT COUNT(*) FROM $tmp_tbl";
-      MKDEBUG && _d($sql);
-      ($n_rows) = @{ $dbh->selectcol_arrayref($sql) };
+   if ( $event->{wrapped_query} && $event->{tmp_tbl} ) {
+      my $tmp_tbl = $event->{tmp_tbl};
+      eval {
+         $sql = "SELECT COUNT(*) FROM $tmp_tbl";
+         MKDEBUG && _d($sql);
+         ($n_rows) = @{ $dbh->selectcol_arrayref($sql) };
 
-      $sql = "CHECKSUM TABLE $tmp_tbl";
+         $sql = "CHECKSUM TABLE $tmp_tbl";
+         MKDEBUG && _d($sql);
+         $tbl_checksum = $dbh->selectrow_arrayref($sql)->[1];
+      };
+      die "Failed to checksum table: $EVAL_ERROR"
+         if $EVAL_ERROR;
+   
+      $sql = "DROP TABLE IF EXISTS $tmp_tbl";
       MKDEBUG && _d($sql);
-      $tbl_checksum = $dbh->selectrow_arrayref($sql)->[1];
-   };
-   if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('Error counting rows or checksumming', $tmp_tbl, ':',
-         $EVAL_ERROR);
-      return;
+     eval {
+         $dbh->do($sql);
+      };
+      MKDEBUG && $EVAL_ERROR && _d('Error:', $EVAL_ERROR);
    }
+   else {
+      MKDEBUG && _d("Event doesn't have wrapped query or tmp tbl");
+   }
+
    $event->{row_count} = $n_rows;
    $event->{checksum}  = $tbl_checksum;
-   MKDEBUG && _d('n rows:', $n_rows, 'tbl checksum:', $tbl_checksum);
-
-   $sql = "DROP TABLE IF EXISTS $tmp_tbl";
-   MKDEBUG && _d($sql);
-   eval { $dbh->do($sql); };
-   if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('Error dropping tmp table:', $EVAL_ERROR);
-      return;
-   }
+   MKDEBUG && _d('row count:', $n_rows, 'checksum:', $tbl_checksum);
 
    return $event;
 }
@@ -7130,6 +7131,16 @@ sub _compare_rows {
    my $item     = $event0->{fingerprint} || $event0->{arg};
    my $sampleno = $event0->{sampleno} || 0;
    my $dbh      = $hosts->[0]->{dbh};  # doesn't matter which one
+
+   if ( !$event0->{results_sth} ) {
+      MKDEBUG && _d("Event 0 doesn't have a results sth");
+      return (
+         different_row_counts    => $different_row_counts,
+         different_column_values => $different_column_values,
+         different_column_counts => $different_column_counts,
+         different_column_types  => $different_column_types,
+      );
+   }
 
    my $res_struct = MockSyncStream::get_result_set_struct($dbh,
       $event0->{results_sth});
@@ -7658,7 +7669,6 @@ sub samples {
 
 sub reset {
    my ( $self ) = @_;
-   $self->{tmp_tbl} = '';
    $self->{diffs}   = {};
    $self->{samples} = {};
    return;
@@ -7968,7 +7978,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareWarnings package 5064
+# CompareWarnings package 5067
 # ###########################################################################
 package CompareWarnings;
 
@@ -7985,13 +7995,12 @@ $Data::Dumper::Quotekeys = 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(clear get_id Quoter VersionParser);
+   my @required_args = qw(get_id Quoter QueryParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
       %args,
-      tmp_tbl => undef,  # tmp tbl used to clear warnings reliably
       diffs   => {},
       samples => {},
    };
@@ -8007,47 +8016,40 @@ sub before_execute {
    my ($event, $dbh) = @args{@required_args};
    my $sql;
 
-   return $event unless $self->{clear};
+   return $event unless $self->{'clear-warnings'};
 
-   if ( !$self->{tmp_tbl} ) {
-      MKDEBUG && _d('Creating temporary table');
-
-      my ($db, $tmp_tbl) = @args{qw(db temp-table)};
-      $db = $args{'temp-database'} if $args{'temp-database'};
-      die "Cannot clear warnings without a database"
-         unless $db;
-
-      my $q  = $self->{Quoter};
-      my $vp = $self->{VersionParser};
-
-      $self->{tmp_tbl} = $q->quote($db, 'mk_upgrade_clear_warnings');
-      my $engine       = $vp->version_ge($dbh, '5.0.0') ? 'ENGINE' : 'TYPE';
-
-      eval {
-         $sql = "DROP TEMPORARY TABLE IF EXISTS $self->{tmp_tbl}";
-         MKDEBUG && _d($sql);
-         $dbh->do($sql);
-
-         $sql = "CREATE TEMPORARY TABLE $self->{tmp_tbl} (i int) $engine=MEMORY";
-         MKDEBUG && _d($sql);
-         $dbh->do($sql);
-
-         $sql = "INSERT INTO $self->{tmp_tbl} VALUES (42)";
-         MKDEBUG && _d($sql);
-         $dbh->do($sql);
-      };
-      die "Failed to create temporary table $self->{tmp_tbl}: $EVAL_ERROR"
-         if $EVAL_ERROR;
-   }
-
-   if ( $self->{tmp_tbl} ) {
-      $sql = "SELECT * FROM $self->{tmp_tbl}";
+   if ( my $tbl = $self->{'clear-warnings-table'} ) {
+      $sql = "SELECT * FROM $tbl LIMIT 1";
       MKDEBUG && _d($sql);
       eval {
          $dbh->do($sql);
       };
-      die "Failed to select from temporary table $self->{tmp_tbl}: $EVAL_ERROR"
+      die "Failed to SELECT from clear warnings table: $EVAL_ERROR"
          if $EVAL_ERROR;
+   }
+   else {
+      my $q    = $self->{Quoter};
+      my $qp   = $self->{QueryParser};
+      my @tbls = $qp->get_tables($event->{arg});
+      my $ok   = 0;
+      TABLE:
+      foreach my $tbl ( @tbls ) {
+         $sql = "SELECT * FROM $tbl LIMIT 1";
+         MKDEBUG && _d($sql);
+         eval {
+            $dbh->do($sql);
+         };
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d('Failed to clear warnings');
+         }
+         else {
+            MKDEBUG && _d('Cleared warnings');
+            $ok = 1;
+            last TABLE;
+         }
+      }
+      die "Failed to clear warnings"
+         unless $ok;
    }
 
    return $event;
@@ -8522,7 +8524,8 @@ sub main {
       }
       if ( $have_warnings ) {
          push @compare_modules, new CompareWarnings(
-            clear  => $o->get('clear-warnings'),
+            'clear-warnings'       => $o->get('clear-warnings'),
+            'clear-warnings-table' => $o->get('clear-warnings-table'),
             get_id => sub { return make_checksum(@_); },
             %common_modules,
          );
@@ -8535,7 +8538,7 @@ sub main {
    my $groupby = 'fingerprint';
    map {
       my $ea = new EventAggregator(
-         groupby => 'arg',
+         groupby => 'fingerprint',
          worst   => 'Query_time',
       );
       $_->{ea} = $ea;
@@ -8705,7 +8708,9 @@ sub main {
       }
 
       # Compare host events for differences, then aggregate those differences.
+      my $n_diffs = 0;
       foreach my $c ( @compare_modules ) {
+         MKDEBUG && _d('Doing', ref $c, 'compare');
          my %diffs = $c->compare(
             events               => \@host_events,
             hosts                => $hosts,
@@ -8713,12 +8718,9 @@ sub main {
             'max-different-rows' => $o->get('max-different-rows'),
          );
          @{$event}{keys %diffs} = values %diffs;
-         $event->{differences}  = do {
-            my $i = 0;
-            map { $i += $_ } values %diffs;
-            $i;
-         };
+         map { $n_diffs += $_ } values %diffs;
       }
+      $event->{differences} = $n_diffs;
       $meta_ea->aggregate($event);
 
 
@@ -8800,11 +8802,7 @@ sub main {
       }
 
       # Set up the parser and miscellaneous options to it.
-      my $misc   = { oktorun => \$oktorun };
-      #my $parser = $o->get('type') eq 'slowlog'   ? new SlowLogParser()
-      #           : $o->get('type') eq 'tcpdump'   ? new TcpdumpParser()
-      #           : die("Unknown type " . $o->get('type'));
-
+      my $misc = { oktorun => \$oktorun };
       my ($fh);
       $run_func = sub {
          if ( !$fh ) {
@@ -8900,48 +8898,49 @@ sub main {
       # ##################################################################
       # Do the report for each query.
       # ##################################################################
-      ITEM:
-      foreach my $rank ( 1 .. @worst ) {
-         my $item          = $worst[$rank - 1]->[0];
-         my $stats         = $meta_ea->results->{classes}->{$item};
-         my $sample        = $meta_ea->results->{samples}->{$item};
-         my $samp_query    = $sample->{arg} || '';
+      if ( $o->get('reports')->{queries} ) {
+         ITEM:
+         foreach my $rank ( 1 .. @worst ) {
+            my $item   = $worst[$rank - 1]->[0];
+            my $sample = $meta_ea->results->{samples}->{$item};
 
-         print $urf->event_report(
-            meta_ea => $meta_ea,
-            hosts   => $hosts,
-            where   => $item,
-            rank    => $rank,
-            worst   => 'differences',
-         );
+            print "\n";
+            print $urf->event_report(
+               meta_ea => $meta_ea,
+               hosts   => $hosts,
+               where   => $item,
+               rank    => $rank,
+               worst   => 'differences',
+            );
 
-         print "$item\n";
+            print "$item\n";
 
-         my $query_id = make_checksum($item);
-         foreach my $c ( @compare_modules ) {
-            my %all_samples = $c->samples($item);
+            my $query_id = make_checksum($item);
+            foreach my $c ( @compare_modules ) {
+               my %compare_samples = $c->samples($item);
+               @{$samples{$item}}{keys %compare_samples}
+                  = values %compare_samples;
+            }
             map {
-               $all_samples{$_} = $samples{$item}->{$_} unless $all_samples{$_};
-            } keys %{$samples{$item}};
-            map {
-               print "/* $query_id-$_ */ $all_samples{$_}\n";
-            } sort keys %all_samples;
-         }
-      } # Each worst ITEM
-
-      # ##################################################################
-      # Print difference reports.
-      # ##################################################################
-      foreach my $c ( @compare_modules ) {
-         my $report = $c->report(hosts => $hosts);
-         print "\n$report" if $report;
+                  print "/* $query_id-$_ */ $samples{$item}->{$_}\n";
+            } sort { $a <=> $b } keys %{$samples{$item}};
+         } # Each worst ITEM
       }
 
-      report_errors(errors => $errors) if $o->get('reports')->{errors};
+      # ##################################################################
+      # Print the other, summary-like reports.
+      # ##################################################################
+      if ( $o->get('reports')->{differences} ) {
+         foreach my $c ( @compare_modules ) {
+            my $report = $c->report(hosts => $hosts);
+            print "\n$report" if $report;
+         }
+      }
 
-      # ##################################################################
-      # Print statistics.
-      # ##################################################################
+      if ( $o->get('reports')->{errors} ) {
+         report_errors(errors => $errors);
+      }
+
       if ( $o->get('reports')->{statistics} ) {
          my $fmt = "# %-17s %d\n";
          print "\n# Statistics\n";
@@ -8963,6 +8962,7 @@ sub main {
       }
       %samples   = ();
       %samplenos = ();
+      $errors    = {};
 
       foreach my $c ( @compare_modules ) {
          $c->reset();
@@ -9005,9 +9005,12 @@ sub report_errors {
 
    foreach my $item ( sort keys %$errors ) {
       map {
+         my ($host, $error) =  @{$errors->{$item}->{$_}};
+         chomp $error;
          $rf->add_line(
             make_checksum($item) . '-' . $_,
-            @{$errors->{$item}->{$_}},
+            $host,
+            $error,
          );
       } sort { $a <=> $b } keys %{$errors->{$item}};
    }
@@ -9167,6 +9170,12 @@ database that mk-upgrade usually detects automatically, but in some cases
 it might be necessary to specify L<"--temp-database">.  If mk-upgrade can't
 auto-detect the current database, it will create a temporary table in the
 L<"--temp-database"> called C<mk_upgrade_clear_warnings>.
+
+=item --clear-warnings-table
+
+type: string
+
+Execute C<SELECT * FROM ... LIMIT 1> from this table to clear warnings.
 
 =item --compare
 
@@ -9408,10 +9417,10 @@ Print the L<"--reports">.
 
 =item --reports
 
-type: Hash; default: header,queries,differences,errors,statistics
+type: Hash; default: queries,differences,errors,statistics
 
-Print these reports.  Valid reports are header, queries, differences, and
-errors. 
+Print these reports.  Valid reports are queries, differences, errors, and
+statistics.
 
 See L<"OUTPUT"> for more information on the various parts of the report.
 
