@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 51;
+use Test::More tests => 56;
 
 require '../Quoter.pm';
 require '../MySQLDump.pm';
@@ -147,7 +147,7 @@ is_deeply(
 proc('before_execute', db=>'test', 'temp-table'=>'dropme');
 
 is(
-   $events[0]->{arg},
+   $events[0]->{wrapped_query},
    'CREATE TEMPORARY TABLE `test`.`dropme` AS select * from test.t where i>0',
    'checksum: before_execute() wraps query in CREATE TEMPORARY TABLE'
 );
@@ -177,7 +177,7 @@ like(
 );
 
 is(
-   $events[0]->{arg},
+   $events[0]->{wrapped_query},
    'CREATE TEMPORARY TABLE `test`.`dropme` AS select * from test.t where i>0',
    "checksum: execute() doesn't unwrap query"
 );
@@ -201,9 +201,9 @@ ok(
 proc('after_execute');
 
 is(
-   $events[0]->{arg},
-   'select * from test.t where i>0',
-   'checksum: after_execute() unwrapped query'
+   $events[0]->{wrapped_query},
+   'CREATE TEMPORARY TABLE `test`.`dropme` AS select * from test.t where i>0',
+   'checksum: after_execute() left wrapped query'
 );
 
 is_deeply(
@@ -236,6 +236,11 @@ is(
    $events[0]->{checksum},
    '251493421',
    "checksum: correct checksum after after_execute()"
+);
+
+ok(
+   !exists $events[0]->{wrapped_query},
+   'checksum: wrapped query removed after compare'
 );
 
 # Make checksums differ.
@@ -695,6 +700,79 @@ is(
    $cr->report(hosts => $hosts),
    $report,
    'rows: report, left with more rows'
+);
+
+# #############################################################################
+# Try to compare without having done the actions.
+# #############################################################################
+@events = (
+   {
+      arg => 'select * from test.t',
+      db  => 'test',
+   },
+   {
+      arg => 'select * from test.t',
+      db  => 'test',
+   },
+);
+
+$cr = new CompareResults(
+   method     => 'checksum',
+   'base-dir' => '/dev/null',  # not used with checksum method
+   plugins    => [$plugin],
+   get_id     => \&get_id,
+   %modules,
+);
+
+my @diffs;
+eval {
+   @diffs = $cr->compare(events => \@events, hosts => $hosts);
+};
+
+is(
+   $EVAL_ERROR,
+   '',
+   "compare() checksums without actions doesn't die"
+);
+
+is_deeply(
+   \@diffs,
+   [
+      different_row_counts    => 0,
+      different_checksums     => 0,
+      different_column_counts => 0,
+      different_column_types  => 0,
+   ],
+   'No differences after bad compare()'
+);
+
+$cr = new CompareResults(
+   method     => 'rows',
+   'base-dir' => $tmpdir,
+   plugins    => [$plugin],
+   get_id     => \&get_id,
+   %modules,
+);
+
+eval {
+   @diffs = $cr->compare(events => \@events, hosts => $hosts);
+};
+
+is(
+   $EVAL_ERROR,
+   '',
+   "compare() rows without actions doesn't die"
+);
+
+is_deeply(
+   \@diffs,
+   [
+      different_row_counts    => 0,
+      different_column_values => 0,
+      different_column_counts => 0,
+      different_column_types  => 0,
+   ],
+   'No differences after bad compare()'
 );
 
 # #############################################################################

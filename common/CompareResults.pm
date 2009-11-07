@@ -46,7 +46,6 @@ sub new {
    }
    my $self = {
       %args,
-      tmp_tbl => '',  # for checksum method
       diffs   => {},
       samples => {},
    };
@@ -74,9 +73,6 @@ sub before_execute {
    my ($event, $dbh) = @args{@required_args};
    my $sql;
 
-   # Clear previous tmp tbl.
-   $self->{tmp_tbl} = '';
-
    if ( $self->{method} eq 'checksum' ) {
       my ($db, $tmp_tbl) = @args{qw(db temp-table)};
       $db = $args{'temp-database'} if $args{'temp-database'};
@@ -97,13 +93,13 @@ sub before_execute {
          if $EVAL_ERROR;
 
       # Save the tmp tbl; it's used later in _compare_checksums().
-      $self->{tmp_tbl} = $tmp_tbl; 
+      $event->{tmp_tbl} = $tmp_tbl; 
 
       # Wrap the original query so when it's executed its results get
       # put in tmp table.
-      $event->{original_arg} = $event->{arg};
-      $event->{arg} = "CREATE TEMPORARY TABLE $tmp_tbl AS $event->{arg}";
-      MKDEBUG && _d('Wrapped query:', $event->{arg});
+      $event->{wrapped_query}
+         = "CREATE TEMPORARY TABLE $tmp_tbl AS $event->{arg}";
+      MKDEBUG && _d('Wrapped query:', $event->{wrapped_query});
    }
 
    return $event;
@@ -127,7 +123,6 @@ sub execute {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($event, $dbh) = @args{@required_args};
-   my $query         = $event->{arg};
    my ( $start, $end, $query_time );
 
    # Other modules should only execute the query if Query_time does not
@@ -137,6 +132,7 @@ sub execute {
    MKDEBUG && _d('Executing query');
    $event->{Query_time} = 0;
    if ( $self->{method} eq 'rows' ) {
+      my $query = $event->{arg};
       my $sth;
       eval {
          $sth = $dbh->prepare($query);
@@ -154,6 +150,8 @@ sub execute {
       $event->{results_sth} = $sth;
    }
    else {
+      die "No wrapped query" unless $event->{wrapped_query};
+      my $query = $event->{wrapped_query};
       eval {
          $start = time();
          $dbh->do($query);
@@ -182,18 +180,7 @@ sub after_execute {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($event) = @args{@required_args};
-
-   if ( $self->{method} eq 'checksum' ) {
-      # This shouldn't happen, unless before_execute() isn't called.
-      die "Failed to restore original query" unless $event->{original_arg};
-
-      $event->{arg} = $event->{original_arg};
-      delete $event->{original_arg};
-      MKDEBUG && _d('Unwrapped query');
-   }
-
-   return $event;
+   return $args{event};
 }
 
 # Required args:
@@ -240,14 +227,20 @@ sub _compare_checksums {
          event => $events->[$i],
          dbh   => $hosts->[$i]->{dbh},
       );
-      
       if ( $i ) {
-         $different_checksums++
-            if ($events->[0]->{checksum} || 0) != ($events->[$i]->{checksum} || 0);
-         $different_row_counts++
-            if ($events->[0]->{row_count} || 0) != ($events->[$i]->{row_count} || 0);
+         if ( ($events->[0]->{checksum} || 0)
+              != ($events->[$i]->{checksum}||0) ) {
+            $different_checksums++;
+         }
+         if ( ($events->[0]->{row_count} || 0)
+              != ($events->[$i]->{row_count} || 0) ) {
+            $different_row_counts++
+         }
+
+         delete $events->[$i]->{wrapped_query};
       }
    }
+   delete $events->[0]->{wrapped_query};
 
    # Save differences.
    my $item     = $events->[0]->{fingerprint} || $events->[0]->{arg};
@@ -278,36 +271,39 @@ sub _checksum_results {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($event, $dbh) = @args{@required_args};
-   my $tmp_tbl       = $self->{tmp_tbl};
-   my $sql;
 
+   my $sql;
    my $n_rows       = 0;
    my $tbl_checksum = 0;
-   eval {
-      $sql = "SELECT COUNT(*) FROM $tmp_tbl";
-      MKDEBUG && _d($sql);
-      ($n_rows) = @{ $dbh->selectcol_arrayref($sql) };
+   if ( $event->{wrapped_query} && $event->{tmp_tbl} ) {
+      my $tmp_tbl = $event->{tmp_tbl};
+      eval {
+         $sql = "SELECT COUNT(*) FROM $tmp_tbl";
+         MKDEBUG && _d($sql);
+         ($n_rows) = @{ $dbh->selectcol_arrayref($sql) };
 
-      $sql = "CHECKSUM TABLE $tmp_tbl";
+         $sql = "CHECKSUM TABLE $tmp_tbl";
+         MKDEBUG && _d($sql);
+         $tbl_checksum = $dbh->selectrow_arrayref($sql)->[1];
+      };
+      die "Failed to checksum table: $EVAL_ERROR"
+         if $EVAL_ERROR;
+   
+      $sql = "DROP TABLE IF EXISTS $tmp_tbl";
       MKDEBUG && _d($sql);
-      $tbl_checksum = $dbh->selectrow_arrayref($sql)->[1];
-   };
-   if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('Error counting rows or checksumming', $tmp_tbl, ':',
-         $EVAL_ERROR);
-      return;
+     eval {
+         $dbh->do($sql);
+      };
+      # This isn't critical; we don't need to die.
+      MKDEBUG && $EVAL_ERROR && _d('Error:', $EVAL_ERROR);
    }
+   else {
+      MKDEBUG && _d("Event doesn't have wrapped query or tmp tbl");
+   }
+
    $event->{row_count} = $n_rows;
    $event->{checksum}  = $tbl_checksum;
-   MKDEBUG && _d('n rows:', $n_rows, 'tbl checksum:', $tbl_checksum);
-
-   $sql = "DROP TABLE IF EXISTS $tmp_tbl";
-   MKDEBUG && _d($sql);
-   eval { $dbh->do($sql); };
-   if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('Error dropping tmp table:', $EVAL_ERROR);
-      return;
-   }
+   MKDEBUG && _d('row count:', $n_rows, 'checksum:', $tbl_checksum);
 
    return $event;
 }
@@ -330,6 +326,17 @@ sub _compare_rows {
    my $item     = $event0->{fingerprint} || $event0->{arg};
    my $sampleno = $event0->{sampleno} || 0;
    my $dbh      = $hosts->[0]->{dbh};  # doesn't matter which one
+
+   if ( !$event0->{results_sth} ) {
+      # This will happen if execute() or something fails.
+      MKDEBUG && _d("Event 0 doesn't have a results sth");
+      return (
+         different_row_counts    => $different_row_counts,
+         different_column_values => $different_column_values,
+         different_column_counts => $different_column_counts,
+         different_column_types  => $different_column_types,
+      );
+   }
 
    my $res_struct = MockSyncStream::get_result_set_struct($dbh,
       $event0->{results_sth});
@@ -931,7 +938,6 @@ sub samples {
 
 sub reset {
    my ( $self ) = @_;
-   $self->{tmp_tbl} = '';
    $self->{diffs}   = {};
    $self->{samples} = {};
    return;
