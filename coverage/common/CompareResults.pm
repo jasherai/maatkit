@@ -1,16 +1,16 @@
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 File                           stmt   bran   cond    sub    pod   time  total
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
-.../common/CompareResults.pm   97.6   71.5   66.7  100.0    n/a  100.0   90.9
-Total                          97.6   71.5   66.7  100.0    n/a  100.0   90.9
+.../common/CompareResults.pm   98.5   72.3   81.0  100.0    n/a  100.0   92.4
+Total                          98.5   72.3   81.0  100.0    n/a  100.0   92.4
 ---------------------------- ------ ------ ------ ------ ------ ------ ------
 
 
 Run:          CompareResults.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Fri Nov  6 16:35:19 2009
-Finish:       Fri Nov  6 16:35:23 2009
+Start:        Sat Nov  7 17:23:14 2009
+Finish:       Sat Nov  7 17:23:18 2009
 
 /home/daniel/dev/maatkit/common/CompareResults.pm
 
@@ -32,18 +32,18 @@ line  err   stmt   bran   cond    sub    pod   time   code
 15                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 16                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 17                                                    # ###########################################################################
-18                                                    # CompareResults package $Revision: 5057 $
+18                                                    # CompareResults package $Revision: 5066 $
 19                                                    # ###########################################################################
 20                                                    package CompareResults;
 21                                                    
 22             1                    1             7   use strict;
                1                                  6   
                1                                  5   
-23             1                    1             5   use warnings FATAL => 'all';
-               1                                  3   
+23             1                    1             6   use warnings FATAL => 'all';
+               1                                  2   
                1                                  4   
 24             1                    1             6   use English qw(-no_match_vars);
-               1                                  3   
+               1                                  2   
                1                                  5   
 25             1                    1             6   use Time::HiRes qw(time);
                1                                  2   
@@ -51,10 +51,10 @@ line  err   stmt   bran   cond    sub    pod   time   code
 26                                                    
 27             1                    1             6   use constant MKDEBUG => $ENV{MKDEBUG};
                1                                  2   
-               1                                  7   
+               1                                  6   
 28                                                    
 29             1                    1             6   use Data::Dumper;
-               1                                  2   
+               1                                  6   
                1                                  5   
 30                                                    $Data::Dumper::Indent    = 1;
 31                                                    $Data::Dumper::Sortkeys  = 1;
@@ -67,938 +67,947 @@ line  err   stmt   bran   cond    sub    pod   time   code
 38                                                    #   * get_id     coderef: used by report() to trf query to its ID
 39                                                    #   * common modules
 40                                                    sub new {
-41             2                    2        882804      my ( $class, %args ) = @_;
-42             2                                 70      my @required_args = qw(method base-dir plugins get_id
+41             4                    4        874879      my ( $class, %args ) = @_;
+42             4                                 70      my @required_args = qw(method base-dir plugins get_id
 43                                                                              QueryParser MySQLDump TableParser TableSyncer Quoter);
-44             2                                 17      foreach my $arg ( @required_args ) {
-45    ***     18     50                         149         die "I need a $arg argument" unless $args{$arg};
+44             4                                 35      foreach my $arg ( @required_args ) {
+45    ***     36     50                         277         die "I need a $arg argument" unless $args{$arg};
 46                                                       }
-47             2                                 67      my $self = {
+47             4                                101      my $self = {
 48                                                          %args,
-49                                                          tmp_tbl => '',  # for checksum method
-50                                                          diffs   => {},
-51                                                          samples => {},
-52                                                       };
-53             2                                 93      return bless $self, $class;
-54                                                    }
-55                                                    
-56                                                    # Required args:
-57                                                    #   * event  hashref: an event
-58                                                    #   * dbh    scalar: active dbh
-59                                                    # Optional args:
-60                                                    #   * db             scalar: database name to create temp table in unless...
-61                                                    #   * temp-database  scalar: ...temp db name is given
-62                                                    #   * temp-table     scalar: temp table name
-63                                                    # Returns: hashref
-64                                                    # Can die: yes
-65                                                    # before_execute() drops the temp table if the method is checksum.
-66                                                    # db and temp-table are required for the checksum method, but optional
-67                                                    # for the rows method.
-68                                                    sub before_execute {
-69            20                   20          3128      my ( $self, %args ) = @_;
-70            20                                161      my @required_args = qw(event dbh);
-71            20                                118      foreach my $arg ( @required_args ) {
-72    ***     40     50                         337         die "I need a $arg argument" unless $args{$arg};
-73                                                       }
-74            20                                150      my ($event, $dbh) = @args{@required_args};
-75            20                                 82      my $sql;
-76                                                    
-77                                                       # Clear previous tmp tbl.
-78            20                                115      $self->{tmp_tbl} = '';
-79                                                    
-80            20    100                         165      if ( $self->{method} eq 'checksum' ) {
-81             6                                 43         my ($db, $tmp_tbl) = @args{qw(db temp-table)};
-82    ***      6     50                          42         $db = $args{'temp-database'} if $args{'temp-database'};
-83    ***      6     50                          32         die "Cannot checksum results without a database"
-84                                                             unless $db;
-85                                                    
-86             6                                 70         $tmp_tbl = $self->{Quoter}->quote($db, $tmp_tbl);
-87             6                                 29         eval {
-88             6                                 32            $sql = "DROP TABLE IF EXISTS $tmp_tbl";
+49                                                          diffs   => {},
+50                                                          samples => {},
+51                                                       };
+52             4                                112      return bless $self, $class;
+53                                                    }
+54                                                    
+55                                                    # Required args:
+56                                                    #   * event  hashref: an event
+57                                                    #   * dbh    scalar: active dbh
+58                                                    # Optional args:
+59                                                    #   * db             scalar: database name to create temp table in unless...
+60                                                    #   * temp-database  scalar: ...temp db name is given
+61                                                    #   * temp-table     scalar: temp table name
+62                                                    # Returns: hashref
+63                                                    # Can die: yes
+64                                                    # before_execute() drops the temp table if the method is checksum.
+65                                                    # db and temp-table are required for the checksum method, but optional
+66                                                    # for the rows method.
+67                                                    sub before_execute {
+68            20                   20          1238      my ( $self, %args ) = @_;
+69            20                                171      my @required_args = qw(event dbh);
+70            20                                114      foreach my $arg ( @required_args ) {
+71    ***     40     50                         335         die "I need a $arg argument" unless $args{$arg};
+72                                                       }
+73            20                                144      my ($event, $dbh) = @args{@required_args};
+74            20                                 69      my $sql;
+75                                                    
+76            20    100                         159      if ( $self->{method} eq 'checksum' ) {
+77             6                                 45         my ($db, $tmp_tbl) = @args{qw(db temp-table)};
+78    ***      6     50                          43         $db = $args{'temp-database'} if $args{'temp-database'};
+79    ***      6     50                          35         die "Cannot checksum results without a database"
+80                                                             unless $db;
+81                                                    
+82             6                                 69         $tmp_tbl = $self->{Quoter}->quote($db, $tmp_tbl);
+83             6                                 27         eval {
+84             6                                 32            $sql = "DROP TABLE IF EXISTS $tmp_tbl";
+85             6                                 19            MKDEBUG && _d($sql);
+86             6                               1638            $dbh->do($sql);
+87                                                    
+88             6                                 59            $sql = "SET storage_engine=MyISAM";
 89             6                                 18            MKDEBUG && _d($sql);
-90             6                               1922            $dbh->do($sql);
-91                                                    
-92             6                                 42            $sql = "SET storage_engine=MyISAM";
-93             6                                 19            MKDEBUG && _d($sql);
-94             6                               1284            $dbh->do($sql);
-95                                                          };
-96    ***      6     50                          53         die "Failed to drop temporary table $tmp_tbl: $EVAL_ERROR"
-97                                                             if $EVAL_ERROR;
-98                                                    
-99                                                          # Save the tmp tbl; it's used later in _compare_checksums().
-100            6                                 48         $self->{tmp_tbl} = $tmp_tbl; 
-101                                                   
-102                                                         # Wrap the original query so when it's executed its results get
-103                                                         # put in tmp table.
-104            6                                 49         $event->{original_arg} = $event->{arg};
-105            6                                 55         $event->{arg} = "CREATE TEMPORARY TABLE $tmp_tbl AS $event->{arg}";
-106            6                                 25         MKDEBUG && _d('Wrapped query:', $event->{arg});
-107                                                      }
-108                                                   
-109           20                                263      return $event;
-110                                                   }
-111                                                   
-112                                                   # Required args:
-113                                                   #   * event  hashref: an event
-114                                                   #   * dbh    scalar: active dbh
-115                                                   # Returns: hashref
-116                                                   # Can die: yes
-117                                                   # execute() executes the event's query.  Any prep work should have
-118                                                   # been done in before_execute().  For the checksum method, this simply
-119                                                   # executes the wrapped query.  For the rows method, this gets/saves
-120                                                   # a statement handle for the results in the event which is processed
-121                                                   # later in compare().  Both methods add the Query_time attrib to the
-122                                                   # event.
-123                                                   sub execute {
-124           20                   20           555      my ( $self, %args ) = @_;
-125           20                                167      my @required_args = qw(event dbh);
-126           20                                119      foreach my $arg ( @required_args ) {
-127   ***     40     50                         346         die "I need a $arg argument" unless $args{$arg};
-128                                                      }
-129           20                                152      my ($event, $dbh) = @args{@required_args};
-130           20                                128      my $query         = $event->{arg};
-131           20                                 93      my ( $start, $end, $query_time );
-132                                                   
-133           20                                 70      MKDEBUG && _d('Executing query');
-134           20                                120      $event->{Query_time} = 0;
-135           20    100                         170      if ( $self->{method} eq 'rows' ) {
-136           14                                 66         my $sth;
-137           14                                 74         eval {
+90             6                                948            $dbh->do($sql);
+91                                                          };
+92    ***      6     50                          53         die "Failed to drop temporary table $tmp_tbl: $EVAL_ERROR"
+93                                                             if $EVAL_ERROR;
+94                                                    
+95                                                          # Save the tmp tbl; it's used later in _compare_checksums().
+96             6                                 45         $event->{tmp_tbl} = $tmp_tbl; 
+97                                                    
+98                                                          # Wrap the original query so when it's executed its results get
+99                                                          # put in tmp table.
+100            6                                 72         $event->{wrapped_query}
+101                                                            = "CREATE TEMPORARY TABLE $tmp_tbl AS $event->{arg}";
+102            6                                 22         MKDEBUG && _d('Wrapped query:', $event->{wrapped_query});
+103                                                      }
+104                                                   
+105           20                                272      return $event;
+106                                                   }
+107                                                   
+108                                                   # Required args:
+109                                                   #   * event  hashref: an event
+110                                                   #   * dbh    scalar: active dbh
+111                                                   # Returns: hashref
+112                                                   # Can die: yes
+113                                                   # execute() executes the event's query.  Any prep work should have
+114                                                   # been done in before_execute().  For the checksum method, this simply
+115                                                   # executes the wrapped query.  For the rows method, this gets/saves
+116                                                   # a statement handle for the results in the event which is processed
+117                                                   # later in compare().  Both methods add the Query_time attrib to the
+118                                                   # event.
+119                                                   sub execute {
+120           20                   20           524      my ( $self, %args ) = @_;
+121           20                                152      my @required_args = qw(event dbh);
+122           20                                118      foreach my $arg ( @required_args ) {
+123   ***     40     50                         337         die "I need a $arg argument" unless $args{$arg};
+124                                                      }
+125           20                                145      my ($event, $dbh) = @args{@required_args};
+126           20                                 91      my ( $start, $end, $query_time );
+127                                                   
+128                                                      # Other modules should only execute the query if Query_time does not
+129                                                      # already exist.  This module requires special execution so we always
+130                                                      # execute.
+131                                                   
+132           20                                 67      MKDEBUG && _d('Executing query');
+133           20                                122      $event->{Query_time} = 0;
+134           20    100                         170      if ( $self->{method} eq 'rows' ) {
+135           14                                 83         my $query = $event->{arg};
+136           14                                 61         my $sth;
+137           14                                 64         eval {
 138           14                                 48            $sth = $dbh->prepare($query);
 139                                                         };
-140   ***     14     50                         156         die "Failed to prepare query: $EVAL_ERROR" if $EVAL_ERROR;
+140   ***     14     50                         164         die "Failed to prepare query: $EVAL_ERROR" if $EVAL_ERROR;
 141                                                   
-142           14                                 57         eval {
-143           14                                126            $start = time();
-144           14                               4746            $sth->execute();
-145           14                                168            $end   = time();
-146           14                                296            $query_time = sprintf '%.6f', $end - $start;
+142           14                                 58         eval {
+143           14                                116            $start = time();
+144           14                               4561            $sth->execute();
+145           14                                140            $end   = time();
+146           14                                293            $query_time = sprintf '%.6f', $end - $start;
 147                                                         };
-148   ***     14     50                          99         die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
+148   ***     14     50                          96         die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
 149                                                   
-150           14                                123         $event->{results_sth} = $sth;
+150           14                                119         $event->{results_sth} = $sth;
 151                                                      }
 152                                                      else {
-153            6                                 26         eval {
-154            6                                 52            $start = time();
-155            6                               5703            $dbh->do($query);
-156            6                                 64            $end   = time();
-157            6                                167            $query_time = sprintf '%.6f', $end - $start;
-158                                                         };
-159   ***      6     50                          52         die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
-160                                                      }
-161                                                   
-162           20                                419      $event->{Query_time} = $query_time;
+153   ***      6     50                          48         die "No wrapped query" unless $event->{wrapped_query};
+154            6                                 38         my $query = $event->{wrapped_query};
+155            6                                 27         eval {
+156            6                                 51            $start = time();
+157            6                               6072            $dbh->do($query);
+158            6                                 78            $end   = time();
+159            6                                164            $query_time = sprintf '%.6f', $end - $start;
+160                                                         };
+161   ***      6     50                          54         die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
+162                                                      }
 163                                                   
-164           20                                342      return $event;
-165                                                   }
-166                                                   
-167                                                   # Required args:
-168                                                   #   * event  hashref: an event
-169                                                   # Optional args:
-170                                                   #   * dbh    scalar: active dbh
-171                                                   # Returns: hashref
-172                                                   # Can die: yes
-173                                                   # after_execute() does any post-execution cleanup.  The results should
-174                                                   # not be compared here; no anaylytics here, save that for compare().
-175                                                   sub after_execute {
-176            7                    7           133      my ( $self, %args ) = @_;
-177            7                                 48      my @required_args = qw(event);
-178            7                                 52      foreach my $arg ( @required_args ) {
-179   ***      7     50                          67         die "I need a $arg argument" unless $args{$arg};
-180                                                      }
-181            7                                 49      my ($event) = @args{@required_args};
-182                                                   
-183            7    100                          61      if ( $self->{method} eq 'checksum' ) {
-184                                                         # This shouldn't happen, unless before_execute() isn't called.
-185   ***      6     50                          44         die "Failed to restore original query" unless $event->{original_arg};
-186                                                   
-187            6                                 40         $event->{arg} = $event->{original_arg};
-188            6                                 34         delete $event->{original_arg};
-189            6                                 54         MKDEBUG && _d('Unwrapped query');
-190                                                      }
-191                                                   
-192            7                                 83      return $event;
-193                                                   }
-194                                                   
-195                                                   # Required args:
-196                                                   #   * events  arrayref: events
-197                                                   #   * hosts   arrayref: hosts hashrefs with at least a dbh key
-198                                                   # Returns: array
-199                                                   # Can die: yes
-200                                                   # compare() compares events that have been run through before_execute(),
-201                                                   # execute() and after_execute().  The checksum method primarily compares
-202                                                   # the checksum attribs saved in the events.  The rows method uses the
-203                                                   # result statement handles saved in the events to compare rows and column
-204                                                   # values.  Each method returns an array of key => value pairs which the
-205                                                   # caller should aggregate into a meta-event that represents differences
-206                                                   # compare() has found in these events.  Only a "summary" of differences is
-207                                                   # returned.  Specific differences are saved internally and are reported
-208                                                   # by calling report() later.
-209                                                   sub compare {
-210           10                   10           182      my ( $self, %args ) = @_;
-211           10                                 78      my @required_args = qw(events hosts);
-212           10                                 72      foreach my $arg ( @required_args ) {
-213   ***     20     50                         223         die "I need a $arg argument" unless $args{$arg};
-214                                                      }
-215           10                                 77      my ($events, $hosts) = @args{@required_args};
-216           10    100                         182      return $self->{method} eq 'rows' ? $self->_compare_rows(%args)
-217                                                                                       : $self->_compare_checksums(%args);
-218                                                   }
-219                                                   
-220                                                   sub _compare_checksums {
-221            3                    3            27      my ( $self, %args ) = @_;
-222            3                                 25      my @required_args = qw(events hosts);
-223            3                                 19      foreach my $arg ( @required_args ) {
-224   ***      6     50                          50         die "I need a $arg argument" unless $args{$arg};
-225                                                      }
-226            3                                 24      my ($events, $hosts) = @args{@required_args};
-227                                                   
-228            3                                 14      my $different_row_counts    = 0;
-229            3                                 11      my $different_column_counts = 0; # TODO
-230            3                                 16      my $different_column_types  = 0; # TODO
-231            3                                 13      my $different_checksums     = 0;
-232                                                   
-233            3                                 16      my $n_events = scalar @$events;
-234            3                                 24      foreach my $i ( 0..($n_events-1) ) {
-235            6                                 88         $events->[$i] = $self->_checksum_results(
-236                                                            event => $events->[$i],
-237                                                            dbh   => $hosts->[$i]->{dbh},
-238                                                         );
-239                                                         
-240            6    100                          51         if ( $i ) {
-241   ***      3    100     50                   69            $different_checksums++
-      ***                   50                        
-242                                                               if ($events->[0]->{checksum} || 0) != ($events->[$i]->{checksum} || 0);
-243   ***      3    100     50                   66            $different_row_counts++
-      ***                   50                        
-244                                                               if ($events->[0]->{row_count} || 0) != ($events->[$i]->{row_count} || 0);
-245                                                         }
-246                                                      }
-247                                                   
-248                                                      # Save differences.
-249   ***      3            33                   34      my $item     = $events->[0]->{fingerprint} || $events->[0]->{arg};
-250   ***      3            50                   31      my $sampleno = $events->[0]->{sampleno} || 0;
-251            3    100                          20      if ( $different_checksums ) {
-252            4                                 59         $self->{diffs}->{checksums}->{$item}->{$sampleno}
-253            2                                 17            = [ map { $_->{checksum} } @$events ];
-254            2                                 29         $self->{samples}->{$item}->{$sampleno} = $events->[0]->{arg};
-255                                                      }
-256            3    100                          20      if ( $different_row_counts ) {
-257            2                                 22         $self->{diffs}->{row_counts}->{$item}->{$sampleno}
-258            1                                  9            = [ map { $_->{row_count} } @$events ];
-259            1                                 12         $self->{samples}->{$item}->{$sampleno} = $events->[0]->{arg};
-260                                                      }
-261                                                   
-262                                                      return (
-263            3                                224         different_row_counts    => $different_row_counts,
-264                                                         different_checksums     => $different_checksums,
-265                                                         different_column_counts => $different_column_counts,
-266                                                         different_column_types  => $different_column_types,
-267                                                      );
-268                                                   }
-269                                                   
-270                                                   sub _checksum_results {
-271            6                    6            60      my ( $self, %args ) = @_;
-272            6                                 59      my @required_args = qw(event dbh);
-273            6                                 39      foreach my $arg ( @required_args ) {
-274   ***     12     50                         104         die "I need a $arg argument" unless $args{$arg};
-275                                                      }
-276            6                                 46      my ($event, $dbh) = @args{@required_args};
-277            6                                 38      my $tmp_tbl       = $self->{tmp_tbl};
-278            6                                 21      my $sql;
-279                                                   
-280            6                                 25      my $n_rows       = 0;
-281            6                                 26      my $tbl_checksum = 0;
-282            6                                 24      eval {
-283            6                                 37         $sql = "SELECT COUNT(*) FROM $tmp_tbl";
-284            6                                 22         MKDEBUG && _d($sql);
-285            6                                 25         ($n_rows) = @{ $dbh->selectcol_arrayref($sql) };
+164           20                                399      $event->{Query_time} = $query_time;
+165                                                   
+166           20                                337      return $event;
+167                                                   }
+168                                                   
+169                                                   # Required args:
+170                                                   #   * event  hashref: an event
+171                                                   # Optional args:
+172                                                   #   * dbh    scalar: active dbh
+173                                                   # Returns: hashref
+174                                                   # Can die: yes
+175                                                   # after_execute() does any post-execution cleanup.  The results should
+176                                                   # not be compared here; no anaylytics here, save that for compare().
+177                                                   sub after_execute {
+178            7                    7           129      my ( $self, %args ) = @_;
+179            7                                 50      my @required_args = qw(event);
+180            7                                 38      foreach my $arg ( @required_args ) {
+181   ***      7     50                          69         die "I need a $arg argument" unless $args{$arg};
+182                                                      }
+183            7                                 82      return $args{event};
+184                                                   }
+185                                                   
+186                                                   # Required args:
+187                                                   #   * events  arrayref: events
+188                                                   #   * hosts   arrayref: hosts hashrefs with at least a dbh key
+189                                                   # Returns: array
+190                                                   # Can die: yes
+191                                                   # compare() compares events that have been run through before_execute(),
+192                                                   # execute() and after_execute().  The checksum method primarily compares
+193                                                   # the checksum attribs saved in the events.  The rows method uses the
+194                                                   # result statement handles saved in the events to compare rows and column
+195                                                   # values.  Each method returns an array of key => value pairs which the
+196                                                   # caller should aggregate into a meta-event that represents differences
+197                                                   # compare() has found in these events.  Only a "summary" of differences is
+198                                                   # returned.  Specific differences are saved internally and are reported
+199                                                   # by calling report() later.
+200                                                   sub compare {
+201           12                   12           259      my ( $self, %args ) = @_;
+202           12                                 91      my @required_args = qw(events hosts);
+203           12                                 79      foreach my $arg ( @required_args ) {
+204   ***     24     50                         213         die "I need a $arg argument" unless $args{$arg};
+205                                                      }
+206           12                                 92      my ($events, $hosts) = @args{@required_args};
+207           12    100                         220      return $self->{method} eq 'rows' ? $self->_compare_rows(%args)
+208                                                                                       : $self->_compare_checksums(%args);
+209                                                   }
+210                                                   
+211                                                   sub _compare_checksums {
+212            4                    4            34      my ( $self, %args ) = @_;
+213            4                                 30      my @required_args = qw(events hosts);
+214            4                                 24      foreach my $arg ( @required_args ) {
+215   ***      8     50                          64         die "I need a $arg argument" unless $args{$arg};
+216                                                      }
+217            4                                 29      my ($events, $hosts) = @args{@required_args};
+218                                                   
+219            4                                 18      my $different_row_counts    = 0;
+220            4                                 16      my $different_column_counts = 0; # TODO
+221            4                                 16      my $different_column_types  = 0; # TODO
+222            4                                 16      my $different_checksums     = 0;
+223                                                   
+224            4                                 19      my $n_events = scalar @$events;
+225            4                                 30      foreach my $i ( 0..($n_events-1) ) {
+226            8                                105         $events->[$i] = $self->_checksum_results(
+227                                                            event => $events->[$i],
+228                                                            dbh   => $hosts->[$i]->{dbh},
+229                                                         );
+230            8    100                          68         if ( $i ) {
+231            4    100    100                  105            if ( ($events->[0]->{checksum} || 0)
+                           100                        
+232                                                                 != ($events->[$i]->{checksum}||0) ) {
+233            2                                 12               $different_checksums++;
+234                                                            }
+235            4    100    100                   87            if ( ($events->[0]->{row_count} || 0)
+                           100                        
+236                                                                 != ($events->[$i]->{row_count} || 0) ) {
+237            1                                  6               $different_row_counts++
+238                                                            }
+239                                                   
+240            4                                 46            delete $events->[$i]->{wrapped_query};
+241                                                         }
+242                                                      }
+243            4                                 29      delete $events->[0]->{wrapped_query};
+244                                                   
+245                                                      # Save differences.
+246   ***      4            66                   54      my $item     = $events->[0]->{fingerprint} || $events->[0]->{arg};
+247            4           100                   43      my $sampleno = $events->[0]->{sampleno} || 0;
+248            4    100                          26      if ( $different_checksums ) {
+249            4                                 56         $self->{diffs}->{checksums}->{$item}->{$sampleno}
+250            2                                 15            = [ map { $_->{checksum} } @$events ];
+251            2                                 24         $self->{samples}->{$item}->{$sampleno} = $events->[0]->{arg};
+252                                                      }
+253            4    100                          28      if ( $different_row_counts ) {
+254            2                                 22         $self->{diffs}->{row_counts}->{$item}->{$sampleno}
+255            1                                  7            = [ map { $_->{row_count} } @$events ];
+256            1                                 12         $self->{samples}->{$item}->{$sampleno} = $events->[0]->{arg};
+257                                                      }
+258                                                   
+259                                                      return (
+260            4                                117         different_row_counts    => $different_row_counts,
+261                                                         different_checksums     => $different_checksums,
+262                                                         different_column_counts => $different_column_counts,
+263                                                         different_column_types  => $different_column_types,
+264                                                      );
+265                                                   }
+266                                                   
+267                                                   sub _checksum_results {
+268            8                    8            77      my ( $self, %args ) = @_;
+269            8                                 60      my @required_args = qw(event dbh);
+270            8                                 50      foreach my $arg ( @required_args ) {
+271   ***     16     50                         133         die "I need a $arg argument" unless $args{$arg};
+272                                                      }
+273            8                                 64      my ($event, $dbh) = @args{@required_args};
+274                                                   
+275            8                                 29      my $sql;
+276            8                                 35      my $n_rows       = 0;
+277            8                                 46      my $tbl_checksum = 0;
+278   ***      8    100     66                  149      if ( $event->{wrapped_query} && $event->{tmp_tbl} ) {
+279            6                                 35         my $tmp_tbl = $event->{tmp_tbl};
+280            6                                 26         eval {
+281            6                                 39            $sql = "SELECT COUNT(*) FROM $tmp_tbl";
+282            6                                 19            MKDEBUG && _d($sql);
+283            6                                 25            ($n_rows) = @{ $dbh->selectcol_arrayref($sql) };
                6                                 23   
-286                                                   
-287            6                                 88         $sql = "CHECKSUM TABLE $tmp_tbl";
-288            6                                 22         MKDEBUG && _d($sql);
-289            6                                 24         $tbl_checksum = $dbh->selectrow_arrayref($sql)->[1];
-290                                                      };
-291   ***      6     50                        1605      if ( $EVAL_ERROR ) {
-292   ***      0                                  0         MKDEBUG && _d('Error counting rows or checksumming', $tmp_tbl, ':',
-293                                                            $EVAL_ERROR);
-294   ***      0                                  0         return;
-295                                                      }
-296            6                                 46      $event->{row_count} = $n_rows;
-297            6                                 32      $event->{checksum}  = $tbl_checksum;
-298            6                                 20      MKDEBUG && _d('n rows:', $n_rows, 'tbl checksum:', $tbl_checksum);
-299                                                   
-300            6                                 29      $sql = "DROP TABLE IF EXISTS $tmp_tbl";
-301            6                                 20      MKDEBUG && _d($sql);
-302            6                                 22      eval { $dbh->do($sql); };
-               6                               2597   
-303   ***      6     50                          54      if ( $EVAL_ERROR ) {
-304   ***      0                                  0         MKDEBUG && _d('Error dropping tmp table:', $EVAL_ERROR);
-305   ***      0                                  0         return;
-306                                                      }
+284                                                   
+285            6                                 90            $sql = "CHECKSUM TABLE $tmp_tbl";
+286            6                                 20            MKDEBUG && _d($sql);
+287            6                                 19            $tbl_checksum = $dbh->selectrow_arrayref($sql)->[1];
+288                                                         };
+289   ***      6     50                        1459         die "Failed to checksum table: $EVAL_ERROR"
+290                                                            if $EVAL_ERROR;
+291                                                      
+292            6                                 38         $sql = "DROP TABLE IF EXISTS $tmp_tbl";
+293            6                                 18         MKDEBUG && _d($sql);
+294            6                                 24        eval {
+295            6                               2162            $dbh->do($sql);
+296                                                         };
+297                                                         # This isn't critical; we don't need to die.
+298            6                                 40         MKDEBUG && $EVAL_ERROR && _d('Error:', $EVAL_ERROR);
+299                                                      }
+300                                                      else {
+301            2                                  8         MKDEBUG && _d("Event doesn't have wrapped query or tmp tbl");
+302                                                      }
+303                                                   
+304            8                                 61      $event->{row_count} = $n_rows;
+305            8                                 64      $event->{checksum}  = $tbl_checksum;
+306            8                                 27      MKDEBUG && _d('row count:', $n_rows, 'checksum:', $tbl_checksum);
 307                                                   
-308            6                                 87      return $event;
+308            8                                112      return $event;
 309                                                   }
 310                                                   
 311                                                   sub _compare_rows {
-312            7                    7            74      my ( $self, %args ) = @_;
-313            7                                 58      my @required_args = qw(events hosts);
-314            7                                 47      foreach my $arg ( @required_args ) {
-315   ***     14     50                         113         die "I need a $arg argument" unless $args{$arg};
+312            8                    8            77      my ( $self, %args ) = @_;
+313            8                                 70      my @required_args = qw(events hosts);
+314            8                                 52      foreach my $arg ( @required_args ) {
+315   ***     16     50                         138         die "I need a $arg argument" unless $args{$arg};
 316                                                      }
-317            7                                 52      my ($events, $hosts) = @args{@required_args};
+317            8                                 59      my ($events, $hosts) = @args{@required_args};
 318                                                   
-319            7                                 31      my $different_row_counts    = 0;
-320            7                                 30      my $different_column_counts = 0; # TODO
-321            7                                 32      my $different_column_types  = 0; # TODO
-322            7                                 30      my $different_column_values = 0;
+319            8                                 48      my $different_row_counts    = 0;
+320            8                                 33      my $different_column_counts = 0; # TODO
+321            8                                 34      my $different_column_types  = 0; # TODO
+322            8                                 33      my $different_column_values = 0;
 323                                                   
-324            7                                 34      my $n_events = scalar @$events;
-325            7                                 54      my $event0   = $events->[0]; 
-326   ***      7            66                   89      my $item     = $event0->{fingerprint} || $event0->{arg};
-327            7           100                   89      my $sampleno = $event0->{sampleno} || 0;
-328            7                                 49      my $dbh      = $hosts->[0]->{dbh};  # doesn't matter which one
+324            8                                 44      my $n_events = scalar @$events;
+325            8                                 49      my $event0   = $events->[0]; 
+326   ***      8            66                  117      my $item     = $event0->{fingerprint} || $event0->{arg};
+327            8           100                   85      my $sampleno = $event0->{sampleno} || 0;
+328            8                                 57      my $dbh      = $hosts->[0]->{dbh};  # doesn't matter which one
 329                                                   
-330            7                                108      my $res_struct = MockSyncStream::get_result_set_struct($dbh,
-331                                                         $event0->{results_sth});
-332            7                                 26      MKDEBUG && _d('Result set struct:', Dumper($res_struct));
-333                                                   
-334                                                      # Use a mock sth so we don't have to re-execute event0 sth to compare
-335                                                      # it to the 3rd and subsequent events.
-336            7                                 35      my @event0_rows      = @{ $event0->{results_sth}->fetchall_arrayref({}) };
-               7                                152   
-337            7                                139      $event0->{row_count} = scalar @event0_rows;
-338            7                                144      my $left = new MockSth(@event0_rows);
-339            7                                 33      $left->{NAME} = [ @{$event0->{results_sth}->{NAME}} ];
-               7                                 77   
+330            8    100                          67      if ( !$event0->{results_sth} ) {
+331                                                         # This will happen if execute() or something fails.
+332            1                                  4         MKDEBUG && _d("Event 0 doesn't have a results sth");
+333                                                         return (
+334            1                                 23            different_row_counts    => $different_row_counts,
+335                                                            different_column_values => $different_column_values,
+336                                                            different_column_counts => $different_column_counts,
+337                                                            different_column_types  => $different_column_types,
+338                                                         );
+339                                                      }
 340                                                   
-341                                                      EVENT:
-342            7                                128      foreach my $i ( 1..($n_events-1) ) {
-343            7                                 44         my $event = $events->[$i];
-344            7                                 43         my $right = $event->{results_sth};
-345                                                   
-346            7                                 40         $event->{row_count} = 0;
-347                                                   
-348                                                         # Identical rows are ignored.  Once a difference on either side is found,
-349                                                         # we gobble the remaining rows in that sth and print them to an outfile.
-350                                                         # This short circuits RowDiff::compare_sets() which is what we want to do.
-351            7                                 32         my $no_diff      = 1;  # results are identical; this catches 0 row results
-352            7                                114         my $outfile      = new Outfile();
-353            7                                 37         my ($left_outfile, $right_outfile, $n_rows);
-354                                                         my $same_row     = sub {
-355            9                    9            45               $event->{row_count}++;  # Keep track of this event's row_count.
-356            9                                 46               return;
-357            7                                 93         };
-358                                                         my $not_in_left  = sub {
-359            5                    5            29            my ( $rr ) = @_;
-360            5                                 22            $no_diff = 0;
-361                                                            # $n_rows will be added later to this event's row_count.
-362            5                                 55            ($right_outfile, $n_rows) = $self->write_to_outfile(
-363                                                               side    => 'right',
-364                                                               sth     => $right,
-365                                                               row     => $rr,
-366                                                               Outfile => $outfile,
-367                                                            );
-368            5                                100            return;
-369            7                                 86         };
-370                                                         my $not_in_right = sub {
-371            5                    5            25            my ( $lr ) = @_;
-372            5                                 22            $no_diff = 0;
-373                                                            # left is event0 so we don't need $n_rows back.
-374            5                                 61            ($left_outfile, undef) = $self->write_to_outfile(
-375                                                               side    => 'left',
-376                                                               sth     => $left,
-377                                                               row     => $lr,
-378                                                               Outfile => $outfile,
-379                                                            ); 
-380            5                                101            return;
-381            7                                 76         };
-382                                                   
-383            7                                 97         my $rd       = new RowDiff(dbh => $dbh);
-384            7                                148         my $mocksync = new MockSyncStream(
-385                                                            query        => $event0->{arg},
-386                                                            cols         => $res_struct->{cols},
-387                                                            same_row     => $same_row,
-388                                                            not_in_left  => $not_in_left,
-389                                                            not_in_right => $not_in_right,
-390                                                         );
-391                                                   
-392            7                                 32         MKDEBUG && _d('Comparing result sets with MockSyncStream');
-393            7                                 76         $rd->compare_sets(
-394                                                            left   => $left,
-395                                                            right  => $right,
-396                                                            syncer => $mocksync,
-397                                                            tbl    => $res_struct,
-398                                                         );
-399                                                   
-400                                                         # Add number of rows written to outfile to this event's row_count.
-401                                                         # $n_rows will be undef if there were no differences; row_count will
-402                                                         # still be correct in this case because we kept track of it in $same_row.
-403            7           100                   99         $event->{row_count} += $n_rows || 0;
-404                                                   
-405            7                                 26         MKDEBUG && _d('Left has', $event0->{row_count}, 'rows, right has',
-406                                                            $event->{row_count});
-407                                                   
-408                                                         # Save differences.
-409            7    100                          68         $different_row_counts++ if $event0->{row_count} != $event->{row_count};
-410            7    100                          41         if ( $different_row_counts ) {
-411            2                                 38            $self->{diffs}->{row_counts}->{$item}->{$sampleno}
-412                                                               = [ $event0->{row_count}, $event->{row_count} ];
-413            2                                 24            $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
-414                                                         }
+341            7                                 91      my $res_struct = MockSyncStream::get_result_set_struct($dbh,
+342                                                         $event0->{results_sth});
+343            7                                 27      MKDEBUG && _d('Result set struct:', Dumper($res_struct));
+344                                                   
+345                                                      # Use a mock sth so we don't have to re-execute event0 sth to compare
+346                                                      # it to the 3rd and subsequent events.
+347            7                                 30      my @event0_rows      = @{ $event0->{results_sth}->fetchall_arrayref({}) };
+               7                                129   
+348            7                                111      $event0->{row_count} = scalar @event0_rows;
+349            7                                128      my $left = new MockSth(@event0_rows);
+350            7                                 31      $left->{NAME} = [ @{$event0->{results_sth}->{NAME}} ];
+               7                                 78   
+351                                                   
+352                                                      EVENT:
+353            7                                121      foreach my $i ( 1..($n_events-1) ) {
+354            7                                 45         my $event = $events->[$i];
+355            7                                 42         my $right = $event->{results_sth};
+356                                                   
+357            7                                 39         $event->{row_count} = 0;
+358                                                   
+359                                                         # Identical rows are ignored.  Once a difference on either side is found,
+360                                                         # we gobble the remaining rows in that sth and print them to an outfile.
+361                                                         # This short circuits RowDiff::compare_sets() which is what we want to do.
+362            7                                 34         my $no_diff      = 1;  # results are identical; this catches 0 row results
+363            7                                109         my $outfile      = new Outfile();
+364            7                                 35         my ($left_outfile, $right_outfile, $n_rows);
+365                                                         my $same_row     = sub {
+366            9                    9            47               $event->{row_count}++;  # Keep track of this event's row_count.
+367            9                                 45               return;
+368            7                                 90         };
+369                                                         my $not_in_left  = sub {
+370            5                    5            26            my ( $rr ) = @_;
+371            5                                 23            $no_diff = 0;
+372                                                            # $n_rows will be added later to this event's row_count.
+373            5                                 68            ($right_outfile, $n_rows) = $self->write_to_outfile(
+374                                                               side    => 'right',
+375                                                               sth     => $right,
+376                                                               row     => $rr,
+377                                                               Outfile => $outfile,
+378                                                            );
+379            5                                102            return;
+380            7                                 86         };
+381                                                         my $not_in_right = sub {
+382            5                    5            26            my ( $lr ) = @_;
+383            5                                 21            $no_diff = 0;
+384                                                            # left is event0 so we don't need $n_rows back.
+385            5                                 64            ($left_outfile, undef) = $self->write_to_outfile(
+386                                                               side    => 'left',
+387                                                               sth     => $left,
+388                                                               row     => $lr,
+389                                                               Outfile => $outfile,
+390                                                            ); 
+391            5                                104            return;
+392            7                                 75         };
+393                                                   
+394            7                                 93         my $rd       = new RowDiff(dbh => $dbh);
+395            7                                149         my $mocksync = new MockSyncStream(
+396                                                            query        => $event0->{arg},
+397                                                            cols         => $res_struct->{cols},
+398                                                            same_row     => $same_row,
+399                                                            not_in_left  => $not_in_left,
+400                                                            not_in_right => $not_in_right,
+401                                                         );
+402                                                   
+403            7                                 32         MKDEBUG && _d('Comparing result sets with MockSyncStream');
+404            7                                 73         $rd->compare_sets(
+405                                                            left   => $left,
+406                                                            right  => $right,
+407                                                            syncer => $mocksync,
+408                                                            tbl    => $res_struct,
+409                                                         );
+410                                                   
+411                                                         # Add number of rows written to outfile to this event's row_count.
+412                                                         # $n_rows will be undef if there were no differences; row_count will
+413                                                         # still be correct in this case because we kept track of it in $same_row.
+414            7           100                   87         $event->{row_count} += $n_rows || 0;
 415                                                   
-416            7                                 59         $left->reset();
-417            7    100                          71         next EVENT if $no_diff;
+416            7                                 24         MKDEBUG && _d('Left has', $event0->{row_count}, 'rows, right has',
+417                                                            $event->{row_count});
 418                                                   
-419                                                         # The result sets differ, so now we must begin the difficult
-420                                                         # work: finding and determining the nature of those differences.
-421            6                                 19         MKDEBUG && _d('Result sets are different');
-422                                                   
-423                                                   
-424                                                         # Make sure both outfiles are created, else diff_rows() will die.
-425            6    100                          44         if ( !$left_outfile ) {
-426            1                                  3            MKDEBUG && _d('Right has extra rows not in left');
-427            1                                  8            (undef, $left_outfile) = $self->open_outfile(side => 'left');
-428                                                         }
-429            6    100                          36         if ( !$right_outfile ) {
-430            1                                  4            MKDEBUG && _d('Left has extra rows not in right');
-431            1                                  9            (undef, $right_outfile) = $self->open_outfile(side => 'right');
-432                                                         }
+419                                                         # Save differences.
+420            7    100                          67         $different_row_counts++ if $event0->{row_count} != $event->{row_count};
+421            7    100                          44         if ( $different_row_counts ) {
+422            2                                 36            $self->{diffs}->{row_counts}->{$item}->{$sampleno}
+423                                                               = [ $event0->{row_count}, $event->{row_count} ];
+424            2                                 24            $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+425                                                         }
+426                                                   
+427            7                                 57         $left->reset();
+428            7    100                          69         next EVENT if $no_diff;
+429                                                   
+430                                                         # The result sets differ, so now we must begin the difficult
+431                                                         # work: finding and determining the nature of those differences.
+432            6                                 23         MKDEBUG && _d('Result sets are different');
 433                                                   
-434   ***      6            33                  199         my @diff_rows = $self->diff_rows(
-435                                                            %args,             # for options like max-different-rows
-436                                                            left_dbh        => $hosts->[0]->{dbh},
-437                                                            left_outfile    => $left_outfile,
-438                                                            right_dbh       => $hosts->[$i]->{dbh},
-439                                                            right_outfile   => $right_outfile,
-440                                                            res_struct      => $res_struct,
-441                                                            query           => $event0->{arg},
-442                                                            db              => $args{tmp_db} || $event0->{db},
-443                                                         );
+434                                                   
+435                                                         # Make sure both outfiles are created, else diff_rows() will die.
+436            6    100                          41         if ( !$left_outfile ) {
+437            1                                  4            MKDEBUG && _d('Right has extra rows not in left');
+438            1                                  7            (undef, $left_outfile) = $self->open_outfile(side => 'left');
+439                                                         }
+440            6    100                          39         if ( !$right_outfile ) {
+441            1                                  5            MKDEBUG && _d('Left has extra rows not in right');
+442            1                                  7            (undef, $right_outfile) = $self->open_outfile(side => 'right');
+443                                                         }
 444                                                   
-445                                                         # Save differences.
-446            6    100                         128         if ( scalar @diff_rows ) { 
-447            3                                 13            $different_column_values++; 
-448            3                                 52            $self->{diffs}->{col_vals}->{$item}->{$sampleno} = \@diff_rows;
-449            3                                133            $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
-450                                                         }
-451                                                      }
-452                                                   
-453                                                      return (
-454            7                                276         different_row_counts    => $different_row_counts,
-455                                                         different_column_values => $different_column_values,
-456                                                         different_column_counts => $different_column_counts,
-457                                                         different_column_types  => $different_column_types,
-458                                                      );
-459                                                   }
-460                                                   
-461                                                   # Required args:
-462                                                   #   * left_dbh       scalar: active dbh for left
-463                                                   #   * left_outfile   scalar: outfile name for left
-464                                                   #   * right_dbh      scalar: active dbh for right
-465                                                   #   * right_outfile  scalar: outfile name for right
-466                                                   #   * res_struct     hashref: result set structure
-467                                                   #   * db             scalar: database to use for creating temp tables
-468                                                   #   * query          scalar: query, parsed for indexes
-469                                                   # Optional args:
-470                                                   #   * add-indexes         scalar: add indexes from source tables to tmp tbl
-471                                                   #   * max-different-rows  scalar: stop after this many differences are found
-472                                                   #   * float-precision     scalar: round float, double, decimal types to N places
-473                                                   # Returns: scalar
-474                                                   # Can die: no
-475                                                   # diff_rows() loads and compares two result sets and returns the number of
-476                                                   # differences between them.  This includes missing rows and row data
-477                                                   # differences.
-478                                                   sub diff_rows {
-479            6                    6           177      my ( $self, %args ) = @_;
-480            6                                 76      my @required_args = qw(left_dbh left_outfile right_dbh right_outfile
-481                                                                             res_struct db query);
-482            6                                 41      foreach my $arg ( @required_args ) {
-483   ***     42     50                         311         die "I need a $arg argument" unless $args{$arg};
-484                                                      }
-485            6                                 72      my ($left_dbh, $left_outfile, $right_dbh, $right_outfile, $res_struct,
-486                                                          $db, $query)
-487                                                         = @args{@required_args};
-488                                                   
-489                                                      # First thing, make two temps tables into which the outfiles can
-490                                                      # be loaded.  This requires that we make a CREATE TABLE statement
-491                                                      # for the result sets' columns.
-492            6                                 41      my $left_tbl  = "`$db`.`mk_upgrade_left`";
-493            6                                 36      my $right_tbl = "`$db`.`mk_upgrade_right`";
-494            6                                 55      my $table_ddl = $self->make_table_ddl($res_struct);
-495                                                   
-496            6                               4282      $left_dbh->do("DROP TABLE IF EXISTS $left_tbl");
-497            6                             334515      $left_dbh->do("CREATE TABLE $left_tbl $table_ddl");
-498            6                               5655      $left_dbh->do("LOAD DATA LOCAL INFILE '$left_outfile' "
-499                                                         . "INTO TABLE $left_tbl");
-500                                                   
-501            6                             304399      $right_dbh->do("DROP TABLE IF EXISTS $right_tbl");
-502            6                             292569      $right_dbh->do("CREATE TABLE $right_tbl $table_ddl");
-503            6                               4245      $right_dbh->do("LOAD DATA LOCAL INFILE '$right_outfile' "
-504                                                         . "INTO TABLE $right_tbl");
-505                                                   
-506            6                                 35      MKDEBUG && _d('Loaded', $left_outfile, 'into table', $left_tbl, 'and',
-507                                                         $right_outfile, 'into table', $right_tbl);
-508                                                   
-509                                                      # Now we need to get all indexes from all tables used by the query
-510                                                      # and add them to the temp tbl.  Some indexes may be invalid, dupes,
-511                                                      # or generally useless, but we'll let the sync algo decide that later.
-512            6    100                          75      if ( $args{'add-indexes'} ) {
-513            1                                 40         $self->add_indexes(
-514                                                            %args,
-515                                                            dsts      => [
-516                                                               { dbh => $left_dbh,  tbl => $left_tbl  },
-517                                                               { dbh => $right_dbh, tbl => $right_tbl },
-518                                                            ],
-519                                                         );
-520                                                      }
-521                                                   
-522                                                      # Create a RowDiff with callbacks that will do what we want when rows and
-523                                                      # columns differ.  This RowDiff is passed to TableSyncer which calls it.
-524                                                      # TODO: explain how these callbacks work together.
-525            6           100                  125      my $max_diff = $args{'max-different-rows'} || 1_000;  # 1k=sanity/safety
-526            6                                 43      my $n_diff   = 0;
-527            6                                 43      my @missing_rows;  # not currently saved; row counts show missing rows
-528            6                                 25      my @different_rows;
-529            1                    1            18      use constant LEFT  => 0;
+445   ***      6            33                  205         my @diff_rows = $self->diff_rows(
+446                                                            %args,             # for options like max-different-rows
+447                                                            left_dbh        => $hosts->[0]->{dbh},
+448                                                            left_outfile    => $left_outfile,
+449                                                            right_dbh       => $hosts->[$i]->{dbh},
+450                                                            right_outfile   => $right_outfile,
+451                                                            res_struct      => $res_struct,
+452                                                            query           => $event0->{arg},
+453                                                            db              => $args{tmp_db} || $event0->{db},
+454                                                         );
+455                                                   
+456                                                         # Save differences.
+457            6    100                         125         if ( scalar @diff_rows ) { 
+458            3                                 14            $different_column_values++; 
+459            3                                 51            $self->{diffs}->{col_vals}->{$item}->{$sampleno} = \@diff_rows;
+460            3                                119            $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+461                                                         }
+462                                                      }
+463                                                   
+464                                                      return (
+465            7                                272         different_row_counts    => $different_row_counts,
+466                                                         different_column_values => $different_column_values,
+467                                                         different_column_counts => $different_column_counts,
+468                                                         different_column_types  => $different_column_types,
+469                                                      );
+470                                                   }
+471                                                   
+472                                                   # Required args:
+473                                                   #   * left_dbh       scalar: active dbh for left
+474                                                   #   * left_outfile   scalar: outfile name for left
+475                                                   #   * right_dbh      scalar: active dbh for right
+476                                                   #   * right_outfile  scalar: outfile name for right
+477                                                   #   * res_struct     hashref: result set structure
+478                                                   #   * db             scalar: database to use for creating temp tables
+479                                                   #   * query          scalar: query, parsed for indexes
+480                                                   # Optional args:
+481                                                   #   * add-indexes         scalar: add indexes from source tables to tmp tbl
+482                                                   #   * max-different-rows  scalar: stop after this many differences are found
+483                                                   #   * float-precision     scalar: round float, double, decimal types to N places
+484                                                   # Returns: scalar
+485                                                   # Can die: no
+486                                                   # diff_rows() loads and compares two result sets and returns the number of
+487                                                   # differences between them.  This includes missing rows and row data
+488                                                   # differences.
+489                                                   sub diff_rows {
+490            6                    6          3159      my ( $self, %args ) = @_;
+491            6                                 83      my @required_args = qw(left_dbh left_outfile right_dbh right_outfile
+492                                                                             res_struct db query);
+493            6                                 46      foreach my $arg ( @required_args ) {
+494   ***     42     50                         306         die "I need a $arg argument" unless $args{$arg};
+495                                                      }
+496            6                                 72      my ($left_dbh, $left_outfile, $right_dbh, $right_outfile, $res_struct,
+497                                                          $db, $query)
+498                                                         = @args{@required_args};
+499                                                   
+500                                                      # First thing, make two temps tables into which the outfiles can
+501                                                      # be loaded.  This requires that we make a CREATE TABLE statement
+502                                                      # for the result sets' columns.
+503            6                                 42      my $left_tbl  = "`$db`.`mk_upgrade_left`";
+504            6                                 33      my $right_tbl = "`$db`.`mk_upgrade_right`";
+505            6                                 70      my $table_ddl = $self->make_table_ddl($res_struct);
+506                                                   
+507            6                               4958      $left_dbh->do("DROP TABLE IF EXISTS $left_tbl");
+508            6                             379683      $left_dbh->do("CREATE TABLE $left_tbl $table_ddl");
+509            6                               5560      $left_dbh->do("LOAD DATA LOCAL INFILE '$left_outfile' "
+510                                                         . "INTO TABLE $left_tbl");
+511                                                   
+512            6                             393047      $right_dbh->do("DROP TABLE IF EXISTS $right_tbl");
+513            6                             307999      $right_dbh->do("CREATE TABLE $right_tbl $table_ddl");
+514            6                               4587      $right_dbh->do("LOAD DATA LOCAL INFILE '$right_outfile' "
+515                                                         . "INTO TABLE $right_tbl");
+516                                                   
+517            6                                 39      MKDEBUG && _d('Loaded', $left_outfile, 'into table', $left_tbl, 'and',
+518                                                         $right_outfile, 'into table', $right_tbl);
+519                                                   
+520                                                      # Now we need to get all indexes from all tables used by the query
+521                                                      # and add them to the temp tbl.  Some indexes may be invalid, dupes,
+522                                                      # or generally useless, but we'll let the sync algo decide that later.
+523            6    100                          83      if ( $args{'add-indexes'} ) {
+524            1                                 46         $self->add_indexes(
+525                                                            %args,
+526                                                            dsts      => [
+527                                                               { dbh => $left_dbh,  tbl => $left_tbl  },
+528                                                               { dbh => $right_dbh, tbl => $right_tbl },
+529                                                            ],
+530                                                         );
+531                                                      }
+532                                                   
+533                                                      # Create a RowDiff with callbacks that will do what we want when rows and
+534                                                      # columns differ.  This RowDiff is passed to TableSyncer which calls it.
+535                                                      # TODO: explain how these callbacks work together.
+536            6           100                  125      my $max_diff = $args{'max-different-rows'} || 1_000;  # 1k=sanity/safety
+537            6                                 27      my $n_diff   = 0;
+538            6                                 25      my @missing_rows;  # not currently saved; row counts show missing rows
+539            6                                 22      my @different_rows;
+540            1                    1            11      use constant LEFT  => 0;
                1                                  2   
-               1                                  6   
-530            1                    1             6      use constant RIGHT => 1;
+               1                                  5   
+541            1                    1             6      use constant RIGHT => 1;
                1                                  3   
                1                                  4   
-531            6                                 50      my @l_r = (undef, undef);
-532            6                                 22      my @last_diff_col;
-533            6                                 27      my $last_diff = 0;
-534                                                      my $key_cmp      = sub {
-535            4                    4            49         push @last_diff_col, [@_];
-536            4                                 17         $last_diff--;
-537            4                                 19         return;
-538            6                                135      };
-539                                                      my $same_row = sub {
-540            7                    7            48         my ( $lr, $rr ) = @_;
-541            7    100    100                  107         if ( $l_r[LEFT] && $l_r[RIGHT] ) {
+542            6                                 52      my @l_r = (undef, undef);
+543            6                                 23      my @last_diff_col;
+544            6                                 26      my $last_diff = 0;
+545                                                      my $key_cmp      = sub {
+546            4                    4            38         push @last_diff_col, [@_];
+547            4                                 17         $last_diff--;
+548            4                                 20         return;
+549            6                                129      };
+550                                                      my $same_row = sub {
+551            7                    7            48         my ( $lr, $rr ) = @_;
+552            7    100    100                  106         if ( $l_r[LEFT] && $l_r[RIGHT] ) {
                     100                               
                     100                               
-542            3                                 11            MKDEBUG && _d('Saving different row');
-543            3                                 18            push @different_rows, $last_diff_col[$last_diff];
-544            3                                 12            $n_diff++;
-545                                                         }
-546                                                         elsif ( $l_r[LEFT] ) {
-547            2                                  6            MKDEBUG && _d('Saving not in right row');
-548                                                            # push @missing_rows, [$l_r[LEFT], undef];
-549            2                                 11            $n_diff++;
-550                                                         }
-551                                                         elsif ( $l_r[RIGHT] ) {
-552            1                                  3            MKDEBUG && _d('Saving not in left row');
-553                                                            # push @missing_rows, [undef, $l_r[RIGHT]];
-554            1                                  5            $n_diff++;
-555                                                         }
-556                                                         else {
-557            1                                  5            MKDEBUG && _d('No missing or different rows in queue');
-558                                                         }
-559            7                                 50         @l_r           = (undef, undef);
-560            7                                 40         @last_diff_col = ();
-561            7                                 31         $last_diff     = 0;
-562            7                                 39         return;
-563            6                                111      };
-564                                                      my $not_in_left  = sub {
-565            4                    4            25         my ( $rr ) = @_;
-566   ***      4     50                          28         $same_row->() if $l_r[RIGHT];  # last missing row
-567            4                                 18         $l_r[RIGHT] = $rr;
-568   ***      4    100     66                   67         $same_row->(@l_r) if $l_r[LEFT] && $l_r[RIGHT];
-569            4                                 18         return;
-570            6                                 63      };
-571                                                      my $not_in_right = sub {
-572            5                    5            30         my ( $lr ) = @_;
-573            5    100                          42         $same_row->() if $l_r[LEFT];  # last missing row
-574            5                                 21         $l_r[LEFT] = $lr;
-575   ***      5     50     33                   78         $same_row->(@l_r) if $l_r[LEFT] && $l_r[RIGHT];
-576            5                                 25         return;
-577            6                                 62      };
-578                                                      my $done = sub {
-579           15                   15            93         my ( $left, $right ) = @_;
-580           15                                 60         MKDEBUG && _d('Found', $n_diff, 'of', $max_diff, 'max differences');
-581           15    100                          98         if ( $n_diff >= $max_diff ) {
-582            1                                  4            MKDEBUG && _d('Done comparing rows, got --max-differences', $max_diff);
-583            1                                 20            $left->finish();
-584            1                                 13            $right->finish();
-585            1                                 26            return 1;
-586                                                         }
-587           14                                280         return 0;
-588            6                                 79      };
-589            6                                 22      my $trf;
-590            6    100                          58      if ( my $n = $args{'float-precision'} ) {
-591                                                         $trf = sub {
-592            1                    1            11            my ( $l, $r, $tbl, $col ) = @_;
-593   ***      1     50                          31            return $l, $r
-594                                                               unless $tbl->{type_for}->{$col} =~ m/(?:float|double|decimal)/;
-595            1                                 23            my $l_rounded = sprintf "%.${n}f", $l;
-596            1                                 12            my $r_rounded = sprintf "%.${n}f", $r;
-597            1                                  4            MKDEBUG && _d('Rounded', $l, 'to', $l_rounded,
-598                                                               'and', $r, 'to', $r_rounded);
-599            1                                 17            return $l_rounded, $r_rounded;
-600            2                                 35         };
-601                                                      };
-602                                                   
-603            6                                172      my $rd = new RowDiff(
-604                                                         dbh          => $left_dbh,
-605                                                         key_cmp      => $key_cmp,
-606                                                         same_row     => $same_row,
-607                                                         not_in_left  => $not_in_left,
-608                                                         not_in_right => $not_in_right,
-609                                                         done         => $done,
-610                                                         trf          => $trf,
-611                                                      );
-612            6                                162      my $ch = new ChangeHandler(
-613                                                         src_db     => $db,
-614                                                         src_tbl    => 'mk_upgrade_left',
-615                                                         dst_db     => $db,
-616                                                         dst_tbl    => 'mk_upgrade_right',
-617                                                         tbl_struct => $res_struct,
-618                                                         queue      => 0,
-619                                                         replace    => 0,
-620                                                         actions    => [],
-621                                                         Quoter     => $self->{Quoter},
+553            3                                 11            MKDEBUG && _d('Saving different row');
+554            3                                 18            push @different_rows, $last_diff_col[$last_diff];
+555            3                                 13            $n_diff++;
+556                                                         }
+557                                                         elsif ( $l_r[LEFT] ) {
+558            2                                  7            MKDEBUG && _d('Saving not in right row');
+559                                                            # push @missing_rows, [$l_r[LEFT], undef];
+560            2                                 10            $n_diff++;
+561                                                         }
+562                                                         elsif ( $l_r[RIGHT] ) {
+563            1                                  3            MKDEBUG && _d('Saving not in left row');
+564                                                            # push @missing_rows, [undef, $l_r[RIGHT]];
+565            1                                  4            $n_diff++;
+566                                                         }
+567                                                         else {
+568            1                                  4            MKDEBUG && _d('No missing or different rows in queue');
+569                                                         }
+570            7                                 49         @l_r           = (undef, undef);
+571            7                                 31         @last_diff_col = ();
+572            7                                 28         $last_diff     = 0;
+573            7                                 36         return;
+574            6                                 86      };
+575                                                      my $not_in_left  = sub {
+576            4                    4            27         my ( $rr ) = @_;
+577   ***      4     50                          26         $same_row->() if $l_r[RIGHT];  # last missing row
+578            4                                 17         $l_r[RIGHT] = $rr;
+579   ***      4    100     66                   67         $same_row->(@l_r) if $l_r[LEFT] && $l_r[RIGHT];
+580            4                                 20         return;
+581            6                                 63      };
+582                                                      my $not_in_right = sub {
+583            5                    5            30         my ( $lr ) = @_;
+584            5    100                          41         $same_row->() if $l_r[LEFT];  # last missing row
+585            5                                 22         $l_r[LEFT] = $lr;
+586   ***      5     50     33                   76         $same_row->(@l_r) if $l_r[LEFT] && $l_r[RIGHT];
+587            5                                 23         return;
+588            6                                 82      };
+589                                                      my $done = sub {
+590           15                   15            94         my ( $left, $right ) = @_;
+591           15                                 52         MKDEBUG && _d('Found', $n_diff, 'of', $max_diff, 'max differences');
+592           15    100                         100         if ( $n_diff >= $max_diff ) {
+593            1                                  5            MKDEBUG && _d('Done comparing rows, got --max-differences', $max_diff);
+594            1                                 21            $left->finish();
+595            1                                 12            $right->finish();
+596            1                                 28            return 1;
+597                                                         }
+598           14                                297         return 0;
+599            6                                 74      };
+600            6                                 24      my $trf;
+601            6    100                          55      if ( my $n = $args{'float-precision'} ) {
+602                                                         $trf = sub {
+603            1                    1            17            my ( $l, $r, $tbl, $col ) = @_;
+604   ***      1     50                          27            return $l, $r
+605                                                               unless $tbl->{type_for}->{$col} =~ m/(?:float|double|decimal)/;
+606            1                                 23            my $l_rounded = sprintf "%.${n}f", $l;
+607            1                                 12            my $r_rounded = sprintf "%.${n}f", $r;
+608            1                                  4            MKDEBUG && _d('Rounded', $l, 'to', $l_rounded,
+609                                                               'and', $r, 'to', $r_rounded);
+610            1                                  9            return $l_rounded, $r_rounded;
+611            2                                 40         };
+612                                                      };
+613                                                   
+614            6                                168      my $rd = new RowDiff(
+615                                                         dbh          => $left_dbh,
+616                                                         key_cmp      => $key_cmp,
+617                                                         same_row     => $same_row,
+618                                                         not_in_left  => $not_in_left,
+619                                                         not_in_right => $not_in_right,
+620                                                         done         => $done,
+621                                                         trf          => $trf,
 622                                                      );
-623                                                   
-624                                                      # With whatever index we may have, let TableSyncer choose an
-625                                                      # algorithm and find were rows differ.  We don't actually sync
-626                                                      # the tables (execute=>0).  Instead, the callbacks above will
-627                                                      # save rows in @missing_rows and @different_rows.
-628            6                                189      $self->{TableSyncer}->sync_table(
-629                                                         plugins       => $self->{plugins},
-630                                                         src           => {
-631                                                            dbh => $left_dbh,
-632                                                            db  => $db,
-633                                                            tbl => 'mk_upgrade_left',
-634                                                         },
-635                                                         dst           => {
-636                                                            dbh => $right_dbh,
-637                                                            db  => $db,
-638                                                            tbl => 'mk_upgrade_right',
-639                                                         },
-640                                                         tbl_struct    => $res_struct,
-641                                                         cols          => $res_struct->{cols},
-642                                                         chunk_size    => 1_000,
-643                                                         RowDiff       => $rd,
-644                                                         ChangeHandler => $ch,
-645                                                      );
-646                                                   
-647            6    100                          67      if ( $n_diff < $max_diff ) {
-648            5    100    100                   85         $same_row->() if $l_r[LEFT] || $l_r[RIGHT];  # save remaining rows
-649                                                      }
-650                                                   
-651            6                                305      return @different_rows;
-652                                                   }
-653                                                   
-654                                                   # Writes the current row and all remaining rows to an outfile.
-655                                                   # Returns the outfile's name.
-656                                                   sub write_to_outfile {
-657           10                   10           147      my ( $self, %args ) = @_;
-658           10                                 92      my @required_args = qw(side row sth Outfile);
-659           10                                 65      foreach my $arg ( @required_args ) {
-660   ***     40     50                         352         die "I need a $arg argument" unless $args{$arg};
-661                                                      }
-662           10                                130      my ( $side, $row, $sth, $outfile ) = @args{@required_args};
-663           10                                108      my ( $fh, $file ) = $self->open_outfile(%args);
+623            6                                150      my $ch = new ChangeHandler(
+624                                                         src_db     => $db,
+625                                                         src_tbl    => 'mk_upgrade_left',
+626                                                         dst_db     => $db,
+627                                                         dst_tbl    => 'mk_upgrade_right',
+628                                                         tbl_struct => $res_struct,
+629                                                         queue      => 0,
+630                                                         replace    => 0,
+631                                                         actions    => [],
+632                                                         Quoter     => $self->{Quoter},
+633                                                      );
+634                                                   
+635                                                      # With whatever index we may have, let TableSyncer choose an
+636                                                      # algorithm and find were rows differ.  We don't actually sync
+637                                                      # the tables (execute=>0).  Instead, the callbacks above will
+638                                                      # save rows in @missing_rows and @different_rows.
+639            6                                211      $self->{TableSyncer}->sync_table(
+640                                                         plugins       => $self->{plugins},
+641                                                         src           => {
+642                                                            dbh => $left_dbh,
+643                                                            db  => $db,
+644                                                            tbl => 'mk_upgrade_left',
+645                                                         },
+646                                                         dst           => {
+647                                                            dbh => $right_dbh,
+648                                                            db  => $db,
+649                                                            tbl => 'mk_upgrade_right',
+650                                                         },
+651                                                         tbl_struct    => $res_struct,
+652                                                         cols          => $res_struct->{cols},
+653                                                         chunk_size    => 1_000,
+654                                                         RowDiff       => $rd,
+655                                                         ChangeHandler => $ch,
+656                                                      );
+657                                                   
+658            6    100                          64      if ( $n_diff < $max_diff ) {
+659            5    100    100                   90         $same_row->() if $l_r[LEFT] || $l_r[RIGHT];  # save remaining rows
+660                                                      }
+661                                                   
+662            6                                304      return @different_rows;
+663                                                   }
 664                                                   
-665                                                      # Write this one row.
-666           10                                 95      $outfile->write($fh, [ MockSyncStream::as_arrayref($sth, $row) ]);
-667                                                   
-668                                                      # Get and write all remaining rows.
-669           10                                185      my $remaining_rows = $sth->fetchall_arrayref();
-670           10                                 79      $outfile->write($fh, $remaining_rows);
-671                                                   
-672           10                                 58      my $n_rows = 1 + @$remaining_rows;
-673           10                                 35      MKDEBUG && _d('Wrote', $n_rows, 'rows');
-674                                                   
-675   ***     10     50                         838      close $fh or warn "Cannot close $file: $OS_ERROR";
-676           10                                 44      return $file, $n_rows;
-677                                                   }
+665                                                   # Writes the current row and all remaining rows to an outfile.
+666                                                   # Returns the outfile's name.
+667                                                   sub write_to_outfile {
+668           10                   10           133      my ( $self, %args ) = @_;
+669           10                                 95      my @required_args = qw(side row sth Outfile);
+670           10                                 64      foreach my $arg ( @required_args ) {
+671   ***     40     50                         314         die "I need a $arg argument" unless $args{$arg};
+672                                                      }
+673           10                                115      my ( $side, $row, $sth, $outfile ) = @args{@required_args};
+674           10                                103      my ( $fh, $file ) = $self->open_outfile(%args);
+675                                                   
+676                                                      # Write this one row.
+677           10                                108      $outfile->write($fh, [ MockSyncStream::as_arrayref($sth, $row) ]);
 678                                                   
-679                                                   sub open_outfile {
-680           12                   12           114      my ( $self, %args ) = @_;
-681           12                                137      my $outfile = $self->{'base-dir'} . "/$args{side}-outfile.txt";
-682   ***     12     50                        1446      open my $fh, '>', $outfile or die "Cannot open $outfile: $OS_ERROR";
-683           12                                 52      MKDEBUG && _d('Opened outfile', $outfile);
-684           12                                153      return $fh, $outfile;
-685                                                   }
-686                                                   
-687                                                   # Returns just the column definitions for the given struct.
-688                                                   # Example:
-689                                                   #   (
-690                                                   #     `i` integer,
-691                                                   #     `f` float(10,8)
-692                                                   #   )
-693                                                   sub make_table_ddl {
-694            6                    6            50      my ( $self, $struct ) = @_;
-695            8                                 35      my $sql = "(\n"
-696                                                              . (join("\n",
-697                                                                    map {
-698            6                                 49                       my $name = $_;
-699            8                                 59                       my $type = $struct->{type_for}->{$_};
-700            8           100                   90                       my $size = $struct->{size}->{$_} || '';
-701            8                                 95                       "  `$name` $type$size,";
-702            6                                 35                    } @{$struct->{cols}}))
-703                                                              . ')';
-704                                                      # The last column will be like "`i` integer,)" which is invalid.
-705            6                                 84      $sql =~ s/,\)$/\n)/;
-706            6                                 66      MKDEBUG && _d('Table ddl:', $sql);
-707            6                                 50      return $sql;
-708                                                   }
-709                                                   
-710                                                   # Adds every index from every table used by the query to all the
-711                                                   # dest tables.  dest is an arrayref of hashes, one for each destination.
-712                                                   # Each hash needs a dbh and tbl key; e.g.:
-713                                                   #   [
-714                                                   #     {
-715                                                   #       dbh => $dbh,
-716                                                   #       tbl => 'db.tbl',
-717                                                   #     },
-718                                                   #   ],
-719                                                   # For the moment, the sub returns nothing.  In the future, it should
-720                                                   # add to $args{struct}->{keys} the keys that it was able to add.
-721                                                   sub add_indexes {
-722            1                    1            25      my ( $self, %args ) = @_;
-723            1                                 13      my @required_args = qw(query dsts db);
-724            1                                 15      foreach my $arg ( @required_args ) {
-725   ***      3     50                          35         die "I need a $arg argument" unless $args{$arg};
-726                                                      }
-727            1                                  9      my ($query, $dsts) = @args{@required_args};
-728                                                   
-729            1                                  8      my $qp = $self->{QueryParser};
-730            1                                  5      my $tp = $self->{TableParser};
-731            1                                  8      my $q  = $self->{Quoter};
-732            1                                  6      my $du = $self->{MySQLDump};
-733                                                   
-734            1                                 25      my @src_tbls = $qp->get_tables($query);
-735            1                                  4      my @keys;
-736            1                                  6      foreach my $db_tbl ( @src_tbls ) {
-737            1                                 17         my ($db, $tbl) = $q->split_unquote($db_tbl, $args{db});
-738   ***      1     50                           9         if ( $db ) {
-739            1                                  5            my $tbl_struct;
-740            1                                  5            eval {
-741            1                                 27               $tbl_struct = $tp->parse(
-742                                                                  $du->get_create_table($dsts->[0]->{dbh}, $q, $db, $tbl)
-743                                                               );
-744                                                            };
-745   ***      1     50                          10            if ( $EVAL_ERROR ) {
-746   ***      0                                  0               MKDEBUG && _d('Error parsing', $db, '.', $tbl, ':', $EVAL_ERROR);
-747   ***      0                                  0               next;
-748                                                            }
-749   ***      1     50                          15            push @keys, map {
-750            1                                  9               my $def = ($_->{is_unique} ? 'UNIQUE ' : '')
-751                                                                       . "KEY ($_->{colnames})";
-752            1                                 24               [$def, $_];
-753            1                                  6            } grep { $_->{type} eq 'BTREE' } values %{$tbl_struct->{keys}};
-               1                                  8   
-754                                                         }
-755                                                         else {
-756   ***      0                                  0            MKDEBUG && _d('Cannot get indexes from', $db_tbl, 'because its '
-757                                                               . 'database is unknown');
-758                                                         }
-759                                                      }
-760            1                                  4      MKDEBUG && _d('Source keys:', Dumper(\@keys));
-761   ***      1     50                           8      return unless @keys;
-762                                                   
-763            1                                  7      for my $dst ( @$dsts ) {
-764            2                                138         foreach my $key ( @keys ) {
-765            2                                 17            my $def = $key->[0];
-766            2                                 25            my $sql = "ALTER TABLE $dst->{tbl} ADD $key->[0]";
-767            2                                  6            MKDEBUG && _d($sql);
-768            2                                  9            eval {
-769            2                             154734               $dst->{dbh}->do($sql);
-770                                                            };
-771   ***      2     50                         156            if ( $EVAL_ERROR ) {
-772   ***      0                                  0               MKDEBUG && _d($EVAL_ERROR);
-773                                                            }
-774                                                            else {
-775                                                               # TODO: $args{res_struct}->{keys}->{$key->[1]->{name}} = $key->[1];
-776                                                            }
-777                                                         }
-778                                                      }
-779                                                   
-780                                                      # If the query uses only 1 table then return its struct.
-781                                                      # TODO: $args{struct} = $struct if @src_tbls == 1;
-782            1                                 35      return;
-783                                                   }
-784                                                   
-785                                                   sub report {
-786            4                    4            46      my ( $self, %args ) = @_;
-787            4                                 31      my @required_args = qw(hosts);
-788            4                                 27      foreach my $arg ( @required_args ) {
-789   ***      4     50                          45         die "I need a $arg argument" unless $args{$arg};
-790                                                      }
-791            4                                 27      my ($hosts) = @args{@required_args};
-792                                                   
-793   ***      4     50                          20      return unless keys %{$self->{diffs}};
-               4                                 55   
-794                                                   
-795                                                      # These columns are common to all the reports; make them just once.
-796            4                                 37      my $query_id_col = {
-797                                                         name        => 'Query ID',
-798                                                         fixed_width => 18,
-799                                                      };
-800            8                                 61      my @host_cols = map {
-801            4                                 27         my $col = { name => $_->{name} };
-802            8                                 49         $col;
-803                                                      } @$hosts;
-804                                                   
-805            4                                 21      my @reports;
-806            4                                 25      foreach my $diff ( qw(checksums col_vals row_counts) ) {
-807           12                                 72         my $report = "_report_diff_$diff";
-808           12                                183         push @reports, $self->$report(
-809                                                            query_id_col => $query_id_col,
-810                                                            host_cols    => \@host_cols,
-811                                                            %args
-812                                                         );
-813                                                      }
-814                                                   
-815            4                                104      return join("\n", @reports);
-816                                                   }
-817                                                   
-818                                                   sub _report_diff_checksums {
-819            4                    4            45      my ( $self, %args ) = @_;
-820            4                                 40      my @required_args = qw(query_id_col host_cols);
-821            4                                 33      foreach my $arg ( @required_args ) {
-822   ***      8     50                          70         die "I need a $arg argument" unless $args{$arg};
-823                                                      }
-824                                                   
-825            4                                 27      my $get_id = $self->{get_id};
-826                                                   
-827            4    100                          16      return unless keys %{$self->{diffs}->{checksums}};
-               4                                 70   
+679                                                      # Get and write all remaining rows.
+680           10                                187      my $remaining_rows = $sth->fetchall_arrayref();
+681           10                                 82      $outfile->write($fh, $remaining_rows);
+682                                                   
+683           10                                 58      my $n_rows = 1 + @$remaining_rows;
+684           10                                 34      MKDEBUG && _d('Wrote', $n_rows, 'rows');
+685                                                   
+686   ***     10     50                         890      close $fh or warn "Cannot close $file: $OS_ERROR";
+687           10                                 44      return $file, $n_rows;
+688                                                   }
+689                                                   
+690                                                   sub open_outfile {
+691           12                   12           115      my ( $self, %args ) = @_;
+692           12                                144      my $outfile = $self->{'base-dir'} . "/$args{side}-outfile.txt";
+693   ***     12     50                        1514      open my $fh, '>', $outfile or die "Cannot open $outfile: $OS_ERROR";
+694           12                                 51      MKDEBUG && _d('Opened outfile', $outfile);
+695           12                                154      return $fh, $outfile;
+696                                                   }
+697                                                   
+698                                                   # Returns just the column definitions for the given struct.
+699                                                   # Example:
+700                                                   #   (
+701                                                   #     `i` integer,
+702                                                   #     `f` float(10,8)
+703                                                   #   )
+704                                                   sub make_table_ddl {
+705            6                    6            39      my ( $self, $struct ) = @_;
+706            8                                 35      my $sql = "(\n"
+707                                                              . (join("\n",
+708                                                                    map {
+709            6                                 56                       my $name = $_;
+710            8                                 57                       my $type = $struct->{type_for}->{$_};
+711            8           100                   92                       my $size = $struct->{size}->{$_} || '';
+712            8                                 92                       "  `$name` $type$size,";
+713            6                                 35                    } @{$struct->{cols}}))
+714                                                              . ')';
+715                                                      # The last column will be like "`i` integer,)" which is invalid.
+716            6                                 86      $sql =~ s/,\)$/\n)/;
+717            6                                 18      MKDEBUG && _d('Table ddl:', $sql);
+718            6                                 47      return $sql;
+719                                                   }
+720                                                   
+721                                                   # Adds every index from every table used by the query to all the
+722                                                   # dest tables.  dest is an arrayref of hashes, one for each destination.
+723                                                   # Each hash needs a dbh and tbl key; e.g.:
+724                                                   #   [
+725                                                   #     {
+726                                                   #       dbh => $dbh,
+727                                                   #       tbl => 'db.tbl',
+728                                                   #     },
+729                                                   #   ],
+730                                                   # For the moment, the sub returns nothing.  In the future, it should
+731                                                   # add to $args{struct}->{keys} the keys that it was able to add.
+732                                                   sub add_indexes {
+733            1                    1            27      my ( $self, %args ) = @_;
+734            1                                 13      my @required_args = qw(query dsts db);
+735            1                                 19      foreach my $arg ( @required_args ) {
+736   ***      3     50                          27         die "I need a $arg argument" unless $args{$arg};
+737                                                      }
+738            1                                  9      my ($query, $dsts) = @args{@required_args};
+739                                                   
+740            1                                  9      my $qp = $self->{QueryParser};
+741            1                                  8      my $tp = $self->{TableParser};
+742            1                                  7      my $q  = $self->{Quoter};
+743            1                                  6      my $du = $self->{MySQLDump};
+744                                                   
+745            1                                 20      my @src_tbls = $qp->get_tables($query);
+746            1                                  5      my @keys;
+747            1                                  6      foreach my $db_tbl ( @src_tbls ) {
+748            1                                 15         my ($db, $tbl) = $q->split_unquote($db_tbl, $args{db});
+749   ***      1     50                           7         if ( $db ) {
+750            1                                  5            my $tbl_struct;
+751            1                                  6            eval {
+752            1                                 26               $tbl_struct = $tp->parse(
+753                                                                  $du->get_create_table($dsts->[0]->{dbh}, $q, $db, $tbl)
+754                                                               );
+755                                                            };
+756   ***      1     50                          11            if ( $EVAL_ERROR ) {
+757   ***      0                                  0               MKDEBUG && _d('Error parsing', $db, '.', $tbl, ':', $EVAL_ERROR);
+758   ***      0                                  0               next;
+759                                                            }
+760   ***      1     50                          16            push @keys, map {
+761            1                                 10               my $def = ($_->{is_unique} ? 'UNIQUE ' : '')
+762                                                                       . "KEY ($_->{colnames})";
+763            1                                 26               [$def, $_];
+764            1                                  6            } grep { $_->{type} eq 'BTREE' } values %{$tbl_struct->{keys}};
+               1                                 10   
+765                                                         }
+766                                                         else {
+767   ***      0                                  0            MKDEBUG && _d('Cannot get indexes from', $db_tbl, 'because its '
+768                                                               . 'database is unknown');
+769                                                         }
+770                                                      }
+771            1                                  4      MKDEBUG && _d('Source keys:', Dumper(\@keys));
+772   ***      1     50                           8      return unless @keys;
+773                                                   
+774            1                                  7      for my $dst ( @$dsts ) {
+775            2                                 15         foreach my $key ( @keys ) {
+776            2                                 17            my $def = $key->[0];
+777            2                                 24            my $sql = "ALTER TABLE $dst->{tbl} ADD $key->[0]";
+778            2                                  8            MKDEBUG && _d($sql);
+779            2                                  9            eval {
+780            2                             171476               $dst->{dbh}->do($sql);
+781                                                            };
+782   ***      2     50                          64            if ( $EVAL_ERROR ) {
+783   ***      0                                  0               MKDEBUG && _d($EVAL_ERROR);
+784                                                            }
+785                                                            else {
+786                                                               # TODO: $args{res_struct}->{keys}->{$key->[1]->{name}} = $key->[1];
+787                                                            }
+788                                                         }
+789                                                      }
+790                                                   
+791                                                      # If the query uses only 1 table then return its struct.
+792                                                      # TODO: $args{struct} = $struct if @src_tbls == 1;
+793            1                                 34      return;
+794                                                   }
+795                                                   
+796                                                   sub report {
+797            4                    4            44      my ( $self, %args ) = @_;
+798            4                                 30      my @required_args = qw(hosts);
+799            4                                 32      foreach my $arg ( @required_args ) {
+800   ***      4     50                          45         die "I need a $arg argument" unless $args{$arg};
+801                                                      }
+802            4                                 29      my ($hosts) = @args{@required_args};
+803                                                   
+804   ***      4     50                          16      return unless keys %{$self->{diffs}};
+               4                                 46   
+805                                                   
+806                                                      # These columns are common to all the reports; make them just once.
+807            4                                 36      my $query_id_col = {
+808                                                         name        => 'Query ID',
+809                                                         fixed_width => 18,
+810                                                      };
+811            8                                 61      my @host_cols = map {
+812            4                                 25         my $col = { name => $_->{name} };
+813            8                                 51         $col;
+814                                                      } @$hosts;
+815                                                   
+816            4                                 20      my @reports;
+817            4                                 25      foreach my $diff ( qw(checksums col_vals row_counts) ) {
+818           12                                 75         my $report = "_report_diff_$diff";
+819           12                                175         push @reports, $self->$report(
+820                                                            query_id_col => $query_id_col,
+821                                                            host_cols    => \@host_cols,
+822                                                            %args
+823                                                         );
+824                                                      }
+825                                                   
+826            4                                 89      return join("\n", @reports);
+827                                                   }
 828                                                   
-829            1                                 64      my $report = new ReportFormatter();
-830            1                                  8      $report->set_title('Checksum differences');
-831            1                                 16      $report->set_columns(
-832                                                         $args{query_id_col},
-833            1                                  5         @{$args{host_cols}},
-834                                                      );
+829                                                   sub _report_diff_checksums {
+830            4                    4            48      my ( $self, %args ) = @_;
+831            4                                 38      my @required_args = qw(query_id_col host_cols);
+832            4                                 31      foreach my $arg ( @required_args ) {
+833   ***      8     50                          74         die "I need a $arg argument" unless $args{$arg};
+834                                                      }
 835                                                   
-836            1                                  8      my $diff_checksums = $self->{diffs}->{checksums};
-837            1                                 11      foreach my $item ( sort keys %$diff_checksums ) {
-838            1                                 17         map {
-839   ***      0                                  0            $report->add_line(
-840                                                               $get_id->($item) . '-' . $_,
-841            1                                 10               @{$diff_checksums->{$item}->{$_}}[0,1],
-842                                                            );
-843            1                                  4         } sort { $a <=> $b } keys %{$diff_checksums->{$item}};
-               1                                 18   
-844                                                      }
-845                                                   
-846            1                                 15      return $report->get_report();
-847                                                   }
-848                                                   
-849                                                   sub _report_diff_col_vals {
-850            4                    4            44      my ( $self, %args ) = @_;
-851            4                                 39      my @required_args = qw(query_id_col host_cols);
-852            4                                 33      foreach my $arg ( @required_args ) {
-853   ***      8     50                          71         die "I need a $arg argument" unless $args{$arg};
-854                                                      }
-855                                                   
-856            4                                 24      my $get_id = $self->{get_id};
-857                                                   
-858            4    100                          17      return unless keys %{$self->{diffs}->{col_vals}};
-               4                                 54   
+836            4                                 26      my $get_id = $self->{get_id};
+837                                                   
+838            4    100                          16      return unless keys %{$self->{diffs}->{checksums}};
+               4                                 65   
+839                                                   
+840            1                                 54      my $report = new ReportFormatter();
+841            1                                 12      $report->set_title('Checksum differences');
+842            1                                 14      $report->set_columns(
+843                                                         $args{query_id_col},
+844            1                                  6         @{$args{host_cols}},
+845                                                      );
+846                                                   
+847            1                                 19      my $diff_checksums = $self->{diffs}->{checksums};
+848            1                                 12      foreach my $item ( sort keys %$diff_checksums ) {
+849            1                                 15         map {
+850   ***      0                                  0            $report->add_line(
+851                                                               $get_id->($item) . '-' . $_,
+852            1                                  8               @{$diff_checksums->{$item}->{$_}},
+853                                                            );
+854            1                                  5         } sort { $a <=> $b } keys %{$diff_checksums->{$item}};
+               1                                 11   
+855                                                      }
+856                                                   
+857            1                                 16      return $report->get_report();
+858                                                   }
 859                                                   
-860            2                                 43      my $report = new ReportFormatter();
-861            2                                 17      $report->set_title('Column value differences');
-862            2                                 29      $report->set_columns(
-863                                                         $args{query_id_col},
-864                                                         {
-865                                                            name => 'Column'
-866                                                         },
-867            2                                 18         @{$args{host_cols}},
-868                                                      );
-869            2                                 18      my $diff_col_vals = $self->{diffs}->{col_vals};
-870            2                                 20      foreach my $item ( sort keys %$diff_col_vals ) {
-871            2                                  9         foreach my $sampleno (sort {$a <=> $b} keys %{$diff_col_vals->{$item}}) {
+860                                                   sub _report_diff_col_vals {
+861            4                    4            44      my ( $self, %args ) = @_;
+862            4                                 41      my @required_args = qw(query_id_col host_cols);
+863            4                                 41      foreach my $arg ( @required_args ) {
+864   ***      8     50                          71         die "I need a $arg argument" unless $args{$arg};
+865                                                      }
+866                                                   
+867            4                                 26      my $get_id = $self->{get_id};
+868                                                   
+869            4    100                          17      return unless keys %{$self->{diffs}->{col_vals}};
+               4                                 56   
+870                                                   
+871            2                                 55      my $report = new ReportFormatter();
+872            2                                 19      $report->set_title('Column value differences');
+873            2                                 25      $report->set_columns(
+874                                                         $args{query_id_col},
+875                                                         {
+876                                                            name => 'Column'
+877                                                         },
+878            2                                 18         @{$args{host_cols}},
+879                                                      );
+880            2                                 16      my $diff_col_vals = $self->{diffs}->{col_vals};
+881            2                                 20      foreach my $item ( sort keys %$diff_col_vals ) {
+882            2                                  9         foreach my $sampleno (sort {$a <=> $b} keys %{$diff_col_vals->{$item}}) {
       ***      0                                  0   
-               2                                 23   
-872            2                                 16            map {
-873            2                                 16               $report->add_line(
-874                                                                  $get_id->($item) . '-' . $sampleno,
-875                                                                  @$_,
-876                                                               );
-877            2                                  8            } @{$diff_col_vals->{$item}->{$sampleno}};
-878                                                         }
-879                                                      }
-880                                                   
-881            2                                 24      return $report->get_report();
-882                                                   }
-883                                                   
-884                                                   sub _report_diff_row_counts {
-885            4                    4            53      my ( $self, %args ) = @_;
-886            4                                 38      my @required_args = qw(query_id_col hosts);
-887            4                                 34      foreach my $arg ( @required_args ) {
-888   ***      8     50                          72         die "I need a $arg argument" unless $args{$arg};
-889                                                      }
-890                                                   
-891            4                                 33      my $get_id = $self->{get_id};
-892                                                   
-893            4    100                          16      return unless keys %{$self->{diffs}->{row_counts}};
-               4                                 51   
+               2                                 21   
+883            2                                 18            map {
+884            2                                 16               $report->add_line(
+885                                                                  $get_id->($item) . '-' . $sampleno,
+886                                                                  @$_,
+887                                                               );
+888            2                                  9            } @{$diff_col_vals->{$item}->{$sampleno}};
+889                                                         }
+890                                                      }
+891                                                   
+892            2                               2009      return $report->get_report();
+893                                                   }
 894                                                   
-895            3                                 47      my $report = new ReportFormatter();
-896            3                                 34      $report->set_title('Row count differences');
-897            6                                 53      $report->set_columns(
-898                                                         $args{query_id_col},
-899                                                         map {
-900            3                                 24            my $col = { name => $_->{name}, right_justify => 1  };
-901            6                                 46            $col;
-902            3                                 24         } @{$args{hosts}},
-903                                                      );
-904                                                   
-905            3                                 21      my $diff_row_counts = $self->{diffs}->{row_counts};
-906            3                                 29      foreach my $item ( sort keys %$diff_row_counts ) {
-907            3                                 34         map {
-908   ***      0                                  0            $report->add_line(
-909                                                               $get_id->($item) . '-' . $_,
-910            3                                 25               @{$diff_row_counts->{$item}->{$_}}[0,1],
-911                                                            );
-912            3                                 14         } sort { $a <=> $b } keys %{$diff_row_counts->{$item}};
-               3                                 32   
-913                                                      }
-914                                                   
-915            3                                 30      return $report->get_report();
-916                                                   }
-917                                                   
-918                                                   sub samples {
-919            2                    2            18      my ( $self, $item ) = @_;
-920   ***      2     50                          17      return unless $item;
-921            2                                  8      my @samples;
-922            2                                  9      foreach my $sampleno ( keys %{$self->{samples}->{$item}} ) {
-               2                                 34   
-923            2                                 25         push @samples, $sampleno, $self->{samples}->{$item}->{$sampleno};
+895                                                   sub _report_diff_row_counts {
+896            4                    4            40      my ( $self, %args ) = @_;
+897            4                                 40      my @required_args = qw(query_id_col hosts);
+898            4                                 31      foreach my $arg ( @required_args ) {
+899   ***      8     50                          67         die "I need a $arg argument" unless $args{$arg};
+900                                                      }
+901                                                   
+902            4                                 24      my $get_id = $self->{get_id};
+903                                                   
+904            4    100                          14      return unless keys %{$self->{diffs}->{row_counts}};
+               4                                 61   
+905                                                   
+906            3                                 42      my $report = new ReportFormatter();
+907            3                                 26      $report->set_title('Row count differences');
+908            6                                 51      $report->set_columns(
+909                                                         $args{query_id_col},
+910                                                         map {
+911            3                                 20            my $col = { name => $_->{name}, right_justify => 1  };
+912            6                                 43            $col;
+913            3                                 18         } @{$args{hosts}},
+914                                                      );
+915                                                   
+916            3                                 24      my $diff_row_counts = $self->{diffs}->{row_counts};
+917            3                                 29      foreach my $item ( sort keys %$diff_row_counts ) {
+918            3                                 33         map {
+919   ***      0                                  0            $report->add_line(
+920                                                               $get_id->($item) . '-' . $_,
+921            3                                 24               @{$diff_row_counts->{$item}->{$_}},
+922                                                            );
+923            3                                 14         } sort { $a <=> $b } keys %{$diff_row_counts->{$item}};
+               3                                 30   
 924                                                      }
-925            2                                 26      return @samples;
-926                                                   }
-927                                                   
-928                                                   sub reset {
-929            3                    3            37      my ( $self ) = @_;
-930            3                                 21      $self->{tmp_tbl} = '';
-931            3                                 22      $self->{diffs}   = {};
-932            3                                 62      $self->{samples} = {};
-933            3                                 25      return;
-934                                                   }
-935                                                   
-936                                                   sub _d {
-937            1                    1            45      my ($package, undef, $line) = caller 0;
-938   ***      2     50                          18      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-               2                                 18   
-               2                                 19   
-939            1                                  8           map { defined $_ ? $_ : 'undef' }
-940                                                           @_;
-941            1                                  5      print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-942                                                   }
-943                                                   
-944                                                   1;
+925                                                   
+926            3                                 29      return $report->get_report();
+927                                                   }
+928                                                   
+929                                                   sub samples {
+930            2                    2            17      my ( $self, $item ) = @_;
+931   ***      2     50                          16      return unless $item;
+932            2                                  9      my @samples;
+933            2                                  9      foreach my $sampleno ( keys %{$self->{samples}->{$item}} ) {
+               2                                 26   
+934            2                                 23         push @samples, $sampleno, $self->{samples}->{$item}->{$sampleno};
+935                                                      }
+936            2                                 26      return @samples;
+937                                                   }
+938                                                   
+939                                                   sub reset {
+940            3                    3            43      my ( $self ) = @_;
+941            3                                 29      $self->{diffs}   = {};
+942            3                                 62      $self->{samples} = {};
+943            3                                 29      return;
+944                                                   }
 945                                                   
-946                                                   # ###########################################################################
-947                                                   # End CompareResults package
-948                                                   # ###########################################################################
+946                                                   sub _d {
+947            1                    1            48      my ($package, undef, $line) = caller 0;
+948   ***      2     50                          17      @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+               2                                 14   
+               2                                 19   
+949            1                                  9           map { defined $_ ? $_ : 'undef' }
+950                                                           @_;
+951            1                                  5      print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+952                                                   }
+953                                                   
+954                                                   1;
+955                                                   
+956                                                   # ###########################################################################
+957                                                   # End CompareResults package
+958                                                   # ###########################################################################
 
 
 Branches
@@ -1006,71 +1015,71 @@ Branches
 
 line  err      %   true  false   branch
 ----- --- ------ ------ ------   ------
-45    ***     50      0     18   unless $args{$arg}
-72    ***     50      0     40   unless $args{$arg}
-80           100      6     14   if ($$self{'method'} eq 'checksum')
-82    ***     50      0      6   if $args{'temp-database'}
-83    ***     50      0      6   unless $db
-96    ***     50      0      6   if $EVAL_ERROR
-127   ***     50      0     40   unless $args{$arg}
-135          100     14      6   if ($$self{'method'} eq 'rows') { }
+45    ***     50      0     36   unless $args{$arg}
+71    ***     50      0     40   unless $args{$arg}
+76           100      6     14   if ($$self{'method'} eq 'checksum')
+78    ***     50      0      6   if $args{'temp-database'}
+79    ***     50      0      6   unless $db
+92    ***     50      0      6   if $EVAL_ERROR
+123   ***     50      0     40   unless $args{$arg}
+134          100     14      6   if ($$self{'method'} eq 'rows') { }
 140   ***     50      0     14   if $EVAL_ERROR
 148   ***     50      0     14   if $EVAL_ERROR
-159   ***     50      0      6   if $EVAL_ERROR
-179   ***     50      0      7   unless $args{$arg}
-183          100      6      1   if ($$self{'method'} eq 'checksum')
-185   ***     50      0      6   unless $$event{'original_arg'}
-213   ***     50      0     20   unless $args{$arg}
-216          100      7      3   $$self{'method'} eq 'rows' ? :
-224   ***     50      0      6   unless $args{$arg}
-240          100      3      3   if ($i)
-241          100      2      1   if ($$events[0]{'checksum'} || 0) != ($$events[$i]{'checksum'} || 0)
-243          100      1      2   if ($$events[0]{'row_count'} || 0) != ($$events[$i]{'row_count'} || 0)
-251          100      2      1   if ($different_checksums)
-256          100      1      2   if ($different_row_counts)
-274   ***     50      0     12   unless $args{$arg}
-291   ***     50      0      6   if ($EVAL_ERROR)
-303   ***     50      0      6   if ($EVAL_ERROR)
-315   ***     50      0     14   unless $args{$arg}
-409          100      2      5   if $$event0{'row_count'} != $$event{'row_count'}
-410          100      2      5   if ($different_row_counts)
-417          100      1      6   if $no_diff
-425          100      1      5   if (not $left_outfile)
-429          100      1      5   if (not $right_outfile)
-446          100      3      3   if (scalar @diff_rows)
-483   ***     50      0     42   unless $args{$arg}
-512          100      1      5   if ($args{'add-indexes'})
-541          100      3      4   if ($l_r[0] and $l_r[1]) { }
+153   ***     50      0      6   unless $$event{'wrapped_query'}
+161   ***     50      0      6   if $EVAL_ERROR
+181   ***     50      0      7   unless $args{$arg}
+204   ***     50      0     24   unless $args{$arg}
+207          100      8      4   $$self{'method'} eq 'rows' ? :
+215   ***     50      0      8   unless $args{$arg}
+230          100      4      4   if ($i)
+231          100      2      2   if (($$events[0]{'checksum'} || 0) != ($$events[$i]{'checksum'} || 0))
+235          100      1      3   if (($$events[0]{'row_count'} || 0) != ($$events[$i]{'row_count'} || 0))
+248          100      2      2   if ($different_checksums)
+253          100      1      3   if ($different_row_counts)
+271   ***     50      0     16   unless $args{$arg}
+278          100      6      2   if ($$event{'wrapped_query'} and $$event{'tmp_tbl'}) { }
+289   ***     50      0      6   if $EVAL_ERROR
+315   ***     50      0     16   unless $args{$arg}
+330          100      1      7   if (not $$event0{'results_sth'})
+420          100      2      5   if $$event0{'row_count'} != $$event{'row_count'}
+421          100      2      5   if ($different_row_counts)
+428          100      1      6   if $no_diff
+436          100      1      5   if (not $left_outfile)
+440          100      1      5   if (not $right_outfile)
+457          100      3      3   if (scalar @diff_rows)
+494   ***     50      0     42   unless $args{$arg}
+523          100      1      5   if ($args{'add-indexes'})
+552          100      3      4   if ($l_r[0] and $l_r[1]) { }
              100      2      2   elsif ($l_r[0]) { }
              100      1      1   elsif ($l_r[1]) { }
-566   ***     50      0      4   if $l_r[1]
-568          100      3      1   if $l_r[0] and $l_r[1]
-573          100      1      4   if $l_r[0]
-575   ***     50      0      5   if $l_r[0] and $l_r[1]
-581          100      1     14   if ($n_diff >= $max_diff)
-590          100      2      4   if (my $n = $args{'float-precision'})
-593   ***     50      0      1   unless $$tbl{'type_for'}{$col} =~ /(?:float|double|decimal)/
-647          100      5      1   if ($n_diff < $max_diff)
-648          100      2      3   if $l_r[0] or $l_r[1]
-660   ***     50      0     40   unless $args{$arg}
-675   ***     50      0     10   unless close $fh
-682   ***     50      0     12   unless open my $fh, '>', $outfile
-725   ***     50      0      3   unless $args{$arg}
-738   ***     50      1      0   if ($db) { }
-745   ***     50      0      1   if ($EVAL_ERROR)
-749   ***     50      1      0   $$_{'is_unique'} ? :
-761   ***     50      0      1   unless @keys
-771   ***     50      0      2   if ($EVAL_ERROR) { }
-789   ***     50      0      4   unless $args{$arg}
-793   ***     50      0      4   unless keys %{$$self{'diffs'};}
-822   ***     50      0      8   unless $args{$arg}
-827          100      3      1   unless keys %{$$self{'diffs'}{'checksums'};}
-853   ***     50      0      8   unless $args{$arg}
-858          100      2      2   unless keys %{$$self{'diffs'}{'col_vals'};}
-888   ***     50      0      8   unless $args{$arg}
-893          100      1      3   unless keys %{$$self{'diffs'}{'row_counts'};}
-920   ***     50      0      2   unless $item
-938   ***     50      2      0   defined $_ ? :
+577   ***     50      0      4   if $l_r[1]
+579          100      3      1   if $l_r[0] and $l_r[1]
+584          100      1      4   if $l_r[0]
+586   ***     50      0      5   if $l_r[0] and $l_r[1]
+592          100      1     14   if ($n_diff >= $max_diff)
+601          100      2      4   if (my $n = $args{'float-precision'})
+604   ***     50      0      1   unless $$tbl{'type_for'}{$col} =~ /(?:float|double|decimal)/
+658          100      5      1   if ($n_diff < $max_diff)
+659          100      2      3   if $l_r[0] or $l_r[1]
+671   ***     50      0     40   unless $args{$arg}
+686   ***     50      0     10   unless close $fh
+693   ***     50      0     12   unless open my $fh, '>', $outfile
+736   ***     50      0      3   unless $args{$arg}
+749   ***     50      1      0   if ($db) { }
+756   ***     50      0      1   if ($EVAL_ERROR)
+760   ***     50      1      0   $$_{'is_unique'} ? :
+772   ***     50      0      1   unless @keys
+782   ***     50      0      2   if ($EVAL_ERROR) { }
+800   ***     50      0      4   unless $args{$arg}
+804   ***     50      0      4   unless keys %{$$self{'diffs'};}
+833   ***     50      0      8   unless $args{$arg}
+838          100      3      1   unless keys %{$$self{'diffs'}{'checksums'};}
+864   ***     50      0      8   unless $args{$arg}
+869          100      2      2   unless keys %{$$self{'diffs'}{'col_vals'};}
+899   ***     50      0      8   unless $args{$arg}
+904          100      1      3   unless keys %{$$self{'diffs'}{'row_counts'};}
+931   ***     50      0      2   unless $item
+948   ***     50      2      0   defined $_ ? :
 
 
 Conditions
@@ -1080,32 +1089,33 @@ and 3 conditions
 
 line  err      %     !l  l&&!r   l&&r   expr
 ----- --- ------ ------ ------ ------   ----
-541          100      2      2      3   $l_r[0] and $l_r[1]
-568   ***     66      1      0      3   $l_r[0] and $l_r[1]
-575   ***     33      0      5      0   $l_r[0] and $l_r[1]
+278   ***     66      2      0      6   $$event{'wrapped_query'} and $$event{'tmp_tbl'}
+552          100      2      2      3   $l_r[0] and $l_r[1]
+579   ***     66      1      0      3   $l_r[0] and $l_r[1]
+586   ***     33      0      5      0   $l_r[0] and $l_r[1]
 
 or 2 conditions
 
 line  err      %      l     !l   expr
 ----- --- ------ ------ ------   ----
-241   ***     50      3      0   $$events[0]{'checksum'} || 0
-      ***     50      3      0   $$events[$i]{'checksum'} || 0
-243   ***     50      3      0   $$events[0]{'row_count'} || 0
-      ***     50      3      0   $$events[$i]{'row_count'} || 0
-250   ***     50      3      0   $$events[0]{'sampleno'} || 0
-327          100      5      2   $$event0{'sampleno'} || 0
-403          100      5      2   $n_rows || 0
-525          100      1      5   $args{'max-different-rows'} || 1000
-700          100      5      3   $$struct{'size'}{$_} || ''
+231          100      3      1   $$events[0]{'checksum'} || 0
+             100      3      1   $$events[$i]{'checksum'} || 0
+235          100      3      1   $$events[0]{'row_count'} || 0
+             100      3      1   $$events[$i]{'row_count'} || 0
+247          100      3      1   $$events[0]{'sampleno'} || 0
+327          100      5      3   $$event0{'sampleno'} || 0
+414          100      5      2   $n_rows || 0
+536          100      1      5   $args{'max-different-rows'} || 1000
+711          100      5      3   $$struct{'size'}{$_} || ''
 
 or 3 conditions
 
 line  err      %      l  !l&&r !l&&!r   expr
 ----- --- ------ ------ ------ ------   ----
-249   ***     33      3      0      0   $$events[0]{'fingerprint'} || $$events[0]{'arg'}
-326   ***     66      5      2      0   $$event0{'fingerprint'} || $$event0{'arg'}
-434   ***     33      0      6      0   $args{'tmp_db'} || $$event0{'db'}
-648          100      1      1      3   $l_r[0] or $l_r[1]
+246   ***     66      3      1      0   $$events[0]{'fingerprint'} || $$events[0]{'arg'}
+326   ***     66      5      3      0   $$event0{'fingerprint'} || $$event0{'arg'}
+445   ***     33      0      6      0   $args{'tmp_db'} || $$event0{'db'}
+659          100      1      1      3   $l_r[0] or $l_r[1]
 
 
 Covered Subroutines
@@ -1119,36 +1129,36 @@ BEGIN                       1 /home/daniel/dev/maatkit/common/CompareResults.pm:
 BEGIN                       1 /home/daniel/dev/maatkit/common/CompareResults.pm:25 
 BEGIN                       1 /home/daniel/dev/maatkit/common/CompareResults.pm:27 
 BEGIN                       1 /home/daniel/dev/maatkit/common/CompareResults.pm:29 
-BEGIN                       1 /home/daniel/dev/maatkit/common/CompareResults.pm:529
-BEGIN                       1 /home/daniel/dev/maatkit/common/CompareResults.pm:530
-__ANON__                    9 /home/daniel/dev/maatkit/common/CompareResults.pm:355
-__ANON__                    5 /home/daniel/dev/maatkit/common/CompareResults.pm:359
-__ANON__                    5 /home/daniel/dev/maatkit/common/CompareResults.pm:371
-__ANON__                    4 /home/daniel/dev/maatkit/common/CompareResults.pm:535
-__ANON__                    7 /home/daniel/dev/maatkit/common/CompareResults.pm:540
-__ANON__                    4 /home/daniel/dev/maatkit/common/CompareResults.pm:565
-__ANON__                    5 /home/daniel/dev/maatkit/common/CompareResults.pm:572
-__ANON__                   15 /home/daniel/dev/maatkit/common/CompareResults.pm:579
-__ANON__                    1 /home/daniel/dev/maatkit/common/CompareResults.pm:592
-_checksum_results           6 /home/daniel/dev/maatkit/common/CompareResults.pm:271
-_compare_checksums          3 /home/daniel/dev/maatkit/common/CompareResults.pm:221
-_compare_rows               7 /home/daniel/dev/maatkit/common/CompareResults.pm:312
-_d                          1 /home/daniel/dev/maatkit/common/CompareResults.pm:937
-_report_diff_checksums      4 /home/daniel/dev/maatkit/common/CompareResults.pm:819
-_report_diff_col_vals       4 /home/daniel/dev/maatkit/common/CompareResults.pm:850
-_report_diff_row_counts     4 /home/daniel/dev/maatkit/common/CompareResults.pm:885
-add_indexes                 1 /home/daniel/dev/maatkit/common/CompareResults.pm:722
-after_execute               7 /home/daniel/dev/maatkit/common/CompareResults.pm:176
-before_execute             20 /home/daniel/dev/maatkit/common/CompareResults.pm:69 
-compare                    10 /home/daniel/dev/maatkit/common/CompareResults.pm:210
-diff_rows                   6 /home/daniel/dev/maatkit/common/CompareResults.pm:479
-execute                    20 /home/daniel/dev/maatkit/common/CompareResults.pm:124
-make_table_ddl              6 /home/daniel/dev/maatkit/common/CompareResults.pm:694
-new                         2 /home/daniel/dev/maatkit/common/CompareResults.pm:41 
-open_outfile               12 /home/daniel/dev/maatkit/common/CompareResults.pm:680
-report                      4 /home/daniel/dev/maatkit/common/CompareResults.pm:786
-reset                       3 /home/daniel/dev/maatkit/common/CompareResults.pm:929
-samples                     2 /home/daniel/dev/maatkit/common/CompareResults.pm:919
-write_to_outfile           10 /home/daniel/dev/maatkit/common/CompareResults.pm:657
+BEGIN                       1 /home/daniel/dev/maatkit/common/CompareResults.pm:540
+BEGIN                       1 /home/daniel/dev/maatkit/common/CompareResults.pm:541
+__ANON__                    9 /home/daniel/dev/maatkit/common/CompareResults.pm:366
+__ANON__                    5 /home/daniel/dev/maatkit/common/CompareResults.pm:370
+__ANON__                    5 /home/daniel/dev/maatkit/common/CompareResults.pm:382
+__ANON__                    4 /home/daniel/dev/maatkit/common/CompareResults.pm:546
+__ANON__                    7 /home/daniel/dev/maatkit/common/CompareResults.pm:551
+__ANON__                    4 /home/daniel/dev/maatkit/common/CompareResults.pm:576
+__ANON__                    5 /home/daniel/dev/maatkit/common/CompareResults.pm:583
+__ANON__                   15 /home/daniel/dev/maatkit/common/CompareResults.pm:590
+__ANON__                    1 /home/daniel/dev/maatkit/common/CompareResults.pm:603
+_checksum_results           8 /home/daniel/dev/maatkit/common/CompareResults.pm:268
+_compare_checksums          4 /home/daniel/dev/maatkit/common/CompareResults.pm:212
+_compare_rows               8 /home/daniel/dev/maatkit/common/CompareResults.pm:312
+_d                          1 /home/daniel/dev/maatkit/common/CompareResults.pm:947
+_report_diff_checksums      4 /home/daniel/dev/maatkit/common/CompareResults.pm:830
+_report_diff_col_vals       4 /home/daniel/dev/maatkit/common/CompareResults.pm:861
+_report_diff_row_counts     4 /home/daniel/dev/maatkit/common/CompareResults.pm:896
+add_indexes                 1 /home/daniel/dev/maatkit/common/CompareResults.pm:733
+after_execute               7 /home/daniel/dev/maatkit/common/CompareResults.pm:178
+before_execute             20 /home/daniel/dev/maatkit/common/CompareResults.pm:68 
+compare                    12 /home/daniel/dev/maatkit/common/CompareResults.pm:201
+diff_rows                   6 /home/daniel/dev/maatkit/common/CompareResults.pm:490
+execute                    20 /home/daniel/dev/maatkit/common/CompareResults.pm:120
+make_table_ddl              6 /home/daniel/dev/maatkit/common/CompareResults.pm:705
+new                         4 /home/daniel/dev/maatkit/common/CompareResults.pm:41 
+open_outfile               12 /home/daniel/dev/maatkit/common/CompareResults.pm:691
+report                      4 /home/daniel/dev/maatkit/common/CompareResults.pm:797
+reset                       3 /home/daniel/dev/maatkit/common/CompareResults.pm:940
+samples                     2 /home/daniel/dev/maatkit/common/CompareResults.pm:930
+write_to_outfile           10 /home/daniel/dev/maatkit/common/CompareResults.pm:668
 
 
