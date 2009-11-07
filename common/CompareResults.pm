@@ -158,7 +158,11 @@ sub execute {
          $end   = time();
          $query_time = sprintf '%.6f', $end - $start;
       };
-      die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
+      if ( $EVAL_ERROR ) {
+         delete $event->{wrapped_query};
+         delete $event->{tmp_tbl};
+         die "Failed to execute query: $EVAL_ERROR";
+      }
    }
 
    $event->{Query_time} = $query_time;
