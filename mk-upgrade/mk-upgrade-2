@@ -6304,7 +6304,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MockSyncStream package 5034
+# MockSyncStream package 5059
 # ###########################################################################
 package MockSyncStream;
 
@@ -6391,7 +6391,8 @@ sub get_result_set_struct {
       $struct->{is_numeric}->{$col} 
          = ($type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ? 1 : 0);
       $struct->{size}->{$col}
-         = ($type =~ m/(?:float|double|decimal)/)   ? "($p[$i],$s[$i])"
+         = ($type =~ m/(?:float|double)/)           ? "($s[$i],$p[$i])"
+         : ($type =~ m/(?:decimal)/)                ? "($p[$i],$s[$i])"
          : ($type =~ m/(?:char|varchar)/ && $p[$i]) ? "($p[$i])"
          :                                            undef;
    }
@@ -6421,7 +6422,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MockSth package 5038
+# MockSth package 5057
 # ###########################################################################
 package MockSth;
 
@@ -6433,10 +6434,12 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, @rows ) = @_;
+   my $n_rows = scalar @rows;
    my $self = {
       cursor => 0,
-      Active => scalar(@rows),
+      Active => $n_rows,
       rows   => \@rows,
+      n_rows => $n_rows,
       NAME   => [],
    };
    return bless $self, $class;
@@ -6445,29 +6448,32 @@ sub new {
 sub reset {
    my ( $self ) = @_;
    $self->{cursor} = 0;
-   $self->{Active} = scalar @{$self->{rows}},
+   $self->{Active} = $self->{n_rows};
    return;
 }
 
 sub fetchrow_hashref {
    my ( $self ) = @_;
    my $row;
-   if ( $self->{cursor} < @{$self->{rows}} ) {
+   if ( $self->{cursor} < $self->{n_rows} ) {
       $row = $self->{rows}->[$self->{cursor}++];
    }
-   $self->{Active} = $self->{cursor} < @{$self->{rows}};
+   $self->{Active} = $self->{cursor} < $self->{n_rows};
    return $row;
 }
 
 sub fetchall_arrayref {
    my ( $self ) = @_;
-   my $rows = [];
-   if ( $self->{cursor} < @{$self->{rows}} ) {
-      @$rows = $self->{rows}->[ $self->{cursor}..(@{$self->{rows}} - 1) ];
-      $self->{cursor} = @{$self->{rows}};
+   my @rows;
+   if ( $self->{cursor} < $self->{n_rows} ) {
+      my @cols = @{$self->{NAME}};
+      die "Cannot fetchall_arrayref() unless NAME is set" unless @cols;
+      @rows =  map { [ @{$_}{@cols} ] }
+         @{$self->{rows}}[ $self->{cursor}..($self->{n_rows} - 1) ];
+      $self->{cursor} = $self->{n_rows};
    }
-   $self->{Active} = $self->{cursor} < @{$self->{rows}};
-   return $rows;
+   $self->{Active} = $self->{cursor} < $self->{n_rows};
+   return \@rows;
 }
 
 sub _d {
@@ -6685,7 +6691,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# UpgradeReportFormatter package 5051
+# UpgradeReportFormatter package 5062
 # ###########################################################################
 
 
@@ -6741,7 +6747,7 @@ sub event_report {
       '# Found ' . ($class->{differences}->{sum} || 0)
       . ' differences in ' . $class->{sampleno}->{cnt} . " samples:\n";
 
-   my $fmt = "# %-15s %d\n";
+   my $fmt = "# %-17s %d\n";
    my @diffs = grep { $_ =~ m/^different_/ } keys %$class;
    foreach my $diff ( sort @diffs ) {
       push @result,
@@ -6869,7 +6875,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareResults package 5053
+# CompareResults package 5060
 # ###########################################################################
 package CompareResults;
 
@@ -6950,6 +6956,7 @@ sub execute {
    my ($event, $dbh) = @args{@required_args};
    my $query         = $event->{arg};
    my ( $start, $end, $query_time );
+
 
    MKDEBUG && _d('Executing query');
    $event->{Query_time} = 0;
@@ -7215,6 +7222,7 @@ sub _compare_rows {
       }
 
       my @diff_rows = $self->diff_rows(
+         %args,             # for options like max-different-rows
          left_dbh        => $hosts->[0]->{dbh},
          left_outfile    => $left_outfile,
          right_dbh       => $hosts->[$i]->{dbh},
@@ -7222,7 +7230,6 @@ sub _compare_rows {
          res_struct      => $res_struct,
          query           => $event0->{arg},
          db              => $args{tmp_db} || $event0->{db},
-         max_differences => $args{max_differences},
       );
 
       if ( scalar @diff_rows ) { 
@@ -7268,17 +7275,19 @@ sub diff_rows {
    MKDEBUG && _d('Loaded', $left_outfile, 'into table', $left_tbl, 'and',
       $right_outfile, 'into table', $right_tbl);
 
-   $self->add_source_indexes(
-      %args,
-      dsts      => [
-         { dbh => $left_dbh,  tbl => $left_tbl  },
-         { dbh => $right_dbh, tbl => $right_tbl },
-      ],
-   );
+   if ( $args{'add-indexes'} ) {
+      $self->add_indexes(
+         %args,
+         dsts      => [
+            { dbh => $left_dbh,  tbl => $left_tbl  },
+            { dbh => $right_dbh, tbl => $right_tbl },
+         ],
+      );
+   }
 
-   my $max_diff = $args{'max-differences'} || 1_000;  # 1k=sanity/safety
+   my $max_diff = $args{'max-different-rows'} || 1_000;  # 1k=sanity/safety
    my $n_diff   = 0;
-   my @missing_rows;
+   my @missing_rows;  # not currently saved; row counts show missing rows
    my @different_rows;
    use constant LEFT  => 0;
    use constant RIGHT => 1;
@@ -7299,12 +7308,10 @@ sub diff_rows {
       }
       elsif ( $l_r[LEFT] ) {
          MKDEBUG && _d('Saving not in right row');
-         push @missing_rows, [$l_r[LEFT], undef];
          $n_diff++;
       }
       elsif ( $l_r[RIGHT] ) {
          MKDEBUG && _d('Saving not in left row');
-         push @missing_rows, [undef, $l_r[RIGHT]];
          $n_diff++;
       }
       else {
@@ -7446,7 +7453,7 @@ sub make_table_ddl {
    return $sql;
 }
 
-sub add_source_indexes {
+sub add_indexes {
    my ( $self, %args ) = @_;
    my @required_args = qw(query dsts db);
    foreach my $arg ( @required_args ) {
@@ -7491,7 +7498,7 @@ sub add_source_indexes {
    for my $dst ( @$dsts ) {
       foreach my $key ( @keys ) {
          my $def = $key->[0];
-         my $sql = "ALTER TABLE `$dst->{tbl}` ADD $key->[0]";
+         my $sql = "ALTER TABLE $dst->{tbl} ADD $key->[0]";
          MKDEBUG && _d($sql);
          eval {
             $dst->{dbh}->do($sql);
@@ -7562,7 +7569,7 @@ sub _report_diff_checksums {
       map {
          $report->add_line(
             $get_id->($item) . '-' . $_,
-            @{$diff_checksums->{$item}->{$_}}[0,1],
+            @{$diff_checksums->{$item}->{$_}},
          );
       } sort { $a <=> $b } keys %{$diff_checksums->{$item}};
    }
@@ -7631,7 +7638,7 @@ sub _report_diff_row_counts {
       map {
          $report->add_line(
             $get_id->($item) . '-' . $_,
-            @{$diff_row_counts->{$item}->{$_}}[0,1],
+            @{$diff_row_counts->{$item}->{$_}},
          );
       } sort { $a <=> $b } keys %{$diff_row_counts->{$item}};
    }
@@ -7669,6 +7676,673 @@ sub _d {
 
 # ###########################################################################
 # End CompareResults package
+# ###########################################################################
+
+# ###########################################################################
+# CompareQueryTimes package 5061
+# ###########################################################################
+package CompareQueryTimes;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use POSIX qw(floor);
+
+Transformers->import(qw(micro_t));
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+my @bucket_threshold = qw(500 100  100   500 50   50    20 1   );
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw(get_id);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+      %args,
+      diffs   => {},
+      samples => {},
+   };
+   return bless $self, $class;
+}
+
+sub before_execute {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   return $args{event};
+}
+
+sub execute {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($event, $dbh) = @args{@required_args};
+
+   if ( exists $event->{Query_time} ) {
+      MKDEBUG && _d('Query already executed');
+      return $event;
+   }
+
+   MKDEBUG && _d('Executing query');
+   my $query = $event->{arg};
+   my ( $start, $end, $query_time );
+
+   $event->{Query_time} = 0;
+   eval {
+      $start = time();
+      $dbh->do($query);
+      $end   = time();
+      $query_time = sprintf '%.6f', $end - $start;
+   };
+   die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
+
+   $event->{Query_time} = $query_time;
+
+   return $event;
+}
+
+sub after_execute {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   return $args{event};
+}
+
+sub compare {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(events);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($events) = @args{@required_args};
+
+   my $different_query_times = 0;
+
+   my $event0   = $events->[0];
+   my $item     = $event0->{fingerprint} || $event0->{arg};
+   my $sampleno = $event0->{sampleno}    || 0;
+   my $t0       = $event0->{Query_time}  || 0;
+   my $b0       = bucket_for($t0);
+
+   my $n_events = scalar @$events;
+   foreach my $i ( 1..($n_events-1) ) {
+      my $event = $events->[$i];
+      my $t     = $event->{Query_time};
+      my $b     = bucket_for($t);
+
+      if ( $b0 != $b ) {
+         my $diff = abs($t0 - $t);
+         $different_query_times++;
+         $self->{diffs}->{big}->{$item}->{$sampleno}
+            = [ micro_t($t0), micro_t($t), micro_t($diff) ];
+         $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+      }
+      else {
+         my $inc = percentage_increase($t0, $t);
+         if ( $inc >= $bucket_threshold[$b0] ) {
+            $different_query_times++;
+            $self->{diffs}->{in_bucket}->{$item}->{$sampleno}
+               = [ micro_t($t0), micro_t($t), $inc, $bucket_threshold[$b0] ];
+            $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+         }
+      }
+   }
+
+   return (
+      different_query_times => $different_query_times,
+   );
+}
+
+sub bucket_for {
+   my ( $val ) = @_;
+   die "I need a val" unless defined $val;
+   return 0 if $val == 0;
+   my $bucket = floor(log($val) / log(10)) + 6;
+   $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+   return $bucket;
+}
+
+sub percentage_increase {
+   my ( $x, $y ) = @_;
+   return 0 if $x == $y;
+
+   if ( $x > $y ) {
+      my $z = $y;
+         $y = $x;
+         $x = $z;
+   }
+
+   if ( $x == 0 ) {
+      return 1000;  # This should trigger all buckets' thresholds.
+   }
+
+   return sprintf '%.2f', (($y - $x) / $x) * 100;
+}
+
+sub report {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($hosts) = @args{@required_args};
+
+   return unless keys %{$self->{diffs}};
+
+   my $query_id_col = {
+      name        => 'Query ID',
+      fixed_width => 18,
+   };
+   my @host_cols = map {
+      my $col = { name => $_->{name} };
+      $col;
+   } @$hosts;
+
+   my @reports;
+   foreach my $diff ( qw(big in_bucket) ) {
+      my $report = "_report_diff_$diff";
+      push @reports, $self->$report(
+         query_id_col => $query_id_col,
+         host_cols    => \@host_cols,
+         %args
+      );
+   }
+
+   return join("\n", @reports);
+}
+
+sub _report_diff_big {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{big}};
+
+   my $report = new ReportFormatter();
+   $report->set_title('Big query time differences');
+   $report->set_columns(
+      $args{query_id_col},
+      map {
+         my $col = { name => $_->{name}, right_justify => 1  };
+         $col;
+      } @{$args{hosts}},
+      { name => 'Difference', right_justify => 1 },
+   );
+
+   my $diff_big = $self->{diffs}->{big};
+   foreach my $item ( sort keys %$diff_big ) {
+      map {
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            @{$diff_big->{$item}->{$_}},
+         );
+      } sort { $a <=> $b } keys %{$diff_big->{$item}};
+   }
+
+   return $report->get_report();
+}
+
+sub _report_diff_in_bucket {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{in_bucket}};
+
+   my $report = new ReportFormatter();
+   $report->set_title('Significant query time differences');
+   $report->set_columns(
+      $args{query_id_col},
+      map {
+         my $col = { name => $_->{name}, right_justify => 1  };
+         $col;
+      } @{$args{hosts}},
+      { name => '%Increase',  right_justify => 1 },
+      { name => '%Threshold', right_justify => 1 },
+   );
+
+   my $diff_in_bucket = $self->{diffs}->{in_bucket};
+   foreach my $item ( sort keys %$diff_in_bucket ) {
+      map {
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            @{$diff_in_bucket->{$item}->{$_}},
+         );
+      } sort { $a <=> $b } keys %{$diff_in_bucket->{$item}};
+   }
+
+   return $report->get_report();
+}
+
+sub samples {
+   my ( $self, $item ) = @_;
+   return unless $item;
+   my @samples;
+   foreach my $sampleno ( keys %{$self->{samples}->{$item}} ) {
+      push @samples, $sampleno, $self->{samples}->{$item}->{$sampleno};
+   }
+   return @samples;
+}
+
+sub reset {
+   my ( $self ) = @_;
+   $self->{diffs}   = {};
+   $self->{samples} = {};
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End CompareQueryTimes package
+# ###########################################################################
+
+# ###########################################################################
+# CompareWarnings package 5064
+# ###########################################################################
+package CompareWarnings;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw(clear get_id Quoter VersionParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+      %args,
+      tmp_tbl => undef,  # tmp tbl used to clear warnings reliably
+      diffs   => {},
+      samples => {},
+   };
+   return bless $self, $class;
+}
+
+sub before_execute {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($event, $dbh) = @args{@required_args};
+   my $sql;
+
+   return $event unless $self->{clear};
+
+   if ( !$self->{tmp_tbl} ) {
+      MKDEBUG && _d('Creating temporary table');
+
+      my ($db, $tmp_tbl) = @args{qw(db temp-table)};
+      $db = $args{'temp-database'} if $args{'temp-database'};
+      die "Cannot clear warnings without a database"
+         unless $db;
+
+      my $q  = $self->{Quoter};
+      my $vp = $self->{VersionParser};
+
+      $self->{tmp_tbl} = $q->quote($db, 'mk_upgrade_clear_warnings');
+      my $engine       = $vp->version_ge($dbh, '5.0.0') ? 'ENGINE' : 'TYPE';
+
+      eval {
+         $sql = "DROP TEMPORARY TABLE IF EXISTS $self->{tmp_tbl}";
+         MKDEBUG && _d($sql);
+         $dbh->do($sql);
+
+         $sql = "CREATE TEMPORARY TABLE $self->{tmp_tbl} (i int) $engine=MEMORY";
+         MKDEBUG && _d($sql);
+         $dbh->do($sql);
+
+         $sql = "INSERT INTO $self->{tmp_tbl} VALUES (42)";
+         MKDEBUG && _d($sql);
+         $dbh->do($sql);
+      };
+      die "Failed to create temporary table $self->{tmp_tbl}: $EVAL_ERROR"
+         if $EVAL_ERROR;
+   }
+
+   if ( $self->{tmp_tbl} ) {
+      $sql = "SELECT * FROM $self->{tmp_tbl}";
+      MKDEBUG && _d($sql);
+      eval {
+         $dbh->do($sql);
+      };
+      die "Failed to select from temporary table $self->{tmp_tbl}: $EVAL_ERROR"
+         if $EVAL_ERROR;
+   }
+
+   return $event;
+}
+
+sub execute {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($event, $dbh) = @args{@required_args};
+
+   if ( exists $event->{Query_time} ) {
+      MKDEBUG && _d('Query already executed');
+      return $event;
+   }
+
+   MKDEBUG && _d('Executing query');
+   my $query = $event->{arg};
+   my ( $start, $end, $query_time );
+
+   $event->{Query_time} = 0;
+   eval {
+      $start = time();
+      $dbh->do($query);
+      $end   = time();
+      $query_time = sprintf '%.6f', $end - $start;
+   };
+   die "Failed to execute query: $EVAL_ERROR" if $EVAL_ERROR;
+
+   $event->{Query_time} = $query_time;
+
+   return $event;
+}
+
+sub after_execute {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($event, $dbh) = @args{@required_args};
+
+   my $warnings;
+   my $warning_count;
+   eval {
+      $warnings      = $dbh->selectall_hashref('SHOW WARNINGS', 'Code');
+      $warning_count = $dbh->selectcol_arrayref('SELECT @@warning_count')->[0];
+   };
+   die "Failed to SHOW WARNINGS: $EVAL_ERROR"
+      if $EVAL_ERROR;
+
+   $event->{warning_count} = $warning_count || 0;
+   $event->{warnings}      = $warnings;
+
+   return $event;
+}
+
+sub compare {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(events);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($events) = @args{@required_args};
+
+   my $different_warning_counts = 0;
+   my $different_warnings       = 0;
+   my $different_warning_levels = 0;
+
+   my $event0   = $events->[0];
+   my $item     = $event0->{fingerprint} || $event0->{arg};
+   my $sampleno = $event0->{sampleno} || 0;
+   my $w0       = $event0->{warnings};
+
+   my $n_events = scalar @$events;
+   foreach my $i ( 1..($n_events-1) ) {
+      my $event = $events->[$i];
+
+      if ( ($event0->{warning_count} || 0) != ($event->{warning_count} || 0) ) {
+         $different_warning_counts++;
+         $self->{diffs}->{warning_counts}->{$item}->{$sampleno}
+            = [ $event0->{warning_count} || 0, $event->{warning_count} || 0 ];
+         $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+      }
+
+      my $w = $event->{warnings};
+
+      next if !$w0 && !$w;
+
+      my %new_warnings;
+      foreach my $code ( keys %$w0 ) {
+         if ( exists $w->{$code} ) {
+            if ( $w->{$code}->{Level} ne $w0->{$code}->{Level} ) {
+               $different_warning_levels++;
+               $self->{diffs}->{levels}->{$item}->{$sampleno}
+                  = [ $code, $w0->{$code}->{Level}, $w->{$code}->{Level},
+                      $w->{$code}->{Message} ];
+               $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+            }
+            delete $w->{$code};
+         }
+         else {
+
+            $different_warnings++;
+            $self->{diffs}->{warnings}->{$item}->{$sampleno}
+               = [ 0, $code, $w0->{$code}->{Message} ];
+            $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+         }
+      }
+
+      foreach my $code ( keys %$w ) {
+         $different_warnings++;
+         $self->{diffs}->{warnings}->{$item}->{$sampleno}
+            = [ $i, $code, $w->{$code}->{Message} ];
+         $self->{samples}->{$item}->{$sampleno} = $event0->{arg};
+      }
+
+      delete $event->{warnings};
+   }
+   delete $event0->{warnings};
+
+   return (
+      different_warning_counts => $different_warning_counts,
+      different_warnings       => $different_warnings,
+      different_warning_levels => $different_warning_levels,
+   );
+}
+
+sub report {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($hosts) = @args{@required_args};
+
+   return unless keys %{$self->{diffs}};
+
+   my $query_id_col = {
+      name        => 'Query ID',
+      fixed_width => 18,
+   };
+   my @host_cols = map {
+      my $col = { name => $_->{name} };
+      $col;
+   } @$hosts;
+
+   my @reports;
+   foreach my $diff ( qw(warnings levels warning_counts) ) {
+      my $report = "_report_diff_$diff";
+      push @reports, $self->$report(
+         query_id_col => $query_id_col,
+         host_cols    => \@host_cols,
+         %args
+      );
+   }
+
+   return join("\n", @reports);
+}
+
+sub _report_diff_warnings {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{warnings}};
+
+   my $report = new ReportFormatter(long_last_column => 1);
+   $report->set_title('New warnings');
+   $report->set_columns(
+      $args{query_id_col},
+      { name => 'Host', },
+      { name => 'Code', right_justify => 1 },
+      { name => 'Message' },
+   );
+
+   my $diff_warnings = $self->{diffs}->{warnings};
+   foreach my $item ( sort keys %$diff_warnings ) {
+      map {
+         my ($hostno, $code, $message) = @{$diff_warnings->{$item}->{$_}};
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            $args{hosts}->[$hostno]->{name}, $code, $message,
+         );
+      } sort { $a <=> $b } keys %{$diff_warnings->{$item}};
+   }
+
+   return $report->get_report();
+}
+
+sub _report_diff_levels {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{levels}};
+
+   my $report = new ReportFormatter(long_last_column => 1);
+   $report->set_title('Warning level differences');
+   $report->set_columns(
+      $args{query_id_col},
+      { name => 'Code', right_justify => 1 },
+      map {
+         my $col = { name => $_->{name}, right_justify => 1  };
+         $col;
+      } @{$args{hosts}},
+      { name => 'Message' },
+   );
+
+   my $diff_levels = $self->{diffs}->{levels};
+   foreach my $item ( sort keys %$diff_levels ) {
+      map {
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            @{$diff_levels->{$item}->{$_}},
+         );
+      } sort { $a <=> $b } keys %{$diff_levels->{$item}};
+   }
+
+   return $report->get_report();
+}
+
+sub _report_diff_warning_counts {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(query_id_col hosts);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $get_id = $self->{get_id};
+
+   return unless keys %{$self->{diffs}->{warning_counts}};
+
+   my $report = new ReportFormatter();
+   $report->set_title('Warning count differences');
+   $report->set_columns(
+      $args{query_id_col},
+      map {
+         my $col = { name => $_->{name}, right_justify => 1  };
+         $col;
+      } @{$args{hosts}},
+   );
+
+   my $diff_warning_counts = $self->{diffs}->{warning_counts};
+   foreach my $item ( sort keys %$diff_warning_counts ) {
+      map {
+         $report->add_line(
+            $get_id->($item) . '-' . $_,
+            @{$diff_warning_counts->{$item}->{$_}},
+         );
+      } sort { $a <=> $b } keys %{$diff_warning_counts->{$item}};
+   }
+
+   return $report->get_report();
+}
+
+sub samples {
+   my ( $self, $item ) = @_;
+   return unless $item;
+   my @samples;
+   foreach my $sampleno ( keys %{$self->{samples}->{$item}} ) {
+      push @samples, $sampleno, $self->{samples}->{$item}->{$sampleno};
+   }
+   return @samples;
+}
+
+sub reset {
+   my ( $self ) = @_;
+   $self->{diffs}   = {};
+   $self->{samples} = {};
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End CompareWarnings package
 # ###########################################################################
 
 # ###########################################################################
@@ -7738,7 +8412,6 @@ sub main {
             ($hosts->[-1] ? $hosts->[-1]->{dsn} : undef),
             $dsn_defaults
          );
-         my $dbh = get_cxn($dp, $o, $dsn);
          push @$hosts,
             {
                dsn  => $dsn,
@@ -7807,9 +8480,10 @@ sub main {
    # ########################################################################
    # Make compare modules in order.
    # ########################################################################
+   my $compare = $o->get('compare');
    my @compare_modules;
-   my $method  = lc $o->get('compare-results-method');
-   if ( $o->get('compare-results') ) {
+   if ( $compare->{results} ) {
+      my $method  = lc $o->get('compare-results-method');
       MKDEBUG && _d('Compare results method:', $method);
 
       my $plugins = [];
@@ -7819,15 +8493,40 @@ sub main {
          push @$plugins, new TableSyncGroupBy(%common_modules);
       }
 
-      my $compare = new CompareResults(
+      push @compare_modules, new CompareResults(
          method     => $method,
          plugins    => $plugins,
          get_id     => sub { return make_checksum(@_); },
          'base-dir' => $o->get('base-dir'),
          %common_modules,
       );
+   }
 
-      push @compare_modules, $compare;
+   if ( $compare->{query_times} ) {
+      push @compare_modules, new CompareQueryTimes(
+         get_id     => sub { return make_checksum(@_); },
+         %common_modules,
+      );
+   }
+
+   if ( $compare->{warnings} ) {
+      # SHOW WARNINGS requires MySQL 4.1.
+      my $have_warnings = 1;
+      foreach my $host ( @$hosts ) {
+         if ( !$vp->version_ge($host->{dbh}, '4.1.0') ) {
+            warn "Compare warnings DISABLED because host ", $host->{name},
+               " MySQL version is less than 4.1";
+            $have_warnings = 0;
+            last;
+         }
+      }
+      if ( $have_warnings ) {
+         push @compare_modules, new CompareWarnings(
+            clear  => $o->get('clear-warnings'),
+            get_id => sub { return make_checksum(@_); },
+            %common_modules,
+         );
+      }
    }
 
    # ########################################################################
@@ -7963,9 +8662,17 @@ sub main {
          my $dbh        = $host->{dbh};
          my $host_name  = $host->{name};
          my $host_event = { %$event };
+         my %bad_module;
+         $host_event->{Errors} = 'No';
          ACTION:
          foreach my $action ( qw(before_execute execute after_execute) ) {
+            MODULE:
             foreach my $c ( @compare_modules ) {
+               if ( $bad_module{ref $c} ) {
+                  MKDEBUG && _d('Skipping bad module', ref $c, $action,
+                     'on', $host_name);
+                  next MODULE;
+               }
                MKDEBUG && _d('Doing', ref $c, $action, 'on', $host_name);
                eval {
                   $host_event = $c->$action(
@@ -7983,27 +8690,27 @@ sub main {
                      = [$host->{name}, $EVAL_ERROR];
                   $samples{$event->{fingerprint}}->{$event->{sampleno} || 0}
                      = $event->{arg};
-                  $host_event->{Error} = 'Yes';
-                  last ACTION;
+                  $host_event->{Errors} = 'Yes';
+                  $bad_module{ref $c}++;
+                  next MODULE;
                }
-            }
-            # If there's an error we won't make it here because of last ACTION.
-            MKDEBUG && _d('All actions were successful');
-            $host_event->{Error} = 'No';
-
-            if ( exists $host_event->{Query_time}
-                 && $o->get('zero-query-times') ) {
-               $host_event->{Query_time} = 0;
-            }
+            } 
          }
+
+         $host_event->{Warnings}
+            = $host_event->{warning_count}
+              && $host_event->{warning_count} > 0 ? 'Yes' : 'No';
+
          push @host_events, $host_event;
       }
 
       # Compare host events for differences, then aggregate those differences.
       foreach my $c ( @compare_modules ) {
          my %diffs = $c->compare(
-            events => \@host_events,
-            hosts  => $hosts,
+            events               => \@host_events,
+            hosts                => $hosts,
+            'float-precision'    => $o->get('float-precision'),
+            'max-different-rows' => $o->get('max-different-rows'),
          );
          @{$event}{keys %diffs} = values %diffs;
          $event->{differences}  = do {
@@ -8014,14 +8721,25 @@ sub main {
       }
       $meta_ea->aggregate($event);
 
+
       # Per-host aggregates must be done after compare() because
       # some attributes can only be added to the host events during
       # compare(), like row_count for the rows method.
       for my $i ( 0..$#host_events ) {
+
+         # Zero query times.  Do this after compare() but before
+         # per-host aggregation so that the modules can compare/use
+         # the query times but the per-host aggregated reports will
+         # show zeros.
+         if ( exists $host_events[$i]->{Query_time}
+              && $o->get('zero-query-times') ) {
+            $host_events[$i]->{Query_time} = 0;
+         }
+
          $hosts->[$i]->{ea}->aggregate($host_events[$i]);
       }
 
-      return $event;
+      return $event;  # the meta-event
    };
 
    # User-defined filter.
@@ -8436,6 +9154,94 @@ runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
 binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
 
+=item --[no]clear-warnings
+
+default: yes
+
+Clear warnings before each warnings comparison.
+
+If comparing warnings (L<"--compare"> includes C<warnings>), this option
+causes mk-upgrade to execute a successful C<SELECT> statement which clears
+any warnings left over from previous queries.  This requires a current
+database that mk-upgrade usually detects automatically, but in some cases
+it might be necessary to specify L<"--temp-database">.  If mk-upgrade can't
+auto-detect the current database, it will create a temporary table in the
+L<"--temp-database"> called C<mk_upgrade_clear_warnings>.
+
+=item --compare
+
+type: Hash; default: query_times,results,warnings
+
+What to compare for each query executed on each host.
+
+Comparisons determine differences when the queries are executed on the hosts.
+More comparisons enable more differences to be detected.  The following
+comparisons are available:
+
+=over
+
+=item query_times
+
+Compare query execution times.  If this comparison is disabled, the queries
+are still executed so that other comparisons will work, but the query time
+attributes are removed from the events.
+
+=item results
+
+Compare result sets to find differences in rows, columns, etc.
+
+What differences can be found depends on the L<"--compare-results-method"> used.
+
+=item warnings
+
+Compare warnings from C<SHOW WARNINGS>.  Requires at least MySQL 4.1.
+
+=back
+
+=item --compare-results-method
+
+type: string; default: CHECKSUM; group: Comparisons
+
+Method to use for L<"--compare"> C<results>.  This option has no effect
+if C<--no-compare-results> is given.
+
+Available compare methods (case-insensitive):
+
+=over
+
+=item CHECKSUM
+
+Do C<CREATE TEMPORARY TABLE `mk_upgrade` AS query> then
+C<CHECKSUM TABLE `mk_upgrade`>.  This method is fast and simple but in
+rare cases might it be inaccurate because the MySQL manual says:
+
+  [The] fact that two tables produce the same checksum does I<not> mean that
+  the tables are identical.
+
+Requires at least MySQL 4.1.
+
+=item rows
+
+Compare rows one-by-one to find differences.  This method has advantages
+and disadvantages.  Its disadvantages are that it may be slower and it
+requires writing and reading outfiles from disk.  Its advantages are that
+it is universal (works for all versions of MySQL), it doesn't alter the query
+in any way, and it can find column value differences.
+
+The C<rows> method works as follows:
+
+  1. Rows from each host are compared one-by-one.
+  2. If no differences are found, comparison stops, else...
+  3. All remain rows (after the point where they begin to differ)
+     are written to outfiles.
+  4. The outfiles are loaded into temporary tables with
+     C<LOAD DATA LOCAL INFILE>.
+  5. The temporary tables are analyzed to determine the differences.
+
+The outfiles are written to the L<"--base-dir">.
+
+=back
+
 =item --config
 
 type: Array
@@ -8509,6 +9315,15 @@ It is permissible for the code to have side effects (to alter $event).
 You can find an explanation of the structure of $event at
 L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
 
+=item --float-precision
+
+type: int
+
+Round float, double and decimal values to this many places.
+
+This option helps eliminate false-positives caused by floating-point
+imprecision.
+
 =item --help
 
 Show help and exit.
@@ -8544,9 +9359,12 @@ type: string
 
 Print all output to this file when daemonized.
 
-=item --only-failed-queries
+=item --max-different-rows
 
-Report only queries that had at least one failure of any kind.
+type: int; default: 10
+
+Stop comparing rows for C<--compare-results-method rows> after this many
+differences are found.
 
 =item --order-by
 
@@ -8580,7 +9398,7 @@ Port number to use for connection.
 
 type: string
 
-Execute this single query on the servers.
+Execute this single query on the servers; ignores files on command line.
 
 =item --[no]report
 
@@ -8617,7 +9435,7 @@ type: string
 Use this database for creating temporary tables.
 
 If given, this database is used for creating temporary tables for the
-results comparison (see L<"--[no]compare-results">).  Otherwise, the current
+results comparison (see L<"--compare">).  Otherwise, the current
 database (from the last event that specified its database) is used.
 
 =item --temp-table
@@ -8636,114 +9454,9 @@ User for login if not current user.
 
 Show version and exit.
 
-=back
-
-=head2 COMPARISONS
-
-Comparisons determine differences when the queries are executed on the hosts.
-More comparisons enable more differences to be detected.
-
-=over
-
-=item --[no]compare-errors
-
-default: yes; group: Comparisons
-
-Compare errors.
-
-=item --[no]compare-query-times
-
-default: yes; group: Comparisons
-
-Compare query execution times.  If this comparison is disabled, the queries
-are still executed so that other comparisons will work, but the query times
-are not compared.  See also L<"--zero-query-times">.
-
-=item --[no]compare-results
-
-default: yes; group: Comparisons
-
-Compare result sets to find differences in rows, columns, etc.
-
-What differences can be found depends on the L<"--compare-results-method"> used.
-
-=item --compare-results-method
-
-type: string; default: CHECKSUM; group: Comparisons
-
-Method to use for L<"--[no]compare-results">.  This option has no effect
-if C<--no-compare-results> is given.
-
-Available compare methods (case-insensitive):
-
-=over
-
-=item CHECKSUM
-
-Do C<CREATE TEMPORARY TABLE `mk_upgrade` AS query> then
-C<CHECKSUM TABLE `mk_upgrade`>.  This method is fast and simple but in
-rare cases might it be inaccurate because the MySQL manual says:
-
-  [The] fact that two tables produce the same checksum does I<not> mean that
-  the tables are identical.
-
-Requires at least MySQL 4.1.
-
-=item rows
-
-Compare rows one-by-one to find differences.  This method has advantages
-and disadvantages.  Its disadvantages are that it may be slower and it
-requires writing and reading outfiles from disk.  Its advantages are that
-it is universal (works for all versions of MySQL), it doesn't alter the query
-in any way, and it can find column value differences.
-
-The C<rows> method works as follows:
-
-  1. Rows from each host are compared one-by-one.
-  2. If no differences are found, comparison stops, else...
-  3. All remain rows (after the point where they begin to differ)
-     are written to outfiles.
-  4. The outfiles are loaded into temporary tables with
-     C<LOAD DATA LOCAL INFILE>.
-  5. The temporary tables are analyzed to determine the differences.
-
-The outfiles are written to the L<"--base-dir">.
-
-=back
-
-=item --[no]compare-warnings
-
-default: yes; group: Comparisons
-
-Compare warnings from C<SHOW WARNINGS>.  Requires at least MySQL 4.1.
-
-=item --float-precision
-
-type: int
-
-Round float, double and decimal values to this many places.
-
-This option helps eliminate false-positives caused by floating-point
-imprecision.
-
-=item --max-differences
-
-type: int; default: 10
-
-Stop comparing rows for C<--compare-results-method rows> after this many differences are found.
-
-This counts for both missing and different rows.  The query's rank will not
-be increased for the different rows past this value.  Therefore, this option
-may lower the query's real rank because all different rows may not be found.
-
 =item --zero-query-times
 
-Zero the query times in the reports.
-
-If L<"--[no]compare-query-times"> is disabled (C<--no-compare-query-times>)
-the queries are still executed and still printed in the reports.  This option
-causes the real query times to be printed as zeros instead.  This helps if you
-are L<diff>'ing the output.
+Zero the query times in the report.
 
 =back
 
