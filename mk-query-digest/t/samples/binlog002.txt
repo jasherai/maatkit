@@ -57,8 +57,8 @@ create database d\G
 #    1s
 #  10s+
 # Tables
-#    /* write */ SHOW TABLE STATUS FROM `d` LIKE 'foo'\G
-#    /* write */ SHOW CREATE TABLE `d`.`foo`\G
+#    SHOW TABLE STATUS FROM `d` LIKE 'foo'\G
+#    SHOW CREATE TABLE `d`.`foo`\G
 create table foo (i int)\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0xF579EC4A9633EEA0 at byte 973 ______

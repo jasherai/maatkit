@@ -21,8 +21,8 @@
 #    1s  ################################################################
 #  10s+
 # Tables
-#    /* write */ SHOW TABLE STATUS LIKE 'film_actor'\G
-#    /* write */ SHOW CREATE TABLE `film_actor`\G
+#    SHOW TABLE STATUS LIKE 'film_actor'\G
+#    SHOW CREATE TABLE `film_actor`\G
 INSERT INTO `film_actor` VALUES (1,1,'2006-02-15 10:05:03') /*... omitted ...*/ON duplicate KEY UPDATE actor_id=actor_id+1\G
 
 # Query 2: 0 QPS, 0x concurrency, ID 0xA1C3EE4F5996E672 at byte 342942 ___
@@ -47,8 +47,8 @@ INSERT INTO `film_actor` VALUES (1,1,'2006-02-15 10:05:03') /*... omitted ...*/O
 #    1s  ################################################################
 #  10s+
 # Tables
-#    /* write */ SHOW TABLE STATUS LIKE 'film_actor'\G
-#    /* write */ SHOW CREATE TABLE `film_actor`\G
+#    SHOW TABLE STATUS LIKE 'film_actor'\G
+#    SHOW CREATE TABLE `film_actor`\G
 INSERT IGNORE INTO `film_actor` VALUES (1,1,'2006-02-15 10:05:03') /*... omitted ...*/\G
 
 # Query 3: 0 QPS, 0x concurrency, ID 0xA2C576176F348267 at byte 171471 ___
@@ -73,6 +73,6 @@ INSERT IGNORE INTO `film_actor` VALUES (1,1,'2006-02-15 10:05:03') /*... omitted
 #    1s  ################################################################
 #  10s+
 # Tables
-#    /* write */ SHOW TABLE STATUS LIKE 'film_actor'\G
-#    /* write */ SHOW CREATE TABLE `film_actor`\G
+#    SHOW TABLE STATUS LIKE 'film_actor'\G
+#    SHOW CREATE TABLE `film_actor`\G
 REPLACE INTO `film_actor` VALUES (1,1,'2006-02-15 10:05:03') /*... omitted ...*/\G

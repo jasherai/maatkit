@@ -22,8 +22,8 @@
 #    1s
 #  10s+
 # Tables
-#    /* read */ SHOW TABLE STATUS FROM `db2` LIKE 'bar'\G
-#    /* read */ SHOW CREATE TABLE `db2`.`bar`\G
+#    SHOW TABLE STATUS FROM `db2` LIKE 'bar'\G
+#    SHOW CREATE TABLE `db2`.`bar`\G
 # EXPLAIN
 SELECT * FROM bar\G
 
@@ -50,7 +50,7 @@ SELECT * FROM bar\G
 #    1s
 #  10s+
 # Tables
-#    /* read */ SHOW TABLE STATUS FROM `db1` LIKE 'foo'\G
-#    /* read */ SHOW CREATE TABLE `db1`.`foo`\G
+#    SHOW TABLE STATUS FROM `db1` LIKE 'foo'\G
+#    SHOW CREATE TABLE `db1`.`foo`\G
 # EXPLAIN
 SELECT * FROM foo\G

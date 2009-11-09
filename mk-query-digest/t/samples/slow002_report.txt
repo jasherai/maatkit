@@ -23,10 +23,10 @@
 #    1s
 #  10s+
 # Tables
-#    /* write */ SHOW TABLE STATUS FROM `db2` LIKE 'tuningdetail_21_265507'\G
-#    /* write */ SHOW CREATE TABLE `db2`.`tuningdetail_21_265507`\G
-#    /* write */ SHOW TABLE STATUS FROM `db1` LIKE 'gonzo'\G
-#    /* write */ SHOW CREATE TABLE `db1`.`gonzo`\G
+#    SHOW TABLE STATUS FROM `db2` LIKE 'tuningdetail_21_265507'\G
+#    SHOW CREATE TABLE `db2`.`tuningdetail_21_265507`\G
+#    SHOW TABLE STATUS FROM `db1` LIKE 'gonzo'\G
+#    SHOW CREATE TABLE `db1`.`gonzo`\G
 update db2.tuningdetail_21_265507 n
       inner join db1.gonzo a using(gonzo) 
       set n.column1 = a.column1, n.word3 = a.word3\G
@@ -64,8 +64,8 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
 #    1s
 #  10s+
 # Tables
-#    /* write */ SHOW TABLE STATUS FROM `db4` LIKE 'vab3concept1upload'\G
-#    /* write */ SHOW CREATE TABLE `db4`.`vab3concept1upload`\G
+#    SHOW TABLE STATUS FROM `db4` LIKE 'vab3concept1upload'\G
+#    SHOW CREATE TABLE `db4`.`vab3concept1upload`\G
 UPDATE db4.vab3concept1upload
 SET    vab3concept1id = '91848182522'
 WHERE  vab3concept1upload='6994465'\G
@@ -102,8 +102,8 @@ select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   va
 #    1s
 #  10s+
 # Tables
-#    /* write */ SHOW TABLE STATUS FROM `foo` LIKE 'bar'\G
-#    /* write */ SHOW CREATE TABLE `foo`.`bar`\G
+#    SHOW TABLE STATUS FROM `foo` LIKE 'bar'\G
+#    SHOW CREATE TABLE `foo`.`bar`\G
 UPDATE foo.bar
 SET    biz = '91848182522'\G
 # Converted for EXPLAIN
@@ -139,8 +139,8 @@ select     biz = '91848182522' from foo.bar \G
 #    1s
 #  10s+
 # Tables
-#    /* write */ SHOW TABLE STATUS FROM `bizzle` LIKE 'bat'\G
-#    /* write */ SHOW CREATE TABLE `bizzle`.`bat`\G
+#    SHOW TABLE STATUS FROM `bizzle` LIKE 'bat'\G
+#    SHOW CREATE TABLE `bizzle`.`bat`\G
 UPDATE bizzle.bat
 SET    boop='bop: 899'
 WHERE  fillze='899'\G
@@ -177,8 +177,8 @@ select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 #    1s
 #  10s+
 # Tables
-#    /* write */ SHOW TABLE STATUS FROM `db1` LIKE 'conch'\G
-#    /* write */ SHOW CREATE TABLE `db1`.`conch`\G
+#    SHOW TABLE STATUS FROM `db1` LIKE 'conch'\G
+#    SHOW CREATE TABLE `db1`.`conch`\G
 INSERT INTO db1.conch (word3, vid83)
 VALUES ('211', '18')\G
 
@@ -211,8 +211,8 @@ VALUES ('211', '18')\G
 #    1s
 #  10s+
 # Tables
-#    /* write */ SHOW TABLE STATUS FROM `db3` LIKE 'vendor11gonzo'\G
-#    /* write */ SHOW CREATE TABLE `db3`.`vendor11gonzo`\G
+#    SHOW TABLE STATUS FROM `db3` LIKE 'vendor11gonzo'\G
+#    SHOW CREATE TABLE `db3`.`vendor11gonzo`\G
 INSERT INTO db3.vendor11gonzo (makef, bizzle)
 VALUES ('', 'Exact')\G
 

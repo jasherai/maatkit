@@ -21,7 +21,7 @@
 #    1s  ################################################################
 #  10s+
 # Tables
-#    /* read */ SHOW TABLE STATUS LIKE 'a'\G
-#    /* read */ SHOW CREATE TABLE `a`\G
+#    SHOW TABLE STATUS LIKE 'a'\G
+#    SHOW CREATE TABLE `a`\G
 # EXPLAIN
 select * from a, a, a\G

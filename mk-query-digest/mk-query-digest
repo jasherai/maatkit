@@ -7264,12 +7264,7 @@ sub main {
             my @tables;
             if ( $o->get('for-explain') || $o->get('table-access') ){
                @tables = extract_tables($samp_query, $default_db);
-               if ( $o->get('table-access') ) {
-                  push @table_access, {
-                     query  => $samp_query,
-                     tables => [ @tables ],
-                  };
-               }
+               push @table_access, $samp_query if $o->get('table-access');
             }
 
             # ###############################################################
@@ -7376,23 +7371,29 @@ sub main {
 
          # Print table access.
          if ( $o->get('table-access') ) {
+            my @subqueries;
+            map {
+               eval {
+                  push @subqueries, $qp->split($_);
+               };
+               if ( $EVAL_ERROR ) {
+                  MKDEBUG && _d($EVAL_ERROR);
+                  warn "Cannot get table access for query $_";
+               }
+            } @table_access; 
+
             my %seen;
             print "\n" if $o->get('report');
-            foreach my $item ( @table_access ) {
-               next unless scalar @{$item->{tables}};
-               my @access;
-               foreach my $tbl ( @{$item->{tables}} ) {
-                  next unless $tbl->{rw};
-                  my $db     = $tbl->{db}  ? "`$tbl->{db}`."  : '';
-                  my $access = "$tbl->{rw} $db`$tbl->{tbl}`";
-                  next if $o->get('unique-table-access') && $seen{$access}++;
-                  push @access, $access;
-               }
-
-               if ( @access ) {
-                  print "$item->{query}\n"
-                     unless $o->get('unique-table-access');
-                  print join("\n", @access), "\n";
+            foreach my $subquery ( @subqueries ) {
+               my $rw = $qp->query_type($subquery, $qr)->{rw};
+               next unless $rw;
+               my @tables = $qp->get_tables($subquery);
+               next unless scalar @tables;
+               foreach my $db_tbl ( @tables ) {
+                  next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+                  my ($db, $tbl) = $q->split_unquote($db_tbl);
+                  $db            = $db ? "`$db`."  : '';
+                  print "$rw $db`$tbl`\n";
                }
             }
          }
@@ -7438,20 +7439,11 @@ sub extract_tables {
    my ( $query, $default_db ) = @_;
    my @tables;
    my %seen;
-
-   foreach my $subquery ( $qp->split($query) ) {
-      foreach my $db_tbl ( $qp->get_tables($subquery) ) {
-         next if $seen{$db_tbl}++; # Unique-ify for issue 337.
-         my ( $db, $tbl ) = $q->split_unquote($db_tbl, $default_db);
-         my $rw           = $qp->query_type($subquery, $qr)->{rw};
-         push @tables, {
-            db  => $db,
-            tbl => $tbl,
-            rw  => $rw,
-         };
-      }
+   foreach my $db_tbl ( $qp->get_tables($query) ) {
+      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
+      push @tables, [ $db || $default_db, $tbl ];
    }
-
    return @tables;
 }
 
@@ -7460,14 +7452,14 @@ sub print_tables {
    my ( @tables ) = @_;
    return unless @tables;
    print "# Tables\n";
-   foreach my $tbl ( @tables ) {
-      my ( $db, $tbl, $rw ) = @{$tbl}{qw(db tbl rw)};
-      $rw = $rw ? "/* $rw */" : '';
-      print "#    $rw SHOW TABLE STATUS",
+   foreach my $db_tbl ( @tables ) {
+      my ( $db, $tbl ) = @$db_tbl;
+      print '#    SHOW TABLE STATUS',
          ($db ? " FROM `$db`" : ''), " LIKE '$tbl'\\G\n";
-      print "#    $rw SHOW CREATE TABLE ",
-         $q->quote(grep { $_ } ($db, $tbl)), "\\G\n";
+      print "#    SHOW CREATE TABLE ",
+         $q->quote(grep { $_ } @$db_tbl), "\\G\n";
    }
+   return;
 }
 
 sub print_explain {
@@ -8723,28 +8715,23 @@ Socket file to use for connection.
 
 =item --table-access
 
-Print table access report.
+Print a table access report.
 
-The table access report shows which tables each unique query accesses
-and if the access is a read or write.  This information is printed by default
-with L<"--[no]for-explain"> in the standard query report, like:
+The table access report shows which tables are accessed by all the queries
+and if the access is a read or write.  The report looks like:
 
-  # Tables
-  #    /* write */ SHOW TABLE STATUS FROM `d` LIKE 'foo'\G
-  #    /* write */ SHOW CREATE TABLE `d`.`foo`\G
-  create table foo (i int)\G
-
-If you want to see only a table access report, specify this option and
-C<--no-report>.  Then only a table access report like this will be printed:
-
-  UPDATE tbl SET foo='bar' WHERE foo IS NULL
   write `baz`.`tbl`
-  SELECT * FROM new_tbl WHERE d < '2009-01-01 12:12:10'
   read `baz`.`new_tbl`
-  INSERT INTO tbl VALUES (1, 2, 3)
-  write `baz`.`tbl`
+  write `baz`.`tbl3`
+  write `db6`.`tbl6`
 
-See also L<"--unique-table-access">.
+If you pipe the output to L<sort>, the read and write tables will be grouped
+together and sorted alphabetically:
+
+  read `baz`.`new_tbl`
+  write `baz`.`tbl`
+  write `baz`.`tbl3`
+  write `db6`.`tbl6`
 
 =item --tcpdump-errors
 
@@ -8853,27 +8840,6 @@ instead of MySQL packets.  For example:
 memcached uses port 11211 by default.
 
 =back
-
-=item --unique-table-access
-
-Show only unique tables and no queries in the L<"--table-access"> report.
-
-If you simply want a list of all the unique tables that are accessed by all
-the queries, specify C<--no-report --table-access --unique-table-access>.
-The unique table access report looks like:
-
-  write `baz`.`tbl`
-  read `baz`.`new_tbl`
-  write `baz`.`tbl3`
-  write `db6`.`tbl6`
-
-If you pipe the output to L<sort>, the read and write tables will be grouped
-together and sorted alphabetically:
-
-  read `baz`.`new_tbl`
-  write `baz`.`tbl`
-  write `baz`.`tbl3`
-  write `db6`.`tbl6`
 
 =item --until
 
