@@ -5,8 +5,9 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 2;
 
-require "../HTTPProtocolParser.pm";
-require "../TcpdumpParser.pm";
+require '../TcpdumpParser.pm';
+require '../ProtocolParser.pm';
+require '../HTTPProtocolParser.pm';
 
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -78,7 +79,8 @@ run_test({
         request      => 'get',
         page         => '/contact',
         response     => '200',
-        reponse_time => '0.651419',
+        Query_time   => '0.651419',
+        Request_time => '0.651419',
       },
    ],
 });
