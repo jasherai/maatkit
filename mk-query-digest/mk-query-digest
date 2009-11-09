@@ -7336,7 +7336,7 @@ sub main {
                else {
                   if ( $groupby eq 'tables' ) {
                      my ( $db, $tbl ) = $q->split_unquote($item);
-                     print_tables( {db => $db, tbl => $tbl} );
+                     print_tables([$db, $tbl]);
                   }
                   print $item, "\n"; 
                }

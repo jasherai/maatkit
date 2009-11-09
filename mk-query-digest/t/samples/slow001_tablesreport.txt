@@ -26,3 +26,6 @@
 #    1s  ################################################################
 #  10s+
 # Tables
+#    SHOW TABLE STATUS FROM `test` LIKE 'n'\G
+#    SHOW CREATE TABLE `test`.`n`\G
+test.n
