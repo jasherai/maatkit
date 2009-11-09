@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 104;
+use Test::More tests => 106;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -222,6 +222,20 @@ ok(
    no_diff($run_with . 'slow037.txt --group-by distill --report-format=query_report,profile',
       'samples/slow037_report.txt'),
    'Distill UNLOCK and LOCK TABLES'
+);
+
+# Test --table-access.
+ok(
+   no_diff($run_with . 'slow020.txt --no-report --table-access',
+      'samples/slow020_table_access.txt'),
+   'Analysis for slow020 with --table-access'
+);
+
+# This one tests that the list of tables is unique.
+ok(
+   no_diff($run_with . 'slow030.txt --no-report --table-access',
+      'samples/slow030_table_access.txt'),
+   'Analysis for slow030 with --table-access'
 );
 
 # #############################################################################
