@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 require "../MaatkitTest.pm";
 require "../SlowLogParser.pm";
@@ -83,6 +83,18 @@ ok(
       'samples/slowlogwriter001.txt',
    ),
    'Writes Client attrib from tcpdump',
+);
+
+ok(
+   no_diff(
+      {
+         Query_time => '1.123456',
+         Lock_time  => '0.000001',
+         arg        => 'select * from foo',
+      },
+      'samples/slowlogwriter002.txt',
+   ),
+   'Writes microsecond times'
 );
 
 # #############################################################################

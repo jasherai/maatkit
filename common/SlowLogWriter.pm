@@ -49,17 +49,10 @@ sub write {
 
    # Tweak output according to log type: either classic or Percona-patched.
    my $percona_patched = exists $event->{QC_Hit} ? 1 : 0;
-   my $df;  # Decimal/microsecond or integer format.
-   if ( $percona_patched ) {
-      $df = '.6f';
-   }
-   else {
-      $df = 'd';
-   }
 
    # Classic slow log attribs.
    printf $fh
-      "# Query_time: %$df  Lock_time: %$df  Rows_sent: %d  Rows_examined: %d\n",
+      "# Query_time: %s  Lock_time: %s  Rows_sent: %d  Rows_examined: %d\n",
       # TODO 0  Rows_affected: 0  Rows_read: 1
       map { $_ || 0 }
          @{$event}{qw(Query_time Lock_time Rows_sent Rows_examined)};
@@ -74,7 +67,7 @@ sub write {
       if ( exists $event->{InnoDB_IO_r_ops} ) {
          # Optional 3 lines of Percona-patched InnoDB attribs.
          printf $fh
-            "#   InnoDB_IO_r_ops: %d  InnoDB_IO_r_bytes: %d  InnoDB_IO_r_wait: %$df\n#   InnoDB_rec_lock_wait: %$df  InnoDB_queue_wait: %$df\n#   InnoDB_pages_distinct: %d\n",
+            "#   InnoDB_IO_r_ops: %d  InnoDB_IO_r_bytes: %d  InnoDB_IO_r_wait: %s\n#   InnoDB_rec_lock_wait: %s  InnoDB_queue_wait: %s\n#   InnoDB_pages_distinct: %d\n",
             map { $_ || 0 }
                @{$event}{qw(InnoDB_IO_r_ops InnoDB_IO_r_bytes InnoDB_IO_r_wait InnoDB_rec_lock_wait InnoDB_queue_wait InnoDB_pages_distinct)};
 
