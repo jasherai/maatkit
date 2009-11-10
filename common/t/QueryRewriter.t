@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 124;
+use Test::More tests => 125;
 
 require "../QueryRewriter.pm";
 require '../QueryParser.pm';
@@ -856,7 +856,13 @@ my $huge_insert = `zcat samples/slow039.txt.gz | tail -n 1`;
 is(
    $qr->fingerprint($huge_insert),
    q{insert into the_universe values(?+)},
-   'truly huge insert (issue 687)'
+   'truly huge insert 1/2 (issue 687)'
+);
+$huge_insert = `zcat samples/slow040.txt.gz | tail -n 2`;
+is(
+   $qr->fingerprint($huge_insert),
+   q{insert into the_universe values(?+)},
+   'truly huge insert 2/2 (issue 687)'
 );
 
 # #############################################################################
