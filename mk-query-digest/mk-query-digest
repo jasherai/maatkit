@@ -8388,14 +8388,31 @@ type: Array; default: Query_time:sum
 Sort events by this attribute and aggregate function.
 
 This is a comma-separated list of order-by expressions, one for each
-L<"--group-by"> attribute.  The default Query_time:sum is used for
+L<"--group-by"> attribute.  The default C<Query_time:sum> is used for
 L<"--group-by"> attributes without explicitly given L<"--order-by"> attributes
 (that is, if you specify more L<"--group-by"> attributes than corresponding
-L<"--order-by"> attributes).  The syntax is attribute:aggregate.  Valid
-aggregates are sum, min, max, cnt. See the default value for an example.
+L<"--order-by"> attributes).  The syntax is C<attribute:aggregate>.  See
+L<"ATTRIBUTES"> for valid attributes.  Valid aggregates are:
+
+   Aggregate Meaning
+   ========= ============================
+   C<sum>    Sum/total attribute value
+   C<min>    Minimum attribute value
+   C<max>    Maximum attribute value
+   C<cnt>    Frequency/count of the query
+
+For example, the default C<Query_time:sum> means that queries in the
+query analysis report will be ordered (sorted) by their total query execution
+time ("Exec time").  C<Query_time:max> orders the queries by their
+maximum query execution time, so the query with the single largest
+C<Query_time> will be list first.  C<cnt> refers more to the frequency
+of the query as a whole, how often it appears; "Count" is its corresponding
+line in the query analysis report.  So any attribute and C<cnt> should yield
+the same report wherein queries are sorted by the number of times they
+appear.
 
 If you specify an attribute that doesn't exist in the events, then
-mk-query-digest falls back to the default Query_time:sum and prints a notice
+mk-query-digest falls back to the default C<Query_time:sum> and prints a notice
 at the beginning of the report for each query class.
 
 =item --outliers
