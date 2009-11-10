@@ -3562,7 +3562,7 @@ mk-loadavg - Watch MySQL load and take action when it gets too high.
 
 Execute my_script.sh when Threads_running exceeds 10:
 
-  mk-loadavg --watch Status:status:Threads_running:>:10 \
+  mk-loadavg --watch "Status:status:Threads_running:>:10" \
     --execute-command my_script.sh
 
 =head1 RISKS
@@ -3671,7 +3671,7 @@ Execute this command when watched items exceed their threshold values
 
 This command will be executed every time a L<"--watch"> item (or all items if
 L<"--and"> is specified) exceeds its threshold.  For example, if you specify
-C<--watch Server:vmstat:swpd:\>:0>, then this command will be executed
+C<--watch "Server:vmstat:swpd:>:0">, then this command will be executed
 when the server begins to swap and it will be executed again at each
 L<"--interval"> so long as the server is still swapping.
 
@@ -3834,9 +3834,9 @@ This is a common error when specifying L<"--watch"> on the commnad line:
 
    Failed to load --watch WatchServer: Error parsing parameters vmstat:swpd:: No comparison parameter; expected >, < or = at ./mk-loadavg line 3100.
 
-The C<E<gt>> and other special characters need to be escaped:
+The L<"--watch"> values need to be quoted:
 
-   mk-loadavg --watch Server:vmstat:swpd:\>:0
+   mk-loadavg --watch "Server:vmstat:swpd:>:0"
 
 =over
 
@@ -3849,9 +3849,9 @@ The value argument is case-sensitive.
 
 Examples:
 
-  --watch Status:status:Threads_connected:>:16
-  --watch Status:innodb:Innodb_buffer_pool_hit_rate:<:0.98
-  --watch Status:slave:Seconds_behind_master:>:300
+  --watch "Status:status:Threads_connected:>:16"
+  --watch "Status:innodb:Innodb_buffer_pool_hit_rate:<:0.98"
+  --watch "Status:slave:Seconds_behind_master:>:300"
 
 You can easily see what values are available for SHOW STATUS and SHOW SLAVE
 STATUS, but the values for SHOW INNODB STATUS are not apparent.  Some common
@@ -3897,8 +3897,8 @@ Watch aggregated SHOW PROCESSLIST values.
 
 Examples:
 
-  --watch Processlist:state:Locked:count:>:5
-  --watch Processlist:command:Query:time:<:1
+  --watch "Processlist:state:Locked:count:>:5"
+  --watch "Processlist:command:Query:time:<:1"
 
 =item Server
 
@@ -3909,9 +3909,9 @@ Watch server values.
 
 Examples:
 
-  --watch Server:loadavg:5:>:4.00
-  --watch Server:vmstat:swpd:>:0
-  --watch Server:vmstat:free:=:0
+  --watch "Server:loadavg:5:>:4.00"
+  --watch "Server:vmstat:swpd:>:0"
+  --watch "Server:vmstat:free:=:0"
 
 See L<"--vmstat">.
 
