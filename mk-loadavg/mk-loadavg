@@ -3828,7 +3828,7 @@ arguments are passed to the WatchStatus module which parses them.  Each
 watch module requires different arguments.  The watch modules included
 in mk-loadavg and what arguments they require are listed below.
 
-This is a common error when specify L<"--watch"> on the commnad line:
+This is a common error when specifying L<"--watch"> on the commnad line:
 
    mk-loadavg --watch Server:vmstat:swpd:>:0
 
