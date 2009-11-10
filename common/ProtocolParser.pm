@@ -75,7 +75,7 @@ sub parse_packet {
       $client      = $src_host;
    }
    else {
-      warn 'Packet is not to or from web server: ', Dumper($packet);
+      warn 'Packet is not to or from server: ', Dumper($packet);
       return;
    }
    MKDEBUG && _d('Client:', $client);
@@ -103,6 +103,23 @@ sub parse_packet {
 
    # Save raw packets to dump later in case something fails.
    push @{$session->{raw_packets}}, $packet->{raw_packet};
+
+   if ( $session->{buff} ) {
+      # Previous packets were not complete so append this data
+      # to what we've been buffering.
+      $session->{buff_left} -= $packet->{data_len};
+      if ( $session->{buff_left} > 0 ) {
+         MKDEBUG && _d('Added data to buff; expecting', $session->{buff_left},
+            'more bytes');
+         return;
+      }
+
+      MKDEBUG && _d('Got all data; buff left:', $session->{buff_left});
+      $packet->{data}       = $session->{buff} . $packet->{data};
+      $packet->{data_len}  += length $session->{buff};
+      $session->{buff}      = '';
+      $session->{buff_left} = 0;
+   }
 
    # Finally, parse the packet and maybe create an event.
    $packet->{data} = pack('H*', $packet->{data});
@@ -136,8 +153,10 @@ sub _packet_from_client {
 sub make_event {
    my ( $self, $session, $packet ) = @_;
    die "Event has no attributes" unless scalar keys %{$session->{attribs}};
+   MKDEBUG && _d('Event started at', $session->{attribs}->{ts},
+      'finished at', $packet->{ts});
    my $event = {
-      Query_time => timestamp_diff($session->{attribs}->{ts}, $packet->{ts}),
+      Query_time => $self->timestamp_diff($session->{attribs}->{ts}, $packet->{ts}),
    };
    @{$event}{keys %{$session->{attribs}}} = values %{$session->{attribs}};
    return $event;
@@ -183,7 +202,7 @@ sub fail_session {
 
 # Returns the difference between two tcpdump timestamps.
 sub timestamp_diff {
-   my ( $start, $end ) = @_;
+   my ( $self, $start, $end ) = @_;
    return 0 unless $start && $end;
    my $sd = substr($start, 0, 11, '');
    my $ed = substr($end,   0, 11, '');

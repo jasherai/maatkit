@@ -51,8 +51,6 @@ sub _packet_from_server {
 
    MKDEBUG && _d('Packet is from server; client state:', $session->{state}); 
 
-   my $data = $packet->{data};
-
    # If there's no session state, then we're catching a server response
    # mid-stream.
    if ( !$session->{state} ) {
@@ -62,31 +60,47 @@ sub _packet_from_server {
 
    # Assume that the server is returning only one value. 
    # TODO: make it handle multiple.
-   if ( $session->{state} eq 'awaiting headers' ) {
+   if ( $session->{state} eq 'awaiting reply' ) {
       MKDEBUG && _d('State:', $session->{state});
-
-      my ($line1, $header) = $packet->{data} =~ m/\A(.*?)\r\n(.+)?/s;
-      # First header val should be: version  code phrase
-      # E.g.:                       HTTP/1.1  200 OK
+      my ($line1, $content) = $self->_parse_header($session, $packet->{data});
+      # First line should be: version  code phrase
+      # E.g.:                 HTTP/1.1  200 OK
       my ($version, $code, $phrase) = $line1 =~ m/(\S+)/g;
-
       $session->{attribs}->{response} = $code;
-      MKDEBUG && _d('Reponse code for last', 
-         $session->{request}, $session->{page},
-         'request:', $session->{response});
+      MKDEBUG && _d('Reponse code for last',
+         $session->{attribs}->{request}, $session->{attribs}->{page},
+         'request:', $session->{attribs}->{response});
 
-      MKDEBUG && _d('HTTP header:', $header);
-      my @headers;
-      foreach my $val ( split(/\r\n/, $header) ) {
-         last unless $val;
-         # Capture and save any useful header values.
-         if ( $val =~ m/^Content-Length/i ) {
-            ($session->{attribs}->{bytes}) = $val =~ /: (\d+)/;
-         }
+      $session->{response_start} = $packet->{ts};
+
+      my $content_len = $content ? length $content : 0;
+      MKDEBUG && _d('Got', $content_len, 'bytes of content');
+      if ( $session->{attribs}->{bytes}
+           && $content_len < $session->{attribs}->{bytes} ) {
+         $session->{data_len}  = $session->{attribs}->{bytes};
+         $session->{buff}      = $content;
+         $session->{buff_left} = $session->{attribs}->{bytes} - $content_len;
+         MKDEBUG && _d('Contents not complete,', $session->{buff_left},
+            'bytes left');
+         $session->{state} = 'recving content';
+         return;
       }
    }
+   elsif ( $session->{state} eq 'recving content' ) {
+      if ( $session->{buff} ) {
+         MKDEBUG && _d('Receiving content,', $session->{buff_left},
+            'bytes left');
+         return;
+      }
+      MKDEBUG && _d('Contents received; started at', $session->{response_start},
+         'finished at', $packet->{ts});
+      $session->{attribs}->{Transmit_time}
+         = $self->timestamp_diff($session->{response_start}, $packet->{ts}),
+   }
    else {
-         return; # Prevent firing event.
+      # TODO:
+      warn "Server response in unknown state"; 
+      return;
    }
 
    MKDEBUG && _d('Creating event, deleting session');
@@ -116,36 +130,66 @@ sub _packet_from_client {
       $session->{client} = $client;
    }
 
-   my ($line1, $val);
-   my ($request, $page);
    if ( !$session->{state} ) {
       MKDEBUG && _d('Session state: ', $session->{state});
-      $session->{state} = 'awaiting headers';
-
-      # Split up the first line into its parts.
-      ($line1, $val) = $packet->{data} =~ m/\A(.*?)\r\n(.+)?/s;
-      my @vals = $line1 =~ m/(\S+)/g;
-      $request = lc shift @vals;
+      $session->{state} = 'awaiting reply';
+      my ($line1, undef) = $self->_parse_header($session, $packet->{data});
+      # First line should be: request page      version
+      # E.g.:                 GET     /foo.html HTTP/1.1
+      my ($request, $page, $version) = $line1 =~ m/(\S+)/g;
+      $request = lc $request;
       MKDEBUG && _d('Request:', $request);
       if ( $request eq 'get' ) {
-         ($page) = shift @vals;
+         @{$session->{attribs}}{qw(request page)} = ($request, $page);
          MKDEBUG && _d('Page:', $page);
       }
       else {
-         MKDEBUG && _d("Don't know how to handle", $request);
+         MKDEBUG && _d("Don't know how to handle a", $request, "request");
+         return;
       }
 
-      @{$session->{attribs}}{qw(request page)} = ($request, $page);
       $session->{attribs}->{host}       = $packet->{src_host};
       $session->{attribs}->{pos_in_log} = $packet->{pos_in_log};
       $session->{attribs}->{ts}         = $packet->{ts};
    }
    else {
-      MKDEBUG && _d('Session state: ', $session->{state});
-      $val = $packet->{data};
+      # TODO:
+      die "Probably multiple GETs from client before a server response?"; 
    }
 
    return $event;
+}
+
+sub _parse_header {
+   my ( $self, $session, $data ) = @_;
+   die "I need data" unless $data;
+   my ($header, $content)    = split(/\r\n\r\n/, $data);
+   my ($line1, $header_vals) = $header  =~ m/\A(.*?)\r\n(.+)?/s;
+   MKDEBUG && _d('HTTP header:', $line1);
+   my @headers;
+   foreach my $val ( split(/\r\n/, $header_vals) ) {
+      last unless $val;
+      # Capture and save any useful header values.
+      MKDEBUG && _d('HTTP header:', $val);
+      if ( $val =~ m/^Content-Length/i ) {
+         ($session->{attribs}->{bytes}) = $val =~ /: (\d+)/;
+         MKDEBUG && _d('Saved Content-Length:', $session->{attribs}->{bytes});
+      }
+      if ( $val =~ m/^Host/i ) {
+         # The "host" attribute is already taken, so we call this "domain".
+         ($session->{attribs}->{domain}) = $val =~ /: (\S+)/;
+         MKDEBUG && _d('Saved Host:', ($session->{attribs}->{domain}));
+      }
+   }
+   return $line1, $content;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
