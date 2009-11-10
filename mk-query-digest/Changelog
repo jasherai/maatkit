@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Certain very large queries segfaulted (issue 687).
    * Removed --unique-table-access (issue 675).
 
 2009-10-30: version 0.9.11

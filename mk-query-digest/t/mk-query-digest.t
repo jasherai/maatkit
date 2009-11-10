@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 106;
+use Test::More tests => 107;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -957,7 +957,7 @@ $output = `zcat ../../common/t/samples/slow039.txt.gz | ../mk-query-digest`;
 like(
    $output,
    qr/Query 1:/,
-   'Big INSERT that can segfault fingerprint() (issue 687)'
+   'INSERT that segfaulted fingerprint() (issue 687)'
 );
 
 # #############################################################################

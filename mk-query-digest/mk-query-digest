@@ -1462,7 +1462,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 4969
+# QueryRewriter package 5087
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1557,7 +1557,7 @@ sub fingerprint {
       && return $query;
    $query =~ m/\A\s*(call\s+\S+)\(/i
       && return lc($1); # Warning! $1 used, be careful.
-   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)? INTO .+? VALUES \(.*?\)),\(/i ) {
+   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)? INTO .+? VALUES \(.*?\))\s*,\s*\(/i ) {
       $query = $beginning; # Shorten multi-value INSERT statements ASAP
    }
 
