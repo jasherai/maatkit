@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 123;
+use Test::More tests => 124;
 
 require "../QueryRewriter.pm";
 require '../QueryParser.pm';
@@ -849,6 +849,14 @@ is(
    $qr->fingerprint( load_file('samples/huge_explicit_cols_values.txt') ),
    q{insert into foo (a,b,c,d,e,f,g,h) values(?+)},
    'huge insert with explicit columns before values() (issue 322)',
+);
+
+# Those ^ aren't huge enough.  This one is 1.2M large. 
+my $huge_insert = `zcat samples/slow039.txt.gz | tail -n 1`;
+is(
+   $qr->fingerprint($huge_insert),
+   q{insert into the_universe values(?+)},
+   'truly huge insert (issue 687)'
 );
 
 # #############################################################################
