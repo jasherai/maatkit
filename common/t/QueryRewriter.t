@@ -769,6 +769,15 @@ is(
 );
 
 is(
+   $qr->shorten(
+      "select * from a where b in(1,2,3,4,5,6) and "
+         . "a in(1,2,3,4,5,6,1,2,3,4,5,6)", 1),
+   "select * from a where b in(1 /*... omitted 5 items ...*/ )"
+      . " and a in(1 /*... omitted 11 items ...*/ )",
+   "shorten two IN() lists of numbers",
+);
+
+is(
    $qr->shorten("select * from a", 1),
    "select * from a",
    "Does not shorten strings it does not match",
