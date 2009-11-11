@@ -1,5 +1,7 @@
 Changelog for mk-log-player:
 
+   * Added general log splitting; --type genlog (issue 172).
+
 2009-10-30: version 1.0.2
 
    * --set-vars did not work (issue 597).

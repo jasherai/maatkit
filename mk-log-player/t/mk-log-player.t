@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 14;
+use Test::More tests => 15;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -145,9 +145,9 @@ ok(
 );
 
 
-# #########################################################################
+# #############################################################################
 # Issue 391: Add --pid option to all scripts
-# #########################################################################
+# #############################################################################
 `touch /tmp/mk-script.pid`;
 $output = `../mk-log-player --split Thread_id ../../common/t/samples/binlog001.txt --type binlog --session-files 1  --pid /tmp/mk-script.pid 2>&1`;
 like(
@@ -156,6 +156,21 @@ like(
    'Dies if PID file already exists (issue 391)'
 );
 `rm -rf /tmp/mk-script.pid`;
+
+
+# #############################################################################
+# Issue 172: Make mk-query-digest able to read general logs
+# #############################################################################
+diag(`rm -rf $tmpdir/*`);
+`../mk-log-player --split Thread_id --base-dir $tmpdir ../../common/t/samples/genlog001.txt --type genlog --session-files 1`;
+
+$output = `diff $tmpdir/sessions-1.txt samples/split_genlog001.txt`;
+
+is(
+   $output,
+   '',
+   'Split genlog001.txt'
+);
 
 # #############################################################################
 # Done.
