@@ -97,7 +97,6 @@ sub parse_event {
          } until ( $done );
 
          chomp $arg;
-         $arg .= ';';  # Add ending ; like slowlog events.
          push @properties, 'cmd', 'Query', 'arg', $arg;
          push @properties, 'bytes', length($properties[-1]);
       }
@@ -133,7 +132,7 @@ sub parse_event {
             push @properties, 'db',   $db   if $db;
          }
 
-         push @properties, 'arg', "administrator command: $cmd;";
+         push @properties, 'arg', "administrator command: $cmd";
          push @properties, 'bytes', length($properties[-1]);
       }
 
