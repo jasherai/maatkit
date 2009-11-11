@@ -137,6 +137,10 @@ sub parse_event {
          push @properties, 'bytes', length($properties[-1]);
       }
 
+      # The Query_time attrib is expected by mk-query-digest but
+      # general logs have no Query_time so we fake it.
+      push @properties, 'Query_time', 0;
+
       # Don't dump $event; want to see full dump of all properties,
       # and after it's been cast into a hash, duplicated keys will
       # be gone.
