@@ -55,7 +55,7 @@ sub parse_event {
    my $oktorun_here = 1;
    my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
    my $num_events   = 0;
-
+   my %db_for;
    my $line;
    my $pos_in_log = tell($fh);
    LINE:
@@ -99,6 +99,7 @@ sub parse_event {
          chomp $arg;
          push @properties, 'cmd', 'Query', 'arg', $arg;
          push @properties, 'bytes', length($properties[-1]);
+         push @properties, 'db', $db_for{$thread_id} if $db_for{$thread_id};
       }
       else {
          # If it's not a query it's some admin command.
@@ -120,6 +121,7 @@ sub parse_event {
                push @properties, 'user', $user if $user;
                push @properties, 'host', $host if $host;
                push @properties, 'db',   $db   if $db;
+               $db_for{$thread_id} = $db;
             }
          }
          elsif ( $cmd eq 'Init' ) {
@@ -130,6 +132,7 @@ sub parse_event {
             my ($db) = $arg =~ /(\S+)/;
             MKDEBUG && _d('Init DB:', $db);
             push @properties, 'db',   $db   if $db;
+            $db_for{$thread_id} = $db;
          }
 
          push @properties, 'arg', "administrator command: $cmd";
