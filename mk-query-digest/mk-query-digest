@@ -3201,7 +3201,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogWriter package 4461
+# SlowLogWriter package 5092
 # ###########################################################################
 package SlowLogWriter;
 
@@ -3233,16 +3233,9 @@ sub write {
    }
 
    my $percona_patched = exists $event->{QC_Hit} ? 1 : 0;
-   my $df;  # Decimal/microsecond or integer format.
-   if ( $percona_patched ) {
-      $df = '.6f';
-   }
-   else {
-      $df = 'd';
-   }
 
    printf $fh
-      "# Query_time: %$df  Lock_time: %$df  Rows_sent: %d  Rows_examined: %d\n",
+      "# Query_time: %s  Lock_time: %s  Rows_sent: %d  Rows_examined: %d\n",
       map { $_ || 0 }
          @{$event}{qw(Query_time Lock_time Rows_sent Rows_examined)};
 
@@ -3254,7 +3247,7 @@ sub write {
 
       if ( exists $event->{InnoDB_IO_r_ops} ) {
          printf $fh
-            "#   InnoDB_IO_r_ops: %d  InnoDB_IO_r_bytes: %d  InnoDB_IO_r_wait: %$df\n#   InnoDB_rec_lock_wait: %$df  InnoDB_queue_wait: %$df\n#   InnoDB_pages_distinct: %d\n",
+            "#   InnoDB_IO_r_ops: %d  InnoDB_IO_r_bytes: %d  InnoDB_IO_r_wait: %s\n#   InnoDB_rec_lock_wait: %s  InnoDB_queue_wait: %s\n#   InnoDB_pages_distinct: %d\n",
             map { $_ || 0 }
                @{$event}{qw(InnoDB_IO_r_ops InnoDB_IO_r_bytes InnoDB_IO_r_wait InnoDB_rec_lock_wait InnoDB_queue_wait InnoDB_pages_distinct)};
 
@@ -6418,6 +6411,149 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# GeneralLogParser package 5096
+# ###########################################################################
+package GeneralLogParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   return bless {}, $class;
+}
+
+my $genlog_line_1= qr{
+   \A
+   (?:(\d{6}\s\d{1,2}:\d\d:\d\d))? # Timestamp
+   \s+
+   (?:\s*(\d+))                        # Thread ID
+   \s
+   (\w+)                               # Command
+   \s+
+   (.*)                                # Argument
+   \Z
+}xs;
+
+sub parse_event {
+   my ( $self, $fh, $misc, @callbacks ) = @_;
+   my $oktorun_here = 1;
+   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
+   my $num_events   = 0;
+
+   my $line;
+   my $pos_in_log = tell($fh);
+   LINE:
+   while ( $$oktorun && defined($line = <$fh>) ) {
+      MKDEBUG && _d($line);
+      my ($ts, $thread_id, $cmd, $arg) = $line =~ m/$genlog_line_1/;
+      if ( !($thread_id && $cmd) ) {
+         MKDEBUG && _d('Not start of general log event');
+         next;
+      }
+      my @properties = ('pos_in_log', $pos_in_log, 'ts', $ts,
+         'Thread_id', $thread_id);
+
+      $pos_in_log = tell($fh);
+
+      my $redo = 0;
+      if ( $cmd eq 'Query' ) {
+         my $done = 0;
+         do {
+            $line = <$fh>;
+            if ( $line ) {
+               ($ts, $thread_id, $cmd, undef) = $line =~ m/$genlog_line_1/;
+               if ( $thread_id && $cmd ) {
+                  MKDEBUG && _d('Event done');
+                  $done = 1;
+                  $redo = 1;
+               }
+               else {
+                  MKDEBUG && _d('More arg:', $line);
+                  $arg .= $line;
+               }
+            }
+            else {
+               MKDEBUG && _d('No more lines');
+               $done = 1;
+            }
+         } until ( $done );
+
+         chomp $arg;
+         push @properties, 'cmd', 'Query', 'arg', $arg;
+         push @properties, 'bytes', length($properties[-1]);
+      }
+      else {
+         push @properties, 'cmd', 'Admin';
+
+         if ( $cmd eq 'Connect' ) {
+            if ( $arg =~ m/^Access denied/ ) {
+               $cmd = $arg;
+            }
+            else {
+               my ($user, undef, $db) = $arg =~ /(\S+)/g;
+               my $host;
+               ($user, $host) = split(/@/, $user);
+               MKDEBUG && _d('Connect', $user, '@', $host, 'on', $db);
+
+               push @properties, 'user', $user if $user;
+               push @properties, 'host', $host if $host;
+               push @properties, 'db',   $db   if $db;
+            }
+         }
+         elsif ( $cmd eq 'Init' ) {
+            $cmd = 'Init DB';
+            $arg =~ s/^DB\s+//;
+            my ($db) = $arg =~ /(\S+)/;
+            MKDEBUG && _d('Init DB:', $db);
+            push @properties, 'db',   $db   if $db;
+         }
+
+         push @properties, 'arg', "administrator command: $cmd";
+         push @properties, 'bytes', length($properties[-1]);
+      }
+
+      push @properties, 'Query_time', 0;
+
+      MKDEBUG && _d('Properties of event:', Dumper(\@properties));
+      my $event = { @properties };
+      foreach my $callback ( @callbacks ) {
+         last unless $event = $callback->($event);
+      }
+      ++$num_events;
+
+      if ( $redo ) {
+         MKDEBUG && _d('Redoing');
+         redo;
+      }
+   } # LINE
+
+   return $num_events;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End GeneralLogParser package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -6474,7 +6610,13 @@ sub main {
    # Frequently used options.
    my $review_dsn = $o->get('review'); 
    my @groupby    = @{$o->get('group-by')};
-   my @orderby    = @{$o->get('order-by')};
+   my @orderby;
+   if ( $o->get('type') eq 'genlog' && !$o->got('order-by') ) {
+      @orderby = 'Query_time:cnt';
+   }
+   else { 
+      @orderby = @{$o->get('order-by')};
+   }
 
    if ( !$o->get('help') ) {
       if ( $review_dsn
@@ -7039,6 +7181,7 @@ sub main {
       my $misc   = { oktorun => \$oktorun };
       my $parser = $o->get('type') eq 'slowlog'   ? new SlowLogParser()
                  : $o->get('type') eq 'binlog'    ? new BinaryLogParser()
+                 : $o->get('type') eq 'genlog'    ? new GeneralLogParser()
                  : $o->get('type') eq 'tcpdump'   ? new TcpdumpParser()
                  : $o->get('type') eq 'memcached' ? new TcpdumpParser()
                  : die("Unknown type " . $o->get('type'));
@@ -8411,6 +8554,10 @@ line in the query analysis report.  So any attribute and C<cnt> should yield
 the same report wherein queries are sorted by the number of times they
 appear.
 
+When parsing general logs (L<"--type"> C<genlog>), the default L<"--order-by">
+becomes C<Query_time:cnt>.  General logs do not report query times so only
+the C<cnt> aggregate makes sense because all query times are zero.
+
 If you specify an attribute that doesn't exist in the events, then
 mk-query-digest falls back to the default C<Query_time:sum> and prints a notice
 at the beginning of the report for each query class.
@@ -8799,6 +8946,12 @@ The type of input to parse (default slowlog).  The permitted types are
 =item binlog
 
 Parse a binary log file.
+
+=item genlog
+
+Parse a general log file.  General logs lack a lot of L<"ATTRIBUTES">,
+notably C<Query_time>.  The default L<"--orer-by"> for general logs
+changes to C<Query_time:cnt>.
 
 =item slowlog
 
