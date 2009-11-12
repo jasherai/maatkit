@@ -153,10 +153,14 @@ sub _packet_from_client {
 sub make_event {
    my ( $self, $session, $packet ) = @_;
    die "Event has no attributes" unless scalar keys %{$session->{attribs}};
-   MKDEBUG && _d('Event started at', $session->{attribs}->{ts},
-      'finished at', $packet->{ts});
+   die "Query has no arg attribute" unless $session->{attribs}->{arg};
+   my $start_request = $session->{start_request} || 0;
+   my $start_reply   = $session->{start_reply}   || 0;
+   my $end_reply     = $session->{end_reply}     || 0;
+   MKDEBUG && _d('Event times:', $start_request, $start_reply, $end_reply);
    my $event = {
-      Query_time => $self->timestamp_diff($session->{attribs}->{ts}, $packet->{ts}),
+      Query_time    => $self->timestamp_diff($start_request, $start_reply),
+      Transmit_time => $self->timestamp_diff($start_reply, $end_reply),
    };
    @{$event}{keys %{$session->{attribs}}} = values %{$session->{attribs}};
    return $event;

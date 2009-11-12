@@ -66,12 +66,11 @@ sub _packet_from_server {
       # First line should be: version  code phrase
       # E.g.:                 HTTP/1.1  200 OK
       my ($version, $code, $phrase) = $line1 =~ m/(\S+)/g;
-      $session->{attribs}->{response} = $code;
-      MKDEBUG && _d('Reponse code for last',
-         $session->{attribs}->{request}, $session->{attribs}->{page},
-         'request:', $session->{attribs}->{response});
+      $session->{attribs}->{Status_code} = $code;
+      MKDEBUG && _d('Status code for last', $session->{attribs}->{arg},
+         'request:', $session->{attribs}->{Status_code});
 
-      $session->{response_start} = $packet->{ts};
+      $session->{start_reply} = $packet->{ts} unless $session->{start_reply};
 
       my $content_len = $content ? length $content : 0;
       MKDEBUG && _d('Got', $content_len, 'bytes of content');
@@ -92,10 +91,8 @@ sub _packet_from_server {
             'bytes left');
          return;
       }
-      MKDEBUG && _d('Contents received; started at', $session->{response_start},
-         'finished at', $packet->{ts});
-      $session->{attribs}->{Transmit_time}
-         = $self->timestamp_diff($session->{response_start}, $packet->{ts}),
+      MKDEBUG && _d('Contents received; started at', $session->{start_response},
+         'finished at', $packet->{ts}); 
    }
    else {
       # TODO:
@@ -104,6 +101,7 @@ sub _packet_from_server {
    }
 
    MKDEBUG && _d('Creating event, deleting session');
+   $session->{end_reply}   = $packet->{ts};
    my $event = $self->make_event($session, $packet);
    delete $self->{sessions}->{$session->{client}}; # http is stateless!
    $session->{raw_packets} = []; # Avoid keeping forever
@@ -137,17 +135,23 @@ sub _packet_from_client {
       # First line should be: request page      version
       # E.g.:                 GET     /foo.html HTTP/1.1
       my ($request, $page, $version) = $line1 =~ m/(\S+)/g;
+      if ( !$request || !$page ) {
+         MKDEBUG && _d("Didn't get a request or page:", $request, $page);
+         return;
+      }
       $request = lc $request;
-      MKDEBUG && _d('Request:', $request);
+      my $arg = "$request $page";
+      MKDEBUG && _d('arg:', $arg);
+
       if ( $request eq 'get' ) {
-         @{$session->{attribs}}{qw(request page)} = ($request, $page);
-         MKDEBUG && _d('Page:', $page);
+         @{$session->{attribs}}{qw(arg)} = ($arg);
       }
       else {
          MKDEBUG && _d("Don't know how to handle a", $request, "request");
          return;
       }
 
+      $session->{start_request}         = $packet->{ts};
       $session->{attribs}->{host}       = $packet->{src_host};
       $session->{attribs}->{pos_in_log} = $packet->{pos_in_log};
       $session->{attribs}->{ts}         = $packet->{ts};
@@ -177,8 +181,8 @@ sub _parse_header {
       }
       if ( $val =~ m/^Host/i ) {
          # The "host" attribute is already taken, so we call this "domain".
-         ($session->{attribs}->{domain}) = $val =~ /: (\S+)/;
-         MKDEBUG && _d('Saved Host:', ($session->{attribs}->{domain}));
+         ($session->{attribs}->{Virtual_host}) = $val =~ /: (\S+)/;
+         MKDEBUG && _d('Saved Host:', ($session->{attribs}->{Virtual_host}));
       }
    }
    return $line1, $content;
