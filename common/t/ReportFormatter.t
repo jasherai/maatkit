@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -65,6 +65,32 @@ is(
 # short long long long long long long long long long long long long long long long long long long
 ",
    'Truncate header underlining to line width'
+);
+
+
+# Make sure header labels are always left justified.
+$rf = new ReportFormatter(
+   line_width       => 74,
+   long_last_column => 1,
+);
+$rf->set_columns(
+   { name => 'Rank',          right_justify => 1, },
+   { name => 'Query ID',                          },
+   { name => 'Response time', right_justify => 1, },
+   { name => 'Calls',         right_justify => 1, },
+   { name => 'R/Call',        right_justify => 1, },
+   { name => 'Item',          },
+);
+$rf->add_line(
+   '123456789', '0x31DA25F95494CA95', '0.1494 99.9%', '1', '0.1494', 'SHOW');
+
+is(
+   $rf->get_report(),
+"# Rank      Query ID           Response time Calls R/Call Item
+# ========= ================== ============= ===== ====== ====
+# 123456789 0x31DA25F95494CA95  0.1494 99.9%     1 0.1494 SHOW
+",
+   'Header labels are always left justified'
 );
 
 # #############################################################################

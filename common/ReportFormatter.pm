@@ -125,7 +125,9 @@ sub get_report {
 
    push @lines, sprintf "${p}$self->{title}" if $self->{title};
 
-   push @lines, sprintf $fmt, map { $_->{name} } @{$self->{cols}};
+   # This ensures that the header labels are always left justified.
+   (my $hdr_fmt = $fmt) =~ s/%([^-])/%-$1/g;
+   push @lines, sprintf $hdr_fmt, map { $_->{name} } @{$self->{cols}};
 
    if ( $self->{underline_header} ) {
       my $underline_len = 0;
