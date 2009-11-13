@@ -23,6 +23,11 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+eval {
+   require IO::Uncompress::Inflate;
+   IO::Uncompress::Inflate->import(qw(inflate $InflateError));
+};
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
@@ -48,10 +53,114 @@ sub new {
    return bless $self, $class;
 }
 
-# The packet arg should be a hashref from TcpdumpParser::parse_event().
-# misc is a placeholder for future features.
 sub parse_packet {
    my ( $self, $packet, $misc ) = @_;
+
+   # Save each session's packets until its closed by the client.
+   # This allows us to ensure that packets are processed in order.
+   if ( $self->{buffer} ) {
+      my ($packet_from, $session) = $self->_get_session($packet);
+      if ( $packet->{data_len} ) {
+         if ( $packet_from eq 'client' ) {
+            push @{$session->{client_packets}}, $packet;
+            MKDEBUG && _d('Saved client packet');
+         }
+         else {
+            push @{$session->{server_packets}}, $packet;
+            MKDEBUG && _d('Saved server packet');
+         }
+      }
+
+      # Process the session's packets when the client closes the connection.
+      return unless ($packet_from eq 'client')
+                    && ($packet->{fin} || $packet->{rst});
+
+      my $event;
+      map {
+         $event = $self->_parse_packet($_, $misc);
+      } sort { $a->{seq} <=> $b->{seq} }
+      @{$session->{client_packets}};
+      
+      map {
+         $event = $self->_parse_packet($_, $misc);
+      } sort { $a->{seq} <=> $b->{seq} }
+      @{$session->{server_packets}};
+
+      return $event;
+   }
+
+   if ( $packet->{data_len} == 0 ) {
+      # Return early if there's no TCP data.  These are usually ACK packets, but
+      # they could also be FINs in which case, we should close and delete the
+      # client's session.
+      MKDEBUG && _d('No TCP data');
+      return;
+   }
+
+   return $self->_parse_packet($packet, $misc);
+}
+
+# The packet arg should be a hashref from TcpdumpParser::parse_event().
+# misc is a placeholder for future features.
+sub _parse_packet {
+   my ( $self, $packet, $misc ) = @_;
+
+   my ($packet_from, $session) = $self->_get_session($packet);
+
+   # Save raw packets to dump later in case something fails.
+   push @{$session->{raw_packets}}, $packet->{raw_packet}
+      unless $misc->{recurse};
+
+   if ( $session->{buff} ) {
+      # Previous packets were not complete so append this data
+      # to what we've been buffering.
+      $session->{buff_left} -= $packet->{data_len};
+      if ( $session->{buff_left} > 0 ) {
+         MKDEBUG && _d('Added data to buff; expecting', $session->{buff_left},
+            'more bytes');
+         return;
+      }
+
+      MKDEBUG && _d('Got all data; buff left:', $session->{buff_left});
+      $packet->{data}       = $session->{buff} . $packet->{data};
+      $packet->{data_len}  += length $session->{buff};
+      $session->{buff}      = '';
+      $session->{buff_left} = 0;
+   }
+
+   # Finally, parse the packet and maybe create an event.
+   $packet->{data} = pack('H*', $packet->{data}) unless $misc->{recurse};
+   my $event;
+   if ( $packet_from eq 'server' ) {
+      $event = $self->_packet_from_server($packet, $session, $misc);
+   }
+   elsif ( $packet_from eq 'client' ) {
+      $event = $self->_packet_from_client($packet, $session, $misc);
+   }
+   else {
+      # Should not get here.
+      die 'Packet origin unknown';
+   }
+
+   if ( $session->{out_of_order} ) {
+      MKDEBUG && _d('Session packets are out of order');
+      push @{$session->{packets}}, $packet;
+      if ( $session->{have_all_packets} ) {
+         MKDEBUG && _d('Have all packets; ordering and processing');
+         delete $session->{out_of_order};
+         delete $session->{have_all_packets};
+         map {
+            $event = $self->_parse_packet($_, { recurse => 1 });
+         } sort { $a->{seq} <=> $b->{seq} } @{$session->{packets}};
+      }
+   }
+
+   MKDEBUG && _d('Done with packet; event:', Dumper($event));
+   return $event;
+}
+
+sub _get_session {
+   my ( $self, $packet ) = @_;
 
    my $src_host = "$packet->{src_host}:$packet->{src_port}";
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
@@ -93,50 +202,7 @@ sub parse_packet {
    };
    my $session = $self->{sessions}->{$client};
 
-   # Return early if there's no TCP data.  These are usually ACK packets, but
-   # they could also be FINs in which case, we should close and delete the
-   # client's session.
-   if ( $packet->{data_len} == 0 ) {
-      MKDEBUG && _d('No TCP data');
-      return;
-   }
-
-   # Save raw packets to dump later in case something fails.
-   push @{$session->{raw_packets}}, $packet->{raw_packet};
-
-   if ( $session->{buff} ) {
-      # Previous packets were not complete so append this data
-      # to what we've been buffering.
-      $session->{buff_left} -= $packet->{data_len};
-      if ( $session->{buff_left} > 0 ) {
-         MKDEBUG && _d('Added data to buff; expecting', $session->{buff_left},
-            'more bytes');
-         return;
-      }
-
-      MKDEBUG && _d('Got all data; buff left:', $session->{buff_left});
-      $packet->{data}       = $session->{buff} . $packet->{data};
-      $packet->{data_len}  += length $session->{buff};
-      $session->{buff}      = '';
-      $session->{buff_left} = 0;
-   }
-
-   # Finally, parse the packet and maybe create an event.
-   $packet->{data} = pack('H*', $packet->{data});
-   my $event;
-   if ( $packet_from eq 'server' ) {
-      $event = $self->_packet_from_server($packet, $session, $misc);
-   }
-   elsif ( $packet_from eq 'client' ) {
-      $event = $self->_packet_from_client($packet, $session, $misc);
-   }
-   else {
-      # Should not get here.
-      die 'Packet origin unknown';
-   }
-
-   MKDEBUG && _d('Done with packet; event:', Dumper($event));
-   return $event;
+   return $packet_from, $session;
 }
 
 sub _packet_from_server {
@@ -220,6 +286,35 @@ sub timestamp_diff {
    else { # Assume only one day boundary has been crossed, no DST, etc
       return sprintf '%.6f', ( 86_400 - $ssecs ) + $esecs;
    }
+}
+
+# Takes a scalarref to a hex string of compressed data.
+# Returns a scalarref to a hex string of the uncompressed data.
+# The given hex string of compressed data is not modified.
+sub uncompress_data {
+   my ( $self, $data, $len ) = @_;
+   die "I need data" unless $data;
+   die "I need a len argument" unless $len;
+   die "I need a scalar reference to data" unless ref $data eq 'SCALAR';
+   MKDEBUG && _d('Uncompressing data');
+   our $InflateError;
+
+   # Pack hex string into compressed binary data.
+   my $comp_bin_data = pack('H*', $$data);
+
+   # Uncompress the compressed binary data.
+   my $uncomp_bin_data = '';
+   my $z = new IO::Uncompress::Inflate(
+      \$comp_bin_data
+   ) or die "IO::Uncompress::Inflate failed: $InflateError";
+   my $status = $z->read(\$uncomp_bin_data, $len)
+      or die "IO::Uncompress::Inflate failed: $InflateError";
+
+   # Unpack the uncompressed binary data back into a hex string.
+   # This is the original MySQL packet(s).
+   my $uncomp_data = unpack('H*', $uncomp_bin_data);
+
+   return \$uncomp_data;
 }
 
 sub _d {

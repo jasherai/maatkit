@@ -56,6 +56,9 @@ is_deeply(
       tcp_hlen   => 8,
       dgram_len  => 353,
       data_len   => 301,
+      syn        => 0,
+      fin        => 0,
+      rst        => 0,
       data => join('', qw(
          2901 0000 0353 454c 4543 5420
          6469 7374 696e 6374 2074 702e 6964 2c20
@@ -130,6 +133,9 @@ run_test(
          tcp_hlen    => 8,
          dgram_len   => 89,
          data_len    => 37,
+         syn         => 0,
+         fin         => 0,
+         rst         => 0,
          data        => join('', qw(
             2100 0000 0373 656c 6563 7420
             2268 656c 6c6f 2077 6f72 6c64 2220 6173
@@ -148,6 +154,9 @@ run_test(
          tcp_hlen    => 8,
          dgram_len   => 125,
          data_len    => 73,
+         syn         => 0,
+         fin         => 0,
+         rst         => 0,
          data          => join('', qw(
             0100 0001 011e 0000 0203 6465
             6600 0000 0867 7265 6574 696e 6700 0c08
@@ -198,6 +207,9 @@ run_test(
          tcp_hlen    => 5,
          dgram_len   => 66,
          data_len    => 26,
+         syn         => 0,
+         fin         => 0,
+         rst         => 0,
          data        => join('', qw(
             6765 7420 323a 6f70 7469 6f6e 733a 616c 6c6f 7074 696f 6e73 0d0a
          )),

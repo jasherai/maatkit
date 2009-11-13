@@ -134,6 +134,8 @@ sub _parse_packet {
    my $seq = hex(substr($data, ($ip_hlen + 1) * 8, 8));
    my $ack = hex(substr($data, ($ip_hlen + 2) * 8, 8));
 
+   my $flags = hex(substr($data, (($ip_hlen + 3) * 8) + 2, 2));
+
    # Throw away the IP and TCP headers.
    $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
 
@@ -141,6 +143,9 @@ sub _parse_packet {
       ts        => $ts,
       seq       => $seq,
       ack       => $ack,
+      fin       => $flags & 0x01,
+      syn       => $flags & 0x02,
+      rst       => $flags & 0x04,
       src_host  => $src_host,
       src_port  => $src_port,
       dst_host  => $dst_host,

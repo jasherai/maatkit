@@ -58,11 +58,43 @@ sub _packet_from_server {
       return;
    }
 
+   if ( $session->{out_of_order} ) {
+      # We're waiting for the header so we can get the content length.
+      # Once we know this, we can determine how many out of order packets
+      # we need to complete the request, then order them and re-process.
+      my ($line1, $content);
+      if ( !$session->{have_header} ) {
+         ($line1, $content) = $self->_parse_header(
+            $session, $packet->{data}, $packet->{data_len});
+      }
+      if ( $line1 ) {
+         $session->{have_header} = 1;
+         $packet->{content_len}  = length $content;
+         MKDEBUG && _d('Got out of order header with',
+            $packet->{content_len}, 'bytes of content');
+      }
+      my $have_len = $packet->{content_len} || $packet->{data_len};
+      map { $have_len += $_->{data_len} }
+         @{$session->{packets}};
+      $session->{have_all_packets}
+         = 1 if $session->{attribs}->{bytes}
+                && $have_len >= $session->{attribs}->{bytes};
+      MKDEBUG && _d('Have', $have_len, 'of', $session->{attribs}->{bytes});
+      return;
+   }
+
    # Assume that the server is returning only one value. 
    # TODO: make it handle multiple.
    if ( $session->{state} eq 'awaiting reply' ) {
       MKDEBUG && _d('State:', $session->{state});
-      my ($line1, $content) = $self->_parse_header($session, $packet->{data});
+      my ($line1, $content) = $self->_parse_header($session, $packet->{data}, $packet->{data_len});
+      if ( !$line1 ) {
+         $session->{out_of_order}     = 1;
+         $session->{have_all_packets} = 0;
+         $session->{state}            = 'awaiting reply';
+         return;
+      }
+      return unless $line1;
       # First line should be: version  code phrase
       # E.g.:                 HTTP/1.1  200 OK
       my ($version, $code, $phrase) = $line1 =~ m/(\S+)/g;
@@ -91,8 +123,7 @@ sub _packet_from_server {
             'bytes left');
          return;
       }
-      MKDEBUG && _d('Contents received; started at', $session->{start_response},
-         'finished at', $packet->{ts}); 
+      MKDEBUG && _d('Contents received');
    }
    else {
       # TODO:
@@ -104,7 +135,6 @@ sub _packet_from_server {
    $session->{end_reply}   = $packet->{ts};
    my $event = $self->make_event($session, $packet);
    delete $self->{sessions}->{$session->{client}}; # http is stateless!
-   $session->{raw_packets} = []; # Avoid keeping forever
    return $event;
 }
 
@@ -131,7 +161,7 @@ sub _packet_from_client {
    if ( !$session->{state} ) {
       MKDEBUG && _d('Session state: ', $session->{state});
       $session->{state} = 'awaiting reply';
-      my ($line1, undef) = $self->_parse_header($session, $packet->{data});
+      my ($line1, undef) = $self->_parse_header($session, $packet->{data}, $packet->{data_len});
       # First line should be: request page      version
       # E.g.:                 GET     /foo.html HTTP/1.1
       my ($request, $page, $version) = $line1 =~ m/(\S+)/g;
@@ -165,11 +195,13 @@ sub _packet_from_client {
 }
 
 sub _parse_header {
-   my ( $self, $session, $data ) = @_;
+   my ( $self, $session, $data, $len, $no_recurse ) = @_;
    die "I need data" unless $data;
    my ($header, $content)    = split(/\r\n\r\n/, $data);
    my ($line1, $header_vals) = $header  =~ m/\A(.*?)\r\n(.+)?/s;
    MKDEBUG && _d('HTTP header:', $line1);
+   return unless $line1;
+
    my @headers;
    foreach my $val ( split(/\r\n/, $header_vals) ) {
       last unless $val;
@@ -178,6 +210,10 @@ sub _parse_header {
       if ( $val =~ m/^Content-Length/i ) {
          ($session->{attribs}->{bytes}) = $val =~ /: (\d+)/;
          MKDEBUG && _d('Saved Content-Length:', $session->{attribs}->{bytes});
+      }
+      if ( $val =~ m/Content-Encoding/i ) {
+         ($session->{compressed}) = $val =~ /: (\w+)/;
+         MKDEBUG && _d('Saved Content-Encoding:', $session->{compressed});
       }
       if ( $val =~ m/^Host/i ) {
          # The "host" attribute is already taken, so we call this "domain".
