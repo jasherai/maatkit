@@ -156,14 +156,8 @@ sub _packet_from_client {
 
    my $event;
    if ( ($session->{state} || '') =~ m/awaiting / ) {
-      # Whoa, we expected something from the server, not the client.  Fire an
-      # INTERRUPTED with what we've got, and create a new session.
-      MKDEBUG && _d("Expected data from the client, looks like interrupted");
-      $session->{res} = 'INTERRUPTED';
-      $event = $self->make_event($session, $packet);
-      my $client = $session->{client};
-      delete @{$session}{keys %$session};
-      $session->{client} = $client;
+      MKDEBUG && _d('More client headers:', $packet->{data});
+      return;
    }
 
    if ( !$session->{state} ) {
