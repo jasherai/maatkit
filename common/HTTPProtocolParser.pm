@@ -175,7 +175,7 @@ sub _packet_from_client {
       my $arg = "$request $vh$page";
       MKDEBUG && _d('arg:', $arg);
 
-      if ( $request eq 'get' ) {
+      if ( $request eq 'get' || $request eq 'post' ) {
          @{$session->{attribs}}{qw(arg)} = ($arg);
       }
       else {

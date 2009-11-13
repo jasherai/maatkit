@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 14;
 
 require '../TcpdumpParser.pm';
 require '../ProtocolParser.pm';
@@ -272,6 +272,24 @@ run_test({
          bytes          => 2706737,
          host           => '192.168.200.110',
          pos_in_log     => 640,
+      }
+   ],
+});
+
+# A simple POST.
+$protocol = new HTTPProtocolParser();
+run_test({
+   file   => 'samples/http_tcpdump008.txt',
+   result => [
+      {  ts             => '2009-11-13 10:53:48.349465',
+         Query_time     => '0.030740',
+         Status_code    => '200',
+         Transmit_time  => '0.000000',
+         Virtual_host   => 'www.google.com',
+         arg            => 'post www.google.com/finance/qs/channel?VER=6&RID=481&CVER=1&zx=5xccsz-eg9chk&t=1',
+         bytes          => 54,
+         host           => '192.168.200.110',
+         pos_in_log     => 0,
       }
    ],
 });
