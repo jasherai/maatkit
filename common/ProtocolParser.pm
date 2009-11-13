@@ -219,9 +219,6 @@ sub _packet_from_client {
    die "Don't call parent class _packet_from_client()";
 }
 
-# The event is not yet suitable for mk-query-digest.  It lacks, for example,
-# an arg and fingerprint attribute.  The event should be passed to
-# HTTPEvent::make_event() to transform it.
 sub make_event {
    my ( $self, $session, $packet ) = @_;
    die "Event has no attributes" unless scalar keys %{$session->{attribs}};
@@ -335,5 +332,5 @@ sub _d {
 1;
 
 # ###########################################################################
-# End HTTPProtocolParser package
+# End ProtocolParser package
 # ###########################################################################
