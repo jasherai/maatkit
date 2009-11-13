@@ -1462,7 +1462,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5089
+# QueryRewriter package 5111
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1648,9 +1648,21 @@ sub _distill_tables {
 sub distill {
    my ( $self, $query, %args ) = @_;
 
-   my ($verbs, $table)  = $self->_distill_verbs($query, %args);
-   my @tables           = $self->_distill_tables($query, $table, %args);
-   $query               = join(q{ }, $verbs, @tables);
+   if ( $args{generic} ) {
+      my ($cmd, $arg) = $query =~ m/^(\S+)\s+(\S+)/;
+      return '' unless $cmd;
+      $query = (uc $cmd) . ($arg ? " $arg" : '');
+   }
+   else {
+      my ($verbs, $table)  = $self->_distill_verbs($query, %args);
+      my @tables           = $self->_distill_tables($query, $table, %args);
+      $query               = join(q{ }, $verbs, @tables);
+   }
+   
+   if ( $args{trf} ) {
+      $query = $args{trf}->($query, %args);
+   }
+
    return $query;
 }
 
@@ -7459,13 +7471,25 @@ sub main {
       };
    }
 
+   my %distill_args;
+   if ( $o->get('type') eq 'memcached' || $o->get('type') eq 'http' ) {
+      $distill_args{generic} = 1;
+      if ( $o->get('type') eq 'http' ) {
+         # Remove stuff after url.
+         $distill_args{trf} = sub {
+            my ( $query ) = @_;
+            $query =~ s/(\S+ \S+?)(?:[?;].+)/$1/;
+            return $query;
+         };
+      }
+   }
    if ( grep { $_ eq 'distill' } @groupby ) {
       push @callbacks, sub {
          my ( $event ) = @_;
          MKDEBUG && _d('callback: distill');
          my $group_by_val = $event->{arg};
          return 0 unless defined $group_by_val;
-         $event->{distill} = $qr->distill($group_by_val);
+         $event->{distill} = $qr->distill($group_by_val, %distill_args);
          MKDEBUG && !$event->{distill} && _d('Cannot distill', $event->{arg});
          return $event;
       };
@@ -7903,7 +7927,8 @@ sub main {
                rank   => $rank,
                r      => $stats->{Query_time}->{sum},
                cnt    => $stats->{Query_time}->{cnt},
-               sample => $groupby eq 'fingerprint' ? $qr->distill($samp_query)
+               sample => $groupby eq 'fingerprint' ? $qr->distill($samp_query,
+                                                                  %distill_args)
                                                    : $item,
                id     => $groupby eq 'fingerprint' ? make_checksum($item)
                                                    : '',
