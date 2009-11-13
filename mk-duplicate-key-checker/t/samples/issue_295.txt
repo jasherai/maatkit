@@ -3,6 +3,9 @@
 # ########################################################################
 
 # Key b_a ends with a prefix of the clustered index
+# Key definitions:
+#   
+#   
 # Column types:
 #	  `b` int(11) NOT NULL
 #	  `a` int(11) NOT NULL

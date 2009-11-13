@@ -16,6 +16,21 @@ my $dbh = $sb->get_dbh_for('master')
 my $cnf = '/tmp/12345/my.sandbox.cnf'; # TODO: use $sb
 my $cmd = "perl ../mk-duplicate-key-checker -F $cnf";
 
+
+# Returns true (1) if there's no difference between the
+# cmd's output and the expected output.
+sub no_diff {
+   my ( $cmd, $expected_output ) = @_;
+   `$cmd > /tmp/mk-output.txt`;
+   # Uncomment this line to update the $expected_output files when there is a
+   # fix.
+   # `cat /tmp/mk-output.txt > $expected_output`;
+   my $retval = system("diff /tmp/mk-output.txt $expected_output");
+   `rm -rf /tmp/mk-output.txt`;
+   $retval = $retval >> 8; 
+   return !$retval;
+}
+
 my $output = `$cmd -d mysql -t columns_priv -v`;
 like($output,
    qr/PRIMARY \(`Host`,`Db`,`User`,`Table_name`,`Column_name`\)/,
@@ -28,26 +43,41 @@ is(`$cmd -d test --nosummary`, '', 'No dupes on clean sandbox');
 $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', '../../common/t/samples/dupe_key.sql', 'test');
 
-$output = `$cmd -d test | diff samples/basic_output.txt -`;
-is($output, '', 'Default output');
+ok(
+   no_diff("$cmd -d test", 'samples/basic_output.txt'),
+   'Default output'
+);
 
-$output = `$cmd -d test --nosql | diff samples/nosql_output.txt -`;
-is($output, '', '--nosql');
+ok(
+   no_diff("$cmd -d test --nosql", 'samples/nosql_output.txt'),
+   '--nosql'
+);
 
-$output = `$cmd -d test --nosummary | diff samples/nosummary_output.txt -`;
-is($output, '', '--nosummary');
+ok(
+   no_diff("$cmd -d test --nosummary", 'samples/nosummary_output.txt'),
+   '--nosummary'
+);
 
 $sb->load_file('master', '../../common/t/samples/uppercase_names.sql', 'test');
-$output = `$cmd -d test -t UPPER_TEST | diff samples/uppercase_names.txt -`;
-is($output, '', 'Issue 306 crash on uppercase column names');
+
+ok(
+   no_diff("$cmd -d test -t UPPER_TEST", 'samples/uppercase_names.txt'),
+   'Issue 306 crash on uppercase column names'
+);
 
 $sb->load_file('master', '../../common/t/samples/issue_269-1.sql', 'test');
-$output = `$cmd -d test -t a | diff samples/issue_269.txt -`;
-is($output, '', 'No dupes for issue 269');
+
+ok(
+   no_diff("$cmd -d test -t a", 'samples/issue_269.txt'),
+   'No dupes for issue 269'
+);
 
 $sb->wipe_clean($dbh);
-$output = `$cmd -d test | diff samples/nonexistent_db.txt -`;
-is($output, '', 'No results for nonexistent db');
+
+ok(
+   no_diff("$cmd -d test", 'samples/nonexistent_db.txt'),
+   'No results for nonexistent db'
+);
 
 # #############################################################################
 # Issue 298: mk-duplicate-key-checker crashes
@@ -60,16 +90,19 @@ unlike($output, qr/Use of uninitialized var/, 'Does not crash on undef var');
 # #############################################################################
 $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', 'samples/issue_331.sql', 'test');
-$output = `$cmd -d issue_331 | diff samples/issue_331.txt -`;
-is($output, '', 'Issue 331 crash on fks');
+ok(
+   no_diff("$cmd -d issue_331", 'samples/issue_331.txt'),
+   'Issue 331 crash on fks'
+);
 
 # #############################################################################
 # Issue 295: Enhance rules for clustered keys in mk-duplicate-key-checker
 # #############################################################################
 $sb->load_file('master', 'samples/issue_295.sql', 'test');
-$output = `$cmd -d issue_295 | diff samples/issue_295.txt -`;
-is($output, '', "Shorten, not remove, clustered dupes");
-
+ok(
+   no_diff("$cmd -d issue_295", 'samples/issue_295.txt'),
+   "Shorten, not remove, clustered dupes"
+);
 
 # #########################################################################
 # Issue 391: Add --pid option to all scripts

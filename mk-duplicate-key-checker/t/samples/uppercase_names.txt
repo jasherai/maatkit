@@ -3,6 +3,9 @@
 # ########################################################################
 
 # A is a duplicate of PRIMARY
+# Key definitions:
+#   KEY `A` (`A`)
+#   PRIMARY KEY  (`A`),
 # Column types:
 #	  `a` int(11) NOT NULL default '0'
 # To remove this duplicate index, execute:

@@ -142,7 +142,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4931
+# TableParser package 5115
 # ###########################################################################
 package TableParser;
 
@@ -461,6 +461,7 @@ sub get_fks {
          parent_tbl     => $parent,
          parent_colnames=> $parent_cols,
          parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
+         ddl            => $fk,
       };
    }
 
@@ -2354,7 +2355,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DuplicateKeyFinder package 4965
+# DuplicateKeyFinder package 5115
 # ###########################################################################
 package DuplicateKeyFinder;
 
@@ -2477,8 +2478,10 @@ sub get_duplicate_fks {
             my $dupe = {
                key               => $fks[$j]->{name},
                cols              => [ @{$fks[$j]->{cols}} ],
+               ddl               => $fks[$j]->{ddl},
                duplicate_of      => $fks[$i]->{name},
                duplicate_of_cols => [ @{$fks[$i]->{cols}} ],
+               duplicate_of_ddl  => $fks[$i]->{ddl},
                reason            =>
                     "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{colnames}) "
                   . "REFERENCES $fks[$j]->{parent_tbl} "
@@ -2578,8 +2581,10 @@ sub remove_prefix_duplicates {
             my $dupe = {
                key               => $right_name,
                cols              => $right_keys->[$right_index]->{real_cols},
+               ddl               => $right_keys->[$right_index]->{ddl},
                duplicate_of      => $left_name,
                duplicate_of_cols => $left_keys->[$left_index]->{real_cols},
+               duplicate_of_ddl  => $left_keys->[$left_index]->{ddl},
                reason            => $reason,
                dupe_type         => $exact_dupe ? 'exact' : 'prefix',
             };
@@ -3326,6 +3331,10 @@ sub print_duplicate_key {
 
    $dupe->{reason} =~ s/\n/\n# /g;
    print "# $dupe->{reason}\n";
+
+   print "# Key definitions:\n";
+   print "#   " . ($dupe->{ddl} || '') . "\n";
+   print "#   " . ($dupe->{duplicate_of_ddl} || '') . "\n";
 
    print "# Column types:\n";
    my %seen;  # print each column only once

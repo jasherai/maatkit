@@ -3,6 +3,9 @@
 # ########################################################################
 
 # FOREIGN KEY fk_1 (`id`) REFERENCES `issue_331`.`issue_331_t1` (`t1_id`) is a duplicate of FOREIGN KEY fk_2 (`id`) REFERENCES `issue_331`.`issue_331_t1` (`t1_id`)
+# Key definitions:
+#   CONSTRAINT `fk_1` FOREIGN KEY (`id`) REFERENCES `issue_331_t1` (`t1_id`)
+#   CONSTRAINT `fk_2` FOREIGN KEY (`id`) REFERENCES `issue_331_t1` (`t1_id`)
 # Column types:
 #	  `id` bigint(20) NOT NULL default '0'
 # To remove this duplicate foreign key, execute:
