@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Added key definitions to report (issue 693).
+
 2009-10-30: version 1.2.8
 
    * Printing duplicate key with prefixed column caused crash (issue 663).
