@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 125;
+use Test::More tests => 129;
 
 require "../QueryRewriter.pm";
 require '../QueryParser.pm';
@@ -839,6 +839,31 @@ is(
    $qr->distill('truncate table foo'),
    'TRUNCATE TABLE foo',
    'distills truncate table'
+);
+
+# Test generic distillation for memcached, http, etc.
+my $trf = sub {
+   my ( $query ) = @_;
+   $query =~ s/(\S+ \S+?)(?:[?;].+)/$1/;
+   return $query;
+};
+
+is(
+   $qr->distill('get percona.com/', generic => 1, trf => $trf),
+   'GET percona.com/',
+   'generic distill HTTP get'
+);
+
+is(
+   $qr->distill('get percona.com/page.html?some=thing', generic => 1, trf => $trf),
+   'GET percona.com/page.html',
+   'generic distill HTTP get with args'
+);
+
+is(
+   $qr->distill('put percona.com/contacts.html', generic => 1, trf => $trf),
+   'PUT percona.com/contacts.html',
+   'generic distill HTTP put'
 );
 
 # #############################################################################

@@ -252,14 +252,28 @@ sub _distill_tables {
 sub distill {
    my ( $self, $query, %args ) = @_;
 
-   # _distill_verbs() may return a table if it's a special statement
-   # like TRUNCATE TABLE foo.  _distill_tables() handles some but not
-   # all special statements so we pass it this special table in case
-   # it's a statement it can't handle.  If it can handle it, it will
-   # eliminate any duplicate tables.
-   my ($verbs, $table)  = $self->_distill_verbs($query, %args);
-   my @tables           = $self->_distill_tables($query, $table, %args);
-   $query               = join(q{ }, $verbs, @tables);
+   if ( $args{generic} ) {
+      # Do a generic distillation which returns the first two words
+      # of a simple "cmd arg" query, like memcached and HTTP stuff.
+      my ($cmd, $arg) = $query =~ m/^(\S+)\s+(\S+)/;
+      return '' unless $cmd;
+      $query = (uc $cmd) . ($arg ? " $arg" : '');
+   }
+   else {
+      # _distill_verbs() may return a table if it's a special statement
+      # like TRUNCATE TABLE foo.  _distill_tables() handles some but not
+      # all special statements so we pass it this special table in case
+      # it's a statement it can't handle.  If it can handle it, it will
+      # eliminate any duplicate tables.
+      my ($verbs, $table)  = $self->_distill_verbs($query, %args);
+      my @tables           = $self->_distill_tables($query, $table, %args);
+      $query               = join(q{ }, $verbs, @tables);
+   }
+   
+   if ( $args{trf} ) {
+      $query = $args{trf}->($query, %args);
+   }
+
    return $query;
 }
 
