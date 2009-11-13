@@ -81,8 +81,8 @@ create table foo (i int)\G
 #  10s+
 insert foo values (1) /*... omitted ...*/\G
 
-# Rank Query ID           Response time    Calls   R/Call     Item
-# ==== ================== ================ ======= ========== ====
-#    1 0xF25D6D5AC7C18FF3     0.0000  0.0%       1   0.0000 CREATE DATABASE d
-#    2 0x03409022EB8A4AE7     0.0000  0.0%       1   0.0000 CREATE TABLE foo
-#    3 0xF579EC4A9633EEA0     0.0000  0.0%       1   0.0000 INSERT
+# Rank Query ID           Response time    Calls R/Call   Item
+# ==== ================== ================ ===== ======== ================
+#    1 0xF25D6D5AC7C18FF3     0.0000  0.0%     1   0.0000 CREATE DATABASE d
+#    2 0x03409022EB8A4AE7     0.0000  0.0%     1   0.0000 CREATE TABLE foo
+#    3 0xF579EC4A9633EEA0     0.0000  0.0%     1   0.0000 INSERT

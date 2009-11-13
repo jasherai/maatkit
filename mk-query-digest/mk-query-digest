@@ -3876,6 +3876,158 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# ReportFormatter package 5113
+# ###########################################################################
+package ReportFormatter;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use List::Util qw(min max);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw();
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+      underline_header  => 1,
+      line_prefix        => '# ',
+      line_width         => 78,
+      truncate_underline => 1,
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub set_title {
+   my ( $self, $title ) = @_;
+   $self->{title} = $title;
+   return;
+}
+
+sub set_columns {
+   my ( $self, @cols ) = @_;
+   push @{$self->{cols}}, map {
+      my $col = $_;
+      die "Column does not have a name" unless defined $col->{name};
+      if ( $col->{fixed_wdith} && $col->{fixed_width} < length $col->{name} ) { 
+         die "Fixed width is less than the column name";
+      }
+      $col->{min_val_width} = length $col->{name};
+      $col->{max_val_width} = length $col->{name};
+      $col;
+   } @cols;
+   return;
+}
+
+sub add_line {
+   my ( $self, @vals ) = @_;
+
+   my $n_cols = scalar @{$self->{cols}};
+   my $n_vals = scalar @vals;
+   die "Number of columns ($n_cols) and values ($n_vals) do not match"
+      unless $n_cols == $n_vals;
+
+   my @line;
+   for my $i ( 0..$#vals ) {
+      my $col = $self->{cols}->[$i];
+      my $val = $vals[$i];
+      my $width = length $val;
+      if ( $col->{fixed_width} && $width > $col->{fixed_width} ) {
+         if ( $col->{truncate} ) {
+            $val  = substr($val, 0, $col->{fixed_width} - 3);
+            $val .= '...';
+            MKDEBUG && _d('Truncated', $vals[$i], 'to', $val);
+         }
+         else {
+            die "Value '$val' is too wide for column $col->{name}";
+         }
+      }
+      $col->{max_val_width} = max($width, $col->{max_val_width});
+      push @line, $val;
+   }
+   push @{$self->{lines}}, \@line;
+
+   return;
+}
+
+sub get_report {
+   my ( $self ) = @_;
+   my @lines;
+   my $p = $self->{line_prefix} || '';
+
+   my $n_cols = scalar @{$self->{cols}}
+              - ($self->{long_last_column} ? 2 : 1);
+
+   my $fmt = $p;
+   my @col_fmts;
+   for my $i ( 0..$n_cols ) {
+      my $col = $self->{cols}->[$i];
+      my $col_fmt = '%'
+                  . ($col->{right_justify} ? '' : '-')
+                  . "$col->{max_val_width}"
+                  . 's';
+      push @col_fmts, $col_fmt;
+   }
+   if ( $self->{long_last_column} ) {
+      push @col_fmts, '%s';
+   }
+   $fmt .= join(' ', @col_fmts);
+   MKDEBUG && _d('Format:', $fmt);
+
+   push @lines, sprintf "${p}$self->{title}" if $self->{title};
+
+   (my $hdr_fmt = $fmt) =~ s/%([^-])/%-$1/g;
+   push @lines, sprintf $hdr_fmt, map { $_->{name} } @{$self->{cols}};
+
+   if ( $self->{underline_header} ) {
+      my $underline_len = 0;
+      my @underlines = map {
+         my $underline = '=' x $_->{max_val_width};
+         $underline_len += length $underline;
+         $underline;
+      } @{$self->{cols}};
+      $underline_len += (scalar @underlines) - 1;
+      if ( $self->{truncate_underline}
+           && (2 + $underline_len) > $self->{line_width} ) {
+         my $over = $self->{line_width} - (2 + $underline_len);
+         $underlines[-1] = substr($underlines[-1], 0, $over);
+      }
+
+      push @lines, sprintf $fmt, @underlines;
+   }
+
+   foreach my $line ( @{$self->{lines}} ) {
+      push @lines, sprintf $fmt, @$line;
+   }
+
+   return join("\n", @lines) . "\n";
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ReportFormatter package
+# ###########################################################################
+
+# ###########################################################################
 # QueryReportFormatter package 4980
 # ###########################################################################
 
@@ -8108,16 +8260,33 @@ sub main {
 
          # Print profile (issue 381).
          if ( $o->get('report') && $o->get('report-format')->{profile} ) {
-            print "\n# Rank Query ID           Response time    Calls   R/Call",
-                  "     Item\n",
-                  "# ==== ================== ================ ======= ======",
-                  "==== ====\n";
+            my $report = new ReportFormatter(
+               line_width       => 74,
+               long_last_column => 1,
+            );
+            $report->set_columns(
+               { name => 'Rank',          right_justify => 1, },
+               { name => 'Query ID',                          },
+               { name => 'Response time', right_justify => 1, },
+               { name => 'Calls',         right_justify => 1, },
+               { name => 'R/Call',        right_justify => 1, },
+               { name => 'Item',                              },
+            );
+
             foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @profiles ) {
-               printf "# %4d 0x%16s %10.4f %4.1f%% %7d %8.4f %s\n",
-                  $item->{rank}, $item->{id}, $item->{r},
-                  $item->{r} / ($total_r || 1) * 100,
-                  $item->{cnt}, $item->{r} / $item->{cnt}, $item->{sample};
+               my $rt  = sprintf('%10.4f', $item->{r});
+               my $rtp = sprintf('%4.1f%%', $item->{r} / ($total_r || 1) * 100);
+               my $rc  = sprintf('%8.4f', $item->{r} / $item->{cnt});
+               $report->add_line(
+                  $item->{rank},
+                  "0x$item->{id}",
+                  "$rt $rtp",
+                  $item->{cnt},
+                  $rc,
+                  $item->{sample},
+               );
             }
+            print "\n" . $report->get_report();
          }
       } # Each groupby
 

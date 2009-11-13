@@ -5,6 +5,7 @@ Changelog for mk-query-digest:
    * Added general log parsing; --type genlog (issue 172).
    * Added HTTP protocol parsing; --type http (issue 679).
    * memcached queries were not distilled.
+   * Profile report was misaligned.
 
 2009-10-30: version 0.9.11
 
