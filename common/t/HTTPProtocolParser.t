@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 10;
 
 require '../TcpdumpParser.pm';
 require '../ProtocolParser.pm';
@@ -235,6 +235,25 @@ run_test({
          bytes          => 4382,
          host           => '192.168.200.110',
          pos_in_log     => 785, 
+      },
+   ],
+});
+
+# Out of order header that might look like the text header
+# but is really data; text header arrives last.
+$protocol = new HTTPProtocolParser();
+run_test({
+   file   => 'samples/http_tcpdump006.txt',
+   result => [
+      {  ts             => '2009-11-13 09:50:44.432099',
+         Query_time     => '0.140878',
+         Status_code    => '200',
+         Transmit_time  => '0.237153',
+         Virtual_host   => '247wallst.files.wordpress.com',
+         arg            => 'get /2009/11/airplane4.jpg?w=139&h=93',
+         bytes          => 3391,
+         host           => '192.168.200.110',
+         pos_in_log     => 782,
       },
    ],
 });

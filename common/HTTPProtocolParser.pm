@@ -199,7 +199,7 @@ sub _parse_header {
    my ( $self, $session, $data, $len, $no_recurse ) = @_;
    die "I need data" unless $data;
    my ($header, $content)    = split(/\r\n\r\n/, $data);
-   my ($line1, $header_vals) = $header  =~ m/\A(.*?)\r\n(.+)?/s;
+   my ($line1, $header_vals) = $header  =~ m/\A(\S+ \S+ \S+)\r\n(.+)?/s;
    MKDEBUG && _d('HTTP header:', $line1);
    return unless $line1;
 
