@@ -3,6 +3,7 @@ Changelog for mk-query-digest:
    * Certain very large queries segfaulted (issue 687).
    * Removed --unique-table-access (issue 675).
    * Added general log parsing; --type genlog (issue 172).
+   * Added HTTP protocol parsing; --type http (issue 679).
 
 2009-10-30: version 0.9.11
 
