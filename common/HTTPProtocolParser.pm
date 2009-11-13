@@ -171,7 +171,8 @@ sub _packet_from_client {
          return;
       }
       $request = lc $request;
-      my $arg = "$request $page";
+      my $vh   = $session->{attribs}->{Virtual_host} || '';
+      my $arg = "$request $vh$page";
       MKDEBUG && _d('arg:', $arg);
 
       if ( $request eq 'get' ) {
@@ -199,7 +200,7 @@ sub _parse_header {
    my ( $self, $session, $data, $len, $no_recurse ) = @_;
    die "I need data" unless $data;
    my ($header, $content)    = split(/\r\n\r\n/, $data);
-   my ($line1, $header_vals) = $header  =~ m/\A(\S+ \S+ \S+)\r\n(.+)?/s;
+   my ($line1, $header_vals) = $header  =~ m/\A(\S+ \S+ .+?)\r\n(.+)?/s;
    MKDEBUG && _d('HTTP header:', $line1);
    return unless $line1;
 
