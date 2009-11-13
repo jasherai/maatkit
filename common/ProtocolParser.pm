@@ -106,6 +106,7 @@ sub _parse_packet {
    my ( $self, $packet, $misc ) = @_;
 
    my ($packet_from, $session) = $self->_get_session($packet);
+   MKDEBUG && _d('State:', $session->{state});
 
    # Save raw packets to dump later in case something fails.
    push @{$session->{raw_packets}}, $packet->{raw_packet}
@@ -141,10 +142,15 @@ sub _parse_packet {
       # Should not get here.
       die 'Packet origin unknown';
    }
+   MKDEBUG && _d('State:', $session->{state});
 
    if ( $session->{out_of_order} ) {
       MKDEBUG && _d('Session packets are out of order');
       push @{$session->{packets}}, $packet;
+      $session->{ts_min}
+         = $packet->{ts} if $packet->{ts} lt ($session->{ts_min} || '');
+      $session->{ts_max}
+         = $packet->{ts} if $packet->{ts} gt ($session->{ts_max} || '');
       if ( $session->{have_all_packets} ) {
          MKDEBUG && _d('Have all packets; ordering and processing');
          delete $session->{out_of_order};
@@ -223,7 +229,8 @@ sub make_event {
    my $start_request = $session->{start_request} || 0;
    my $start_reply   = $session->{start_reply}   || 0;
    my $end_reply     = $session->{end_reply}     || 0;
-   MKDEBUG && _d('Event times:', $start_request, $start_reply, $end_reply);
+   MKDEBUG && _d('Request start:', $start_request,
+      'reply start:', $start_reply, 'reply end:', $end_reply);
    my $event = {
       Query_time    => $self->timestamp_diff($start_request, $start_reply),
       Transmit_time => $self->timestamp_diff($start_reply, $end_reply),

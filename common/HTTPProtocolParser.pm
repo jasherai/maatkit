@@ -86,23 +86,31 @@ sub _packet_from_server {
    # Assume that the server is returning only one value. 
    # TODO: make it handle multiple.
    if ( $session->{state} eq 'awaiting reply' ) {
-      MKDEBUG && _d('State:', $session->{state});
-      my ($line1, $content) = $self->_parse_header($session, $packet->{data}, $packet->{data_len});
+
+      # Save this early because we may return early if the packets
+      # are being received out of order.  Also, save it only once
+      # in case we re-process packets if they're out of order.
+      $session->{start_reply} = $packet->{ts} unless $session->{start_reply};
+
+      # Get first line of header and first chunk of contents/data.
+      my ($line1, $content) = $self->_parse_header($session, $packet->{data},
+            $packet->{data_len});
+
+      # The reponse, when in order, is text header followed by data.
+      # If there's no line1, then we didn't get the text header first
+      # which means we're getting the response in out of order packets.
       if ( !$line1 ) {
-         $session->{out_of_order}     = 1;
+         $session->{out_of_order}     = 1;  # alert parent
          $session->{have_all_packets} = 0;
-         $session->{state}            = 'awaiting reply';
          return;
       }
-      return unless $line1;
+
       # First line should be: version  code phrase
       # E.g.:                 HTTP/1.1  200 OK
       my ($version, $code, $phrase) = $line1 =~ m/(\S+)/g;
       $session->{attribs}->{Status_code} = $code;
       MKDEBUG && _d('Status code for last', $session->{attribs}->{arg},
          'request:', $session->{attribs}->{Status_code});
-
-      $session->{start_reply} = $packet->{ts} unless $session->{start_reply};
 
       my $content_len = $content ? length $content : 0;
       MKDEBUG && _d('Got', $content_len, 'bytes of content');
@@ -132,7 +140,7 @@ sub _packet_from_server {
    }
 
    MKDEBUG && _d('Creating event, deleting session');
-   $session->{end_reply}   = $packet->{ts};
+   $session->{end_reply} = $session->{ts_max} || $packet->{ts};
    my $event = $self->make_event($session, $packet);
    delete $self->{sessions}->{$session->{client}}; # http is stateless!
    return $event;
@@ -159,7 +167,6 @@ sub _packet_from_client {
    }
 
    if ( !$session->{state} ) {
-      MKDEBUG && _d('Session state: ', $session->{state});
       $session->{state} = 'awaiting reply';
       my ($line1, undef) = $self->_parse_header($session, $packet->{data}, $packet->{data_len});
       # First line should be: request page      version

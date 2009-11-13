@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 6;
 
 require '../TcpdumpParser.pm';
 require '../ProtocolParser.pm';
@@ -205,19 +205,21 @@ run_test({
 
 # TODO:
 
-# 1 out of order packet.
+# A reponse received in out of order packet.
 $protocol = new HTTPProtocolParser();
 run_test({
    file   => 'samples/http_tcpdump004.txt',
    result => [
-   ],
-});
-
-# Several out of order packets; dev.mysql.com.
-$protocol = new HTTPProtocolParser();
-run_test({
-   file   => 'samples/http_tcpdump003.txt',
-   result => [
+      {  ts             => '2009-11-12 11:27:10.757573',
+         Query_time     => '0.327356',
+         Status_code    => '200',
+         Transmit_time  => '0.549501',
+         Virtual_host   => 'dev.mysql.com',
+         arg            => 'get /common/css/mysql.css',
+         bytes          => 11283,
+         host           => '10.67.237.92',
+         pos_in_log     => 776,
+      },
    ],
 });
 
