@@ -191,8 +191,10 @@ sub get_duplicate_fks {
             my $dupe = {
                key               => $fks[$j]->{name},
                cols              => [ @{$fks[$j]->{cols}} ],
+               ddl               => $fks[$j]->{ddl},
                duplicate_of      => $fks[$i]->{name},
                duplicate_of_cols => [ @{$fks[$i]->{cols}} ],
+               duplicate_of_ddl  => $fks[$i]->{ddl},
                reason            =>
                     "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{colnames}) "
                   . "REFERENCES $fks[$j]->{parent_tbl} "
@@ -342,8 +344,10 @@ sub remove_prefix_duplicates {
             my $dupe = {
                key               => $right_name,
                cols              => $right_keys->[$right_index]->{real_cols},
+               ddl               => $right_keys->[$right_index]->{ddl},
                duplicate_of      => $left_name,
                duplicate_of_cols => $left_keys->[$left_index]->{real_cols},
+               duplicate_of_ddl  => $left_keys->[$left_index]->{ddl},
                reason            => $reason,
                dupe_type         => $exact_dupe ? 'exact' : 'prefix',
             };

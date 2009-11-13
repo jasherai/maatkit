@@ -416,6 +416,7 @@ sub get_fks {
          parent_tbl     => $parent,
          parent_colnames=> $parent_cols,
          parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
+         ddl            => $fk,
       };
    }
 

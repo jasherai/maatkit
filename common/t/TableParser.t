@@ -512,6 +512,7 @@ is_deeply(
          parent_tbl      => '`t2`',
          parent_colnames => '`a`',
          parent_cols     => ['a'],
+         ddl             => 'CONSTRAINT `t1_ibfk_1` FOREIGN KEY (`a`) REFERENCES `t2` (`a`)',
       },
    },
    'one fk'
@@ -527,6 +528,7 @@ is_deeply(
          parent_tbl      => '`foo`.`t2`',
          parent_colnames => '`a`',
          parent_cols     => ['a'],
+         ddl             => 'CONSTRAINT `t1_ibfk_1` FOREIGN KEY (`a`) REFERENCES `t2` (`a`)',
       },
    },
    'one fk with default database'
@@ -542,6 +544,7 @@ is_deeply(
          parent_tbl      => '`issue_331_t1`',
          parent_colnames => '`t1_id`',
          parent_cols     => ['t1_id'],
+         ddl             => 'CONSTRAINT `fk_1` FOREIGN KEY (`id`) REFERENCES `issue_331_t1` (`t1_id`)',
       },
       'fk_2' => {
          name            => 'fk_2',
@@ -550,6 +553,7 @@ is_deeply(
          parent_tbl      => '`issue_331_t1`',
          parent_colnames => '`t1_id`',
          parent_cols     => ['t1_id'],
+         ddl             => 'CONSTRAINT `fk_2` FOREIGN KEY (`id`) REFERENCES `issue_331_t1` (`t1_id`)',
       }
    },
    'two fks (issue 331)'

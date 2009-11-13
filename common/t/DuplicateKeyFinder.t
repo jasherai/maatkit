@@ -61,8 +61,10 @@ is_deeply(
       {
          'key'          => 'a',
          'cols'         => [qw(a)],
+         ddl            => 'KEY `a` (`a`),',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => [qw(a b)],
+         duplicate_of_ddl    => 'KEY `a_2` (`a`,`b`)',
          'reason'       => 'a is a left-prefix of a_2',
          dupe_type      => 'prefix',
       }
@@ -83,8 +85,10 @@ is_deeply(
       {
          'key'          => 'a',
          'cols'         => [qw(a)],
+         ddl            => 'KEY `a` (`a`),',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => [qw(a b)],
+         duplicate_of_ddl    => 'KEY `a_2` (`a`,`b`),',
          'reason'       => 'a is a left-prefix of a_2',
          dupe_type      => 'prefix',
       }
@@ -108,16 +112,20 @@ is_deeply(
       {
          'key'          => 'a_3',
          'cols'         => [qw(a b)],
+         ddl            => 'KEY `a_3` (`a`,`b`)',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => [qw(a b)],
+         duplicate_of_ddl    => 'KEY `a_2` (`a`,`b`),',
          'reason'       => 'a_3 is a duplicate of a_2',
          dupe_type      => 'exact',
       },
       {
          'key'          => 'a',
          'cols'         => [qw(a)],
+         ddl            => 'KEY `a` (`a`),',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => [qw(a b)],
+         duplicate_of_ddl    => 'KEY `a_2` (`a`,`b`),',
          'reason'       => 'a is a left-prefix of a_2',
          dupe_type      => 'prefix',
       },
@@ -150,8 +158,10 @@ is_deeply(
       {
          'key'          => 'a',
          'cols'         => [qw(a)],
+         ddl            => 'KEY `a` (`a`),',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => [qw(a b)],
+         duplicate_of_ddl    => 'FULLTEXT KEY `a_2` (`a`,`b`),',
          'reason'       => 'a is a left-prefix of a_2',
          dupe_type      => 'prefix',
       },
@@ -185,8 +195,10 @@ is_deeply(
       {
          'key'          => 'ft_idx_a_b_2',
          'cols'         => [qw(a b)],
+         ddl            => 'FULLTEXT KEY `ft_idx_a_b_2` (`a`,`b`)',
          'duplicate_of' => 'ft_idx_a_b_1',
          'duplicate_of_cols' => [qw(a b)],
+         duplicate_of_ddl    => 'FULLTEXT KEY `ft_idx_a_b_1` (`a`,`b`),',
          'reason'       => 'ft_idx_a_b_2 is a duplicate of ft_idx_a_b_1',
          dupe_type      => 'exact',
       }
@@ -207,8 +219,10 @@ is_deeply(
       {
          'key'          => 'ft_idx_a_b',
          'cols'         => [qw(a b)],
+         ddl            => 'FULLTEXT KEY `ft_idx_a_b` (`a`,`b`),',
          'duplicate_of' => 'ft_idx_b_a',
          'duplicate_of_cols' => [qw(b a)],
+         duplicate_of_ddl    => 'FULLTEXT KEY `ft_idx_b_a` (`b`,`a`)',
          'reason'       => 'ft_idx_a_b is a duplicate of ft_idx_b_a',
          dupe_type      => 'exact',
       }
@@ -241,8 +255,10 @@ is_deeply(
       {
          'key'          => 'a',
          'cols'         => [qw(b a)],
+         ddl            => 'KEY `a` (`b`,`a`),',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => [qw(a b)],
+         duplicate_of_ddl    => 'KEY `a_2` (`a`,`b`),',
          'reason'       => 'a is a duplicate of a_2',
          dupe_type      => 'exact',
       }
@@ -336,8 +352,10 @@ is_deeply(
       {
          'key'               => 't1_ibfk_1',
          'cols'              => [qw(a b)],
+         ddl                 => 'CONSTRAINT `t1_ibfk_1` FOREIGN KEY (`a`, `b`) REFERENCES `t2` (`a`, `b`)',
          'duplicate_of'      => 't1_ibfk_2',
          'duplicate_of_cols' => [qw(b a)],
+         duplicate_of_ddl    => 'CONSTRAINT `t1_ibfk_2` FOREIGN KEY (`b`, `a`) REFERENCES `t2` (`b`, `a`)',
          'reason'            => 'FOREIGN KEY t1_ibfk_1 (`a`, `b`) REFERENCES `test`.`t2` (`a`, `b`) is a duplicate of FOREIGN KEY t1_ibfk_2 (`b`, `a`) REFERENCES `test`.`t2` (`b`, `a`)',
          dupe_type      => 'fk',
       }
@@ -399,8 +417,10 @@ is_deeply(
       {
          'key'          => 'j',
          'cols'         => [qw(a b)],
+         ddl            => 'KEY `j` (`a`,`b`)',
          'duplicate_of' => 'i',
          'duplicate_of_cols' => [qw(a b)],
+         duplicate_of_ddl    => 'UNIQUE KEY `i` (`a`,`b`),',
          'reason'       => 'j is a duplicate of i',
          dupe_type      => 'exact',
       }
@@ -421,8 +441,10 @@ is_deeply(
       {
          'key'          => 'j',
          'cols'         => [qw(a b)],
+         ddl            => 'KEY `j` (`a`,`b`)',
          'duplicate_of' => 'PRIMARY',
          'duplicate_of_cols' => [qw(a b)],
+         duplicate_of_ddl    => 'PRIMARY KEY  (`a`,`b`),',
          'reason'       => 'j is a duplicate of PRIMARY',
          dupe_type      => 'exact',
       }
@@ -456,8 +478,10 @@ is_deeply(
       {
          'key'               => 'A',
          'cols'              => [qw(A)],
+         ddl                 => 'KEY `A` (`A`)',
          'duplicate_of'      => 'PRIMARY',
          'duplicate_of_cols' => [qw(A)],
+         duplicate_of_ddl    => 'PRIMARY KEY  (`A`),',
          'reason'            => "A is a duplicate of PRIMARY",
          dupe_type      => 'exact',
       },
@@ -478,8 +502,10 @@ is_deeply(
       {
          'key'               => 'ua_b',
          'cols'              => [qw(a b)],
+         ddl                 => 'UNIQUE KEY `ua_b` (`a`,`b`),',
          'duplicate_of'      => 'a_b_c',
          'duplicate_of_cols' => [qw(a b c)],
+         duplicate_of_ddl    => 'KEY `a_b_c` (`a`,`b`,`c`)',
          'reason'            => "Uniqueness of ua_b ignored because PRIMARY is a stronger constraint\nua_b is a left-prefix of a_b_c",
          dupe_type      => 'prefix',
       },
@@ -502,32 +528,40 @@ is_deeply(
        'reason' => 'a is a left-prefix of PRIMARY',
        dupe_type      => 'prefix',
        'duplicate_of_cols' => [qw(a b)],
+       duplicate_of_ddl    => 'PRIMARY KEY  (`a`,`b`),',
        'cols' => [qw(a)],
-       'key' => 'a'
+       'key'  => 'a',
+       ddl    => 'KEY `a` (`a`),',
       },
       {
        'duplicate_of' => 'PRIMARY',
        'reason' => 'a_b is a duplicate of PRIMARY',
        dupe_type      => 'exact',
        'duplicate_of_cols' => [qw(a b)],
+       duplicate_of_ddl    => 'PRIMARY KEY  (`a`,`b`),',
        'cols' => [qw(a b)],
-       'key' => 'a_b'
+       'key'  => 'a_b',
+       ddl    => 'KEY `a_b` (`a`,`b`),',
       },
       {
        'duplicate_of' => 'PRIMARY',
        'reason' => "Uniqueness of ua_b ignored because ua is a stronger constraint\nua_b is a duplicate of PRIMARY",
        dupe_type      => 'exact',
        'duplicate_of_cols' => [qw(a b)],
+       duplicate_of_ddl    => 'PRIMARY KEY  (`a`,`b`),',
        'cols' => [qw(a b)],
-       'key' => 'ua_b'
+       'key'  => 'ua_b',
+       ddl    => 'UNIQUE KEY `ua_b` (`a`,`b`),',
       },
       {
        'duplicate_of' => 'PRIMARY',
        'reason' => "Uniqueness of ua_b2 ignored because ua is a stronger constraint\nua_b2 is a duplicate of PRIMARY",
        dupe_type      => 'exact',
        'duplicate_of_cols' => [qw(a b)],
+       duplicate_of_ddl    => 'PRIMARY KEY  (`a`,`b`),',
        'cols' => [qw(a b)],
-       'key' => 'ua_b2'
+       'key'  => 'ua_b2',
+       ddl    => 'UNIQUE KEY `ua_b2` (`a`,`b`),',
       }
    ],
    'Very pathological case',
@@ -564,8 +598,10 @@ is_deeply(
       {
          'key'               => 'fk_1',
          'cols'              => [qw(id)],
+         ddl                 => 'CONSTRAINT `fk_1` FOREIGN KEY (`id`) REFERENCES `issue_331_t1` (`t1_id`)',
          'duplicate_of'      => 'fk_2',
          'duplicate_of_cols' => [qw(id)],
+         duplicate_of_ddl    => 'CONSTRAINT `fk_2` FOREIGN KEY (`id`) REFERENCES `issue_331_t1` (`t1_id`)',
          'reason'            => 'FOREIGN KEY fk_1 (`id`) REFERENCES `test`.`issue_331_t1` (`t1_id`) is a duplicate of FOREIGN KEY fk_2 (`id`) REFERENCES `test`.`issue_331_t1` (`t1_id`)',
          dupe_type      => 'fk',
       }
