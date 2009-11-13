@@ -296,8 +296,10 @@ is_deeply(
       {
          'key'          => 'b',
          'cols'         => [qw(b a)],
+         ddl            => 'KEY `b` (`b`,`a`)',
          'duplicate_of' => 'PRIMARY',
          'duplicate_of_cols' => [qw(a)],
+         duplicate_of_ddl    => 'PRIMARY KEY  (`a`),',
          'reason'       => 'Key b ends with a prefix of the clustered index',
          dupe_type      => 'clustered',
          short_key      => '`b`',

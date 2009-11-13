@@ -400,8 +400,10 @@ sub remove_clustered_duplicates {
             my $dupe = {
                key               => $keys->[$i]->{name},
                cols              => $keys->[$i]->{real_cols},
+               ddl               => $keys->[$i]->{ddl},
                duplicate_of      => $ck->{name},
                duplicate_of_cols => $ck->{real_cols},
+               duplicate_of_ddl  => $ck->{ddl},
                reason            => "Key $keys->[$i]->{name} ends with a "
                                   . "prefix of the clustered index",
                dupe_type         => 'clustered',
