@@ -3436,6 +3436,7 @@ sub watch_server {
    foreach my $arg ( qw(dsn o dp vp) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   my $dbh     = $args{dbh};
    my $dsn     = $args{dsn};
    my $o       = $args{o};
    my $dp      = $args{dp};
@@ -3449,10 +3450,34 @@ sub watch_server {
            && !-f $o->get('sentinel')
            && $oktorun ) {
 
+      # If there's a dbh then we're connect to MySQL.  Make sure its
+      # responding, wait and retry forever it's not.
+      if ( $dbh ) {
+         while ( !$dbh->ping ) {
+            my $wait = $o->get('wait');
+            _log($o, "MySQL not responding; waiting $wait to reconnect");
+            sleep $wait;
+            eval {
+               $dbh = $dp->get_dbh(
+                  $dp->get_cxn_params($dsn), { AutoCommit => 1 });
+            };
+            if ( $EVAL_ERROR ) {
+               _log($o, 'Could not reconnect to MySQL server:', $EVAL_ERROR);
+            }
+            else {
+               _log($o, 'Reconnected to MySQL');
+               $dbh->{InactiveDestroy} = 1;  # Don't die on fork().
+               next;  # Redo the oktorun checks after waiting.
+            }
+         }
+      }
+
       my $n_failed = 0;
       foreach my $watch ( @$watches ) {
          my $watch_name = $watch->{name};
          _log($o, "Checking $watch_name");
+
+         $watch->{module}->set_dbh($dbh);  # Reset this in case we reconnected.
 
          my $check_status = $watch->{module}->check();  # Check it!
          my @last_test    = map {
@@ -3804,6 +3829,16 @@ Values are taken from the last line.
 
 The default, C<vmstat 1 2>,  gets current values.  Running just C<vmstat>
 would get average values since last reboot.
+
+=item --wait
+
+type: int; default: 60s
+
+Wait this long to reconnect to MySQL.
+
+If the MySQL server goes away between L<"--interval"> checks, mk-loadavg
+will attempt to reconnect to MySQL forever, sleeping this amount of time
+in between attempts.
 
 =item --watch
 

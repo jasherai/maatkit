@@ -1,5 +1,8 @@
 Changelog for mk-loadavg:
 
+   * The script did not attempt to reconnect to MySQL (issue 692).
+   * Added --wait for attempts to reconnect to MySQL (issue 692).
+
 2009-10-30: version 0.9.1
 
    * --watch Processlist did not work.
