@@ -115,6 +115,10 @@ sub _parse_packet {
    my ( $src_host, $src_port ) = $source =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
    my ( $dst_host, $dst_port ) = $dest   =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
 
+   # Change ports from service name to number.
+   $src_port = $self->port_number($src_port);
+   $dst_port = $self->port_number($dst_port);
+   
    my $hex = qr/[0-9a-f]/;
    (my $data = join('', $packet =~ m/\s+0x$hex+:\s((?:\s$hex{2,4})+)/go)) =~ s/\s+//g; 
 
@@ -161,6 +165,15 @@ sub _parse_packet {
    MKDEBUG && _d('packet:', Dumper($pkt));
    $pkt->{data} = $data;
    return $pkt;
+}
+
+sub port_number {
+   my ( $self, $port ) = @_;
+   return $port unless $port =~ m/[^\d]/;
+   return 3306  if $port eq 'mysql';
+   return 11211 if $port eq 'memcached';
+   return 80    if $port eq 'http';
+   return $port;
 }
 
 sub _d {

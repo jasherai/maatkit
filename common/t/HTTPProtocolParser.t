@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 14;
+use Test::More tests => 16;
 
 require '../TcpdumpParser.pm';
 require '../ProtocolParser.pm';
@@ -291,6 +291,24 @@ run_test({
          host           => '192.168.200.110',
          pos_in_log     => 0,
       }
+   ],
+});
+
+# .http instead of .80
+$protocol = new HTTPProtocolParser();
+run_test({
+   file   => 'samples/http_tcpdump009.txt',
+   result => [
+      { ts              => '2009-11-09 11:31:52.341907',
+        bytes           => '715',
+        host            => '10.112.2.144',
+        pos_in_log      => 0,
+        Virtual_host    => 'hackmysql.com',
+        arg             => 'get hackmysql.com/contact',
+        Status_code     => '200',
+        Query_time      => '0.651419',
+        Transmit_time   => '0.000000',
+      },
    ],
 });
 
