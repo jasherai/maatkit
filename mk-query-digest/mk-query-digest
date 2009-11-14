@@ -2016,7 +2016,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 5102
+# TcpdumpParser package 5120
 # ###########################################################################
 package TcpdumpParser;
 
@@ -2080,6 +2080,9 @@ sub _parse_packet {
    my ( $src_host, $src_port ) = $source =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
    my ( $dst_host, $dst_port ) = $dest   =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
 
+   $src_port = $self->port_number($src_port);
+   $dst_port = $self->port_number($dst_port);
+   
    my $hex = qr/[0-9a-f]/;
    (my $data = join('', $packet =~ m/\s+0x$hex+:\s((?:\s$hex{2,4})+)/go)) =~ s/\s+//g; 
 
@@ -2118,6 +2121,15 @@ sub _parse_packet {
    MKDEBUG && _d('packet:', Dumper($pkt));
    $pkt->{data} = $data;
    return $pkt;
+}
+
+sub port_number {
+   my ( $self, $port ) = @_;
+   return $port unless $port =~ m/[^\d]/;
+   return 3306  if $port eq 'mysql';
+   return 11211 if $port eq 'memcached';
+   return 80    if $port eq 'http';
+   return $port;
 }
 
 sub _d {
@@ -5178,7 +5190,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4931
+# TableParser package 5115
 # ###########################################################################
 package TableParser;
 
@@ -5497,6 +5509,7 @@ sub get_fks {
          parent_tbl     => $parent,
          parent_colnames=> $parent_cols,
          parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
+         ddl            => $fk,
       };
    }
 
@@ -7047,7 +7060,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# HTTPProtocolParser package 5109
+# HTTPProtocolParser package 5121
 # ###########################################################################
 package HTTPProtocolParser;
 use base 'ProtocolParser';
@@ -7211,6 +7224,10 @@ sub _parse_header {
    MKDEBUG && _d('HTTP header:', $line1);
    return unless $line1;
 
+   if ( !$header_vals ) {
+      MKDEBUG && _d('No header vals');
+      return $line1, undef;
+   }
    my @headers;
    foreach my $val ( split(/\r\n/, $header_vals) ) {
       last unless $val;
