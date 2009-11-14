@@ -28,7 +28,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   my $self = {
+      pending => [],
+   };
+   return bless $self, $class;
 }
 
 my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
@@ -68,10 +71,12 @@ my $slow_log_hd_line = qr{
 # the result.  Sometimes a line of code has been changed from an alternate
 # form for performance reasons -- sometimes as much as 20x better performance.
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
    # Read a whole stmt at a time.  But, to make things even more fun, sometimes
    # part of the log entry might continue past the separator.  In these cases we
@@ -80,15 +85,14 @@ sub parse_event {
    # acceptable.  And additionally, the line terminator doesn't work for all
    # cases; the header lines might follow a statement, causing the paragraph
    # slurp to grab more than one statement at a time.
-   my @pending;
+   my $pending = $self->{pending};
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $trimlen    = length($INPUT_RECORD_SEPARATOR);
    my $pos_in_log = tell($fh);
    my $stmt;
 
    EVENT:
-   while ( $$oktorun
-           && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
+   while ( (defined($stmt = shift @$pending) or defined($stmt = <$fh>)) ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 
@@ -100,7 +104,7 @@ sub parse_event {
          if ( @chunks > 1 ) {
             MKDEBUG && _d("Found multiple chunks");
             $stmt = shift @chunks;
-            unshift @pending, @chunks;
+            unshift @$pending, @chunks;
          }
       }
 
@@ -242,10 +246,10 @@ sub parse_event {
             my $arg = substr($stmt, $pos - length($line));
             push @properties, 'arg', $arg, 'bytes', length($arg);
             # Handle embedded attributes.
-            if ( $misc && $misc->{embed}
-               && ( my ($e) = $arg =~ m/($misc->{embed})/)
+            if ( $args{misc} && $args{misc}->{embed}
+               && ( my ($e) = $arg =~ m/($args{misc}->{embed})/)
             ) {
-               push @properties, $e =~ m/$misc->{capture}/g;
+               push @properties, $e =~ m/$args{misc}->{capture}/g;
             }
             last LINE;
          }
@@ -255,13 +259,9 @@ sub parse_event {
       # it's been cast into a hash, duplicated keys will be gone.
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
-      foreach my $callback ( @callbacks ) {
-         last unless $event = $callback->($event);
-      }
-      ++$num_events;
-      last EVENT unless @pending;
+      return $event;
    }
-   return $num_events;
+   return;
 }
 
 sub _d {

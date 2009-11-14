@@ -23,7 +23,13 @@ sub run_test {
    my $num_events = 0;
    eval {
       open my $fh, "<", $def->{file} or die $OS_ERROR;
-      $num_events++ while $p->parse_event($fh, $def->{misc}, sub { push @e, @_ });
+      my %args = (
+         fh   => $fh,
+         misc => $def->{misc},
+      );
+      while ( my $e = $p->parse_event(%args) ) {
+         push @e, $e;
+      }
       close $fh;
    };
    is($EVAL_ERROR, '', "No error on $def->{file}");
@@ -32,7 +38,7 @@ sub run_test {
          or print "Got: ", Dumper(\@e);
    }
    if ( defined $def->{num_events} ) {
-      is($num_events, $def->{num_events}, "$def->{file} num_events");
+      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
    }
 }
 
@@ -1196,53 +1202,56 @@ run_test({
 # #############################################################################
 # Test a callback chain.
 # #############################################################################
-my $i = 0;
-my @e = ();
-my $file;
-my $callback1 = sub {
-   my ( $event ) = @_;
-   return 0 if $i >= 5;
-   $event->{foo} = ++$i;
-   return $event;
+SKIP: {
+   skip 'no longer valid', 4 if 1;
+   my $i = 0;
+   my @e = ();
+   my $file;
+   my $callback1 = sub {
+      my ( $event ) = @_;
+      return 0 if $i >= 5;
+      $event->{foo} = ++$i;
+      return $event;
+   };
+   my $callback2 = sub {
+      my ( $event ) = @_;
+      push @e, $event;
+      return $event;
+   };
+   open $file, "<", 'samples/slow001.txt' or die $OS_ERROR;
+   $i = 0;
+   1 while ( $p->parse_event( $file, undef, $callback1, $callback2 ) );
+   close $file;
+   is($e[1]->{foo}, '2', "Callback chain works", );
+
+   open $file, "<", 'samples/slow002.txt' or die $OS_ERROR;
+   @e = ();
+   $i = 0;
+   1 while ( $p->parse_event( $file, undef, $callback1, $callback2 ) );
+   close $file;
+   is(scalar @e, '5', "Callback chain early termination works", );
+
+   # Test that we can early-abort when not oktorun.
+   @e = ();
+   my $num_events = 0;
+   my $oktorun = 0;
+   open my $fh, "<", 'samples/slow001.txt' or die $OS_ERROR;
+   $num_events++ while $p->parse_event($fh, {oktorun=>\$oktorun}, sub { push @e, @_ });
+   close $fh;
+   is_deeply(
+      \@e,
+      [],
+      'oktorun'
+   );
+
+   open $fh, "<", 'samples/slow001.txt' or die $OS_ERROR;
+   $num_events++ while $p->parse_event($fh, undef, sub { push @e, @_ });
+   close $fh;
+   ok(
+      @e,
+      'Runs without oktorun arg'
+   );
 };
-my $callback2 = sub {
-   my ( $event ) = @_;
-   push @e, $event;
-   return $event;
-};
-open $file, "<", 'samples/slow001.txt' or die $OS_ERROR;
-$i = 0;
-1 while ( $p->parse_event( $file, undef, $callback1, $callback2 ) );
-close $file;
-is($e[1]->{foo}, '2', "Callback chain works", );
-
-open $file, "<", 'samples/slow002.txt' or die $OS_ERROR;
-@e = ();
-$i = 0;
-1 while ( $p->parse_event( $file, undef, $callback1, $callback2 ) );
-close $file;
-is(scalar @e, '5', "Callback chain early termination works", );
-
-# Test that we can early-abort when not oktorun.
-@e = ();
-my $num_events = 0;
-my $oktorun = 0;
-open my $fh, "<", 'samples/slow001.txt' or die $OS_ERROR;
-$num_events++ while $p->parse_event($fh, {oktorun=>\$oktorun}, sub { push @e, @_ });
-close $fh;
-is_deeply(
-   \@e,
-   [],
-   'oktorun'
-);
-
-open $fh, "<", 'samples/slow001.txt' or die $OS_ERROR;
-$num_events++ while $p->parse_event($fh, undef, sub { push @e, @_ });
-close $fh;
-ok(
-   @e,
-   'Runs without oktorun arg'
-);
 
 # #############################################################################
 # Parse "Client: IP:port".
