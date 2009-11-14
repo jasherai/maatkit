@@ -204,6 +204,10 @@ sub _parse_header {
    MKDEBUG && _d('HTTP header:', $line1);
    return unless $line1;
 
+   if ( !$header_vals ) {
+      MKDEBUG && _d('No header vals');
+      return $line1, undef;
+   }
    my @headers;
    foreach my $val ( split(/\r\n/, $header_vals) ) {
       last unless $val;
