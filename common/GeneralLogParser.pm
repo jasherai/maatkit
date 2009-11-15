@@ -32,7 +32,11 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
-   return bless {}, $class;
+   my $self = {
+      pending => [],
+      db_for  => {},
+   };
+   return bless $self, $class;
 }
 
 my $genlog_line_1= qr{
@@ -51,15 +55,19 @@ my $genlog_line_1= qr{
 # (slow, log, undef).  It reads events from the filehandle and calls the
 # callback with each event.
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
-   my %db_for;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
+
+   my $pending = $self->{pending};
+   my $db_for  = $self->{db_for};
    my $line;
    my $pos_in_log = tell($fh);
    LINE:
-   while ( $$oktorun && defined($line = <$fh>) ) {
+   while ( (defined($line = shift @$pending) or defined($line = <$fh>)) ) {
       MKDEBUG && _d($line);
       my ($ts, $thread_id, $cmd, $arg) = $line =~ m/$genlog_line_1/;
       if ( !($thread_id && $cmd) ) {
@@ -72,7 +80,7 @@ sub parse_event {
 
       $pos_in_log = tell($fh);
 
-      my $redo = 0;
+      @$pending = ();
       if ( $cmd eq 'Query' ) {
          # There may be more lines to this query.
          my $done = 0;
@@ -83,7 +91,7 @@ sub parse_event {
                if ( $thread_id && $cmd ) {
                   MKDEBUG && _d('Event done');
                   $done = 1;
-                  $redo = 1;
+                  push @$pending, $line;
                }
                else {
                   MKDEBUG && _d('More arg:', $line);
@@ -99,7 +107,7 @@ sub parse_event {
          chomp $arg;
          push @properties, 'cmd', 'Query', 'arg', $arg;
          push @properties, 'bytes', length($properties[-1]);
-         push @properties, 'db', $db_for{$thread_id} if $db_for{$thread_id};
+         push @properties, 'db', $db_for->{$thread_id} if $db_for->{$thread_id};
       }
       else {
          # If it's not a query it's some admin command.
@@ -121,7 +129,7 @@ sub parse_event {
                push @properties, 'user', $user if $user;
                push @properties, 'host', $host if $host;
                push @properties, 'db',   $db   if $db;
-               $db_for{$thread_id} = $db;
+               $db_for->{$thread_id} = $db;
             }
          }
          elsif ( $cmd eq 'Init' ) {
@@ -132,7 +140,7 @@ sub parse_event {
             my ($db) = $arg =~ /(\S+)/;
             MKDEBUG && _d('Init DB:', $db);
             push @properties, 'db',   $db   if $db;
-            $db_for{$thread_id} = $db;
+            $db_for->{$thread_id} = $db;
          }
 
          push @properties, 'arg', "administrator command: $cmd";
@@ -148,18 +156,11 @@ sub parse_event {
       # be gone.
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
-      foreach my $callback ( @callbacks ) {
-         last unless $event = $callback->($event);
-      }
-      ++$num_events;
-
-      if ( $redo ) {
-         MKDEBUG && _d('Redoing');
-         redo;
-      }
+      return $event;
    } # LINE
 
-   return $num_events;
+   @{$self->{pending}} = ();
+   return;
 }
 
 sub _d {
