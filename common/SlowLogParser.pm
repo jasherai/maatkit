@@ -263,6 +263,7 @@ sub parse_event {
    }
 
    @$pending = ();
+   $args{oktorun}->(0) if $args{oktorun};
    return;
 }
 

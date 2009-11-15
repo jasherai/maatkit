@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 47;
+use Test::More tests => 46;
 
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -17,14 +17,15 @@ my $p = new SlowLogParser;
 sub run_test {
    my ( $def ) = @_;
    map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:misc|file|result|num_events)$/ }
+      grep { $_ !~ m/^(?:misc|file|result|num_events|oktorun)$/ }
       keys %$def;
    my @e;
    eval {
       open my $fh, "<", $def->{file} or die $OS_ERROR;
       my %args = (
-         fh   => $fh,
-         misc => $def->{misc},
+         fh      => $fh,
+         misc    => $def->{misc},
+         oktorun => $def->{oktorun},
       );
       while ( my $e = $p->parse_event(%args) ) {
          push @e, $e;
@@ -1201,56 +1202,48 @@ run_test({
 # #############################################################################
 # Test a callback chain.
 # #############################################################################
-SKIP: {
-   skip 'no longer valid', 4 if 1;
-   my $i = 0;
-   my @e = ();
-   my $file;
-   my $callback1 = sub {
-      my ( $event ) = @_;
-      return 0 if $i >= 5;
-      $event->{foo} = ++$i;
-      return $event;
-   };
-   my $callback2 = sub {
-      my ( $event ) = @_;
-      push @e, $event;
-      return $event;
-   };
-   open $file, "<", 'samples/slow001.txt' or die $OS_ERROR;
-   $i = 0;
-   1 while ( $p->parse_event( $file, undef, $callback1, $callback2 ) );
-   close $file;
-   is($e[1]->{foo}, '2', "Callback chain works", );
+my $oktorun = 1;
 
-   open $file, "<", 'samples/slow002.txt' or die $OS_ERROR;
-   @e = ();
-   $i = 0;
-   1 while ( $p->parse_event( $file, undef, $callback1, $callback2 ) );
-   close $file;
-   is(scalar @e, '5', "Callback chain early termination works", );
+run_test({
+   file    => 'samples/slow001.txt',
+   oktorun => sub { $oktorun = $_[0]; },
+   result => [
+      {  ts            => '071015 21:43:52',
+         user          => 'root',
+         host          => 'localhost',
+         ip            => '',
+         db            => 'test',
+         arg           => 'select sleep(2) from n',
+         Query_time    => 2,
+         Lock_time     => 0,
+         Rows_sent     => 1,
+         Rows_examined => 0,
+         pos_in_log    => 0,
+         bytes         => length('select sleep(2) from n'),
+         cmd           => 'Query',
+      },
+      {  ts            => '071015 21:45:10',
+         db            => 'sakila',
+         user          => 'root',
+         host          => 'localhost',
+         ip            => '',
+         arg           => 'select sleep(2) from test.n',
+         Query_time    => 2,
+         Lock_time     => 0,
+         Rows_sent     => 1,
+         Rows_examined => 0,
+         pos_in_log    => 359,
+         bytes         => length('select sleep(2) from test.n'),
+         cmd           => 'Query',
+      },
+   ],
+});
 
-   # Test that we can early-abort when not oktorun.
-   @e = ();
-   my $num_events = 0;
-   my $oktorun = 0;
-   open my $fh, "<", 'samples/slow001.txt' or die $OS_ERROR;
-   $num_events++ while $p->parse_event($fh, {oktorun=>\$oktorun}, sub { push @e, @_ });
-   close $fh;
-   is_deeply(
-      \@e,
-      [],
-      'oktorun'
-   );
-
-   open $fh, "<", 'samples/slow001.txt' or die $OS_ERROR;
-   $num_events++ while $p->parse_event($fh, undef, sub { push @e, @_ });
-   close $fh;
-   ok(
-      @e,
-      'Runs without oktorun arg'
-   );
-};
+is(
+   $oktorun,
+   0,
+   'Sets oktorun'
+);
 
 # #############################################################################
 # Parse "Client: IP:port".
