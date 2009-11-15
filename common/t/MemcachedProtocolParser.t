@@ -31,21 +31,17 @@ sub run_test {
       grep { $_ !~ m/^(?:misc|file|result|num_events|desc)$/ }
       keys %$def;
    my @e;
-   my $num_events = 0;
-
-   my @callbacks;
-   push @callbacks, sub {
-      my ( $packet ) = @_;
-      return $protocol->parse_packet($packet, undef);
-   };
-   push @callbacks, sub {
-      push @e, @_;
-   };
-
    eval {
       open my $fh, "<", $def->{file}
          or BAIL_OUT("Cannot open $def->{file}: $OS_ERROR");
-      $num_events++ while $tcpdump->parse_event($fh, undef, @callbacks);
+      my %args = (
+         fh   => $fh,
+         misc => $def->{misc},
+      );
+      while ( my $p = $tcpdump->parse_event(%args) ) {
+         my $e = $protocol->parse_event(%args, event => $p);
+         push @e, $e if $e;
+      }
       close $fh;
    };
    is($EVAL_ERROR, '', "No error on $def->{file}");
@@ -57,13 +53,8 @@ sub run_test {
       ) or print "Got: ", Dumper(\@e);
    }
    if ( defined $def->{num_events} ) {
-      is($num_events, $def->{num_events}, "$def->{file} num_events");
+      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
    }
-
-   # Uncomment this if you're hacking the unknown.
-   # print "Events for $def->{file}: ", Dumper(\@e);
-
-   return;
 }
 
 # A session with a simple set().
