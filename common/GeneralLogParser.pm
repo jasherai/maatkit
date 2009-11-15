@@ -160,6 +160,7 @@ sub parse_event {
    } # LINE
 
    @{$self->{pending}} = ();
+   $args{oktorun}->(0) if $args{oktorun};
    return;
 }
 
