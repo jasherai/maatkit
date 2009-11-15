@@ -174,8 +174,13 @@ sub new {
 
 # The packet arg should be a hashref from TcpdumpParser::parse_event().
 # misc is a placeholder for future features.
-sub parse_packet {
-   my ( $self, $packet, $misc ) = @_;
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $packet = @args{@required_args};
 
    my $src_host = "$packet->{src_host}:$packet->{src_port}";
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
@@ -278,7 +283,7 @@ sub parse_packet {
    # The returned event may be empty if no event was ready to be created.
    my $event;
    if ( $packet_from eq 'server' ) {
-      $event = $self->_packet_from_server($packet, $session, $misc);
+      $event = $self->_packet_from_server($packet, $session, $args{misc});
    }
    elsif ( $packet_from eq 'client' ) {
       if ( $session->{buff} && $session->{buff_left} <= 0 ) {
@@ -299,7 +304,7 @@ sub parse_packet {
             $session->{buff_left}, 'more bytes');
          return;
       }
-      $event = $self->_packet_from_client($packet, $session, $misc);
+      $event = $self->_packet_from_client($packet, $session, $args{misc});
 
       $session->{buff}           = '';
       $session->{buff_left}      = 0;
