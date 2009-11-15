@@ -20,7 +20,6 @@ sub run_test {
       grep { $_ !~ m/^(?:misc|file|result|num_events)$/ }
       keys %$def;
    my @e;
-   my $num_events = 0;
    eval {
       open my $fh, "<", $def->{file} or die $OS_ERROR;
       my %args = (

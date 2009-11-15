@@ -32,6 +32,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
+   my $self = {
+      delim     => undef,
+      delim_len => 0,
+   };
    return bless {}, $class;
 }
 
@@ -42,18 +46,20 @@ my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)
 # This method accepts an open filehandle and a callback function.  It reads
 # events from the filehandle and calls the callback with each event.
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $pos_in_log = tell($fh);
    my $stmt;
-   my ($delim, $delim_len) = (undef, 0);
+   my ($delim, $delim_len) = ($self->{delim}, $self->{delim_len});
 
    EVENT:
-   while ( $$oktorun && defined($stmt = <$fh>) ) {
+   while ( defined($stmt = <$fh>) ) {
       my @properties = ('pos_in_log', $pos_in_log);
       my ($ts, $sid, $end, $type, $rest);
       $pos_in_log = tell($fh);
@@ -78,8 +84,8 @@ sub parse_event {
          if ( $line =~ m/^DELIMITER/m ) {
             my ( $del ) = $line =~ m/^DELIMITER (\S*)$/m;
             if ( $del ) {
-               $delim_len = length $del;
-               $delim     = quotemeta $del;
+               $self->{delim_len} = $delim_len = length $del;
+               $self->{delim}     = $delim     = quotemeta $del;
                MKDEBUG && _d('delimiter:', $delim);
             }
             else {
@@ -87,8 +93,8 @@ sub parse_event {
                # the delimiter back to normal like "DELIMITER ;" appear as
                # "DELIMITER ".
                MKDEBUG && _d('Delimiter reset to ;');
-               $delim     = undef;
-               $delim_len = 0;
+               $self->{delim}     = $delim     = undef;
+               $self->{delim_len} = $delim_len = 0;
             }
             next LINE;
          }
@@ -190,15 +196,15 @@ sub parse_event {
             if ( $arg =~ m/^DELIMITER/m ) {
                my ( $del ) = $arg =~ m/^DELIMITER (\S*)$/m;
                if ( $del ) {
-                  $delim_len = length $del;
-                  $delim     = quotemeta $del;
+                  $self->{delim_len} = $delim_len = length $del;
+                  $self->{delim}     = $delim     = quotemeta $del;
                   MKDEBUG && _d('delimiter:', $delim);
                }
                else {
                   MKDEBUG && _d('Delimiter reset to ;');
                   $del       = ';';
-                  $delim     = undef;
-                  $delim_len = 0;
+                  $self->{delim}     = $delim     = undef;
+                  $self->{delim_len} = $delim_len = 0;
                }
 
                $arg =~ s/^DELIMITER.*$//m;  # Remove DELIMITER from arg.
@@ -217,18 +223,14 @@ sub parse_event {
          # it's been cast into a hash, duplicated keys will be gone.
          MKDEBUG && _d('Properties of event:', Dumper(\@properties));
          my $event = { @properties };
-         foreach my $callback ( @callbacks ) {
-            last unless $event = $callback->($event);
-         }
-         ++$num_events;
+         return $event;
       }
       else {
          MKDEBUG && _d('Event had no arg');
       }
-
    } # EVENT
 
-   return $num_events;
+   return;
 }
 
 sub _d {

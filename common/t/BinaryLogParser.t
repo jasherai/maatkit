@@ -20,10 +20,15 @@ sub run_test {
       grep { $_ !~ m/^(?:misc|file|result|num_events)$/ }
       keys %$def;
    my @e;
-   my $num_events = 0;
    eval {
       open my $fh, "<", $def->{file} or die $OS_ERROR;
-      $num_events++ while $p->parse_event($fh, $def->{misc}, sub { push @e, @_ });
+      my %args = (
+         fh   => $fh,
+         misc => $def->{misc},
+      );
+      while ( my $e = $p->parse_event(%args) ) {
+         push @e, $e;
+      }
       close $fh;
    };
    is($EVAL_ERROR, '', "No error on $def->{file}");
@@ -32,7 +37,7 @@ sub run_test {
          or print "Got: ", Dumper(\@e);
    }
    if ( defined $def->{num_events} ) {
-      is($num_events, $def->{num_events}, "$def->{file} num_events");
+      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
    }
 }
 
