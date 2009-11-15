@@ -53,8 +53,13 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_packet {
-   my ( $self, $packet, $misc ) = @_;
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $packet = @args{@required_args};
 
    # Save each session's packets until its closed by the client.
    # This allows us to ensure that packets are processed in order.
@@ -77,12 +82,12 @@ sub parse_packet {
 
       my $event;
       map {
-         $event = $self->_parse_packet($_, $misc);
+         $event = $self->_parse_packet($_, $args{misc});
       } sort { $a->{seq} <=> $b->{seq} }
       @{$session->{client_packets}};
       
       map {
-         $event = $self->_parse_packet($_, $misc);
+         $event = $self->_parse_packet($_, $args{misc});
       } sort { $a->{seq} <=> $b->{seq} }
       @{$session->{server_packets}};
 
@@ -97,7 +102,7 @@ sub parse_packet {
       return;
    }
 
-   return $self->_parse_packet($packet, $misc);
+   return $self->_parse_packet($packet, $args{misc});
 }
 
 # The packet arg should be a hashref from TcpdumpParser::parse_event().
