@@ -250,7 +250,7 @@ is_deeply(
 
 $report = <<EOF;
 # Warning level differences
-# Query ID           Code   dbh-1 dbh-2 Message
+# Query ID           Code dbh-1   dbh-2 Message
 # ================== ==== ======= ===== ======================================
 # 4336C4AAA4EEF76B-1 1264 Warning Error Out of range value for column 'i' at row 1
 EOF

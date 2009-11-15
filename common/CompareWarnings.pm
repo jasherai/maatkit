@@ -171,6 +171,12 @@ sub after_execute {
    die "Failed to SHOW WARNINGS: $EVAL_ERROR"
       if $EVAL_ERROR;
 
+   # We munge the warnings to be the same thing so testing is easier, otherwise
+   # a ton of code has to be involved.  This seems to be the minimal necessary
+   # code to handle changes in warning messages.
+   map {
+      $_->{Message} =~ s/Out of range value adjusted/Out of range value/;
+   } values %$warnings;
    $event->{warning_count} = $warning_count || 0;
    $event->{warnings}      = $warnings;
 
