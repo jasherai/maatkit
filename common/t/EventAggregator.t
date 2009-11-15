@@ -27,7 +27,14 @@ sub parse_file {
    my @e;
    eval {
       open my $fh, "<", $file or BAIL_OUT($OS_ERROR);
-      1 while $p->parse_event($fh, undef, sub { push @e, @_; $ea->aggregate(@_);  });
+      my %args = (
+         fh   => $fh,
+         misc => undef,
+      );
+      while ( my $e = $p->parse_event(%args) ) {
+         push @e, $e;
+         $ea->aggregate($e);
+      }
       close $fh;
    };
    die $EVAL_ERROR if $EVAL_ERROR;
