@@ -261,6 +261,8 @@ sub parse_event {
       my $event = { @properties };
       return $event;
    }
+
+   @$pending = ();
    return;
 }
 
