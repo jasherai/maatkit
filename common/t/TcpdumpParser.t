@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 7;
+use Test::More tests => 5;
 
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -50,7 +50,7 @@ is_deeply(
       src_host   => '192.168.28.223',
       src_port   =>  '56462',
       dst_host   => '192.168.28.213',
-      dst_port   => 'mysql',
+      dst_port   => '3306',
       complete   => 1,
       ip_hlen    => 5,
       tcp_hlen   => 8,
@@ -83,19 +83,13 @@ is_deeply(
    },
    'Parsed packet OK');
 
-my @packets;
-my $oktorun = 1;
-
-sub save_packet {
-   push @packets, @_;
-   return;
-}
-
 sub run_test {
    my ( $file, $desc, $result ) = @_;
-   @packets = ();
+   my @packets;
    open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
-   $p->parse_event($fh, { oktorun => \$oktorun }, \&save_packet);
+   while ( my $packet = $p->parse_event(fh=>$fh) ) {
+      push @packets, $packet;
+   }
 
    # raw_packet is the actual dump text from the file.  It's used
    # in MySQLProtocolParser but I don't think we need to double-check
@@ -111,7 +105,6 @@ sub run_test {
       ) ) {
       print Dumper(\@packets);
    }
-   $oktorun = 1; # Reset this here so we don't forget for the next test.
    return;
 }
 
@@ -165,24 +158,6 @@ run_test(
             6f72 6c64 0500 0005 fe00 0002 00)),
       },
    ],
-);
-
-# Test that we can early-abort when not oktorun.
-$oktorun = 0;
-run_test(
-   'samples/tcpdump001.txt',
-   'oktorun',
-   [
-   ],
-);
-
-@packets = ();
-open my $fh, '<', 'samples/tcpdump001.txt'
-   or BAIL_OUT("Cannot open samples/tcpdump001.txt: $OS_ERROR");
-$p->parse_event($fh, undef, \&save_packet);
-ok(
-   @packets,
-   'Runs without oktorun arg'
 );
 
 # #############################################################################

@@ -65,15 +65,17 @@ sub new {
 # instead of parse_packet because mk-query-digest expects this for its
 # modular parser objects.
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_packets = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
    # In case we get a closed fh, trying tell() on it will cause an error.
    if ( !$fh ) {
       MKDEBUG && _d('No filehandle');
-      return 0;
+      return;
    }
 
    # We read a packet at a time.  Assuming that all packets begin with a
@@ -82,28 +84,23 @@ sub parse_event {
    local $INPUT_RECORD_SEPARATOR = "\n20";
 
    my $pos_in_log = tell($fh);
-   while ( $$oktorun && defined(my $raw_packet = <$fh>) ) {
+   while ( defined(my $raw_packet = <$fh>) ) {
       next if $raw_packet =~ m/^$/;  # issue 564
+      $pos_in_log -= 1 if $pos_in_log;
 
       # Remove the separator from the packet, and restore it to the front if
       # necessary.
       $raw_packet =~ s/\n20\Z//;
       $raw_packet = "20$raw_packet" unless $raw_packet =~ m/\A20/;
 
-      MKDEBUG && _d('packet:', ++$num_packets, 'pos:', $pos_in_log);
       my $packet = $self->_parse_packet($raw_packet);
       $packet->{pos_in_log} = $pos_in_log;
       $packet->{raw_packet} = $raw_packet;
 
-      foreach my $callback ( @callbacks ) {
-         last unless $packet = $callback->($packet);
-      }
-
-      $pos_in_log = tell($fh) - 1;
+      return $packet;
    }
 
-   MKDEBUG && _d('Done parsing packets;', $num_packets, 'parsed');
-   return $num_packets;
+   return;
 }
 
 # Takes a hex description of a TCP/IP packet and returns the interesting bits.
