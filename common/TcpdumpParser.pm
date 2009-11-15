@@ -100,6 +100,7 @@ sub parse_event {
       return $packet;
    }
 
+   $args{oktorun}->(0) if $args{oktorun};
    return;
 }
 

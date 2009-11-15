@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -83,11 +83,13 @@ is_deeply(
    },
    'Parsed packet OK');
 
+my $oktorun = 1;
+
 sub run_test {
    my ( $file, $desc, $result ) = @_;
    my @packets;
    open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
-   while ( my $packet = $p->parse_event(fh=>$fh) ) {
+   while ( my $packet = $p->parse_event(fh=>$fh, oktorun=>sub { $oktorun=$_[0]; }) ) {
       push @packets, $packet;
    }
 
@@ -158,6 +160,12 @@ run_test(
             6f72 6c64 0500 0005 fe00 0002 00)),
       },
    ],
+);
+
+is(
+   $oktorun,
+   0,
+   'Sets oktorun'
 );
 
 # #############################################################################
