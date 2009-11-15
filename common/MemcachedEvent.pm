@@ -73,7 +73,8 @@ sub new {
 # Given an event from MemcachedProtocolParser, returns an event
 # more suitable for mk-query-digest.
 sub parse_event {
-   my ( $self, $event ) = @_;
+   my ( $self, %args ) = @_;
+   my $event = $args{event};
    return unless $event;
 
    if ( !$event->{cmd} || !$event->{key} ) {

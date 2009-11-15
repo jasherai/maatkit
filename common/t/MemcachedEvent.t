@@ -18,7 +18,7 @@ isa_ok($memce, 'MemcachedEvent');
 sub make_events {
    my ( @memc_events ) = @_;
    my @events;
-   push @events, map { $memce->parse_event($_) } @memc_events;
+   push @events, map { $memce->parse_event(event=>$_) } @memc_events;
    return \@events;
 }
 
