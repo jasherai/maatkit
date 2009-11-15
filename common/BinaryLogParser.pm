@@ -230,6 +230,7 @@ sub parse_event {
       }
    } # EVENT
 
+   $args{oktorun}->(0) if $args{oktorun};
    return;
 }
 

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 7;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -14,17 +14,20 @@ require "../BinaryLogParser.pm";
 
 my $p = new BinaryLogParser();
 
+my $oktorun = 1;
+
 sub run_test {
    my ( $def ) = @_;
    map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:misc|file|result|num_events)$/ }
+      grep { $_ !~ m/^(?:misc|file|result|num_events|oktorun)$/ }
       keys %$def;
    my @e;
    eval {
       open my $fh, "<", $def->{file} or die $OS_ERROR;
       my %args = (
-         fh   => $fh,
-         misc => $def->{misc},
+         fh      => $fh,
+         misc    => $def->{misc},
+         oktorun => $def->{oktorun},
       );
       while ( my $e = $p->parse_event(%args) ) {
          push @e, $e;
@@ -42,7 +45,8 @@ sub run_test {
 }
 
 run_test({
-   file => 'samples/binlog001.txt',
+   file    => 'samples/binlog001.txt',
+   oktorun => sub { $oktorun = $_[0]; },
    result => [
   {
     '@@session.character_set_client' => '8',
@@ -204,6 +208,12 @@ run_test({
   }
 ]
 });
+
+is(
+   $oktorun,
+   0,
+   'Sets oktorun'
+);
 
 run_test({
    file => 'samples/binlog002.txt',
