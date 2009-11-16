@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 38;
+use Test::More tests => 39;
 
 BEGIN {
    # The timestamps for unix_timestamp are East Coast (EST), so GMT-4.
@@ -62,12 +62,13 @@ is(parse_timestamp('071015  1:43:52.108'), '2007-10-15 01:43:52.108000',
 # unix_timestamp() tests.
 # #############################################################################
 is(unix_timestamp('2007-10-15 01:43:52', 1), 1192412632, 'unix_timestamp');
-is(unix_timestamp('2009-05-14 12:51:10.001817', 1), 1242305470, 'unix_timestamp with microseconds');
+is(unix_timestamp('2009-05-14 12:51:10.080017', 1), '1242305470.080017', 'unix_timestamp with microseconds');
 
 # #############################################################################
 # ts() tests.
 # #############################################################################
 is(ts(1192412632, 1), '2007-10-15T01:43:52', 'ts');
+is(ts(1192412632.5, 1), '2007-10-15T01:43:52.500000', 'ts with microseconds');
 
 # #############################################################################
 # make_checksum() tests.

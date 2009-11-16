@@ -46,7 +46,7 @@ our @EXPORT_OK   = qw(
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
-our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?/;
+our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?/;
 our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
                                          # like a MySQL YYMMDD without hh:mm:ss.
 
@@ -145,8 +145,14 @@ sub ts {
       = $gmt ? gmtime($time) : localtime($time);
    $mon  += 1;
    $year += 1900;
-   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+   my $val = sprintf("%d-%02d-%02dT%02d:%02d:%02d",
       $year, $mon, $mday, $hour, $min, $sec);
+   if ( my ($us) = $time =~ m/(\.\d+)$/ ) {
+      $us = sprintf("%.6f", $us);
+      $us =~ s/^0\././;
+      $val .= $us;
+   }
+   return $val;
 }
 
 # Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.  Also
@@ -164,16 +170,19 @@ sub parse_timestamp {
 }
 
 # Turns a properly formatted timestamp like 2007-10-15 01:43:52
-# into an int (seconds since epoch).  Optional microseconds are ignored.  $gmt
+# into an int (seconds since epoch).  Optional microseconds are printed.  $gmt
 # makes it use GMT time instead of local time (to make tests deterministic).
 sub unix_timestamp {
    my ( $val, $gmt ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-     = $val =~ m/^$proper_ts$/ )
-   {
-      return $gmt
+   if ( my($y, $m, $d, $h, $i, $s, $us) = $val =~ m/^$proper_ts$/ ) {
+      $val = $gmt
          ? timegm($s, $i, $h, $d, $m - 1, $y)
          : timelocal($s, $i, $h, $d, $m - 1, $y);
+      if ( defined $us ) {
+         $us = sprintf('%.6f', $us);
+         $us =~ s/^0\././;
+         $val .= $us;
+      }
    }
    return $val;
 }
