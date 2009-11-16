@@ -669,7 +669,9 @@ sub parse_binlog {
    my ( $file ) = @_;
    @events = ();
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   1 while ( $parser->parse_event($fh, undef, sub { push @events, @_; }) );
+   while ( my $e = $parser->parse_event(fh => $fh) ) {
+      push @events, $e;
+   }
    close $fh;
    return;
 }
@@ -801,7 +803,7 @@ my $master_dbh = $sb->get_dbh_for('master');
 my $slave_dbh  = $sb->get_dbh_for('slave1');
 
 SKIP: {
-   skip 'Cannot connect to sandbox master or slave', 1
+   skip 'Cannot connect to sandbox master or slave', 6
       unless $master_dbh && $slave_dbh;
 
    my $spf = new SlavePrefetch(
