@@ -34,7 +34,7 @@ $pl->parse_event(
    },
    {
       prev => $prev,
-      time => 1000,
+      time => Transformers::unix_timestamp('2001-01-01 00:05:00'),
    },
    $callback,
 );
@@ -54,7 +54,7 @@ $pl->parse_event(
    },
    {
       prev => $prev,
-      time => 1000,
+      time => Transformers::unix_timestamp('2001-01-01 00:05:00'),
    },
    $callback,
 );
@@ -67,7 +67,7 @@ $pl->parse_event(
    },
    {
       prev => $prev,
-      time => 1001,
+      time => Transformers::unix_timestamp('2001-01-01 00:05:01'),
    },
    $callback,
 );
@@ -88,18 +88,20 @@ $pl->parse_event(
    },
    {
       prev => $prev,
-      time => 1000,
+      time => Transformers::unix_timestamp('2001-01-01 00:05:00'),
       etime => .05,
    },
    $callback,
 );
 
-# The $prev array should now show that the query started at time 998.
+# The $prev array should now show that the query started at time 2 seconds ago
 is_deeply(
    $prev,
    [
       [1, 'root', 'localhost', 'test', 'Query', 2,
-         'executing', 'query1_1', 998, .05, 1000 ],
+         'executing', 'query1_1',
+         Transformers::unix_timestamp('2001-01-01 00:04:58'), .05,
+         Transformers::unix_timestamp('2001-01-01 00:05:00') ],
    ],
    'Prev knows about the query',
 );
@@ -117,7 +119,7 @@ $pl->parse_event(
    },
    {
       prev => $prev,
-      time => 1001,
+      time => Transformers::unix_timestamp('2001-01-01 00:05:01'),
       etime => .03,
    },
    $callback,
@@ -128,7 +130,9 @@ is_deeply(
    $prev,
    [
       [2, 'root', 'localhost', 'test', 'Query', 1,
-         'executing', 'query2_1', 1000, .03, 1001],
+         'executing', 'query2_1',
+         Transformers::unix_timestamp('2001-01-01 00:05:00'), .03,
+         Transformers::unix_timestamp('2001-01-01 00:05:01')],
    ],
    'Prev forgot disconnected cxn 1, knows about cxn 2',
 );
@@ -141,7 +145,7 @@ is_deeply(
          host       => 'localhost',
          arg        => 'query1_1',
          bytes      => 8,
-         ts         => '1969-12-31T17:16:40',
+         ts         => '2001-01-01T00:05:00',
          Query_time => 2,
          Lock_time  => 0,
          id         => 1,
@@ -161,7 +165,7 @@ $pl->parse_event(
    },
    {
       prev => $prev,
-      time => 1002,
+      time => Transformers::unix_timestamp('2001-01-01 00:05:02'),
    },
    $callback,
 );
@@ -181,7 +185,7 @@ is_deeply(
          host       => 'localhost',
          arg        => 'query2_1',
          bytes      => 8,
-         ts         => '1969-12-31T17:16:41',
+         ts         => '2001-01-01T00:05:01',
          Query_time => 1,
          Lock_time  => 0,
          id         => 2,
@@ -191,7 +195,7 @@ is_deeply(
 );
 
 # In this sample, cxn 2 is running a query, with a start time at the current
-# time of 1003.
+# time of 3 secs later
 @events = ();
 $pl->parse_event(
    sub {
@@ -201,7 +205,7 @@ $pl->parse_event(
    },
    {
       prev => $prev,
-      time => 1003,
+      time => Transformers::unix_timestamp('2001-01-01 00:05:03'),
       etime => 3.14159,
    },
    $callback,
@@ -211,7 +215,8 @@ is_deeply(
    $prev,
    [
       [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
-      1003, 3.14159, 1003 ],
+      Transformers::unix_timestamp('2001-01-01 00:05:03'), 3.14159,
+      Transformers::unix_timestamp('2001-01-01 00:05:03') ],
    ],
    'Prev says query2_2 just started',
 );
@@ -223,8 +228,9 @@ is_deeply(
    'query2_2 is not fired yet',
 );
 
-# In this sample, the "same" query is running one second later and this time
-# it seems to have a start time of 1005, which is not enough to be a new query.
+# In this sample, the "same" query is running one second later and this time it
+# seems to have a start time of 5 secs later, which is not enough to be a new
+# query.
 @events = ();
 $pl->parse_event(
    sub {
@@ -234,7 +240,7 @@ $pl->parse_event(
    },
    {
       prev => $prev,
-      time => 1005,
+      time => Transformers::unix_timestamp('2001-01-01 00:05:05'),
       etime => 2.718,
    },
    $callback,
@@ -246,9 +252,10 @@ is_deeply(
    $prev,
    [
       [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
-      1003, 3.14159, 1003 ],
+      Transformers::unix_timestamp('2001-01-01 00:05:03'), 3.14159,
+      Transformers::unix_timestamp('2001-01-01 00:05:03') ],
    ],
-   'After query2_2 fired, the prev array has the one starting at 1003',
+   'After query2_2 fired, the prev array has the one starting at 05:03',
 );
 
 is(scalar(@events), 0, 'It did not fire yet');
@@ -263,7 +270,7 @@ $pl->parse_event(
    },
    {
       prev => $prev,
-      time => 1008.5,
+      time => Transformers::unix_timestamp('2001-01-01 00:05:08.500'),
       etime => 0.123,
    },
    $callback,
@@ -275,9 +282,10 @@ is_deeply(
    $prev,
    [
       [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
-      1008, 0.123, 1008.5 ],
+      Transformers::unix_timestamp('2001-01-01 00:05:08'), 0.123,
+      Transformers::unix_timestamp('2001-01-01 00:05:08.500') ],
    ],
-   'After query2_2 fired, the prev array has the one starting at 1008',
+   'After query2_2 fired, the prev array has the one starting at 05:08',
 );
 
 # And the query has fired an event.
@@ -288,7 +296,7 @@ is_deeply(
          host       => 'localhost',
          arg        => 'query2_2',
          bytes      => 8,
-         ts         => '1969-12-31T17:16:43',
+         ts         => '2001-01-01T00:05:03',
          Query_time => 5.5,
          Lock_time  => 0,
          id         => 2,
