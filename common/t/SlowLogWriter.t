@@ -22,7 +22,9 @@ sub run_test {
    eval {
       # Parse the original file and write the results back to $buffer.
       open my $fh, "<", $filename or die $OS_ERROR;
-      1 while $p->parse_event($fh, undef, sub { $w->write($fh2, @_) });
+      while ( my $e = $p->parse_event(fh => $fh) ) {
+         $w->write($fh2, $e);
+      }
       close $fh;
 
       if ( $expected ) {
