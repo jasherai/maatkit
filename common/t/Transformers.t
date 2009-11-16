@@ -3,14 +3,14 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 37;
+use Test::More tests => 38;
 
 BEGIN {
    # The timestamps for unix_timestamp are East Coast (EST), so GMT-4.
    $ENV{TZ}='EST5EDT';
    require '../Transformers.pm';
    Transformers->import( qw(parse_timestamp micro_t shorten secs_to_time
-   percentage_of unix_timestamp make_checksum any_unix_timestamp) );
+   percentage_of unix_timestamp make_checksum any_unix_timestamp ts) );
 };
 
 # #############################################################################
@@ -61,8 +61,13 @@ is(parse_timestamp('071015  1:43:52.108'), '2007-10-15 01:43:52.108000',
 # #############################################################################
 # unix_timestamp() tests.
 # #############################################################################
-is(unix_timestamp('2007-10-15 01:43:52'), 1192427032, 'unix_timestamp');
-is(unix_timestamp('2009-05-14 12:51:10.001817'), 1242319870, 'unix_timestamp with microseconds');
+is(unix_timestamp('2007-10-15 01:43:52', 1), 1192412632, 'unix_timestamp');
+is(unix_timestamp('2009-05-14 12:51:10.001817', 1), 1242305470, 'unix_timestamp with microseconds');
+
+# #############################################################################
+# ts() tests.
+# #############################################################################
+is(ts(1192412632, 1), '2007-10-15T01:43:52', 'ts');
 
 # #############################################################################
 # make_checksum() tests.

@@ -24,7 +24,7 @@ package Transformers;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Time::Local qw(timelocal);
+use Time::Local qw(timegm timelocal);
 use Digest::MD5 qw(md5_hex);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -137,10 +137,12 @@ sub shorten {
       $num, $units[$n]);
 }
 
+# Turns a unix timestamp into an ISO8601 formatted date and time.  $gmt makes
+# this relative to GMT, for test determinism.
 sub ts {
-   my ( $time ) = @_;
+   my ( $time, $gmt ) = @_;
    my ( $sec, $min, $hour, $mday, $mon, $year )
-      = localtime($time);
+      = $gmt ? gmtime($time) : localtime($time);
    $mon  += 1;
    $year += 1900;
    return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
@@ -162,13 +164,16 @@ sub parse_timestamp {
 }
 
 # Turns a properly formatted timestamp like 2007-10-15 01:43:52
-# into an int (seconds since epoch).  Optional microseconds are ignored.
+# into an int (seconds since epoch).  Optional microseconds are ignored.  $gmt
+# makes it use GMT time instead of local time (to make tests deterministic).
 sub unix_timestamp {
-   my ( $val ) = @_;
+   my ( $val, $gmt ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
      = $val =~ m/^$proper_ts$/ )
    {
-      return timelocal($s, $i, $h, $d, $m - 1, $y);
+      return $gmt
+         ? timegm($s, $i, $h, $d, $m - 1, $y)
+         : timelocal($s, $i, $h, $d, $m - 1, $y);
    }
    return $val;
 }
