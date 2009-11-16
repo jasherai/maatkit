@@ -849,11 +849,11 @@ SKIP: {
    `rm -rf /tmp/mk-query-digest.log`;
    my @ts = $dbh1->selectrow_array('SELECT first_seen, last_seen FROM test.query_review LIMIT 1');
    ok(
-      $ts[0] ne '0000-00-00 00:00:00',
+      $ts[0] && $ts[0] ne '0000-00-00 00:00:00',
       'first_seen from --processlist is not 0000-00-00 00:00:00'
    );
    ok(
-      $ts[1] ne '0000-00-00 00:00:00',
+      $ts[0] && $ts[1] ne '0000-00-00 00:00:00',
       'last_seen from --processlist is not 0000-00-00 00:00:00'
    );
 };
@@ -985,6 +985,8 @@ is(
    '',
    'No warnings on INSERT that segfaulted fingerprint() (issue 687)',
 );
+
+diag(`rm -rf /tmp/mqd-warnings.txt`);
 
 # #############################################################################
 # Done.
