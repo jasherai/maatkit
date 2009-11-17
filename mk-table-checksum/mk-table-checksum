@@ -4337,7 +4337,6 @@ sub checksum_tables {
                   MKDEBUG && _d('Column for numerical --since:',
                      $db, '.', $table->{table}, '.', $sincecol);
                   # This ends up being an additional WHERE clause.
-                  print "]]] HERE since=".$final_o->get('since')."\n";
                   $table->{since} = $q->quote($sincecol)
                      . '>=' .  $q->quote_val($final_o->get('since'));
                }
