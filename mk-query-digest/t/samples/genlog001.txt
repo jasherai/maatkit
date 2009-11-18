@@ -24,7 +24,7 @@
 #  10s+
 administrator command: Connect\G
 
-# Query 2: 0.00 QPS, 0x concurrency, ID 0xE90C6069BAFE249F at byte 428 ___
+# Query 2: 0.00 QPS, 0x concurrency, ID 0xE90C6069BAFE249F at byte 464 ___
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         28       2
 # Exec time      0       0       0       0       0       0       0       0
