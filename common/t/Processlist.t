@@ -20,83 +20,78 @@ my $rsp = new TextResultSetParser();
 MaatkitTest->import(qw(load_file));
 
 my @events;
-my $callback = sub { push @events, @_ };
-my $prev     = [];
+my $procs;
+
+sub parse_n_times {
+   my ( $n, %args ) = @_;
+   my @events;
+   for ( 1..$n ) {
+      my $event = $pl->parse_event(misc => \%args);
+      push @events, $event if $event;
+   }
+   return @events;
+}
 
 # An unfinished query doesn't crash anything.
-@events = ();
-$pl->parse_event(
-   sub {
-      return [
-         [1, 'unauthenticated user', 'localhost', undef, 'Connect', undef,
-         'Reading from net', undef],
-      ],
+$procs = [
+   [ [1, 'unauthenticated user', 'localhost', undef, 'Connect', undef,
+    'Reading from net', undef] ],
+],
+parse_n_times(
+   3,
+   code  => sub {
+      return shift @$procs;
    },
-   {
-      prev => $prev,
-      time => Transformers::unix_timestamp('2001-01-01 00:05:00'),
-   },
-   $callback,
+   time  => Transformers::unix_timestamp('2001-01-01 00:05:00'),
 );
-is_deeply($prev, [], 'Prev does not know about undef query');
+is_deeply($pl->_get_rows()->{prev_rows}, [], 'Prev does not know about undef query');
 is(scalar @events, 0, 'No events fired from connection in process');
 
 # Make a new one to replicate a bug with certainty...
 $pl = Processlist->new();
 
 # An existing sleeping query that goes away doesn't crash anything.
-@events = ();
-$pl->parse_event(
-   sub {
+parse_n_times(
+   1,
+   code  => sub {
       return [
          [1, 'root', 'localhost', undef, 'Sleep', 7, '', undef],
       ],
    },
-   {
-      prev => $prev,
-      time => Transformers::unix_timestamp('2001-01-01 00:05:00'),
-   },
-   $callback,
+   time  => Transformers::unix_timestamp('2001-01-01 00:05:00'),
 );
 
 # And now the connection goes away...
-$pl->parse_event(
-   sub {
+parse_n_times(
+   1,
+   code  => sub {
       return [
       ],
    },
-   {
-      prev => $prev,
-      time => Transformers::unix_timestamp('2001-01-01 00:05:01'),
-   },
-   $callback,
+   time  => Transformers::unix_timestamp('2001-01-01 00:05:01'),
 );
 
-is_deeply($prev, [], 'everything went away');
+is_deeply($pl->_get_rows()->{prev_rows}, [], 'everything went away');
 is(scalar @events, 0, 'No events fired from sleeping connection that left');
 
 # Make sure there's a fresh start...
 $pl = Processlist->new();
 
 # The initial processlist shows a query in progress.
-@events = ();
-$pl->parse_event(
-   sub {
+parse_n_times(
+   1,
+   code  => sub {
       return [
          [1, 'root', 'localhost', 'test', 'Query', 2, 'executing', 'query1_1'],
       ],
    },
-   {
-      prev => $prev,
-      time => Transformers::unix_timestamp('2001-01-01 00:05:00'),
-      etime => .05,
-   },
-   $callback,
+   time  => Transformers::unix_timestamp('2001-01-01 00:05:00'),
+   etime => .05,
 );
 
 # The $prev array should now show that the query started at time 2 seconds ago
 is_deeply(
-   $prev,
+   $pl->_get_rows()->{prev_rows},
    [
       [1, 'root', 'localhost', 'test', 'Query', 2,
          'executing', 'query1_1',
@@ -110,24 +105,21 @@ is(scalar @events, 0, 'No events fired');
 
 # The next processlist shows a new query in progress and the other one is not
 # there anymore at all.
-@events = ();
-$pl->parse_event(
-   sub {
-      return [
-         [2, 'root', 'localhost', 'test', 'Query', 1, 'executing', 'query2_1'],
-      ],
+$procs = [
+   [ [2, 'root', 'localhost', 'test', 'Query', 1, 'executing', 'query2_1'] ],
+];
+@events = parse_n_times(
+   2, 
+   code  => sub {
+      return shift @$procs,
    },
-   {
-      prev => $prev,
-      time => Transformers::unix_timestamp('2001-01-01 00:05:01'),
-      etime => .03,
-   },
-   $callback,
+   time  => Transformers::unix_timestamp('2001-01-01 00:05:01'),
+   etime => .03,
 );
 
 # The $prev array should not have the first one anymore, just the second one.
 is_deeply(
-   $prev,
+   $pl->_get_rows()->{prev_rows},
    [
       [2, 'root', 'localhost', 'test', 'Query', 1,
          'executing', 'query2_1',
@@ -156,23 +148,19 @@ is_deeply(
 
 # In this sample, the query on cxn 2 is finished, but the connection is still
 # open.
-@events = ();
-$pl->parse_event(
-   sub {
+@events = parse_n_times(
+   1,
+   code  => sub {
       return [
          [ 2, 'root', 'localhost', 'test', 'Sleep', 0, '', undef],
       ],
    },
-   {
-      prev => $prev,
-      time => Transformers::unix_timestamp('2001-01-01 00:05:02'),
-   },
-   $callback,
+   time  => Transformers::unix_timestamp('2001-01-01 00:05:02'),
 );
 
 # And so as a result, query2_1 has fired and the prev array is empty.
 is_deeply(
-   $prev,
+   $pl->_get_rows()->{prev_rows},
    [],
    'Prev says no queries are active',
 );
@@ -196,23 +184,19 @@ is_deeply(
 
 # In this sample, cxn 2 is running a query, with a start time at the current
 # time of 3 secs later
-@events = ();
-$pl->parse_event(
-   sub {
+@events = parse_n_times(
+   1,
+   code  => sub {
       return [
          [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2'],
       ],
    },
-   {
-      prev => $prev,
-      time => Transformers::unix_timestamp('2001-01-01 00:05:03'),
-      etime => 3.14159,
-   },
-   $callback,
+   time  => Transformers::unix_timestamp('2001-01-01 00:05:03'),
+   etime => 3.14159,
 );
 
 is_deeply(
-   $prev,
+   $pl->_get_rows()->{prev_rows},
    [
       [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
       Transformers::unix_timestamp('2001-01-01 00:05:03'), 3.14159,
@@ -231,25 +215,21 @@ is_deeply(
 # In this sample, the "same" query is running one second later and this time it
 # seems to have a start time of 5 secs later, which is not enough to be a new
 # query.
-@events = ();
-$pl->parse_event(
-   sub {
+@events = parse_n_times(
+   1,
+   code  => sub {
       return [
          [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2'],
       ],
    },
-   {
-      prev => $prev,
-      time => Transformers::unix_timestamp('2001-01-01 00:05:05'),
-      etime => 2.718,
-   },
-   $callback,
+   time  => Transformers::unix_timestamp('2001-01-01 00:05:05'),
+   etime => 2.718,
 );
 
 # And so as a result, query2_2 has NOT fired, but the prev array contains the
 # query2_2 still.
 is_deeply(
-   $prev,
+   $pl->_get_rows()->{prev_rows},
    [
       [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
       Transformers::unix_timestamp('2001-01-01 00:05:03'), 3.14159,
@@ -261,25 +241,21 @@ is_deeply(
 is(scalar(@events), 0, 'It did not fire yet');
 
 # But wait!  There's another!  And this time we catch it!
-@events = ();
-$pl->parse_event(
-   sub {
+@events = parse_n_times(
+   1,
+   code  => sub {
       return [
          [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2'],
       ],
    },
-   {
-      prev => $prev,
-      time => Transformers::unix_timestamp('2001-01-01 00:05:08.500'),
-      etime => 0.123,
-   },
-   $callback,
+   time  => Transformers::unix_timestamp('2001-01-01 00:05:08.500'),
+   etime => 0.123,
 );
 
 # And so as a result, query2_2 has fired and the prev array contains the "new"
 # query2_2.
 is_deeply(
-   $prev,
+   $pl->_get_rows()->{prev_rows},
    [
       [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2',
       Transformers::unix_timestamp('2001-01-01 00:05:08'), 0.123,

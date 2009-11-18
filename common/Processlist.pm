@@ -44,8 +44,14 @@ use constant {
 };
 
 sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
+   my ( $class, %args ) = @_;
+   my $self = {
+      prev_rows => [],
+      new_rows  => [],
+      curr_row  => undef,
+      prev_row  => undef,
+   };
+   return bless $self, $class;
 }
 
 # This method accepts a $code coderef, which is typically going to return SHOW
@@ -144,99 +150,130 @@ sub new {
 #    will show up in the processlist -- make that a property too.
 # 4) It should put cmd => Query, cmd => Admin, or whatever
 sub parse_event {
-   my ( $self, $code, $misc, @callbacks ) = @_;
-   my $num_events = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(misc);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($misc) = @args{@required_args};
 
-   my @curr = sort { $a->[ID] <=> $b->[ID] } @{$code->()};
-   my @prev = @{$misc->{prev} ||= []};
-   my @new; # Will become next invocation's @prev
-   my ($curr, $prev); # Rows from each source
+   # The code callback should return an arrayref of events from the proclist.
+   my $code = $misc->{code};
+   die "I need a code arg to misc" unless $code;
 
-   do {
-      if ( !$curr && @curr ) {
-         MKDEBUG && _d('Fetching row from curr');
-         $curr = shift @curr;
+   # If there are current rows from the last time we were called, continue
+   # using/parsing them.  Else, try to get new rows from $code.  Else, the
+   # proecesslist is probably empty so do nothing.
+   my @curr;
+   if ( $self->{curr_rows} ) {
+      MKDEBUG && _d('Current rows from last call');
+      @curr = @{$self->{curr_rows}};
+   }
+   else {
+      my $rows = $code->();
+      if ( $rows && scalar @$rows ) {
+         MKDEBUG && _d('Got new current rows');
+         @curr = sort { $a->[ID] <=> $b->[ID] } @$rows;
       }
-      if ( !$prev && @prev ) {
-         MKDEBUG && _d('Fetching row from prev');
-         $prev = shift @prev;
+      else {
+         MKDEBUG && _d('No current rows');
       }
-      if ( $curr || $prev ) {
-         # In each of the if/elses, something must be undef'ed to prevent
-         # infinite looping.
-         if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
-            MKDEBUG && _d('$curr and $prev are the same cxn');
-            # Or, if its start time seems to be after the start time of
-            # the previously seen one, it's also a new query.
-            my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
-            my $is_new = 0;
-            if ( $prev->[INFO] ) {
-               if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
-                  # This is a different query or a new query
-                  MKDEBUG && _d('$curr has a new query');
-                  $is_new = 1;
-               }
-               elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
-                  MKDEBUG && _d('$curr time is less than $prev time');
-                  $is_new = 1;
-               }
-               elsif ( $curr->[INFO] && defined $curr->[TIME]
-                  && $misc->{time} - $curr->[TIME] - $prev->[START]
-                     - $prev->[ETIME] - $misc->{etime} > $fudge
-               ) {
-                  MKDEBUG && _d('$curr has same query that restarted');
-                  $is_new = 1;
-               }
-               if ( $is_new ) {
-                  fire_event( $prev, $misc->{time}, @callbacks );
-               }
+   }
+
+   my @prev = @{$self->{prev_rows} ||= []};
+   my @new  = @{$self->{new_rows}  ||= []};; # Becomes next invocation's @prev
+   my $curr = $self->{curr_row}; # Rows from each source
+   my $prev = $self->{prev_row};
+   my $event;
+
+   MKDEBUG && _d('Rows:', scalar @prev, 'prev,', scalar @curr, 'current');
+
+   if ( !$curr && @curr ) {
+      MKDEBUG && _d('Fetching row from curr');
+      $curr = shift @curr;
+   }
+   if ( !$prev && @prev ) {
+      MKDEBUG && _d('Fetching row from prev');
+      $prev = shift @prev;
+   }
+   if ( $curr || $prev ) {
+      # In each of the if/elses, something must be undef'ed to prevent
+      # infinite looping.
+      if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
+         MKDEBUG && _d('$curr and $prev are the same cxn');
+         # Or, if its start time seems to be after the start time of
+         # the previously seen one, it's also a new query.
+         my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
+         my $is_new = 0;
+         if ( $prev->[INFO] ) {
+            if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
+               # This is a different query or a new query
+               MKDEBUG && _d('$curr has a new query');
+               $is_new = 1;
             }
-            if ( $curr->[INFO] ) {
-               if ( $prev->[INFO] && !$is_new ) {
-                  MKDEBUG && _d('Pushing old history item back onto $prev');
-                  push @new, [ @$prev ];
-               }
-               else {
-                  MKDEBUG && _d('Pushing new history item onto $prev');
-                  push @new,
-                     [ @$curr, int($misc->{time} - $curr->[TIME]),
-                        $misc->{etime}, $misc->{time} ];
-               }
+            elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
+               MKDEBUG && _d('$curr time is less than $prev time');
+               $is_new = 1;
             }
-            $curr = $prev = undef; # Fetch another from each.
+            elsif ( $curr->[INFO] && defined $curr->[TIME]
+                    && $misc->{time} - $curr->[TIME] - $prev->[START]
+                       - $prev->[ETIME] - $misc->{etime} > $fudge
+            ) {
+               MKDEBUG && _d('$curr has same query that restarted');
+               $is_new = 1;
+            }
+            if ( $is_new ) {
+               $event = $self->make_event($prev, $misc->{time});
+            }
          }
-         # The row in the prev doesn't exist in the curr.  Fire an event.
-         elsif ( !$curr
-               || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
-            MKDEBUG && _d('$curr is not in $prev');
-            fire_event( $prev, $misc->{time}, @callbacks );
-            $prev = undef;
-         }
-         # The row in curr isn't in prev; start a new event.
-         else { # This else must be entered, to prevent infinite loops.
-            MKDEBUG && _d('$prev is not in $curr');
-            if ( $curr->[INFO] && defined $curr->[TIME] ) {
+         if ( $curr->[INFO] ) {
+            if ( $prev->[INFO] && !$is_new ) {
+               MKDEBUG && _d('Pushing old history item back onto $prev');
+               push @new, [ @$prev ];
+            }
+            else {
                MKDEBUG && _d('Pushing new history item onto $prev');
                push @new,
                   [ @$curr, int($misc->{time} - $curr->[TIME]),
                      $misc->{etime}, $misc->{time} ];
             }
-            $curr = undef; # No infinite loops.
          }
+         $curr = $prev = undef; # Fetch another from each.
       }
-   } while ( @curr || @prev || $curr || $prev );
+      # The row in the prev doesn't exist in the curr.  Fire an event.
+      elsif ( !$curr
+              || ($curr && $prev && $curr->[ID] > $prev->[ID]) ) {
+         MKDEBUG && _d('$curr is not in $prev');
+         $event = $self->make_event($prev, $misc->{time});
+         $prev = undef;
+      }
+      # The row in curr isn't in prev; start a new event.
+      else { # This else must be entered, to prevent infinite loops.
+         MKDEBUG && _d('$prev is not in $curr');
+         if ( $curr->[INFO] && defined $curr->[TIME] ) {
+            MKDEBUG && _d('Pushing new history item onto $prev');
+            push @new,
+               [ @$curr, int($misc->{time} - $curr->[TIME]),
+                  $misc->{etime}, $misc->{time} ];
+         }
+         $curr = undef; # No infinite loops.
+      }
+   }
 
-   @{$misc->{prev}} = @new;
+   $self->{prev_rows} = \@new;
+   $self->{prev_row}  = $prev;
+   $self->{curr_rows} = scalar @curr ? \@curr : undef;
+   $self->{curr_row}  = $curr;
 
-   return $num_events;
+   return $event;
 }
 
 # The exec time of the query is the max of the time from the processlist, or the
 # time during which we've actually observed the query running.  In case two
 # back-to-back queries executed as the same one and we weren't able to tell them
 # apart, their time will add up, which is kind of what we want.
-sub fire_event {
-   my ( $row, $time, @callbacks ) = @_;
+sub make_event {
+   my ( $self, $row, $time ) = @_;
    my $Query_time = $row->[TIME];
    if ( $row->[TIME] < $time - $row->[FSEEN] ) {
       $Query_time = $time - $row->[FSEEN];
@@ -252,9 +289,15 @@ sub fire_event {
       Query_time => $Query_time,
       Lock_time  => 0,               # TODO
    };
-   foreach my $callback ( @callbacks ) {
-      last unless $event = $callback->($event);
-   }
+   MKDEBUG && _d('Properties of event:', Dumper($event));
+   return $event;
+}
+
+sub _get_rows {
+   my ( $self ) = @_;
+   my %rows = map { $_ => $self->{$_} }
+      qw(prev_rows new_rows curr_row prev_row);
+   return \%rows;
 }
 
 # Accepts a PROCESSLIST and a specification of filters to use against it.

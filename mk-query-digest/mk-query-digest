@@ -2016,7 +2016,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 5120
+# TcpdumpParser package 5136
 # ###########################################################################
 package TcpdumpParser;
 
@@ -2037,39 +2037,37 @@ sub new {
 }
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_packets = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
    if ( !$fh ) {
       MKDEBUG && _d('No filehandle');
-      return 0;
+      return;
    }
 
    local $INPUT_RECORD_SEPARATOR = "\n20";
 
    my $pos_in_log = tell($fh);
-   while ( $$oktorun && defined(my $raw_packet = <$fh>) ) {
+   while ( defined(my $raw_packet = <$fh>) ) {
       next if $raw_packet =~ m/^$/;  # issue 564
+      $pos_in_log -= 1 if $pos_in_log;
 
       $raw_packet =~ s/\n20\Z//;
       $raw_packet = "20$raw_packet" unless $raw_packet =~ m/\A20/;
 
-      MKDEBUG && _d('packet:', ++$num_packets, 'pos:', $pos_in_log);
       my $packet = $self->_parse_packet($raw_packet);
       $packet->{pos_in_log} = $pos_in_log;
       $packet->{raw_packet} = $raw_packet;
 
-      foreach my $callback ( @callbacks ) {
-         last unless $packet = $callback->($packet);
-      }
-
-      $pos_in_log = tell($fh) - 1;
+      return $packet;
    }
 
-   MKDEBUG && _d('Done parsing packets;', $num_packets, 'parsed');
-   return $num_packets;
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _parse_packet {
@@ -2147,7 +2145,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5104
+# MySQLProtocolParser package 5129
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2286,8 +2284,13 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_packet {
-   my ( $self, $packet, $misc ) = @_;
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $packet = @args{@required_args};
 
    my $src_host = "$packet->{src_host}:$packet->{src_port}";
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
@@ -2366,7 +2369,7 @@ sub parse_packet {
 
    my $event;
    if ( $packet_from eq 'server' ) {
-      $event = $self->_packet_from_server($packet, $session, $misc);
+      $event = $self->_packet_from_server($packet, $session, $args{misc});
    }
    elsif ( $packet_from eq 'client' ) {
       if ( $session->{buff} && $session->{buff_left} <= 0 ) {
@@ -2383,7 +2386,7 @@ sub parse_packet {
             $session->{buff_left}, 'more bytes');
          return;
       }
-      $event = $self->_packet_from_client($packet, $session, $misc);
+      $event = $self->_packet_from_client($packet, $session, $args{misc});
 
       $session->{buff}           = '';
       $session->{buff_left}      = 0;
@@ -3057,7 +3060,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 4462
+# SlowLogParser package 5133
 # ###########################################################################
 package SlowLogParser;
 
@@ -3070,7 +3073,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   my $self = {
+      pending => [],
+   };
+   return bless $self, $class;
 }
 
 my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
@@ -3086,20 +3092,21 @@ my $slow_log_hd_line = qr{
    }xm;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
-   my @pending;
+   my $pending = $self->{pending};
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $trimlen    = length($INPUT_RECORD_SEPARATOR);
    my $pos_in_log = tell($fh);
    my $stmt;
 
    EVENT:
-   while ( $$oktorun
-           && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
+   while ( (defined($stmt = shift @$pending) or defined($stmt = <$fh>)) ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 
@@ -3108,7 +3115,7 @@ sub parse_event {
          if ( @chunks > 1 ) {
             MKDEBUG && _d("Found multiple chunks");
             $stmt = shift @chunks;
-            unshift @pending, @chunks;
+            unshift @$pending, @chunks;
          }
       }
 
@@ -3195,10 +3202,10 @@ sub parse_event {
             MKDEBUG && _d("Got the query/arg line");
             my $arg = substr($stmt, $pos - length($line));
             push @properties, 'arg', $arg, 'bytes', length($arg);
-            if ( $misc && $misc->{embed}
-               && ( my ($e) = $arg =~ m/($misc->{embed})/)
+            if ( $args{misc} && $args{misc}->{embed}
+               && ( my ($e) = $arg =~ m/($args{misc}->{embed})/)
             ) {
-               push @properties, $e =~ m/$misc->{capture}/g;
+               push @properties, $e =~ m/$args{misc}->{capture}/g;
             }
             last LINE;
          }
@@ -3206,13 +3213,12 @@ sub parse_event {
 
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
-      foreach my $callback ( @callbacks ) {
-         last unless $event = $callback->($event);
-      }
-      ++$num_events;
-      last EVENT unless @pending;
+      return $event;
    }
-   return $num_events;
+
+   @$pending = ();
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -5902,7 +5908,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedProtocolParser package 4834
+# MemcachedProtocolParser package 5130
 # ###########################################################################
 package MemcachedProtocolParser;
 
@@ -5933,8 +5939,13 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_packet {
-   my ( $self, $packet, $misc ) = @_;
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $packet = @args{@required_args};
 
    my $src_host = "$packet->{src_host}:$packet->{src_port}";
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
@@ -5982,10 +5993,10 @@ sub parse_packet {
    $packet->{data} = pack('H*', $packet->{data});
    my $event;
    if ( $packet_from eq 'server' ) {
-      $event = $self->_packet_from_server($packet, $session, $misc);
+      $event = $self->_packet_from_server($packet, $session, $args{misc});
    }
    elsif ( $packet_from eq 'client' ) {
-      $event = $self->_packet_from_client($packet, $session, $misc);
+      $event = $self->_packet_from_client($packet, $session, $args{misc});
    }
    else {
       die 'Packet origin unknown';
@@ -6261,7 +6272,7 @@ sub timestamp_diff {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedEvent package 4155
+# MemcachedEvent package 5139
 # ###########################################################################
 package MemcachedEvent;
 
@@ -6308,8 +6319,9 @@ sub new {
    return bless $self, $class;
 }
 
-sub make_event {
-   my ( $self, $event ) = @_;
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my $event = $args{event};
    return unless $event;
 
    if ( !$event->{cmd} || !$event->{key} ) {
@@ -6403,7 +6415,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 4936
+# BinaryLogParser package 5134
 # ###########################################################################
 package BinaryLogParser;
 
@@ -6420,6 +6432,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
+   my $self = {
+      delim     => undef,
+      delim_len => 0,
+   };
    return bless {}, $class;
 }
 
@@ -6428,18 +6444,20 @@ my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end
 my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $pos_in_log = tell($fh);
    my $stmt;
-   my ($delim, $delim_len) = (undef, 0);
+   my ($delim, $delim_len) = ($self->{delim}, $self->{delim_len});
 
    EVENT:
-   while ( $$oktorun && defined($stmt = <$fh>) ) {
+   while ( defined($stmt = <$fh>) ) {
       my @properties = ('pos_in_log', $pos_in_log);
       my ($ts, $sid, $end, $type, $rest);
       $pos_in_log = tell($fh);
@@ -6464,14 +6482,14 @@ sub parse_event {
          if ( $line =~ m/^DELIMITER/m ) {
             my ( $del ) = $line =~ m/^DELIMITER (\S*)$/m;
             if ( $del ) {
-               $delim_len = length $del;
-               $delim     = quotemeta $del;
+               $self->{delim_len} = $delim_len = length $del;
+               $self->{delim}     = $delim     = quotemeta $del;
                MKDEBUG && _d('delimiter:', $delim);
             }
             else {
                MKDEBUG && _d('Delimiter reset to ;');
-               $delim     = undef;
-               $delim_len = 0;
+               $self->{delim}     = $delim     = undef;
+               $self->{delim_len} = $delim_len = 0;
             }
             next LINE;
          }
@@ -6539,15 +6557,15 @@ sub parse_event {
             if ( $arg =~ m/^DELIMITER/m ) {
                my ( $del ) = $arg =~ m/^DELIMITER (\S*)$/m;
                if ( $del ) {
-                  $delim_len = length $del;
-                  $delim     = quotemeta $del;
+                  $self->{delim_len} = $delim_len = length $del;
+                  $self->{delim}     = $delim     = quotemeta $del;
                   MKDEBUG && _d('delimiter:', $delim);
                }
                else {
                   MKDEBUG && _d('Delimiter reset to ;');
                   $del       = ';';
-                  $delim     = undef;
-                  $delim_len = 0;
+                  $self->{delim}     = $delim     = undef;
+                  $self->{delim_len} = $delim_len = 0;
                }
 
                $arg =~ s/^DELIMITER.*$//m;  # Remove DELIMITER from arg.
@@ -6564,18 +6582,15 @@ sub parse_event {
       if ( $found_arg ) {
          MKDEBUG && _d('Properties of event:', Dumper(\@properties));
          my $event = { @properties };
-         foreach my $callback ( @callbacks ) {
-            last unless $event = $callback->($event);
-         }
-         ++$num_events;
+         return $event;
       }
       else {
          MKDEBUG && _d('Event had no arg');
       }
-
    } # EVENT
 
-   return $num_events;
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -6593,7 +6608,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# GeneralLogParser package 5098
+# GeneralLogParser package 5135
 # ###########################################################################
 package GeneralLogParser;
 
@@ -6610,7 +6625,11 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
-   return bless {}, $class;
+   my $self = {
+      pending => [],
+      db_for  => {},
+   };
+   return bless $self, $class;
 }
 
 my $genlog_line_1= qr{
@@ -6626,15 +6645,19 @@ my $genlog_line_1= qr{
 }xs;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
-   my %db_for;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
+
+   my $pending = $self->{pending};
+   my $db_for  = $self->{db_for};
    my $line;
    my $pos_in_log = tell($fh);
    LINE:
-   while ( $$oktorun && defined($line = <$fh>) ) {
+   while ( (defined($line = shift @$pending) or defined($line = <$fh>)) ) {
       MKDEBUG && _d($line);
       my ($ts, $thread_id, $cmd, $arg) = $line =~ m/$genlog_line_1/;
       if ( !($thread_id && $cmd) ) {
@@ -6646,7 +6669,7 @@ sub parse_event {
 
       $pos_in_log = tell($fh);
 
-      my $redo = 0;
+      @$pending = ();
       if ( $cmd eq 'Query' ) {
          my $done = 0;
          do {
@@ -6656,7 +6679,7 @@ sub parse_event {
                if ( $thread_id && $cmd ) {
                   MKDEBUG && _d('Event done');
                   $done = 1;
-                  $redo = 1;
+                  push @$pending, $line;
                }
                else {
                   MKDEBUG && _d('More arg:', $line);
@@ -6672,7 +6695,7 @@ sub parse_event {
          chomp $arg;
          push @properties, 'cmd', 'Query', 'arg', $arg;
          push @properties, 'bytes', length($properties[-1]);
-         push @properties, 'db', $db_for{$thread_id} if $db_for{$thread_id};
+         push @properties, 'db', $db_for->{$thread_id} if $db_for->{$thread_id};
       }
       else {
          push @properties, 'cmd', 'Admin';
@@ -6690,7 +6713,7 @@ sub parse_event {
                push @properties, 'user', $user if $user;
                push @properties, 'host', $host if $host;
                push @properties, 'db',   $db   if $db;
-               $db_for{$thread_id} = $db;
+               $db_for->{$thread_id} = $db;
             }
          }
          elsif ( $cmd eq 'Init' ) {
@@ -6699,7 +6722,7 @@ sub parse_event {
             my ($db) = $arg =~ /(\S+)/;
             MKDEBUG && _d('Init DB:', $db);
             push @properties, 'db',   $db   if $db;
-            $db_for{$thread_id} = $db;
+            $db_for->{$thread_id} = $db;
          }
 
          push @properties, 'arg', "administrator command: $cmd";
@@ -6710,18 +6733,12 @@ sub parse_event {
 
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
-      foreach my $callback ( @callbacks ) {
-         last unless $event = $callback->($event);
-      }
-      ++$num_events;
-
-      if ( $redo ) {
-         MKDEBUG && _d('Redoing');
-         redo;
-      }
+      return $event;
    } # LINE
 
-   return $num_events;
+   @{$self->{pending}} = ();
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -7320,7 +7337,8 @@ sub main {
    my $review_dsn = $o->get('review'); 
    my @groupby    = @{$o->get('group-by')};
    my @orderby;
-   if ( $o->get('type') eq 'genlog' && !$o->got('order-by') ) {
+   if ( (grep { $_ eq 'genlog' || $_ eq 'GeneralLogParser' } @{$o->get('type')})
+        && !$o->got('order-by') ) {
       @orderby = 'Query_time:cnt';
    }
    else { 
@@ -7484,46 +7502,33 @@ sub main {
    # the chain).
    # ########################################################################
    my @callbacks;
+   my %alias_for = (
+      slowlog   => ['SlowLogParser'],
+      binlog    => ['BinaryLogParser'],
+      genlog    => ['GeneralLogParser'],
+      tcpdump   => ['TcpdumpParser','MySQLProtocolParser'],
+      memcached => ['TcpdumpParser','MemcachedProtocolParser','MemcachedEvent'],
+      http      => ['TcpdumpParser','HTTPProtocolParser'],
+   );
+   my $type = $o->get('type');
+   $type    = $alias_for{$type->[0]} if $alias_for{$type->[0]};
 
-   my $mysql_proto;
-   if ( $o->get('type') eq 'tcpdump' ) {
-      # If we're parsing tcpdump output, we'll create a TcpdumpParser
-      # obj later, but first we need a callback for MySQLProtocolParser
-      # which will make events out of the tcpdump data.  This callback
-      # must be first because it creates the events for subsequent callbacks.
-      $mysql_proto = new MySQLProtocolParser(
-         server => $o->get('watch-server'),
-         o      => $o,
-      );
-      push @callbacks, sub {
-         # Returns an event only when one is ready (it takes a few
-         # packets to make an event).
-         return $mysql_proto->parse_packet(@_);
+   foreach my $module ( @$type ) {
+      my $parser;
+      eval {
+         $parser = $module->new(
+            server => $o->get('watch-server'),
+            o      => $o,
+         );
       };
-   }
-   # Translate TCP packets into memcached query events.  This sub must be
-   # first because it creates the events for subsequent callbacks.
-   my $memc_proto;
-   my $memc_event;
-   if ( $o->get('type') eq 'memcached' ) {
-      $memc_proto = new MemcachedProtocolParser(
-         server => $o->get('watch-server'),
-         o      => $o,
-      );
-      $memc_event = new MemcachedEvent();
+      if ( $EVAL_ERROR ) {
+         die "Failed to load $module module: $EVAL_ERROR";
+      }
       push @callbacks, sub {
-         return $memc_event->make_event( $memc_proto->parse_packet(@_) );
+         my ( $event, %args ) = @_;
+         return $parser->parse_event(%args);
       };
-   }
-   # Parse HTTP traffic.
-   if ( $o->get('type') eq 'http' ) {
-      my $http_proto = new HTTPProtocolParser(
-         server => $o->get('watch-server'),
-         o      => $o,
-      );
-      push @callbacks, sub {
-         return $http_proto->parse_packet(@_);
-      };
+      MKDEBUG && _d('Added', $module, 'module to callbacks');
    }
 
    # Filter early for --since and --until.
@@ -7853,7 +7858,6 @@ sub main {
       my $cur_server = 'processlist';
       my $cur_time   = 0;
       my $misc       = {
-            oktorun  => \$oktorun,
             prev     => [],
             time     => 0,
             etime    => 0
@@ -7892,16 +7896,13 @@ sub main {
       };
       $run_func = sub {
          my $events;
-         eval {
-            $events = $pl->parse_event(
-               $get_processlist_sub,
-               $misc,
-               @callbacks,
-            );
-            Time::HiRes::usleep($o->get('interval') * 1_000_000);
-         };
-         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-         return $events;
+         $events = $pl->parse_event(
+            $get_processlist_sub,
+            $misc,
+            @callbacks,
+         );
+         Time::HiRes::usleep($o->get('interval') * 1_000_000);
+         return;
       };
    }
    else { # Parse log files
@@ -7909,16 +7910,7 @@ sub main {
          push @ARGV, '-'; # Magical STDIN filename.
       }
 
-      # Set up the parser and miscellaneous options to it.
-      my $misc   = { oktorun => \$oktorun };
-      my $parser = $o->get('type') eq 'slowlog'   ? new SlowLogParser()
-                 : $o->get('type') eq 'binlog'    ? new BinaryLogParser()
-                 : $o->get('type') eq 'genlog'    ? new GeneralLogParser()
-                 : $o->get('type') eq 'tcpdump'   ? new TcpdumpParser()
-                 : $o->get('type') eq 'memcached' ? new TcpdumpParser()
-                 : $o->get('type') eq 'http'      ? new TcpdumpParser()
-                 : die("Unknown type " . $o->get('type'));
-
+      my $misc = {};
       if ( my $patterns = $o->get('embedded-attributes') ) {
          $misc->{embed}   = qr/$patterns->[0]/o;
          $misc->{capture} = qr/$patterns->[1]/o;
@@ -7929,7 +7921,13 @@ sub main {
       my ($fh);
       $run_func = sub {
          if ( !$fh ) {
-            my $file = shift @ARGV or return;
+            my $file = shift @ARGV;
+            if ( !$file ) {
+               MKDEBUG && _d('No more files to parse');
+               $oktorun = 0;
+               return;
+            }
+
             if ( $file eq '-' ) {
                $fh = *STDIN;
                MKDEBUG && _d('Reading STDIN');
@@ -7944,13 +7942,27 @@ sub main {
             }
          }
 
-         my $events;
-         $events = $parser->parse_event($fh, $misc, @callbacks);
-         if ( !$events ) {
+         my $more_events = 1;
+         my $oktorun_sub = sub { $more_events = $_[0]; };
+         my $event       = {};
+         foreach my $callback ( @callbacks ) {
+            last unless $oktorun;
+            $event = $callback->(
+               $event,  # for backwards compatibility
+               event   => $event,  # new interface
+               fh      => $fh,
+               oktorun => $oktorun_sub,
+               misc    => $misc,
+            );
+            last unless $event;
+         }
+
+         if ( !$more_events ) {
             close $fh;
             $fh = undef;
          }
-         return $events;
+
+         return;  # Next file will be parsed.
       };
    }
 
@@ -7970,9 +7982,8 @@ sub main {
          $oktorun                             # instructed to quit
          && ($start == $end || $now < $end) ) # or time is exceeded
       {
-         my $result;
          eval {
-            $result = $run_func->();
+            $run_func->();
          };
          if ( $EVAL_ERROR ) {
             _d($EVAL_ERROR);
@@ -7983,10 +7994,7 @@ sub main {
 
             last EVENT unless $o->get('continue-on-error');
          }
-         else {
-            $now = time();
-            last EVENT unless defined $result;
-         }
+         $now = time();
       }
 
       # ######################################################################
@@ -9688,7 +9696,7 @@ will print something like:
 
 =item --type
 
-type: string
+type: Array
 
 The type of input to parse (default slowlog).  The permitted types are
 
