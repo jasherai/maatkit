@@ -234,7 +234,7 @@ sub _distill_tables {
       $_ =~ s/`//g;
       $_ =~ s/(_?)[0-9]+/$1?/g;
       $_;
-   } $qp->get_tables($query);
+   } grep { defined $_ } $qp->get_tables($query);
 
    push @tables, $table if $table;
 
