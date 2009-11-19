@@ -3570,7 +3570,7 @@ sub main {
          $progress)
    );
 
-   return $stat_totals{exit};
+   return $stat_totals{exit} || 0;
 }
 
 # ############################################################################
