@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * Tables were not dumped on MySQL 4.
+
 2009-10-30: version 1.0.18
 
    * Removed sets and all set-related options (issue 637).
