@@ -9,6 +9,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...mon/DuplicateKeyFinder.pm  100.0   81.2   86.7  100.0    n/a  100.0   94.2
 ...common/EventAggregator.pm   97.1   78.7   82.4   96.6    n/a  100.0   90.2
 ...t/common/EventTimeline.pm   90.9   67.9   50.0   92.9    n/a  100.0   85.0
+...mon/ExecutionThrottler.pm  100.0   75.0   50.0  100.0    n/a  100.0   92.2
 .../maatkit/common/Grants.pm   76.9   50.0    n/a   85.7    n/a  100.0   75.7
 ...mon/InnoDBStatusParser.pm   67.3   37.5   33.3   81.8    n/a  100.0   61.2
 ...maatkit/common/KeySize.pm   95.1   81.8   66.7  100.0    n/a  100.0   91.8
@@ -31,9 +32,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...maatkit/common/Outfile.pm   81.2   62.5    n/a   88.9    n/a  100.0   79.6
 ...kit/common/Processlist.pm   89.3   85.0   56.6   84.2    n/a  100.0   78.2
 .../ProcesslistAggregator.pm   85.0   87.5   80.0   85.7    n/a  100.0   85.3
-...t/common/QueryExecutor.pm   78.9   54.7   76.5   94.1    n/a  100.0   74.8
 ...kit/common/QueryParser.pm   93.9   73.8   69.2   91.7    n/a  100.0   88.3
-...kit/common/QueryRanker.pm   90.5   75.0   63.2  100.0    n/a  100.0   85.5
 ...n/QueryReportFormatter.pm   97.3   80.0   66.7  100.0    n/a  100.0   89.8
 ...kit/common/QueryReview.pm   91.0   68.2   66.7   91.7    n/a  100.0   84.7
 ...t/common/QueryRewriter.pm   92.2   84.5   53.3   93.8    n/a  100.0   87.8
