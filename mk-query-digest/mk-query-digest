@@ -1473,7 +1473,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5111
+# QueryRewriter package 5157
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1644,7 +1644,7 @@ sub _distill_tables {
       $_ =~ s/`//g;
       $_ =~ s/(_?)[0-9]+/$1?/g;
       $_;
-   } $qp->get_tables($query);
+   } grep { defined $_ } $qp->get_tables($query);
 
    push @tables, $table if $table;
 
@@ -2066,7 +2066,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 5136
+# TcpdumpParser package 5155
 # ###########################################################################
 package TcpdumpParser;
 
@@ -2173,11 +2173,11 @@ sub _parse_packet {
 
 sub port_number {
    my ( $self, $port ) = @_;
-   return $port unless $port =~ m/[^\d]/;
-   return 3306  if $port eq 'mysql';
-   return 11211 if $port eq 'memcached';
-   return 80    if $port eq 'http';
-   return $port;
+   return unless $port;
+   return $port eq 'memcached' ? 11211
+        : $port eq 'http'      ? 80
+        : $port eq 'mysql'     ? 3306
+        :                        $port; 
 }
 
 sub _d {
@@ -7341,6 +7341,7 @@ package mk_query_digest;
 
 use English qw(-no_match_vars);
 use Time::Local qw(timelocal);
+use Time::HiRes qw(time usleep);
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 $OUTPUT_AUTOFLUSH     = 1;
@@ -7552,9 +7553,9 @@ sub main {
    # the chain).
    # ########################################################################
    my @callbacks;
+   my %callback_names;
    my $misc = {};
    if ( $o->get('processlist') ) {
-      require Time::HiRes;
       my $pl = new Processlist();
       my ( $sth, $cxn );
       my $cur_server = 'processlist';
@@ -7564,7 +7565,7 @@ sub main {
          time  => 0,
          etime => 0,
          code  => sub {
-            my $time = $misc->{time} = Time::HiRes::time();
+            my $time = $misc->{time} = time();
             my $err;
             do {
                eval { $sth->execute; };
@@ -7574,7 +7575,7 @@ sub main {
                   eval {
                      ($cur_server, $ps_dbh) = find_role(
                         $o, $ps_dbh, $cur_server, 0, 'for --processlist');
-                     $cur_time = Time::HiRes::time();
+                     $cur_time = time();
                      $sth      = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
                      $cxn      = $ps_dbh->{mysql_thread_id};
                      $sth->execute();
@@ -7587,12 +7588,12 @@ sub main {
                }
             } until ( $sth && !$err );
             if ( $o->get('mirror')
-                 && Time::HiRes::time() - $cur_time > $o->get('mirror')) {
+                 && time() - $cur_time > $o->get('mirror')) {
                ($cur_server, $ps_dbh) = find_role($o, $ps_dbh, $cur_server,
                   0, 'for --processlist');
-               $cur_time = Time::HiRes::time();
+               $cur_time = time();
             }
-            $misc->{etime} = Time::HiRes::time() - $time;
+            $misc->{etime} = time() - $time;
             [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
          },
       };
@@ -7601,6 +7602,7 @@ sub main {
          my ( $event, %args ) = @_;
          return $pl->parse_event(%args);
       };
+      $callback_names{$callbacks[-1]} = ref $pl;
       MKDEBUG && _d('Added Processlist module to callbacks');
    }
    else {
@@ -7631,6 +7633,7 @@ sub main {
             my ( $event, %args ) = @_;
             return $parser->parse_event(%args);
          };
+         $callback_names{$callbacks[-1]} = ref $parser;
          MKDEBUG && _d('Added', $module, 'module to callbacks');
       }
    }
@@ -7677,6 +7680,7 @@ sub main {
          }
          return;
       };
+      $callback_names{$callbacks[-1]} = 'since';
    }
    if ( $o->get('until') ) {
       my $until = any_unix_timestamp($o->get('until'), $time_callback);
@@ -7701,6 +7705,7 @@ sub main {
          }
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'until';
    }
 
    if ( grep { $_ eq 'fingerprint' } @groupby ) {
@@ -7713,11 +7718,13 @@ sub main {
          $event->{fingerprint} = $qr->fingerprint($groupby_val);
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'fingerprint';
    }
 
    # Make subs which map attrib aliases to their primary attrib.
    foreach my $alt_attrib ( @{$o->get('attribute-aliases')} ) {
       push @callbacks, make_alt_attrib($alt_attrib);
+      $callback_names{$callbacks[-1]} = 'attribute aliases';
    }
 
    # Carry attribs forward for --inherit-attributes.
@@ -7727,6 +7734,7 @@ sub main {
       $prev_vals
    );
    push @callbacks, $inherit_attrib_sub if $inherit_attrib_sub;
+   $callback_names{$callbacks[-1]} = 'inherit attributes';
 
    if ( grep { $_ eq 'tables' } @groupby ) {
       push @callbacks, sub {
@@ -7747,6 +7755,7 @@ sub main {
          ];
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'tables';
    }
 
    my %distill_args;
@@ -7771,6 +7780,7 @@ sub main {
          MKDEBUG && !$event->{distill} && _d('Cannot distill', $event->{arg});
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'distill';
    }
 
    # Filter after special attributes, like fingerprint, tables,
@@ -7791,6 +7801,7 @@ sub main {
       my $sub = eval $code
          or die "Error compiling --filter code: $code\n$EVAL_ERROR";
       push @callbacks, $sub;
+      $callback_names{$callbacks[-1]} = 'filter';
    }
 
    if ( $o->get('zero-admin') ) {
@@ -7804,6 +7815,7 @@ sub main {
          }
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'zero admin';
    }
 
    if ( $o->got('sample') ) {
@@ -7822,6 +7834,7 @@ sub main {
             MKDEBUG && _d("--sample rejects event", $event->{$group_by_val});
             return;
          };
+         $callback_names{$callbacks[-1]} = 'sample';
       }
    }
 
@@ -7833,14 +7846,14 @@ sub main {
          $w->write(*STDOUT, $event);
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'print';
    }
 
    if ( $o->get('execute') ) {
-      require Time::HiRes;
       my $cur_server = 'execute';
       ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
             1, 'for --execute');
-      my $cur_time = Time::HiRes::time();
+      my $cur_time = time();
       my $curdb;
       push @callbacks, sub {
          my ( $event ) = @_;
@@ -7851,9 +7864,9 @@ sub main {
                $ex_dbh->do("USE $db");
                $curdb = $db;
             }
-            my $start = Time::HiRes::time();
+            my $start = time();
             $ex_dbh->do($event->{arg});
-            my $end = Time::HiRes::time();
+            my $end = time();
             if ( $o->get('mirror') && $end - $cur_time > $o->get('mirror') ) {
                ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
                      1, 'for --execute');
@@ -7867,7 +7880,7 @@ sub main {
             eval {
                ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
                      1, 'for --execute');
-               $cur_time = Time::HiRes::time();
+               $cur_time = time();
             };
             if ( $EVAL_ERROR ) {
                print STDERR $EVAL_ERROR;
@@ -7877,6 +7890,7 @@ sub main {
          }
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'execute';
    }
 
    # Finally, add aggregator obj for each groupby attrib to the callbacks.
@@ -7919,6 +7933,7 @@ sub main {
          $ea->aggregate($event);
          return $event;
       };
+      $callback_names{$callbacks[-1]} = "aggregate $groupby";
 
       # If user wants a timeline report, too, then create an EventTimeline
       # aggregator for this groupby attrib and add it to the callbacks, too.
@@ -7933,15 +7948,17 @@ sub main {
             $tl->aggregate($event);
             return $event;
          };
+         $callback_names{$callbacks[-1]} = "timeline $groupby";
       }
    }
 
    if ( $o->get('processlist') ) {
       push @callbacks, sub {
          MKDEBUG && _d('callback: interval sleep');
-         Time::HiRes::usleep($o->get('interval') * 1_000_000);
+         usleep($o->get('interval') * 1_000_000);
          return @_;
-      }
+      };
+      $callback_names{$callbacks[-1]} = 'interval sleep';
    }
 
    # ########################################################################
@@ -7973,6 +7990,7 @@ sub main {
       push @ARGV, '-'; # Magical STDIN filename.
    }
 
+   my %prof;
    my $fh;
    my $start = time();
    my $end   = $start + ($o->get('run-time') || 0); # When we should exit
@@ -8029,6 +8047,7 @@ sub main {
             my $oktorun_sub = sub { $more_events = $_[0]; };
             foreach my $callback ( @callbacks ) {
                last unless $oktorun;  # the global oktorun var
+               my $start = time;
                $event = $callback->(
                   $event,  # for backwards compatibility
                   event   => $event,  # new interface
@@ -8036,6 +8055,9 @@ sub main {
                   oktorun => $oktorun_sub,
                   misc    => $misc,
                );
+               my $end = time;
+               $prof{$callback}->{time} += ($end - $start);
+               $prof{$callback}->{count}++;
                last unless $event;
             }
             if ( !$more_events ) {
@@ -8389,6 +8411,19 @@ sub main {
    # Disconnect all open $dbh's
    map { $dp->disconnect($_) } grep { $_ }
       ($qv_dbh, $qv_dbh2, $ex_dbh, $ps_dbh, $ep_dbh);
+
+   if ( $o->get('statistics') ) {
+      my $fmt = "%-25s %12s %7s\n";
+      print "\n";
+      printf $fmt, 'Process', 'Time', 'Count';
+      printf $fmt, ('=' x 25), ('=' x 12), ('=' x 7);
+      foreach my $callback ( @callbacks ) {
+         my $name = $callback_names{$callback} || $callback;
+         my $t    = sprintf '%.6f', $prof{$callback}->{time}  || 0;
+         my $n    = shorten($prof{$callback}->{count} || 0, d=>1_000);
+         printf $fmt, $name, $t, $n;
+      }
+   }
 
    exit;
 } # End main().
@@ -9696,6 +9731,10 @@ See also L<"--until">.
 short form: -S; type: string
 
 Socket file to use for connection.
+
+=item --statistics
+
+Print statistics about the pipeline processes.
 
 =item --table-access
 
