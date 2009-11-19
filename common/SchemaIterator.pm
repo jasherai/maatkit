@@ -230,9 +230,9 @@ sub get_tbl_itr {
                # in SHOW FULL TABLES was not added until 5.0.2.  So 5.0.1
                # is an edge case that we ignore.  If >=5.0.2 then there
                # might be views and $type will be Table_type and we check
-               # as normal.  Else, there cannot be views so we default
-               # $type to 'VIEW' so that every table passes.
-               $ok = 0 if ($type || 'VIEW') eq 'VIEW';
+               # as normal.  Else, there cannot be views so there will be
+               # no $type.
+               $ok = 0 if ($type || '') eq 'VIEW';
             }
             $ok;
          }
