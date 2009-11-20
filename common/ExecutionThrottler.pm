@@ -61,7 +61,7 @@ sub new {
 
 sub throttle {
    my ( $self, %args ) = @_;
-   if ( $self->_time_to_check() ) {
+   if ( $self->_time_to_check() || !$self->{last_check} ) {
       my $rate_avg = (sum(@{$self->{int_rates}})   || 0)
                    / (scalar @{$self->{int_rates}} || 1);
       $self->_save_rate_avg($rate_avg);
@@ -84,13 +84,13 @@ sub throttle {
       }
 
       MKDEBUG && _d('Skip probability:', $self->{skip_prob});
+      $self->{last_check} = time;
    }
    else {
       my $current_rate = $self->{get_rate}->();
       push @{$self->{int_rates}}, $current_rate;
       MKDEBUG && _d('Current rate:', $current_rate);
-   }
-   $self->{last_check} = time;
+   } 
 
    # rand() returns a fractional value between [0,1).  If skip_prob is
    # 0 then, then no queries will be skipped.  If its 1.0, then all queries
