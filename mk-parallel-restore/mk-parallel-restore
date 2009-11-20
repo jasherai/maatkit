@@ -2607,6 +2607,7 @@ sub do_table {
       my @sql;      
       push @sql, "USE `$db`";
       push @sql, 'SET SQL_LOG_BIN=0' unless $o->get('bin-log');
+      push @sql, 'SET FOREIGN_KEY_CHECKS=0' unless $o->get('foreign-key-checks');
       push @sql, "DROP TABLE IF EXISTS `$db`.`$tbl`" if $o->get('drop-tables');
       push @sql, $table_ddl;
       _do($dbh, $dry_run, @sql);

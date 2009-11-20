@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * Failed to restore tables with foreign key constraints (issue 703).
+
 2009-10-30: version 1.0.17
 
    * Removed ability to restore triggers and views (issue 316).

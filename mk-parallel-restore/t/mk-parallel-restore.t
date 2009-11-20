@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 59;
+use Test::More tests => 60;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -705,6 +705,7 @@ $output = `$cmd samples/fast_index --dry-run --quiet -t store -t film_text --no-
 is(
    $output,
 "USE `sakila`
+SET FOREIGN_KEY_CHECKS=0
 DROP TABLE IF EXISTS `sakila`.`film_text`
 CREATE TABLE `film_text` (
   `film_id` smallint(6) NOT NULL,
@@ -723,6 +724,19 @@ INSERT INTO `film_text` VALUES (1,'ACADEMY DINOSAUR','A Epic Drama of a Feminist
 /*!40000 ALTER TABLE `sakila`.`film_text` ENABLE KEYS */
 ",
    '--no-foreign-key-checks'
+);
+
+# " # fix my syntax highlighting because of that ^
+
+# #############################################################################
+# Issue 703: mk-parallel-restore cannot create tables with constraints
+# #############################################################################
+$dbh->do('DROP TABLE IF EXISTS test.store');
+`$cmd samples/fast_index/ -D test -t store --no-foreign-key-checks 2>&1`;
+is_deeply(
+   $dbh->selectall_arrayref("show tables from `test` like 'store'"),
+   [['store']],
+   'Restore table with foreign key constraints (issue 703)'
 );
 
 # #############################################################################
