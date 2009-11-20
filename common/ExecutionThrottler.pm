@@ -33,18 +33,18 @@ $Data::Dumper::Quotekeys = 0;
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # Arguments:
-#   * rate_max          scalar: maximum allowable execution rate
-#   * get_rate          subref: callback to get the current execution rate
-#   * check_int         scalar: check interval in seconds for calling get_rate()
-#   * probability-step  scalar: incr/decr skip_prob in step increments
+#   * rate_max   scalar: maximum allowable execution rate
+#   * get_rate   subref: callback to get the current execution rate
+#   * check_int  scalar: check interval in seconds for calling get_rate()
+#   * step       scalar: incr/decr skip_prob in step increments
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(rate_max get_rate check_int);
+   my @required_args = qw(rate_max get_rate check_int step);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $self = {
-      'probability-step' => 0.05,  # default
+      step       => 0.05,  # default
       %args, 
       rate_ok    => undef,
       last_check => undef,
@@ -71,7 +71,7 @@ sub parse_event {
       if ( $rate_avg > $self->{rate_max} ) {
          # Rates is too high; increase the probability that the event
          # will be skipped.
-         $self->{skip_prob} += $self->{'probability-step'};
+         $self->{skip_prob} += $self->{step};
          $self->{skip_prob}  = 1.0 if $self->{skip_prob} > 1.0;
          MKDEBUG && _d('Rate max exceeded');
          $args{stats}->{rate_max_exceeded}++ if $args{stats};
@@ -79,7 +79,7 @@ sub parse_event {
       else {
          # The rate is ok; decrease the probability that the event
          # will be skipped.
-         $self->{skip_prob} -= $self->{'probability-step'};
+         $self->{skip_prob} -= $self->{step};
          $self->{skip_prob} = 0.0 if $self->{skip_prob} < 0.0;
       }
 

@@ -24,10 +24,10 @@ my %args = (
 my $get_rate = sub { return $rate; };
 
 my $et = new ExecutionThrottler(
-   rate_max           => 90,
-   get_rate           => $get_rate,
-   check_int          => 0.4,
-   'probability-step' => 0.8,
+   rate_max  => 90,
+   get_rate  => $get_rate,
+   check_int => 0.4,
+   step      => 0.8,
 );
 
 isa_ok($et, 'ExecutionThrottler');
