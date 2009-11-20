@@ -97,7 +97,7 @@ sub throttle {
    # will be skipped.  skip_prop is adjusted above; it depends on the
    # average rate.
    if ( $args{event} ) {
-      $args{event}->{Skip_exec} = $self->{skip_prob} <= rand() ? 0 : 1;
+      $args{event}->{Skip_exec} = $self->{skip_prob} <= rand() ? 'No' : 'Yes';
    }
 
    return $args{event};

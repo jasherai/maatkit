@@ -18,7 +18,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 my $rate    = 100;
 my $oktorun = 1;
 my %args = (
-   event   => { arg => 'query', Skip_exec => 0, },
+   event   => { arg => 'query', Skip_exec => 'No', },
    oktorun => sub { return $oktorun; },
 );
 my $get_rate = sub { return $rate; };
@@ -57,8 +57,8 @@ usleep 450000;
 my $event = $et->throttle(%args);
 is(
    $event->{Skip_exec},
-   1,
-   'Event after check, exceeds rate max, Skip_exec = 1'
+   'Yes',
+   'Event after check, exceeds rate max, Skip_exec = Yes'
 );
 
 is(
