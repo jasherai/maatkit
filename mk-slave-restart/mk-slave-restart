@@ -2137,6 +2137,8 @@ sub main {
 
    $dp->prop('set-vars', $o->get('set-vars'));
 
+   $o->set('verbose', 0) if $o->get('quiet');
+
    if ( !$o->get('help') ) {
       if ( $o->get('until-master') ) {
          if ( $o->get('until-master') !~ m/^[.\w-]+,\d+$/ ) {

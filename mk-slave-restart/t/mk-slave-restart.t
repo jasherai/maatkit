@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 13;
+use Test::More tests => 14;
 
 require '../mk-slave-restart';
 require '../../common/Sandbox.pm';
@@ -114,6 +114,16 @@ is(
    $ret >> 8,
    0,
    "--monitor --stop doesn't cause error"
+);
+
+# #############################################################################
+#  Issue 673: Use of uninitialized value in numeric gt (>)
+# #############################################################################
+$output = `../mk-slave-restart --monitor  --error-numbers 1205,1317 --quiet -F /tmp/12346/my.sandbox.cnf  --run-time 1 2>&1`;
+is(
+   $output,
+   '',
+   'No error with --quiet (issue 673)'
 );
 
 # #############################################################################

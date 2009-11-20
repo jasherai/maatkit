@@ -1,5 +1,7 @@
 Changelog for mk-slave-restart:
 
+   * --quiet caused a "Use of uninitialized value" error (issue 673).
+
 2009-10-30: version 1.0.18
 
    * --monitor --stop caused error Option maxlength does not exist (issue 662).
