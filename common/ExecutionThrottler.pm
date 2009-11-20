@@ -59,7 +59,7 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_event {
+sub throttle {
    my ( $self, %args ) = @_;
    if ( $self->_time_to_check() ) {
       my $rate_avg = (sum(@{$self->{int_rates}})   || 0)
