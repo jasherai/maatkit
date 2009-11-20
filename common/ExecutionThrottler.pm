@@ -70,7 +70,7 @@ sub throttle {
 
       if ( $args{stats} ) {
          $args{stats}->{throttle_checked_rate}++;
-         $args{stats}->{throttle_rate_avg} = $running_avg;
+         $args{stats}->{throttle_rate_avg} = sprintf '%.2f', $running_avg;
       }
 
       if ( $rate_avg > $self->{rate_max} ) {
@@ -134,7 +134,7 @@ sub _save_rate_avg {
    push @$samples, $rate;
    shift @$samples if @$samples > 100;
    $self->{stats}->{rate_avg} = sum(@$samples) / (scalar @$samples);
-   return $self->{stats}->{rate_avg};
+   return $self->{stats}->{rate_avg} || 0;
 }
 
 sub _d {
