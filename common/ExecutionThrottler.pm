@@ -61,12 +61,17 @@ sub new {
 
 sub throttle {
    my ( $self, %args ) = @_;
-   if ( $self->_time_to_check() || !$self->{last_check} ) {
+   if ( $self->_time_to_check() ) {
       my $rate_avg = (sum(@{$self->{int_rates}})   || 0)
                    / (scalar @{$self->{int_rates}} || 1);
-      $self->_save_rate_avg($rate_avg);
+      my $running_avg = $self->_save_rate_avg($rate_avg);
       @{$self->{int_rates}} = ();
       MKDEBUG && _d('Average rate for last interval:', $rate_avg);
+
+      if ( $args{stats} ) {
+         $args{stats}->{throttle_checked_rate}++;
+         $args{stats}->{throttle_rate_avg} = $running_avg;
+      }
 
       if ( $rate_avg > $self->{rate_max} ) {
          # Rates is too high; increase the probability that the event
@@ -74,13 +79,14 @@ sub throttle {
          $self->{skip_prob} += $self->{step};
          $self->{skip_prob}  = 1.0 if $self->{skip_prob} > 1.0;
          MKDEBUG && _d('Rate max exceeded');
-         $args{stats}->{rate_max_exceeded}++ if $args{stats};
+         $args{stats}->{throttle_rate_max_exceeded}++ if $args{stats};
       }
       else {
          # The rate is ok; decrease the probability that the event
          # will be skipped.
          $self->{skip_prob} -= $self->{step};
          $self->{skip_prob} = 0.0 if $self->{skip_prob} < 0.0;
+         $args{stats}->{throttle_rate_ok}++ if $args{stats};
       }
 
       MKDEBUG && _d('Skip probability:', $self->{skip_prob});
@@ -105,7 +111,10 @@ sub throttle {
 
 sub _time_to_check {
    my ( $self ) = @_;
-   return 0 unless $self->{last_check};
+   if ( !$self->{last_check} ) {
+      $self->{last_check} = time;
+      return 0;
+   }
    return time - $self->{last_check} >= $self->{check_int} ? 1 : 0;
 }
 
@@ -125,7 +134,7 @@ sub _save_rate_avg {
    push @$samples, $rate;
    shift @$samples if @$samples > 100;
    $self->{stats}->{rate_avg} = sum(@$samples) / (scalar @$samples);
-   return;
+   return $self->{stats}->{rate_avg};
 }
 
 sub _d {
