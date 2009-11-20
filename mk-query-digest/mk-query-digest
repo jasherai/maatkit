@@ -7330,6 +7330,121 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# ExecutionThrottler package 5166
+# ###########################################################################
+package ExecutionThrottler;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use List::Util qw(sum);
+use Time::HiRes qw(time);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw(rate_max get_rate check_int step);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $self = {
+      step       => 0.05,  # default
+      %args, 
+      rate_ok    => undef,
+      last_check => undef,
+      stats      => {
+         rate_avg     => 0,
+         rate_samples => [],
+      },
+      int_rates  => [],
+      skip_prob  => 0.0,
+   };
+
+   return bless $self, $class;
+}
+
+sub throttle {
+   my ( $self, %args ) = @_;
+   if ( $self->_time_to_check() || !$self->{last_check} ) {
+      my $rate_avg = (sum(@{$self->{int_rates}})   || 0)
+                   / (scalar @{$self->{int_rates}} || 1);
+      $self->_save_rate_avg($rate_avg);
+      @{$self->{int_rates}} = ();
+      MKDEBUG && _d('Average rate for last interval:', $rate_avg);
+
+      if ( $rate_avg > $self->{rate_max} ) {
+         $self->{skip_prob} += $self->{step};
+         $self->{skip_prob}  = 1.0 if $self->{skip_prob} > 1.0;
+         MKDEBUG && _d('Rate max exceeded');
+         $args{stats}->{rate_max_exceeded}++ if $args{stats};
+      }
+      else {
+         $self->{skip_prob} -= $self->{step};
+         $self->{skip_prob} = 0.0 if $self->{skip_prob} < 0.0;
+      }
+
+      MKDEBUG && _d('Skip probability:', $self->{skip_prob});
+      $self->{last_check} = time;
+   }
+   else {
+      my $current_rate = $self->{get_rate}->();
+      push @{$self->{int_rates}}, $current_rate;
+      MKDEBUG && _d('Current rate:', $current_rate);
+   } 
+
+   if ( $args{event} ) {
+      $args{event}->{Skip_exec} = $self->{skip_prob} <= rand() ? 'No' : 'Yes';
+   }
+
+   return $args{event};
+}
+
+sub _time_to_check {
+   my ( $self ) = @_;
+   return 0 unless $self->{last_check};
+   return time - $self->{last_check} >= $self->{check_int} ? 1 : 0;
+}
+
+sub rate_avg {
+   my ( $self ) = @_;
+   return $self->{stats}->{rate_avg} || 0;
+}
+
+sub skip_probability {
+   my ( $self ) = @_;
+   return $self->{skip_prob};
+}
+
+sub _save_rate_avg {
+   my ( $self, $rate ) = @_;
+   my $samples  = $self->{stats}->{rate_samples};
+   push @$samples, $rate;
+   shift @$samples if @$samples > 100;
+   $self->{stats}->{rate_avg} = sum(@$samples) / (scalar @$samples);
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ExecutionThrottler package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -7554,6 +7669,7 @@ sub main {
    # ########################################################################
    my @callbacks;
    my %callback_names;
+   my %prof;
    my $misc = {};
    if ( $o->get('processlist') ) {
       my $pl = new Processlist();
@@ -7849,6 +7965,31 @@ sub main {
       $callback_names{$callbacks[-1]} = 'print';
    }
 
+   if ( my $et_args = $o->get('execute-throttle') ) {
+      my ($rate_max, $int, $step) = @$et_args;
+      $step ||= 0.05;
+      $step  /= 100;
+      MKDEBUG && _d('Execute throttle:', $rate_max, $int, $step);
+      my $get_rate = sub {
+         my $total_time = 0;
+         map { $total_time += ($_->{time} || 0); }
+         grep { defined $_ } values %prof;
+         return percentage_of($prof{'execute'}->{time} || 0, $total_time);
+      };
+      my $et = new ExecutionThrottler(
+         rate_max  => $rate_max,
+         get_rate  => $get_rate,
+         check_int => $int,
+         step      => $step,
+      );
+      push @callbacks, sub {
+         my ( $event, %args ) = @_;
+         MKDEBUG && _d('callback: throttle');
+         return $et->throttle(%args);
+      };
+      $callback_names{$callbacks[-1]} = 'execute throttle';
+   }
+
    if ( $o->get('execute') ) {
       my $cur_server = 'execute';
       ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
@@ -7858,6 +7999,10 @@ sub main {
       push @callbacks, sub {
          my ( $event ) = @_;
          MKDEBUG && _d('callback: execute');
+         if ( ($event->{Skip_exec} || '') eq 'Yes' ) {
+            MKDEBUG && _d('Not executing event because of --execute-throttle');
+            return $event;
+         }
          my $db = $event->{db};
          eval {
             if ( $db && (!$curdb || $db ne $curdb) ) {
@@ -7990,7 +8135,6 @@ sub main {
       push @ARGV, '-'; # Magical STDIN filename.
    }
 
-   my %prof;
    my $fh;
    my $start = time();
    my $end   = $start + ($o->get('run-time') || 0); # When we should exit
@@ -8055,9 +8199,10 @@ sub main {
                   oktorun => $oktorun_sub,
                   misc    => $misc,
                );
-               my $end = time;
-               $prof{$callback}->{time} += ($end - $start);
-               $prof{$callback}->{count}++;
+               my $end  = time;
+               my $name = $callback_names{$callback} || $callback;
+               $prof{$name}->{time} += ($end - $start);
+               $prof{$name}->{count}++;
                last unless $event;
             }
             if ( !$more_events ) {
@@ -8419,8 +8564,8 @@ sub main {
       printf $fmt, ('=' x 25), ('=' x 12), ('=' x 7);
       foreach my $callback ( @callbacks ) {
          my $name = $callback_names{$callback} || $callback;
-         my $t    = sprintf '%.6f', $prof{$callback}->{time}  || 0;
-         my $n    = shorten($prof{$callback}->{count} || 0, d=>1_000);
+         my $t    = sprintf '%.6f', $prof{$name}->{time}  || 0;
+         my $n    = shorten($prof{$name}->{count} || 0, d=>1_000);
          printf $fmt, $name, $t, $n;
       }
    }
@@ -9112,7 +9257,36 @@ overwrites the event's Query_time attribute.  If unsuccessful, the callback
 returns false and terminates the chain.
 
 If the connection fails, mk-query-digest tries to reconnect once per second.
-See also L<"--mirror">.
+
+See also L<"--mirror"> and L<"--execute-throttle">.
+
+=item --execute-throttle
+
+type: array
+
+Throttle values for L<"--execute">.
+
+By default L<"--execute"> runs without any limitations or concerns for the
+amount of time that it takes to execute the events.  The L<"--execute-throttle">
+allows you to limit the amount of time spent doing L<"--execute"> relative
+to the other processes that handle events.  This works by marking some events
+with a C<Skip_exec> attribute when L<"--execute"> begins to take too much time.
+L<"--execute"> will not execute an event if this attribute is true.  This
+indirectly decreases the time spent doing L<"--execute">.
+
+The L<"--execute-throttle"> option takes at least two comma-separated values:
+max allowed L<"--execute"> time as a percentage and a check interval time.  An
+optional third value is a percentage step for increasing and decreasing the
+probability that an event will be marked C<Skip_exec> true.  5 (percent) is
+the default step.
+
+For example: L<"--execute-throttle"> C<80,1m,10>.  This will limit
+L<"--execute"> to 80% of total event processing time, checked every minute,
+and probability stepped up and down by 10%.  When L<"--execute"> exceeds 80%,
+the probability that events will be marked C<Skip_exec> true increases by 10%.
+L<"--execute"> time is checked again after another minute.  If it's still
+above 80%, then the probability will increase another 10%.  Or, if it's dropped
+below 80%, then the probability will decrease by 10%.
 
 =item --expected-range
 
