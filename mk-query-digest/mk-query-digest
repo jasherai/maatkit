@@ -9983,7 +9983,7 @@ Parse a binary log file.
 =item genlog
 
 Parse a general log file.  General logs lack a lot of L<"ATTRIBUTES">,
-notably C<Query_time>.  The default L<"--orer-by"> for general logs
+notably C<Query_time>.  The default L<"--order-by"> for general logs
 changes to C<Query_time:cnt>.
 
 =item http
