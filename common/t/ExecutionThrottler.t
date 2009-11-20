@@ -35,7 +35,7 @@ isa_ok($et, 'ExecutionThrottler');
 # This event won't be checked because 0.4 seconds haven't passed
 # so Skip_exec should still be 0 even though the rate is past max.
 is_deeply(
-   $et->parse_event(%args),
+   $et->throttle(%args),
    $args{event},
    'Event before first check'
 );
@@ -54,7 +54,7 @@ usleep 450000;
 # The avg int rate will be 100, so skip prop should be stepped up
 # by 0.8 and Skip_exec will have an 80% chance of being set true.
 # Therefore, this test will fail 20% of the time.  :-)
-my $event = $et->parse_event(%args);
+my $event = $et->throttle(%args);
 is(
    $event->{Skip_exec},
    1,
@@ -69,13 +69,13 @@ is(
 
 # Inject another rate sample and then sleep until the next check.
 $rate = 50;
-$et->parse_event(%args);
+$et->throttle(%args);
 usleep 450000;
 
 # This event should be ok because the avg rate dropped below max.
 # skip prob should be stepped down by 0.8, to zero.
 is_deeply(
-   $et->parse_event(%args),
+   $et->throttle(%args),
    $args{event},
    'Event ok at min rate'
 );
@@ -88,11 +88,11 @@ is(
 
 # Increase the rate to max and check that it's still ok.
 $rate = 90;
-$et->parse_event(%args);
+$et->throttle(%args);
 usleep 450000;
 
 is_deeply(
-   $et->parse_event(%args),
+   $et->throttle(%args),
    $args{event},
    'Event ok at max rate'
 );
