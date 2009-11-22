@@ -63,7 +63,8 @@ sub strip_comments {
 }
 
 # Shortens long queries by normalizing stuff out of them.  $length is used only
-# for IN() lists.
+# for IN() lists.  If $length is given, the query is shortened if it's longer
+# than that.
 sub shorten {
    my ( $self, $query, $length ) = @_;
    # Shorten multi-value insert/replace, all the way up to on duplicate key
@@ -82,37 +83,48 @@ sub shorten {
 
    # Shorten long IN() lists of literals.  But only if the string is longer than
    # the $length limit.  Assumption: values don't contain commas or closing
-   # parens inside them.  Assumption: all values are the same length.
-   if ( $length && length($query) > $length ) {
-      my ($left, $mid, $right) = $query =~ m{
-         (\A.*?\bIN\s*\()     # Everything up to the opening of IN list
-         ([^\)]+)             # Contents of the list
-         (\).*\Z)             # The rest of the query
-      }xsi;
-      if ( $left ) {
-         # Compute how many to keep and try to get rid of the middle of the
-         # list until it's short enough.
-         my $targ = $length - length($left) - length($right);
-         my @vals = split(/,/, $mid);
-         my @left = shift @vals;
-         my @right;
-         my $len  = length($left[0]);
-         while ( @vals && $len < $targ / 2 ) {
-            $len += length($vals[0]) + 1;
-            push @left, shift @vals;
-         }
-         while ( @vals && $len < $targ ) {
-            $len += length($vals[-1]) + 1;
-            unshift @right, pop @vals;
-         }
-         $query = $left . join(',', @left)
-                . (@right ? ',' : '')
-                . " /*... omitted " . scalar(@vals) . " items ...*/ "
-                . join(',', @right) . $right;
+   # parens inside them.
+   my $last_length  = 0;
+   my $query_length = length($query);
+   while (
+      $length          > 0
+      && $query_length > $length
+      && $query_length < ( $last_length || $query_length + 1 )
+   ) {
+      $last_length = $query_length;
+      $query =~ s{
+         (\bIN\s*\()    # The opening of an IN list
+         ([^\)]+)       # Contents of the list, assuming no item contains paren
+         (?=\))           # Close of the list
       }
+      {
+         $1 . __shorten($2)
+      }gexsi;
    }
 
    return $query;
+}
+
+# Used by shorten().  The argument is the stuff inside an IN() list.  The
+# argument might look like this:
+#  1,2,3,4,5,6
+# Or, if this is a second or greater iteration, it could even look like this:
+#  /*... omitted 5 items ...*/ 6,7,8,9
+# In the second case, we need to trim out 6,7,8 and increment "5 items" to "8
+# items".  We assume that the values in the list don't contain commas; if they
+# do, the results could be a little bit wrong, but who cares.  We keep the first
+# 20 items because we don't want to nuke all the samples from the query, we just
+# want to shorten it.
+sub __shorten {
+   my ( $snippet ) = @_;
+   my @vals = split(/,/, $snippet);
+   return $snippet unless @vals > 20;
+   my @keep = splice(@vals, 0, 20);  # Remove and save the first 20 items
+   return
+      join(',', @keep)
+      . "/*... omitted "
+      . scalar(@vals)
+      . " items ...*/";
 }
 
 # Normalizes variable queries to a "query fingerprint" by abstracting away

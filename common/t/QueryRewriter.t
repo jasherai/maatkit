@@ -763,17 +763,11 @@ is(
 );
 
 is(
-   $qr->shorten("select * from a where b in(1,2,3,4,5,6)", 1),
-   "select * from a where b in(1 /*... omitted 5 items ...*/ )",
-   "shorten IN() list numbers",
-);
-
-is(
    $qr->shorten(
-      "select * from a where b in(1,2,3,4,5,6) and "
-         . "a in(1,2,3,4,5,6,1,2,3,4,5,6)", 1),
-   "select * from a where b in(1 /*... omitted 5 items ...*/ )"
-      . " and a in(1 /*... omitted 11 items ...*/ )",
+      "select * from a where b in(" . join(',', 1..60) . ") and "
+         . "a in(" . join(',', 1..5000) . ")", 1),
+   "select * from a where b in(" . join(',', 1..20) . "/*... omitted 40 items ...*/)"
+      . " and a in(" . join(',', 1..20) . "/*... omitted 4980 items ...*/)",
    "shorten two IN() lists of numbers",
 );
 
@@ -784,15 +778,21 @@ is(
 );
 
 is(
-   $qr->shorten("select * from a where b in(1,2,3,4,5,6)", 1024),
-   "select * from a where b in(1,2,3,4,5,6)",
-   "shorten IN() list numbers but not those that are already short",
+   $qr->shorten("select * from a where b in(". join(',', 1..100) . ")", 1024),
+   "select * from a where b in(". join(',', 1..100) . ")",
+   "shorten IN() list numbers but not those that are already short enough",
 );
 
 is(
-   $qr->shorten("select * from a where b in(1, '5 string', \"6 string\")", 1),
-   "select * from a where b in(1 /*... omitted 2 items ...*/ )",
-   "shorten IN() list numbers and strings",
+   $qr->shorten("select * from a where b in(" . join(',', 1..100) . "'a,b')", 1),
+   "select * from a where b in(" . join(',', 1..20) . "/*... omitted 81 items ...*/)",
+   "Test case to document that commas are expected to mess up omitted count",
+);
+
+is(
+   $qr->shorten("select * from a where b in(1, 'a)b', " . join(',', 1..100) . ")", 1),
+   "select * from a where b in(1, 'a)b', " . join(',', 1..100) . ")",
+   "Test case to document that parens are expected to prevent shortening",
 );
 
 is(
