@@ -493,7 +493,7 @@ sub _packet_from_server {
          }
          else {
             MKDEBUG && _d('Got an EOF packet');
-            die "Got an unexpected EOF packet";
+            $self->fail_session($session, 'got an unexpected EOF packet');
             # ^^^ We shouldn't reach this because EOF should come after a
             # header, field, or row data packet; and we should be firing the
             # event and returning when we see that.  See SVN history for some
@@ -773,7 +773,7 @@ sub get_lcb {
 # The sqlstate marker and actual sqlstate are combined into one value. 
 sub parse_error_packet {
    my ( $data ) = @_;
-   die "I need data" unless $data;
+   return unless $data;
    MKDEBUG && _d('ERROR data:', $data);
    if ( length $data < 16 ) {
       MKDEBUG && _d('Error packet is too short:', $data);
@@ -805,7 +805,7 @@ sub parse_error_packet {
 #         00 ...              Message (optional)
 sub parse_ok_packet {
    my ( $data ) = @_;
-   die "I need data" unless $data;
+   return unless $data;
    MKDEBUG && _d('OK data:', $data);
    if ( length $data < 12 ) {
       MKDEBUG && _d('OK packet is too short:', $data);
@@ -832,7 +832,7 @@ sub parse_ok_packet {
 # Currently we only capture and return the thread id.
 sub parse_server_handshake_packet {
    my ( $data ) = @_;
-   die "I need data" unless $data;
+   return unless $data;
    MKDEBUG && _d('Server handshake data:', $data);
    my $handshake_pattern = qr{
                         # Bytes                Name
@@ -860,7 +860,7 @@ sub parse_server_handshake_packet {
 # Currently we only capture and return the user and default database.
 sub parse_client_handshake_packet {
    my ( $data ) = @_;
-   die "I need data" unless $data;
+   return unless $data;
    MKDEBUG && _d('Client handshake data:', $data);
    my ( $flags, $user, $buff_len ) = $data =~ m{
       ^
@@ -900,8 +900,7 @@ sub parse_client_handshake_packet {
 # so we have to use the packet length to know where the data ends.
 sub parse_com_packet {
    my ( $data, $len ) = @_;
-   die "I need data"  unless $data;
-   die "I need a len" unless $len;
+   return unless $data && $len;
    MKDEBUG && _d('COM data:',
       (substr($data, 0, 100).(length $data > 100 ? '...' : '')),
       'len:', $len);
@@ -1099,6 +1098,8 @@ sub fail_session {
    my ( $self, $session, $reason ) = @_;
    my $errors_fh = $self->_get_errors_fh();
    if ( $errors_fh ) {
+      my $raw_packets = $session->{raw_packets};
+      delete $session->{raw_packets};  # Don't dump, it's printed below.
       $session->{reason_for_failure} = $reason;
       my $session_dump = '# ' . Dumper($session);
       chomp $session_dump;
@@ -1106,7 +1107,7 @@ sub fail_session {
       print $errors_fh "$session_dump\n";
       {
          local $LIST_SEPARATOR = "\n";
-         print $errors_fh "@{$session->{raw_packets}}";
+         print $errors_fh "@$raw_packets";
          print $errors_fh "\n";
       }
    }
