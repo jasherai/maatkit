@@ -17,9 +17,11 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $rate    = 100;
 my $oktorun = 1;
+my $time    = 1.000001;
 my %args = (
-   event   => { arg => 'query', Skip_exec => 'No', },
+   event   => { arg => 'query', },
    oktorun => sub { return $oktorun; },
+   misc    => { time => $time },
 );
 my $get_rate = sub { return $rate; };
 
@@ -48,17 +50,15 @@ is(
 );
 
 # Let a time interval pass, 0.4s.
-usleep 450000;
+$args{misc}->{time} += 0.4;
 
 # This event will be checked because a time interval has passed.
 # The avg int rate will be 100, so skip prop should be stepped up
 # by 0.8 and Skip_exec will have an 80% chance of being set true.
-# Therefore, this test will fail 20% of the time.  :-)
 my $event = $et->throttle(%args);
-is(
-   $event->{Skip_exec},
-   'Yes',
-   'Event after check, exceeds rate max, Skip_exec = Yes'
+ok(
+   exists $event->{Skip_exec},
+   'Event after check, exceeds rate max, got Skip_exec attrib'
 );
 
 is(
@@ -70,7 +70,7 @@ is(
 # Inject another rate sample and then sleep until the next check.
 $rate = 50;
 $et->throttle(%args);
-usleep 450000;
+$args{misc}->{time} += 0.45;
 
 # This event should be ok because the avg rate dropped below max.
 # skip prob should be stepped down by 0.8, to zero.
@@ -89,7 +89,7 @@ is(
 # Increase the rate to max and check that it's still ok.
 $rate = 90;
 $et->throttle(%args);
-usleep 450000;
+$args{misc}->{time} += 0.45;
 
 is_deeply(
    $et->throttle(%args),

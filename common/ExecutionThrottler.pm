@@ -61,7 +61,8 @@ sub new {
 
 sub throttle {
    my ( $self, %args ) = @_;
-   if ( $self->_time_to_check() ) {
+   my $time = $args{misc}->{time} || time;
+   if ( $self->_time_to_check($time) ) {
       my $rate_avg = (sum(@{$self->{int_rates}})   || 0)
                    / (scalar @{$self->{int_rates}} || 1);
       my $running_avg = $self->_save_rate_avg($rate_avg);
@@ -90,7 +91,7 @@ sub throttle {
       }
 
       MKDEBUG && _d('Skip probability:', $self->{skip_prob});
-      $self->{last_check} = time;
+      $self->{last_check} = $time;
    }
    else {
       my $current_rate = $self->{get_rate}->();
@@ -110,12 +111,12 @@ sub throttle {
 }
 
 sub _time_to_check {
-   my ( $self ) = @_;
+   my ( $self, $time ) = @_;
    if ( !$self->{last_check} ) {
-      $self->{last_check} = time;
+      $self->{last_check} = $time;
       return 0;
    }
-   return time - $self->{last_check} >= $self->{check_int} ? 1 : 0;
+   return $time - $self->{last_check} >= $self->{check_int} ? 1 : 0;
 }
 
 sub rate_avg {
