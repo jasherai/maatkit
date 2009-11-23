@@ -4097,7 +4097,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 4980
+# QueryReportFormatter package 5180
 # ###########################################################################
 
 
@@ -4156,7 +4156,7 @@ sub global_report {
    my $stats = $ea->results;
    my @result;
 
-   my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
+   my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt} || 0;
 
    my ($qps, $conc) = (0, 0);
    if ( $global_cnt && $stats->{globals}->{ts}
@@ -4178,8 +4178,8 @@ sub global_report {
       '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
       shorten($global_cnt, d=>1_000),
       shorten(scalar keys %{$stats->{classes}}, d=>1_000),
-      shorten($qps, d=>1_000),
-      shorten($conc, d=>1_000));
+      shorten($qps  || 0, d=>1_000),
+      shorten($conc || 0, d=>1_000));
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
 
@@ -4261,8 +4261,8 @@ sub event_report {
       '# %s %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
       ($ea->{groupby} eq 'fingerprint' ? 'Query' : 'Item'),
       $opts{rank} || 0,
-      shorten($qps, d=>1_000),
-      shorten($conc, d=>1_000),
+      shorten($qps  || 0, d=>1_000),
+      shorten($conc || 0, d=>1_000),
       make_checksum($opts{where}),
       $sample->{pos_in_log} || 0);
    $line .= ('_' x (LINE_LENGTH - length($line)));
@@ -4395,7 +4395,7 @@ sub make_label {
 sub format_bool_attrib {
    my ( $stats ) = @_;
    my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
-   my $n_true = '(' . shorten($stats->{sum}, d=>1_000, p=>0) . ')';
+   my $n_true = '(' . shorten($stats->{sum} || 0, d=>1_000, p=>0) . ')';
    return $p_true, $n_true;
 }
 
