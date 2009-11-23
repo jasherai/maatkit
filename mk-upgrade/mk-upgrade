@@ -9130,9 +9130,6 @@ from a tcpdump dump and then compare them with mk-audit:
   mk-query-digest --no-report --print --sample 1 --type tcpdump dump.txt \
     | mk-upgrade h=host1 h=host2
 
-Queries are not yet fingerprinted or aggregated.  Every query is executed,
-compared and ranked individually.
-
 =head1 OUTPUT
 
 TODO
