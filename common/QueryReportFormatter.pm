@@ -80,7 +80,7 @@ sub global_report {
    my @result;
 
    # Get global count
-   my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
+   my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt} || 0;
 
    # Calculate QPS (queries per second) by looking at the min/max timestamp.
    my ($qps, $conc) = (0, 0);
@@ -104,8 +104,8 @@ sub global_report {
       '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
       shorten($global_cnt, d=>1_000),
       shorten(scalar keys %{$stats->{classes}}, d=>1_000),
-      shorten($qps, d=>1_000),
-      shorten($conc, d=>1_000));
+      shorten($qps  || 0, d=>1_000),
+      shorten($conc || 0, d=>1_000));
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
 
@@ -202,8 +202,8 @@ sub event_report {
       '# %s %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
       ($ea->{groupby} eq 'fingerprint' ? 'Query' : 'Item'),
       $opts{rank} || 0,
-      shorten($qps, d=>1_000),
-      shorten($conc, d=>1_000),
+      shorten($qps  || 0, d=>1_000),
+      shorten($conc || 0, d=>1_000),
       make_checksum($opts{where}),
       $sample->{pos_in_log} || 0);
    $line .= ('_' x (LINE_LENGTH - length($line)));
@@ -359,7 +359,7 @@ sub format_bool_attrib {
    # number of events minus those that were true.
    my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
    # my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
-   my $n_true = '(' . shorten($stats->{sum}, d=>1_000, p=>0) . ')';
+   my $n_true = '(' . shorten($stats->{sum} || 0, d=>1_000, p=>0) . ')';
    return $p_true, $n_true;
 }
 
