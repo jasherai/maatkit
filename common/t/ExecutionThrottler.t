@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 10;
+use Test::More tests => 12;
 
 require '../ExecutionThrottler.pm';
 
@@ -18,10 +18,12 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 my $rate    = 100;
 my $oktorun = 1;
 my $time    = 1.000001;
+my $stats   = {};
 my %args = (
    event   => { arg => 'query', },
    oktorun => sub { return $oktorun; },
    misc    => { time => $time },
+   stats   => $stats,
 );
 my $get_rate = sub { return $rate; };
 
@@ -102,6 +104,18 @@ is(
    $et->rate_avg,
    80,
    'Calcs average rate'
+);
+
+is(
+   $stats->{throttle_rate_min},
+   50,
+   'Stats min rate'
+);
+
+is(
+   $stats->{throttle_rate_max},
+   100,
+   'Stats max rate'
 );
 
 # #############################################################################

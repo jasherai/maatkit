@@ -23,7 +23,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use List::Util qw(sum);
+use List::Util qw(sum min max);
 use Time::HiRes qw(time);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -66,13 +66,14 @@ sub throttle {
       my $rate_avg = (sum(@{$self->{int_rates}})   || 0)
                    / (scalar @{$self->{int_rates}} || 1);
       my $running_avg = $self->_save_rate_avg($rate_avg);
-      @{$self->{int_rates}} = ();
       MKDEBUG && _d('Average rate for last interval:', $rate_avg);
 
       if ( $args{stats} ) {
          $args{stats}->{throttle_checked_rate}++;
          $args{stats}->{throttle_rate_avg} = sprintf '%.2f', $running_avg;
       }
+
+      @{$self->{int_rates}} = ();
 
       if ( $rate_avg > $self->{rate_max} ) {
          # Rates is too high; increase the probability that the event
@@ -96,6 +97,12 @@ sub throttle {
    else {
       my $current_rate = $self->{get_rate}->();
       push @{$self->{int_rates}}, $current_rate;
+      if ( $args{stats} ) {
+         $args{stats}->{throttle_rate_min} = min(
+            ($args{stats}->{throttle_rate_min} || ()), $current_rate);
+         $args{stats}->{throttle_rate_max} = max(
+            ($args{stats}->{throttle_rate_max} || ()), $current_rate);
+      }
       MKDEBUG && _d('Current rate:', $current_rate);
    } 
 
@@ -133,9 +140,20 @@ sub _save_rate_avg {
    my ( $self, $rate ) = @_;
    my $samples  = $self->{stats}->{rate_samples};
    push @$samples, $rate;
-   shift @$samples if @$samples > 100;
+   shift @$samples if @$samples > 1_000;
    $self->{stats}->{rate_avg} = sum(@$samples) / (scalar @$samples);
    return $self->{stats}->{rate_avg} || 0;
+}
+
+sub reset {
+   my ( $self ) = @_;
+   $self->{rate_ok}           = undef;
+   $self->{last_check}        = undef;
+   $self->{stats}->{rate_avg} = 0;
+   @{$self->{rate_samples}}   = ();
+   @{$self->{int_rates}}      = ();
+   $self->{skip_prob}         = 0.0;
+   return;
 }
 
 sub _d {
