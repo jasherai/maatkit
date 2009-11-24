@@ -1473,7 +1473,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5157
+# QueryRewriter package 5175
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1527,34 +1527,37 @@ sub shorten {
 
    return $query unless $query =~ m/IN\s*\(\s*(?!select)/i;
 
-   if ( $length && length($query) > $length ) {
-      my ($left, $mid, $right) = $query =~ m{
-         (\A.*?\bIN\s*\()     # Everything up to the opening of IN list
-         ([^\)]+)             # Contents of the list
-         (\).*\Z)             # The rest of the query
-      }xsi;
-      if ( $left ) {
-         my $targ = $length - length($left) - length($right);
-         my @vals = split(/,/, $mid);
-         my @left = shift @vals;
-         my @right;
-         my $len  = length($left[0]);
-         while ( @vals && $len < $targ / 2 ) {
-            $len += length($vals[0]) + 1;
-            push @left, shift @vals;
-         }
-         while ( @vals && $len < $targ ) {
-            $len += length($vals[-1]) + 1;
-            unshift @right, pop @vals;
-         }
-         $query = $left . join(',', @left)
-                . (@right ? ',' : '')
-                . " /*... omitted " . scalar(@vals) . " items ...*/ "
-                . join(',', @right) . $right;
+   my $last_length  = 0;
+   my $query_length = length($query);
+   while (
+      $length          > 0
+      && $query_length > $length
+      && $query_length < ( $last_length || $query_length + 1 )
+   ) {
+      $last_length = $query_length;
+      $query =~ s{
+         (\bIN\s*\()    # The opening of an IN list
+         ([^\)]+)       # Contents of the list, assuming no item contains paren
+         (?=\))           # Close of the list
       }
+      {
+         $1 . __shorten($2)
+      }gexsi;
    }
 
    return $query;
+}
+
+sub __shorten {
+   my ( $snippet ) = @_;
+   my @vals = split(/,/, $snippet);
+   return $snippet unless @vals > 20;
+   my @keep = splice(@vals, 0, 20);  # Remove and save the first 20 items
+   return
+      join(',', @keep)
+      . "/*... omitted "
+      . scalar(@vals)
+      . " items ...*/";
 }
 
 sub fingerprint {
@@ -7331,7 +7334,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ExecutionThrottler package 5183
+# ExecutionThrottler package 5187
 # ###########################################################################
 package ExecutionThrottler;
 
@@ -7339,7 +7342,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use List::Util qw(sum);
+use List::Util qw(sum min max);
 use Time::HiRes qw(time);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -7377,13 +7380,14 @@ sub throttle {
       my $rate_avg = (sum(@{$self->{int_rates}})   || 0)
                    / (scalar @{$self->{int_rates}} || 1);
       my $running_avg = $self->_save_rate_avg($rate_avg);
-      @{$self->{int_rates}} = ();
       MKDEBUG && _d('Average rate for last interval:', $rate_avg);
 
       if ( $args{stats} ) {
          $args{stats}->{throttle_checked_rate}++;
          $args{stats}->{throttle_rate_avg} = sprintf '%.2f', $running_avg;
       }
+
+      @{$self->{int_rates}} = ();
 
       if ( $rate_avg > $self->{rate_max} ) {
          $self->{skip_prob} += $self->{step};
@@ -7403,6 +7407,12 @@ sub throttle {
    else {
       my $current_rate = $self->{get_rate}->();
       push @{$self->{int_rates}}, $current_rate;
+      if ( $args{stats} ) {
+         $args{stats}->{throttle_rate_min} = min(
+            ($args{stats}->{throttle_rate_min} || ()), $current_rate);
+         $args{stats}->{throttle_rate_max} = max(
+            ($args{stats}->{throttle_rate_max} || ()), $current_rate);
+      }
       MKDEBUG && _d('Current rate:', $current_rate);
    } 
 
@@ -7436,9 +7446,20 @@ sub _save_rate_avg {
    my ( $self, $rate ) = @_;
    my $samples  = $self->{stats}->{rate_samples};
    push @$samples, $rate;
-   shift @$samples if @$samples > 100;
+   shift @$samples if @$samples > 1_000;
    $self->{stats}->{rate_avg} = sum(@$samples) / (scalar @$samples);
    return $self->{stats}->{rate_avg} || 0;
+}
+
+sub reset {
+   my ( $self ) = @_;
+   $self->{rate_ok}           = undef;
+   $self->{last_check}        = undef;
+   $self->{stats}->{rate_avg} = 0;
+   @{$self->{rate_samples}}   = ();
+   @{$self->{int_rates}}      = ();
+   $self->{skip_prob}         = 0.0;
+   return;
 }
 
 sub _d {
@@ -7988,6 +8009,7 @@ sub main {
       $callback_names{$callbacks[-1]} = 'print';
    }
 
+   my $et;
    if ( my $et_args = $o->get('execute-throttle') ) {
       # These were check earlier; no need to check them again.
       my ($rate_max, $int, $step) = @{$o->get('execute-throttle')};
@@ -7996,13 +8018,13 @@ sub main {
       MKDEBUG && _d('Execute throttle:', $rate_max, $int, $step);
 
       my $get_rate = sub {
-         my $total_time = 0;
-         map { $total_time += ($_->{time} || 0); }
-         grep { defined $_ } values %prof;
-         return percentage_of($prof{'execute'}->{time} || 0, $total_time);
+         return percentage_of(
+            $prof{callback}->{'execute'}->{time} || 0,
+            $prof{total}->{time}                 || 0,
+         );
       };
 
-      my $et = new ExecutionThrottler(
+      $et = new ExecutionThrottler(
          rate_max  => $rate_max,
          get_rate  => $get_rate,
          check_int => $int,
@@ -8031,8 +8053,10 @@ sub main {
             # Zero Query_time to 'Exec time' will show the real time
             # spent executing queries.
             $event->{Query_time} = 0;
+            $stats{execute_skipped}++;
             return $event;
          }
+         $stats{execute_executed}++;
          my $db = $event->{db};
          eval {
             if ( $db && (!$curdb || $db ne $curdb) ) {
@@ -8053,6 +8077,7 @@ sub main {
          };
          # Don't try to re-execute the statement.  Just skip it.
          if ( $EVAL_ERROR && $EVAL_ERROR =~ m/server has gone away/ ) {
+            $stats{execute_error}++;
             print STDERR $EVAL_ERROR;
             eval {
                ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
@@ -8177,7 +8202,12 @@ sub main {
       $oktorun
       && (!$o->get('iterations') || $iters++ < $o->get('iterations') )
    ) {
-      MKDEBUG && _d('Iteration', $iters);
+
+      if ( $o->get('print-iterations') ) {
+         my $iter_start = time;
+         MKDEBUG && _d('Iteration', $iters, 'started at', ts($iter_start));
+         print "\n# Iteration $iters started at ", ts($iter_start), "\n";
+      }
 
       EVENT:
       while (                                 # Quit if:
@@ -8233,9 +8263,12 @@ sub main {
                   stats   => \%stats,
                );
                my $end  = time;
+               my $t    = $end - $start;
                my $name = $callback_names{$callback} || $callback;
-               $prof{$name}->{time} += ($end - $start);
-               $prof{$name}->{count}++;
+               $prof{callback}->{$name}->{time} += $t;
+               $prof{callback}->{$name}->{count}++;
+               $prof{total}->{time} += $t;
+               $prof{total}->{count}++;
                last unless $event;
             }
             if ( !$more_events ) {
@@ -8246,6 +8279,7 @@ sub main {
          };
          if ( $EVAL_ERROR ) {
             _d($EVAL_ERROR);
+            $stats{pipeline_error}++;
 
             # Don't ignore failure to open a file, else we'll get
             # "tell() on closed filehandle" errors.
@@ -8254,7 +8288,7 @@ sub main {
             last EVENT unless $o->get('continue-on-error');
          }
          $now = time();
-      }  # while oktorun
+      }  # EVENT
 
       # ######################################################################
       # Done parsing events, now do something with the aggregated query
@@ -8584,44 +8618,62 @@ sub main {
       foreach my $ea ( @ea, @tl ) {
          $ea->reset_aggregated_data();
       }
+
+      # $et->reset() if $et;
+
+      if ( $o->get('pipeline-profile') ) {
+         my $report = new ReportFormatter(
+            line_width => 74,
+         );
+         $report->set_columns(
+            { name => 'Process'                   },
+            { name => 'Time',  right_justify => 1 },
+            { name => 'Count', right_justify => 1 },
+         );
+         $report->set_title('Pipeline profile');
+         foreach my $callback ( @callbacks ) {
+            my $name = $callback_names{$callback} || $callback;
+            my $t    = $prof{callback}->{$name}->{time} || 0;
+            my $tp   = sprintf('%.2f %4.1f%%', $t,
+                           $t / ($prof{total}->{time} || 1) * 100);
+            $report->add_line($name, $tp,
+               $prof{callback}->{$name}->{count} || 0);
+            
+            # Reset profile for next iteration.
+            map { $prof{callback}->{$name}->{$_} = 0 }
+               keys %{$prof{callback}->{$name}};
+         }
+         map { $prof{total}->{$_} = 0 } keys %{$prof{total}};
+
+         print "\n" . $report->get_report();
+      }
+
+      if ( $o->get('statistics') ) {
+         if ( keys %stats ) {
+            my $report = new ReportFormatter(
+               line_width => 74,
+            );
+            $report->set_columns(
+               { name => 'Statistic',                    },
+               { name => 'Value',     right_justify => 1 },
+            );
+            foreach my $stat ( sort keys %stats ) {
+               $report->add_line($stat, $stats{$stat} || 0);
+
+               # Reset stats for next iteration.
+               $stats{$stat} = 0;
+            }
+            print "\n" . $report->get_report();
+         }
+         else {
+            print "\n# No statistics values.\n";
+         }
+      }
    } # ITERATION
 
    # Disconnect all open $dbh's
    map { $dp->disconnect($_) } grep { $_ }
       ($qv_dbh, $qv_dbh2, $ex_dbh, $ps_dbh, $ep_dbh);
-
-   if ( $o->get('statistics') ) {
-      my $report = new ReportFormatter(
-         line_width => 74,
-      );
-      $report->set_columns(
-         { name => 'Process'                   },
-         { name => 'Time',  right_justify => 1 },
-         { name => 'Count', right_justify => 1 },
-      );
-      $report->set_title('Pipeline processes');
-      foreach my $callback ( @callbacks ) {
-         my $name = $callback_names{$callback} || $callback;
-         my $t    = sprintf '%.6f', $prof{$name}->{time}  || 0;
-         $report->add_line($name, $t, $prof{$name}->{count} || 0);
-      }
-      print "\n" . $report->get_report();
-
-      if ( keys %stats ) {
-         $report = new ReportFormatter(
-            line_width => 74,
-         );
-         $report->set_columns(
-            { name => 'Stat',                     },
-            { name => 'Value', right_justify => 1 },
-         );
-         $report->set_title('General statistics');
-         foreach my $stat ( sort keys %stats ) {
-            $report->add_line($stat, $stats{$stat} || '');
-         }
-         print "\n" . $report->get_report();
-      }
-   }
 
    exit;
 } # End main().
@@ -9566,7 +9618,7 @@ How frequently to poll the processlist, in seconds.
 type: int; default: 1
 
 How many times to iterate through the collect-and-report cycle.  If 0, iterate
-to infinity.  See also L<--run-time>.
+to infinity.  See also L<"--run-time">.
 
 =item --limit
 
@@ -9680,6 +9732,10 @@ daemonized instance exits.  The program checks for the existence of the
 PID file when starting; if it exists and the process with the matching PID
 exists, the program exits.
 
+=item --pipeline-profile
+
+Print a profile of the pipeline processes.
+
 =item --port
 
 short form: -P; type: int
@@ -9689,6 +9745,18 @@ Port number to use for connection.
 =item --print
 
 Print log events to STDOUT in standard slow-query-log format.
+
+=item --print-iterations
+
+Print the start time for each L<"--iterations">.
+
+This option causes a line like the following to be printed at the start
+of each L<"--iterations"> report:
+
+  # Iteration 2 started at 2009-11-24T14:39:48.345780 
+
+This line will print even if C<--no-report> is specified.  If C<--iterations 0>
+is specified, each iteration number will be C<0>.
 
 =item --processlist
 
@@ -9961,7 +10029,7 @@ Socket file to use for connection.
 
 =item --statistics
 
-Print statistics about the pipeline processes.
+Print statistics.
 
 =item --table-access
 
