@@ -22,7 +22,9 @@ use warnings FATAL => 'all';
 
 package DSNParser;
 
-use DBI;
+eval {
+   require DBI;
+};
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -260,6 +262,17 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
+
+   # Test that DBI is installed.  If yes then this will succeed.
+   # Else it will cause an error.
+   eval {
+      DBI->installed_drivers();
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot connect to MySQL because the Perl DBI module is not "
+         . "installed or not found.  Run 'perl -MDBI' to see the directories "
+         . "that Perl searches for DBI.\n";
+   }
 
    # Try twice to open the $dbh and set it up as desired.
    my $dbh;

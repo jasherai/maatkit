@@ -22,7 +22,6 @@ package KeySize;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use DBI;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -100,7 +99,8 @@ sub get_key_size {
    my $sth = $dbh->prepare($sql);
    eval { $sth->execute(); };
    if ( $EVAL_ERROR ) {
-      $self->{error} = "Cannot get size of $name key: $DBI::errstr";
+      chomp $EVAL_ERROR;
+      $self->{error} = "Cannot get size of $name key: $EVAL_ERROR";
       return;
    }
    $explain = $sth->fetchrow_hashref();
