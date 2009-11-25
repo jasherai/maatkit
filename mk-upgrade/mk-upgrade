@@ -9072,18 +9072,27 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-upgrade - Test queries executed on different servers for differences.
+mk-upgrade - Execute queries on different servers and check for differences.
 
 =head1 SYNOPSIS
 
-Compare all queries in slow.log on host1 to host2:
+Execute and compare all queries in slow.log on host1 to host2:
 
-   mk-upgrade h=host1 h=host2 slow.log
+  mk-upgrade slow.log h=host1 h=host2
 
-Use mk-query-digest to compare only 1 sample of each unique query:
+Use mk-query-digest to get, execute and compare queries from tcpdump:
 
-  mk-query-digest --no-report --print --sample 1 slow.log \
+  tcpdump -i eth0 port 3306 -s 65535  -x -n -q -tttt     \
+    | mk-query-digest --type tcpdump --no-report --print \
     | mk-upgrade h=host1 h=host2
+
+Compare only query times on host1 to host2 and host3:
+
+  mk-upgrade slow.log h=host1 h=host2 h=host3 --compare query_times
+
+Compare a single query, no slowlog needed:
+
+  mk-upgrade h=host1 h=host2 --query 'SELECT * FROM db.tbl'
 
 =head1 RISKS
 
@@ -9111,24 +9120,25 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
-mk-upgrade measures differences in execution plans on two MySQL servers and
-ranks the results.  This helps to test for bugs, changes in results, and
-performance regressions before an upgrade or configuration change.  The higher a
-query ranks, the greater its results differ.
+mk-upgrade executes queries from slowlogs on one or more MySQL server to find
+differences in query time, warnings, results, and other aspects of the querys'
+execution.  This helps to evaluate upgrades, migrations and configuration
+changes.  The comparisons specified by L<"--compare"> determine what
+differences can be found.  A report is printed which outlines all the
+differences found; see L<"OUTPUT"> below.
 
-mk-upgrade reads queries from slowlogs.  You should use mk-query-digest to
-extract only one unique sample of each query from the original slowlog.  For
-example:
+The first DSN (host) specified on the command line is authoritative; it defines
+the results to which the other DSNs are compared.  You can "compare" only one
+host, in which case there will be no differences but the output can be saved
+to be diffed later against the output of another single host "comparison".
 
-  mk-query-digest --no-report --print --sample 1 slow.log \
-    | mk-upgrade h=host1 h=host2
+At present, mk-upgrade only reads slowlogs.  Use C<mk-query-digest --print> to
+transform other log formats to slowlog.
 
-You can also use mk-query-digest to transform other input sources into a
-slowlog by its C<--print --no-report> options.  For example, to get queries
-from a tcpdump dump and then compare them with mk-audit:
-
-  mk-query-digest --no-report --print --sample 1 --type tcpdump dump.txt \
-    | mk-upgrade h=host1 h=host2
+DSNs and slowlog files can be specified in any order.  mk-upgrade will
+automatically determine if an argument is a DSN or a slowlog file.  If no
+slowlog files are given and L<"--query"> is not specified then mk-upgrade
+will read from C<STDIN>.
 
 =head1 OUTPUT
 
@@ -9410,7 +9420,10 @@ Port number to use for connection.
 
 type: string
 
-Execute this single query on the servers; ignores files on command line.
+Execute and compare this single query; ignores files on command line.
+
+This option allows you to supply a single query on the command line.  Any
+slowlogs also specified on the command line are ignored.
 
 =item --[no]report
 
