@@ -25,14 +25,16 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 4823
+# DSNParser package 5189
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package DSNParser;
 
-use DBI;
+eval {
+   require DBI;
+};
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -237,6 +239,15 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
+
+   eval {
+      DBI->installed_drivers();
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot connect to MySQL because the Perl DBI module is not "
+         . "installed or not found.  Run 'perl -MDBI' to see the directories "
+         . "that Perl searches for DBI.\n";
+   }
 
    my $dbh;
    my $tries = 2;
