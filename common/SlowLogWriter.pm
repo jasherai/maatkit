@@ -52,7 +52,7 @@ sub write {
 
    # Classic slow log attribs.
    printf $fh
-      "# Query_time: %s  Lock_time: %s  Rows_sent: %d  Rows_examined: %d\n",
+      "# Query_time: %.6f  Lock_time: %.6f  Rows_sent: %d  Rows_examined: %d\n",
       # TODO 0  Rows_affected: 0  Rows_read: 1
       map { $_ || 0 }
          @{$event}{qw(Query_time Lock_time Rows_sent Rows_examined)};

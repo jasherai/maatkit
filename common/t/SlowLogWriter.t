@@ -3,60 +3,35 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 4;
 
-require "../MaatkitTest.pm";
 require "../SlowLogParser.pm";
 require "../SlowLogWriter.pm";
-
-MaatkitTest->import(qw(load_file));
 
 my $p = new SlowLogParser;
 my $w = new SlowLogWriter;
 
-sub run_test {
+sub no_diff {
    my ( $filename, $expected ) = @_;
-   my $original;
-   my $buffer = '';
-   open my $fh2, ">", \$buffer or die $OS_ERROR;
-   eval {
-      # Parse the original file and write the results back to $buffer.
-      open my $fh, "<", $filename or die $OS_ERROR;
-      while ( my $e = $p->parse_event(fh => $fh) ) {
-         $w->write($fh2, $e);
-      }
-      close $fh;
-
-      if ( $expected ) {
-         $original = load_file($expected);
-      }
-      else {
-         # Read the original into RAM; clean up the header lines from $original.
-         open $fh, "<", $filename or die $OS_ERROR;
-         local $INPUT_RECORD_SEPARATOR = undef;
-         $original = <$fh>;
-         $original =~ s{
-            ^(?:
-            Tcp\sport:.*
-            |/\S+/mysqld.*
-            |Time\s+Id\s+Command.*
-            )\n
-         }{}gxm;
-         # Remove SET statements because SlowLogParser will have made these
-         # into event attribs, but we can't from here which attribs were SETs.
-         $original =~ s/^SET\s+.+?;\n//mg;
-      }
-
-      close $fh2;
-      close $fh;
-   };
+   
+   # Parse and rewrite the original file.
+   my $tmp_file = '/tmp/SlowLogWriter-test.txt';
+   open my $rewritten_fh, '>', $tmp_file or BAIL_OUT($EVAL_ERROR);
+   open my $fh, "<", $filename or BAIL_OUT($OS_ERROR);
+   while ( my $e = $p->parse_event(fh => $fh) ) {
+      $w->write($rewritten_fh, $e);
+   }
+   close $fh;
+   close $rewritten_fh;
 
    # Compare the contents of the two files.
-   is($EVAL_ERROR, '', "No error on $filename");
-   is($buffer, $original, "Correct output for $filename");
+   my $retval = system("diff $tmp_file $expected");
+   `rm -rf $tmp_file`;
+   $retval = $retval >> 8;
+   return !$retval;
 }
 
-sub no_diff {
+sub write_event {
    my ( $event, $expected_output ) = @_;
    my $tmp_file = '/tmp/SlowLogWriter-output.txt';
    open my $fh, '>', $tmp_file or die "Cannot open $tmp_file: $OS_ERROR";
@@ -69,13 +44,19 @@ sub no_diff {
 }
 
 # Check that I can write a slow log in the default slow log format.
-run_test('samples/slow001.txt');
+ok(
+   no_diff('samples/slow001.txt', 'samples/slow001-rewritten.txt'),
+   'slow001.txt rewritten'
+);
 
 # Test writing a Percona-patched slow log with Thread_id and hi-res Query_time.
-run_test('samples/slow032.txt', 'samples/slow032-rewritten.txt');
+ok(
+   no_diff('samples/slow032.txt', 'samples/slow032-rewritten.txt'),
+   'slow032.txt rewritten'
+);
 
 ok(
-   no_diff(
+   write_event(
       {
          Query_time => '1',
          arg        => 'select * from foo',
@@ -88,7 +69,7 @@ ok(
 );
 
 ok(
-   no_diff(
+   write_event(
       {
          Query_time => '1.123456',
          Lock_time  => '0.000001',
