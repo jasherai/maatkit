@@ -9072,7 +9072,7 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-upgrade - Execute queries on different servers and check for differences.
+mk-upgrade - Execute queries on multiple servers and check for differences.
 
 =head1 SYNOPSIS
 
