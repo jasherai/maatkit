@@ -579,7 +579,7 @@ CREATE TABLE `store` (
 USE `sakila`
 /*!40101 SET SQL_MODE=\"NO_AUTO_VALUE_ON_ZERO\" */
 INSERT INTO `store` VALUES (1,1,1,'2006-02-15 11:57:12'),(2,2,2,'2006-02-15 11:57:12');
-ALTER TABLE `sakila`.`store` ADD KEY `idx_fk_address_id` (`address_id`), UNIQUE KEY `idx_unique_manager` (`manager_staff_id`)
+ALTER TABLE `sakila`.`store` ADD KEY `idx_fk_address_id` (`address_id`), ADD UNIQUE KEY `idx_unique_manager` (`manager_staff_id`)
 ",
    '--fast-index'
 );

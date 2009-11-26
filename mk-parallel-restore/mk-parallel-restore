@@ -928,14 +928,16 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 4823
+# DSNParser package 5189
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package DSNParser;
 
-use DBI;
+eval {
+   require DBI;
+};
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -1141,6 +1143,15 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
+   eval {
+      DBI->installed_drivers();
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot connect to MySQL because the Perl DBI module is not "
+         . "installed or not found.  Run 'perl -MDBI' to see the directories "
+         . "that Perl searches for DBI.\n";
+   }
+
    my $dbh;
    my $tries = 2;
    while ( !$dbh && $tries-- ) {
@@ -1265,7 +1276,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 4299
+# Transformers package 5144
 # ###########################################################################
 
 package Transformers;
@@ -1273,7 +1284,7 @@ package Transformers;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Time::Local qw(timelocal);
+use Time::Local qw(timegm timelocal);
 use Digest::MD5 qw(md5_hex);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -1295,7 +1306,7 @@ our @EXPORT_OK   = qw(
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
-our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?/;
+our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?/;
 our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
 
 sub micro_t {
@@ -1380,13 +1391,19 @@ sub shorten {
 }
 
 sub ts {
-   my ( $time ) = @_;
+   my ( $time, $gmt ) = @_;
    my ( $sec, $min, $hour, $mday, $mon, $year )
-      = localtime($time);
+      = $gmt ? gmtime($time) : localtime($time);
    $mon  += 1;
    $year += 1900;
-   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+   my $val = sprintf("%d-%02d-%02dT%02d:%02d:%02d",
       $year, $mon, $mday, $hour, $min, $sec);
+   if ( my ($us) = $time =~ m/(\.\d+)$/ ) {
+      $us = sprintf("%.6f", $us);
+      $us =~ s/^0\././;
+      $val .= $us;
+   }
+   return $val;
 }
 
 sub parse_timestamp {
@@ -1402,11 +1419,16 @@ sub parse_timestamp {
 }
 
 sub unix_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-     = $val =~ m/^$proper_ts$/ )
-   {
-      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   my ( $val, $gmt ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s, $us) = $val =~ m/^$proper_ts$/ ) {
+      $val = $gmt
+         ? timegm($s, $i, $h, $d, $m - 1, $y)
+         : timelocal($s, $i, $h, $d, $m - 1, $y);
+      if ( defined $us ) {
+         $us = sprintf('%.6f', $us);
+         $us =~ s/^0\././;
+         $val .= $us;
+      }
    }
    return $val;
 }
@@ -1708,7 +1730,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4931
+# TableParser package 5197
 # ###########################################################################
 package TableParser;
 
@@ -2027,6 +2049,7 @@ sub get_fks {
          parent_tbl     => $parent,
          parent_colnames=> $parent_cols,
          parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
+         ddl            => $fk,
       };
    }
 
@@ -2052,7 +2075,7 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         $_->{ddl};
+         "ADD $_->{ddl}";
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
@@ -2741,7 +2764,7 @@ sub do_table {
 
       # Do InnoDB fast index creation.
       if ( $o->get('fast-index') && $indexes_ddl ) {
-         push @sql, "ALTER TABLE `$db`.`$tbl` ADD $indexes_ddl";
+         push @sql, "ALTER TABLE `$db`.`$tbl` $indexes_ddl";
       }
 
       _do($dbh, $dry_run, @sql);
