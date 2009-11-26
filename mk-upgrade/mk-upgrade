@@ -3180,7 +3180,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 4969
+# QueryRewriter package 5195
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3234,34 +3234,37 @@ sub shorten {
 
    return $query unless $query =~ m/IN\s*\(\s*(?!select)/i;
 
-   if ( $length && length($query) > $length ) {
-      my ($left, $mid, $right) = $query =~ m{
-         (\A.*?\bIN\s*\()     # Everything up to the opening of IN list
-         ([^\)]+)             # Contents of the list
-         (\).*\Z)             # The rest of the query
-      }xsi;
-      if ( $left ) {
-         my $targ = $length - length($left) - length($right);
-         my @vals = split(/,/, $mid);
-         my @left = shift @vals;
-         my @right;
-         my $len  = length($left[0]);
-         while ( @vals && $len < $targ / 2 ) {
-            $len += length($vals[0]) + 1;
-            push @left, shift @vals;
-         }
-         while ( @vals && $len < $targ ) {
-            $len += length($vals[-1]) + 1;
-            unshift @right, pop @vals;
-         }
-         $query = $left . join(',', @left)
-                . (@right ? ',' : '')
-                . " /*... omitted " . scalar(@vals) . " items ...*/ "
-                . join(',', @right) . $right;
+   my $last_length  = 0;
+   my $query_length = length($query);
+   while (
+      $length          > 0
+      && $query_length > $length
+      && $query_length < ( $last_length || $query_length + 1 )
+   ) {
+      $last_length = $query_length;
+      $query =~ s{
+         (\bIN\s*\()    # The opening of an IN list
+         ([^\)]+)       # Contents of the list, assuming no item contains paren
+         (?=\))           # Close of the list
       }
+      {
+         $1 . __shorten($2)
+      }gexsi;
    }
 
    return $query;
+}
+
+sub __shorten {
+   my ( $snippet ) = @_;
+   my @vals = split(/,/, $snippet);
+   return $snippet unless @vals > 20;
+   my @keep = splice(@vals, 0, 20);  # Remove and save the first 20 items
+   return
+      join(',', @keep)
+      . "/*... omitted "
+      . scalar(@vals)
+      . " items ...*/";
 }
 
 sub fingerprint {
@@ -3275,7 +3278,7 @@ sub fingerprint {
       && return $query;
    $query =~ m/\A\s*(call\s+\S+)\(/i
       && return lc($1); # Warning! $1 used, be careful.
-   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)? INTO .+? VALUES \(.*?\)),\(/i ) {
+   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)?\s+INTO.+?VALUES\s*\(.*?\))\s*,\s*\(/is ) {
       $query = $beginning; # Shorten multi-value INSERT statements ASAP
    }
 
@@ -3317,6 +3320,22 @@ sub _distill_verbs {
       && return "USE";
    $query =~ m/\A\s*UNLOCK TABLES/i
       && return "UNLOCK";
+   $query =~ m/\A\s*xa\s+(\S+)/i
+      && return "XA_$1";
+
+   $query = $self->strip_comments($query);
+
+   if ( $query =~ m/\A\s*SHOW\s+/i ) {
+      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/;
+      MKDEBUG && _d('SHOW', @what);
+      return unless scalar @what;
+      if ( $what[0] =~ m/CREATE/i || ($what[1] && $what[1] =~ m/STATUS/i) ) {
+         return "SHOW $what[0] $what[1]";
+      }
+      else {
+         return "SHOW $what[0]";
+      }
+   }
 
    eval $QueryParser::data_def_stmts;
    eval $QueryParser::tbl_ident;
@@ -3351,7 +3370,7 @@ sub _distill_tables {
       $_ =~ s/`//g;
       $_ =~ s/(_?)[0-9]+/$1?/g;
       $_;
-   } $qp->get_tables($query);
+   } grep { defined $_ } $qp->get_tables($query);
 
    push @tables, $table if $table;
 
@@ -3366,9 +3385,21 @@ sub _distill_tables {
 sub distill {
    my ( $self, $query, %args ) = @_;
 
-   my ($verbs, $table)  = $self->_distill_verbs($query, %args);
-   my @tables           = $self->_distill_tables($query, $table, %args);
-   $query               = join(q{ }, $verbs, @tables);
+   if ( $args{generic} ) {
+      my ($cmd, $arg) = $query =~ m/^(\S+)\s+(\S+)/;
+      return '' unless $cmd;
+      $query = (uc $cmd) . ($arg ? " $arg" : '');
+   }
+   else {
+      my ($verbs, $table)  = $self->_distill_verbs($query, %args);
+      my @tables           = $self->_distill_tables($query, $table, %args);
+      $query               = join(q{ }, $verbs, @tables);
+   }
+   
+   if ( $args{trf} ) {
+      $query = $args{trf}->($query, %args);
+   }
+
    return $query;
 }
 
