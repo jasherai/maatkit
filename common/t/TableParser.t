@@ -567,8 +567,8 @@ sub test_rsi {
    my $ddl = load_file($file);
    my ($got_new_ddl, $got_indexes) = $tp->remove_secondary_indexes($ddl);
    is(
-      $indexes,
       $got_indexes,
+      $indexes,
       "$des - secondary indexes $file"
    );
    is(
@@ -624,7 +624,7 @@ test_rsi(
   PRIMARY KEY  (`actor_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=201 DEFAULT CHARSET=utf8;
 ",
-   'KEY `idx_actor_last_name` (`last_name`)'
+   'ADD KEY `idx_actor_last_name` (`last_name`)'
 );
 
 test_rsi(
@@ -636,7 +636,7 @@ test_rsi(
   CONSTRAINT `t1_ibfk_1` FOREIGN KEY (`a`) REFERENCES `t2` (`a`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1
 ",
-   'KEY `a` (`a`)',
+   'ADD KEY `a` (`a`)',
 );
 
 test_rsi(
@@ -661,7 +661,7 @@ test_rsi(
   CONSTRAINT `fk_film_language_original` FOREIGN KEY (`original_language_id`) REFERENCES `language` (`language_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8
 ",
-   'KEY `idx_fk_original_language_id` (`original_language_id`), KEY `idx_fk_language_id` (`language_id`), KEY `idx_title` (`title`)'
+   'ADD KEY `idx_fk_original_language_id` (`original_language_id`), ADD KEY `idx_fk_language_id` (`language_id`), ADD KEY `idx_title` (`title`)'
 );
 
 # #############################################################################

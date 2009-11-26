@@ -446,7 +446,7 @@ sub remove_secondary_indexes {
          # Escape ( ) in the key def so Perl treats them literally.
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         $_->{ddl};
+         "ADD $_->{ddl}";
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
