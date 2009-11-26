@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 129;
+use Test::More tests => 144;
 
 require "../QueryRewriter.pm";
 require '../QueryParser.pm';
@@ -696,7 +696,7 @@ is(
    'REPLACE SELECT checksum.checksum foo.foo',
    'distill with reserved words');
 
-is($qr->distill('SHOW STATUS'), 'SHOW', 'distill SHOW');
+is($qr->distill('SHOW STATUS'), 'SHOW STATUS', 'distill SHOW STATUS');
 
 is($qr->distill('commit'), 'COMMIT', 'distill COMMIT');
 
@@ -918,4 +918,70 @@ is(
    'distills unlock tables'
 );
 
-exit
+# #############################################################################
+#  Issue 712: Queries not handled by "distill"
+# #############################################################################
+is(
+   $qr->distill('XA START 0x123'),
+   'XA_START',
+   'distills xa start'
+);
+is(
+   $qr->distill('XA PREPARE 0x123'),
+   'XA_PREPARE',
+   'distills xa prepare'
+);
+is(
+   $qr->distill('XA COMMIT 0x123'),
+   'XA_COMMIT',
+   'distills xa commit'
+);
+is(
+   $qr->distill('XA END 0x123'),
+   'XA_END',
+   'distills xa end'
+);
+
+is(
+   $qr->distill("/* mysql-connector-java-5.1-nightly-20090730 ( Revision: \${svn.Revision} ) */SHOW VARIABLES WHERE Variable_name ='language' OR Variable_name =
+   'net_write_timeout' OR Variable_name = 'interactive_timeout' OR
+   Variable_name = 'wait_timeout' OR Variable_name = 'character_set_client' OR
+   Variable_name = 'character_set_connection' OR Variable_name =
+   'character_set' OR Variable_name = 'character_set_server' OR Variable_name
+   = 'tx_isolation' OR Variable_name = 'transaction_isolation' OR
+   Variable_name = 'character_set_results' OR Variable_name = 'timezone' OR
+   Variable_name = 'time_zone' OR Variable_name = 'system_time_zone' OR
+   Variable_name = 'lower_case_table_names' OR Variable_name =
+   'max_allowed_packet' OR Variable_name = 'net_buffer_length' OR
+   Variable_name = 'sql_mode' OR Variable_name = 'query_cache_type' OR
+   Variable_name = 'query_cache_size' OR Variable_name = 'init_connect'"),
+   'SHOW VARIABLES',
+   'distills /* comment */SHOW VARIABLES'
+);
+
+is(
+   $qr->distill('SHOW SLAVE STATUS'),
+   'SHOW SLAVE STATUS',
+   'distills SHOW SLAVE STATUS'
+);
+is(
+   $qr->distill('SHOW INNODB STATUS'),
+   'SHOW INNODB STATUS',
+   'distills SHOW INNODB STATUS'
+);
+is(
+   $qr->distill('SHOW CREATE TABLE'),
+   'SHOW CREATE TABLE',
+   'distills SHOW CREATE TABLE'
+);
+
+my @show = qw(COLUMNS GRANTS INDEX STATUS TABLES TRIGGERS WARNINGS);
+foreach my $show ( @show ) {
+   is(
+      $qr->distill("SHOW $show"),
+      "SHOW $show",
+      "distills SHOW $show"
+   );
+}
+
+exit;

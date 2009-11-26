@@ -204,6 +204,23 @@ sub _distill_verbs {
       && return "USE";
    $query =~ m/\A\s*UNLOCK TABLES/i
       && return "UNLOCK";
+   $query =~ m/\A\s*xa\s+(\S+)/i
+      && return "XA_$1";
+
+   $query = $self->strip_comments($query);
+
+   if ( $query =~ m/\A\s*SHOW\s+/i ) {
+      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/;
+      MKDEBUG && _d('SHOW', @what);
+      return unless scalar @what;
+      # Handles SHOW CREATE * and SHOW * STATUS.
+      if ( $what[0] =~ m/CREATE/i || ($what[1] && $what[1] =~ m/STATUS/i) ) {
+         return "SHOW $what[0] $what[1]";
+      }
+      else {
+         return "SHOW $what[0]";
+      }
+   }
 
    # More special cases for data defintion statements.
    # The two evals are a hack to keep Perl from warning that
