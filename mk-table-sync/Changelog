@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Added note to output when using --dry-run (issue 691).
+
 2009-10-30: version 1.0.21
 
    * Fixed an infinite loop with the Nibble algorithm (issue 644).

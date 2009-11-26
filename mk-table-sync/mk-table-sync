@@ -5918,6 +5918,13 @@ sub main {
       %modules,
    );
 
+   if ( $o->get('dry-run') ) {
+      print "# NOTE: --dry-run does not show if data needs to be synced because it\n"
+         .  "#       does not access, compare or sync data.  --dry-run only shows\n"
+         .  "#       the work that would be done.\n";
+
+   }
+
    if ( $o->get('lock-and-rename') ) {
       $exit_status = lock_and_rename(%args);
    }
