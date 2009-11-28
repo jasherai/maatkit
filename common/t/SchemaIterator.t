@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 28;
 
 use List::Util qw(max);
 
@@ -306,6 +306,25 @@ is_deeply(
    get_all($next_tbl),
    ['t1','t2'],
    '--tables-regex'
+);
+
+# ignore patterns
+@ARGV=qw{--ignore-databases-regex (?:^d[23]|mysql|info|sakila) --ignore-tables-regex t[^23]};
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+
+$next_db = $si->get_db_itr(dbh=>$dbh);
+is_deeply(
+   get_all($next_db),
+   ['d1'],
+   '--ignore-databases-regex'
+);
+
+$next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
+is_deeply(
+   get_all($next_tbl),
+   [qw(t2 t3)],
+   '--ignore-tables-regex'
 );
 
 # #############################################################################

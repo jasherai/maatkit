@@ -48,14 +48,16 @@ sub new {
 # Can die: yes
 # make_filter() uses an OptionParser obj and the following standard filter
 # options to make a filter sub suitable for set_filter():
-#   --databases -d      List of allowed databases
-#   --ignore-databases  List of databases to ignore
-#   --databases-regex   List of allowed databases that match pattern
-#   --tables    -t      List of allowed tables
-#   --ignore-tables     List of tables to ignore
-#   --tables-regex      List of allowed tables that match pattern
-#   --engines   -e      List of allowed engines
-#   --ignore-engines    List of engines to ignore 
+#   --databases -d            List of allowed databases
+#   --ignore-databases        List of databases to ignore
+#   --databases-regex         List of allowed databases that match pattern
+#   --ignore-databases-regex  List of ignored database that match pattern
+#   --tables    -t            List of allowed tables
+#   --ignore-tables           List of tables to ignore
+#   --tables-regex            List of allowed tables that match pattern
+#   --ignore-tables-regex     List of ignored tables that match pattern
+#   --engines   -e            List of allowed engines
+#   --ignore-engines          List of engines to ignore 
 # The filters in the sub are created in that order for efficiency.  For
 # example, the table filters are not checked if the database doesn't first
 # pass its filters.  Each filter is only created if specified.  Since the
@@ -81,16 +83,23 @@ sub make_filter {
    if ( $o->has('databases-regex') && (my $p = $o->get('databases-regex')) ) {
       push @dbs_regex, "      return 0 unless \$db && (\$db =~ m/$p/o);";
    }
-   if ( @permit_dbs || @reject_dbs || @dbs_regex ) {
+   my @reject_dbs_regex;
+   if ( $o->has('ignore-databases-regex')
+        && (my $p = $o->get('ignore-databases-regex')) ) {
+      push @reject_dbs_regex, "      return 0 if \$db && (\$db =~ m/$p/o);";
+   }
+   if ( @permit_dbs || @reject_dbs || @dbs_regex || @reject_dbs_regex ) {
       push @lines,
          '   if ( $db ) {',
-            (@permit_dbs ? @permit_dbs : ()),
-            (@reject_dbs ? @reject_dbs : ()),
-            (@dbs_regex  ? @dbs_regex  : ()),
+            (@permit_dbs        ? @permit_dbs       : ()),
+            (@reject_dbs        ? @reject_dbs       : ()),
+            (@dbs_regex         ? @dbs_regex        : ()),
+            (@reject_dbs_regex  ? @reject_dbs_regex : ()),
          '   }';
    }
 
-   if ( $o->get('tables') || $o->get('ignore-tables') ) {
+   if ( $o->get('tables') || $o->get('ignore-tables')
+        || $o->get('ignore-tables-regex') ) {
       my @permit_tbls = _make_filter('unless', '$tbl', $o->get('tables'))
          if $o->has('tables');
       my @reject_tbls = _make_filter('if', '$tbl', $o->get('ignore-tables'))
@@ -98,6 +107,12 @@ sub make_filter {
       my @tbls_regex;
       if ( $o->has('tables-regex') && (my $p = $o->get('tables-regex')) ) {
          push @tbls_regex, "      return 0 unless \$tbl && (\$tbl =~ m/$p/o);";
+      }
+      my @reject_tbls_regex;
+      if ( $o->has('ignore-tables-regex')
+           && (my $p = $o->get('ignore-tables-regex')) ) {
+         push @reject_tbls_regex,
+            "      return 0 if \$tbl && (\$tbl =~ m/$p/o);";
       }
 
       my @get_eng;
@@ -121,16 +136,17 @@ sub make_filter {
             if $o->has('ignore-engines');
       }
 
-      if ( @permit_tbls || @reject_tbls || @tbls_regex
+      if ( @permit_tbls || @reject_tbls || @tbls_regex || @reject_tbls_regex
            || @permit_engs || @reject_engs ) {
          push @lines,
             '   if ( $tbl ) {',
-               (@permit_tbls ? @permit_tbls : ()),
-               (@reject_tbls ? @reject_tbls : ()),
-               (@tbls_regex  ? @tbls_regex  : ()),
-               (@get_eng     ? @get_eng     : ()),
-               (@permit_engs ? @permit_engs : ()),
-               (@reject_engs ? @reject_engs : ()),
+               (@permit_tbls       ? @permit_tbls        : ()),
+               (@reject_tbls       ? @reject_tbls        : ()),
+               (@tbls_regex        ? @tbls_regex         : ()),
+               (@reject_tbls_regex ? @reject_tbls_regex  : ()),
+               (@get_eng           ? @get_eng            : ()),
+               (@permit_engs       ? @permit_engs        : ()),
+               (@reject_engs       ? @reject_engs        : ()),
             '   }';
       }
    }
