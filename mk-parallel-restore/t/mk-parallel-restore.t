@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 60;
+use Test::More tests => 62;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -737,6 +737,24 @@ is_deeply(
    $dbh->selectall_arrayref("show tables from `test` like 'store'"),
    [['store']],
    'Restore table with foreign key constraints (issue 703)'
+);
+
+# #############################################################################
+# Issue 683: mk-parellel-restore innodb table empty 
+# #############################################################################
+`$cmd --drop-tables --create-databases samples/issue_683`;
+is_deeply(
+   $dbh->selectall_arrayref('select count(*) from `f4all-LIVE`.`Season`'),
+   [[47]],
+   'Commit after restore (issue 683)'
+);
+
+`$cmd --drop-tables --create-databases --no-resume --no-commit samples/issue_683`;
+
+is_deeply(
+   $dbh->selectall_arrayref('select count(*) from `f4all-LIVE`.`Season`'),
+   [[0]],
+   '--no-commit'
 );
 
 # #############################################################################

@@ -2186,7 +2186,7 @@ sub main {
       $o->save_error("You did not specify any files to restore");
    }
 
-   foreach my $opt ( qw(bulk-insert-buffer-size commit local ignore replace) ) {
+   foreach my $opt ( qw(bulk-insert-buffer-size local ignore replace) ) {
       if ( $o->got($opt) && !$o->get('tab') ) {
          $o->save_error("Option --$opt is ineffective without --tab or --csv");
       }
@@ -2739,8 +2739,7 @@ sub do_table {
             }
             else {
                eval {
-                  $dbh->do($sql, {}, $load_from);
-                  $dbh->commit() if $o->get('commit');
+                  $dbh->do($sql, {}, $load_from); 
                };
                if ( $EVAL_ERROR ) {
                   die mysql_error_msg($EVAL_ERROR)." while restoring $db.$tbl";
@@ -2753,6 +2752,9 @@ sub do_table {
             die "I don't understand how to load file $file\n";
          }
       } # .txt tab file
+
+      $dbh->commit() if $o->get('commit');
+
    } # each file
 
    if ( $dbh ) {
@@ -3225,9 +3227,11 @@ Sets the connection, database, and C<LOAD DATA INFILE> character set.
 The default is C<BINARY>, which is the safest value to use for C<LOAD DATA
 INFILE>.  Has no effect without L<"--tab">.
 
-=item --commit
+=item --[no]commit
 
-Commit after each load via C<LOAD DATA INFILE>.
+default: yes
+
+Commit after each file.
 
 =item --config
 
