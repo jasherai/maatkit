@@ -2248,7 +2248,7 @@ For more information on how to read EXPLAIN output, please see
 L<http://dev.mysql.com/doc/en/explain.html>, and this talk titled "Query
 Optimizer Internals and What's New in the MySQL 5.2 Optimizer," from Timour
 Katchaounov, one of the MySQL developers:
-L<http://conferences.oreillynet.com/presentations/mysql07/katchaounov_timour.pdf>.
+L<http://maatkit.org/presentations/katchaounov_timour.pdf>.
 
 =head1 MODULES
 
