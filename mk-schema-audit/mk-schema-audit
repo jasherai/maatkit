@@ -733,227 +733,6 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 4162
-# ###########################################################################
-package MySQLFind;
-
-use strict;
-use warnings FATAL => 'all';
-
-use English qw(-no_match_vars);
-use Data::Dumper;
-$Data::Dumper::Indent    = 0;
-$Data::Dumper::Quotekeys = 0;
-
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-
-sub new {
-   my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dumper quoter) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   die "Do not pass me a dbh argument" if $args{dbh};
-   my $self = bless \%args, $class;
-   $self->{need_engine}
-      = (   $self->{engines}->{permit}
-         || $self->{engines}->{reject}
-         || $self->{engines}->{regexp} ? 1 : 0);
-   die "I need a parser argument"
-      if $self->{need_engine} && !defined $args{parser};
-   MKDEBUG && _d('Need engine:', $self->{need_engine} ? 'yes' : 'no');
-   $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
-   $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
-   if ( $args{useddl} ) {
-      MKDEBUG && _d('Will prefer DDL');
-   }
-   return $self;
-}
-
-sub init_timestamp {
-   my ( $self, $dbh ) = @_;
-   return if $self->{timestamp}->{$dbh}->{now};
-   my $sql = 'SELECT CURRENT_TIMESTAMP';
-   MKDEBUG && _d($sql);
-   ($self->{timestamp}->{$dbh}->{now}) = $dbh->selectrow_array($sql);
-   MKDEBUG && _d('Current timestamp:', $self->{timestamp}->{$dbh}->{now});
-}
-
-sub find_databases {
-   my ( $self, $dbh ) = @_;
-   return grep {
-      $_ !~ m/^(information_schema|lost\+found)$/i
-   }  $self->_filter('databases', sub { $_[0] },
-         $self->{dumper}->get_databases(
-            $dbh,
-            $self->{quoter},
-            $self->{databases}->{like}));
-}
-
-sub find_tables {
-   my ( $self, $dbh, %args ) = @_; 
-
-   my @tables
-      = $self->_filter('tables', sub { $_[0]->{name} },
-         $self->_fetch_tbl_list($dbh, %args));
-
-   my %broken_table;
-
-   if ( $self->{need_engine} ) {
-      foreach my $tbl ( @tables ) {
-         next if $tbl->{engine};
-         my ( $tbl_name ) = $tbl->{name} =~ m/\.(.+)$/;
-         my $struct = $self->{parser}->parse(
-            $self->{dumper}->get_create_table(
-               $dbh, $self->{quoter}, $args{database}, $tbl_name));
-         $broken_table{$tbl_name} = 1 unless $struct;
-         $tbl->{engine} = $struct->{engine};
-      }
-      @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
-   }
-
-   for my $i ( 0..$#tables ) {
-      $tables[$i]->{name} =~ s/^[^.]*\.//;
-      
-      if ( $broken_table{$tables[$i]->{name}} ) {
-         MKDEBUG && _d('Removing broken table:', $tables[$i]->{name});
-         delete $tables[$i];
-      }
-   }
-
-   foreach my $crit ( @{$self->{tables}->{status}} ) {
-      my ($key, $test) = %$crit;
-      @tables
-         = grep {
-            $self->_test_date($_, $key, $test, $dbh)
-         } @tables;
-   }
-
-   return map { $_->{name} } @tables;
-}
-
-sub find_views {
-   my ( $self, $dbh, %args ) = @_;
-   my @tables = $self->_fetch_tbl_list($dbh, %args);
-   @tables = grep { $_->{engine} eq 'VIEW' } @tables;
-   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
-   return map { $_->{name} } @tables;
-}
-
-sub _use_db {
-   my ( $self, $dbh, $new ) = @_;
-   if ( !$new ) {
-      MKDEBUG && _d('No new DB to use');
-      return;
-   }
-   my $sql = 'SELECT DATABASE()';
-   MKDEBUG && _d($sql);
-   my $curr = $dbh->selectrow_array($sql);
-   if ( $curr && $new && $curr eq $new ) {
-      MKDEBUG && _d('Current and new DB are the same');
-      return $curr;
-   }
-   $sql = 'USE ' . $self->{quoter}->quote($new);
-   MKDEBUG && _d($sql);
-   $dbh->do($sql);
-   return $curr;
-}
-
-sub _fetch_tbl_list {
-   my ( $self, $dbh, %args ) = @_;
-   die "database is required" unless $args{database};
-
-   my $curr_db = $self->_use_db($dbh, $args{database});
-
-   my @tables;
-   if ( scalar @{$self->{tables}->{status}} ) {
-      @tables = $self->{dumper}->get_table_status(
-         $dbh,
-         $self->{quoter},
-         $args{database},
-         $self->{tables}->{like});
-   }
-   else {
-      @tables = $self->{dumper}->get_table_list(
-         $dbh,
-         $self->{quoter},
-         $args{database},
-         $self->{tables}->{like});
-   }
-
-   @tables = map {
-      my %hash = %$_;
-      $hash{name} = join('.', $args{database}, $hash{name});
-      \%hash;
-   }
-   grep {
-      ( $self->{engines}->{views} || ($_->{engine} ne 'VIEW') )
-   } @tables;
-
-   $self->_use_db($dbh, $curr_db);
-
-   return @tables;
-}
-
-sub _filter {
-   my ( $self, $thing, $sub, @vals ) = @_;
-   MKDEBUG && _d('Filtering', $thing, 'list on', Dumper($self->{$thing}));
-   my $permit = $self->{$thing}->{permit};
-   my $reject = $self->{$thing}->{reject};
-   my $regexp = $self->{$thing}->{regexp};
-   return grep {
-      my $val = $sub->($_);
-      $val = '' unless defined $val;
-      if ( $thing eq 'tables' ) {
-         (my $tbl = $val) =~ s/^.*\.//;
-         ( !$reject || (!$reject->{$val} && !$reject->{$tbl}) )
-            && ( !$permit || $permit->{$val} || $permit->{$tbl} )
-            && ( !$regexp || $val =~ m/$regexp/ )
-      }
-      else {
-         ( !$reject || !$reject->{$val} )
-            && ( !$permit || $permit->{$val} )
-            && ( !$regexp || $val =~ m/$regexp/ )
-      }
-   } @vals;
-}
-
-sub _test_date {
-   my ( $self, $table, $prop, $test, $dbh ) = @_;
-   $prop = lc $prop;
-   if ( !defined $table->{$prop} ) {
-      MKDEBUG && _d($prop, 'is not defined');
-      return $self->{nullpass};
-   }
-   my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
-   die "Invalid date test $test for $prop" unless defined $num;
-   $self->init_timestamp($dbh);
-   my $sql = "SELECT DATE_SUB('$self->{timestamp}->{$dbh}->{now}', "
-           . "INTERVAL $num SECOND)";
-   MKDEBUG && _d($sql);
-   ($self->{timestamp}->{$dbh}->{$num}) ||= $dbh->selectrow_array($sql);
-   my $time = $self->{timestamp}->{$dbh}->{$num};
-   return 
-         ( $equality eq '-' && $table->{$prop} gt $time )
-      || ( $equality eq '+' && $table->{$prop} lt $time )
-      || (                     $table->{$prop} eq $time );
-}
-
-sub _d {
-   my ($package, undef, $line) = caller 0;
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-        map { defined $_ ? $_ : 'undef' }
-        @_;
-   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-}
-
-1;
-
-# ###########################################################################
-# End MySQLFind package
-# ###########################################################################
-
-# ###########################################################################
 # DSNParser package 5208
 # ###########################################################################
 use strict;
@@ -2857,6 +2636,679 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# QueryRewriter package $Revision$
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package QueryRewriter;
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+# A list of verbs that can appear in queries.  I know this is incomplete -- it
+# does not have CREATE, DROP, ALTER, TRUNCATE for example.  But I don't need
+# those for my client yet.  Other verbs: KILL, LOCK, UNLOCK
+our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
+                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK}xi;
+my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
+my $bal;
+$bal         = qr/
+                  \(
+                  (?:
+                     (?> [^()]+ )    # Non-parens without backtracking
+                     |
+                     (??{ $bal })    # Group with matching parens
+                  )*
+                  \)
+                 /x;
+
+# The one-line comment pattern is quite crude.  This is intentional for
+# performance.  The multi-line pattern does not match version-comments.
+my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
+my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
+}
+
+# Strips comments out of queries.
+sub strip_comments {
+   my ( $self, $query ) = @_;
+   $query =~ s/$olc_re//go;
+   $query =~ s/$mlc_re//go;
+   return $query;
+}
+
+# Shortens long queries by normalizing stuff out of them.  $length is used only
+# for IN() lists.  If $length is given, the query is shortened if it's longer
+# than that.
+sub shorten {
+   my ( $self, $query, $length ) = @_;
+   # Shorten multi-value insert/replace, all the way up to on duplicate key
+   # update if it exists.
+   $query =~ s{
+      \A(
+         (?:INSERT|REPLACE)
+         (?:\s+LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)?
+         (?:\s\w+)*\s+\S+\s+VALUES\s*\(.*?\)
+      )
+      \s*,\s*\(.*?(ON\s+DUPLICATE|\Z)}
+      {$1 /*... omitted ...*/$2}xsi;
+
+   # Shortcut!  Find out if there's an IN() list with values.
+   return $query unless $query =~ m/IN\s*\(\s*(?!select)/i;
+
+   # Shorten long IN() lists of literals.  But only if the string is longer than
+   # the $length limit.  Assumption: values don't contain commas or closing
+   # parens inside them.
+   my $last_length  = 0;
+   my $query_length = length($query);
+   while (
+      $length          > 0
+      && $query_length > $length
+      && $query_length < ( $last_length || $query_length + 1 )
+   ) {
+      $last_length = $query_length;
+      $query =~ s{
+         (\bIN\s*\()    # The opening of an IN list
+         ([^\)]+)       # Contents of the list, assuming no item contains paren
+         (?=\))           # Close of the list
+      }
+      {
+         $1 . __shorten($2)
+      }gexsi;
+   }
+
+   return $query;
+}
+
+# Used by shorten().  The argument is the stuff inside an IN() list.  The
+# argument might look like this:
+#  1,2,3,4,5,6
+# Or, if this is a second or greater iteration, it could even look like this:
+#  /*... omitted 5 items ...*/ 6,7,8,9
+# In the second case, we need to trim out 6,7,8 and increment "5 items" to "8
+# items".  We assume that the values in the list don't contain commas; if they
+# do, the results could be a little bit wrong, but who cares.  We keep the first
+# 20 items because we don't want to nuke all the samples from the query, we just
+# want to shorten it.
+sub __shorten {
+   my ( $snippet ) = @_;
+   my @vals = split(/,/, $snippet);
+   return $snippet unless @vals > 20;
+   my @keep = splice(@vals, 0, 20);  # Remove and save the first 20 items
+   return
+      join(',', @keep)
+      . "/*... omitted "
+      . scalar(@vals)
+      . " items ...*/";
+}
+
+# Normalizes variable queries to a "query fingerprint" by abstracting away
+# parameters, canonicalizing whitespace, etc.  See
+# http://dev.mysql.com/doc/refman/5.0/en/literals.html for literal syntax.
+# Note: Any changes to this function must be profiled for speed!  Speed of this
+# function is critical for mk-log-parser.  There are known bugs in this, but the
+# balance between maybe-you-get-a-bug and speed favors speed.  See past
+# revisions of this subroutine for more correct, but slower, regexes.
+sub fingerprint {
+   my ( $self, $query ) = @_;
+
+   # First, we start with a bunch of special cases that we can optimize because
+   # they are special behavior or because they are really big and we want to
+   # throw them away as early as possible.
+   $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
+      && return 'mysqldump';
+   # Matches queries like REPLACE /*foo.bar:3/3*/ INTO checksum.checksum
+   $query =~ m#/\*\w+\.\w+:[0-9]/[0-9]\*/#     # mk-table-checksum, etc query
+      && return 'maatkit';
+   # Administrator commands appear to be a comment, so return them as-is
+   $query =~ m/\A# administrator command: /
+      && return $query;
+   # Special-case for stored procedures.
+   $query =~ m/\A\s*(call\s+\S+)\(/i
+      && return lc($1); # Warning! $1 used, be careful.
+   # mysqldump's INSERT statements will have long values() lists, don't waste
+   # time on them... they also tend to segfault Perl on some machines when you
+   # get to the "# Collapse IN() and VALUES() lists" regex below!
+   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)?\s+INTO.+?VALUES\s*\(.*?\))\s*,\s*\(/is ) {
+      $query = $beginning; # Shorten multi-value INSERT statements ASAP
+   }
+
+   $query =~ s/$olc_re//go;
+   $query =~ s/$mlc_re//go;
+   $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
+      && return $query;
+
+   $query =~ s/\\["']//g;                # quoted strings
+   $query =~ s/".*?"/?/sg;               # quoted strings
+   $query =~ s/'.*?'/?/sg;               # quoted strings
+   # This regex is extremely broad in its definition of what looks like a
+   # number.  That is for speed.
+   $query =~ s/[0-9+-][0-9a-f.xb+-]*/?/g;# Anything vaguely resembling numbers
+   $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+   $query =~ s/\A\s+//;                  # Chop off leading whitespace
+   chomp $query;                         # Kill trailing whitespace
+   $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+   $query = lc $query;
+   $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
+   $query =~ s{                          # Collapse IN and VALUES lists
+               \b(in|values?)(?:[\s,]*\([\s?,]*\))+
+              }
+              {$1(?+)}gx;
+   $query =~ s{                          # Collapse UNION
+               \b(select\s.*?)(?:(\sunion(?:\sall)?)\s\1)+
+              }
+              {$1 /*repeat$2*/}xg;
+   $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
+   # The following are disabled because of speed issues.  Should we try to
+   # normalize whitespace between and around operators?  My gut feeling is no.
+   # $query =~ s/ , | ,|, /,/g;    # Normalize commas
+   # $query =~ s/ = | =|= /=/g;       # Normalize equals
+   # $query =~ s# [,=+*/-] ?|[,=+*/-] #+#g;    # Normalize operators
+   return $query;
+}
+
+sub _distill_verbs {
+   my ( $self, $query ) = @_;
+
+   # Special cases.
+   $query =~ m/\A\s*call\s+(\S+)\(/i
+      && return "CALL $1"; # Warning! $1 used, be careful.
+   $query =~ m/\A# administrator/
+      && return "ADMIN";
+   $query =~ m/\A\s*use\s+/
+      && return "USE";
+   $query =~ m/\A\s*UNLOCK TABLES/i
+      && return "UNLOCK";
+   $query =~ m/\A\s*xa\s+(\S+)/i
+      && return "XA_$1";
+
+   $query = $self->strip_comments($query);
+
+   if ( $query =~ m/\A\s*SHOW\s+/i ) {
+      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/;
+      MKDEBUG && _d('SHOW', @what);
+      return unless scalar @what;
+      # Handles SHOW CREATE * and SHOW * STATUS.
+      if ( $what[0] =~ m/CREATE/i || ($what[1] && $what[1] =~ m/STATUS/i) ) {
+         return "SHOW $what[0] $what[1]";
+      }
+      else {
+         return "SHOW $what[0]";
+      }
+   }
+
+   # More special cases for data defintion statements.
+   # The two evals are a hack to keep Perl from warning that
+   # "QueryParser::data_def_stmts" used only once: possible typo at...".
+   # Some day we'll group all our common regex together in a packet and
+   # export/import them properly.
+   eval $QueryParser::data_def_stmts;
+   eval $QueryParser::tbl_ident;
+   my ( $dds ) = $query =~ /^\s*($QueryParser::data_def_stmts)\b/i;
+   if ( $dds ) {
+      my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
+      $obj = uc $obj if $obj;
+      MKDEBUG && _d('Data def statment:', $dds, 'obj:', $obj);
+      my ($db_or_tbl)
+         = $query =~ m/(?:TABLE|DATABASE)\s+($QueryParser::tbl_ident)(\s+.*)?/i;
+      MKDEBUG && _d('Matches db or table:', $db_or_tbl);
+      return uc($dds . ($obj ? " $obj" : '')), $db_or_tbl;
+   }
+
+   # First, get the query type -- just extract all the verbs and collapse them
+   # together.
+   my @verbs = $query =~ m/\b($verbs)\b/gio;
+   @verbs    = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
+   };
+   my $verbs = join(q{ }, @verbs);
+   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+
+   return $verbs;
+}
+
+sub _distill_tables {
+   my ( $self, $query, $table, %args ) = @_;
+   my $qp = $args{QueryParser} || $self->{QueryParser};
+   die "I need a QueryParser argument" unless $qp;
+
+   # "Fingerprint" the tables.
+   my @tables = map {
+      $_ =~ s/`//g;
+      $_ =~ s/(_?)[0-9]+/$1?/g;
+      $_;
+   } grep { defined $_ } $qp->get_tables($query);
+
+   push @tables, $table if $table;
+
+   # Collapse the table list
+   @tables = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
+   };
+
+   return @tables;
+}
+
+# This is kind of like fingerprinting, but it super-fingerprints to something
+# that shows the query type and the tables/objects it accesses.
+sub distill {
+   my ( $self, $query, %args ) = @_;
+
+   if ( $args{generic} ) {
+      # Do a generic distillation which returns the first two words
+      # of a simple "cmd arg" query, like memcached and HTTP stuff.
+      my ($cmd, $arg) = $query =~ m/^(\S+)\s+(\S+)/;
+      return '' unless $cmd;
+      $query = (uc $cmd) . ($arg ? " $arg" : '');
+   }
+   else {
+      # _distill_verbs() may return a table if it's a special statement
+      # like TRUNCATE TABLE foo.  _distill_tables() handles some but not
+      # all special statements so we pass it this special table in case
+      # it's a statement it can't handle.  If it can handle it, it will
+      # eliminate any duplicate tables.
+      my ($verbs, $table)  = $self->_distill_verbs($query, %args);
+      my @tables           = $self->_distill_tables($query, $table, %args);
+      $query               = join(q{ }, $verbs, @tables);
+   }
+   
+   if ( $args{trf} ) {
+      $query = $args{trf}->($query, %args);
+   }
+
+   return $query;
+}
+
+sub convert_to_select {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   $query =~ s{
+                 \A.*?
+                 update\s+(.*?)
+                 \s+set\b(.*?)
+                 (?:\s*where\b(.*?))?
+                 (limit\s*[0-9]+(?:\s*,\s*[0-9]+)?)?
+                 \Z
+              }
+              {__update_to_select($1, $2, $3, $4)}exsi
+      || $query =~ s{
+                    \A.*?
+                    (?:insert|replace)\s+
+                    .*?\binto\b(.*?)\(([^\)]+)\)\s*
+                    values?\s*(\(.*?\))\s*
+                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select($1, $2, $3)}exsi
+      || $query =~ s{
+                    \A.*?
+                    delete\s+(.*?)
+                    \bfrom\b(.*)
+                    \Z
+                 }
+                 {__delete_to_select($1, $2)}exsi;
+   $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
+   $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
+   return $query;
+}
+
+sub convert_select_list {
+   my ( $self, $query ) = @_;
+   $query =~ s{
+               \A\s*select(.*?)\bfrom\b
+              }
+              {$1 =~ m/\*/ ? "select 1 from" : "select isnull(coalesce($1)) from"}exi;
+   return $query;
+}
+
+sub __delete_to_select {
+   my ( $delete, $join ) = @_;
+   if ( $join =~ m/\bjoin\b/ ) {
+      return "select 1 from $join";
+   }
+   return "select * from $join";
+}
+
+sub __insert_to_select {
+   my ( $tbl, $cols, $vals ) = @_;
+   MKDEBUG && _d('Args:', @_);
+   my @cols = split(/,/, $cols);
+   MKDEBUG && _d('Cols:', @cols);
+   $vals =~ s/^\(|\)$//g; # Strip leading/trailing parens
+   my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|[^,]+)/g;
+   MKDEBUG && _d('Vals:', @vals);
+   if ( @cols == @vals ) {
+      return "select * from $tbl where "
+         . join(' and ', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
+   }
+   else {
+      return "select * from $tbl limit 1";
+   }
+}
+
+sub __update_to_select {
+   my ( $from, $set, $where, $limit ) = @_;
+   return "select $set from $from "
+      . ( $where ? "where $where" : '' )
+      . ( $limit ? " $limit "      : '' );
+}
+
+sub wrap_in_derived {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   return $query =~ m/\A\s*select/i
+      ? "select 1 from ($query) as x limit 1"
+      : $query;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End QueryRewriter package
+# ###########################################################################
+
+# ###########################################################################
+# SchemaIterator package $Revision$
+# ###########################################################################
+package SchemaIterator;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(Quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+      %args,
+      filter => undef,
+   };
+   return bless $self, $class;
+}
+
+# Required args:
+#   * o  obj: OptionParser module
+# Returns: subref
+# Can die: yes
+# make_filter() uses an OptionParser obj and the following standard filter
+# options to make a filter sub suitable for set_filter():
+#   --databases -d            List of allowed databases
+#   --ignore-databases        List of databases to ignore
+#   --databases-regex         List of allowed databases that match pattern
+#   --ignore-databases-regex  List of ignored database that match pattern
+#   --tables    -t            List of allowed tables
+#   --ignore-tables           List of tables to ignore
+#   --tables-regex            List of allowed tables that match pattern
+#   --ignore-tables-regex     List of ignored tables that match pattern
+#   --engines   -e            List of allowed engines
+#   --ignore-engines          List of engines to ignore 
+# The filters in the sub are created in that order for efficiency.  For
+# example, the table filters are not checked if the database doesn't first
+# pass its filters.  Each filter is only created if specified.  Since the
+# database and tables are given separately we no longer have to worry about
+# splitting db.tbl to match db and/or tbl.  The filter returns true if the
+# schema object is allowed.
+sub make_filter {
+   my ( $self, $o ) = @_;
+   my @lines = (
+      'sub {',
+      '   my ( $dbh, $db, $tbl ) = @_;',
+      '   my $engine = undef;',
+   );
+
+   # Filter schema objs in this order: db, tbl, engine.  It's not efficient
+   # to check the table if, for example, the database isn't allowed.
+
+   my @permit_dbs = _make_filter('unless', '$db', $o->get('databases'))
+      if $o->has('databases');
+   my @reject_dbs = _make_filter('if', '$db', $o->get('ignore-databases'))
+      if $o->has('ignore-databases');
+   my @dbs_regex;
+   if ( $o->has('databases-regex') && (my $p = $o->get('databases-regex')) ) {
+      push @dbs_regex, "      return 0 unless \$db && (\$db =~ m/$p/o);";
+   }
+   my @reject_dbs_regex;
+   if ( $o->has('ignore-databases-regex')
+        && (my $p = $o->get('ignore-databases-regex')) ) {
+      push @reject_dbs_regex, "      return 0 if \$db && (\$db =~ m/$p/o);";
+   }
+   if ( @permit_dbs || @reject_dbs || @dbs_regex || @reject_dbs_regex ) {
+      push @lines,
+         '   if ( $db ) {',
+            (@permit_dbs        ? @permit_dbs       : ()),
+            (@reject_dbs        ? @reject_dbs       : ()),
+            (@dbs_regex         ? @dbs_regex        : ()),
+            (@reject_dbs_regex  ? @reject_dbs_regex : ()),
+         '   }';
+   }
+
+   if ( $o->get('tables') || $o->get('ignore-tables')
+        || $o->get('ignore-tables-regex') ) {
+      my @permit_tbls = _make_filter('unless', '$tbl', $o->get('tables'))
+         if $o->has('tables');
+      my @reject_tbls = _make_filter('if', '$tbl', $o->get('ignore-tables'))
+         if $o->has('ignore-tables');
+      my @tbls_regex;
+      if ( $o->has('tables-regex') && (my $p = $o->get('tables-regex')) ) {
+         push @tbls_regex, "      return 0 unless \$tbl && (\$tbl =~ m/$p/o);";
+      }
+      my @reject_tbls_regex;
+      if ( $o->has('ignore-tables-regex')
+           && (my $p = $o->get('ignore-tables-regex')) ) {
+         push @reject_tbls_regex,
+            "      return 0 if \$tbl && (\$tbl =~ m/$p/o);";
+      }
+
+      my @get_eng;
+      my @permit_engs;
+      my @reject_engs;
+      if ( $o->get('engines') || $o->get('ignore-engines') ) {
+         push @get_eng,
+            '      my $sql = "SHOW TABLE STATUS "',
+            '              . ($db ? "FROM `$db`" : "")',
+            '              . " LIKE \'$tbl\'";',
+            '      MKDEBUG && _d($sql);',
+            '      eval {',
+            '         $engine = $dbh->selectrow_hashref($sql)->{engine};',
+            '      };',
+            '      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);',
+            '      MKDEBUG && _d($tbl, "uses engine", $engine);',
+            '      $engine = lc $engine if $engine;',
+         @permit_engs = _make_filter('unless', '$engine', $o->get('engines'), 1)
+            if $o->has('engines');
+         @reject_engs = _make_filter('if', '$engine', $o->get('ignore-engines'), 1)
+            if $o->has('ignore-engines');
+      }
+
+      if ( @permit_tbls || @reject_tbls || @tbls_regex || @reject_tbls_regex
+           || @permit_engs || @reject_engs ) {
+         push @lines,
+            '   if ( $tbl ) {',
+               (@permit_tbls       ? @permit_tbls        : ()),
+               (@reject_tbls       ? @reject_tbls        : ()),
+               (@tbls_regex        ? @tbls_regex         : ()),
+               (@reject_tbls_regex ? @reject_tbls_regex  : ()),
+               (@get_eng           ? @get_eng            : ()),
+               (@permit_engs       ? @permit_engs        : ()),
+               (@reject_engs       ? @reject_engs        : ()),
+            '   }';
+      }
+   }
+
+   push @lines, '   return 1;',  '}';
+
+   # Make the subroutine.
+   my $code = join("\n", @lines);
+   MKDEBUG && _d('filter sub:', $code);
+   my $filter_sub= eval $code
+      or die "Error compiling subroutine code:\n$code\n$EVAL_ERROR";
+
+   return $filter_sub;
+}
+
+# Required args:
+#   * filter_sub  subref: Filter sub, usually from make_filter()
+# Returns: undef
+# Can die: no
+# set_filter() sets the filter sub that get_db_itr() and get_tbl_itr()
+# use to filter the schema objects they find.  If no filter sub is set
+# then every possible schema object is returned by the iterators.  The
+# filter should return true if the schema object is allowed.
+sub set_filter {
+   my ( $self, $filter_sub ) = @_;
+   $self->{filter} = $filter_sub;
+   MKDEBUG && _d('Set filter sub');
+   return;
+}
+
+# Required args:
+#   * dbh  dbh: an active dbh
+# Returns: itr
+# Can die: no
+# get_db_itr() returns an iterator which returns the next db found,
+# according to any set filters, when called successively.
+sub get_db_itr {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh) = @args{@required_args};
+
+   my $filter = $self->{filter};
+   my @dbs;
+   eval {
+      my $sql = 'SHOW DATABASES';
+      MKDEBUG && _d($sql);
+      @dbs =  grep {
+         my $ok = $filter ? $filter->($dbh, $_, undef) : 1;
+         $ok;
+      } @{ $dbh->selectcol_arrayref($sql) };
+      MKDEBUG && _d('Found', scalar @dbs, 'databases');
+   };
+   MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+   return sub {
+      return shift @dbs;
+   };
+}
+
+# Required args:
+#   * dbh    dbh: an active dbh
+#   * db     scalar: database name
+# Optional args:
+#   * views  bool: Permit/return views (default no)
+# Returns: itr
+# Can die: no
+# get_tbl_itr() returns an iterator which returns the next table found,
+# in the given db, according to any set filters, when called successively.
+# Make sure $dbh->{FetchHashKeyName} = 'NAME_lc' was set, else engine
+# filters won't work.
+sub get_tbl_itr {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $views) = @args{@required_args, 'views'};
+
+   my $filter = $self->{filter};
+   my @tbls;
+   if ( $db ) {
+      eval {
+         my $sql = 'SHOW /*!50002 FULL*/ TABLES FROM '
+                 . $self->{Quoter}->quote($db);
+         MKDEBUG && _d($sql);
+         @tbls = map {
+            $_->[0]
+         }
+         grep {
+            my ($tbl, $type) = @$_;
+            my $ok = $filter ? $filter->($dbh, $db, $tbl) : 1;
+            if ( !$views ) {
+               # We don't want views therefore we have to check the table
+               # type.  Views are actually available in 5.0.1 but "FULL"
+               # in SHOW FULL TABLES was not added until 5.0.2.  So 5.0.1
+               # is an edge case that we ignore.  If >=5.0.2 then there
+               # might be views and $type will be Table_type and we check
+               # as normal.  Else, there cannot be views so there will be
+               # no $type.
+               $ok = 0 if ($type || '') eq 'VIEW';
+            }
+            $ok;
+         }
+         @{ $dbh->selectall_arrayref($sql) };
+         MKDEBUG && _d('Found', scalar @tbls, 'tables in', $db);
+      };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+   }
+   else {
+      MKDEBUG && _d('No db given so no tables');
+   }
+   return sub {
+      return shift @tbls;
+   };
+}
+
+# Required args:
+#   * cond      scalar: condition for check, "if" or "unless"
+#   * var_name  scalar: literal var name to compare to obj values
+#   * objs      hashref: object values (as the hash keys)
+# Optional args:
+#   * lc  bool: lowercase object values
+# Returns: scalar
+# Can die: no
+# _make_filter() return a test condtion like "$var eq 'foo' || $var eq 'bar'".
+sub _make_filter {
+   my ( $cond, $var_name, $objs, $lc ) = @_;
+   my @lines;
+   if ( scalar keys %$objs ) {
+      my $test = join(' || ',
+         map { "$var_name eq '" . ($lc ? lc $_ : $_) ."'" } keys %$objs);
+      push @lines, "      return 0 $cond $var_name && ($test);",
+   }
+   return @lines;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SchemaIterator package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -2867,28 +3319,18 @@ sub _d {
 package mk_schema_audit;
 
 use English qw(-no_match_vars);
-use Getopt::Long;
-use List::Util qw(max);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 Transformers->import(qw(shorten));
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-$OUTPUT_AUTOFLUSH = 1;
+use sigtrap 'handler', \&sig_int, 'normal-signals';
 
-my $dbh;
-my $o;
-my $ks;
-my $q  = new Quoter();
-my $tp = new TableParser();
-my $du = new MySQLDump();
-
-my $max_width = 74;
-my $hdr_width = $max_width - 2;  # for '# '
-my $hdr_fmt   = "# %-${hdr_width}s\n";
-
-my %summary;
-my %seen_tbl;
+my $oktorun = 1;  # global for sig handler
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -2896,101 +3338,276 @@ sub main {
    # ########################################################################
    # Get configuration information.
    # ########################################################################
-   $o = new OptionParser(
-      description => q{examines MySQL schema for inefficiencies.},
+   my $dp = new DSNParser;
+   my $o  = new OptionParser(
+      strict      => 0,
+      prompt      => '[OPTION...] FILE|DSN [FILE|DSN...]',
+      dp          => $dp,
+      description => q{examines MySQL schema for inefficiencies.  Specify }
+                   . q{either files or DSNs.  Files can contain multiple }
+                   . q{SHOW CREATE TABLE separated by blank lines. }
+                   . q{Or, schema objects are gotten from DSNs.},
    );
    $o->get_specs();
    $o->get_opts();
-   
+
+   $dp->prop('set-vars', $o->get('set-vars'));
+
    $o->usage_or_errors();
+
+   # #########################################################################
+   # Make common modules.
+   # #########################################################################
+   my $vp = new VersionParser();
+   my $q  = new Quoter();
+   my $tp = new TableParser(Quoter => $q);
+   my $du = new MySQLDump(cache => 0);
+   my $qr = new QueryRewriter();
+   my %common_modules = (
+      DSNParser     => $dp,
+      MySQLDump     => $du,
+      OptionParser  => $o,
+      QueryRewriter => $qr,
+      Quoter        => $q,
+      TableParser   => $tp,
+      VersionParser => $vp,
+   );
 
    # ##########################################################################
    # Get ready to do the main work.
    # ##########################################################################
-
-   # Connect to the database
-   if ( $o->get('ask-pass') ) {
-      $o->set('password', OptionParser::prompt_noecho("Enter password: "));
+   if ( @ARGV == 0 ) {
+      push @ARGV, '-'; # Magical STDIN filename.
    }
 
-   my $vp = new VersionParser();
-   my $dp = new DSNParser;
-   $dp->prop('set-vars', $o->get('set-vars'));
-   my $dsn = $dp->parse_options($o);
-   $dbh = $dp->get_dbh( $dp->get_cxn_params($dsn), { AutoCommit => 1 } );
-
-   my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
-
-   $ks = $o->get('summary') ? new KeySize() : undef;
-   my $dk = new DuplicateKeyFinder();
-   my $tp_opts = {
-      ignore_type  => $o->get('a'),
-      ignore_order => $o->get('ignoreorder'),
-      clustered    => $o->get('c'),
-   };
-
-   my $finder = new MySQLFind(
-      quoter    => $q,
-      useddl    => 1,
-      parser    => $tp,
-      dumper    => $du,
-      databases => {
-         permit => $o->get('d'),
-         reject => $o->get('g'),
-      },
-      tables => {
-         permit => $o->get('t'),
-         reject => $o->get('n'),
-      },
-      engines => {
-         views  => 0,
-         permit => $o->get('e'),
-         reject => $o->get('E'),
-      },
+   # Make an iterator which returns the next schema object to audit.
+   my $si = new SchemaIterator(
+      Quoter => $q,
    );
 
-   DATABASE:
-   foreach my $database ( $finder->find_databases($dbh) ) {
-      TABLE:
-      foreach my $table ( $finder->find_tables($dbh, database => $database) ) {
-         my $ddl      = $du->get_create_table($dbh, $q, $database, $table)->[1];
-         my $engine   = $tp->get_engine($ddl) || next TABLE;
-         my $tbl_info = {
-            db     => $database,
-            tbl    => $table,
-            engine => $engine,
-            ddl    => $ddl,
-         };
-
-         my $keys = $dk->get_keys($ddl,{version => $version }) if $o->get('f') =~ m/k/;
-         my $fks  = $dk->get_fks($ddl,{database => $database}) if $o->get('f') =~ m/f/;
-
-         next TABLE unless @$keys || @$fks;
-
-         if ( $o->get('v') ) {
-            print_all_keys($keys, $tbl_info) if $keys;
-            print_all_keys($fks,  $tbl_info) if $fks;
+   my $next_obj;
+   if ( -f $ARGV[0] || $ARGV[0] eq '-' ) {
+      MKDEBUG && _d('Args are files');
+      my $file;
+      my $fh;
+      $next_obj = sub {
+         if ( !$fh ) {
+            do {
+               $file = shift @ARGV;
+               MKDEBUG && _d('Reading', $file);
+               if ( !$file ) {
+                  $oktorun = 0;
+                  return;
+               }
+               open $fh, '<', $file or warn "Cannot open $file: $OS_ERROR";
+            } until ( $fh );
          }
-         else {
-            $dk->get_duplicate_keys(
-               keys     => $keys,
-               tbl_info => $tbl_info,
-               callback => \&print_duplicate_key,
-               %$tp_opts,
-            ) if $keys;
 
-            $dk->get_duplicate_fks(
-               keys     => $fks,
-               tbl_info => $tbl_info,
-               callback => \&print_duplicate_key,
-               %$tp_opts,
-            ) if $fks;
+         $INPUT_RECORD_SEPARATOR = '';
+         while ( defined(my $obj = <$fh>) ) {
+            MKDEBUG && _d('Read schema object:', $obj);
+            return (
+               obj => $obj,
+            );
          }
-         $summary{'Total Keys'} += scalar @$keys + scalar @$fks if $o->get('summary');
-      }
+
+         MKDEBUG && _d('Done reading', $file);
+         close $fh or warn "Cannot close $file: $OS_ERROR";
+         $fh = undef;
+      };
+   }
+   else {
+      MKDEBUG && _d('Args are DSNs');
+      my $dsn_defaults = $dp->parse_options($o);
+      my $first_dsn    = $ARGV[0];
+      my $dsn;
+      my $dbh;
+      my $version;
+      my ($db, $next_db, $next_tbl);
+      $next_obj = sub {
+         do {
+            if ( !$dbh ) {
+               $dsn = shift @ARGV;
+               MKDEBUG && _d('Connecting to', $dp->as_string($dsn));
+               if ( !$dsn ) {
+                  $oktorun = 0;
+                  return;
+               }
+               # Connect to the database
+               if ( $o->get('ask-pass') ) {
+                  my $prompt = "Enter password for "
+                             . $dp->as_string($dsn)
+                             . ": ";
+                  $o->set('password', OptionParser::prompt_noecho($prompt));
+               }
+
+               $dbh = $dp->get_dbh(
+                  $dp->get_cxn_params($dp->parse($dsn, $dsn_defaults)),
+                  { AutoCommit => 1 }
+               );
+
+               $version = $vp->parse(
+                  $dbh->selectrow_array('SELECT VERSION()'));
+            }
+         } until $dbh;
+
+         if ( !$next_db ) {
+            MKDEBUG && _d('Getting db iterator');
+            $next_db = $si->get_db_itr(dbh => $dbh);
+         }
+
+         DATABASE:
+         while ( $db or $db = $next_db->() ) {
+            MKDEBUG && _d('Getting tables from', $db);
+            if ( !$next_tbl ) {
+               MKDEBUG && _d('Getting tbl iterator');
+               $next_tbl = $si->get_tbl_itr(
+                  dsn   => $dsn,
+                  dbh   => $dbh,
+                  db    => $db,
+                  views => 0,
+               );
+            }
+            TABLE:
+            while ( my $tbl = $next_tbl->() ) {
+               MKDEBUG && _d('Getting table', $tbl);
+               my $obj;
+               eval {
+                  $obj = $du->get_create_table($dbh, $q, $db, $tbl)->[1];
+               };
+               if ( !$obj ) {
+                  # If this happens errors will be printed to STDERR so the
+                  # user knows what table is broken.
+                  MKDEBUG && _d('Error getting table def');
+                  next TABLE;
+               }
+               return (
+                  obj     => $obj,
+                  db      => $db,
+                  tbl     => $tbl,
+                  dsn     => $dsn,
+                  dbh     => $dbh,
+                  version => $version,
+               );
+            } # TABLE
+            MKDEBUG && _d('No more tables in this db');
+            $db       = undef;  # get next db
+            $next_tbl = undef;  # get next tbl iter for next db
+            return;
+         } # DATABASE
+
+         MKDEBUG && _d('Done on', $dp->as_string($dsn));
+         $dbh->disconnect();
+         $dbh      = undef;
+         $db       = undef;
+         $next_db  = undef;
+         $next_tbl = undef;
+         return;
+      };
    }
 
-   print_key_summary(%summary) if $o->get('summary');
+
+   # #########################################################################
+   # Make processes for the pipeline.
+   # #########################################################################
+   my @callbacks;
+
+   # First callback should get the next schema obj.
+   push @callbacks, $next_obj; 
+
+   my $obj_filter = $si->make_filter($o);
+   $si->set_filter($obj_filter);
+   push @callbacks, sub {
+      my ( %args ) = @_;
+      MKDEBUG && _d('callback: filter');
+      if ( !$args{tbl} ) {
+         my ($name)     = $args{obj} =~ m/CREATE (?:TEMPORARY )?TABLE (`.+?`)/;
+         my ($db, $tbl) = $q->split_unquote($name) if $name;
+         $args{db}      = $db;
+         $args{tbl}     = $tbl;
+         MKDEBUG && _d('db:', $db, 'tbl:', $tbl);
+      }
+      if ( $obj_filter->($args{dbh}, $args{db}, $args{tbl}) ) {
+         return %args;
+      }
+      return;
+   };
+
+   push @callbacks, sub {
+      my ( %args ) = @_;
+      MKDEBUG && _d('callback: fingerprint');
+      return unless $args{tbl};
+      $args{name} = ($args{db} ? $args{db} : '') . ".$args{tbl}";
+      if ( $args{fingerprint} ) {
+         $args{fingerprint} = $qr->fingerprint($args{name});
+      }
+      return %args;
+   };
+
+   if ( $o->get('unique') ) {
+      my %seen_obj;
+      push @callbacks, sub {
+         my ( %args ) = @_;
+         MKDEBUG && _d('callback: unique');
+         my $fp = $args{fingerprint} || $args{name};
+         return unless $fp;
+         return if $seen_obj{$fp}++;  # already seen
+         return %args;  # first time seen
+      };
+   }
+
+   push @callbacks, sub {
+      my ( %args ) = @_;
+      MKDEBUG && _d('callback: parse');
+      if ( !$args{tbl_struct} ) {
+         eval {
+            $args{tbl_struct} = $tp->parse($args{obj});
+         };
+         return unless $args{tbl_struct};
+      }
+      return %args;
+   };
+
+   if ( $o->get('print') ) {
+      my %dsn_strings;
+      push @callbacks, sub {
+         my ( %args ) = @_;
+         MKDEBUG && _d('callback: print');
+         my $host = '';
+         if ( $args{dbh} && $args{dsn} ) {
+            $host = $dsn_strings{$args{dbh}} ||= $dp->as_string($args{dsn})
+                  . " ";
+         }
+         print $host
+            . join('.', grep { defined $_ } ($args{db}, $args{tbl}))
+            . "\n";
+         return %args;
+      };
+   }
+
+   # TODO: callbacks for --audit
+
+   # #########################################################################
+   # Do it!
+   # #########################################################################
+   while ( $oktorun ) {
+      eval {
+         my %args        = ();
+         my $oktorun_sub = sub { $oktorun = $_[0]; };
+         foreach my $callback ( @callbacks ) {
+            last unless $oktorun;  # the global oktorun var
+            %args = $callback->(
+               %args,
+               oktorun => $oktorun_sub,
+            );
+            last unless %args;
+         }
+      };
+      if ( $EVAL_ERROR ) {
+         _d($EVAL_ERROR);
+         warn $EVAL_ERROR;
+      }
+   }
 
    return 0;
 }
@@ -2999,81 +3616,17 @@ sub main {
 # Subroutines
 # ##########################################################################
 
-sub print_all_keys {
-   my ( $keys, $tbl_info ) = @_;
-   return unless $keys;
-   my $db  = $tbl_info->{db};
-   my $tbl = $tbl_info->{tbl};
-   if ( !$seen_tbl{"$db$tbl"}++ ) {
-      printf $hdr_fmt, ('#' x $hdr_width);
-      printf $hdr_fmt, "$db.$tbl";
-      printf $hdr_fmt, ('#' x $hdr_width);
+# Catches signals so we can exit gracefully.
+sub sig_int {
+   my ( $signal ) = @_;
+   if ( $oktorun ) {
+      print STDERR "# Caught SIG$signal.\n";
+      $oktorun = 0;
    }
-   foreach my $key ( @$keys ) {
-      print "\n# $key->{name} ($key->{cols})";
+   else {
+      print STDERR "# Exiting on SIG$signal.\n";
+      exit 1;
    }
-   print "\n";
-   return;
-}
-
-sub print_duplicate_key {
-   my ( $dupe, %args ) = @_;
-   return unless $dupe;
-   my $db     = $args{tbl_info}->{db};
-   my $tbl    = $args{tbl_info}->{tbl};
-   my $struct = $tp->parse($args{tbl_info}->{ddl});
-
-   if ( !$seen_tbl{"$db$tbl"}++ ) {
-      printf $hdr_fmt, ('#' x $hdr_width);
-      printf $hdr_fmt, "$db.$tbl";
-      printf $hdr_fmt, ('#' x $hdr_width);
-      print "\n";
-   }
-
-   print "# $dupe->{reason}\n";
-
-   print "# Column types:\n";
-   my %seen_col;
-   my @cols = map { s/`//g; $_; }
-              grep { $_ if !$seen_col{$_}++; }
-              split(',', "$dupe->{cols},$dupe->{duplicate_of_cols}");
-   foreach my $col ( @cols ) {
-      print "#\t" . $struct->{defs}->{$col} . "\n";
-   }
-
-   print "# To remove this duplicate key, execute:\n"
-      . 'ALTER TABLE '.$q->quote($db, $tbl)." DROP KEY `$dupe->{key}`;\n"
-         if $o->get('sql');
-   print "\n";
-
-   if ( $o->get('summary') ) {
-      $summary{'Total Duplicate Keys'} += 1;
-      my $key_info = {
-         name => $dupe->{key},
-         cols => [ split(',', $dupe->{cols}) ],
-      };
-      $summary{'Size Duplicate Keys'} += $ks->get_key_size(
-         dbh => $dbh,
-         tbl => $q->quote($db, $tbl),
-         key => $key_info,
-      )
-   }
-   return 0;
-}
-
-# TODO: would be nice to shorten/format some of these values.
-sub print_key_summary {
-   my ( %summary ) = @_;
-   printf $hdr_fmt, ('#' x $hdr_width);
-   printf $hdr_fmt, 'Summary of keys';
-   printf $hdr_fmt, ('#' x $hdr_width);
-   print "\n";
-   my $max_item = max(map { length($_) } keys %summary);
-   my $line_fmt = "# %-${max_item}s  %-s\n";
-   foreach my $item ( sort keys %summary ) {
-      printf $line_fmt, $item, $summary{$item};
-   }
-   return;
 }
 
 sub _d {
@@ -3132,9 +3685,7 @@ mk-schema audit audits schemas.
 
 =over
 
-=item --allstruct
-
-short form: -a
+=item --all-structs
 
 Compare indexes with different structs (BTREE, HASH, etc).
 
@@ -3144,6 +3695,41 @@ as a FULLTEXT index is not really a duplicate, for example.
 =item --ask-pass
 
 Prompt for a password when connecting to MySQL.
+
+=item --audit
+
+type: hash
+
+Specify which built-in or audit modules to run.
+
+By default mk-schema-audit runs all of its built-in audits.  You can override
+these audits or specify your own, external audit modules to use.  The built-in
+audits are:
+
+=over
+
+=item counts
+
+Count the number of databases, tables, indexes, engines used by each table,
+number of columns for each table, etc.  Only the schema objects permitted by
+the various filter options (like L<"--database">, L<"--ignore-tables">, etc.)
+are counted.
+
+=item indexes
+
+Check for duplicate indexes.  See also L<"--all-structs">, L<"--[no]clustered">,
+and L<"--ignore-order">.
+
+=item foreign_keys
+
+Check for duplicate forgeign keys.
+
+=item data_types
+
+Check for inefficient column data types like varchar for IP addresses instead
+of unsigned int.
+
+=back
 
 =item --charset
 
@@ -3155,11 +3741,11 @@ runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
 binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
 
-=item --clustered
+=item --[no]clustered
 
-short form: -c
+default: yes
 
-PK columns appended to secondary key is duplicate.
+Primary key columns appended to secondary key is duplicate.
 
 Detects when a suffix of a secondary key is a leftmost prefix of the primary
 key, and treats it as a duplicate key.  Only detects this condition on storage
@@ -3176,11 +3762,40 @@ Here's an example of a key that is considered redundant with this option:
   PRIMARY KEY  (`a`)
   KEY `b` (`b`,`a`)
 
+The use of such indexes is rather subtle.  For example, suppose you have the
+following query:
+
+  SELECT ... WHERE b=1 ORDER BY a;
+
+This query will do a filesort if we remove the index on C<b,a>.  But if we
+shorten the index on C<b,a> to just C<b> and also remove the ORDER BY, the query
+should return the same results.
+
+The tool suggests shortening duplicate clustered keys by dropping the key
+and re-adding it without the primary key prefix.  The shortened clustered
+key may still duplicate another key, but the tool cannot currently detect
+when this happens without being ran a second time to re-check the newly
+shortened clustered keys.  Therefore, if you shorten any duplicate clusterted
+keys, you should run the tool again.
+
+=item --config
+
+type: Array
+
+Read this comma-separated list of config files; if specified, this must be the
+first option on the command line.
+
 =item --databases
 
 short form: -d; type: hash
 
-Check only this comma-separated list of databases.
+Dump only this comma-separated list of databases.
+
+=item --databases-regex
+
+type: string
+
+Dump only databases whose names match this Perl regex.
 
 =item --defaults-file
 
@@ -3189,17 +3804,17 @@ short form: -F; type: string
 Only read mysql options from the given file.  You must give an absolute
 pathname.
 
-=item --engine
+=item --engines
 
 short form: -e; type: hash
 
-Do only tables whose storage engine is in this comma-separated list.
+Dump only tables that use this comma-separated list of storage engines.
 
-=item --function
+=item --[no]fingerprint
 
-short form: -f; type: string; default: fk
+default: yes
 
-Do f=foreign keys, k=keys or fk=check both.
+Fingerprint the schema objects.
 
 =item --help
 
@@ -3211,29 +3826,44 @@ short form: -h; type: string
 
 Connect to host.
 
-=item --ignoredb
+=item --ignore-databases
 
-short form: -g; type: Hash
+type: Hash
 
 Ignore this comma-separated list of databases.
 
-=item --ignoreengine
+=item --ignore-databases-regex
 
-short form: -E; type: Hash
+type: string
 
-Ignore this comma-separated list of storage engines.
+Ignore databases whose names match this Perl regex.
 
-=item --ignoreorder
+=item --ignore-engines
+
+type: Hash; default: FEDERATED,MRG_MyISAM
+
+Do not dump tables that use this comma-separated list of storage engines.
+
+The schema file will be dumped as usual.  This prevents dumping data for
+Federated tables and Merge tables.
+
+=item --ignore-order
 
 Ignore index order so KEY(a,b) duplicates KEY(b,a).
 
-=item --ignoretbl
+=item --ignore-tables
 
-short form: -n; type: Hash
+type: Hash
 
-Ignore this comma-separated list of tables.
+Ignore this comma-separated list of table names.
 
 Table names may be qualified with the database name.
+
+=item --ignore-tables-regex
+
+type: string
+
+Ignore tables whose names match the Perl regex.
 
 =item --password
 
@@ -3241,11 +3871,25 @@ short form: -p; type: string
 
 Password to use when connecting.
 
+=item --pid
+
+type: string
+
+Create the given PID file when daemonized.  The file contains the process
+ID of the daemonized instance.  The PID file is removed when the
+daemonized instance exits.  The program checks for the existence of the
+PID file when starting; if it exists and the process with the matching PID
+exists, the program exits.
+
 =item --port
 
 short form: -P; type: int
 
 Port number to use for connection.
+
+=item --print
+
+Print the name of each schema object as it's found.
 
 =item --set-vars
 
@@ -3260,24 +3904,6 @@ short form: -S; type: string
 
 Socket file to use for connection.
 
-=item --[no]sql
-
-default: yes
-
-Print DROP KEY statement for each duplicate key.
-
-By default an ALTER TABLE  DROP KEY statement is printed below each duplicate
-key so that, if you want to remove the duplicate key, you can copy-paste the
-statement into MySQL.
-
-To disable printing these statements, specify --nosql.
-
-=item --[no]summary
-
-default: yes
-
-Print summary of indexes at end of output.
-
 =item --tables
 
 short form: -t; type: hash
@@ -3286,17 +3912,19 @@ Check only this comma-separated list of tables.
 
 Table names may be qualified with the database name.
 
+=item --[no]unique
+
+default: yes
+
+Only audit unique schema objects.
+
+See also L<"--fingerprint">.
+
 =item --user
 
 short form: -u; type: string
 
 User for login if not current user.
-
-=item --verbose
-
-short form: -v
-
-Output all keys and/or foreign keys found, not just redundant ones.
 
 =item --version
 
