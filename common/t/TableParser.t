@@ -56,6 +56,7 @@ is_deeply(
       is_numeric   => { a => 1 },
       engine       => 'MyISAM',
       type_for     => { a => 'int' },
+      name         => 't1',
    },
    'Basic table is OK',
 );
@@ -64,6 +65,7 @@ $tbl = $tp->parse( load_file('samples/TableParser-prefix_idx.sql') );
 is_deeply(
    $tbl,
    {
+      name           => 't1',
       cols           => [ 'a', 'b' ],
       col_posn       => { a => 0, b => 1 },
       is_col         => { a => 1, b => 1 },
@@ -272,6 +274,7 @@ is_deeply(
          special_features     => 'set',
          last_update          => 'timestamp',
       },
+      name => 'film',
    },
    'sakila.film',
 );
@@ -306,6 +309,7 @@ is_deeply(
       is_numeric   => { a => 1 },
       engine       => 'MyISAM',
       type_for     => { a => 'int' },
+      name         => 't',
    },
    'Temporary table',
 );
@@ -385,7 +389,8 @@ is_deeply(
          'pfk-source_instrument_id'  => 'int',
          'pfk-related_instrument_id' => 'int'
       },
-      'is_nullable' => {}
+      'is_nullable' => {},
+      name => 'instrument_relation',
    },
    'Hyphens in indexed columns',
 );
@@ -418,6 +423,7 @@ is_deeply(
       is_numeric   => { id => 1 },
       engine       => 'ndbcluster',
       type_for     => { id => 'bigint' },
+      name         => 'pipo',
    },
    'NDB table',
 );
@@ -454,6 +460,7 @@ is_deeply(
       is_numeric   => { a => 1, b => 1, mixedcol => 1 },
       engine       => 'MyISAM',
       type_for     => { a => 'int', b => 'int', mixedcol => 'int' },
+      name         => 't',
    },
    'Mixed-case identifiers',
 );
@@ -489,6 +496,7 @@ is_deeply(
       is_numeric   => { a => 1 },
       engine       => 'MyISAM',
       type_for     => { a => 'int', b => 'char' },
+      name         => 't2',
    },
    'No clustered key on MyISAM table'
 );
@@ -821,6 +829,7 @@ is_deeply(
       is_numeric   => {},
       engine       => 'MyISAM',
       type_for     => { country => 'enum' },
+      name         => 'issue_132',
    },
    'ENUM col with backtick in value (issue 132)'
 );
@@ -855,6 +864,7 @@ is_deeply(
       is_numeric   => { a => 1 },
       engine       => 'MyISAM',
       type_for     => { a => 'int' },
+      name         => 'issue_330',
    },
    'issue with pairing backticks in column comments (issue 330)'
 );
