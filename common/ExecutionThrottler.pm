@@ -145,17 +145,6 @@ sub _save_rate_avg {
    return $self->{stats}->{rate_avg} || 0;
 }
 
-sub reset {
-   my ( $self ) = @_;
-   $self->{rate_ok}           = undef;
-   $self->{last_check}        = undef;
-   $self->{stats}->{rate_avg} = 0;
-   @{$self->{rate_samples}}   = ();
-   @{$self->{int_rates}}      = ();
-   $self->{skip_prob}         = 0.0;
-   return;
-}
-
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
