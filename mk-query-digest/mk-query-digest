@@ -5277,7 +5277,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5115
+# TableParser package 5197
 # ###########################################################################
 package TableParser;
 
@@ -5622,7 +5622,7 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         $_->{ddl};
+         "ADD $_->{ddl}";
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
@@ -7361,7 +7361,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ExecutionThrottler package 5187
+# ExecutionThrottler package 5204
 # ###########################################################################
 package ExecutionThrottler;
 
@@ -7476,17 +7476,6 @@ sub _save_rate_avg {
    shift @$samples if @$samples > 1_000;
    $self->{stats}->{rate_avg} = sum(@$samples) / (scalar @$samples);
    return $self->{stats}->{rate_avg} || 0;
-}
-
-sub reset {
-   my ( $self ) = @_;
-   $self->{rate_ok}           = undef;
-   $self->{last_check}        = undef;
-   $self->{stats}->{rate_avg} = 0;
-   @{$self->{rate_samples}}   = ();
-   @{$self->{int_rates}}      = ();
-   $self->{skip_prob}         = 0.0;
-   return;
 }
 
 sub _d {
@@ -8645,8 +8634,6 @@ sub main {
       foreach my $ea ( @ea, @tl ) {
          $ea->reset_aggregated_data();
       }
-
-      # $et->reset() if $et;
 
       if ( $o->get('pipeline-profile') ) {
          my $report = new ReportFormatter(
