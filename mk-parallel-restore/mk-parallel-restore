@@ -928,7 +928,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5189
+# DSNParser package 5208
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1149,7 +1149,11 @@ sub get_dbh {
    if ( $EVAL_ERROR ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
-         . "that Perl searches for DBI.\n";
+         . "that Perl searches for DBI.  If DBI is not installed, try:\n"
+         . "  Debian/Ubuntu  apt-get install libdbi-perl\n"
+         . "  RHEL/CentOS    yum install perl-DBI\n"
+         . "  OpenSolaris    pgk install pkg:/SUNWpmdbi\n";
+
    }
 
    my $dbh;
@@ -1195,6 +1199,15 @@ sub get_dbh {
          if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
             MKDEBUG && _d('Going to try again without utf8 support');
             delete $defaults->{mysql_enable_utf8};
+         }
+         elsif ( $EVAL_ERROR =~ m/locate DBD\/mysql/i ) {
+            die "Cannot connect to MySQL because the Perl DBD::mysql module is "
+               . "not installed or not found.  Run 'perl -MDBD::mysql' to see "
+               . "the directories that Perl searches for DBD::mysql.  If "
+               . "DBD::mysql is not installed, try:\n"
+               . "  Debian/Ubuntu  apt-get install libdbd-mysql-perl\n"
+               . "  RHEL/CentOS    yum install perl-DBD-MySQL\n"
+               . "  OpenSolaris    pgk install pkg:/SUNWapu13dbd-mysql\n";
          }
          if ( !$tries ) {
             die $EVAL_ERROR;
