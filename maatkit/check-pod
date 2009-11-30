@@ -67,14 +67,23 @@ foreach my $prog ( @progs ) {
    my ($program) = $prog =~ m{/([a-z-]+)$};
    next unless $program;
 
+   my $output;
+
    if ( $podchecker ) {
-      my $output = `$podchecker $prog 2>&1`;
+      $output = `$podchecker $prog 2>&1`;
       is(
          $output,
          "$prog pod syntax OK.\n",
          "$program: podchecker",
       );
    }
+
+   $output = `perldoc -T $prog 2>&1`;
+   # unlike() will print the whole POD if this fails; ok() is more terse.
+   ok(
+      $output !~ qr/can't break/,
+      "$program: no long lines"
+   );
 
    if (!is_deeply(\@headers, \@standard_order, "$program: headings") ) {
       compare_to_standard($program, @headers);
