@@ -34,6 +34,13 @@ do
    do
       if [ -z "$MODULE" -o "$MOD" = "$MODULE" ]; then
          if [ -f "../common/$MOD.pm" ]; then
+            if grep -q '^# [A-Z].* package.*Revision' $FILE; then
+               echo "\nERROR: $FILE has a malformed module header:"
+               grep '^# [A-Z].* package.*Revision' $FILE
+               echo
+               exit 1
+            fi
+
             cat $FILE | ./insert_module $MOD > $MOD.tmp
             if diff -q $FILE $MOD.tmp | grep differ > /dev/null ; then
                echo "Updating $MOD in $FILE";

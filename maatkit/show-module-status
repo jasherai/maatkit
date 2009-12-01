@@ -2,22 +2,27 @@
 
 set -e
 
-for FILE in `ls ../mk-*/mk-*`; do
+for SCRIPT in `cat packages`; do
+   FILE="../$SCRIPT/$SCRIPT"
    if grep -q '^# [A-Z].* package.*Revision' $FILE; then
       echo "File $FILE has a malformed module header in it"
-      grep '^# [A-Z].* package.*Revision' $FILE;
-      exit 1;
+      grep '^# [A-Z].* package.*Revision' $FILE
+      exit 1
    fi
    grep '^# [A-Z].* package [0-9]*$' $FILE | while read LINE; do
       MOD=`echo "$LINE" | awk '{print $2}'`;
       VER=`echo "$LINE" | awk '{print $4}'`;
-      # Learn the version of that module...
-      MVER=`grep Revision ../common/$MOD.pm | awk '{print $5}'`;
-      if [ "$VER" -gt "$MVER" ]; then
-         echo "$FILE has an impossible version $VER of $MOD (newest is $MVER)";
-         exit 1;
-      elif [ "$VER" != "$MVER" ]; then
-         echo "$FILE has $MOD $VER; newest is $MVER";
+      if [ -f ../common/$MOD.pm ]; then
+         # Learn the version of that module...
+         MVER=`grep Revision ../common/$MOD.pm | awk '{print $5}'`;
+         if [ "$VER" -gt "$MVER" ]; then
+            echo "$FILE has an impossible version $VER of $MOD (newest is $MVER)";
+            exit 1;
+         elif [ "$VER" != "$MVER" ]; then
+            echo "$FILE has $MOD $VER; newest is $MVER";
+         fi
+      else
+         echo "\nWARNING: $FILE uses nonexistent module $MOD\n"
       fi
    done
 done
