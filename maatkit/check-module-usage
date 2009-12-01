@@ -10,6 +10,7 @@ MaatkitTest->import(qw(load_file));
 
 my %not_instantiated = (
    ServerSpecs    => 1,
+   MaatkitCommon  => 1,
    Transformers   => 1,
 );
 
@@ -26,10 +27,24 @@ foreach my $prog ( @progs ) {
    my $contents = load_file($prog);
 
    my %uses   = map  { $_ => 1 } $contents =~ m/new (\w+)/gm;
-   my @unused = grep { !$uses{$_} && !$not_instantiated{$_} } $contents =~ m/^# (\w+) package \d+/gm;
+   my @unused = grep {
+      my $unused = 0;
+      if ( $not_instantiated{$_} ) {
+         chomp(my $g = `grep -c '${_}::' $prog`);  # MaatkitCommon::_d
+         chomp(my $i = `grep -c '${_}->import' $prog`);  # Transformers->import
+         $g ||= 0;
+         $i ||= 0;
+         $unused = 1 if $g + $i == 0;
+      }
+      else {
+         $unused = 1 unless $uses{$_};
+      }
+      $unused;
+   } $contents =~ m/^# (\w+) package \d+/gm;
 
    if ( @unused ) {
-      print "$program has unused modules: @unused\n";
+      print "$program has unused modules:\n"
+         . join('', map { "\t$_\n" } @unused);
    }
 }
 
