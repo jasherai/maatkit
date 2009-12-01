@@ -8104,9 +8104,9 @@ sub main {
                $cur_time = $end;
             }
          };
+         $stats{execute_error}++ if $EVAL_ERROR;
          # Don't try to re-execute the statement.  Just skip it.
          if ( $EVAL_ERROR && $EVAL_ERROR =~ m/server has gone away/ ) {
-            $stats{execute_error}++;
             print STDERR $EVAL_ERROR;
             eval {
                ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
