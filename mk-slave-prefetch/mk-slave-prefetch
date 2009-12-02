@@ -915,20 +915,21 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5208
+# DSNParser package 5226
 # ###########################################################################
+package DSNParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package DSNParser;
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 eval {
    require DBI;
 };
-use Data::Dumper;
-$Data::Dumper::Indent    = 0;
-$Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
+my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1130,10 +1131,7 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
-   eval {
-      DBI->installed_drivers();
-   };
-   if ( $EVAL_ERROR ) {
+   if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
          . "that Perl searches for DBI.  If DBI is not installed, try:\n"
@@ -1276,7 +1274,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 4936
+# BinaryLogParser package 5134
 # ###########################################################################
 package BinaryLogParser;
 
@@ -1293,6 +1291,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
+   my $self = {
+      delim     => undef,
+      delim_len => 0,
+   };
    return bless {}, $class;
 }
 
@@ -1301,18 +1303,20 @@ my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end
 my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $pos_in_log = tell($fh);
    my $stmt;
-   my ($delim, $delim_len) = (undef, 0);
+   my ($delim, $delim_len) = ($self->{delim}, $self->{delim_len});
 
    EVENT:
-   while ( $$oktorun && defined($stmt = <$fh>) ) {
+   while ( defined($stmt = <$fh>) ) {
       my @properties = ('pos_in_log', $pos_in_log);
       my ($ts, $sid, $end, $type, $rest);
       $pos_in_log = tell($fh);
@@ -1337,14 +1341,14 @@ sub parse_event {
          if ( $line =~ m/^DELIMITER/m ) {
             my ( $del ) = $line =~ m/^DELIMITER (\S*)$/m;
             if ( $del ) {
-               $delim_len = length $del;
-               $delim     = quotemeta $del;
+               $self->{delim_len} = $delim_len = length $del;
+               $self->{delim}     = $delim     = quotemeta $del;
                MKDEBUG && _d('delimiter:', $delim);
             }
             else {
                MKDEBUG && _d('Delimiter reset to ;');
-               $delim     = undef;
-               $delim_len = 0;
+               $self->{delim}     = $delim     = undef;
+               $self->{delim_len} = $delim_len = 0;
             }
             next LINE;
          }
@@ -1412,15 +1416,15 @@ sub parse_event {
             if ( $arg =~ m/^DELIMITER/m ) {
                my ( $del ) = $arg =~ m/^DELIMITER (\S*)$/m;
                if ( $del ) {
-                  $delim_len = length $del;
-                  $delim     = quotemeta $del;
+                  $self->{delim_len} = $delim_len = length $del;
+                  $self->{delim}     = $delim     = quotemeta $del;
                   MKDEBUG && _d('delimiter:', $delim);
                }
                else {
                   MKDEBUG && _d('Delimiter reset to ;');
                   $del       = ';';
-                  $delim     = undef;
-                  $delim_len = 0;
+                  $self->{delim}     = $delim     = undef;
+                  $self->{delim_len} = $delim_len = 0;
                }
 
                $arg =~ s/^DELIMITER.*$//m;  # Remove DELIMITER from arg.
@@ -1437,18 +1441,15 @@ sub parse_event {
       if ( $found_arg ) {
          MKDEBUG && _d('Properties of event:', Dumper(\@properties));
          my $event = { @properties };
-         foreach my $callback ( @callbacks ) {
-            last unless $event = $callback->($event);
-         }
-         ++$num_events;
+         return $event;
       }
       else {
          MKDEBUG && _d('Event had no arg');
       }
-
    } # EVENT
 
-   return $num_events;
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -1466,7 +1467,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5195
+# QueryRewriter package 5228
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1612,10 +1613,11 @@ sub _distill_verbs {
    $query = $self->strip_comments($query);
 
    if ( $query =~ m/\A\s*SHOW\s+/i ) {
-      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/;
+      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/i;
       MKDEBUG && _d('SHOW', @what);
       return unless scalar @what;
-      if ( $what[0] =~ m/CREATE/i || ($what[1] && $what[1] =~ m/STATUS/i) ) {
+      @what = map { uc $_ } grep { defined $_ } @what; 
+      if ( $what[0] =~ m/CREATE/ || ($what[1] && $what[1] =~ m/STATUS/) ) {
          return "SHOW $what[0] $what[1]";
       }
       else {
@@ -1965,7 +1967,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 4160 $Revision$
+# MySQLDump package 4160
 # ###########################################################################
 package MySQLDump;
 
@@ -2000,8 +2002,6 @@ EOF
    /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 EOF
 
-# Arguments:
-# * cache: defaults to 1
 sub new {
    my ( $class, %args ) = @_;
    $args{cache} = 1 unless defined $args{cache};
@@ -2066,7 +2066,6 @@ sub dump {
    }
 }
 
-# USEs the given database, and returns the previous default database.
 sub _use_db {
    my ( $self, $dbh, $quoter, $new ) = @_;
    if ( !$new ) {
@@ -2173,9 +2172,6 @@ sub get_triggers {
       if ( $sth->rows ) {
          my $trgs = $sth->fetchall_arrayref({});
          foreach my $trg (@$trgs) {
-            # Lowercase the hash keys because the NAME_lc property might be set
-            # on the $dbh, so the lettercase is unpredictable.  This makes them
-            # predictable.
             my %trg;
             @trg{ map { lc $_ } keys %$trg } = values %$trg;
             push @{ $self->{triggers}->{$db}->{ $trg{table} } }, \%trg;
@@ -2278,32 +2274,31 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4931 $Revision$
+# TableParser package 5216
 # ###########################################################################
 package TableParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+
 sub new {
-   my ( $class ) = @_;
-   return bless {}, $class;
+   my ( $class, %args ) = @_;
+   my @required_args = qw(Quoter);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = { %args };
+   return bless $self, $class;
 }
 
-# Several subs in this module require either a $ddl or $tbl param.
-#
-# $ddl is the return value from MySQLDump::get_create_table() (which returns
-# the output of SHOW CREATE TALBE).
-#
-# $tbl is the return value from the sub below, parse().
-#
-# And some subs have an optional $opts param which is a hashref of options.
-# $opts->{mysql_version} is typically used, which is the return value from
-# VersionParser::parser() (which returns a zero-padded MySQL version,
-# e.g. 004001000 for 4.1.0).
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -2324,8 +2319,9 @@ sub parse {
          . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
 
-   # Lowercase identifiers to avoid issues with case-sensitivity in Perl.
-   # (Bug #1910276).
+   my ($name)     = $ddl =~ m/CREATE (?:TEMPORARY )?TABLE\s+(`.+?`)/;
+   (undef, $name) = $self->{Quoter}->split_unquote($name) if $name;
+
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
    my $engine = $self->get_engine($ddl);
@@ -2334,12 +2330,9 @@ sub parse {
    my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
    MKDEBUG && _d('Columns:', join(', ', @cols));
 
-   # Save the column definitions *exactly*
    my %def_for;
    @def_for{@cols} = @defs;
 
-   # Find column types, whether numeric, whether nullable, whether
-   # auto-increment.
    my (@nums, @null);
    my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
    foreach my $col ( @cols ) {
@@ -2358,12 +2351,10 @@ sub parse {
       $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
    }
 
-   # TODO: passing is_nullable this way is just a quick hack. Ultimately,
-   # we probably should decompose this sub further, taking out the block
-   # above that parses col props like nullability, auto_inc, type, etc.
    my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
+      name           => $name,
       cols           => \@cols,
       col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
       is_col         => { map { $_ => 1 } @cols },
@@ -2380,9 +2371,6 @@ sub parse {
    };
 }
 
-# Sorts indexes in this order: PRIMARY, unique, non-nullable, any (shortest
-# first, alphabetical).  Only BTREE indexes are considered.
-# TODO: consider length as # of bytes instead of # of columns.
 sub sort_indexes {
    my ( $self, $tbl ) = @_;
 
@@ -2402,8 +2390,6 @@ sub sort_indexes {
    return @indexes;
 }
 
-# Finds the 'best' index; if the user specifies one, dies if it's not in the
-# table.
 sub find_best_index {
    my ( $self, $tbl, $index ) = @_;
    my $best;
@@ -2412,12 +2398,9 @@ sub find_best_index {
    }
    if ( !$best ) {
       if ( $index ) {
-         # The user specified an index, so we can't choose our own.
          die "Index '$index' does not exist in table";
       }
       else {
-         # Try to pick the best index.
-         # TODO: eliminate indexes that have column prefixes.
          ($best) = $self->sort_indexes($tbl);
       }
    }
@@ -2425,11 +2408,6 @@ sub find_best_index {
    return $best;
 }
 
-# Takes a dbh, database, table, quoter, and WHERE clause, and reports the
-# indexes MySQL thinks are best for EXPLAIN SELECT * FROM that table.  If no
-# WHERE, just returns an empty list.  If no possible_keys, returns empty list,
-# even if 'key' is not null.  Only adds 'key' to the list if it's included in
-# possible_keys.
 sub find_possible_keys {
    my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
    return () unless $where;
@@ -2437,7 +2415,6 @@ sub find_possible_keys {
       . ' WHERE ' . $where;
    MKDEBUG && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
-   # Normalize columns to lowercase
    $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
    if ( $expl->{possible_keys} ) {
       MKDEBUG && _d('possible_keys =', $expl->{possible_keys});
@@ -2459,29 +2436,69 @@ sub find_possible_keys {
    }
 }
 
-# Returns true if the table exists.  If $can_insert is set, also checks whether
-# the user can insert into the table.
-sub table_exists {
-   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
-   my $result = 0;
+sub check_table {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(dbh db tbl);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dbh, $db, $tbl) = @args{@required_args};
+   my $q      = $self->{Quoter};
    my $db_tbl = $q->quote($db, $tbl);
-   my $sql    = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d('Checking', $db_tbl);
+
+   my $sql = "SHOW TABLES FROM " . $q->quote($db)
+           . ' LIKE ' . $q->literal_like($tbl);
+   MKDEBUG && _d($sql);
+   my $row;
+   eval {
+      $row = $dbh->selectrow_arrayref($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
+   }
+   if ( !$row->[0] || $row->[0] ne $tbl ) {
+      MKDEBUG && _d('Table does not exist');
+      return 0;
+   }
+
+   MKDEBUG && _d('Table exists; no privs to check');
+   return 1 unless $args{all_privs};
+
+   $sql = "SHOW FULL COLUMNS FROM $db_tbl";
    MKDEBUG && _d($sql);
    eval {
-      my $sth = $dbh->prepare($sql);
-      $sth->execute();
-      my @columns = @{$sth->fetchall_arrayref({})};
-      if ( $can_insert ) {
-         $result = grep { ($_->{Privileges} || '') =~ m/insert/ } @columns;
-      }
-      else {
-         $result = 1;
-      }
+      $row = $dbh->selectrow_hashref($sql);
    };
-   if ( MKDEBUG && $EVAL_ERROR ) {
-      _d($EVAL_ERROR);
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      return 0;
    }
-   return $result;
+   if ( !scalar keys %$row ) {
+      MKDEBUG && _d('Table has no columns:', Dumper($row));
+      return 0;
+   }
+   my $privs = $row->{privileges} || $row->{Privileges};
+
+   $sql = "DELETE FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d($sql);
+   eval {
+      $dbh->do($sql);
+   };
+   my $can_delete = $EVAL_ERROR ? 0 : 1;
+
+   MKDEBUG && _d('User privs on', $db_tbl, ':', $privs,
+      ($can_delete ? 'delete' : ''));
+
+   if ( !($privs =~ m/select/ && $privs =~ m/insert/ && $privs =~ m/update/
+          && $can_delete) ) {
+      MKDEBUG && _d('User does not have all privs');
+      return 0;
+   }
+
+   MKDEBUG && _d('User has all privs');
+   return 1;
 }
 
 sub get_engine {
@@ -2491,26 +2508,6 @@ sub get_engine {
    return $engine || undef;
 }
 
-# $ddl is a SHOW CREATE TABLE returned from MySQLDumper::get_create_table().
-# The general format of a key is
-# [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
-# Returns a hashref of keys and their properties and the clustered key (if
-# the engine is InnoDB):
-#   {
-#     key => {
-#       type         => BTREE, FULLTEXT or  SPATIAL
-#       name         => column name, like: "foo_key"
-#       colnames     => original col def string, like: "(`a`,`b`)"
-#       cols         => arrayref containing the col names, like: [qw(a b)]
-#       col_prefixes => arrayref containing any col prefixes (parallels cols)
-#       is_unique    => 1 if the col is UNIQUE or PRIMARY
-#       is_nullable  => true (> 0) if one or more col can be NULL
-#       is_col       => hashref with key for each col=>1
-#     },
-#   },
-#   'PRIMARY',   # clustered key
-#
-# Foreign keys are ignored; use get_fks() instead.
 sub get_keys {
    my ( $self, $ddl, $opts, $is_nullable ) = @_;
    my $engine        = $self->get_engine($ddl);
@@ -2520,20 +2517,15 @@ sub get_keys {
    KEY:
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
 
-      # If you want foreign keys, use get_fks() below.
       next KEY if $key =~ m/FOREIGN/;
 
-      MKDEBUG && _d('Parsed key:', $key);
+      my $key_ddl = $key;
+      MKDEBUG && _d('Parsed key:', $key_ddl);
 
-      # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
-      # will report its index as USING HASH even when this is not supported.
-      # The true type should be BTREE.  See
-      # http://bugs.mysql.com/bug.php?id=22632
       if ( $engine !~ m/MEMORY|HEAP/ ) {
          $key =~ s/USING HASH/USING BTREE/;
       }
 
-      # Determine index type
       my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
       my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
       $type = $type || $special || 'BTREE';
@@ -2548,8 +2540,6 @@ sub get_keys {
       my @cols;
       my @col_prefixes;
       foreach my $col_def ( split(',', $cols) ) {
-         # Parse columns of index including potential column prefixes
-         # E.g.: `a`,`b`(20)
          my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
@@ -2567,9 +2557,9 @@ sub get_keys {
          is_unique    => $unique,
          is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
          is_col       => { map { $_ => 1 } @cols },
+         ddl          => $key_ddl,
       };
 
-      # Find clustered key (issue 295).
       if ( $engine =~ m/InnoDB/i && !$clustered_key ) {
          my $this_key = $keys->{$name};
          if ( $this_key->{name} eq 'PRIMARY' ) {
@@ -2585,7 +2575,6 @@ sub get_keys {
    return $keys, $clustered_key;
 }
 
-# Like get_keys() above but only returns a hash of foreign keys.
 sub get_fks {
    my ( $self, $ddl, $opts ) = @_;
    my $fks = {};
@@ -2608,19 +2597,51 @@ sub get_fks {
          parent_tbl     => $parent,
          parent_colnames=> $parent_cols,
          parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
+         ddl            => $fk,
       };
    }
 
    return $fks;
 }
 
-# Removes the AUTO_INCREMENT property from the end of SHOW CREATE TABLE.  A
-# sample:
-# ) ENGINE=InnoDB AUTO_INCREMENT=201 DEFAULT CHARSET=utf8;
 sub remove_auto_increment {
    my ( $self, $ddl ) = @_;
    $ddl =~ s/(^\).*?) AUTO_INCREMENT=\d+\b/$1/m;
    return $ddl;
+}
+
+sub remove_secondary_indexes {
+   my ( $self, $ddl ) = @_;
+   my $sec_indexes_ddl;
+   my $tbl_struct = $self->parse($ddl);
+
+   if ( ($tbl_struct->{engine} || '') =~ m/InnoDB/i ) {
+      my $clustered_key = $tbl_struct->{clustered_key};
+      $clustered_key  ||= '';
+
+      my @sec_indexes   = map {
+         my $key_def = $_->{ddl};
+         $key_def =~ s/([\(\)])/\\$1/g;
+         $ddl =~ s/\s+$key_def//;
+         "ADD $_->{ddl}";
+      }
+      grep { $_->{name} ne $clustered_key }
+      values %{$tbl_struct->{keys}};
+      MKDEBUG && _d('Secondary indexes:', Dumper(\@sec_indexes));
+
+      if ( @sec_indexes ) {
+         $sec_indexes_ddl = join(' ', @sec_indexes);
+         $sec_indexes_ddl =~ s/,$//;
+      }
+
+      $ddl =~ s/,(\n\) )/$1/s;
+   }
+   else {
+      MKDEBUG && _d('Not removing secondary indexes from',
+         $tbl_struct->{engine}, 'table');
+   }
+
+   return $ddl, $sec_indexes_ddl, $tbl_struct;
 }
 
 sub _d {
@@ -2638,7 +2659,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4977 $Revision$
+# QueryParser package 4977
 # ###########################################################################
 package QueryParser;
 
@@ -2648,57 +2669,41 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
-# This regex finds things that look like database.table identifiers, based on
-# their proximity to keywords.  (?<!KEY\s) is a workaround for ON DUPLICATE KEY
-# UPDATE, which is usually followed by a column name.
 our $tbl_regex = qr{
          \b(?:FROM|JOIN|(?<!KEY\s)UPDATE|INTO) # Words that precede table names
          \b\s*
-         # Capture the identifier and any number of comma-join identifiers that
-         # follow it, optionally with aliases with or without the AS keyword
          ($tbl_ident
             (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
          )
       }xio;
-# This regex is meant to match "derived table" queries, of the form
-# .. from ( select ...
-# .. join ( select ...
-# .. bar join foo, ( select ...
-# Unfortunately it'll also match this:
-# select a, b, (select ...
 our $has_derived = qr{
       \b(?:FROM|JOIN|,)
       \s*\(\s*SELECT
    }xi;
 
-# http://dev.mysql.com/doc/refman/5.1/en/sql-syntax-data-definition.html
-# We treat TRUNCATE as a dds but really it's a data manipulation statement.
 our $data_def_stmts = qr/(?:CREATE|ALTER|TRUNCATE|DROP|RENAME)/i;
+
+our $data_manip_stmts = qr/(?:INSERT|UPDATE|DELETE|REPLACE)/i;
 
 sub new {
    my ( $class ) = @_;
    bless {}, $class;
 }
 
-# Returns a list of table names found in the query text.
 sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
    MKDEBUG && _d('Getting tables for', $query);
 
-   # Handle CREATE, ALTER, TRUNCATE and DROP TABLE.
    my ( $ddl_stmt ) = $query =~ /^\s*($data_def_stmts)\b/i;
    if ( $ddl_stmt ) {
       MKDEBUG && _d('Special table type:', $ddl_stmt);
       $query =~ s/IF NOT EXISTS//i;
       if ( $query =~ m/$ddl_stmt DATABASE\b/i ) {
-         # Handles CREATE DATABASE, not to be confused with CREATE TABLE.
          MKDEBUG && _d('Query alters a database, not a table');
          return ();
       }
       if ( $ddl_stmt =~ m/CREATE/i && $query =~ m/$ddl_stmt\b.+?\bSELECT\b/i ) {
-         # Handle CREATE TABLE ... SELECT.  In this case, the real tables
-         # come from the SELECT, not the CREATE.
          my ($select) = $query =~ m/\b(SELECT\b.+)/is;
          MKDEBUG && _d('CREATE TABLE ... SELECT:', $select);
          return $self->get_tables($select);
@@ -2708,13 +2713,8 @@ sub get_tables {
       return ($tbl);
    }
 
-   # These keywords may appear between UPDATE or SELECT and the table refs.
-   # They need to be removed so that they are not mistaken for tables.
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
-   # Another special case: LOCK TABLES tbl [[AS] alias] READ|WRITE, etc.
-   # We strip the LOCK TABLES stuff and append "FROM" to fake a SELECT
-   # statement and allow $tbl_regex to match below.
    if ( $query =~ /^\s*LOCK TABLES/i ) {
       MKDEBUG && _d('Special table type: LOCK TABLES');
       $query =~ s/^(\s*LOCK TABLES\s+)//;
@@ -2731,12 +2731,8 @@ sub get_tables {
    foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
       MKDEBUG && _d('Match tables:', $tbls);
       foreach my $tbl ( split(',', $tbls) ) {
-         # Remove implicit or explicit (AS) alias.
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
 
-         # Sanity check for cases like when a column is named `from`
-         # and the regex matches junk.  Instead of complex regex to
-         # match around these rarities, this simple check will save us.
          if ( $tbl !~ m/[a-zA-Z]/ ) {
             MKDEBUG && _d('Skipping suspicious table name:', $tbl);
             next;
@@ -2748,66 +2744,40 @@ sub get_tables {
    return @tables;
 }
 
-# Returns true if it sees what looks like a "derived table", e.g. a subquery in
-# the FROM clause.
 sub has_derived_table {
    my ( $self, $query ) = @_;
-   # See the $tbl_regex regex above.
    my $match = $query =~ m/$has_derived/;
    MKDEBUG && _d($query, 'has ' . ($match ? 'a' : 'no') . ' derived table');
    return $match;
 }
 
-# Return a list of tables/databases and the name they're aliased to.
 sub get_aliases {
    my ( $self, $query ) = @_;
    return unless $query;
    my $aliases;
 
-   # These keywords may appear between UPDATE or SELECT and the table refs.
-   # They need to be removed so that they are not mistaken for tables.
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
-   # These keywords may appear before JOIN. They need to be removed so
-   # that they are not mistaken for implicit aliases of the preceding table.
    $query =~ s/ (?:INNER|OUTER|CROSS|LEFT|RIGHT|NATURAL)//ig;
 
-   # Get the table references clause and the keyword that starts the clause.
-   # See the comments below for why we need the starting keyword.
    my ($tbl_refs, $from) = $query =~ m{
       (
          (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
          .+?                       # Table refs
       )
       (?:\s+|\z)                   # If the query does not end with the table
-                                   # refs then there must be at least 1 space
-                                   # between the last tbl ref and the next
-                                   # keyword
       (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
    }ix;
 
-   # This shouldn't happen, often at least.
    die "Failed to parse table references from $query"
       unless $tbl_refs && $from;
 
    MKDEBUG && _d('tbl refs:', $tbl_refs);
 
-   # These keywords precede a table ref. They signal the start of a table
-   # ref, but to know where the table ref ends we need the after tbl ref
-   # keywords below.
    my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
 
-   # These keywords signal the end of a table ref and either 1) the start
-   # of another table ref, or 2) the start of an ON|USING part of a JOIN
-   # clause (which we want to skip over), or 3) the end of the string (\z).
-   # We need these after tbl ref keywords so that they are not mistaken
-   # for implicit aliases of the preceding table.
    my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
 
-   # This is required for cases like:
-   #    FROM t1 JOIN t2 ON t1.col1=t2.col2 JOIN t3 ON t2.col3 = t3.col4
-   # Because spaces may precede a tbl and a tbl may end with \z, then
-   # t3.col4 will match as a table. However, t2.col3=t3.col4 will not match.
    $tbl_refs =~ s/ = /=/g;
 
    while (
@@ -2820,14 +2790,7 @@ sub get_aliases {
       my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
       MKDEBUG && _d('Match table:', $tbl_ref);
 
-      # Handle subqueries.
       if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
-         # According the the manual
-         # http://dev.mysql.com/doc/refman/5.0/en/unnamed-views.html:
-         # "The [AS] name  clause is mandatory, because every table in a
-         # FROM clause must have a name."
-         # So if the tbl ref begins with 'AS', then we probably have a
-         # subquery.
          MKDEBUG && _d('Subquery', $tbl_ref);
          $aliases->{$alias} = undef;
          next;
@@ -2840,46 +2803,36 @@ sub get_aliases {
    return $aliases;
 }
 
-# Splits a compound statement and returns an array with each sub-statement.
-# Example:
-#    INSERT INTO ... SELECT ...
-# is split into two statements: "INSERT INTO ..." and "SELECT ...".
 sub split {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query = clean_query($query);
+   $query = $self->clean_query($query);
    MKDEBUG && _d('Splitting', $query);
 
    my $verbs = qr{SELECT|INSERT|UPDATE|DELETE|REPLACE|UNION|CREATE}i;
 
-   # This splits a statement on the above verbs which means that the verb
-   # gets chopped out.  Capturing the verb (e.g. ($verb)) will retain it,
-   # but then it's disjointed from its statement.  Example: for this query,
-   #   INSERT INTO ... SELECT ...
-   # split returns ('INSERT', 'INTO ...', 'SELECT', '...').  Therefore,
-   # we must re-attach each verb to its statement; we do this later...
    my @split_statements = grep { $_ } split(m/\b($verbs\b(?!(?:\s*\()))/io, $query);
 
    my @statements;
    if ( @split_statements == 1 ) {
-      # This happens if the query has no verbs, so it's probably a single
-      # statement.
       push @statements, $query;
    }
    else {
-      # ...Re-attach verbs to their statements.
       for ( my $i = 0; $i <= $#split_statements; $i += 2 ) {
          push @statements, $split_statements[$i].$split_statements[$i+1];
+
+         if ( $statements[-2] && $statements[-2] =~ m/on duplicate key\s+$/i ) {
+            $statements[-2] .= pop @statements;
+         }
       }
    }
 
-   # Wrap stmts in <> to make it more clear where each one begins/ends.
    MKDEBUG && _d('statements:', map { $_ ? "<$_>" : 'none' } @statements);
    return @statements;
 }
 
 sub clean_query {
-   my ( $query ) = @_;
+   my ( $self, $query ) = @_;
    return unless $query;
    $query =~ s!/\*.*?\*/! !g;  # Remove /* comment blocks */
    $query =~ s/^\s+//;         # Remove leading spaces
@@ -2891,7 +2844,7 @@ sub clean_query {
 sub split_subquery {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query = clean_query($query);
+   $query = $self->clean_query($query);
    $query =~ s/;$//;
 
    my @subqueries;
@@ -2955,6 +2908,24 @@ sub split_subquery {
    return $query, map { $_->{sql} } grep { defined $_ } @subqueries;
 }
 
+sub query_type {
+   my ( $self, $query, $qr ) = @_;
+   my ($type, undef) = $qr->_distill_verbs($query);
+   my $rw;
+   if ( $type =~ m/^SELECT\b/ ) {
+      $rw = 'read';
+   }
+   elsif ( $type =~ m/^$data_manip_stmts\b/
+           || $type =~ m/^$data_def_stmts\b/  ) {
+      $rw = 'write'
+   }
+
+   return {
+      type => $type,
+      rw   => $rw,
+   }
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -2970,7 +2941,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4943 $Revision$
+# Quoter package 4943
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2995,18 +2966,19 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, @vals ) = @_;
-   return join(', ',
-      map {
-         if ( defined $_ ) {
-            $_ =~ s/(['\\])/\\$1/g;
-            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
-         }
-         else {
-            'NULL';
-         }
-      } @vals
-   );
+   my ( $self, $val, $is_numeric ) = @_;
+
+   return 'NULL' unless defined $val;  # undef = NULL
+   return "''" if $val eq '';          # blank string = ''
+
+   if ( !defined $is_numeric ) {
+      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
+   }
+
+   return $val if $is_numeric;
+
+   $val =~ s/(['\\])/\\$1/g;
+   return "'$val'";
 }
 
 sub split_unquote {
@@ -3018,6 +2990,13 @@ sub split_unquote {
       $db  = $default_db;
    }
    return ($db, $tbl);
+}
+
+sub literal_like {
+   my ( $self, $like ) = @_;
+   return unless $like;
+   $like =~ s/([%_])/\\$1/g;
+   return "'$like'";
 }
 
 1;
@@ -3758,26 +3737,32 @@ sub main {
    # (i.e. it should work in Perl 5.8, too).
    my @dbhs = ($dbh);
 
-   for ( 0..$n_threads-1 ) {
-      # Create a connection for this thread.
-      my $thr_dbh = $dp->get_dbh($dp->get_cxn_params($dsn),{ AutoCommit => 1 });
-      $thr_dbh->{FetchHashKeyName} = 'NAME_lc';
-      $thr_dbh->{InactiveDestroy}  = 1;
-      $thr_dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
-      push @dbhs, $thr_dbh;
+   if ( $o->get('secondary-indexes') ) {
+      for ( 0..$n_threads-1 ) {
+         # Create a connection for this thread.
+         my $thr_dbh = $dp->get_dbh($dp->get_cxn_params($dsn),{ AutoCommit => 1 });
+         $thr_dbh->{FetchHashKeyName} = 'NAME_lc';
+         $thr_dbh->{InactiveDestroy}  = 1;
+         $thr_dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
+         push @dbhs, $thr_dbh;
 
-      threads::async {
-         my $query;
-         my $tid = threads::tid();
-         while( $query = $query_queue->dequeue() ) {
-            if ( $query ) {
-               eval { $dbhs[$tid]->do($query); };
-               MKDEBUG && $EVAL_ERROR && _d('Error executing', $query, ':',
-                  $EVAL_ERROR);
-            }; 
-        }
-     };
-   } 
+         my $thr = threads::async {
+            my $query;
+            my $tid = threads::tid();
+            MKDEBUG && _d('Thread', $tid, 'is alive');
+            while( $query = $query_queue->dequeue() ) {
+               if ( $query ) {
+                  eval { $dbhs[$tid]->do($query); };
+                  MKDEBUG && $EVAL_ERROR && _d('Error executing', $query, ':',
+                     $EVAL_ERROR);
+               };
+            }
+            MKDEBUG && _d('Thread', $tid, 'is done');
+         };
+         $thr->detach();
+         MKDEBUG && _d('Thread', $thr->tid(), 'created and detached');
+      }
+   }
 
    # Declare these before new SlavePrefetch so they're available to the
    # oktorun callback arg but don't define them yet because spf->new()
@@ -3872,6 +3857,8 @@ sub main {
          $spf->_get_slave_status();
          if ( $spf->slave_is_running() ) {
             my $fh = $spf->open_relay_log( tmpdir => $o->get('tmpdir') );
+            my $more_events     = 1;
+            my $more_events_sub = sub { $more_events = $_[0]; };
             EVENT:
             while (
                oktorun(
@@ -3880,15 +3867,13 @@ sub main {
                   %oktorun_args) )
             {
                my $event = $lp->parse_event(
-                  $fh,
-                  undef,
-                  sub {
-                     my ( $event ) = @_;
-                     $spf->pipeline_event($event, @callbacks);
-                     return $event;
-                  },
+                  fh      => $fh,
+                  oktorun => $more_events_sub,
                );
-               last EVENT unless $event;
+               if ( $event ) {
+                  $spf->pipeline_event($event, @callbacks);
+               }
+               last EVENT unless $more_events;
             }
          }
          else {
@@ -4139,8 +4124,9 @@ user.  Here is an example of how to grant the necessary privileges:
 If only L<"--print"> is given, then mk-slave-prefetch will only read and print
 information.
 
-At the time of this release, there are bugs parsing certain INSERT statements
-and a bug which causes MySQL's relay-log option to be ignored.
+At the time of this release, there are bugs parsing certain INSERT statements,
+a bug which causes MySQL's relay-log option to be ignored, and a potential
+bug preventing secondary threads from starting.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

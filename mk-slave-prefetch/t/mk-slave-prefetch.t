@@ -20,10 +20,10 @@ my $master_dbh = $sb->get_dbh_for('master')
 my $slave_dbh  = $sb->get_dbh_for('slave1')
    or BAIL_OUT('Cannot connect to sandbox slave1');
 
-my $du = new MySQLDump(cache => 0);
-my $tp = new TableParser();
-my $qp = new QueryParser();
 my $q  = new Quoter();
+my $du = new MySQLDump(cache => 0);
+my $tp = new TableParser(Quoter => $q);
+my $qp = new QueryParser();
 my %common_modules = (
    MySQLDump   => $du,
    TableParser => $tp,
