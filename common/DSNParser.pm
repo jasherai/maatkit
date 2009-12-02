@@ -266,7 +266,7 @@ sub get_dbh {
    # Test that DBI is installed.  If yes then this will succeed.
    # Else it will cause an error.
    eval {
-      DBI->installed_drivers();
+      DBI->available_drivers();
    };
    if ( $EVAL_ERROR ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
