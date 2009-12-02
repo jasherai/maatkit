@@ -25,20 +25,21 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 5208
+# DSNParser package 5226
 # ###########################################################################
+package DSNParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package DSNParser;
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 eval {
    require DBI;
 };
-use Data::Dumper;
-$Data::Dumper::Indent    = 0;
-$Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
+my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -240,10 +241,7 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
-   eval {
-      DBI->installed_drivers();
-   };
-   if ( $EVAL_ERROR ) {
+   if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
          . "that Perl searches for DBI.  If DBI is not installed, try:\n"
@@ -1497,7 +1495,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5195
+# QueryRewriter package 5228
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1643,10 +1641,11 @@ sub _distill_verbs {
    $query = $self->strip_comments($query);
 
    if ( $query =~ m/\A\s*SHOW\s+/i ) {
-      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/;
+      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/i;
       MKDEBUG && _d('SHOW', @what);
       return unless scalar @what;
-      if ( $what[0] =~ m/CREATE/i || ($what[1] && $what[1] =~ m/STATUS/i) ) {
+      @what = map { uc $_ } grep { defined $_ } @what; 
+      if ( $what[0] =~ m/CREATE/ || ($what[1] && $what[1] =~ m/STATUS/) ) {
          return "SHOW $what[0] $what[1]";
       }
       else {
@@ -2238,7 +2237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5129
+# MySQLProtocolParser package 5178
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -5290,7 +5289,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5197
+# TableParser package 5216
 # ###########################################################################
 package TableParser;
 
@@ -5335,6 +5334,9 @@ sub parse {
          . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
 
+   my ($name)     = $ddl =~ m/CREATE (?:TEMPORARY )?TABLE\s+(`.+?`)/;
+   (undef, $name) = $self->{Quoter}->split_unquote($name) if $name;
+
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
    my $engine = $self->get_engine($ddl);
@@ -5367,6 +5369,7 @@ sub parse {
    my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
+      name           => $name,
       cols           => \@cols,
       col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
       is_col         => { map { $_ => 1 } @cols },
@@ -6850,7 +6853,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ProtocolParser package 5104
+# ProtocolParser package 5129
 # ###########################################################################
 package ProtocolParser;
 
@@ -6870,8 +6873,6 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-# server is the "host:port" of the sever being watched.  It's auto-guessed if
-# not specified.
 sub new {
    my ( $class, %args ) = @_;
 
@@ -6888,11 +6889,14 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_packet {
-   my ( $self, $packet, $misc ) = @_;
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $packet = @args{@required_args};
 
-   # Save each session's packets until its closed by the client.
-   # This allows us to ensure that packets are processed in order.
    if ( $self->{buffer} ) {
       my ($packet_from, $session) = $self->_get_session($packet);
       if ( $packet->{data_len} ) {
@@ -6906,18 +6910,17 @@ sub parse_packet {
          }
       }
 
-      # Process the session's packets when the client closes the connection.
       return unless ($packet_from eq 'client')
                     && ($packet->{fin} || $packet->{rst});
 
       my $event;
       map {
-         $event = $self->_parse_packet($_, $misc);
+         $event = $self->_parse_packet($_, $args{misc});
       } sort { $a->{seq} <=> $b->{seq} }
       @{$session->{client_packets}};
       
       map {
-         $event = $self->_parse_packet($_, $misc);
+         $event = $self->_parse_packet($_, $args{misc});
       } sort { $a->{seq} <=> $b->{seq} }
       @{$session->{server_packets}};
 
@@ -6925,31 +6928,23 @@ sub parse_packet {
    }
 
    if ( $packet->{data_len} == 0 ) {
-      # Return early if there's no TCP data.  These are usually ACK packets, but
-      # they could also be FINs in which case, we should close and delete the
-      # client's session.
       MKDEBUG && _d('No TCP data');
       return;
    }
 
-   return $self->_parse_packet($packet, $misc);
+   return $self->_parse_packet($packet, $args{misc});
 }
 
-# The packet arg should be a hashref from TcpdumpParser::parse_event().
-# misc is a placeholder for future features.
 sub _parse_packet {
    my ( $self, $packet, $misc ) = @_;
 
    my ($packet_from, $session) = $self->_get_session($packet);
    MKDEBUG && _d('State:', $session->{state});
 
-   # Save raw packets to dump later in case something fails.
    push @{$session->{raw_packets}}, $packet->{raw_packet}
       unless $misc->{recurse};
 
    if ( $session->{buff} ) {
-      # Previous packets were not complete so append this data
-      # to what we've been buffering.
       $session->{buff_left} -= $packet->{data_len};
       if ( $session->{buff_left} > 0 ) {
          MKDEBUG && _d('Added data to buff; expecting', $session->{buff_left},
@@ -6964,7 +6959,6 @@ sub _parse_packet {
       $session->{buff_left} = 0;
    }
 
-   # Finally, parse the packet and maybe create an event.
    $packet->{data} = pack('H*', $packet->{data}) unless $misc->{recurse};
    my $event;
    if ( $packet_from eq 'server' ) {
@@ -6974,7 +6968,6 @@ sub _parse_packet {
       $event = $self->_packet_from_client($packet, $session, $misc);
    }
    else {
-      # Should not get here.
       die 'Packet origin unknown';
    }
    MKDEBUG && _d('State:', $session->{state});
@@ -7013,7 +7006,6 @@ sub _get_session {
       }
    }
 
-   # Auto-detect the server by looking for its port.
    my $packet_from;
    my $client;
    if ( $src_host =~ m/:$self->{server_port}$/ ) {
@@ -7030,15 +7022,12 @@ sub _get_session {
    }
    MKDEBUG && _d('Client:', $client);
 
-   # Get the client's session info or create a new session if the
-   # client hasn't been seen before.
    if ( !exists $self->{sessions}->{$client} ) {
       MKDEBUG && _d('New session');
       $self->{sessions}->{$client} = {
          client      => $client,
          state       => undef,
          raw_packets => [],
-         # ts -- wait for ts later.
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -7076,7 +7065,6 @@ sub _get_errors_fh {
    my $errors_fh = $self->{errors_fh};
    return $errors_fh if $errors_fh;
 
-   # Errors file isn't open yet; try to open it.
    my $o = $self->{o};
    if ( $o && $o->has('tcpdump-errors') && $o->got('tcpdump-errors') ) {
       my $errors_file = $o->get('tcpdump-errors');
@@ -7109,7 +7097,6 @@ sub fail_session {
    return;
 }
 
-# Returns the difference between two tcpdump timestamps.
 sub timestamp_diff {
    my ( $self, $start, $end ) = @_;
    return 0 unless $start && $end;
@@ -7127,9 +7114,6 @@ sub timestamp_diff {
    }
 }
 
-# Takes a scalarref to a hex string of compressed data.
-# Returns a scalarref to a hex string of the uncompressed data.
-# The given hex string of compressed data is not modified.
 sub uncompress_data {
    my ( $self, $data, $len ) = @_;
    die "I need data" unless $data;
@@ -7138,10 +7122,8 @@ sub uncompress_data {
    MKDEBUG && _d('Uncompressing data');
    our $InflateError;
 
-   # Pack hex string into compressed binary data.
    my $comp_bin_data = pack('H*', $$data);
 
-   # Uncompress the compressed binary data.
    my $uncomp_bin_data = '';
    my $z = new IO::Uncompress::Inflate(
       \$comp_bin_data
@@ -7149,8 +7131,6 @@ sub uncompress_data {
    my $status = $z->read(\$uncomp_bin_data, $len)
       or die "IO::Uncompress::Inflate failed: $InflateError";
 
-   # Unpack the uncompressed binary data back into a hex string.
-   # This is the original MySQL packet(s).
    my $uncomp_data = unpack('H*', $uncomp_bin_data);
 
    return \$uncomp_data;
@@ -8104,20 +8084,26 @@ sub main {
                $cur_time = $end;
             }
          };
-         $stats{execute_error}++ if $EVAL_ERROR;
-         # Don't try to re-execute the statement.  Just skip it.
-         if ( $EVAL_ERROR && $EVAL_ERROR =~ m/server has gone away/ ) {
-            print STDERR $EVAL_ERROR;
-            eval {
-               ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
-                     1, 'for --execute');
-               $cur_time = time();
-            };
-            if ( $EVAL_ERROR ) {
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d($EVAL_ERROR);
+            $stats{execute_error}++;
+            # Don't try to re-execute the statement.  Just skip it.
+            if ( $EVAL_ERROR =~ m/server has gone away/ ) {
                print STDERR $EVAL_ERROR;
-               sleep 1;
+               eval {
+                  ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
+                     1, 'for --execute');
+                  $cur_time = time();
+               };
+               if ( $EVAL_ERROR ) {
+                  print STDERR $EVAL_ERROR;
+                  sleep 1;
+               }
+               return 0;
             }
-            return 0;
+            if ( $EVAL_ERROR =~ m/No database/ ) {
+               $stats{execute_no_database}++;
+            }
          }
          return $event;
       };
