@@ -928,7 +928,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5208
+# DSNParser package 5226
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1144,7 +1144,7 @@ sub get_dbh {
    @{$defaults}{ keys %$opts } = values %$opts;
 
    eval {
-      DBI->installed_drivers();
+      DBI->available_drivers();
    };
    if ( $EVAL_ERROR ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
@@ -1743,7 +1743,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5197
+# TableParser package 5216
 # ###########################################################################
 package TableParser;
 
@@ -1788,6 +1788,9 @@ sub parse {
          . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
 
+   my ($name)     = $ddl =~ m/CREATE (?:TEMPORARY )?TABLE\s+(`.+?`)/;
+   (undef, $name) = $self->{Quoter}->split_unquote($name) if $name;
+
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
    my $engine = $self->get_engine($ddl);
@@ -1820,6 +1823,7 @@ sub parse {
    my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
+      name           => $name,
       cols           => \@cols,
       col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
       is_col         => { map { $_ => 1 } @cols },
