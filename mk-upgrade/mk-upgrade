@@ -25,20 +25,21 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision: 4971 $ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 5208
+# DSNParser package 5226
 # ###########################################################################
+package DSNParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package DSNParser;
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 eval {
    require DBI;
 };
-use Data::Dumper;
-$Data::Dumper::Indent    = 0;
-$Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
+my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -240,10 +241,7 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
-   eval {
-      DBI->installed_drivers();
-   };
-   if ( $EVAL_ERROR ) {
+   if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
          . "that Perl searches for DBI.  If DBI is not installed, try:\n"
@@ -693,7 +691,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4931
+# TableParser package 5216
 # ###########################################################################
 package TableParser;
 
@@ -738,6 +736,9 @@ sub parse {
          . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
 
+   my ($name)     = $ddl =~ m/CREATE (?:TEMPORARY )?TABLE\s+(`.+?`)/;
+   (undef, $name) = $self->{Quoter}->split_unquote($name) if $name;
+
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
    my $engine = $self->get_engine($ddl);
@@ -770,6 +771,7 @@ sub parse {
    my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
+      name           => $name,
       cols           => \@cols,
       col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
       is_col         => { map { $_ => 1 } @cols },
@@ -1012,6 +1014,7 @@ sub get_fks {
          parent_tbl     => $parent,
          parent_colnames=> $parent_cols,
          parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
+         ddl            => $fk,
       };
    }
 
@@ -1037,7 +1040,7 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         $_->{ddl};
+         "ADD $_->{ddl}";
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
@@ -1974,7 +1977,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 4299
+# Transformers package 5144
 # ###########################################################################
 
 package Transformers;
@@ -1982,7 +1985,7 @@ package Transformers;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Time::Local qw(timelocal);
+use Time::Local qw(timegm timelocal);
 use Digest::MD5 qw(md5_hex);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -2004,7 +2007,7 @@ our @EXPORT_OK   = qw(
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
-our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?/;
+our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?/;
 our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
 
 sub micro_t {
@@ -2089,13 +2092,19 @@ sub shorten {
 }
 
 sub ts {
-   my ( $time ) = @_;
+   my ( $time, $gmt ) = @_;
    my ( $sec, $min, $hour, $mday, $mon, $year )
-      = localtime($time);
+      = $gmt ? gmtime($time) : localtime($time);
    $mon  += 1;
    $year += 1900;
-   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+   my $val = sprintf("%d-%02d-%02dT%02d:%02d:%02d",
       $year, $mon, $mday, $hour, $min, $sec);
+   if ( my ($us) = $time =~ m/(\.\d+)$/ ) {
+      $us = sprintf("%.6f", $us);
+      $us =~ s/^0\././;
+      $val .= $us;
+   }
+   return $val;
 }
 
 sub parse_timestamp {
@@ -2111,11 +2120,16 @@ sub parse_timestamp {
 }
 
 sub unix_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-     = $val =~ m/^$proper_ts$/ )
-   {
-      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   my ( $val, $gmt ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s, $us) = $val =~ m/^$proper_ts$/ ) {
+      $val = $gmt
+         ? timegm($s, $i, $h, $d, $m - 1, $y)
+         : timelocal($s, $i, $h, $d, $m - 1, $y);
+      if ( defined $us ) {
+         $us = sprintf('%.6f', $us);
+         $us =~ s/^0\././;
+         $val .= $us;
+      }
    }
    return $val;
 }
@@ -2173,7 +2187,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 4462
+# SlowLogParser package 5133
 # ###########################################################################
 package SlowLogParser;
 
@@ -2186,7 +2200,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   my $self = {
+      pending => [],
+   };
+   return bless $self, $class;
 }
 
 my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
@@ -2202,20 +2219,21 @@ my $slow_log_hd_line = qr{
    }xm;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
-   my @pending;
+   my $pending = $self->{pending};
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $trimlen    = length($INPUT_RECORD_SEPARATOR);
    my $pos_in_log = tell($fh);
    my $stmt;
 
    EVENT:
-   while ( $$oktorun
-           && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
+   while ( (defined($stmt = shift @$pending) or defined($stmt = <$fh>)) ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 
@@ -2224,7 +2242,7 @@ sub parse_event {
          if ( @chunks > 1 ) {
             MKDEBUG && _d("Found multiple chunks");
             $stmt = shift @chunks;
-            unshift @pending, @chunks;
+            unshift @$pending, @chunks;
          }
       }
 
@@ -2311,10 +2329,10 @@ sub parse_event {
             MKDEBUG && _d("Got the query/arg line");
             my $arg = substr($stmt, $pos - length($line));
             push @properties, 'arg', $arg, 'bytes', length($arg);
-            if ( $misc && $misc->{embed}
-               && ( my ($e) = $arg =~ m/($misc->{embed})/)
+            if ( $args{misc} && $args{misc}->{embed}
+               && ( my ($e) = $arg =~ m/($args{misc}->{embed})/)
             ) {
-               push @properties, $e =~ m/$misc->{capture}/g;
+               push @properties, $e =~ m/$args{misc}->{capture}/g;
             }
             last LINE;
          }
@@ -2322,13 +2340,12 @@ sub parse_event {
 
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
-      foreach my $callback ( @callbacks ) {
-         last unless $event = $callback->($event);
-      }
-      ++$num_events;
-      last EVENT unless @pending;
+      return $event;
    }
-   return $num_events;
+
+   @$pending = ();
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -3204,7 +3221,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5195
+# QueryRewriter package 5228
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3350,10 +3367,11 @@ sub _distill_verbs {
    $query = $self->strip_comments($query);
 
    if ( $query =~ m/\A\s*SHOW\s+/i ) {
-      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/;
+      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/i;
       MKDEBUG && _d('SHOW', @what);
       return unless scalar @what;
-      if ( $what[0] =~ m/CREATE/i || ($what[1] && $what[1] =~ m/STATUS/i) ) {
+      @what = map { uc $_ } grep { defined $_ } @what; 
+      if ( $what[0] =~ m/CREATE/ || ($what[1] && $what[1] =~ m/STATUS/) ) {
          return "SHOW $what[0] $what[1]";
       }
       else {
@@ -6595,7 +6613,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 5055
+# ReportFormatter package 5113
 # ###########################################################################
 package ReportFormatter;
 
@@ -6705,7 +6723,8 @@ sub get_report {
 
    push @lines, sprintf "${p}$self->{title}" if $self->{title};
 
-   push @lines, sprintf $fmt, map { $_->{name} } @{$self->{cols}};
+   (my $hdr_fmt = $fmt) =~ s/%([^-])/%-$1/g;
+   push @lines, sprintf $hdr_fmt, map { $_->{name} } @{$self->{cols}};
 
    if ( $self->{underline_header} ) {
       my $underline_len = 0;
@@ -8039,7 +8058,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareWarnings package 5067
+# CompareWarnings package 5132
 # ###########################################################################
 package CompareWarnings;
 
@@ -8164,6 +8183,9 @@ sub after_execute {
    die "Failed to SHOW WARNINGS: $EVAL_ERROR"
       if $EVAL_ERROR;
 
+   map {
+      $_->{Message} =~ s/Out of range value adjusted/Out of range value/;
+   } values %$warnings;
    $event->{warning_count} = $warning_count || 0;
    $event->{warnings}      = $warnings;
 
@@ -8486,6 +8508,9 @@ sub main {
          push @files, $arg;
       }
    }
+   if ( @files == 0 ) {
+      push @files, '-'; # Magical STDIN filename.
+   }
 
    if ( @$hosts == 0 ) {
       $o->save_error('Specify at least one host DSN');
@@ -8512,7 +8537,6 @@ sub main {
    # ########################################################################
    my $q        = new Quoter();
    my $vp       = new VersionParser();
-   my $parser   = new SlowLogParser();
    my $qp       = new QueryParser();
    my $qr       = new QueryRewriter();
    my $du       = new MySQLDump(cache => 0);
@@ -8619,6 +8643,26 @@ sub main {
    my $current_db;
    my $tmp_db  = $o->get('temp-database');
    my $tmp_tbl = $o->get('temp-table');
+
+   if ( my $query = $o->get('query') ) {
+      push @callbacks, sub {
+         my ( $event, %args ) = @_;
+         MKDEBUG && _d('callback: query:', $query);
+         $args{oktorun}->(0) if $args{oktorun};
+         return {
+            cmd        => 'Query',
+            arg        => $query,
+            pos_in_log => 0,  # for compatibility
+         };
+      };
+   }
+   else {
+      my $parser = new SlowLogParser();
+      push @callbacks, sub {
+         my ( $event, %args ) = @_;
+         return $parser->parse_event(%args);
+      };
+   }
 
    # For the moment we only support deterministic SELECT queries.
    # There's no filter/transformation for non-deterministic functions yet,
@@ -8842,56 +8886,10 @@ sub main {
    # ##########################################################################
    # Parse the input.
    # ##########################################################################
-   my $run_func;
-   if ( my $query = $o->get('query') ) {
-      $run_func = sub {
-         MKDEBUG && _d('Executing single query:', $query);
-         my $event = {
-            cmd        => 'Query',
-            arg        => $query,
-            pos_in_log => 0,        # for compatibility
-         };
-         foreach my $callback ( @callbacks ) {
-            last unless $event = $callback->($event);
-         }
-         return;
-      };
-   }
-   else {
-      if ( @files == 0 ) {
-         push @files, '-'; # Magical STDIN filename.
-      }
-
-      # Set up the parser and miscellaneous options to it.
-      my $misc = { oktorun => \$oktorun };
-      my ($fh);
-      $run_func = sub {
-         if ( !$fh ) {
-            my $file = shift @files or return;
-            if ( $file eq '-' ) {
-               $fh = *STDIN;
-               MKDEBUG && _d('Reading STDIN');
-            }
-            else {
-               open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
-               MKDEBUG && _d('Reading', $file);
-            }
-         }
-
-         my $events;
-         $events = $parser->parse_event($fh, $misc, @callbacks);
-         if ( !$events ) {
-            close $fh;
-            $fh = undef;
-         }
-         return $events;
-      };
-   }
-
+   my $fh;
    my $start = time();
    my $end   = $start + ($o->get('run-time') || 0); # When we should exit
    my $now   = $start;
-
    my $iters = 0;
    ITERATION:
    while (  # Quit if instructed to, or if iterations are exceeded.
@@ -8904,24 +8902,57 @@ sub main {
          $oktorun                             # instructed to quit
          && ($start == $end || $now < $end) ) # or time is exceeded
       {
-         my $result;
+         if ( !$fh ) {
+            my $file = shift @files;
+            if ( !$file ) {
+               MKDEBUG && _d('No more files to parse');
+               last EVENT;
+            }
+
+            if ( $file eq '-' ) {
+               $fh = *STDIN;
+               MKDEBUG && _d('Reading STDIN');
+            }
+            else {
+               if ( !open $fh, "<", $file ) {
+                  $fh = undef;
+                  warn "Cannot open $file: $OS_ERROR\n";
+                  next EVENT;
+               }
+               MKDEBUG && _d('Reading', $file);
+            }
+         }
+
+         my $event       = {};
+         my $more_events = 1;
+         my $oktorun_sub = sub { $more_events = $_[0]; };
          eval {
-            $result = $run_func->();
+            foreach my $callback ( @callbacks ) {
+               last unless $oktorun;  # the global oktorun var
+               $event = $callback->(
+                  $event,
+                  event   => $event,  # new interface
+                  fh      => $fh,
+                  oktorun => $oktorun_sub,
+               );
+               last unless $event;
+            }
          };
+         $now = time();
          if ( $EVAL_ERROR ) {
             _d($EVAL_ERROR);
-
             # Don't ignore failure to open a file, else we'll get
             # "tell() on closed filehandle" errors.
             last EVENT if $EVAL_ERROR =~ m/Cannot open/;
-
             last EVENT unless $o->get('continue-on-error');
          }
-         else {
-            $now = time();
-            last EVENT unless defined $result;
+         if ( !$more_events ) {
+            MKDEBUG && _d('No more events');
+            close $fh if $fh;
+            $fh = undef;
+            last EVENT;
          }
-      }
+      }  # EVENT
 
       # ######################################################################
       # Done parsing events, now do the report.
