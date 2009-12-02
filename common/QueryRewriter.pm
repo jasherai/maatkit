@@ -210,11 +210,12 @@ sub _distill_verbs {
    $query = $self->strip_comments($query);
 
    if ( $query =~ m/\A\s*SHOW\s+/i ) {
-      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/;
+      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/i;
       MKDEBUG && _d('SHOW', @what);
       return unless scalar @what;
+      @what = map { uc $_ } grep { defined $_ } @what; 
       # Handles SHOW CREATE * and SHOW * STATUS.
-      if ( $what[0] =~ m/CREATE/i || ($what[1] && $what[1] =~ m/STATUS/i) ) {
+      if ( $what[0] =~ m/CREATE/ || ($what[1] && $what[1] =~ m/STATUS/) ) {
          return "SHOW $what[0] $what[1]";
       }
       else {

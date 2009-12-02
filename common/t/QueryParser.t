@@ -765,7 +765,7 @@ is_deeply(
 is_deeply(
    $qp->query_type('show tables', $qr),
    {
-      type => 'SHOW',
+      type => 'SHOW TABLES',
       rw   => undef,
    },
    'query_type() show tables'
@@ -773,7 +773,7 @@ is_deeply(
 is_deeply(
    $qp->query_type('show fields from foo', $qr),
    {
-      type => 'SHOW',
+      type => 'SHOW FIELDS',
       rw   => undef,
    },
    'query_type() show fields'
