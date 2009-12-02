@@ -17,18 +17,19 @@
 # ###########################################################################
 # DSNParser package $Revision$
 # ###########################################################################
+package DSNParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package DSNParser;
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 eval {
    require DBI;
 };
-use Data::Dumper;
-$Data::Dumper::Indent    = 0;
-$Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
+my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -263,12 +264,7 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
-   # Test that DBI is installed.  If yes then this will succeed.
-   # Else it will cause an error.
-   eval {
-      DBI->available_drivers();
-   };
-   if ( $EVAL_ERROR ) {
+   if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
          . "that Perl searches for DBI.  If DBI is not installed, try:\n"

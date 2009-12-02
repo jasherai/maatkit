@@ -913,20 +913,21 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5208
+# DSNParser package 5226
 # ###########################################################################
+package DSNParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package DSNParser;
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 eval {
    require DBI;
 };
-use Data::Dumper;
-$Data::Dumper::Indent    = 0;
-$Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
+my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1128,10 +1129,7 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
-   eval {
-      DBI->installed_drivers();
-   };
-   if ( $EVAL_ERROR ) {
+   if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
          . "that Perl searches for DBI.  If DBI is not installed, try:\n"
@@ -2488,16 +2486,15 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 4299 $Revision$
+# Transformers package 5144
 # ###########################################################################
 
-# Transformers - Common transformation and beautification subroutines
 package Transformers;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Time::Local qw(timelocal);
+use Time::Local qw(timegm timelocal);
 use Digest::MD5 qw(md5_hex);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -2519,9 +2516,8 @@ our @EXPORT_OK   = qw(
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
-our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?/;
+our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?/;
 our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
-                                         # like a MySQL YYMMDD without hh:mm:ss.
 
 sub micro_t {
    my ( $t, %args ) = @_;
@@ -2531,12 +2527,8 @@ sub micro_t {
 
    $t = 0 if $t < 0;
 
-   # "Remove" scientific notation so the regex below does not make
-   # 6.123456e+18 into 6.123456.
    $t = sprintf('%.17f', $t) if $t =~ /e/;
 
-   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
-   # because sprintf() rounds.
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
@@ -2557,7 +2549,6 @@ sub micro_t {
    return $f;
 }
 
-# Returns what percentage $is of $of.
 sub percentage_of {
    my ( $is, $of, %args ) = @_;
    my $p   = $args{p} || 0; # float precision
@@ -2570,7 +2561,6 @@ sub secs_to_time {
    $secs ||= 0;
    return '00:00' unless $secs;
 
-   # Decide what format to use, if not given
    $fmt ||= $secs >= 86_400 ? 'd'
           : $secs >= 3_600  ? 'h'
           :                   'm';
@@ -2611,17 +2601,21 @@ sub shorten {
 }
 
 sub ts {
-   my ( $time ) = @_;
+   my ( $time, $gmt ) = @_;
    my ( $sec, $min, $hour, $mday, $mon, $year )
-      = localtime($time);
+      = $gmt ? gmtime($time) : localtime($time);
    $mon  += 1;
    $year += 1900;
-   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+   my $val = sprintf("%d-%02d-%02dT%02d:%02d:%02d",
       $year, $mon, $mday, $hour, $min, $sec);
+   if ( my ($us) = $time =~ m/(\.\d+)$/ ) {
+      $us = sprintf("%.6f", $us);
+      $us =~ s/^0\././;
+      $val .= $us;
+   }
+   return $val;
 }
 
-# Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.  Also
-# handles a timestamp with fractions after it.
 sub parse_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s, $f)
@@ -2634,27 +2628,21 @@ sub parse_timestamp {
    return $val;
 }
 
-# Turns a properly formatted timestamp like 2007-10-15 01:43:52
-# into an int (seconds since epoch).  Optional microseconds are ignored.
 sub unix_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-     = $val =~ m/^$proper_ts$/ )
-   {
-      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   my ( $val, $gmt ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s, $us) = $val =~ m/^$proper_ts$/ ) {
+      $val = $gmt
+         ? timegm($s, $i, $h, $d, $m - 1, $y)
+         : timelocal($s, $i, $h, $d, $m - 1, $y);
+      if ( defined $us ) {
+         $us = sprintf('%.6f', $us);
+         $us =~ s/^0\././;
+         $val .= $us;
+      }
    }
    return $val;
 }
 
-# Turns several different types of timestamps into a unix timestamp.
-# Each type is auto-detected.  Supported types are:
-#   * N[shdm]                Now - N[shdm]
-#   * 071015 21:43:52        MySQL slow log timestamp
-#   * 2009-07-01 [3:43:01]   Proper timestamp with options HH:MM:SS
-#   * NOW()                  A MySQL time express
-# For the last type, the callback arg is required.  It is passed the
-# given value/expression and is expected to return a single value
-# (the result of the expression).
 sub any_unix_timestamp {
    my ( $val, $callback ) = @_;
 
@@ -2686,7 +2674,6 @@ sub any_unix_timestamp {
    return;
 }
 
-# Returns the rightmost 64 bits of an MD5 checksum of the value.
 sub make_checksum {
    my ( $val ) = @_;
    my $checksum = uc substr(md5_hex($val), -16);

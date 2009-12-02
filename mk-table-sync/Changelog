@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2009-12-02: version 1.0.22
+
    * Added note to output when using --dry-run (issue 691).
 
 2009-10-30: version 1.0.21

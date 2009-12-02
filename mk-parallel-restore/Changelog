@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+2009-12-02: version 1.0.18
+
    * Failed to restore InnoDB tables (issue 683).
    * Failed to restore tables with foreign key constraints (issue 703).
    * --fast-index caused an error with two or more indexes.

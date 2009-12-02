@@ -1,5 +1,9 @@
 Changelog for mk-upgrade:
 
+2009-12-02: version 0.9.4
+
+   * Completely redesigned the tool.
+
 2009-10-30: version 0.9.3
 
    * Added --[no]compare-query-times.

@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2009-12-02: version 1.2.10
+
    * Removed REPLACE INTO for checking replicate table (issue 365).
 
 2009-10-30: version 1.2.9

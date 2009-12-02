@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+2009-12-02: version 1.0.19
+
    * Tables were not dumped on MySQL 4.
    * Added --ignore-tables-regex (issue 152).
    * Added --ignore-databases-regex (issue 152).

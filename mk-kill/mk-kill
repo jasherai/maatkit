@@ -912,20 +912,21 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5208
+# DSNParser package 5226
 # ###########################################################################
+package DSNParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package DSNParser;
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 eval {
    require DBI;
 };
-use Data::Dumper;
-$Data::Dumper::Indent    = 0;
-$Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
+my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1127,10 +1128,7 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
-   eval {
-      DBI->installed_drivers();
-   };
-   if ( $EVAL_ERROR ) {
+   if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
          . "that Perl searches for DBI.  If DBI is not installed, try:\n"
@@ -1452,7 +1450,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 4299
+# Transformers package 5144
 # ###########################################################################
 
 package Transformers;
@@ -1460,7 +1458,7 @@ package Transformers;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Time::Local qw(timelocal);
+use Time::Local qw(timegm timelocal);
 use Digest::MD5 qw(md5_hex);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -1482,7 +1480,7 @@ our @EXPORT_OK   = qw(
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
-our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?/;
+our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?/;
 our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
 
 sub micro_t {
@@ -1567,13 +1565,19 @@ sub shorten {
 }
 
 sub ts {
-   my ( $time ) = @_;
+   my ( $time, $gmt ) = @_;
    my ( $sec, $min, $hour, $mday, $mon, $year )
-      = localtime($time);
+      = $gmt ? gmtime($time) : localtime($time);
    $mon  += 1;
    $year += 1900;
-   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+   my $val = sprintf("%d-%02d-%02dT%02d:%02d:%02d",
       $year, $mon, $mday, $hour, $min, $sec);
+   if ( my ($us) = $time =~ m/(\.\d+)$/ ) {
+      $us = sprintf("%.6f", $us);
+      $us =~ s/^0\././;
+      $val .= $us;
+   }
+   return $val;
 }
 
 sub parse_timestamp {
@@ -1589,11 +1593,16 @@ sub parse_timestamp {
 }
 
 sub unix_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-     = $val =~ m/^$proper_ts$/ )
-   {
-      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   my ( $val, $gmt ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s, $us) = $val =~ m/^$proper_ts$/ ) {
+      $val = $gmt
+         ? timegm($s, $i, $h, $d, $m - 1, $y)
+         : timelocal($s, $i, $h, $d, $m - 1, $y);
+      if ( defined $us ) {
+         $us = sprintf('%.6f', $us);
+         $us =~ s/^0\././;
+         $val .= $us;
+      }
    }
    return $val;
 }
@@ -1651,7 +1660,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 4584
+# Processlist package 5148
 # ###########################################################################
 package Processlist;
 
@@ -1680,93 +1689,126 @@ use constant {
 };
 
 sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
+   my ( $class, %args ) = @_;
+   my $self = {
+      prev_rows => [],
+      new_rows  => [],
+      curr_row  => undef,
+      prev_row  => undef,
+   };
+   return bless $self, $class;
 }
 
 sub parse_event {
-   my ( $self, $code, $misc, @callbacks ) = @_;
-   my $num_events = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(misc);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($misc) = @args{@required_args};
 
-   my @curr = sort { $a->[ID] <=> $b->[ID] } @{$code->()};
-   my @prev = @{$misc->{prev} ||= []};
-   my @new; # Will become next invocation's @prev
-   my ($curr, $prev); # Rows from each source
+   my $code = $misc->{code};
+   die "I need a code arg to misc" unless $code;
 
-   do {
-      if ( !$curr && @curr ) {
-         MKDEBUG && _d('Fetching row from curr');
-         $curr = shift @curr;
+   my @curr;
+   if ( $self->{curr_rows} ) {
+      MKDEBUG && _d('Current rows from last call');
+      @curr = @{$self->{curr_rows}};
+   }
+   else {
+      my $rows = $code->();
+      if ( $rows && scalar @$rows ) {
+         MKDEBUG && _d('Got new current rows');
+         @curr = sort { $a->[ID] <=> $b->[ID] } @$rows;
       }
-      if ( !$prev && @prev ) {
-         MKDEBUG && _d('Fetching row from prev');
-         $prev = shift @prev;
+      else {
+         MKDEBUG && _d('No current rows');
       }
-      if ( $curr || $prev ) {
-         if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
-            MKDEBUG && _d('$curr and $prev are the same cxn');
-            my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
-            my $is_new = 0;
-            if ( $prev->[INFO] ) {
-               if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
-                  MKDEBUG && _d('$curr has a new query');
-                  $is_new = 1;
-               }
-               elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
-                  MKDEBUG && _d('$curr time is less than $prev time');
-                  $is_new = 1;
-               }
-               elsif ( $curr->[INFO] && defined $curr->[TIME]
-                  && $misc->{time} - $curr->[TIME] - $prev->[START]
-                     - $prev->[ETIME] - $misc->{etime} > $fudge
-               ) {
-                  MKDEBUG && _d('$curr has same query that restarted');
-                  $is_new = 1;
-               }
-               if ( $is_new ) {
-                  fire_event( $prev, $misc->{time}, @callbacks );
-               }
+   }
+
+   my @prev = @{$self->{prev_rows} ||= []};
+   my @new  = @{$self->{new_rows}  ||= []};; # Becomes next invocation's @prev
+   my $curr = $self->{curr_row}; # Rows from each source
+   my $prev = $self->{prev_row};
+   my $event;
+
+   MKDEBUG && _d('Rows:', scalar @prev, 'prev,', scalar @curr, 'current');
+
+   if ( !$curr && @curr ) {
+      MKDEBUG && _d('Fetching row from curr');
+      $curr = shift @curr;
+   }
+   if ( !$prev && @prev ) {
+      MKDEBUG && _d('Fetching row from prev');
+      $prev = shift @prev;
+   }
+   if ( $curr || $prev ) {
+      if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
+         MKDEBUG && _d('$curr and $prev are the same cxn');
+         my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
+         my $is_new = 0;
+         if ( $prev->[INFO] ) {
+            if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
+               MKDEBUG && _d('$curr has a new query');
+               $is_new = 1;
             }
-            if ( $curr->[INFO] ) {
-               if ( $prev->[INFO] && !$is_new ) {
-                  MKDEBUG && _d('Pushing old history item back onto $prev');
-                  push @new, [ @$prev ];
-               }
-               else {
-                  MKDEBUG && _d('Pushing new history item onto $prev');
-                  push @new,
-                     [ @$curr, int($misc->{time} - $curr->[TIME]),
-                        $misc->{etime}, $misc->{time} ];
-               }
+            elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
+               MKDEBUG && _d('$curr time is less than $prev time');
+               $is_new = 1;
             }
-            $curr = $prev = undef; # Fetch another from each.
+            elsif ( $curr->[INFO] && defined $curr->[TIME]
+                    && $misc->{time} - $curr->[TIME] - $prev->[START]
+                       - $prev->[ETIME] - $misc->{etime} > $fudge
+            ) {
+               MKDEBUG && _d('$curr has same query that restarted');
+               $is_new = 1;
+            }
+            if ( $is_new ) {
+               $event = $self->make_event($prev, $misc->{time});
+            }
          }
-         elsif ( !$curr
-               || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
-            MKDEBUG && _d('$curr is not in $prev');
-            fire_event( $prev, $misc->{time}, @callbacks );
-            $prev = undef;
-         }
-         else { # This else must be entered, to prevent infinite loops.
-            MKDEBUG && _d('$prev is not in $curr');
-            if ( $curr->[INFO] && defined $curr->[TIME] ) {
+         if ( $curr->[INFO] ) {
+            if ( $prev->[INFO] && !$is_new ) {
+               MKDEBUG && _d('Pushing old history item back onto $prev');
+               push @new, [ @$prev ];
+            }
+            else {
                MKDEBUG && _d('Pushing new history item onto $prev');
                push @new,
                   [ @$curr, int($misc->{time} - $curr->[TIME]),
                      $misc->{etime}, $misc->{time} ];
             }
-            $curr = undef; # No infinite loops.
          }
+         $curr = $prev = undef; # Fetch another from each.
       }
-   } while ( @curr || @prev || $curr || $prev );
+      elsif ( !$curr
+              || ($curr && $prev && $curr->[ID] > $prev->[ID]) ) {
+         MKDEBUG && _d('$curr is not in $prev');
+         $event = $self->make_event($prev, $misc->{time});
+         $prev = undef;
+      }
+      else { # This else must be entered, to prevent infinite loops.
+         MKDEBUG && _d('$prev is not in $curr');
+         if ( $curr->[INFO] && defined $curr->[TIME] ) {
+            MKDEBUG && _d('Pushing new history item onto $prev');
+            push @new,
+               [ @$curr, int($misc->{time} - $curr->[TIME]),
+                  $misc->{etime}, $misc->{time} ];
+         }
+         $curr = undef; # No infinite loops.
+      }
+   }
 
-   @{$misc->{prev}} = @new;
+   $self->{prev_rows} = \@new;
+   $self->{prev_row}  = $prev;
+   $self->{curr_rows} = scalar @curr ? \@curr : undef;
+   $self->{curr_row}  = $curr;
 
-   return $num_events;
+   return $event;
 }
 
-sub fire_event {
-   my ( $row, $time, @callbacks ) = @_;
+sub make_event {
+   my ( $self, $row, $time ) = @_;
    my $Query_time = $row->[TIME];
    if ( $row->[TIME] < $time - $row->[FSEEN] ) {
       $Query_time = $time - $row->[FSEEN];
@@ -1782,9 +1824,15 @@ sub fire_event {
       Query_time => $Query_time,
       Lock_time  => 0,               # TODO
    };
-   foreach my $callback ( @callbacks ) {
-      last unless $event = $callback->($event);
-   }
+   MKDEBUG && _d('Properties of event:', Dumper($event));
+   return $event;
+}
+
+sub _get_rows {
+   my ( $self ) = @_;
+   my %rows = map { $_ => $self->{$_} }
+      qw(prev_rows new_rows curr_row prev_row);
+   return \%rows;
 }
 
 sub find {

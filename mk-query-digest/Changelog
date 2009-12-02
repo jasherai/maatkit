@@ -1,13 +1,17 @@
 Changelog for mk-query-digest:
 
+2009-12-02: version 0.9.12
+
    * Certain very large queries segfaulted (issue 687).
    * Removed --unique-table-access (issue 675).
-   * --unique-table-access caused the tool to crash (issue 675).
    * Added general log parsing; --type genlog (issue 172).
    * Added HTTP protocol parsing; --type http (issue 679).
    * memcached queries were not distilled.
    * DBI was required when not needed (issue 148).
    * Profile report was misaligned.
+   * Added --execute-throttle (issue 702).
+   * Added --statistics.
+   * Added --pipeline-profile.
 
 2009-10-30: version 0.9.11
 

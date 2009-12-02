@@ -861,7 +861,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 4462
+# SlowLogParser package 5133
 # ###########################################################################
 package SlowLogParser;
 
@@ -874,7 +874,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   my $self = {
+      pending => [],
+   };
+   return bless $self, $class;
 }
 
 my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
@@ -890,20 +893,21 @@ my $slow_log_hd_line = qr{
    }xm;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
-   my @pending;
+   my $pending = $self->{pending};
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $trimlen    = length($INPUT_RECORD_SEPARATOR);
    my $pos_in_log = tell($fh);
    my $stmt;
 
    EVENT:
-   while ( $$oktorun
-           && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
+   while ( (defined($stmt = shift @$pending) or defined($stmt = <$fh>)) ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 
@@ -912,7 +916,7 @@ sub parse_event {
          if ( @chunks > 1 ) {
             MKDEBUG && _d("Found multiple chunks");
             $stmt = shift @chunks;
-            unshift @pending, @chunks;
+            unshift @$pending, @chunks;
          }
       }
 
@@ -999,10 +1003,10 @@ sub parse_event {
             MKDEBUG && _d("Got the query/arg line");
             my $arg = substr($stmt, $pos - length($line));
             push @properties, 'arg', $arg, 'bytes', length($arg);
-            if ( $misc && $misc->{embed}
-               && ( my ($e) = $arg =~ m/($misc->{embed})/)
+            if ( $args{misc} && $args{misc}->{embed}
+               && ( my ($e) = $arg =~ m/($args{misc}->{embed})/)
             ) {
-               push @properties, $e =~ m/$misc->{capture}/g;
+               push @properties, $e =~ m/$args{misc}->{capture}/g;
             }
             last LINE;
          }
@@ -1010,13 +1014,12 @@ sub parse_event {
 
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
-      foreach my $callback ( @callbacks ) {
-         last unless $event = $callback->($event);
-      }
-      ++$num_events;
-      last EVENT unless @pending;
+      return $event;
    }
-   return $num_events;
+
+   @$pending = ();
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -1034,7 +1037,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 4936
+# BinaryLogParser package 5134
 # ###########################################################################
 package BinaryLogParser;
 
@@ -1051,6 +1054,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
+   my $self = {
+      delim     => undef,
+      delim_len => 0,
+   };
    return bless {}, $class;
 }
 
@@ -1059,18 +1066,20 @@ my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end
 my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $pos_in_log = tell($fh);
    my $stmt;
-   my ($delim, $delim_len) = (undef, 0);
+   my ($delim, $delim_len) = ($self->{delim}, $self->{delim_len});
 
    EVENT:
-   while ( $$oktorun && defined($stmt = <$fh>) ) {
+   while ( defined($stmt = <$fh>) ) {
       my @properties = ('pos_in_log', $pos_in_log);
       my ($ts, $sid, $end, $type, $rest);
       $pos_in_log = tell($fh);
@@ -1095,14 +1104,14 @@ sub parse_event {
          if ( $line =~ m/^DELIMITER/m ) {
             my ( $del ) = $line =~ m/^DELIMITER (\S*)$/m;
             if ( $del ) {
-               $delim_len = length $del;
-               $delim     = quotemeta $del;
+               $self->{delim_len} = $delim_len = length $del;
+               $self->{delim}     = $delim     = quotemeta $del;
                MKDEBUG && _d('delimiter:', $delim);
             }
             else {
                MKDEBUG && _d('Delimiter reset to ;');
-               $delim     = undef;
-               $delim_len = 0;
+               $self->{delim}     = $delim     = undef;
+               $self->{delim_len} = $delim_len = 0;
             }
             next LINE;
          }
@@ -1170,15 +1179,15 @@ sub parse_event {
             if ( $arg =~ m/^DELIMITER/m ) {
                my ( $del ) = $arg =~ m/^DELIMITER (\S*)$/m;
                if ( $del ) {
-                  $delim_len = length $del;
-                  $delim     = quotemeta $del;
+                  $self->{delim_len} = $delim_len = length $del;
+                  $self->{delim}     = $delim     = quotemeta $del;
                   MKDEBUG && _d('delimiter:', $delim);
                }
                else {
                   MKDEBUG && _d('Delimiter reset to ;');
                   $del       = ';';
-                  $delim     = undef;
-                  $delim_len = 0;
+                  $self->{delim}     = $delim     = undef;
+                  $self->{delim_len} = $delim_len = 0;
                }
 
                $arg =~ s/^DELIMITER.*$//m;  # Remove DELIMITER from arg.
@@ -1195,18 +1204,15 @@ sub parse_event {
       if ( $found_arg ) {
          MKDEBUG && _d('Properties of event:', Dumper(\@properties));
          my $event = { @properties };
-         foreach my $callback ( @callbacks ) {
-            last unless $event = $callback->($event);
-         }
-         ++$num_events;
+         return $event;
       }
       else {
          MKDEBUG && _d('Event had no arg');
       }
-
    } # EVENT
 
-   return $num_events;
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -1224,7 +1230,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# GeneralLogParser package 5098
+# GeneralLogParser package 5135
 # ###########################################################################
 package GeneralLogParser;
 
@@ -1241,7 +1247,11 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
-   return bless {}, $class;
+   my $self = {
+      pending => [],
+      db_for  => {},
+   };
+   return bless $self, $class;
 }
 
 my $genlog_line_1= qr{
@@ -1257,15 +1267,19 @@ my $genlog_line_1= qr{
 }xs;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
-   my %db_for;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
+
+   my $pending = $self->{pending};
+   my $db_for  = $self->{db_for};
    my $line;
    my $pos_in_log = tell($fh);
    LINE:
-   while ( $$oktorun && defined($line = <$fh>) ) {
+   while ( (defined($line = shift @$pending) or defined($line = <$fh>)) ) {
       MKDEBUG && _d($line);
       my ($ts, $thread_id, $cmd, $arg) = $line =~ m/$genlog_line_1/;
       if ( !($thread_id && $cmd) ) {
@@ -1277,7 +1291,7 @@ sub parse_event {
 
       $pos_in_log = tell($fh);
 
-      my $redo = 0;
+      @$pending = ();
       if ( $cmd eq 'Query' ) {
          my $done = 0;
          do {
@@ -1287,7 +1301,7 @@ sub parse_event {
                if ( $thread_id && $cmd ) {
                   MKDEBUG && _d('Event done');
                   $done = 1;
-                  $redo = 1;
+                  push @$pending, $line;
                }
                else {
                   MKDEBUG && _d('More arg:', $line);
@@ -1303,7 +1317,7 @@ sub parse_event {
          chomp $arg;
          push @properties, 'cmd', 'Query', 'arg', $arg;
          push @properties, 'bytes', length($properties[-1]);
-         push @properties, 'db', $db_for{$thread_id} if $db_for{$thread_id};
+         push @properties, 'db', $db_for->{$thread_id} if $db_for->{$thread_id};
       }
       else {
          push @properties, 'cmd', 'Admin';
@@ -1321,7 +1335,7 @@ sub parse_event {
                push @properties, 'user', $user if $user;
                push @properties, 'host', $host if $host;
                push @properties, 'db',   $db   if $db;
-               $db_for{$thread_id} = $db;
+               $db_for->{$thread_id} = $db;
             }
          }
          elsif ( $cmd eq 'Init' ) {
@@ -1330,7 +1344,7 @@ sub parse_event {
             my ($db) = $arg =~ /(\S+)/;
             MKDEBUG && _d('Init DB:', $db);
             push @properties, 'db',   $db   if $db;
-            $db_for{$thread_id} = $db;
+            $db_for->{$thread_id} = $db;
          }
 
          push @properties, 'arg', "administrator command: $cmd";
@@ -1341,18 +1355,12 @@ sub parse_event {
 
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
-      foreach my $callback ( @callbacks ) {
-         last unless $event = $callback->($event);
-      }
-      ++$num_events;
-
-      if ( $redo ) {
-         MKDEBUG && _d('Redoing');
-         redo;
-      }
+      return $event;
    } # LINE
 
-   return $num_events;
+   @{$self->{pending}} = ();
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -1370,327 +1378,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5195
-# ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
-package QueryRewriter;
-
-use English qw(-no_match_vars);
-
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
-                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK}xi;
-my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
-my $bal;
-$bal         = qr/
-                  \(
-                  (?:
-                     (?> [^()]+ )    # Non-parens without backtracking
-                     |
-                     (??{ $bal })    # Group with matching parens
-                  )*
-                  \)
-                 /x;
-
-my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
-my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
-
-sub new {
-   my ( $class, %args ) = @_;
-   my $self = { %args };
-   return bless $self, $class;
-}
-
-sub strip_comments {
-   my ( $self, $query ) = @_;
-   $query =~ s/$olc_re//go;
-   $query =~ s/$mlc_re//go;
-   return $query;
-}
-
-sub shorten {
-   my ( $self, $query, $length ) = @_;
-   $query =~ s{
-      \A(
-         (?:INSERT|REPLACE)
-         (?:\s+LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)?
-         (?:\s\w+)*\s+\S+\s+VALUES\s*\(.*?\)
-      )
-      \s*,\s*\(.*?(ON\s+DUPLICATE|\Z)}
-      {$1 /*... omitted ...*/$2}xsi;
-
-   return $query unless $query =~ m/IN\s*\(\s*(?!select)/i;
-
-   my $last_length  = 0;
-   my $query_length = length($query);
-   while (
-      $length          > 0
-      && $query_length > $length
-      && $query_length < ( $last_length || $query_length + 1 )
-   ) {
-      $last_length = $query_length;
-      $query =~ s{
-         (\bIN\s*\()    # The opening of an IN list
-         ([^\)]+)       # Contents of the list, assuming no item contains paren
-         (?=\))           # Close of the list
-      }
-      {
-         $1 . __shorten($2)
-      }gexsi;
-   }
-
-   return $query;
-}
-
-sub __shorten {
-   my ( $snippet ) = @_;
-   my @vals = split(/,/, $snippet);
-   return $snippet unless @vals > 20;
-   my @keep = splice(@vals, 0, 20);  # Remove and save the first 20 items
-   return
-      join(',', @keep)
-      . "/*... omitted "
-      . scalar(@vals)
-      . " items ...*/";
-}
-
-sub fingerprint {
-   my ( $self, $query ) = @_;
-
-   $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
-      && return 'mysqldump';
-   $query =~ m#/\*\w+\.\w+:[0-9]/[0-9]\*/#     # mk-table-checksum, etc query
-      && return 'maatkit';
-   $query =~ m/\A# administrator command: /
-      && return $query;
-   $query =~ m/\A\s*(call\s+\S+)\(/i
-      && return lc($1); # Warning! $1 used, be careful.
-   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)?\s+INTO.+?VALUES\s*\(.*?\))\s*,\s*\(/is ) {
-      $query = $beginning; # Shorten multi-value INSERT statements ASAP
-   }
-
-   $query =~ s/$olc_re//go;
-   $query =~ s/$mlc_re//go;
-   $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
-      && return $query;
-
-   $query =~ s/\\["']//g;                # quoted strings
-   $query =~ s/".*?"/?/sg;               # quoted strings
-   $query =~ s/'.*?'/?/sg;               # quoted strings
-   $query =~ s/[0-9+-][0-9a-f.xb+-]*/?/g;# Anything vaguely resembling numbers
-   $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
-   $query =~ s/\A\s+//;                  # Chop off leading whitespace
-   chomp $query;                         # Kill trailing whitespace
-   $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
-   $query = lc $query;
-   $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
-   $query =~ s{                          # Collapse IN and VALUES lists
-               \b(in|values?)(?:[\s,]*\([\s?,]*\))+
-              }
-              {$1(?+)}gx;
-   $query =~ s{                          # Collapse UNION
-               \b(select\s.*?)(?:(\sunion(?:\sall)?)\s\1)+
-              }
-              {$1 /*repeat$2*/}xg;
-   $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
-   return $query;
-}
-
-sub _distill_verbs {
-   my ( $self, $query ) = @_;
-
-   $query =~ m/\A\s*call\s+(\S+)\(/i
-      && return "CALL $1"; # Warning! $1 used, be careful.
-   $query =~ m/\A# administrator/
-      && return "ADMIN";
-   $query =~ m/\A\s*use\s+/
-      && return "USE";
-   $query =~ m/\A\s*UNLOCK TABLES/i
-      && return "UNLOCK";
-   $query =~ m/\A\s*xa\s+(\S+)/i
-      && return "XA_$1";
-
-   $query = $self->strip_comments($query);
-
-   if ( $query =~ m/\A\s*SHOW\s+/i ) {
-      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/;
-      MKDEBUG && _d('SHOW', @what);
-      return unless scalar @what;
-      if ( $what[0] =~ m/CREATE/i || ($what[1] && $what[1] =~ m/STATUS/i) ) {
-         return "SHOW $what[0] $what[1]";
-      }
-      else {
-         return "SHOW $what[0]";
-      }
-   }
-
-   eval $QueryParser::data_def_stmts;
-   eval $QueryParser::tbl_ident;
-   my ( $dds ) = $query =~ /^\s*($QueryParser::data_def_stmts)\b/i;
-   if ( $dds ) {
-      my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
-      $obj = uc $obj if $obj;
-      MKDEBUG && _d('Data def statment:', $dds, 'obj:', $obj);
-      my ($db_or_tbl)
-         = $query =~ m/(?:TABLE|DATABASE)\s+($QueryParser::tbl_ident)(\s+.*)?/i;
-      MKDEBUG && _d('Matches db or table:', $db_or_tbl);
-      return uc($dds . ($obj ? " $obj" : '')), $db_or_tbl;
-   }
-
-   my @verbs = $query =~ m/\b($verbs)\b/gio;
-   @verbs    = do {
-      my $last = '';
-      grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
-   };
-   my $verbs = join(q{ }, @verbs);
-   $verbs =~ s/( UNION SELECT)+/ UNION/g;
-
-   return $verbs;
-}
-
-sub _distill_tables {
-   my ( $self, $query, $table, %args ) = @_;
-   my $qp = $args{QueryParser} || $self->{QueryParser};
-   die "I need a QueryParser argument" unless $qp;
-
-   my @tables = map {
-      $_ =~ s/`//g;
-      $_ =~ s/(_?)[0-9]+/$1?/g;
-      $_;
-   } grep { defined $_ } $qp->get_tables($query);
-
-   push @tables, $table if $table;
-
-   @tables = do {
-      my $last = '';
-      grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
-   };
-
-   return @tables;
-}
-
-sub distill {
-   my ( $self, $query, %args ) = @_;
-
-   if ( $args{generic} ) {
-      my ($cmd, $arg) = $query =~ m/^(\S+)\s+(\S+)/;
-      return '' unless $cmd;
-      $query = (uc $cmd) . ($arg ? " $arg" : '');
-   }
-   else {
-      my ($verbs, $table)  = $self->_distill_verbs($query, %args);
-      my @tables           = $self->_distill_tables($query, $table, %args);
-      $query               = join(q{ }, $verbs, @tables);
-   }
-   
-   if ( $args{trf} ) {
-      $query = $args{trf}->($query, %args);
-   }
-
-   return $query;
-}
-
-sub convert_to_select {
-   my ( $self, $query ) = @_;
-   return unless $query;
-   $query =~ s{
-                 \A.*?
-                 update\s+(.*?)
-                 \s+set\b(.*?)
-                 (?:\s*where\b(.*?))?
-                 (limit\s*[0-9]+(?:\s*,\s*[0-9]+)?)?
-                 \Z
-              }
-              {__update_to_select($1, $2, $3, $4)}exsi
-      || $query =~ s{
-                    \A.*?
-                    (?:insert|replace)\s+
-                    .*?\binto\b(.*?)\(([^\)]+)\)\s*
-                    values?\s*(\(.*?\))\s*
-                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
-                    \Z
-                 }
-                 {__insert_to_select($1, $2, $3)}exsi
-      || $query =~ s{
-                    \A.*?
-                    delete\s+(.*?)
-                    \bfrom\b(.*)
-                    \Z
-                 }
-                 {__delete_to_select($1, $2)}exsi;
-   $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
-   $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
-   return $query;
-}
-
-sub convert_select_list {
-   my ( $self, $query ) = @_;
-   $query =~ s{
-               \A\s*select(.*?)\bfrom\b
-              }
-              {$1 =~ m/\*/ ? "select 1 from" : "select isnull(coalesce($1)) from"}exi;
-   return $query;
-}
-
-sub __delete_to_select {
-   my ( $delete, $join ) = @_;
-   if ( $join =~ m/\bjoin\b/ ) {
-      return "select 1 from $join";
-   }
-   return "select * from $join";
-}
-
-sub __insert_to_select {
-   my ( $tbl, $cols, $vals ) = @_;
-   MKDEBUG && _d('Args:', @_);
-   my @cols = split(/,/, $cols);
-   MKDEBUG && _d('Cols:', @cols);
-   $vals =~ s/^\(|\)$//g; # Strip leading/trailing parens
-   my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|[^,]+)/g;
-   MKDEBUG && _d('Vals:', @vals);
-   if ( @cols == @vals ) {
-      return "select * from $tbl where "
-         . join(' and ', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
-   }
-   else {
-      return "select * from $tbl limit 1";
-   }
-}
-
-sub __update_to_select {
-   my ( $from, $set, $where, $limit ) = @_;
-   return "select $set from $from "
-      . ( $where ? "where $where" : '' )
-      . ( $limit ? " $limit "      : '' );
-}
-
-sub wrap_in_derived {
-   my ( $self, $query ) = @_;
-   return unless $query;
-   return $query =~ m/\A\s*select/i
-      ? "select 1 from ($query) as x limit 1"
-      : $query;
-}
-
-sub _d {
-   my ($package, undef, $line) = caller 0;
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-        map { defined $_ ? $_ : 'undef' }
-        @_;
-   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-}
-
-1;
-
-# ###########################################################################
-# End QueryRewriter package
-# ###########################################################################
-
-# ###########################################################################
-# LogSplitter package 4580
+# LogSplitter package 5225
 # ###########################################################################
 
 package LogSplitter;
@@ -1707,6 +1395,8 @@ $Data::Dumper::Quotekeys = 0;
 use constant MKDEBUG           => $ENV{MKDEBUG};
 use constant MAX_OPEN_FILES    => 1000;
 use constant CLOSE_N_LRU_FILES => 100;
+
+my $oktorun = 1;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1745,86 +1435,21 @@ sub new {
 
 sub split {
    my ( $self, @logs ) = @_;
-   my $oktorun = 1; # True as long as we haven't created too many
+   $oktorun = 1; # True as long as we haven't created too many
+
+   my $callbacks = $self->{callbacks};
 
    if ( @logs == 0 ) {
       MKDEBUG && _d('Implicitly reading STDIN because no logs were given');
       push @logs, '-';
    }
 
-   my @callbacks;
-   push @callbacks, sub {
-      my ( $event ) = @_; 
-      my ($session, $session_id) = $self->_get_session_ds($event);
-      return unless $session;
-
-      if ( !defined $session->{fh} ) {
-         $self->{n_sessions_saved}++;
-         MKDEBUG && _d('New session:', $session_id, ',',
-            $self->{n_sessions_saved}, 'of', $self->{max_sessions});
-
-         my $session_file = $self->_get_next_session_file();
-         if ( !$session_file ) {
-            $oktorun = 0;
-            MKDEBUG && _d('Not oktorun because no _get_next_session_file');
-            return;
-         }
-
-         $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
-
-         open my $fh, '>', $session_file
-            or die "Cannot open session file $session_file: $OS_ERROR";
-         $session->{fh} = $fh;
-         $self->{n_open_fhs}++;
-
-         $session->{active}       = 1;
-         $session->{session_file} = $session_file;
-
-         push @{$self->{session_fhs}}, { fh => $fh, session_id => $session_id };
-
-         MKDEBUG && _d('Created', $session_file, 'for session',
-            $self->{attribute}, '=', $session_id);
-
-         print $fh "-- START SESSION $session_id\n\n";
-      }
-      elsif ( !$session->{active} ) {
-
-         $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
-
-          open $session->{fh}, '>>', $session->{session_file}
-             or die "Cannot reopen session file "
-               . "$session->{session_file}: $OS_ERROR";
-
-          $session->{active} = 1;
-          $self->{n_open_fhs}++;
-
-          MKDEBUG && _d('Reopend', $session->{session_file}, 'for session',
-            $self->{attribute}, '=', $session_id);
-      }
-      else {
-         MKDEBUG && _d('Event belongs to active session', $session_id);
-      }
-
-      my $session_fh = $session->{fh};
-
-      my $db = $event->{db} || $event->{Schema};
-      if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
-         print $session_fh "use $db\n\n";
-         $session->{db} = $db;
-      }
-
-      print $session_fh flatten($event->{arg}), "\n\n";
-      $self->{n_events_saved}++;
-
-      return $event;
-   };
-
-   unshift @callbacks, @{$self->{callbacks}} if $self->{callbacks};
-
    my $lp = $self->{parser};
    LOG:
    foreach my $log ( @logs ) {
+      last unless $oktorun;
       next unless defined $log;
+
       if ( !-f $log && $log ne '-' ) {
          warn "Skipping $log because it is not a file";
          next LOG;
@@ -1839,18 +1464,33 @@ sub split {
             next LOG;
          }
       }
-      if ( $fh ) {
-         MKDEBUG && _d('Splitting', $log);
-         while ( $oktorun ) {
-            my $events = $lp->parse_event($fh, undef, @callbacks);
-            $self->{n_events_total} += $events;
-            last LOG unless $oktorun;
-            if ( !$events ) {
-               MKDEBUG && _d('No more events in', $log);
-               close $fh;
-               next LOG;
+
+      MKDEBUG && _d('Splitting', $log);
+      my $event           = {};
+      my $more_events     = 1;
+      my $more_events_sub = sub { $more_events = $_[0]; };
+      EVENT:
+      while ( $oktorun ) {
+         $event = $lp->parse_event(
+            fh      => $fh,
+            oktorun => $more_events_sub,
+         );
+         if ( $event ) {
+            $self->{n_events_total}++;
+            if ( $callbacks ) {
+               foreach my $callback ( @$callbacks ) {
+                  $event = $callback->($event);
+                  last unless $event;
+               }
             }
+            $self->_save_event($event) if $event;
          }
+         if ( !$more_events ) {
+            MKDEBUG && _d('Done parsing', $log);
+            close $fh;
+            next LOG;
+         }
+         last LOG unless $oktorun;
       }
    }
 
@@ -1861,6 +1501,72 @@ sub split {
 
    $self->_merge_session_files() if $self->{merge_sessions};
    $self->print_split_summary() unless $self->{quiet};
+
+   return;
+}
+
+sub _save_event {
+   my ( $self, $event ) = @_; 
+   my ($session, $session_id) = $self->_get_session_ds($event);
+   return unless $session;
+
+   if ( !defined $session->{fh} ) {
+      $self->{n_sessions_saved}++;
+      MKDEBUG && _d('New session:', $session_id, ',',
+         $self->{n_sessions_saved}, 'of', $self->{max_sessions});
+
+      my $session_file = $self->_get_next_session_file();
+      if ( !$session_file ) {
+         $oktorun = 0;
+         MKDEBUG && _d('Not oktorun because no _get_next_session_file');
+         return;
+      }
+
+      $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
+
+      open my $fh, '>', $session_file
+         or die "Cannot open session file $session_file: $OS_ERROR";
+      $session->{fh} = $fh;
+      $self->{n_open_fhs}++;
+
+      $session->{active}       = 1;
+      $session->{session_file} = $session_file;
+
+      push @{$self->{session_fhs}}, { fh => $fh, session_id => $session_id };
+
+      MKDEBUG && _d('Created', $session_file, 'for session',
+         $self->{attribute}, '=', $session_id);
+
+      print $fh "-- START SESSION $session_id\n\n";
+   }
+   elsif ( !$session->{active} ) {
+
+      $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
+
+       open $session->{fh}, '>>', $session->{session_file}
+          or die "Cannot reopen session file "
+            . "$session->{session_file}: $OS_ERROR";
+
+       $session->{active} = 1;
+       $self->{n_open_fhs}++;
+
+       MKDEBUG && _d('Reopend', $session->{session_file}, 'for session',
+         $self->{attribute}, '=', $session_id);
+   }
+   else {
+      MKDEBUG && _d('Event belongs to active session', $session_id);
+   }
+
+   my $session_fh = $session->{fh};
+
+   my $db = $event->{db} || $event->{Schema};
+   if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
+      print $session_fh "use $db\n\n";
+      $session->{db} = $db;
+   }
+
+   print $session_fh flatten($event->{arg}), "\n\n";
+   $self->{n_events_saved}++;
 
    return;
 }
@@ -2034,20 +1740,21 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5208
+# DSNParser package 5226
 # ###########################################################################
+package DSNParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package DSNParser;
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 eval {
    require DBI;
 };
-use Data::Dumper;
-$Data::Dumper::Indent    = 0;
-$Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
+my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -2249,10 +1956,7 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
-   eval {
-      DBI->installed_drivers();
-   };
-   if ( $EVAL_ERROR ) {
+   if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
          . "that Perl searches for DBI.  If DBI is not installed, try:\n"

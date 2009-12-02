@@ -1,5 +1,7 @@
 Changelog for mk-log-player:
 
+2009-12-02: version 1.0.3
+
    * Added general log splitting; --type genlog (issue 172).
 
 2009-10-30: version 1.0.2
