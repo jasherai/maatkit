@@ -54,12 +54,27 @@ my $callback = sub {
    );
 };
 
+my $event       = {};
+my $more_events = 1;
 my $log;
 open $log, '<', 'samples/slow006.txt' or bail_out($OS_ERROR);
-1 while ( $lp->parse_event($log, undef, $callback) );
+while ( $more_events ) {
+   $event = $lp->parse_event(
+      fh      => $log,
+      oktorun => sub { $more_events = $_[0]; },
+   );
+   $callback->($event) if $event;
+}
 close $log;
+$more_events = 1;
 open $log, '<', 'samples/slow021.txt' or bail_out($OS_ERROR);
-1 while ( $lp->parse_event($log, undef, $callback) );
+while ( $more_events ) {
+   $event = $lp->parse_event(
+      fh      => $log,
+      oktorun => sub { $more_events = $_[0]; },
+   );
+   $callback->($event) if $event;
+}
 close $log;
 
 my $res = $dbh->selectall_arrayref(
@@ -87,7 +102,7 @@ is_deeply(
    'Updates last_seen'
 );
 
-my $event = {
+$event = {
    arg => "UPDATE foo SET bar='nada' WHERE 1",
    ts  => '081222 13:13:13',
 };
