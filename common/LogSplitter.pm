@@ -33,6 +33,8 @@ use constant MKDEBUG           => $ENV{MKDEBUG};
 use constant MAX_OPEN_FILES    => 1000;
 use constant CLOSE_N_LRU_FILES => 100;
 
+my $oktorun = 1;
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(attribute base_dir parser session_files) ) {
@@ -74,102 +76,23 @@ sub new {
 
 sub split {
    my ( $self, @logs ) = @_;
-   my $oktorun = 1; # True as long as we haven't created too many
-                    # session files or too many dirs and files
+   $oktorun = 1; # True as long as we haven't created too many
+                 # session files or too many dirs and files
+
+   my $callbacks = $self->{callbacks};
 
    if ( @logs == 0 ) {
       MKDEBUG && _d('Implicitly reading STDIN because no logs were given');
       push @logs, '-';
    }
 
-   # This sub is called by parser::parse_event().
-   # It saves each session to its own file.
-   my @callbacks;
-   push @callbacks, sub {
-      my ( $event ) = @_; 
-      my ($session, $session_id) = $self->_get_session_ds($event);
-      return unless $session;
-
-      if ( !defined $session->{fh} ) {
-         $self->{n_sessions_saved}++;
-         MKDEBUG && _d('New session:', $session_id, ',',
-            $self->{n_sessions_saved}, 'of', $self->{max_sessions});
-
-         my $session_file = $self->_get_next_session_file();
-         if ( !$session_file ) {
-            $oktorun = 0;
-            MKDEBUG && _d('Not oktorun because no _get_next_session_file');
-            return;
-         }
-
-         # Close Last Recently Used session fhs if opening if this new
-         # session fh will cause us to have too many open files.
-         $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
-
-         # Open a fh for this session file.
-         open my $fh, '>', $session_file
-            or die "Cannot open session file $session_file: $OS_ERROR";
-         $session->{fh} = $fh;
-         $self->{n_open_fhs}++;
-
-         # Save fh and session file in case we need to open/close it later.
-         $session->{active}       = 1;
-         $session->{session_file} = $session_file;
-
-         push @{$self->{session_fhs}}, { fh => $fh, session_id => $session_id };
-
-         MKDEBUG && _d('Created', $session_file, 'for session',
-            $self->{attribute}, '=', $session_id);
-
-         # This special comment lets mk-log-player know when a session begins.
-         print $fh "-- START SESSION $session_id\n\n";
-      }
-      elsif ( !$session->{active} ) {
-         # Reopen the existing but inactive session. This happens when
-         # a new session (above) had to close LRU session fhs.
-
-         # Again, close Last Recently Used session fhs if reopening if this
-         # session's fh will cause us to have too many open files.
-         $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
-
-          # Reopen this session's fh.
-          open $session->{fh}, '>>', $session->{session_file}
-             or die "Cannot reopen session file "
-               . "$session->{session_file}: $OS_ERROR";
-
-          # Mark this session as active again.
-          $session->{active} = 1;
-          $self->{n_open_fhs}++;
-
-          MKDEBUG && _d('Reopend', $session->{session_file}, 'for session',
-            $self->{attribute}, '=', $session_id);
-      }
-      else {
-         MKDEBUG && _d('Event belongs to active session', $session_id);
-      }
-
-      my $session_fh = $session->{fh};
-
-      # Print USE db if 1) we haven't done so yet or 2) the db has changed.
-      my $db = $event->{db} || $event->{Schema};
-      if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
-         print $session_fh "use $db\n\n";
-         $session->{db} = $db;
-      }
-
-      print $session_fh flatten($event->{arg}), "\n\n";
-      $self->{n_events_saved}++;
-
-      return $event;
-   };
-
-   unshift @callbacks, @{$self->{callbacks}} if $self->{callbacks};
-
    # Split all the log files.
    my $lp = $self->{parser};
    LOG:
    foreach my $log ( @logs ) {
+      last unless $oktorun;
       next unless defined $log;
+
       if ( !-f $log && $log ne '-' ) {
          warn "Skipping $log because it is not a file";
          next LOG;
@@ -184,18 +107,33 @@ sub split {
             next LOG;
          }
       }
-      if ( $fh ) {
-         MKDEBUG && _d('Splitting', $log);
-         while ( $oktorun ) {
-            my $events = $lp->parse_event($fh, undef, @callbacks);
-            $self->{n_events_total} += $events;
-            last LOG unless $oktorun;
-            if ( !$events ) {
-               MKDEBUG && _d('No more events in', $log);
-               close $fh;
-               next LOG;
+
+      MKDEBUG && _d('Splitting', $log);
+      my $event           = {};
+      my $more_events     = 1;
+      my $more_events_sub = sub { $more_events = $_[0]; };
+      EVENT:
+      while ( $oktorun ) {
+         $event = $lp->parse_event(
+            fh      => $fh,
+            oktorun => $more_events_sub,
+         );
+         if ( $event ) {
+            $self->{n_events_total}++;
+            if ( $callbacks ) {
+               foreach my $callback ( @$callbacks ) {
+                  $event = $callback->($event);
+                  last unless $event;
+               }
             }
+            $self->_save_event($event) if $event;
          }
+         if ( !$more_events ) {
+            MKDEBUG && _d('Done parsing', $log);
+            close $fh;
+            next LOG;
+         }
+         last LOG unless $oktorun;
       }
    }
 
@@ -207,6 +145,84 @@ sub split {
 
    $self->_merge_session_files() if $self->{merge_sessions};
    $self->print_split_summary() unless $self->{quiet};
+
+   return;
+}
+
+sub _save_event {
+   my ( $self, $event ) = @_; 
+   my ($session, $session_id) = $self->_get_session_ds($event);
+   return unless $session;
+
+   if ( !defined $session->{fh} ) {
+      $self->{n_sessions_saved}++;
+      MKDEBUG && _d('New session:', $session_id, ',',
+         $self->{n_sessions_saved}, 'of', $self->{max_sessions});
+
+      my $session_file = $self->_get_next_session_file();
+      if ( !$session_file ) {
+         $oktorun = 0;
+         MKDEBUG && _d('Not oktorun because no _get_next_session_file');
+         return;
+      }
+
+      # Close Last Recently Used session fhs if opening if this new
+      # session fh will cause us to have too many open files.
+      $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
+
+      # Open a fh for this session file.
+      open my $fh, '>', $session_file
+         or die "Cannot open session file $session_file: $OS_ERROR";
+      $session->{fh} = $fh;
+      $self->{n_open_fhs}++;
+
+      # Save fh and session file in case we need to open/close it later.
+      $session->{active}       = 1;
+      $session->{session_file} = $session_file;
+
+      push @{$self->{session_fhs}}, { fh => $fh, session_id => $session_id };
+
+      MKDEBUG && _d('Created', $session_file, 'for session',
+         $self->{attribute}, '=', $session_id);
+
+      # This special comment lets mk-log-player know when a session begins.
+      print $fh "-- START SESSION $session_id\n\n";
+   }
+   elsif ( !$session->{active} ) {
+      # Reopen the existing but inactive session. This happens when
+      # a new session (above) had to close LRU session fhs.
+
+      # Again, close Last Recently Used session fhs if reopening if this
+      # session's fh will cause us to have too many open files.
+      $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
+
+       # Reopen this session's fh.
+       open $session->{fh}, '>>', $session->{session_file}
+          or die "Cannot reopen session file "
+            . "$session->{session_file}: $OS_ERROR";
+
+       # Mark this session as active again.
+       $session->{active} = 1;
+       $self->{n_open_fhs}++;
+
+       MKDEBUG && _d('Reopend', $session->{session_file}, 'for session',
+         $self->{attribute}, '=', $session_id);
+   }
+   else {
+      MKDEBUG && _d('Event belongs to active session', $session_id);
+   }
+
+   my $session_fh = $session->{fh};
+
+   # Print USE db if 1) we haven't done so yet or 2) the db has changed.
+   my $db = $event->{db} || $event->{Schema};
+   if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
+      print $session_fh "use $db\n\n";
+      $session->{db} = $db;
+   }
+
+   print $session_fh flatten($event->{arg}), "\n\n";
+   $self->{n_events_saved}++;
 
    return;
 }
