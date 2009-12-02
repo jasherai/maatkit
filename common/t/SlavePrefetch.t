@@ -669,8 +669,13 @@ sub parse_binlog {
    my ( $file ) = @_;
    @events = ();
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   while ( my $e = $parser->parse_event(fh => $fh) ) {
-      push @events, $e;
+   my $more_events = 1;
+   while ( $more_events ) {
+      my $e = $parser->parse_event(
+         fh      => $fh,
+         oktorun => sub { $more_events = $_[0]; },
+      );
+      push @events, $e if $e;
    }
    close $fh;
    return;
@@ -816,8 +821,6 @@ SKIP: {
       QueryRewriter   => $qr,
       have_subqueries => 1,
    );
-
-   $sb->load_file('master', 'samples/issue_376.sql');
 
    # Test that exec() actually executes the query.
    $slave_dbh->do('SET @a=1');
