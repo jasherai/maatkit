@@ -36,7 +36,7 @@ sub new {
       delim     => undef,
       delim_len => 0,
    };
-   return bless {}, $class;
+   return bless $self, $class;
 }
 
 my $binlog_line_1 = qr/at (\d+)$/m;
