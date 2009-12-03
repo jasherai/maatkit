@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 47;
+use Test::More tests => 49;
 
 require "../TableParser.pm";
 require "../Quoter.pm";
@@ -670,6 +670,21 @@ test_rsi(
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8
 ",
    'ADD KEY `idx_fk_original_language_id` (`original_language_id`), ADD KEY `idx_fk_language_id` (`language_id`), ADD KEY `idx_title` (`title`)'
+);
+
+test_rsi(
+   'samples/issue_729.sql',
+   'issue 729',
+"CREATE TABLE `posts` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `template_id` smallint(5) unsigned NOT NULL DEFAULT '0',
+  `other_id` bigint(20) unsigned NOT NULL DEFAULT '0',
+  `date` int(10) unsigned NOT NULL DEFAULT '0',
+  `private` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=15417 DEFAULT CHARSET=latin1;
+",
+  'ADD KEY `other_id` (`other_id`)',
 );
 
 # #############################################################################
