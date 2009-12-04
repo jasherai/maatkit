@@ -101,6 +101,18 @@ sub parse_event {
          MKDEBUG && _d('Pending next line:', $next_line);
          push @$pending, $next_line;
       }
+      # Multi-line query for errors like "[ERROR] Slave SQL: Error ... Query:"
+      elsif ( $line =~ m/\bQuery: '/ ) {
+         MKDEBUG && _d('Error query:', $line);
+         my $next_line;
+         my $last_line = 0;
+         while ( !$last_line && defined($next_line = <$fh>) ) {
+            chomp $next_line;
+            MKDEBUG && _d('Error query:', $next_line);
+            $line     .= $next_line;
+            $last_line = 1 if $next_line =~ m/, Error_code:/;
+         }
+      }
 
       # Save the error line.
       push @properties, 'arg', $line;

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 2;
+use Test::More tests => 4;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -252,6 +252,30 @@ run_test({
        ts         => '081117 16:32:55',
       },
    ],
+});
+
+run_test({
+   file    => 'samples/errlog003.txt',
+   result => [
+      {
+         Serious     => 'Yes',
+         arg         => '[ERROR] /usr/sbin/mysqld: Incorrect key file for table \'./bugs_eventum/eventum_note.MYI\'; try to repair it',
+         pos_in_log  => 0,
+         ts          => '090902 10:43:55',
+      },
+      {
+         Serious     => 'Yes',
+         pos_in_log  => 123,
+         ts          => '090902 10:43:55',
+         arg         => '[ERROR] Slave SQL: Error \'Incorrect key file for table \'./bugs_eventum/eventum_note.MYI\'; try to repair it\' on query. Default database: \'bugs_eventum\'. Query: \'DELETE FROM                    bugs_eventum.eventum_note                 WHERE                    not_iss_id IN (384, 385, 101056, 101057, 101058, 101067, 101070, 101156, 101163, 101164, 101175, 101232, 101309, 101433, 101434, 101435, 101436, 101437, 101454, 101476, 101488, 101490, 101506, 101507, 101530, 101531, 101573, 101574, 101575, 101583, 101586, 101587, 101588, 101589, 101590, 101729, 101730, 101791, 101865, 102382)\', Error_code: 126',
+      },
+      {
+         Serious     => 'No',
+         arg         => '[Warning] Slave: Incorrect key file for table \'./bugs_eventum/eventum_note.MYI\'; try to repair it Error_code: 126',
+         pos_in_log  => 747,
+         ts          => '090902 10:43:55'
+      },
+   ]
 });
 
 # #############################################################################
