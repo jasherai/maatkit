@@ -861,6 +861,220 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# ErrorLogParser package 5247
+# ###########################################################################
+package ErrorLogParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+my $ts = qr/(\d{6}\s{1,2}[\d:]+)\s+/;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+      pending => [],
+   };
+   return bless $self, $class;
+}
+
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
+
+   my $pending = $self->{pending};
+
+   my $pos_in_log = tell($fh);
+   my $line;
+   EVENT:
+   while ( defined($line = shift @$pending) or defined($line = <$fh>) ) {
+      next if $line =~ m/^$/;  # lots of blank lines in error logs
+      chomp $line;
+      my @properties = ('pos_in_log', $pos_in_log);
+      $pos_in_log = tell($fh);
+
+      if ( my ($ts) = $line =~ /^$ts/o ) {
+         MKDEBUG && _d('Got ts:', $ts);
+         push @properties, 'ts', $ts;
+         $line =~ s/^$ts//;
+      }
+
+      if ( my ($level) = $line =~ /\[((?:ERROR|Warning|Note))\]/ ) {
+         my $serious = $level eq 'ERROR' ? 'Yes' : 'No';
+         MKDEBUG && _d('Got level:', $level, 'serious:', $serious);
+         push @properties, 'Serious', $serious;
+      }
+
+      if ( my ($level) = $line =~ /InnoDB: Error/ ) {
+         MKDEBUG && _d('Got serious InnoDB error');
+         push @properties, 'Serious', 'Yes';
+      }
+
+      $line =~ s/^\s+//;
+      $line =~ s/\s{2,}/ /;
+      $line =~ s/\s+$//;
+
+      if ( $line =~ m/^InnoDB: / ) {
+         MKDEBUG && _d('InnoDB message:', $line);
+         my $next_line;
+         while ( defined($next_line = <$fh>)
+                 && $next_line =~ m/^InnoDB: / ) {
+            chomp $next_line;
+            MKDEBUG && _d('InnoDB message:', $next_line);
+            $next_line =~ s/^InnoDB://;
+            $line     .= $next_line;
+         }
+         MKDEBUG && _d('Pending next line:', $next_line);
+         push @$pending, $next_line;
+      }
+
+      push @properties, 'arg', $line;
+
+      MKDEBUG && _d('Properties of event:', Dumper(\@properties));
+      my $event = { @properties };
+      return $event;
+
+   } # EVENT
+
+   @$pending = ();
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ErrorLogParser package
+# ###########################################################################
+
+# ###########################################################################
+# ErrorLogPatternMatcher package 5248
+# ###########################################################################
+package ErrorLogPatternMatcher;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+      patterns => [],
+      compiled => [],
+   };
+   return bless $self, $class;
+}
+
+sub _escape_regex {
+   my ( $self, $str ) = @_;
+   $str =~ s!([^A-Za-z_0-9 /:'"=;-])!\\$1!g;
+   return $str;
+}
+
+sub add_patterns {
+   my ( $self, @patterns ) = @_;
+   my $patterns = $self->{patterns};
+   foreach my $p ( @patterns ) {
+      next unless $p;
+      push @{$self->{patterns}}, $p;
+      push @{$self->{compiled}}, qr/$p/;
+      MKDEBUG && _d('Added new pattern:', $p, $self->{compiled}->[-1]);
+   }
+   return;
+}
+
+sub patterns {
+   my ( $self ) = @_;
+   return @{$self->{patterns}};
+}
+
+sub match {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $event = @args{@required_args};
+   my $err   = $event->{arg};
+   return unless $err;
+
+   my $compiled = $self->{compiled};
+   my $n        = (scalar @$compiled) - 1;
+   my $matches;
+   PATTERN:
+   for my $i ( 0..$n ) {
+      if ( $err =~ m/$compiled->[$i]/ ) {
+         $matches = $i;
+         last PATTERN;
+      } 
+   }
+
+   if ( defined $matches ) {
+      MKDEBUG && _d($err, 'matches', $self->{patterns}->[$matches]);
+      $event->{New_pattern} = 'No';
+      $event->{Pattern_no}  = $matches;
+   }
+   else {
+      MKDEBUG && _d('New pattern');
+
+      $err = $self->_escape_regex($err);
+
+      my $new_pattern = $args{new_pattern} ?  $args{new_pattern}->($err)
+                      : $err;
+      $self->add_patterns($new_pattern);
+
+      $event->{New_pattern} = 'Yes';
+      $event->{Pattern_no}  = (scalar @{$self->{patterns}}) - 1;
+   }
+
+   $event->{Pattern} = $self->{patterns}->[ $event->{Pattern_no} ];
+
+   return $event;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ErrorLogPatternMatcher package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -886,30 +1100,52 @@ sub main {
    # ########################################################################
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] FILE|DSN [FILE|DSN...]',
-      dp          => $dp,
-      description => q{examines MySQL schema for inefficiencies.  Specify }
-                   . q{either files or DSNs.  Files can contain multiple }
-                   . q{SHOW CREATE TABLE separated by blank lines. }
-                   . q{Or, schema objects are gotten from DSNs.},
+      prompt      => '[OPTION...] FILE [FILE...]',
+      description => q{parses and aggregates MySQL error log statements.},
    );
    $o->get_specs();
    $o->get_opts();
 
    $o->usage_or_errors();
 
-   # #########################################################################
-   # Make common modules.
-   # #########################################################################
-   my %common_modules = (
-      OptionParser  => $o,
-   );
-
    # ##########################################################################
    # Get ready to do the main work.
    # ##########################################################################
+   my $parser  = new ErrorLogParser();
+   my $matcher = new ErrorLogPatternMatcher();
+
    if ( @ARGV == 0 ) {
       push @ARGV, '-'; # Magical STDIN filename.
+   }
+
+   my %cnt;
+   my $file;
+   while ( $file = shift @ARGV ) {
+      my $fh;
+      if ( $file eq '-' ) {
+         MKDEBUG && _d('Reading from STDIN');
+         $fh = *STDIN;
+      }
+      else {
+         open $fh, '<', $file or warn "Cannot open $file: $OS_ERROR";
+         next unless $fh;
+      }
+
+      my $event;
+      while ( $event = $parser->parse_event(fh => $fh) ) {
+         $event = $matcher->match(
+            event       => $event,
+            new_pattern => \&new_pattern,
+         );
+         $cnt{ $event->{Pattern_no} }++;
+      }
+
+      close $fh;
+   }
+
+   my @patterns = $matcher->patterns;
+   foreach my $pno ( sort { $cnt{$b} <=> $cnt{$a} } keys %cnt ) {
+      print "$cnt{$pno}: " . $patterns[$pno] . "\n\n";
    }
 
    return 0;
@@ -918,6 +1154,12 @@ sub main {
 # ##########################################################################
 # Subroutines
 # ##########################################################################
+sub new_pattern {
+   my ( $err ) = @_;
+   $err =~ s/\b\d+\b/\\d+/g;
+   $err =~ s/\b0x[0-9a-zA-Z]+\b/0x\\S+/g;
+   return $err;
+}
 
 sub _d {
    my ($package, undef, $line) = caller 0;
