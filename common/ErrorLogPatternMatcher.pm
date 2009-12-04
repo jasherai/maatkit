@@ -151,7 +151,7 @@ sub match {
       MKDEBUG && _d('New pattern');
       my $regex = $self->fingerprint($err);
       my $name  = substr($err, 0, 50);
-      $self->add_patterns( [ [$name, undef, $regex] ] );
+      $self->add_patterns( [ [$name, $event->{Level}, $regex] ] );
       $event->{New_pattern} = 'Yes';
       $event->{Pattern_no}  = (scalar @{$self->{patterns}}) - 1;
    }
