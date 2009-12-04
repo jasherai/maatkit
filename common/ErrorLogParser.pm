@@ -113,8 +113,22 @@ sub parse_event {
             $last_line = 1 if $next_line =~ m/, Error_code:/;
          }
       }
+      # MySQL crash and stack trace
+      elsif ( $line =~ m/mysqld got signal 6/ ) {
+         MKDEBUG && _d('Stack trace:', $line);
+         $line .= "\n";
+         my $next_line;
+         while ( defined($next_line = <$fh>)
+                 && $next_line !~ m/^$ts/o ) {
+            MKDEBUG && _d('Stack trace:', $next_line);
+            $line .= $next_line;
+         }
+         MKDEBUG && _d('Pending next line:', $next_line);
+         push @$pending, $next_line;
+      }
 
       # Save the error line.
+      chomp $line;
       push @properties, 'arg', $line;
 
       # Don't dump $event; want to see full dump of all properties, and after
