@@ -39,13 +39,6 @@ sub new {
    return bless $self, $class;
 }
 
-# Escape characters that have special regex meaning.
-sub _escape_regex {
-   my ( $self, $str ) = @_;
-   $str =~ s!([^A-Za-z_0-9 /:'"=;-])!\\$1!g;
-   return $str;
-}
-
 sub add_patterns {
    my ( $self, @patterns ) = @_;
    my $patterns = $self->{patterns};
@@ -73,6 +66,13 @@ sub match {
    my $err   = $event->{arg};
    return unless $err;
 
+   # If there's a query, let QueryRewriter fingerprint it.   
+   if ( $self->{QueryRewriter}
+        && (my ($query) = $err =~ m/Statement: (.+)$/) ) {
+      $query = $self->{QueryRewriter}->fingerprint($query);
+      $err =~ s/Statement: .+$/Statement: $query/;
+   }
+
    my $compiled = $self->{compiled};
    my $n        = (scalar @$compiled) - 1;
    my $matches;
@@ -91,15 +91,7 @@ sub match {
    }
    else {
       MKDEBUG && _d('New pattern');
-
-      # Call _escape_regex before new_pattern so we do not escape
-      # the regex that new_pattern may insert.
-      $err = $self->_escape_regex($err);
-
-      my $new_pattern = $args{new_pattern} ?  $args{new_pattern}->($err)
-                      : $err;
-      $self->add_patterns($new_pattern);
-
+      $self->add_patterns( $self->fingerprint($err) );
       $event->{New_pattern} = 'Yes';
       $event->{Pattern_no}  = (scalar @{$self->{patterns}}) - 1;
    }
@@ -107,6 +99,20 @@ sub match {
    $event->{Pattern} = $self->{patterns}->[ $event->{Pattern_no} ];
 
    return $event;
+}
+
+sub fingerprint {
+   my ( $self, $err ) = @_;
+
+   # Escape special regex characters like ( and ) so they
+   # are literal matches in the compiled pattern.
+   $err =~ s/([\(\)\[\].+?*\{\}])/\\$1/g;
+
+   # Abstract the error message.
+   $err =~ s/\b\d+\b/\\d+/g;              # numbers
+   $err =~ s/\b0x[0-9a-zA-Z]+\b/0x\\S+/g; # hex values
+
+   return $err;
 }
 
 sub _d {

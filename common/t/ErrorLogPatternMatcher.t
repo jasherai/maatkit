@@ -3,8 +3,9 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 3;
+use Test::More tests => 4;
 
+require '../QueryRewriter.pm';
 require '../ErrorLogPatternMatcher.pm';
 require '../ErrorLogParser.pm';
 
@@ -13,18 +14,13 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-my $p = new ErrorLogParser();
-my $m = new ErrorLogPatternMatcher();
+my $qr = new QueryRewriter();
+my $p  = new ErrorLogParser();
+my $m  = new ErrorLogPatternMatcher();
 
 isa_ok($m, 'ErrorLogPatternMatcher');
 
 my $output;
-
-sub new_pattern {
-   my ( $err ) = @_;
-   $err =~ s/\b\d+\b/\\d+/g;
-   return $err;
-}
 
 sub parse {
    my ( $file ) = @_;
@@ -38,7 +34,6 @@ sub parse {
       next unless $e;
       push @m, $m->match(
          event       => $e,
-         new_pattern => \&new_pattern,
       );
    }
    close $fh;
@@ -93,7 +88,7 @@ is_deeply(
       {
         New_pattern  => 'Yes',
         Pattern_no   => 4,
-        Pattern      => '\[Warning\] No argument was provided to --log-bin\, and --log-bin-index was not used; so replication may break when this MySQL server acts as a master and has his hostname changed\!\! Please use \'--log-bin=/var/run/mysqld/mysqld-bin\' to avoid this problem\.',
+        Pattern      => '\[Warning\] No argument was provided to --log-bin, and --log-bin-index was not used; so replication may break when this MySQL server acts as a master and has his hostname changed!! Please use \'--log-bin=/var/run/mysqld/mysqld-bin\' to avoid this problem\.',
         Serious      => 'No',
         arg          => '[Warning] No argument was provided to --log-bin, and --log-bin-index was not used; so replication may break when this MySQL server acts as a master and has his hostname changed!! Please use \'--log-bin=/var/run/mysqld/mysqld-bin\' to avoid this problem.',
         pos_in_log   => 288,
@@ -110,7 +105,7 @@ is_deeply(
       {
         New_pattern  => 'Yes',
         Pattern_no   => 6,
-        Pattern      => '\[Warning\] Neither --relay-log nor --relay-log-index were used; so replication may break when this MySQL server acts as a slave and has his hostname changed\!\! Please use \'--relay-log=/var/run/mysqld/mysqld-relay-bin\' to avoid this problem\.',
+        Pattern      => '\[Warning\] Neither --relay-log nor --relay-log-index were used; so replication may break when this MySQL server acts as a slave and has his hostname changed!! Please use \'--relay-log=/var/run/mysqld/mysqld-relay-bin\' to avoid this problem\.',
         Serious      => 'No',
         arg          => '[Warning] Neither --relay-log nor --relay-log-index were used; so replication may break when this MySQL server acts as a slave and has his hostname changed!! Please use \'--relay-log=/var/run/mysqld/mysqld-relay-bin\' to avoid this problem.',
         pos_in_log   => 878,
@@ -252,7 +247,7 @@ is_deeply(
       {
         New_pattern  => 'Yes',
         Pattern_no   => 17,
-        Pattern      => 'InnoDB: Database was not shut down normally\! Starting crash recovery\. Reading tablespace information from the \.ibd files\.\.\. Restoring possible half-written data pages from the doublewrite buffer\.\.\.',
+        Pattern      => 'InnoDB: Database was not shut down normally! Starting crash recovery\. Reading tablespace information from the \.ibd files\.\.\. Restoring possible half-written data pages from the doublewrite buffer\.\.\.',
         arg          => 'InnoDB: Database was not shut down normally! Starting crash recovery. Reading tablespace information from the .ibd files... Restoring possible half-written data pages from the doublewrite buffer...',
         pos_in_log   => 1924,
         ts           => '080821 19:14:12'
@@ -260,7 +255,7 @@ is_deeply(
       {
         New_pattern  => 'Yes',
         Pattern_no   => 18,
-        Pattern      => 'InnoDB: Starting log scan based on checkpoint at log sequence number \d+ \d+\. Doing recovery: scanned up to log sequence number \d+ \d+ Last MySQL binlog file position \d+ \d+\, file name \./srv-bin\.\d+',
+        Pattern      => 'InnoDB: Starting log scan based on checkpoint at log sequence number \d+ \d+\. Doing recovery: scanned up to log sequence number \d+ \d+ Last MySQL binlog file position \d+ \d+, file name \./srv-bin\.\d+',
         arg          => 'InnoDB: Starting log scan based on checkpoint at log sequence number 1 3703467071. Doing recovery: scanned up to log sequence number 1 3703467081 Last MySQL binlog file position 0 804759240, file name ./srv-bin.000012',
         pos_in_log   => 2237,
         ts           => '080821 19:14:13'
@@ -351,7 +346,7 @@ is_deeply(
         New_pattern  => 'Yes',
         Pattern_no   => 25,
         Serious      => 'Yes',
-        Pattern      => 'InnoDB: Error: cannot allocate \d+ bytes of memory with malloc\! Total allocated memory by InnoDB \d+ bytes\. Operating system errno: \d+ Check if you should increase the swap file or ulimits of your operating system\. On FreeBSD check you have compiled the OS with a big enough maximum process size\. Note that in most \d+-bit computers the process memory space is limited to \d+ GB or \d+ GB\. We keep retrying the allocation for \d+ seconds\.\.\. Fatal error: cannot allocate the memory for the buffer pool',
+        Pattern      => 'InnoDB: Error: cannot allocate \d+ bytes of memory with malloc! Total allocated memory by InnoDB \d+ bytes\. Operating system errno: \d+ Check if you should increase the swap file or ulimits of your operating system\. On FreeBSD check you have compiled the OS with a big enough maximum process size\. Note that in most \d+-bit computers the process memory space is limited to \d+ GB or \d+ GB\. We keep retrying the allocation for \d+ seconds\.\.\. Fatal error: cannot allocate the memory for the buffer pool',
         arg          => 'InnoDB: Error: cannot allocate 268451840 bytes of memory with malloc! Total allocated memory by InnoDB 8074720 bytes. Operating system errno: 12 Check if you should increase the swap file or ulimits of your operating system. On FreeBSD check you have compiled the OS with a big enough maximum process size. Note that in most 32-bit computers the process memory space is limited to 2 GB or 4 GB. We keep retrying the allocation for 60 seconds... Fatal error: cannot allocate the memory for the buffer pool',
         pos_in_log   => 3049,
         ts           => '081117 16:15:16'
@@ -367,6 +362,50 @@ is_deeply(
       },
    ],
    'errlog001.txt'
+);
+
+$m = new ErrorLogPatternMatcher(QueryRewriter => $qr);
+is_deeply(
+   parse('samples/errlog002.txt'),
+   [
+      {
+         New_pattern => 'Yes',
+         Pattern     => '\[Note\] Slave SQL thread initialized, starting replication in log \'mpb-bin\.\d+\' at position \d+, relay log \'\./web-relay-bin\.\d+\' position: \d+',
+         Pattern_no  => 0,
+         Serious     => 'No',
+         arg         => '[Note] Slave SQL thread initialized, starting replication in log \'mpb-bin.000519\' at position 4, relay log \'./web-relay-bin.000001\' position: 4',
+         pos_in_log  => 0,
+         ts          => '090902  8:15:00'
+      },
+      {
+         New_pattern => 'Yes',
+         Pattern     => '\[Warning\] Statement may not be safe to log in statement format\. Statement: insert ignore into fud\?_search_cache \(srch_query, query_type, expiry, msg_id, n_match\) select \?, \?, \?, msg_id, count\(\*\) as word_count from fud\?_search s inner join fud\?_index i on i\.word_id=s\.id where word in\(\?\+\) group by msg_id order by word_count desc limit \?',
+         Pattern_no  => 1,
+         Serious     => 'No',
+         arg         => '[Warning] Statement may not be safe to log in statement format. Statement: INSERT IGNORE INTO fud26_search_cache (srch_query, query_type, expiry, msg_id, n_match) SELECT \'eb081c4be7a9fd8c5aa647f44e6e6365\', 0, 1250326725, msg_id, count(*) as word_count FROM fud26_search s INNER JOIN fud26_index i ON i.word_id=s.id WHERE word IN(\'ejgkkvqduyhzjqwynkf\') GROUP BY msg_id ORDER BY word_count DESC LIMIT 500',
+         pos_in_log  => 160,
+         ts          => '090902  8:40:46'
+      },
+      {
+         New_pattern => 'No',
+         Pattern     => '\[Warning\] Statement may not be safe to log in statement format\. Statement: insert ignore into fud\?_search_cache \(srch_query, query_type, expiry, msg_id, n_match\) select \?, \?, \?, msg_id, count\(\*\) as word_count from fud\?_search s inner join fud\?_index i on i\.word_id=s\.id where word in\(\?\+\) group by msg_id order by word_count desc limit \?',
+         Pattern_no  => 1,
+         Serious     => 'No',
+         arg         => '[Warning] Statement may not be safe to log in statement format. Statement: INSERT IGNORE INTO fud26_search_cache (srch_query, query_type, expiry, msg_id, n_match) SELECT \'89b76d476dcf711b813a14f8c52df840\', 0, 1250328053, msg_id, count(*) as word_count FROM fud26_search s INNER JOIN fud26_index i ON i.word_id=s.id WHERE word IN(\'heicvrxtljqlth\') GROUP BY msg_id ORDER BY word_count DESC LIMIT 500',
+         pos_in_log  => 579,
+         ts          => '090902  8:40:52'
+      },
+      {
+       New_pattern   => 'No',
+       Pattern       => '\[Warning\] Statement may not be safe to log in statement format\. Statement: insert ignore into fud\?_search_cache \(srch_query, query_type, expiry, msg_id, n_match\) select \?, \?, \?, msg_id, count\(\*\) as word_count from fud\?_search s inner join fud\?_index i on i\.word_id=s\.id where word in\(\?\+\) group by msg_id order by word_count desc limit \?',
+       Pattern_no    => 1,
+       Serious       => 'No',
+       arg           => '[Warning] Statement may not be safe to log in statement format. Statement: INSERT IGNORE INTO fud26_search_cache (srch_query, query_type, expiry, msg_id, n_match) SELECT \'895e2ddda332df8d230a9370f6db2ec4\', 0, 1250333052, msg_id, count(*) as word_count FROM fud26_search s INNER JOIN fud26_index i ON i.word_id=s.id WHERE word IN(\'postgresql\') GROUP BY msg_id ORDER BY word_count DESC LIMIT 500',
+       pos_in_log    => 993,
+       ts            => '090902  8:41:00'
+      },
+   ],
+   'errlog002.txt - fingerprint Statement: query'
 );
 
 # #############################################################################
