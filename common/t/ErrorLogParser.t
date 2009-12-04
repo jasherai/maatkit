@@ -52,15 +52,16 @@ run_test({
        arg        => 'mysqld started',
        pos_in_log => 0,
        ts         => '080721 03:03:57',
+       Level      => 'unknown',
       },
       {
-       Serious    => 'No',
+       Level      => 'warning',
        arg        => '[Warning] option \'log_slow_rate_limit\': unsigned value 0 adjusted to 1',
        pos_in_log => 32,
        ts         => '080721  3:04:00',
       },
       {
-       Serious    => 'Yes',
+       Level      => 'error',
        arg        => '[ERROR] /usr/sbin/mysqld: unknown variable \'ssl-key=/opt/mysql.pdns/.cert/server-key.pem\'',
        pos_in_log => 119,
        ts         => '080721  3:04:01',
@@ -69,14 +70,16 @@ run_test({
        arg        => 'mysqld ended',
        pos_in_log => 225,
        ts         => '080721 03:04:01',
+       Level      => 'unknown',
       },
       {
        arg        => 'mysqld started',
        pos_in_log => 255,
        ts         => '080721 03:10:57',
+       Level      => 'unknown',
       },
       {
-       Serious    => 'No',
+       Level      => 'warning',
        arg        => '[Warning] No argument was provided to --log-bin, and --log-bin-index was not used; so replication may break when this MySQL server acts as a master and has his hostname changed!! Please use \'--log-bin=/var/run/mysqld/mysqld-bin\' to avoid this problem.',
        pos_in_log => 288,
        ts         => '080721  3:10:58',
@@ -85,43 +88,45 @@ run_test({
        arg        => 'InnoDB: Started; log sequence number 1 3703096531',
        pos_in_log => 556,
        ts         => '080721  3:11:08',
+       Level      => 'unknown',
       },
       {
-       Serious    => 'No',
+       Level      => 'warning',
        arg        => '[Warning] Neither --relay-log nor --relay-log-index were used; so replication may break when this MySQL server acts as a slave and has his hostname changed!! Please use \'--relay-log=/var/run/mysqld/mysqld-relay-bin\' to avoid this problem.',
        pos_in_log => 878,
        ts         => '080721  3:11:12',
       },
       {
-       Serious    => 'Yes',
+       Level      => 'error',
        arg        => '[ERROR] Failed to open the relay log \'./srv-relay-bin.000001\' (relay_log_pos 4)',
        pos_in_log => 878,
        ts         => '080721  3:11:12',
       },
       {
-       Serious    => 'Yes',
+       Level      => 'error',
        arg        => '[ERROR] Could not find target log during relay log initialization',
        pos_in_log => 974,
        ts         => '080721  3:11:12',
       },
       {
-       Serious    => 'Yes',
+       Level      => 'error',
        arg        => '[ERROR] Failed to initialize the master info structure',
        pos_in_log => 1056,
        ts         => '080721  3:11:12',
       },
       {
-       Serious    => 'No',
+       Level      => 'info',
        arg        => '[Note] /usr/libexec/mysqld: ready for connections.',
        pos_in_log => 1127,
        ts         => '080721  3:11:12',
       },
       {
        arg        => 'Version: \'5.0.45-log\' socket: \'/mnt/data/mysql/mysql.sock\'  port: 3306  Source distribution',
-       pos_in_log => 1194
+       pos_in_log => 1194,
+       Level      => 'unknown',
       },
       {
-       Serious    => 'No',
+       Level      => 'info',
        arg        => '[Note] /usr/libexec/mysqld: Normal shutdown',
        pos_in_log => 1287,
        ts         => '080721  9:22:14',
@@ -130,14 +135,16 @@ run_test({
        arg        => 'InnoDB: Starting shutdown...',
        pos_in_log => 1347,
        ts         => '080721  9:22:17',
+       Level      => 'unknown',
       },
       {
        arg        => 'InnoDB: Shutdown completed; log sequence number 1 3703096531',
        pos_in_log => 1472,
        ts         => '080721  9:22:20',
+       Level      => 'unknown',
       },
       {
-       Serious    => 'No',
+       Level      => 'info',
        arg        => '[Note] /usr/libexec/mysqld: Shutdown complete',
        pos_in_log => 1534,
        ts         => '080721  9:22:20',
@@ -146,18 +153,21 @@ run_test({
        arg        => 'mysqld ended',
        pos_in_log => 1534,
        ts         => '080721 09:22:22',
+       Level      => 'unknown',
       },
       {
        arg        => 'mysqld started',
        pos_in_log => 1565,
        ts         => '080721 09:22:31',
+      Level      => 'unknown',
       },
       {
        arg        => 'Version: \'5.0.45-log\' socket: \'/mnt/data/mysql/mysql.sock\'  port: 3306  Source distribution',
        pos_in_log => 1598,
+       Level      => 'unknown',
       },
       {
-       Serious    => 'Yes',
+       Level      => 'error',
        arg        => '[ERROR] bdb: log_archive: DB_ARCH_ABS: DB_NOTFOUND: No matching key/data pair found',
        pos_in_log => 1691,
        ts         => '080721  9:34:22',
@@ -166,46 +176,52 @@ run_test({
        arg        => 'mysqld started',
        pos_in_log => 1792,
        ts         => '080721 09:39:09',
+       Level      => 'unknown',
       },
       {
        arg        => 'InnoDB: Started; log sequence number 1 3703096531',
        pos_in_log => 1825,
        ts         => '080721  9:39:14',
+       Level      => 'unknown',
       },
       {
        arg        => 'mysqld started',
        pos_in_log => 1924,
        ts         => '080821 19:14:12',
+       Level      => 'unknown',
       },
       {
        pos_in_log => 1924,
        ts         => '080821 19:14:12',
        arg        => 'InnoDB: Database was not shut down normally! Starting crash recovery. Reading tablespace information from the .ibd files... Restoring possible half-written data pages from the doublewrite buffer...',
+       Level      => 'unknown',
       },
       {
        pos_in_log => 2237,
        ts         => '080821 19:14:13',
        arg        => 'InnoDB: Starting log scan based on checkpoint at log sequence number 1 3703467071. Doing recovery: scanned up to log sequence number 1 3703467081 Last MySQL binlog file position 0 804759240, file name ./srv-bin.000012',
+       Level      => 'unknown',
       },
       {
        arg        => 'InnoDB: Started; log sequence number 1 3703467081',
        pos_in_log => 2497,
        ts         => '080821 19:14:13',
+       Level      => 'unknown',
       },
       {
-       Serious    => 'No',
+       Level      => 'info',
        arg        => '[Note] Recovering after a crash using srv-bin',
        pos_in_log => 2559,
        ts         => '080821 19:14:13',
       },
       {
-       Serious    => 'No',
+       Level      => 'info',
        arg        => '[Note] Starting crash recovery...',
        pos_in_log => 2559,
        ts         => '080821 19:14:23',
       },
       {
-       Serious    => 'No',
+       Level      => 'info',
        arg        => '[Note] Crash recovery finished.',
        pos_in_log => 2609,
        ts         => '080821 19:14:23',
@@ -213,15 +229,16 @@ run_test({
       {
        arg        => 'Version: \'5.0.45-log\' socket: \'/mnt/data/mysql/mysql.sock\'  port: 3306  Source distribution',
        pos_in_log => 2657,
+       Level      => 'unknown',
       },
       {
-       Serious    => 'No',
+       Level      => 'info',
        arg        => '[Note] Found 5 of 0 rows when repairing \'./test/a3\'',
        pos_in_log => 2750,
        ts         => '080911 18:04:40',
       },
       {
-       Serious    => 'No',
+       Level      => 'info',
        arg        => '[Note] /usr/libexec/mysqld: ready for connections.',
        pos_in_log => 2818,
        ts         => '081101  9:17:53',
@@ -229,24 +246,27 @@ run_test({
       {
        arg        => 'Version: \'5.0.45-log\' socket: \'/mnt/data/mysql/mysql.sock\'  port: 3306  Source distribution',
        pos_in_log => 2886,
+       Level      => 'unknown',
       },
       {
        arg        => 'Number of processes running now: 0',
        pos_in_log => 2979,
+       Level      => 'unknown',
       },
       {
        arg        => 'mysqld restarted',
        pos_in_log => 3015,
        ts         => '081117 16:15:07',
+       Level      => 'unknown',
       },
       {
        pos_in_log => 3049,
        ts         => '081117 16:15:16',
-       Serious    => 'Yes',
+       Level      => 'error',
        arg        => 'InnoDB: Error: cannot allocate 268451840 bytes of memory with malloc! Total allocated memory by InnoDB 8074720 bytes. Operating system errno: 12 Check if you should increase the swap file or ulimits of your operating system. On FreeBSD check you have compiled the OS with a big enough maximum process size. Note that in most 32-bit computers the process memory space is limited to 2 GB or 4 GB. We keep retrying the allocation for 60 seconds... Fatal error: cannot allocate the memory for the buffer pool',
       },
       {
-       Serious    => 'No',
+       Level      => 'info',
        arg        => '[Note] /usr/libexec/mysqld: ready for connections.',
        pos_in_log => 3718,
        ts         => '081117 16:32:55',
@@ -258,19 +278,19 @@ run_test({
    file    => 'samples/errlog003.txt',
    result => [
       {
-         Serious     => 'Yes',
+         Level       => 'error',
          arg         => '[ERROR] /usr/sbin/mysqld: Incorrect key file for table \'./bugs_eventum/eventum_note.MYI\'; try to repair it',
          pos_in_log  => 0,
          ts          => '090902 10:43:55',
       },
       {
-         Serious     => 'Yes',
+         Level       => 'error',
          pos_in_log  => 123,
          ts          => '090902 10:43:55',
          arg         => '[ERROR] Slave SQL: Error \'Incorrect key file for table \'./bugs_eventum/eventum_note.MYI\'; try to repair it\' on query. Default database: \'bugs_eventum\'. Query: \'DELETE FROM                    bugs_eventum.eventum_note                 WHERE                    not_iss_id IN (384, 385, 101056, 101057, 101058, 101067, 101070, 101156, 101163, 101164, 101175, 101232, 101309, 101433, 101434, 101435, 101436, 101437, 101454, 101476, 101488, 101490, 101506, 101507, 101530, 101531, 101573, 101574, 101575, 101583, 101586, 101587, 101588, 101589, 101590, 101729, 101730, 101791, 101865, 102382)\', Error_code: 126',
       },
       {
-         Serious     => 'No',
+         Level       => 'warning',
          arg         => '[Warning] Slave: Incorrect key file for table \'./bugs_eventum/eventum_note.MYI\'; try to repair it Error_code: 126',
          pos_in_log  => 747,
          ts          => '090902 10:43:55'
@@ -282,7 +302,7 @@ run_test({
    file    => 'samples/errlog004.txt',
    result => [
       {
-         Serious     => 'Yes',
+         Level       => 'error',
          arg         => '[ERROR] Error running query, slave SQL thread aborted. Fix the problem, and restart the slave SQL thread with "SLAVE START". We stopped at log \'mpb-bin.000534\' position 47010998',
          pos_in_log  => 0,
          ts          => '090902 10:43:55',
@@ -290,11 +310,13 @@ run_test({
       {
          arg         => 'InnoDB: Unable to lock ./timer2/rates.ibd, error: 37',
          pos_in_log  => 194,
+         Level       => 'unknown',
       },
       {
          arg         => 'InnoDB: Assertion failure in thread 1312495936 in file fil/fil0fil.c line 752 Failing assertion: ret We intentionally generate a memory trap. Submit a detailed bug report to http://bugs.mysql.com. If you get repeated assertion failures or crashes, even immediately after the mysqld startup, there may be corruption in the InnoDB tablespace. Please refer to http://dev.mysql.com/doc/refman/5.1/en/forcing-recovery.html about forcing recovery.',
          pos_in_log  => 342,
          ts          => '090902 11:08:43',
+         Level       => 'unknown',
       },
       {
          pos_in_log  => 810,
@@ -360,11 +382,13 @@ thd->thread_id=15
 thd->killed=NOT_KILLED
 The manual page at http://dev.mysql.com/doc/mysql/en/crashing.html contains
 information that should help you find out what is causing the crash.',
+         Level       => 'unknown',
       },
       {
          arg         => 'mysqld_safe Number of processes running now: 0',
          pos_in_log  => 3636,
-         ts          => '090902 11:08:43'
+         ts          => '090902 11:08:43',
+         Level       => 'unknown',
       },
    ]
 });
@@ -376,14 +400,16 @@ run_test({
          pos_in_log  => 0,
          arg         => '[Note] /usr/sbin/mysqld: ready for connections.',
          ts          => '080517  4:20:13',
-         Serious     => 'No',
+         Level       => 'info',
       },
       {
          pos_in_log  => 64,
          arg         => 'Version: \'5.0.58-enterprise-gpl-mpb-log\' socket: \'/var/lib/mysql/mysql.sock\'  port: 3306  MySQL Enterprise Server (MPB ed.) (GPL)',
+         Level       => 'unknown',
       },
       {
          pos_in_log  => 195,
+         Level       => 'unknown',
          arg         => 'Status information:
 Current dir: /var/lib/mysql/
 Running threads: 16  Stack size: 262144
@@ -522,7 +548,7 @@ Next alarm time: 28699',
          pos_in_log  => 2873,
          arg         => '[Warning] \'db\' entry \'test nagios@4fa060606e2d579a\' ignored in --skip-name-resolve mode.',
          ts          => '080522  8:41:31',
-         Serious     => 'No',
+         Level       => 'warning',
       },
       {
          pos_in_log  => 2873,
@@ -818,9 +844,10 @@ Alarm status:
 Active alarms:   17
 Max used alarms: 46
 Next alarm time: 28463',
+         Level       => 'unknown',
       },
       {
-         Serious     => 'No',
+         Level       => 'warning',
          pos_in_log  => 9192,
          arg         => '[Warning] \'db\' entry \'test nagios@4fa060606e2d579a\' ignored in --skip-name-resolve mode.',
          ts          => '080523  7:26:27',

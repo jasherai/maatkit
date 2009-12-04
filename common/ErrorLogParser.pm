@@ -67,17 +67,23 @@ sub parse_event {
          $line =~ s/^$ts//;
       }
 
-      # error, warning, note
-      if ( my ($level) = $line =~ /\[((?:ERROR|Warning|Note))\]/ ) {
-         my $serious = $level eq 'ERROR' ? 'Yes' : 'No';
-         MKDEBUG && _d('Got level:', $level, 'serious:', $serious);
-         push @properties, 'Serious', $serious;
+      # Level: error, warning, info or unknown
+      my $level;
+      if ( ($level) = $line =~ /\[((?:ERROR|Warning|Note))\]/ ) {
+         $level = $level =~ m/error/i   ? 'error'
+                : $level =~ m/warning/i ? 'warning'
+                :                         'info';
       }
+      else {
+         $level = 'unknown';
+      }
+      MKDEBUG && _d('Level:', $level);
+      push @properties, 'Level', $level;
 
       # A special case error
       if ( my ($level) = $line =~ /InnoDB: Error/ ) {
          MKDEBUG && _d('Got serious InnoDB error');
-         push @properties, 'Serious', 'Yes';
+         push @properties, 'Level', 'error';
       }
 
       # Collapse whitespace after removing stuff above.

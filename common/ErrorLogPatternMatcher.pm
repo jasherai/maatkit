@@ -35,18 +35,61 @@ sub new {
       %args,
       patterns => [],
       compiled => [],
+      level    => [],
+      name     => [],
    };
    return bless $self, $class;
 }
 
+# The known patterns are not loaded by default because
+# we want to allow the user to load their most common
+# patterns first.  Patterns are checked in the order
+# that they're loaded.
+sub load_known_patterns {
+   my ( $self ) = @_;
+   # Don't make this list global else we'll duplicate memory
+   # between the global and $self.
+   my @known_patterns = (
+      # name           level   regex
+      ['mysqld start', 'info', 'mysqld started'],
+      ['mysqld ended', 'info', 'mysqld ended'  ],
+      ['version',      'info', '^Version: \S+ '],
+   );
+   $self->add_patterns(\@known_patterns);
+   return;
+}
+
 sub add_patterns {
-   my ( $self, @patterns ) = @_;
-   my $patterns = $self->{patterns};
-   foreach my $p ( @patterns ) {
-      next unless $p;
-      push @{$self->{patterns}}, $p;
-      push @{$self->{compiled}}, qr/$p/;
-      MKDEBUG && _d('Added new pattern:', $p, $self->{compiled}->[-1]);
+   my ( $self, $patterns ) = @_;
+   foreach my $p ( @$patterns ) {
+      next unless $p && scalar @$p;
+      my ($name, $level, $regex) = @$p;
+      push @{$self->{name}},     $name;
+      push @{$self->{level}},    $level;
+      push @{$self->{patterns}}, $regex;
+      push @{$self->{compiled}}, qr/$regex/;
+      MKDEBUG && _d('Added new pattern:', $name, $level, $regex,
+         $self->{compiled}->[-1]);
+   }
+   return;
+}
+
+sub load_patterns_file {
+   my ( $self, $fh ) = @_;
+   local $INPUT_RECORD_SEPARATOR = '';
+   my %seen;
+   my $pattern;
+   while ( defined($pattern = <$fh>) ) {
+      my ($name, $level, $regex) = split("\n", $pattern);
+      if ( !($name && $level && $regex) ) {
+         warn "Pattern missing name, level or regex:\n$pattern";
+         next;
+      }
+      if ( $seen{$name}++ ) {
+         warn "Duplicate pattern: $name";
+         next;
+      }
+      $self->add_patterns( [[$name, $level, $regex]] );
    }
    return;
 }
@@ -75,23 +118,30 @@ sub match {
 
    my $compiled = $self->{compiled};
    my $n        = (scalar @$compiled) - 1;
-   my $matches;
+   my $pno;
    PATTERN:
    for my $i ( 0..$n ) {
       if ( $err =~ m/$compiled->[$i]/ ) {
-         $matches = $i;
+         $pno = $i;
          last PATTERN;
       } 
    }
 
-   if ( defined $matches ) {
-      MKDEBUG && _d($err, 'matches', $self->{patterns}->[$matches]);
+   if ( defined $pno ) {
+      MKDEBUG && _d($err, 'matches', $self->{patterns}->[$pno]);
       $event->{New_pattern} = 'No';
-      $event->{Pattern_no}  = $matches;
+      $event->{Pattern_no}  = $pno;
+
+      # Set Level if missing and we know it.
+      if ( !$event->{Level} && $self->{level}->[$pno] ) {
+         $event->{Level} = $self->{level}->[$pno];
+      }
    }
    else {
       MKDEBUG && _d('New pattern');
-      $self->add_patterns( $self->fingerprint($err) );
+      my $regex = $self->fingerprint($err);
+      my $name  = substr($err, 0, 50);
+      $self->add_patterns( [ [$name, undef, $regex] ] );
       $event->{New_pattern} = 'Yes';
       $event->{Pattern_no}  = (scalar @{$self->{patterns}}) - 1;
    }
