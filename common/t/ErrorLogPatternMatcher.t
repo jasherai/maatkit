@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 7;
+use Test::More tests => 9;
 
 require '../QueryRewriter.pm';
 require '../ErrorLogPatternMatcher.pm';
@@ -445,6 +445,20 @@ is(
    $patterns[0],
    'mysqld started',
    'Load known patterns'
+);
+
+@patterns = $m->names;
+is(
+   $patterns[0],
+   'mysqld started',
+   'names'
+);
+
+@patterns = $m->levels;
+is(
+   $patterns[0],
+   'info',
+   'levels'
 );
 
 $m = new ErrorLogPatternMatcher(QueryRewriter => $qr);

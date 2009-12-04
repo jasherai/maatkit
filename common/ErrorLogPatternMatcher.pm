@@ -50,10 +50,10 @@ sub load_known_patterns {
    # Don't make this list global else we'll duplicate memory
    # between the global and $self.
    my @known_patterns = (
-      # name           level   regex
-      ['mysqld start', 'info', 'mysqld started'],
-      ['mysqld ended', 'info', 'mysqld ended'  ],
-      ['version',      'info', '^Version: \S+ '],
+      # name               level   regex
+      ['mysqld started',   'info', 'mysqld started'],
+      ['mysqld ended',     'info', 'mysqld ended'  ],
+      ['version',          'info', '^Version: \S+ '],
    );
    $self->add_patterns(\@known_patterns);
    return;
@@ -64,8 +64,8 @@ sub add_patterns {
    foreach my $p ( @$patterns ) {
       next unless $p && scalar @$p;
       my ($name, $level, $regex) = @$p;
-      push @{$self->{name}},     $name;
-      push @{$self->{level}},    $level;
+      push @{$self->{names}},    $name;
+      push @{$self->{levels}},   $level;
       push @{$self->{patterns}}, $regex;
       push @{$self->{compiled}}, qr/$regex/;
       MKDEBUG && _d('Added new pattern:', $name, $level, $regex,
@@ -97,6 +97,16 @@ sub load_patterns_file {
 sub patterns {
    my ( $self ) = @_;
    return @{$self->{patterns}};
+}
+
+sub names {
+   my ( $self ) = @_;
+   return @{$self->{names}};
+}
+
+sub levels {
+   my ( $self ) = @_;
+   return @{$self->{levels}};
 }
 
 sub match {
@@ -133,8 +143,8 @@ sub match {
       $event->{Pattern_no}  = $pno;
 
       # Set Level if missing and we know it.
-      if ( !$event->{Level} && $self->{level}->[$pno] ) {
-         $event->{Level} = $self->{level}->[$pno];
+      if ( !$event->{Level} && $self->{levels}->[$pno] ) {
+         $event->{Level} = $self->{levels}->[$pno];
       }
    }
    else {
