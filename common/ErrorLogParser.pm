@@ -55,7 +55,7 @@ sub parse_event {
    my $line;
    EVENT:
    while ( defined($line = shift @$pending) or defined($line = <$fh>) ) {
-      next if $line =~ m/^$/;  # lots of blank lines in error logs
+      next if $line =~ m/^\s*$/;  # lots of blank lines in error logs
       chomp $line;
       my @properties = ('pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
@@ -84,6 +84,9 @@ sub parse_event {
       $line =~ s/^\s+//;
       $line =~ s/\s{2,}/ /;
       $line =~ s/\s+$//;
+
+      # TODO: some of these can local INPUT_RECORD_SEPARATOR to $ts
+      # and read 1 chunk instead of line by line until $ts
 
       # InnoDB prints multi-line messages like:
       #   080821 19:14:12  InnoDB: Database was not shut down normally!
@@ -121,6 +124,20 @@ sub parse_event {
          while ( defined($next_line = <$fh>)
                  && $next_line !~ m/^$ts/o ) {
             MKDEBUG && _d('Stack trace:', $next_line);
+            $line .= $next_line;
+         }
+         MKDEBUG && _d('Pending next line:', $next_line);
+         push @$pending, $next_line;
+      }
+      # Debug
+      elsif ( $line =~ m/(?:Status information|Memory status):/ ) {
+         MKDEBUG && _d('Debug:', $line);
+         $line .= "\n";
+         my $next_line;
+         while ( defined($next_line = <$fh>)
+                 && $next_line !~ m/^$ts/o ) {
+            next if $next_line =~ m/^$/;
+            MKDEBUG && _d('Debug:', $next_line);
             $line .= $next_line;
          }
          MKDEBUG && _d('Pending next line:', $next_line);
