@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 9;
+use Test::More tests => 8;
 
 require '../QueryRewriter.pm';
 require '../ErrorLogPatternMatcher.pm';
@@ -439,29 +439,6 @@ is_deeply(
    'Does not load known patterns by default'
 );
 
-$m->load_known_patterns();
-@patterns = $m->patterns;
-is(
-   $patterns[0],
-   'mysqld started',
-   'Load known patterns'
-);
-
-@patterns = $m->names;
-is(
-   $patterns[0],
-   'mysqld started',
-   'names'
-);
-
-@patterns = $m->levels;
-is(
-   $patterns[0],
-   'info',
-   'levels'
-);
-
-$m = new ErrorLogPatternMatcher(QueryRewriter => $qr);
 open my $fh, '<', 'samples/patterns.txt' or BAIL_OUT($OS_ERROR);
 $m->load_patterns_file($fh);
 @patterns = $m->patterns;
@@ -472,6 +449,20 @@ is_deeply(
       'mysql got signal \d',
    ],
    'Load patterns file'
+);
+
+@patterns = $m->names;
+is(
+   $patterns[0],
+   'pattern1',
+   'names'
+);
+
+@patterns = $m->levels;
+is(
+   $patterns[0],
+   'info',
+   'levels'
 );
 
 # #############################################################################

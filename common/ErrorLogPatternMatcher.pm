@@ -41,24 +41,6 @@ sub new {
    return bless $self, $class;
 }
 
-# The known patterns are not loaded by default because
-# we want to allow the user to load their most common
-# patterns first.  Patterns are checked in the order
-# that they're loaded.
-sub load_known_patterns {
-   my ( $self ) = @_;
-   # Don't make this list global else we'll duplicate memory
-   # between the global and $self.
-   my @known_patterns = (
-      # name               level   regex
-      ['mysqld started',   'info', 'mysqld started'],
-      ['mysqld ended',     'info', 'mysqld ended'  ],
-      ['version',          'info', '^Version: \S+ '],
-   );
-   $self->add_patterns(\@known_patterns);
-   return;
-}
-
 sub add_patterns {
    my ( $self, $patterns ) = @_;
    foreach my $p ( @$patterns ) {
