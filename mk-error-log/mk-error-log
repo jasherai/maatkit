@@ -861,7 +861,159 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ErrorLogParser package 5247
+# ReportFormatter package 5113
+# ###########################################################################
+package ReportFormatter;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use List::Util qw(min max);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw();
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+      underline_header  => 1,
+      line_prefix        => '# ',
+      line_width         => 78,
+      truncate_underline => 1,
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub set_title {
+   my ( $self, $title ) = @_;
+   $self->{title} = $title;
+   return;
+}
+
+sub set_columns {
+   my ( $self, @cols ) = @_;
+   push @{$self->{cols}}, map {
+      my $col = $_;
+      die "Column does not have a name" unless defined $col->{name};
+      if ( $col->{fixed_wdith} && $col->{fixed_width} < length $col->{name} ) { 
+         die "Fixed width is less than the column name";
+      }
+      $col->{min_val_width} = length $col->{name};
+      $col->{max_val_width} = length $col->{name};
+      $col;
+   } @cols;
+   return;
+}
+
+sub add_line {
+   my ( $self, @vals ) = @_;
+
+   my $n_cols = scalar @{$self->{cols}};
+   my $n_vals = scalar @vals;
+   die "Number of columns ($n_cols) and values ($n_vals) do not match"
+      unless $n_cols == $n_vals;
+
+   my @line;
+   for my $i ( 0..$#vals ) {
+      my $col = $self->{cols}->[$i];
+      my $val = $vals[$i];
+      my $width = length $val;
+      if ( $col->{fixed_width} && $width > $col->{fixed_width} ) {
+         if ( $col->{truncate} ) {
+            $val  = substr($val, 0, $col->{fixed_width} - 3);
+            $val .= '...';
+            MKDEBUG && _d('Truncated', $vals[$i], 'to', $val);
+         }
+         else {
+            die "Value '$val' is too wide for column $col->{name}";
+         }
+      }
+      $col->{max_val_width} = max($width, $col->{max_val_width});
+      push @line, $val;
+   }
+   push @{$self->{lines}}, \@line;
+
+   return;
+}
+
+sub get_report {
+   my ( $self ) = @_;
+   my @lines;
+   my $p = $self->{line_prefix} || '';
+
+   my $n_cols = scalar @{$self->{cols}}
+              - ($self->{long_last_column} ? 2 : 1);
+
+   my $fmt = $p;
+   my @col_fmts;
+   for my $i ( 0..$n_cols ) {
+      my $col = $self->{cols}->[$i];
+      my $col_fmt = '%'
+                  . ($col->{right_justify} ? '' : '-')
+                  . "$col->{max_val_width}"
+                  . 's';
+      push @col_fmts, $col_fmt;
+   }
+   if ( $self->{long_last_column} ) {
+      push @col_fmts, '%s';
+   }
+   $fmt .= join(' ', @col_fmts);
+   MKDEBUG && _d('Format:', $fmt);
+
+   push @lines, sprintf "${p}$self->{title}" if $self->{title};
+
+   (my $hdr_fmt = $fmt) =~ s/%([^-])/%-$1/g;
+   push @lines, sprintf $hdr_fmt, map { $_->{name} } @{$self->{cols}};
+
+   if ( $self->{underline_header} ) {
+      my $underline_len = 0;
+      my @underlines = map {
+         my $underline = '=' x $_->{max_val_width};
+         $underline_len += length $underline;
+         $underline;
+      } @{$self->{cols}};
+      $underline_len += (scalar @underlines) - 1;
+      if ( $self->{truncate_underline}
+           && (2 + $underline_len) > $self->{line_width} ) {
+         my $over = $self->{line_width} - (2 + $underline_len);
+         $underlines[-1] = substr($underlines[-1], 0, $over);
+      }
+
+      push @lines, sprintf $fmt, @underlines;
+   }
+
+   foreach my $line ( @{$self->{lines}} ) {
+      push @lines, sprintf $fmt, @$line;
+   }
+
+   return join("\n", @lines) . "\n";
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ReportFormatter package
+# ###########################################################################
+
+# ###########################################################################
+# ErrorLogParser package 5254
 # ###########################################################################
 package ErrorLogParser;
 
@@ -901,7 +1053,7 @@ sub parse_event {
    my $line;
    EVENT:
    while ( defined($line = shift @$pending) or defined($line = <$fh>) ) {
-      next if $line =~ m/^$/;  # lots of blank lines in error logs
+      next if $line =~ m/^\s*$/;  # lots of blank lines in error logs
       chomp $line;
       my @properties = ('pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
@@ -912,20 +1064,27 @@ sub parse_event {
          $line =~ s/^$ts//;
       }
 
-      if ( my ($level) = $line =~ /\[((?:ERROR|Warning|Note))\]/ ) {
-         my $serious = $level eq 'ERROR' ? 'Yes' : 'No';
-         MKDEBUG && _d('Got level:', $level, 'serious:', $serious);
-         push @properties, 'Serious', $serious;
+      my $level;
+      if ( ($level) = $line =~ /\[((?:ERROR|Warning|Note))\]/ ) {
+         $level = $level =~ m/error/i   ? 'error'
+                : $level =~ m/warning/i ? 'warning'
+                :                         'info';
       }
+      else {
+         $level = 'unknown';
+      }
+      MKDEBUG && _d('Level:', $level);
+      push @properties, 'Level', $level;
 
       if ( my ($level) = $line =~ /InnoDB: Error/ ) {
          MKDEBUG && _d('Got serious InnoDB error');
-         push @properties, 'Serious', 'Yes';
+         push @properties, 'Level', 'error';
       }
 
       $line =~ s/^\s+//;
       $line =~ s/\s{2,}/ /;
       $line =~ s/\s+$//;
+
 
       if ( $line =~ m/^InnoDB: / ) {
          MKDEBUG && _d('InnoDB message:', $line);
@@ -940,7 +1099,44 @@ sub parse_event {
          MKDEBUG && _d('Pending next line:', $next_line);
          push @$pending, $next_line;
       }
+      elsif ( $line =~ m/\bQuery: '/ ) {
+         MKDEBUG && _d('Error query:', $line);
+         my $next_line;
+         my $last_line = 0;
+         while ( !$last_line && defined($next_line = <$fh>) ) {
+            chomp $next_line;
+            MKDEBUG && _d('Error query:', $next_line);
+            $line     .= $next_line;
+            $last_line = 1 if $next_line =~ m/, Error_code:/;
+         }
+      }
+      elsif ( $line =~ m/mysqld got signal 6/ ) {
+         MKDEBUG && _d('Stack trace:', $line);
+         $line .= "\n";
+         my $next_line;
+         while ( defined($next_line = <$fh>)
+                 && $next_line !~ m/^$ts/o ) {
+            MKDEBUG && _d('Stack trace:', $next_line);
+            $line .= $next_line;
+         }
+         MKDEBUG && _d('Pending next line:', $next_line);
+         push @$pending, $next_line;
+      }
+      elsif ( $line =~ m/(?:Status information|Memory status):/ ) {
+         MKDEBUG && _d('Debug:', $line);
+         $line .= "\n";
+         my $next_line;
+         while ( defined($next_line = <$fh>)
+                 && $next_line !~ m/^$ts/o ) {
+            next if $next_line =~ m/^$/;
+            MKDEBUG && _d('Debug:', $next_line);
+            $line .= $next_line;
+         }
+         MKDEBUG && _d('Pending next line:', $next_line);
+         push @$pending, $next_line;
+      }
 
+      chomp $line;
       push @properties, 'arg', $line;
 
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
@@ -969,7 +1165,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ErrorLogPatternMatcher package 5248
+# ErrorLogPatternMatcher package 5257
 # ###########################################################################
 package ErrorLogPatternMatcher;
 
@@ -989,24 +1185,43 @@ sub new {
       %args,
       patterns => [],
       compiled => [],
+      level    => [],
+      name     => [],
    };
    return bless $self, $class;
 }
 
-sub _escape_regex {
-   my ( $self, $str ) = @_;
-   $str =~ s!([^A-Za-z_0-9 /:'"=;-])!\\$1!g;
-   return $str;
+sub add_patterns {
+   my ( $self, $patterns ) = @_;
+   foreach my $p ( @$patterns ) {
+      next unless $p && scalar @$p;
+      my ($name, $level, $regex) = @$p;
+      push @{$self->{names}},    $name;
+      push @{$self->{levels}},   $level;
+      push @{$self->{patterns}}, $regex;
+      push @{$self->{compiled}}, qr/$regex/;
+      MKDEBUG && _d('Added new pattern:', $name, $level, $regex,
+         $self->{compiled}->[-1]);
+   }
+   return;
 }
 
-sub add_patterns {
-   my ( $self, @patterns ) = @_;
-   my $patterns = $self->{patterns};
-   foreach my $p ( @patterns ) {
-      next unless $p;
-      push @{$self->{patterns}}, $p;
-      push @{$self->{compiled}}, qr/$p/;
-      MKDEBUG && _d('Added new pattern:', $p, $self->{compiled}->[-1]);
+sub load_patterns_file {
+   my ( $self, $fh ) = @_;
+   local $INPUT_RECORD_SEPARATOR = '';
+   my %seen;
+   my $pattern;
+   while ( defined($pattern = <$fh>) ) {
+      my ($name, $level, $regex) = split("\n", $pattern);
+      if ( !($name && $level && $regex) ) {
+         warn "Pattern missing name, level or regex:\n$pattern";
+         next;
+      }
+      if ( $seen{$name}++ ) {
+         warn "Duplicate pattern: $name";
+         next;
+      }
+      $self->add_patterns( [[$name, $level, $regex]] );
    }
    return;
 }
@@ -1014,6 +1229,16 @@ sub add_patterns {
 sub patterns {
    my ( $self ) = @_;
    return @{$self->{patterns}};
+}
+
+sub names {
+   my ( $self ) = @_;
+   return @{$self->{names}};
+}
+
+sub levels {
+   my ( $self ) = @_;
+   return @{$self->{levels}};
 }
 
 sub match {
@@ -1026,31 +1251,37 @@ sub match {
    my $err   = $event->{arg};
    return unless $err;
 
+   if ( $self->{QueryRewriter}
+        && (my ($query) = $err =~ m/Statement: (.+)$/) ) {
+      $query = $self->{QueryRewriter}->fingerprint($query);
+      $err =~ s/Statement: .+$/Statement: $query/;
+   }
+
    my $compiled = $self->{compiled};
    my $n        = (scalar @$compiled) - 1;
-   my $matches;
+   my $pno;
    PATTERN:
    for my $i ( 0..$n ) {
       if ( $err =~ m/$compiled->[$i]/ ) {
-         $matches = $i;
+         $pno = $i;
          last PATTERN;
       } 
    }
 
-   if ( defined $matches ) {
-      MKDEBUG && _d($err, 'matches', $self->{patterns}->[$matches]);
+   if ( defined $pno ) {
+      MKDEBUG && _d($err, 'matches', $self->{patterns}->[$pno]);
       $event->{New_pattern} = 'No';
-      $event->{Pattern_no}  = $matches;
+      $event->{Pattern_no}  = $pno;
+
+      if ( !$event->{Level} && $self->{levels}->[$pno] ) {
+         $event->{Level} = $self->{levels}->[$pno];
+      }
    }
    else {
       MKDEBUG && _d('New pattern');
-
-      $err = $self->_escape_regex($err);
-
-      my $new_pattern = $args{new_pattern} ?  $args{new_pattern}->($err)
-                      : $err;
-      $self->add_patterns($new_pattern);
-
+      my $regex = $self->fingerprint($err);
+      my $name  = substr($err, 0, 50);
+      $self->add_patterns( [ [$name, $event->{Level}, $regex] ] );
       $event->{New_pattern} = 'Yes';
       $event->{Pattern_no}  = (scalar @{$self->{patterns}}) - 1;
    }
@@ -1058,6 +1289,17 @@ sub match {
    $event->{Pattern} = $self->{patterns}->[ $event->{Pattern_no} ];
 
    return $event;
+}
+
+sub fingerprint {
+   my ( $self, $err ) = @_;
+
+   $err =~ s/([\(\)\[\].+?*\{\}])/\\$1/g;
+
+   $err =~ s/\b\d+\b/\\d+/g;              # numbers
+   $err =~ s/\b0x[0-9a-zA-Z]+\b/0x\\S+/g; # hex values
+
+   return $err;
 }
 
 sub _d {
@@ -1108,11 +1350,21 @@ sub main {
 
    $o->usage_or_errors();
 
+
    # ##########################################################################
    # Get ready to do the main work.
    # ##########################################################################
    my $parser  = new ErrorLogParser();
    my $matcher = new ErrorLogPatternMatcher();
+
+   # ##########################################################################
+   # Load saved patterns.
+   # ##########################################################################
+   if ( my $file = $o->get('patterns') ) {
+      open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+      $matcher->load_patterns_file($fh);
+   }
+   load_known_patterns($matcher) if $o->get('known-patterns');
 
    if ( @ARGV == 0 ) {
       push @ARGV, '-'; # Magical STDIN filename.
@@ -1143,10 +1395,39 @@ sub main {
       close $fh;
    }
 
-   my @patterns = $matcher->patterns;
-   foreach my $pno ( sort { $cnt{$b} <=> $cnt{$a} } keys %cnt ) {
-      print "$cnt{$pno}: " . $patterns[$pno] . "\n\n";
+   # ##########################################################################
+   # Do the report.
+   # ##########################################################################
+   my $reporter = new ReportFormatter(
+      line_prefix => '',
+   );
+   $reporter->set_columns(
+      { name => 'Count',   right_justify => 1,              },
+      { name => 'Level',                                    },
+      { name => 'Message', fixed_width => 60, truncate => 1 },
+   );
+
+   # Save patterns while doing the report.
+   my @patterns;
+   my $fh;
+   if ( my $file = $o->get('patterns') ) {
+      open $fh, '>', $file or die "Cannot write to $file: $OS_ERROR";
+      @patterns = $matcher->patterns;
    }
+
+   my @names  = $matcher->names;
+   my @levels = $matcher->levels;
+
+   foreach my $pno ( sort { $cnt{$b} <=> $cnt{$a} } keys %cnt ) {
+      $reporter->add_line($cnt{$pno}, $levels[$pno] || '', $names[$pno] || '');
+      if ( $fh ) {
+         print $fh "$names[$pno]\n$levels[$pno]\n$patterns[$pno]\n\n";
+      }
+   }
+
+   print $reporter->get_report();
+
+   close $fh if $fh;
 
    return 0;
 }
@@ -1154,11 +1435,19 @@ sub main {
 # ##########################################################################
 # Subroutines
 # ##########################################################################
-sub new_pattern {
-   my ( $err ) = @_;
-   $err =~ s/\b\d+\b/\\d+/g;
-   $err =~ s/\b0x[0-9a-zA-Z]+\b/0x\\S+/g;
-   return $err;
+sub load_known_patterns {
+   my ( $matcher ) = @_;
+   my @known_patterns = (
+      # name               level     regex
+      ['mysqld started',   'info',   'mysqld started'                        ],
+      ['mysqld ended',     'info',   'mysqld ended'                          ],
+      ['version',          'info',   '^Version: \S+ '                        ],
+      ['memory status',    'info',   '^Memory status:'                       ],
+      ['debug',            'info',   '^Status information:',                 ],
+      ['InnoDB started',   'info',   '^InnoDB: Started; log sequence number' ],
+   );
+   $matcher->add_patterns(\@known_patterns);
+   return;
 }
 
 sub _d {
@@ -1255,11 +1544,23 @@ short form: -h; type: string
 
 Connect to host.
 
+=item --[no]known-patterns
+
+default: yes
+
+Load known patterns.
+
 =item --password
 
 short form: -p; type: string
 
 Password to use when connecting.
+
+=item --patterns
+
+type: string
+
+Read old patterns and write new patterns to this file.
 
 =item --pid
 
