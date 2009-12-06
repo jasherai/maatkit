@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 110;
+use Test::More tests => 111;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -967,6 +967,27 @@ SKIP: {
       'EXPLAIN /*!50100 PARTITIONS */ (issue 611)'
    );
 };
+
+# #############################################################################
+# Test a sample that at one point caused an error (trunk doesn't have the error
+# now):
+# Use of uninitialized value in join or string at mk-query-digest line 1713.
+# or on newer Perl:
+# Use of uninitialized value $verbs in join or string at mk-query-digest line
+# 1713.
+# The code in question is this:
+#  else {
+#     my ($verbs, $table)  = $self->_distill_verbs($query, %args);
+#     my @tables           = $self->_distill_tables($query, $table, %args);
+#     $query               = join(q{ }, $verbs, @tables);
+#  }
+# #############################################################################
+$output = `../mk-query-digest ../../common/t/samples/slow041.txt >/dev/null 2>/tmp/mqd-warnings.txt`;
+is(
+   -s '/tmp/mqd-warnings.txt',
+   0,
+   'No warnings on file 041'
+);
 
 # #############################################################################
 # Issue 687: Test segfaults on old version of Perl
