@@ -27,7 +27,7 @@ use English qw(-no_match_vars);
 my $DUPE_KEY  = qr/Duplicate entry/;
 our @ACTIONS  = qw(DELETE REPLACE INSERT UPDATE);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Arguments:
 # * Quoter     Quoter object

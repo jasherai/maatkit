@@ -31,7 +31,7 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Defaults are built-in, but you can add/replace items by passing them as
 # hashrefs of {key, desc, copy, dsn}.  The desc and dsn items are optional.

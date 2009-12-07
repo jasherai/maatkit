@@ -24,7 +24,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use List::Util qw(max);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # BXT_XOR is actually faster than ACCUM as long as the user-variable
 # optimization can be used.  I've never seen a case where it can't be.

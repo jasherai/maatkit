@@ -24,7 +24,7 @@ package RowDiff;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Optional args:
 #   * same_row      Callback when rows are identical

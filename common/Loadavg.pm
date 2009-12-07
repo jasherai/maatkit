@@ -26,7 +26,7 @@ use List::Util qw(sum);
 use Time::HiRes qw(time);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;

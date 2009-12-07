@@ -27,7 +27,7 @@ use File::Temp ();
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $option_pattern = '([^\s=]+)(?:=(\S+))?';
 

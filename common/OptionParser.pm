@@ -26,7 +26,7 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 

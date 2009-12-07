@@ -25,7 +25,7 @@ use English qw(-no_match_vars);
 
 use List::Util qw(min);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;

@@ -24,7 +24,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Each column is an arrayref of [ spec, title ].  spec is just like a sprintf
 # spec except it has no width.  If there is a # in it, that'll be replaced by

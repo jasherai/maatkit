@@ -27,7 +27,7 @@ use English qw(-no_match_vars);
 use Time::Local qw(timegm timelocal);
 use Digest::MD5 qw(md5_hex);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 require Exporter;
 our @ISA         = qw(Exporter);

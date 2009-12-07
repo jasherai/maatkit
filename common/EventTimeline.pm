@@ -29,7 +29,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 Transformers->import(qw(parse_timestamp secs_to_time unix_timestamp));
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use constant KEY     => 0;
 use constant CNT     => 1;
 use constant ATT     => 2;

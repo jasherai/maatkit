@@ -37,7 +37,7 @@ our @EXPORT_OK   = qw(
    wait_until
 );
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # This sub doesn't work yet because "mk_upgrade::main" needs to be ref somehow.
 sub output {

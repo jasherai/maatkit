@@ -26,7 +26,7 @@ use POSIX qw(floor);
 
 Transformers->import(qw(micro_t));
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;

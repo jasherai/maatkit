@@ -24,7 +24,7 @@ package QueryRewriter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # A list of verbs that can appear in queries.  I know this is incomplete -- it
 # does not have CREATE, DROP, ALTER, TRUNCATE for example.  But I don't need

@@ -26,7 +26,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # TODO see 3 tablespace extents now reserved for B-tree split operations
 # example in note on case 1028

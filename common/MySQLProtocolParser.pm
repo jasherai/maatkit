@@ -62,7 +62,7 @@ our @EXPORT_OK   = qw(
    parse_flags
 );
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use constant {
    COM_SLEEP               => '00',
    COM_QUIT                => '01',

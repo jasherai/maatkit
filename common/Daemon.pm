@@ -27,7 +27,7 @@ use warnings FATAL => 'all';
 use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # The required o arg is an OptionParser object.
 sub new {

@@ -28,7 +28,7 @@ use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    bless {}, shift;

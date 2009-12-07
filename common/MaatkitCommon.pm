@@ -35,7 +35,7 @@ our @EXPORT_OK   = qw(
    get_number_of_cpus
 );
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Eventually _d() will be exported by default.  We can't do this until
 # we remove it from all other modules else we'll get a "redefined" error.

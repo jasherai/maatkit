@@ -23,7 +23,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 # This regex finds things that look like database.table identifiers, based on
 # their proximity to keywords.  (?<!KEY\s) is a workaround for ON DUPLICATE KEY

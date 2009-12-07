@@ -31,7 +31,7 @@ Transformers->import(qw(make_checksum parse_timestamp));
 
 use Data::Dumper;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # These columns are the minimal set of columns for every review table.  TODO:
 # maybe it's possible to specify this in the tool's POD and pass it in so it's

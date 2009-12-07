@@ -24,7 +24,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Time::HiRes qw(time);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
