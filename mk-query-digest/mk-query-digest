@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 5226
+# DSNParser package 5266
 # ###########################################################################
 package DSNParser;
 
@@ -41,7 +41,7 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -384,7 +384,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4943
+# Quoter package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -393,7 +393,7 @@ package Quoter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -449,7 +449,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 4805
+# OptionParser package 5266
 # ###########################################################################
 package OptionParser;
 
@@ -460,7 +460,7 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -1285,7 +1285,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 5144
+# Transformers package 5266
 # ###########################################################################
 
 package Transformers;
@@ -1296,7 +1296,7 @@ use English qw(-no_match_vars);
 use Time::Local qw(timegm timelocal);
 use Digest::MD5 qw(md5_hex);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 require Exporter;
 our @ISA         = qw(Exporter);
@@ -1495,7 +1495,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5228
+# QueryRewriter package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1504,7 +1504,7 @@ package QueryRewriter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
                   |UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK}xi;
@@ -1816,7 +1816,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 5148
+# Processlist package 5266
 # ###########################################################################
 package Processlist;
 
@@ -1829,7 +1829,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use constant {
    ID      => 0,
    USER    => 1,
@@ -2108,7 +2108,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 5155
+# TcpdumpParser package 5266
 # ###########################################################################
 package TcpdumpParser;
 
@@ -2120,7 +2120,7 @@ use Data::Dumper;
 $Data::Dumper::Indent   = 1;
 $Data::Dumper::Sortkeys = 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -2237,7 +2237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5178
+# MySQLProtocolParser package 5266
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2269,7 +2269,7 @@ our @EXPORT_OK   = qw(
    parse_flags
 );
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use constant {
    COM_SLEEP               => '00',
    COM_QUIT                => '01',
@@ -3153,7 +3153,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 5133
+# SlowLogParser package 5266
 # ###########################################################################
 package SlowLogParser;
 
@@ -3162,7 +3162,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Data::Dumper;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -3329,7 +3329,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogWriter package 5191
+# SlowLogWriter package 5266
 # ###########################################################################
 package SlowLogWriter;
 
@@ -3337,7 +3337,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -3987,7 +3987,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 5113
+# ReportFormatter package 5266
 # ###########################################################################
 package ReportFormatter;
 
@@ -3996,7 +3996,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use List::Util qw(min max);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -4532,7 +4532,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventTimeline package 3539
+# EventTimeline package 5266
 # ###########################################################################
 
 
@@ -4544,7 +4544,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 Transformers->import(qw(parse_timestamp secs_to_time unix_timestamp));
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use constant KEY     => 0;
 use constant CNT     => 1;
 use constant ATT     => 2;
@@ -4700,7 +4700,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4977
+# QueryParser package 5266
 # ###########################################################################
 package QueryParser;
 
@@ -4708,7 +4708,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 our $tbl_regex = qr{
          \b(?:FROM|JOIN|(?<!KEY\s)UPDATE|INTO) # Words that precede table names
@@ -4982,7 +4982,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 4160
+# MySQLDump package 5266
 # ###########################################################################
 package MySQLDump;
 
@@ -4991,7 +4991,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -5289,7 +5289,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5216
+# TableParser package 5266
 # ###########################################################################
 package TableParser;
 
@@ -5301,7 +5301,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 
 sub new {
@@ -5674,7 +5674,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 3277
+# QueryReview package 5266
 # ###########################################################################
 
 package QueryReview;
@@ -5687,7 +5687,7 @@ Transformers->import(qw(make_checksum parse_timestamp));
 
 use Data::Dumper;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my %basic_cols = map { $_ => 1 }
    qw(checksum fingerprint sample first_seen last_seen reviewed_by
@@ -5826,7 +5826,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 4565
+# Daemon package 5266
 # ###########################################################################
 
 package Daemon;
@@ -5837,7 +5837,7 @@ use warnings FATAL => 'all';
 use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -6005,7 +6005,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedProtocolParser package 5130
+# MemcachedProtocolParser package 5266
 # ###########################################################################
 package MemcachedProtocolParser;
 
@@ -6018,7 +6018,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -6369,7 +6369,7 @@ sub timestamp_diff {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedEvent package 5139
+# MemcachedEvent package 5266
 # ###########################################################################
 package MemcachedEvent;
 
@@ -6383,7 +6383,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my %cmds = map { $_ => 1 } qw(
    set
@@ -6512,7 +6512,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 5134
+# BinaryLogParser package 5266
 # ###########################################################################
 package BinaryLogParser;
 
@@ -6525,7 +6525,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -6533,7 +6533,7 @@ sub new {
       delim     => undef,
       delim_len => 0,
    };
-   return bless {}, $class;
+   return bless $self, $class;
 }
 
 my $binlog_line_1 = qr/at (\d+)$/m;
@@ -6705,7 +6705,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# GeneralLogParser package 5135
+# GeneralLogParser package 5266
 # ###########################################################################
 package GeneralLogParser;
 
@@ -6718,7 +6718,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -6853,7 +6853,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ProtocolParser package 5129
+# ProtocolParser package 5266
 # ###########################################################################
 package ProtocolParser;
 
@@ -6871,7 +6871,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -7151,7 +7151,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# HTTPProtocolParser package 5121
+# HTTPProtocolParser package 5266
 # ###########################################################################
 package HTTPProtocolParser;
 use base 'ProtocolParser';
@@ -7165,7 +7165,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -7354,7 +7354,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ExecutionThrottler package 5204
+# ExecutionThrottler package 5266
 # ###########################################################################
 package ExecutionThrottler;
 
@@ -7369,7 +7369,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -7505,7 +7505,7 @@ $OUTPUT_AUTOFLUSH     = 1;
 Transformers->import(qw(shorten micro_t percentage_of ts make_checksum
    any_unix_timestamp));
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 use sigtrap 'handler', \&sig_int, 'normal-signals';
 

@@ -39,7 +39,7 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -873,7 +873,7 @@ package Quoter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -945,7 +945,7 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -1299,7 +1299,7 @@ use warnings FATAL => 'all';
 use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1478,7 +1478,7 @@ use English qw(-no_match_vars);
 use Time::Local qw(timelocal);
 use Digest::MD5 qw(md5_hex);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 require Exporter;
 our @ISA         = qw(Exporter);
@@ -1678,7 +1678,7 @@ package mk_fk_error_logger;
 use English qw(-no_match_vars);
 use sigtrap qw(handler finish untrapped normal-signals);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 Transformers->import(qw(parse_timestamp));
 

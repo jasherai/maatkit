@@ -30,7 +30,7 @@ use English qw(-no_match_vars);
 $OUTPUT_AUTOFLUSH = 1;
 
 # ###########################################################################
-# OptionParser package 4805
+# OptionParser package 5266
 # ###########################################################################
 package OptionParser;
 
@@ -41,7 +41,7 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -866,7 +866,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 3186
+# VersionParser package 5266
 # ###########################################################################
 package VersionParser;
 
@@ -875,7 +875,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -915,7 +915,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5226
+# DSNParser package 5266
 # ###########################################################################
 package DSNParser;
 
@@ -931,7 +931,7 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -1274,7 +1274,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 5134
+# BinaryLogParser package 5266
 # ###########################################################################
 package BinaryLogParser;
 
@@ -1287,7 +1287,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1295,7 +1295,7 @@ sub new {
       delim     => undef,
       delim_len => 0,
    };
-   return bless {}, $class;
+   return bless $self, $class;
 }
 
 my $binlog_line_1 = qr/at (\d+)$/m;
@@ -1467,7 +1467,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5228
+# QueryRewriter package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1476,7 +1476,7 @@ package QueryRewriter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
                   |UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK}xi;
@@ -1788,7 +1788,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 4565
+# Daemon package 5266
 # ###########################################################################
 
 package Daemon;
@@ -1799,7 +1799,7 @@ use warnings FATAL => 'all';
 use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1967,7 +1967,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 4160
+# MySQLDump package 5266
 # ###########################################################################
 package MySQLDump;
 
@@ -1976,7 +1976,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -2274,7 +2274,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5216
+# TableParser package 5266
 # ###########################################################################
 package TableParser;
 
@@ -2286,7 +2286,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 
 sub new {
@@ -2659,7 +2659,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4977
+# QueryParser package 5266
 # ###########################################################################
 package QueryParser;
 
@@ -2667,7 +2667,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 our $tbl_regex = qr{
          \b(?:FROM|JOIN|(?<!KEY\s)UPDATE|INTO) # Words that precede table names
@@ -2941,7 +2941,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4943
+# Quoter package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2950,7 +2950,7 @@ package Quoter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -3006,7 +3006,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# SlavePrefetch package 4726
+# SlavePrefetch package 5266
 # ###########################################################################
 package SlavePrefetch;
 
@@ -3021,7 +3021,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -3630,7 +3630,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # $oktorun must be global so finish() can access it if we catch a signal.
 my $oktorun = 1;

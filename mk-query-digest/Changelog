@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * The script crashed immediately on some OS or versions of Perl (issue 733).
 2009-12-02: version 0.9.12
 
    * Certain very large queries segfaulted (issue 687).

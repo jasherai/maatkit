@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# Quoter package 4943
+# Quoter package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -37,7 +37,7 @@ package Quoter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -93,7 +93,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 4805
+# OptionParser package 5266
 # ###########################################################################
 package OptionParser;
 
@@ -104,7 +104,7 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -929,7 +929,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 3186
+# VersionParser package 5266
 # ###########################################################################
 package VersionParser;
 
@@ -938,7 +938,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -978,7 +978,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5226
+# DSNParser package 5266
 # ###########################################################################
 package DSNParser;
 
@@ -994,7 +994,7 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -1337,7 +1337,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 4760
+# MasterSlave package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1350,7 +1350,7 @@ use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    bless {}, shift;
@@ -1940,7 +1940,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 4565
+# Daemon package 5266
 # ###########################################################################
 
 package Daemon;
@@ -1951,7 +1951,7 @@ use warnings FATAL => 'all';
 use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -2134,7 +2134,7 @@ use List::Util qw(min max);
 use Time::HiRes qw(sleep);
 use sigtrap qw(handler finish untrapped normal-signals);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 $OUTPUT_AUTOFLUSH = 1;
 

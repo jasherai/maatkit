@@ -1,5 +1,6 @@
 Changelog for mk-duplicate-key-checker:
 
+   * The script crashed immediately on some OS or versions of Perl (issue 733).
 2009-12-02: version 1.2.9
 
    * Added key definitions to report (issue 693).

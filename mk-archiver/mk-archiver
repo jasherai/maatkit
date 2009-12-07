@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 4805
+# OptionParser package 5266
 # ###########################################################################
 package OptionParser;
 
@@ -39,7 +39,7 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -864,7 +864,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5216
+# TableParser package 5266
 # ###########################################################################
 package TableParser;
 
@@ -876,7 +876,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 
 sub new {
@@ -1249,7 +1249,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5226
+# DSNParser package 5266
 # ###########################################################################
 package DSNParser;
 
@@ -1265,7 +1265,7 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -1608,7 +1608,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 3186
+# VersionParser package 5266
 # ###########################################################################
 package VersionParser;
 
@@ -1617,7 +1617,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -1657,7 +1657,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4943
+# Quoter package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1666,7 +1666,7 @@ package Quoter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -1722,7 +1722,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 4734
+# TableNibbler package 5266
 # ###########################################################################
 package TableNibbler;
 
@@ -1731,7 +1731,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1977,7 +1977,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 4160
+# MySQLDump package 5266
 # ###########################################################################
 package MySQLDump;
 
@@ -1986,7 +1986,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -2284,7 +2284,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 4565
+# Daemon package 5266
 # ###########################################################################
 
 package Daemon;
@@ -2295,7 +2295,7 @@ use warnings FATAL => 'all';
 use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -2481,7 +2481,7 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Global variables; as few as possible.
 my $oktorun   = 1;

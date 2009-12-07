@@ -1,5 +1,6 @@
 Changelog for mk-show-grants:
 
+   * The script crashed immediately on some OS or versions of Perl (issue 733).
 2009-10-30: version 1.0.20
 
    * Added ability to do --only foo for foo grants on all hosts (issue 551).

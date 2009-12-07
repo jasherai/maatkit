@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 4805
+# OptionParser package 5266
 # ###########################################################################
 package OptionParser;
 
@@ -39,7 +39,7 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -864,7 +864,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4943
+# Quoter package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -873,7 +873,7 @@ package Quoter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -929,7 +929,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5226
+# DSNParser package 5266
 # ###########################################################################
 package DSNParser;
 
@@ -945,7 +945,7 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -1288,7 +1288,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 3186
+# VersionParser package 5266
 # ###########################################################################
 package VersionParser;
 
@@ -1297,7 +1297,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -1337,7 +1337,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 4802
+# TableSyncStream package 5266
 # ###########################################################################
 package TableSyncStream;
 
@@ -1346,7 +1346,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1452,7 +1452,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5216
+# TableParser package 5266
 # ###########################################################################
 package TableParser;
 
@@ -1464,7 +1464,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 
 sub new {
@@ -1837,7 +1837,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 4561
+# RowDiff package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1846,7 +1846,7 @@ package RowDiff;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -2000,7 +2000,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 4160
+# MySQLDump package 5266
 # ###########################################################################
 package MySQLDump;
 
@@ -2009,7 +2009,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -2307,7 +2307,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 4943
+# ChangeHandler package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2319,7 +2319,7 @@ use English qw(-no_match_vars);
 my $DUPE_KEY  = qr/Duplicate entry/;
 our @ACTIONS  = qw(DELETE REPLACE INSERT UPDATE);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -2548,7 +2548,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 4960
+# TableChunker package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2563,7 +2563,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -2947,7 +2947,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 4996
+# TableChecksum package 5266
 # ###########################################################################
 package TableChecksum;
 
@@ -2956,7 +2956,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use List::Util qw(max);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 our %ALGOS = (
    CHECKSUM => { pref => 0, hash => 0 },
@@ -3306,7 +3306,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 4832
+# TableSyncChunk package 5266
 # ###########################################################################
 package TableSyncChunk;
 
@@ -3320,7 +3320,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -3562,7 +3562,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 4949
+# TableSyncNibble package 5266
 # ###########################################################################
 package TableSyncNibble;
 
@@ -3576,7 +3576,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -3926,7 +3926,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncGroupBy package 4802
+# TableSyncGroupBy package 5266
 # ###########################################################################
 package TableSyncGroupBy;
 
@@ -3935,7 +3935,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -4074,7 +4074,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 4832
+# TableSyncer package 5266
 # ###########################################################################
 package TableSyncer;
 
@@ -4087,7 +4087,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -4496,7 +4496,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 4804
+# MySQLFind package 5266
 # ###########################################################################
 package MySQLFind;
 
@@ -4508,7 +4508,7 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 
 sub new {
@@ -4718,7 +4718,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 4734
+# TableNibbler package 5266
 # ###########################################################################
 package TableNibbler;
 
@@ -4727,7 +4727,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -4973,7 +4973,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 4760
+# MasterSlave package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -4986,7 +4986,7 @@ use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    bless {}, shift;
@@ -5576,7 +5576,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 4565
+# Daemon package 5266
 # ###########################################################################
 
 package Daemon;
@@ -5587,7 +5587,7 @@ use warnings FATAL => 'all';
 use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -5768,7 +5768,7 @@ use English qw(-no_match_vars);
 use List::Util qw(sum max min);
 use POSIX qw(ceil);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 $OUTPUT_AUTOFLUSH = 1;
 

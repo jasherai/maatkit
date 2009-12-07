@@ -1,5 +1,6 @@
 Changelog for mk-slave-prefetch:
 
+   * The script crashed immediately on some OS or versions of Perl (issue 733).
 2009-10-30: version 1.0.13
 
    * Tool died on unknown binary log event types (issue 606).

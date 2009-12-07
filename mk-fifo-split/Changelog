@@ -1,5 +1,6 @@
 Changelog for mk-fifo-split:
 
+   * The script crashed immediately on some OS or versions of Perl (issue 733).
 2009-10-30: version 1.0.6
 
    * --set-vars did not work (issue 597).

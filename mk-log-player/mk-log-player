@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 4805
+# OptionParser package 5266
 # ###########################################################################
 package OptionParser;
 
@@ -36,7 +36,7 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -861,7 +861,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 5133
+# SlowLogParser package 5266
 # ###########################################################################
 package SlowLogParser;
 
@@ -870,7 +870,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Data::Dumper;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -1037,7 +1037,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 5134
+# BinaryLogParser package 5266
 # ###########################################################################
 package BinaryLogParser;
 
@@ -1050,7 +1050,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1058,7 +1058,7 @@ sub new {
       delim     => undef,
       delim_len => 0,
    };
-   return bless {}, $class;
+   return bless $self, $class;
 }
 
 my $binlog_line_1 = qr/at (\d+)$/m;
@@ -1230,7 +1230,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# GeneralLogParser package 5135
+# GeneralLogParser package 5266
 # ###########################################################################
 package GeneralLogParser;
 
@@ -1243,7 +1243,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -1740,7 +1740,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5226
+# DSNParser package 5266
 # ###########################################################################
 package DSNParser;
 
@@ -1756,7 +1756,7 @@ eval {
 };
 my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -2099,7 +2099,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MaatkitCommon package 4253
+# MaatkitCommon package 5266
 # ###########################################################################
 package MaatkitCommon;
 
@@ -2118,7 +2118,7 @@ our @EXPORT_OK   = qw(
    get_number_of_cpus
 );
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub _d {
    my ($package, undef, $line) = caller 0;
@@ -2164,7 +2164,7 @@ sub get_number_of_cpus {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 4565
+# Daemon package 5266
 # ###########################################################################
 
 package Daemon;
@@ -2175,7 +2175,7 @@ use warnings FATAL => 'all';
 use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -2365,7 +2365,7 @@ $Data::Dumper::Quotekeys = 0;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $o;
 my $dp;

@@ -1,5 +1,6 @@
 Changelog for mk-log-player:
 
+   * The script crashed immediately on some OS or versions of Perl (issue 733).
 2009-12-02: version 1.0.3
 
    * Added general log splitting; --type genlog (issue 172).
