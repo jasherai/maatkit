@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 111;
+use Test::More tests => 116;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1008,6 +1008,30 @@ is(
 );
 
 diag(`rm -rf /tmp/mqd-warnings.txt`);
+
+# #############################################################################
+# Issue 740: Handle prepared statements
+# #############################################################################
+ok(
+   no_diff($run_with.'tcpdump021.txt --type tcpdump --watch-server 127.0.0.1:12345', 'samples/tcpdump021.txt'),
+   'Analysis for tcpdump021 with prepared statements'
+);
+ok(
+   no_diff($run_with.'tcpdump022.txt --type tcpdump --watch-server 127.0.0.1:12345', 'samples/tcpdump022.txt'),
+   'Analysis for tcpdump022 with prepared statements'
+);
+ok(
+   no_diff($run_with.'tcpdump023.txt --type tcpdump --watch-server 127.0.0.1:12345', 'samples/tcpdump023.txt'),
+   'Analysis for tcpdump023 with prepared statements'
+);
+ok(
+   no_diff($run_with.'tcpdump024.txt --type tcpdump --watch-server 127.0.0.1:12345', 'samples/tcpdump024.txt'),
+   'Analysis for tcpdump024 with prepared statements'
+);
+ok(
+   no_diff($run_with.'tcpdump025.txt --type tcpdump --watch-server 127.0.0.1:12345', 'samples/tcpdump025.txt'),
+   'Analysis for tcpdump025 with prepared statements'
+);
 
 # #############################################################################
 # Done.
