@@ -2237,7 +2237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5270
+# MySQLProtocolParser package 5272
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2801,15 +2801,6 @@ sub _packet_from_client {
          }
          $com->{data} = $exec->{arg};
       }
-      elsif ( $com->{code} eq COM_STMT_CLOSE ) {
-         my $close  = parse_close_packet($com->{data}, $session->{sths});
-         if ( !$close ) {
-            $self->fail_session($session,
-               'failed to parse prepared statement close packet');
-            return;
-         }
-         $com->{data} = $close->{arg};
-      }
 
       $session->{state}      = 'awaiting_reply';
       $session->{pos_in_log} = $packet->{pos_in_log};
@@ -2824,6 +2815,22 @@ sub _packet_from_client {
          return $self->_make_event(
             {  cmd       => 'Admin',
                arg       => 'administrator command: Quit',
+               ts        => $ts,
+            },
+            $packet, $session
+         );
+         $session->{state} = 'closing';
+      }
+      elsif ( $com->{code} eq COM_STMT_CLOSE ) {
+         my $close  = parse_close_packet($com->{data}, $session->{sths});
+         if ( !$close ) {
+            $self->fail_session($session,
+               'failed to parse prepared statement close packet');
+            return;
+         }
+         return $self->_make_event(
+            {  cmd       => 'Query',
+               arg       => $close->{arg},
                ts        => $ts,
             },
             $packet, $session
