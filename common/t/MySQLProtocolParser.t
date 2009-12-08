@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 45;
+use Test::More tests => 47;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -966,6 +966,33 @@ run_test({
          port => '48585',
          pos_in_log => 1014,
          ts => '091208 14:44:52.709597',
+         user => undef
+      }
+   ],
+});
+
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+run_test({
+   file   => 'samples/tcpdump026.txt',
+   desc   => 'prepared statements, close statement',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000000',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'DEALLOCATE PREPARE 50',
+         bytes => 21,
+         cmd => 'Query',
+         db => undef,
+         host => '1.2.3.4',
+         ip => '1.2.3.4',
+         port => '34162',
+         pos_in_log => 0,
+         ts => '091208 17:42:12.696547',
          user => undef
       }
    ],
