@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 35;
+use Test::More tests => 45;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -718,6 +718,258 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
       'Re-assembled data is correct (issue 558)'
    );
 }
+
+# #############################################################################
+# Issue 740: Handle prepared statements
+# #############################################################################
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+run_test({
+   file   => 'samples/tcpdump021.txt',
+   desc   => 'prepared statements, simple, no NULL',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000286',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'PREPARE 2 FROM SELECT i FROM d.t WHERE i=?',
+         bytes => 42,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '58619',
+         pos_in_log => 0,
+         ts => '091208 09:23:49.637394',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'Yes',
+         Query_time => '0.000281',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'SELECT i FROM d.t WHERE i=3',
+         bytes => 27,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '58619',
+         pos_in_log => 1106,
+         ts => '091208 09:23:49.637892',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+          No_good_index_used => 'No',
+          No_index_used => 'No',
+          Query_time => '0.000000',
+          Rows_affected => 0,
+          Thread_id => '4294967296',
+          Warning_count => 0,
+          arg => 'administrator command: Quit',
+          bytes => 27,
+          cmd => 'Admin',
+          db => undef,
+          host => '127.0.0.1',
+          ip => '127.0.0.1',
+          port => '58619',
+          pos_in_log => 1850,
+          ts => '091208 09:23:49.638381',
+          user => undef
+      },
+   ],
+});
+
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+run_test({
+   file   => 'samples/tcpdump022.txt',
+   desc   => 'prepared statements, NULL value',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000303',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'PREPARE 2 FROM SELECT i,j FROM d.t2 WHERE i=? AND j=?',
+         bytes => 53,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '44545',
+         pos_in_log => 0,
+         ts => '091208 13:41:12.811188',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000186',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'SELECT i,j FROM d.t2 WHERE i=NULL AND j=5',
+         bytes => 41,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '44545',
+         pos_in_log => 1330,
+         ts => '091208 13:41:12.811591',
+         user => undef
+      }
+      ],
+});
+
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+run_test({
+   file   => 'samples/tcpdump023.txt',
+   desc   => 'prepared statements, string, char and float',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000315',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'PREPARE 2 FROM SELECT * FROM d.t3 WHERE v=? OR c=? OR f=?',
+         bytes => 57,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '49806',
+         pos_in_log => 0,
+         ts => '091208 14:14:55.951863',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000249',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'SELECT * FROM d.t3 WHERE v="hello world" OR c="a" OR f=1.23',
+         bytes => 59,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '49806',
+         pos_in_log => 1540,
+         ts => '091208 14:14:55.952344',
+         user => undef
+      }
+   ],
+});
+
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+run_test({
+   file   => 'samples/tcpdump024.txt',
+   desc   => 'prepared statements, all NULL',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000278',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'PREPARE 2 FROM SELECT * FROM d.t3 WHERE v=? OR c=? OR f=?',
+         bytes => 57,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '32810',
+         pos_in_log => 0,
+         ts => '091208 14:33:13.711351',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000159',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'SELECT * FROM d.t3 WHERE v=NULL OR c=NULL OR f=NULL',
+         bytes => 51,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '32810',
+         pos_in_log => 1540,
+         ts => '091208 14:33:13.711642',
+         user => undef
+      },
+   ],
+});
+
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+run_test({
+   file   => 'samples/tcpdump025.txt',
+   desc   => 'prepared statements, no params',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000268',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'PREPARE 2 FROM SELECT * FROM d.t WHERE 1 LIMIT 1;',
+         bytes => 49,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '48585',
+         pos_in_log => 0,
+         ts => '091208 14:44:52.709181',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'Yes',
+         Query_time => '0.000234',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'SELECT * FROM d.t WHERE 1 LIMIT 1;',
+         bytes => 34,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '48585',
+         pos_in_log => 1014,
+         ts => '091208 14:44:52.709597',
+         user => undef
+      }
+   ],
+});
 
 # #############################################################################
 # Done.

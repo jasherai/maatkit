@@ -56,6 +56,7 @@ our @EXPORT      = ();
 our @EXPORT_OK   = qw(
    parse_error_packet
    parse_ok_packet
+   parse_ok_prepared_statement_packet
    parse_server_handshake_packet
    parse_client_handshake_packet
    parse_com_packet
@@ -150,6 +151,36 @@ my %flag_for = (
    'CLIENT_MULTI_RESULTS'     => 131072,  # Enable/disable multi-results 
 );
 
+use constant {
+   MYSQL_TYPE_DECIMAL      => 0,
+   MYSQL_TYPE_TINY         => 1,
+   MYSQL_TYPE_SHORT        => 2,
+   MYSQL_TYPE_LONG         => 3,
+   MYSQL_TYPE_FLOAT        => 4,
+   MYSQL_TYPE_DOUBLE       => 5,
+   MYSQL_TYPE_NULL         => 6,
+   MYSQL_TYPE_TIMESTAMP    => 7,
+   MYSQL_TYPE_LONGLONG     => 8,
+   MYSQL_TYPE_INT24        => 9,
+   MYSQL_TYPE_DATE         => 10,
+   MYSQL_TYPE_TIME         => 11,
+   MYSQL_TYPE_DATETIME     => 12,
+   MYSQL_TYPE_YEAR         => 13,
+   MYSQL_TYPE_NEWDATE      => 14,
+   MYSQL_TYPE_VARCHAR      => 15,
+   MYSQL_TYPE_BIT          => 16,
+   MYSQL_TYPE_NEWDECIMAL   => 246,
+   MYSQL_TYPE_ENUM         => 247,
+   MYSQL_TYPE_SET          => 248,
+   MYSQL_TYPE_TINY_BLOB    => 249,
+   MYSQL_TYPE_MEDIUM_BLOB  => 250,
+   MYSQL_TYPE_LONG_BLOB    => 251,
+   MYSQL_TYPE_BLOB         => 252,
+   MYSQL_TYPE_VAR_STRING   => 253,
+   MYSQL_TYPE_STRING       => 254,
+   MYSQL_TYPE_GEOMETRY     => 255,
+};
+
 # server is the "host:port" of the sever being watched.  It's auto-guessed if
 # not specified.  version is a placeholder for handling differences between
 # MySQL v4.0 and older and v4.1 and newer.  Currently, we only handle v4.1.
@@ -221,6 +252,7 @@ sub parse_event {
          compress    => undef,
          raw_packets => [],
          buff        => '',
+         sths        => {},
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -399,18 +431,43 @@ sub _packet_from_server {
          }
          elsif ( $session->{cmd} ) {
             # This OK should be ack'ing a query or something sent earlier
-            # by the client.
-            my $ok  = parse_ok_packet($data);
-            if ( !$ok ) {
-               $self->fail_session($session, 'failed to parse OK packet');
-               return;
-            }
+            # by the client.  OK for prepared statement are special.
             my $com = $session->{cmd}->{cmd};
-            my $arg;
+            my $ok;
+            if ( $com eq COM_STMT_PREPARE ) {
+               MKDEBUG && _d('OK for prepared statement');
+               $ok = parse_ok_prepared_statement_packet($data);
+               if ( !$ok ) {
+                  $self->fail_session($session,
+                     'failed to parse OK prepared statement packet');
+                  return;
+               }
+               my $sth_id = $ok->{sth_id};
 
+               # Save sth id to make arg = "PREPARE sth id FROM arg".
+               $session->{sth_id} = $sth_id;
+
+               # Save all sth info, used in parse_execute_packet().
+               $session->{sths}->{$sth_id} = $ok;
+               $session->{sths}->{$sth_id}->{statement}
+                  = $session->{cmd}->{arg};
+            }
+            else {
+               $ok  = parse_ok_packet($data);
+               if ( !$ok ) {
+                  $self->fail_session($session, 'failed to parse OK packet');
+                  return;
+               }
+            }
+
+            my $arg;
             if ( $com eq COM_QUERY ) {
                $com = 'Query';
                $arg = $session->{cmd}->{arg};
+            }
+            elsif ( $com eq COM_STMT_PREPARE ) {
+               $com = 'Query';
+               $arg = "PREPARE $session->{sth_id} FROM $session->{cmd}->{arg}";
             }
             else {
                $arg = 'administrator command: '
@@ -511,7 +568,7 @@ sub _packet_from_server {
             my $com = $session->{cmd}->{cmd};
             MKDEBUG && _d('Responding to client', $com_for{$com});
             my $event = { ts  => $packet->{ts} };
-            if ( $com eq COM_QUERY ) {
+            if ( $com eq COM_QUERY || $com eq COM_STMT_EXECUTE ) {
                $event->{cmd} = 'Query';
                $event->{arg} = $session->{cmd}->{arg};
             }
@@ -625,6 +682,29 @@ sub _packet_from_client {
          $self->fail_session($session, 'failed to parse COM packet');
          return;
       }
+
+      if ( $com->{code} eq COM_STMT_EXECUTE ) {
+         MKDEBUG && _d('Execute prepared statement');
+         my $exec = parse_execute_packet($com->{data}, $session->{sths});
+         if ( !$exec ) {
+            # This does not signal a failure, it could just be that
+            # the statement handle ID is unknown.
+            MKDEBUG && _d('Failed to parse execute packet');
+            $session->{state} = undef;
+            return;
+         }
+         $com->{data} = $exec->{arg};
+      }
+      elsif ( $com->{code} eq COM_STMT_CLOSE ) {
+         my $close  = parse_close_packet($com->{data}, $session->{sths});
+         if ( !$close ) {
+            $self->fail_session($session,
+               'failed to parse prepared statement close packet');
+            return;
+         }
+         $com->{data} = $close->{arg};
+      }
+
       $session->{state}      = 'awaiting_reply';
       $session->{pos_in_log} = $packet->{pos_in_log};
       $session->{ts}         = $ts;
@@ -655,7 +735,10 @@ sub _make_event {
    MKDEBUG && _d('Making event');
 
    # Clear packets that preceded this event.
-   $session->{raw_packets} = [];
+   $session->{raw_packets}    = [];
+   $session->{buff}           = '';
+   $session->{buff_left}      = 0;
+   $session->{mysql_data_len} = 0;
 
    if ( !$session->{thread_id} ) {
       # Only the server handshake packet gives the thread id, so for
@@ -794,15 +877,15 @@ sub parse_error_packet {
 }
 
 # OK packet structure:
-# Offset  Bytes               Field
-# ======  =================   ====================================
-#         00 00 00 01         MySQL proto header (already removed)
-#         00                  OK  (already removed)
-#         1-9                 Affected rows (LCB)
-#         1-9                 Insert ID (LCB)
-#         00 00               Server status
-#         00 00               Warning count
-#         00 ...              Message (optional)
+# Bytes         Field
+# ===========   ====================================
+# 00 00 00 01   MySQL proto header (already removed)
+# 00            OK  (already removed)
+# 1-9           Affected rows (LCB)
+# 1-9           Insert ID (LCB)
+# 00 00         Server status
+# 00 00         Warning count
+# 00 ...        Message (optional)
 sub parse_ok_packet {
    my ( $data ) = @_;
    return unless $data;
@@ -826,6 +909,33 @@ sub parse_ok_packet {
       message       => $message,
    };
    MKDEBUG && _d('OK packet:', Dumper($pkt));
+   return $pkt;
+}
+
+# OK prepared statement packet structure:
+# Bytes         Field
+# ===========   ====================================
+# 00            OK  (already removed)
+# 00 00 00 00   Statement handler ID
+# 00 00         Number of columns in result set
+# 00 00         Number of parameters (?) in query
+sub parse_ok_prepared_statement_packet {
+   my ( $data ) = @_;
+   return unless $data;
+   MKDEBUG && _d('OK prepared statement data:', $data);
+   if ( length $data < 8 ) {
+      MKDEBUG && _d('OK prepared statement packet is too short:', $data);
+      return;
+   }
+   my $sth_id     = to_num(substr($data, 0, 8, ''));
+   my $num_cols   = to_num(substr($data, 0, 4, ''));
+   my $num_params = to_num(substr($data, 0, 4, ''));
+   my $pkt = {
+      sth_id     => $sth_id,
+      num_cols   => $num_cols,
+      num_params => $num_params,
+   };
+   MKDEBUG && _d('OK prepared packet:', Dumper($pkt));
    return $pkt;
 }
 
@@ -910,13 +1020,107 @@ sub parse_com_packet {
       MKDEBUG && _d('Did not match COM packet');
       return;
    }
-   $data    = to_string(substr($data, 2, ($len - 1) * 2));
+   if ( $code ne COM_STMT_EXECUTE && $code ne COM_STMT_CLOSE ) {
+      # Data for the most common COM, e.g. COM_QUERY, is text.
+      # COM_STMT_EXECUTE is not, so we leave it binary; it can
+      # be parsed by parse_execute_packet().
+      $data = to_string(substr($data, 2, ($len - 1) * 2));
+   }
    my $pkt = {
       code => $code,
       com  => $com,
       data => $data,
    };
    MKDEBUG && _d('COM packet:', Dumper($pkt));
+   return $pkt;
+}
+
+# Execute prepared statement packet structure:
+# Bytes              Field
+# ===========        ========================================
+# 00                 Code 17, COM_STMT_EXECUTE
+# 00 00 00 00        Statement handler ID
+# 00                 flags
+# 00 00 00 00        Iteration count (reserved, always 1)
+# (param_count+7)/8  NULL bitmap
+# 00                 1 if new parameters, else 0
+# n*2                Parameter types (only if new parameters)
+sub parse_execute_packet {
+   my ( $data, $sths ) = @_;
+   return unless $data && $sths;
+
+   my $sth_id = to_num(substr($data, 2, 8));
+   return unless defined $sth_id;
+
+   my $sth = $sths->{$sth_id};
+   if ( !$sth ) {
+      MKDEBUG && _d('Skipping unknown statement handle', $sth_id);
+      return;
+   }
+   my $null_count  = int(($sth->{num_params} + 7) / 8) || 1;
+   my $null_bitmap = to_num(substr($data, 20, $null_count * 2));
+   MKDEBUG && _d('NULL bitmap:', $null_bitmap, 'count:', $null_count);
+   
+   # This chops off everything up to the field types.
+   substr($data, 0, 20 + ($null_count * 2) + 2, '');
+
+   # It seems all params are type 254, MYSQL_TYPE_STRING.  Perhaps
+   # this depends on the client.  If we ever need these types, they
+   # can be saved from here, but doing like:
+   # for my $i ( 1..$sth->{num_params} ) {
+   #    my $type = to_num(substr($data, 0, 4, ''));
+   #    MKDEBUG && _d('Param', $i, 'type:', $type);
+   # }
+   # Until then, we just chop off the types.
+   substr($data, 0, $sth->{num_params} * 4, '');
+
+   my $arg = $sth->{statement};
+   MKDEBUG && _d('Statement:', $arg);
+   for my $i ( 1..$sth->{num_params} ) {
+      my $val;
+      if ( $null_bitmap & $i ) {
+         MKDEBUG && _d('Param', $i, 'is NULL');
+         $val = 'NULL';
+      }
+      else {
+         my $len = to_num(substr($data, 0, 2, ''));
+         $val    = to_string(substr($data, 0, $len * 2, ''));
+      }
+      # Replace ? in prepared statement with value.
+      MKDEBUG && _d('Val:', $val);
+      # The reported types don't help us (see above) so we
+      # make a quick attempt to detect numeric vs. string.
+      if ( $val =~ m/[^\d\.]/ && $val ne 'NULL' ) {
+         $val = "\"$val\"";
+      }
+      $arg =~ s/\?/$val/;
+   }
+
+   # TODO: need to make event attribs dynamic so attribs
+   #       like sth_id will be added automatically
+   my $pkt = {
+      sth_id => $sth_id,
+      arg    => $arg,
+   };
+   MKDEBUG && _d('Execute packet:', Dumper($pkt));
+   return $pkt;
+}
+
+sub parse_close_packet {
+   my ( $data, $sths ) = @_;
+   return unless $data && $sths;
+
+   my $sth_id = to_num(substr($data, 2, 8));
+   return unless defined $sth_id;
+
+   MKDEBUG && _d('Close statement', $sth_id);
+   delete $sths->{$sth_id};
+
+   my $pkt = {
+      sth_id => $sth_id,
+      arg    => "DEALLOCATE PREPARE $sth_id",
+   };
+   MKDEBUG && _d('Execute packet:', Dumper($pkt));
    return $pkt;
 }
 
