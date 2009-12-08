@@ -6786,7 +6786,8 @@ mk-table-sync - Synchronize MySQL tables efficiently.
 
 =head1 SYNOPSIS
 
-B<WARNING>: back up your data before you use this tool.  See L<"RISKS">.
+This tool changes data, so for maximum safety, you should back up your data
+before you use it.
 
 To sync db.tbl1 from host1 to host2:
 
@@ -6828,19 +6829,20 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-B<WARNING>: back up your data before you use this tool.
+With great power comes great responsibility!  This tool changes data, so it is a
+good idea to back up your data.  It is also very powerful, which means it is
+very complex, so you should run it with the L<"--dry-run"> option to see what it
+will do, until you're familiar with its operation.  If you want to see which
+rows are different, without changing any data, use L<"--print"> instead of
+L<"--execute">.  
 
-It is a good idea to B<back up your data> and run C<mk-table-sync> with
-L<"--dry-run"> to see what will happen.  If you want to see which rows
-are different, without changing any data, use L<"--print"> instead of
-L<"--execute">.
-
-Be careful when using mk-table-sync in any master-master setup.  Loss of
-data can occur if the script is not used correctly.
+Be careful when using mk-table-sync in any master-master setup.  Master-master
+replication is inherently tricky, and it's easy to make mistakes.  Yyou need to
+be sure you're using the tool correctly for master-master replication.  See the
+L<"SYNOPSIS"> for the overview of the correct usage.
 
 At the time of this release, there is a bug that causes invalid SQL when
-syncing columns with binary data and a bug that prevents syncing when the
-algorithms are different.
+syncing columns with binary data.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
