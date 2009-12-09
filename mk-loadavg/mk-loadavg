@@ -3372,7 +3372,7 @@ sub main {
       if ( $watch->uses_dbh() ) {
          if ( !$dbh ) {
             if ( $o->get('ask-pass') ) {
-               $o->set('passowrd', OptionParser::prompt_noecho("Enter password: "));
+               $o->set('password', OptionParser::prompt_noecho("Enter password: "));
             }
             $dsn = $dp->parse_options($o);
             $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit => 1});
