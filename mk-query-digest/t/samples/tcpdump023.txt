@@ -35,7 +35,7 @@ SELECT * FROM d.t3 WHERE v=? OR c=? OR f=?\G
 # Exec time     44   249us   249us   249us   249us   249us       0   249us
 # Hosts                  1 127.0.0.1
 # Time range 2009-12-08 14:14:55.952344 to 2009-12-08 14:14:55.952344
-# bytes         54      59      59      59      59      59       0      59
+# bytes         54      61      61      61      61      61       0      61
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Statement              1       2
@@ -53,4 +53,4 @@ SELECT * FROM d.t3 WHERE v=? OR c=? OR f=?\G
 #    SHOW TABLE STATUS FROM `d` LIKE 't3'\G
 #    SHOW CREATE TABLE `d`.`t3`\G
 # EXPLAIN
-SELECT * FROM d.t3 WHERE v="hello world" OR c="a" OR f=1.23\G
+SELECT * FROM d.t3 WHERE v="hello world" OR c="a" OR f="1.23"\G

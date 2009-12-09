@@ -6,7 +6,7 @@
 # Exec time     61   303us   303us   303us   303us   303us       0   303us
 # Hosts                  1 127.0.0.1
 # Time range 2009-12-08 13:41:12.811188 to 2009-12-08 13:41:12.811188
-# bytes         52      46      46      46      46      46       0      46
+# bytes         51      46      46      46      46      46       0      46
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Statement              1       2
@@ -35,7 +35,7 @@ SELECT i,j FROM d.t2 WHERE i=? AND j=?\G
 # Exec time     38   186us   186us   186us   186us   186us       0   186us
 # Hosts                  1 127.0.0.1
 # Time range 2009-12-08 13:41:12.811591 to 2009-12-08 13:41:12.811591
-# bytes         47      41      41      41      41      41       0      41
+# bytes         48      43      43      43      43      43       0      43
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Statement              1       2
@@ -53,4 +53,4 @@ SELECT i,j FROM d.t2 WHERE i=? AND j=?\G
 #    SHOW TABLE STATUS FROM `d` LIKE 't2'\G
 #    SHOW CREATE TABLE `d`.`t2`\G
 # EXPLAIN
-SELECT i,j FROM d.t2 WHERE i=NULL AND j=5\G
+SELECT i,j FROM d.t2 WHERE i=NULL AND j="5"\G
