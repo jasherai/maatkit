@@ -27,8 +27,8 @@
 #   pct_95                 2               2
 #   stddev                 0               0
 #   median                 2               2
-select id from test.t where id > ?
+select id from test.t where id > 3
 
 # Statistics
-# events            5
-# not_select        4
+# events                    5
+# not_select                4

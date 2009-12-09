@@ -8664,12 +8664,9 @@ sub main {
       };
    }
 
-   # For the moment we only support deterministic SELECT queries.
-   # There's no filter/transformation for non-deterministic functions yet,
-   # just a simple filter to remove non-SELECTs.
    push @callbacks, sub {
       my ( $event ) = @_;
-      MKDEBUG && _d('callback: filter non-SELECT');
+      MKDEBUG && _d('callback: check cmd and arg');
       $stats->{events}++;
       if ( ($event->{cmd} || '') ne 'Query' ) {
          MKDEBUG && _d('Skipping non-Query cmd');
@@ -8681,16 +8678,41 @@ sub main {
          $stats->{empty_query}++;
          return;
       }
-      if ( $event->{arg} !~ m/(?:^SELECT|(?:\*\/\s*SELECT))/i ) {
-         MKDEBUG && _d('Skipping non-SELECT query');
-         $stats->{not_select}++;
-         return;
-      }
       return $event;
    };
 
+   if ( $o->get('non-select') ) {
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         MKDEBUG && _d('callback: rewrite non-select');
+         return $event if $event->{arg} =~ m/(?:^SELECT|(?:\*\/\s*SELECT))/i;
+         my $new_arg = $qr->convert_to_select($event->{arg});
+         if ( $new_arg =~ m/^SELECT/i ) {
+            $stats->{convert_to_select_ok}++;
+            $event->{original_arg} = $event->{arg};
+            $event->{arg}          = $new_arg;
+            return $event;
+         }
+         MKDEBUG && _d('Convert to SELECT failed:', $event->{arg});
+         $stats->{convert_to_select_failed}++;
+         return;
+      };
+   }
+   else {
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         MKDEBUG && _d('callback: filter non-select');
+         if ( $event->{arg} !~ m/(?:^SELECT|(?:\*\/\s*SELECT))/i ) {
+            MKDEBUG && _d('Skipping non-SELECT query');
+            $stats->{not_select}++;
+            return;
+         }
+         return $event;
+      };
+   }
+
    # Do this callback before the fingerprint and sampleno attribs are added.
-   my %allowed_attribs = qw(arg 1 db 1 sampleno 1 pos_in_log 1);
+   my %allowed_attribs = qw(arg 1 db 1 sampleno 1 pos_in_log 1 original_arg 1);
    push @callbacks, sub {
       my ( $event ) = @_;
       MKDEBUG && _d('callback: remove not-allowed attributes');
@@ -8993,8 +9015,9 @@ sub main {
       if ( $o->get('reports')->{queries} ) {
          ITEM:
          foreach my $rank ( 1 .. @worst ) {
-            my $item   = $worst[$rank - 1]->[0];
-            my $sample = $meta_ea->results->{samples}->{$item};
+            my $item       = $worst[$rank - 1]->[0];
+            my $sample     = $meta_ea->results->{samples}->{$item};
+            my $samp_query = $sample->{arg} || '';
 
             print "\n";
             print $urf->event_report(
@@ -9005,7 +9028,13 @@ sub main {
                worst   => 'differences',
             );
 
-            print "$item\n";
+            if ( $sample->{original_arg} ) {
+               print "# Converted non-SELECT:\n#   $sample->{original_arg}\n";
+            }
+            if ( $o->get('fingerprints') ) {
+               print "# Fingerprint\n#   $item\n";
+            }
+            print "$samp_query\n";
 
             my $query_id = make_checksum($item);
             foreach my $c ( @compare_modules ) {
@@ -9034,7 +9063,7 @@ sub main {
       }
 
       if ( $o->get('reports')->{statistics} ) {
-         my $fmt = "# %-17s %d\n";
+         my $fmt = "# %-25s %d\n";
          print "\n# Statistics\n";
          map { printf $fmt, $_, $stats->{$_} } sort keys %$stats;
       }
@@ -9423,6 +9452,11 @@ It is permissible for the code to have side effects (to alter $event).
 You can find an explanation of the structure of $event at
 L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
 
+=item --fingerprints
+
+Add query fingerprints to the standard query analysis report.  This is mostly
+useful for debugging purposes.
+
 =item --float-precision
 
 type: int
@@ -9473,6 +9507,14 @@ type: int; default: 10
 
 Stop comparing rows for C<--compare-results-method rows> after this many
 differences are found.
+
+=item --non-select
+
+Rewrite non-SELECT statements as SELECTs and compare.
+
+By default non-SELECT statements are not allowed.  This option causes
+non-SELECT statments (like UPDATE, INSERT and DELETE) to be rewritten
+as SELECT statements, executed and compared.
 
 =item --order-by
 

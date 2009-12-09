@@ -1,6 +1,10 @@
 Changelog for mk-upgrade:
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).
+   * Changed output to print sample query instead of fingerprints.
+   * Added --fingerprints.
+   * Added --non-select to convert non-SELECT statements (issue 747).
+
 2009-12-02: version 0.9.4
 
    * Completely redesigned the tool.

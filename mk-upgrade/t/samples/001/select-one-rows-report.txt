@@ -27,7 +27,7 @@
 #   pct_95                 1               1
 #   stddev                 0               0
 #   median                 1               1
-select id, name, last_login from test.t where id=?
+select id, name, last_login from test.t where id=0
 
 # Statistics
-# events            1
+# events                    1
