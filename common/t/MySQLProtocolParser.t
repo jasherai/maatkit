@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 49;
+use Test::More tests => 51;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -1031,6 +1031,94 @@ run_test({
          port => '34162',
          pos_in_log => 0,
          ts => '091208 17:42:12.698093',
+         user => undef
+      }
+   ],
+});
+
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+run_test({
+   file   => 'samples/tcpdump028.txt',
+   desc   => 'prepared statements, multiple exec, new param',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000292',
+         Rows_affected => 0,
+         Statement_id => 2,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'PREPARE 2 FROM SELECT * FROM d.t WHERE i=?',
+         bytes => 42,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '38682',
+         pos_in_log => 0,
+         ts => '091208 17:35:37.433248',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'Yes',
+         Query_time => '0.000254',
+         Rows_affected => 0,
+         Statement_id => 2,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'SELECT * FROM d.t WHERE i=1',
+         bytes => 27,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '38682',
+         pos_in_log => 1106,
+         ts => '091208 17:35:37.433700',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'Yes',
+         Query_time => '0.000190',
+         Rows_affected => 0,
+         Statement_id => 2,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'SELECT * FROM d.t WHERE i=3',
+         bytes => 27,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '38682',
+         pos_in_log => 1850,
+         ts => '091208 17:35:37.434303',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'Yes',
+         Query_time => '0.000166',
+         Rows_affected => 0,
+         Statement_id => 2,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'SELECT * FROM d.t WHERE i=NULL',
+         bytes => 30,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '38682',
+         pos_in_log => 2589,
+         ts => '091208 17:35:37.434708',
          user => undef
       }
    ],

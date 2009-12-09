@@ -181,6 +181,36 @@ use constant {
    MYSQL_TYPE_GEOMETRY     => 255,
 };
 
+my %type_for = (
+   0   => 'MYSQL_TYPE_DECIMAL',
+   1   => 'MYSQL_TYPE_TINY',
+   2   => 'MYSQL_TYPE_SHORT',
+   3   => 'MYSQL_TYPE_LONG',
+   4   => 'MYSQL_TYPE_FLOAT',
+   5   => 'MYSQL_TYPE_DOUBLE',
+   6   => 'MYSQL_TYPE_NULL',
+   7   => 'MYSQL_TYPE_TIMESTAMP',
+   8   => 'MYSQL_TYPE_LONGLONG',
+   9   => 'MYSQL_TYPE_INT24',
+   10  => 'MYSQL_TYPE_DATE',
+   11  => 'MYSQL_TYPE_TIME',
+   12  => 'MYSQL_TYPE_DATETIME',
+   13  => 'MYSQL_TYPE_YEAR',
+   14  => 'MYSQL_TYPE_NEWDATE',
+   15  => 'MYSQL_TYPE_VARCHAR',
+   16  => 'MYSQL_TYPE_BIT',
+   246 => 'MYSQL_TYPE_NEWDECIMAL',
+   247 => 'MYSQL_TYPE_ENUM',
+   248 => 'MYSQL_TYPE_SET',
+   249 => 'MYSQL_TYPE_TINY_BLOB',
+   250 => 'MYSQL_TYPE_MEDIUM_BLOB',
+   251 => 'MYSQL_TYPE_LONG_BLOB',
+   252 => 'MYSQL_TYPE_BLOB',
+   253 => 'MYSQL_TYPE_VAR_STRING',
+   254 => 'MYSQL_TYPE_STRING',
+   255 => 'MYSQL_TYPE_GEOMETRY',
+);
+
 # server is the "host:port" of the sever being watched.  It's auto-guessed if
 # not specified.  version is a placeholder for handling differences between
 # MySQL v4.0 and older and v4.1 and newer.  Currently, we only handle v4.1.
@@ -1090,18 +1120,21 @@ sub parse_execute_packet {
    my $null_bitmap = to_num(substr($data, 20, $null_count * 2));
    MKDEBUG && _d('NULL bitmap:', $null_bitmap, 'count:', $null_count);
    
-   # This chops off everything up to the field types.
-   substr($data, 0, 20 + ($null_count * 2) + 2, '');
-
-   # It seems all params are type 254, MYSQL_TYPE_STRING.  Perhaps
-   # this depends on the client.  If we ever need these types, they
-   # can be saved from here, but doing like:
-   # for my $i ( 1..$sth->{num_params} ) {
-   #    my $type = to_num(substr($data, 0, 4, ''));
-   #    MKDEBUG && _d('Param', $i, 'type:', $type);
-   # }
-   # Until then, we just chop off the types.
-   substr($data, 0, $sth->{num_params} * 4, '');
+   # This chops off everything up to the byte for new params.
+   substr($data, 0, 20 + ($null_count * 2), '');
+   
+   my $new_params = to_num(substr($data, 0, 2, ''));
+   if ( $new_params ) {
+      MKDEBUG && _d('New params');
+      # It seems all params are type 254, MYSQL_TYPE_STRING.  Perhaps
+      # this depends on the client.  If we ever need these types, they
+      # can be saved here.  Otherwise for now I just want to see the
+      # types in debug output.
+      for my $i ( 1..$sth->{num_params} ) {
+         my $type = to_num(substr($data, 0, 4, ''));
+         MKDEBUG && _d('Param', $i, 'type:', $type, $type_for{$type});
+      }
+   }
 
    my $arg = $sth->{statement};
    MKDEBUG && _d('Statement:', $arg);
