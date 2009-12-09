@@ -211,6 +211,18 @@ my %type_for = (
    255 => 'MYSQL_TYPE_GEOMETRY',
 );
 
+my %unpack_type = (
+   MYSQL_TYPE_NULL       => sub { return 'NULL', 0; },
+   MYSQL_TYPE_TINY       => sub { return to_num(@_, 1), 1; },
+   MySQL_TYPE_SHORT      => sub { return to_num(@_, 2), 2; },
+   MYSQL_TYPE_LONG       => sub { return to_num(@_, 4), 4; },
+   MYSQL_TYPE_LONGLONG   => sub { return to_num(@_, 8), 8; },
+   MYSQL_TYPE_DOUBLE     => sub { return to_double(@_), 8; },
+   MYSQL_TYPE_VARCHAR    => \&unpack_string,
+   MYSQL_TYPE_VAR_STRING => \&unpack_string,
+   MYSQL_TYPE_STRING     => \&unpack_string,
+);
+
 # server is the "host:port" of the sever being watched.  It's auto-guessed if
 # not specified.  version is a placeholder for handling differences between
 # MySQL v4.0 and older and v4.1 and newer.  Currently, we only handle v4.1.
@@ -860,21 +872,78 @@ sub timestamp_diff {
 # Converts hexadecimal to string.
 sub to_string {
    my ( $data ) = @_;
-   # $data =~ s/(..)/chr(hex $1)/eg;
-   $data = pack('H*', $data);
-   return $data;
+   return pack('H*', $data);
+}
+
+sub unpack_string {
+   my ( $data ) = @_;
+   my $len        = 0;
+   my $encode_len = 0;
+   ($data, $len, $encode_len) = decode_len($data);
+   my $t = 'H' . ($len ? $len * 2 : '*');
+   $data = pack($t, $data);
+   return "\"$data\"", $encode_len + $len;
+}
+
+sub decode_len {
+   my ( $data ) = @_;
+   return unless $data;
+
+   # first byte hex   len
+   # ========== ====  =============
+   # 0-251      0-FB  Same
+   # 252        FC    Len in next 2
+   # 253        FD    Len in next 4
+   # 254        FE    Len in next 8
+   my $first_byte = to_num(substr($data, 0, 2, ''));
+
+   my $len;
+   my $encode_len;
+   if ( $first_byte <= 251 ) {
+      $len        = $first_byte;
+      $encode_len = 1;
+   }
+   elsif ( $first_byte == 252 ) {
+      $len        = to_num(substr($data, 4, ''));
+      $encode_len = 2;
+   }
+   elsif ( $first_byte == 253 ) {
+      $len        = to_num(substr($data, 6, ''));
+      $encode_len = 3;
+   }
+   elsif ( $first_byte == 254 ) {
+      $len        = to_num(substr($data, 16, ''));
+      $encode_len = 8;
+   }
+   else {
+      # This shouldn't happen, but it may if we're passed data
+      # that isn't length encoded.
+      MKDEBUG && _d('data:', $data, 'first byte:', $first_byte);
+      die "Invalid length encoded byte: $first_byte";
+   }
+
+   MKDEBUG && _d('len:', $len, 'encode len', $encode_len);
+   return $data, $len, $encode_len;
 }
 
 # All numbers are stored with the least significant byte first in the MySQL
 # protocol.
 sub to_num {
-   my ( $str ) = @_;
+   my ( $str, $len ) = @_;
+   if ( $len ) {
+      $str = substr($str, 0, $len * 2);
+   }
    my @bytes = $str =~ m/(..)/g;
    my $result = 0;
    foreach my $i ( 0 .. $#bytes ) {
       $result += hex($bytes[$i]) * (16 ** ($i * 2));
    }
    return $result;
+}
+
+sub to_double {
+   my ( $str ) = @_;
+   return unpack('d', pack('H*', $str));
 }
 
 # Accepts a reference to a string, which it will modify.  Extracts a
@@ -1119,40 +1188,57 @@ sub parse_execute_packet {
    
    # This chops off everything up to the byte for new params.
    substr($data, 0, 20 + ($null_count * 2), '');
-   
+
    my $new_params = to_num(substr($data, 0, 2, ''));
+   my @types; 
    if ( $new_params ) {
-      MKDEBUG && _d('New params');
+      MKDEBUG && _d('New param types');
       # It seems all params are type 254, MYSQL_TYPE_STRING.  Perhaps
       # this depends on the client.  If we ever need these types, they
       # can be saved here.  Otherwise for now I just want to see the
       # types in debug output.
-      for my $i ( 1..$sth->{num_params} ) {
+      for my $i ( 0..($sth->{num_params}-1) ) {
          my $type = to_num(substr($data, 0, 4, ''));
+         push @types, $type_for{$type};
          MKDEBUG && _d('Param', $i, 'type:', $type, $type_for{$type});
       }
+      $sth->{types} = \@types;
+   }
+   else {
+      # Retrieve previous param types if there are param vals (data).
+      @types = @{$sth->{types}} if $data;
    }
 
-   my $arg = $sth->{statement};
+   # $data should now be truncated up to the parameter values.
+
+   my $arg  = $sth->{statement};
    MKDEBUG && _d('Statement:', $arg);
-   for my $i ( 1..$sth->{num_params} ) {
+   for my $i ( 0..($sth->{num_params}-1) ) {
       my $val;
-      if ( $null_bitmap & $i ) {
-         MKDEBUG && _d('Param', $i, 'is NULL');
+      my $len;  # in bytes
+      if ( $null_bitmap & ($i+1) ) {
+         MKDEBUG && _d('Param', $i, 'is NULL (bitmap)');
          $val = 'NULL';
+         $len = 0;
       }
       else {
-         my $len = to_num(substr($data, 0, 2, ''));
-         $val    = to_string(substr($data, 0, $len * 2, ''));
+         if ( $unpack_type{$types[$i]} ) {
+            ($val, $len) = $unpack_type{$types[$i]}->($data);
+         }
+         else {
+            # TODO: this is probably going to break parsing other param vals
+            MKDEBUG && _d('No handler for param', $i, 'type', $types[$i]);
+            $val = '?';
+            $len = 0;
+         }
       }
+
       # Replace ? in prepared statement with value.
-      MKDEBUG && _d('Val:', $val);
-      # The reported types don't help us (see above) so we
-      # make a quick attempt to detect numeric vs. string.
-      if ( $val =~ m/[^\d\.]/ && $val ne 'NULL' ) {
-         $val = "\"$val\"";
-      }
+      MKDEBUG && _d('Param', $i, 'val:', $val);
       $arg =~ s/\?/$val/;
+
+      # Remove this param val from the data, putting us at the next one.
+      substr($data, 0, $len * 2, '') if $len;
    }
 
    my $pkt = {
