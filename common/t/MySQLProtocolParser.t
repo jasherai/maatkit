@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 47;
+use Test::More tests => 49;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -744,7 +744,8 @@ run_test({
          port => '58619',
          pos_in_log => 0,
          ts => '091208 09:23:49.637394',
-         user => undef
+         user => undef,
+         Statement_id => 2,
       },
       {
          Error_no => 'none',
@@ -763,7 +764,8 @@ run_test({
          port => '58619',
          pos_in_log => 1106,
          ts => '091208 09:23:49.637892',
-         user => undef
+         user => undef,
+         Statement_id => 2,
       },
       {
          Error_no => 'none',
@@ -809,7 +811,8 @@ run_test({
          port => '44545',
          pos_in_log => 0,
          ts => '091208 13:41:12.811188',
-         user => undef
+         user => undef,
+         Statement_id => 2,
       },
       {
          Error_no => 'none',
@@ -828,7 +831,8 @@ run_test({
          port => '44545',
          pos_in_log => 1330,
          ts => '091208 13:41:12.811591',
-         user => undef
+         user => undef,
+         Statement_id => 2,
       }
       ],
 });
@@ -855,7 +859,8 @@ run_test({
          port => '49806',
          pos_in_log => 0,
          ts => '091208 14:14:55.951863',
-         user => undef
+         user => undef,
+         Statement_id => 2,
       },
       {
          Error_no => 'none',
@@ -874,7 +879,8 @@ run_test({
          port => '49806',
          pos_in_log => 1540,
          ts => '091208 14:14:55.952344',
-         user => undef
+         user => undef,
+         Statement_id => 2,
       }
    ],
 });
@@ -901,7 +907,8 @@ run_test({
          port => '32810',
          pos_in_log => 0,
          ts => '091208 14:33:13.711351',
-         user => undef
+         user => undef,
+         Statement_id => 2,
       },
       {
          Error_no => 'none',
@@ -920,7 +927,8 @@ run_test({
          port => '32810',
          pos_in_log => 1540,
          ts => '091208 14:33:13.711642',
-         user => undef
+         user => undef,
+         Statement_id => 2,
       },
    ],
 });
@@ -947,7 +955,8 @@ run_test({
          port => '48585',
          pos_in_log => 0,
          ts => '091208 14:44:52.709181',
-         user => undef
+         user => undef,
+         Statement_id => 2,
       },
       {
          Error_no => 'none',
@@ -966,7 +975,8 @@ run_test({
          port => '48585',
          pos_in_log => 1014,
          ts => '091208 14:44:52.709597',
-         user => undef
+         user => undef,
+         Statement_id => 2,
       }
    ],
 });
@@ -993,6 +1003,34 @@ run_test({
          port => '34162',
          pos_in_log => 0,
          ts => '091208 17:42:12.696547',
+         user => undef
+      }
+   ],
+});
+
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+run_test({
+   file   => 'samples/tcpdump027.txt',
+   desc   => 'prepared statements, reset statement',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000023',
+         Rows_affected => 0,
+         Statement_id => 51,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'RESET 51',
+         bytes => 8,
+         cmd => 'Query',
+         db => undef,
+         host => '1.2.3.4',
+         ip => '1.2.3.4',
+         port => '34162',
+         pos_in_log => 0,
+         ts => '091208 17:42:12.698093',
          user => undef
       }
    ],

@@ -253,6 +253,7 @@ sub parse_event {
          raw_packets => [],
          buff        => '',
          sths        => {},
+         attribs     => {},
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -445,7 +446,7 @@ sub _packet_from_server {
                my $sth_id = $ok->{sth_id};
 
                # Save sth id to make arg = "PREPARE sth id FROM arg".
-               $session->{sth_id} = $sth_id;
+               $session->{attribs}->{Statement_id} = $sth_id;
 
                # Save all sth info, used in parse_execute_packet().
                $session->{sths}->{$sth_id} = $ok;
@@ -461,13 +462,14 @@ sub _packet_from_server {
             }
 
             my $arg;
-            if ( $com eq COM_QUERY ) {
+            if ( $com eq COM_QUERY || $com eq COM_STMT_RESET ) {
                $com = 'Query';
                $arg = $session->{cmd}->{arg};
             }
             elsif ( $com eq COM_STMT_PREPARE ) {
                $com = 'Query';
-               $arg = "PREPARE $session->{sth_id} FROM $session->{cmd}->{arg}";
+               $arg = "PREPARE $session->{attribs}->{Statement_id} "
+                    . "FROM $session->{cmd}->{arg}";
             }
             else {
                $arg = 'administrator command: '
@@ -694,6 +696,17 @@ sub _packet_from_client {
             return;
          }
          $com->{data} = $exec->{arg};
+         $session->{attribs}->{Statement_id} = $exec->{sth_id};
+      }
+      elsif ( $com->{code} eq COM_STMT_RESET ) {
+         my $sth_id = get_sth_id($com->{data});
+         if ( !$sth_id ) {
+            $self->fail_session($session,
+               'failed to parse prepared statement reset packet');
+            return;
+         }
+         $com->{data} = "RESET $sth_id";
+         $session->{attribs}->{Statement_id} = $sth_id;
       }
 
       $session->{state}      = 'awaiting_reply';
@@ -717,15 +730,16 @@ sub _packet_from_client {
       }
       elsif ( $com->{code} eq COM_STMT_CLOSE ) {
          # Apparently, these are not acknowledged by the server.
-         my $close  = parse_close_packet($com->{data}, $session->{sths});
-         if ( !$close ) {
+         my $sth_id = get_sth_id($com->{data});
+         if ( !$sth_id ) {
             $self->fail_session($session,
                'failed to parse prepared statement close packet');
             return;
          }
+         delete $session->{sths}->{$sth_id};
          return $self->_make_event(
             {  cmd       => 'Query',
-               arg       => $close->{arg},
+               arg       => "DEALLOCATE PREPARE $sth_id",
                ts        => $ts,
             },
             $packet, $session
@@ -775,6 +789,7 @@ sub _make_event {
       No_good_index_used => ($event->{No_good_index_used} ? 'Yes' : 'No'),
       No_index_used      => ($event->{No_index_used}      ? 'Yes' : 'No'),
    };
+   @{$new_event}{keys %{$session->{attribs}}} = values %{$session->{attribs}};
    MKDEBUG && _d('Properties of event:', Dumper($new_event));
 
    # Delete cmd to prevent re-making the same event if the
@@ -784,6 +799,9 @@ sub _make_event {
    # Undef the session state so that we ignore everything from
    # the server and wait until the client says something again.
    $session->{state} = undef;
+
+   # Clear the attribs for this event.
+   $session->{attribs} = {};
 
    return $new_event;
 }
@@ -1028,7 +1046,10 @@ sub parse_com_packet {
       MKDEBUG && _d('Did not match COM packet');
       return;
    }
-   if ( $code ne COM_STMT_EXECUTE && $code ne COM_STMT_CLOSE ) {
+   if (    $code ne COM_STMT_EXECUTE
+        && $code ne COM_STMT_CLOSE
+        && $code ne COM_STMT_RESET )
+   {
       # Data for the most common COM, e.g. COM_QUERY, is text.
       # COM_STMT_EXECUTE is not, so we leave it binary; it can
       # be parsed by parse_execute_packet().
@@ -1104,8 +1125,6 @@ sub parse_execute_packet {
       $arg =~ s/\?/$val/;
    }
 
-   # TODO: need to make event attribs dynamic so attribs
-   #       like sth_id will be added automatically
    my $pkt = {
       sth_id => $sth_id,
       arg    => $arg,
@@ -1114,22 +1133,11 @@ sub parse_execute_packet {
    return $pkt;
 }
 
-sub parse_close_packet {
-   my ( $data, $sths ) = @_;
-   return unless $data && $sths;
-
+sub get_sth_id {
+   my ( $data ) = @_;
+   return unless $data;
    my $sth_id = to_num(substr($data, 2, 8));
-   return unless defined $sth_id;
-
-   MKDEBUG && _d('Close statement', $sth_id);
-   delete $sths->{$sth_id};
-
-   my $pkt = {
-      sth_id => $sth_id,
-      arg    => "DEALLOCATE PREPARE $sth_id",
-   };
-   MKDEBUG && _d('Execute packet:', Dumper($pkt));
-   return $pkt;
+   return $sth_id;
 }
 
 sub parse_flags {
