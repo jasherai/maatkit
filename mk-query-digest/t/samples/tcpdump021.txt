@@ -9,6 +9,7 @@
 # bytes         43      42      42      42      42      42       0      42
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
+# Statement              1       2
 # Warning c      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us
@@ -39,6 +40,7 @@ SELECT i FROM d.t WHERE i=?\G
 # bytes         28      27      27      27      27      27       0      27
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
+# Statement              1       2
 # Warning c      0       0       0       0       0       0       0       0
 # 100% (1)    No_index_used
 # Query_time distribution

@@ -9,6 +9,7 @@
 # bytes         56      53      53      53      53      53       0      53
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
+# Statement              1       2
 # Warning c      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us
@@ -41,6 +42,7 @@ SELECT i,j FROM d.t2 WHERE i=? AND j=?\G
 # bytes         43      41      41      41      41      41       0      41
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
+# Statement              1       2
 # Warning c      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us

@@ -9,6 +9,7 @@
 # bytes         52      57      57      57      57      57       0      57
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
+# Statement              1       2
 # Warning c      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us
@@ -39,6 +40,7 @@ SELECT * FROM d.t3 WHERE v=? OR c=? OR f=?\G
 # bytes         47      51      51      51      51      51       0      51
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
+# Statement              1       2
 # Warning c      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us

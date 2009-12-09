@@ -9,6 +9,7 @@
 # bytes         59      49      49      49      49      49       0      49
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
+# Statement              1       2
 # Warning c      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us
@@ -39,6 +40,7 @@ SELECT * FROM d.t WHERE 1 LIMIT 1;\G
 # bytes         40      34      34      34      34      34       0      34
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
+# Statement              1       2
 # Warning c      0       0       0       0       0       0       0       0
 # 100% (1)    No_index_used
 # Query_time distribution
