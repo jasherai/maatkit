@@ -474,8 +474,6 @@ sub _packet_from_server {
                   return;
                }
                my $sth_id = $ok->{sth_id};
-
-               # Save sth id to make arg = "PREPARE sth id FROM arg".
                $session->{attribs}->{Statement_id} = $sth_id;
 
                # Save all sth info, used in parse_execute_packet().
@@ -498,8 +496,7 @@ sub _packet_from_server {
             }
             elsif ( $com eq COM_STMT_PREPARE ) {
                $com = 'Query';
-               $arg = "PREPARE $session->{attribs}->{Statement_id} "
-                    . "FROM $session->{cmd}->{arg}";
+               $arg = "PREPARE $session->{cmd}->{arg}";
             }
             else {
                $arg = 'administrator command: '
