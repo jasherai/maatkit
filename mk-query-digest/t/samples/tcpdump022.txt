@@ -6,7 +6,7 @@
 # Exec time     61   303us   303us   303us   303us   303us       0   303us
 # Hosts                  1 127.0.0.1
 # Time range 2009-12-08 13:41:12.811188 to 2009-12-08 13:41:12.811188
-# bytes         51      46      46      46      46      46       0      46
+# bytes         47      46      46      46      46      46       0      46
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Statement              1       2
@@ -28,14 +28,14 @@ PREPARE SELECT i,j FROM d.t2 WHERE i=? AND j=?\G
 # EXPLAIN
 SELECT i,j FROM d.t2 WHERE i=? AND j=?\G
 
-# Query 2: 0 QPS, 0x concurrency, ID 0x7122CDA2669CA783 at byte 1330 _____
+# Query 2: 0 QPS, 0x concurrency, ID 0x26EEAE2EADD904A1 at byte 1330 _____
 # This item is included in the report because it matches --limit.
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         50       1
 # Exec time     38   186us   186us   186us   186us   186us       0   186us
 # Hosts                  1 127.0.0.1
 # Time range 2009-12-08 13:41:12.811591 to 2009-12-08 13:41:12.811591
-# bytes         48      43      43      43      43      43       0      43
+# bytes         52      51      51      51      51      51       0      51
 # Errors                 1    none
 # Rows affe      0       0       0       0       0       0       0       0
 # Statement              1       2
@@ -52,5 +52,7 @@ SELECT i,j FROM d.t2 WHERE i=? AND j=?\G
 # Tables
 #    SHOW TABLE STATUS FROM `d` LIKE 't2'\G
 #    SHOW CREATE TABLE `d`.`t2`\G
+EXECUTE SELECT i,j FROM d.t2 WHERE i=NULL AND j="5"\G
+# Converted for EXPLAIN
 # EXPLAIN
 SELECT i,j FROM d.t2 WHERE i=NULL AND j="5"\G
