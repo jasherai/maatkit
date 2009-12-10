@@ -8678,6 +8678,25 @@ sub main {
       return $event;
    };
 
+   # User-defined filter.
+   if ( $o->get('filter') ) {
+      my $filter = $o->get('filter');
+      if ( -f $filter && -r $filter ) {
+         MKDEBUG && _d('Reading file', $filter, 'for --filter code');
+         open my $fh, "<", $filter or die "Cannot open $filter: $OS_ERROR";
+         $filter = do { local $/ = undef; <$fh> };
+         close $fh;
+      }
+      else {
+         $filter = "( $filter )";  # issue 565
+      }
+      my $code   = "sub { MKDEBUG && _d('callback: filter');  my(\$event) = shift; $filter && return \$event; };";
+      MKDEBUG && _d('--filter code:', $code);
+      my $sub = eval $code
+         or die "Error compiling --filter code: $code\n$EVAL_ERROR";
+      push @callbacks, $sub;
+   }
+
    if ( $o->get('non-select') ) {
       push @callbacks, sub {
          my ( $event ) = @_;
@@ -8867,25 +8886,6 @@ sub main {
 
       return $event;  # the meta-event
    };
-
-   # User-defined filter.
-   if ( $o->get('filter') ) {
-      my $filter = $o->get('filter');
-      if ( -f $filter && -r $filter ) {
-         MKDEBUG && _d('Reading file', $filter, 'for --filter code');
-         open my $fh, "<", $filter or die "Cannot open $filter: $OS_ERROR";
-         $filter = do { local $/ = undef; <$fh> };
-         close $fh;
-      }
-      else {
-         $filter = "( $filter )";  # issue 565
-      }
-      my $code   = "sub { MKDEBUG && _d('callback: filter');  my(\$event) = shift; $filter && return \$event; };";
-      MKDEBUG && _d('--filter code:', $code);
-      my $sub = eval $code
-         or die "Error compiling --filter code: $code\n$EVAL_ERROR";
-      push @callbacks, $sub;
-   }
 
    # ########################################################################
    # Daemonize now that everything is setup and ready to work.
@@ -9116,7 +9116,6 @@ sub report_errors {
    $rf->set_columns(
       {
          name        => 'Query ID',
-         fixed_width => 18,
       },
       map { { name => $_ } } qw(Host Error)
    );
