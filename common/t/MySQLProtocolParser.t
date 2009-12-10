@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 53;
+use Test::More tests => 55;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -755,8 +755,8 @@ run_test({
          Rows_affected => 0,
          Thread_id => '4294967296',
          Warning_count => 0,
-         arg => 'SELECT i FROM d.t WHERE i="3"',
-         bytes => 29,
+         arg => 'EXECUTE SELECT i FROM d.t WHERE i="3"',
+         bytes => 37,
          cmd => 'Query',
          db => undef,
          host => '127.0.0.1',
@@ -822,8 +822,8 @@ run_test({
          Rows_affected => 0,
          Thread_id => '4294967296',
          Warning_count => 0,
-         arg => 'SELECT i,j FROM d.t2 WHERE i=NULL AND j="5"',
-         bytes => 43,
+         arg => 'EXECUTE SELECT i,j FROM d.t2 WHERE i=NULL AND j="5"',
+         bytes => 51,
          cmd => 'Query',
          db => undef,
          host => '127.0.0.1',
@@ -870,8 +870,8 @@ run_test({
          Rows_affected => 0,
          Thread_id => '4294967296',
          Warning_count => 0,
-         arg => 'SELECT * FROM d.t3 WHERE v="hello world" OR c="a" OR f="1.23"',
-         bytes => 61,
+         arg => 'EXECUTE SELECT * FROM d.t3 WHERE v="hello world" OR c="a" OR f="1.23"',
+         bytes => 69,
          cmd => 'Query',
          db => undef,
          host => '127.0.0.1',
@@ -918,8 +918,8 @@ run_test({
          Rows_affected => 0,
          Thread_id => '4294967296',
          Warning_count => 0,
-         arg => 'SELECT * FROM d.t3 WHERE v=NULL OR c=NULL OR f=NULL',
-         bytes => 51,
+         arg => 'EXECUTE SELECT * FROM d.t3 WHERE v=NULL OR c=NULL OR f=NULL',
+         bytes => 59,
          cmd => 'Query',
          db => undef,
          host => '127.0.0.1',
@@ -966,8 +966,8 @@ run_test({
          Rows_affected => 0,
          Thread_id => '4294967296',
          Warning_count => 0,
-         arg => 'SELECT * FROM d.t WHERE 1 LIMIT 1;',
-         bytes => 34,
+         arg => 'EXECUTE SELECT * FROM d.t WHERE 1 LIMIT 1;',
+         bytes => 42,
          cmd => 'Query',
          db => undef,
          host => '127.0.0.1',
@@ -1070,8 +1070,8 @@ run_test({
          Statement_id => 2,
          Thread_id => '4294967296',
          Warning_count => 0,
-         arg => 'SELECT * FROM d.t WHERE i="1"',
-         bytes => 29,
+         arg => 'EXECUTE SELECT * FROM d.t WHERE i="1"',
+         bytes => 37,
          cmd => 'Query',
          db => undef,
          host => '127.0.0.1',
@@ -1090,8 +1090,8 @@ run_test({
          Statement_id => 2,
          Thread_id => '4294967296',
          Warning_count => 0,
-         arg => 'SELECT * FROM d.t WHERE i="3"',
-         bytes => 29,
+         arg => 'EXECUTE SELECT * FROM d.t WHERE i="3"',
+         bytes => 37,
          cmd => 'Query',
          db => undef,
          host => '127.0.0.1',
@@ -1110,8 +1110,8 @@ run_test({
          Statement_id => 2,
          Thread_id => '4294967296',
          Warning_count => 0,
-         arg => 'SELECT * FROM d.t WHERE i=NULL',
-         bytes => 30,
+         arg => 'EXECUTE SELECT * FROM d.t WHERE i=NULL',
+         bytes => 38,
          cmd => 'Query',
          db => undef,
          host => '127.0.0.1',
@@ -1158,8 +1158,8 @@ run_test({
          Statement_id => 1,
          Thread_id => '4294967296',
          Warning_count => 0,
-         arg => 'SELECT * FROM d.t WHERE i=42 OR u=2009 OR v="hello world" OR d=1.23 OR f=4.56 OR t > "2009-12-01" OR dt > "2009-12-01"',
-         bytes => 118,
+         arg => 'EXECUTE SELECT * FROM d.t WHERE i=42 OR u=2009 OR v="hello world" OR d=1.23 OR f=4.56 OR t > "2009-12-01" OR dt > "2009-12-01"',
+         bytes => 126,
          cmd => 'Query',
          db => undef,
          host => '127.0.0.1',
@@ -1208,6 +1208,54 @@ run_test({
          user => undef
       },
    ]
+});
+
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+run_test({
+   file   => 'samples/tcpdump030.txt',
+   desc   => 'prepared statements, ok response to execute',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000046',
+         Rows_affected => 0,
+         Statement_id => 1,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'PREPARE SET SESSION sql_mode="STRICT_ALL_TABLES"',
+         bytes => 48,
+         cmd => 'Query',
+         db => undef,
+         host => '1.2.3.24',
+         ip => '1.2.3.24',
+         port => '60696',
+         pos_in_log => 0,
+         ts => '091210 14:21:16.956302',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000024',
+         Rows_affected => 0,
+         Statement_id => 1,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'EXECUTE SET SESSION sql_mode="STRICT_ALL_TABLES"',
+         bytes => 48,
+         cmd => 'Query',
+         db => undef,
+         host => '1.2.3.24',
+         ip => '1.2.3.24',
+         port => '60696',
+         pos_in_log => 700,
+         ts => '091210 14:21:16.956446',
+         user => undef
+      }
+   ],
 });
 
 # #############################################################################

@@ -502,7 +502,8 @@ sub _packet_from_server {
             }
 
             my $arg;
-            if ( $com eq COM_QUERY || $com eq COM_STMT_RESET ) {
+            if ( $com eq COM_QUERY
+                 || $com eq COM_STMT_EXECUTE || $com eq COM_STMT_RESET ) {
                $com = 'Query';
                $arg = $session->{cmd}->{arg};
             }
@@ -556,7 +557,7 @@ sub _packet_from_server {
             my $com = $session->{cmd}->{cmd};
             my $arg;
 
-            if ( $com eq COM_QUERY ) {
+            if ( $com eq COM_QUERY || $com eq COM_STMT_EXECUTE ) {
                $com = 'Query';
                $arg = $session->{cmd}->{arg};
             }
@@ -1243,7 +1244,7 @@ sub parse_execute_packet {
 
    my $pkt = {
       sth_id => $sth_id,
-      arg    => $arg,
+      arg    => "EXECUTE $arg",
    };
    MKDEBUG && _d('Execute packet:', Dumper($pkt));
    return $pkt;
