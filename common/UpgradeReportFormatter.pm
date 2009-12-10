@@ -118,7 +118,7 @@ sub event_report {
             my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
             my @n = (
                @{$vals}{qw(sum min max)},
-               $vals->{sum} / $vals->{cnt},
+               ($vals->{sum} || 0) / ($vals->{cnt} || 1),
                @{$metrics}{qw(pct_95 stddev median)},
             );
             @n = map { defined $_ ? $func->($_) : '' } @n;
