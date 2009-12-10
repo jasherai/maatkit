@@ -213,6 +213,8 @@ sub compare {
       my $event = $events->[$i];
 
       if ( ($event0->{warning_count} || 0) != ($event->{warning_count} || 0) ) {
+         MKDEBUG && _d('Warning counts differ:',
+            $event0->{warning_count}, $event->{warning_count});
          $different_warning_counts++;
          $self->{diffs}->{warning_counts}->{$item}->{$sampleno}
             = [ $event0->{warning_count} || 0, $event->{warning_count} || 0 ];
@@ -229,6 +231,8 @@ sub compare {
       foreach my $code ( keys %$w0 ) {
          if ( exists $w->{$code} ) {
             if ( $w->{$code}->{Level} ne $w0->{$code}->{Level} ) {
+               MKDEBUG && _d('Warning levels differ:',
+                  $w0->{$code}->{Level}, $w->{$code}->{Level});
                # Save differences.
                $different_warning_levels++;
                $self->{diffs}->{levels}->{$item}->{$sampleno}
@@ -240,7 +244,7 @@ sub compare {
          }
          else {
             # This warning code is on event0 but not on this event.
-
+            MKDEBUG && _d('Warning gone:', $w0->{$code}->{Message});
             # Save differences.
             $different_warnings++;
             $self->{diffs}->{warnings}->{$item}->{$sampleno}
@@ -252,6 +256,7 @@ sub compare {
       # Any warning codes on this event not deleted above are new;
       # i.e. they weren't on event0.
       foreach my $code ( keys %$w ) {
+         MKDEBUG && _d('Warning new:', $w->{$code}->{Message});
          # Save differences.
          $different_warnings++;
          $self->{diffs}->{warnings}->{$item}->{$sampleno}
