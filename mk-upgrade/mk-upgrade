@@ -6949,7 +6949,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareResults package 5266
+# CompareResults package 5285
 # ###########################################################################
 package CompareResults;
 
@@ -7617,7 +7617,6 @@ sub report {
 
    my $query_id_col = {
       name        => 'Query ID',
-      fixed_width => 18,
    };
    my @host_cols = map {
       my $col = { name => $_->{name} };
@@ -7769,7 +7768,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareQueryTimes package 5266
+# CompareQueryTimes package 5285
 # ###########################################################################
 package CompareQueryTimes;
 
@@ -7935,7 +7934,6 @@ sub report {
 
    my $query_id_col = {
       name        => 'Query ID',
-      fixed_width => 18,
    };
    my @host_cols = map {
       my $col = { name => $_->{name} };
@@ -8058,7 +8056,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareWarnings package 5266
+# CompareWarnings package 5285
 # ###########################################################################
 package CompareWarnings;
 
@@ -8275,7 +8273,6 @@ sub report {
 
    my $query_id_col = {
       name        => 'Query ID',
-      fixed_width => 18,
    };
    my @host_cols = map {
       my $col = { name => $_->{name} };
