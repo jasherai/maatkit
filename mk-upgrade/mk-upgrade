@@ -8056,7 +8056,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareWarnings package 5285
+# CompareWarnings package 5290
 # ###########################################################################
 package CompareWarnings;
 
@@ -8212,6 +8212,8 @@ sub compare {
       my $event = $events->[$i];
 
       if ( ($event0->{warning_count} || 0) != ($event->{warning_count} || 0) ) {
+         MKDEBUG && _d('Warning counts differ:',
+            $event0->{warning_count}, $event->{warning_count});
          $different_warning_counts++;
          $self->{diffs}->{warning_counts}->{$item}->{$sampleno}
             = [ $event0->{warning_count} || 0, $event->{warning_count} || 0 ];
@@ -8226,6 +8228,8 @@ sub compare {
       foreach my $code ( keys %$w0 ) {
          if ( exists $w->{$code} ) {
             if ( $w->{$code}->{Level} ne $w0->{$code}->{Level} ) {
+               MKDEBUG && _d('Warning levels differ:',
+                  $w0->{$code}->{Level}, $w->{$code}->{Level});
                $different_warning_levels++;
                $self->{diffs}->{levels}->{$item}->{$sampleno}
                   = [ $code, $w0->{$code}->{Level}, $w->{$code}->{Level},
@@ -8235,7 +8239,7 @@ sub compare {
             delete $w->{$code};
          }
          else {
-
+            MKDEBUG && _d('Warning gone:', $w0->{$code}->{Message});
             $different_warnings++;
             $self->{diffs}->{warnings}->{$item}->{$sampleno}
                = [ 0, $code, $w0->{$code}->{Message} ];
@@ -8244,6 +8248,7 @@ sub compare {
       }
 
       foreach my $code ( keys %$w ) {
+         MKDEBUG && _d('Warning new:', $w->{$code}->{Message});
          $different_warnings++;
          $self->{diffs}->{warnings}->{$item}->{$sampleno}
             = [ $i, $code, $w->{$code}->{Message} ];
@@ -9026,11 +9031,17 @@ sub main {
             );
 
             if ( $sample->{original_arg} ) {
-               print "# Converted non-SELECT:\n#   $sample->{original_arg}\n";
+               my $orig = $sample->{original_arg};
+               if ( $o->get('shorten') ) {
+                  $orig = $qr->shorten($orig, $o->get('shorten'));
+               }
+               print "# Converted non-SELECT:\n#   $orig\n";
             }
             if ( $o->get('fingerprints') ) {
                print "# Fingerprint\n#   $item\n";
             }
+            $samp_query = $qr->shorten($samp_query, $o->get('shorten'))
+               if $o->get('shorten');
             print "$samp_query\n";
 
             my $query_id = make_checksum($item);
@@ -9570,6 +9581,23 @@ type: time
 
 How long to run before exiting.  The default is to run forever (you can
 interrupt with CTRL-C).
+
+=item --shorten
+
+type: int; default: 1024
+
+Shorten long statements in reports.
+
+Shortens long statements, replacing the omitted portion with a C</*... omitted
+...*/> comment.  This applies only to the output in reports.  It prevents a
+large statement from causing difficulty in a report.  The argument is the
+preferred length of the shortened statement.  Not all statements can be
+shortened, but very large INSERT and similar statements often can; and so
+can IN() lists, although only the first such list in the statement will be
+shortened.
+
+If it shortens something beyond recognition, you can find the original statement
+in the log, at the offset shown in the report header (see L<"OUTPUT">).
 
 =item --socket
 

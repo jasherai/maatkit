@@ -4,6 +4,7 @@ Changelog for mk-upgrade:
    * Changed output to print sample query instead of fingerprints.
    * Added --fingerprints.
    * Added --non-select to convert non-SELECT statements (issue 747).
+   * Added --shorten.
    * Script crashed when subreport query IDs were too long.
 
 2009-12-02: version 0.9.4
