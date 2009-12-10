@@ -284,7 +284,6 @@ sub report {
    # These columns are common to all the reports; make them just once.
    my $query_id_col = {
       name        => 'Query ID',
-      fixed_width => 20,
    };
    my @host_cols = map {
       my $col = { name => $_->{name} };
