@@ -10,7 +10,7 @@
 #   warnings        0
 #            P=12345,h=127.1 P=12347,h=127.1
 # Errors                   1               1
-# Warnings                 0               0
+# Warnings                 1               1
 # Query_time                                
 #   sum                    0               0
 #   min                    0               0
@@ -60,7 +60,4 @@ select * from t where name='jane'
 # Statistics
 # CompareResults_after_execute_skipped 2
 # CompareResults_execute_error   2
-# CompareWarnings_after_execute_skipped 2
-# CompareWarnings_before_execute_error 2
-# CompareWarnings_execute_skipped 2
 # events                         3

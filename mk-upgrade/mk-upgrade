@@ -8477,6 +8477,8 @@ sub main {
    $o->get_specs();
    $o->get_opts();
 
+   $dp->prop('set-vars', $o->get('set-vars'));
+
    if ( !$o->get('help') ) {
       if ( @ARGV < 1 ) {
          $o->save_error('Specify at least one host DSN');
@@ -9585,6 +9587,13 @@ type: time
 
 How long to run before exiting.  The default is to run forever (you can
 interrupt with CTRL-C).
+
+=item --set-vars
+
+type: string; default: wait_timeout=10000,query_cache_type=0
+
+Set these MySQL variables.  Immediately after connecting to MySQL, this
+string will be appended to SET and executed.
 
 =item --shorten
 
