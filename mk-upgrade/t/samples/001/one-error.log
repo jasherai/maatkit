@@ -1,0 +1,7 @@
+# User@Host: root[root] @ localhost []
+# Query_time: 1  Lock_time: 0  Rows_sent: 0  Rows_examined: 0
+use test;
+select id, name, last_login from t where name 'borked';
+# User@Host: root[root] @ localhost []
+# Query_time: 1  Lock_time: 0  Rows_sent: 1  Rows_examined: 1
+select * from t where name='jane';

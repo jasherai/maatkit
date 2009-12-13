@@ -8553,6 +8553,7 @@ sub main {
       TableChecksum => $checksum
    );
    my %common_modules  = (
+      DSNParser     => $dp,
       OptionParser  => $o,
       QueryParser   => $qp,
       QueryRewriter => $qr,
@@ -8819,12 +8820,14 @@ sub main {
          foreach my $action ( qw(before_execute execute after_execute) ) {
             MODULE:
             foreach my $c ( @compare_modules ) {
-               if ( $bad_module{ref $c} ) {
-                  MKDEBUG && _d('Skipping bad module', ref $c, $action,
+               my $module = ref $c;
+               if ( $bad_module{$module} ) {
+                  MKDEBUG && _d('Skipping bad module', $module, $action,
                      'on', $host_name);
+                  $stats->{"${module}_${action}_skipped"}++;
                   next MODULE;
                }
-               MKDEBUG && _d('Doing', ref $c, $action, 'on', $host_name);
+               MKDEBUG && _d('Doing', $module, $action, 'on', $host_name);
                eval {
                   $host_event = $c->$action(
                      event           => $host_event,
@@ -8842,7 +8845,8 @@ sub main {
                   $samples{$event->{fingerprint}}->{$event->{sampleno} || 0}
                      = $event->{arg};
                   $host_event->{Errors} = 'Yes';
-                  $bad_module{ref $c}++;
+                  $bad_module{$module}++;
+                  $stats->{"${module}_${action}_error"}++;
                   next MODULE;
                }
             } 
@@ -9071,7 +9075,7 @@ sub main {
       }
 
       if ( $o->get('reports')->{statistics} ) {
-         my $fmt = "# %-25s %d\n";
+         my $fmt = "# %-30s %d\n";
          print "\n# Statistics\n";
          map { printf $fmt, $_, $stats->{$_} } sort keys %$stats;
       }
