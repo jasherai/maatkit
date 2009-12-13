@@ -58,4 +58,6 @@ select * from t where name='jane'
 # 85C6257EBBF47115-1 P=12347,h=127.1 Failed to execute query: DBD::mysql::st execute failed: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''borked'' at line 1 [for Statement "select id, name, last_login from t where name 'borked'"] at ../mk-upgrade line 7043, <$fh> line 1.
 
 # Statistics
-# events                    2
+# CompareResults_after_execute_skipped 2
+# CompareResults_execute_error   2
+# events                         2

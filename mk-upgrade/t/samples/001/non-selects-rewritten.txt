@@ -100,6 +100,6 @@ select id from test.t where id > 3
 select  name='changed' from t where  id=0
 
 # Statistics
-# convert_to_select_failed  2
-# convert_to_select_ok      2
-# events                    5
+# convert_to_select_failed       2
+# convert_to_select_ok           2
+# events                         5

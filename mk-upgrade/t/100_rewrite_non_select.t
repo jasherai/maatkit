@@ -49,7 +49,7 @@ ok(
 
 ok(
    no_diff(
-      "$cmd samples/001/non-selects-log.txt",
+      "$cmd samples/001/non-selects.log",
       'samples/001/non-selects-rewritten.txt'
    ),
    'Rewrite non-SELECT'

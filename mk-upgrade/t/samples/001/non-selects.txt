@@ -30,5 +30,5 @@
 select id from test.t where id > 3
 
 # Statistics
-# events                    5
-# not_select                4
+# events                         5
+# not_select                     4

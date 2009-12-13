@@ -30,4 +30,4 @@
 select id, name, last_login from test.t where id=5
 
 # Statistics
-# events                    7
+# events                         7
