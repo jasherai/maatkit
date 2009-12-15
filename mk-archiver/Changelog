@@ -1,6 +1,8 @@
 Changelog for mk-archiver:
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).
+   * Added --check-interval, --check-slave-lag and --max-lag (issue 758).
+
 2009-10-30: version 1.0.20
 
    * Added --sleep-coef (issue 540).
