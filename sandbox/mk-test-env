@@ -1,0 +1,235 @@
+#!/bin/sh
+
+# This script controls the Maatkit test environment.  The mk test env is
+# a master-slave pair on ports 12345 and 12346, running from respective
+# directories in /tmp.  This script attempts to ensure that all environment
+# vars like MAATKIT_TRUNK and MAATKIT_SANDBOX_BASEDIR are correct.  The
+# exit status is 0 on success and 1 on any failure.  There's no option to
+# disable output, so just >/dev/null if you only care about the exit status.
+
+err() {
+   echo
+   for msg; do
+      echo $msg
+   done
+   echo "See http://code.google.com/p/maatkit/wiki/Testing for more information."
+   echo
+}
+
+usage() {
+   err "Usage: mk-test-env start|stop|restart|status|checkconfig"
+}
+
+mysql_basedir_ok() {
+   local basedir=$1
+   if [ ! -d "$basedir" ] || [ ! -d "$basedir/bin" ]; then
+      return 0
+   fi
+   if [ ! -x "$basedir/bin/mysqld_safe" ]; then
+      return 0
+   fi
+   return 1  # basedir is ok
+}
+
+set_mysql_basedir() {
+   # Auto-detect basedir if its not explicitly set.
+   if [ -z "$MAATKIT_SANDBOX_BASEDIR" ]; then
+      BASEDIR_AUTO_DETECTED=1
+      local mysqld=`which mysqld`
+      if [ $? ]; then
+         MAATKIT_SANDBOX_BASEDIR=`$mysqld --verbose --help | grep 'basedir ' | awk '{print $2}'`
+      fi
+   fi
+   mysql_basedir_ok $MAATKIT_SANDBOX_BASEDIR
+   local basedir_ok=$?
+   if [ $basedir_ok -eq 1 ]; then
+      export MAATKIT_SANDBOX_BASEDIR=$MAATKIT_SANDBOX_BASEDIR
+   fi
+   return $basedir_ok
+}
+
+checkconfig() {
+   local print_conf=$1
+   local stat=""
+   conf_err=0
+
+   if [ -z "$MAATKIT_TRUNK" ] || [ ! -d "$MAATKIT_TRUNK" ]; then
+      conf_err=1
+      stat="INVALID"
+   else
+      stat="ok"
+   fi
+   if [ $print_conf ]; then
+      echo "MAATKIT_TRUNK=$MAATKIT_TRUNK - $stat"
+   fi
+
+   set_mysql_basedir
+   if [ $? -ne 1  ]; then
+      conf_err=1
+      stat="INVALID"
+   else
+      stat="ok"
+   fi
+   if [ $print_conf ]; then
+      echo -n "MAATKIT_SANDBOX_BASEDIR=$MAATKIT_SANDBOX_BASEDIR - $stat"
+      if [ -n "$BASEDIR_AUTO_DETECTED" ]; then
+         echo " (auto-detected)"
+      else
+         echo
+      fi
+   fi
+
+   return $conf_err
+}
+
+sandbox_status() {
+   local type=$1
+   local port=$2
+   local master_port=$3
+   local status=0  # sandbox is ok, no problems
+
+   echo "Maatkit sandbox $type $port:"
+
+   echo -n "  PID file exists - "
+   if [ -f "/tmp/$port/data/mysql_sandbox$port.pid" ]; then
+      echo "yes"
+      pid=`cat /tmp/$port/data/mysql_sandbox$port.pid`
+      kill -0 $pid
+      echo -n "  process $pid is alive - "
+      if [ $? -eq 0 ]; then
+         echo "yes"
+      else
+         echo "NO"
+         status=1
+      fi
+   else
+      echo "NO"
+      status=1
+   fi
+
+   echo -n "  MySQL is alive - "
+   $MAATKIT_SANDBOX_BASEDIR/bin/mysqladmin --defaults-file="/tmp/$port/my.sandbox.cnf" ping >/dev/null 2>&1
+   if [ $? -eq 0 ]; then
+      echo "yes"
+      echo -n "  sakila db is loaded - "
+      /tmp/$port/use -e 'show databases like "sakila"' | grep sakila >/dev/null 2>&1
+      if [ $? -eq 0 ]; then
+         echo "yes"
+      else
+         echo "NO"
+         status=1
+      fi
+
+      if [ "$type" = "slave" ]; then
+         echo -n "  slave is running - "
+         # Slave status should show:
+         #   Slave_IO_Running: Yes
+         #   Slave_SQL_Running: Yes
+         local slave_running=`/tmp/$port/use -e 'show slave status\G' 2>/dev/null | grep Running | grep -c Yes`
+         if [ $slave_running -eq 2 ]; then
+            echo "yes"
+         else
+            echo "NO"
+            status=1
+         fi
+
+         if [ -n "$master_port" ]; then
+            echo -n "  slave to master $master_port - "
+            local mp=`/tmp/$port/use -e 'show slave status\G' 2>/dev/null | grep Master_Port | awk '{print $2}'`
+            if [ "$mp" = "$master_port" ]; then
+               echo "yes"
+            else
+               echo "NO"
+               status=1
+            fi
+         fi
+      fi
+   else
+      echo "NO"
+      status=1
+   fi
+   return $status
+}
+
+# ###########################################################################
+# Sanity check the cmd line options.
+# ###########################################################################
+if [ $# -lt 1 ]; then
+   usage
+   exit 1
+fi
+
+CMD=$1
+
+# ###########################################################################
+# Process the cmd.
+# ###########################################################################
+
+exit_status=0
+
+if [ $CMD = 'checkconfig' ]; then
+   checkconfig 1
+   echo -n "Maatkit test environment config is "
+   if [ $conf_err -eq 0 ]; then
+      echo "ok!"
+      exit 0
+   else
+      echo "invalid."
+      exit 1
+   fi
+else
+   checkconfig
+   if [ $conf_err -eq 1 ]; then
+      err "The Maatkit test environment config is invalid." \
+          "Run '$0 checkconfig' to see the current configuration."
+      exit 1      
+   fi
+fi
+
+case $CMD in
+   start)
+      cd $MAATKIT_TRUNK/sandbox
+      ./start-sandbox master 12345
+      ./start-sandbox slave  12346 12345
+      echo "Loading sakila database..."
+      ./load-sakila-db 12345
+      exit_status=$?
+      if [ $exit_status -eq 0 ]; then
+         echo "Maatkit test environment started!"
+      else
+         err "There was an error starting the Maatkit test environment."
+      fi
+      ;;
+   stop)
+      cd $MAATKIT_TRUNK/sandbox
+      ./stop-sandbox all
+      rm -rf /tmp/1234[5-9]*
+      exit_status=$?
+      if [ $exit_status -eq 0 ]; then
+         echo "Maatkit test environment stopped."
+      else
+         err "There was an error stopping the Maatkit test environment."
+      fi
+      ;;
+   restart)
+      $0 stop
+      $0 start
+      ;;
+   status)
+      sandbox_status 'master' '12345'
+      local master_status=$?
+      sandbox_status 'slave' '12346' '12345'
+      local slave_status=$?
+      echo -n "Maaktit test environment is "
+      if [ $master_status -eq 0 ] && [ $slave_status -eq 0 ]; then
+         echo "ok!"
+      else
+         echo "invalid."
+         exit_status=1
+      fi
+      ;;
+   *)
+      usage
+esac
+
+exit $exit_status

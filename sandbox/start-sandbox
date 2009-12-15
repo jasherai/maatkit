@@ -1,0 +1,135 @@
+#!/bin/sh
+
+err() {
+   echo
+   for msg; do
+      echo $msg
+   done
+   echo "See http://code.google.com/p/maatkit/wiki/Testing for more information."
+   echo
+}
+
+# ###########################################################################
+# Sanity check the cmd line options.
+# ###########################################################################
+if [ $# -lt 2 ]; then
+   err "Usage: start-sandbox master|slave port [master port]" \
+       "Example: start-sandbox master 12345"                  \
+       "Example: start-sandbox slave 12346 12345"
+   exit 1
+fi
+
+type=$1         # either "master" or "slave"
+port=$2         # sandbox port number, e.g. 12345
+master_port=$3  # master port if slave
+
+if [ "$type" != "master" ] && [ "$type" != "slave" ]; then
+   err "Invalid sandbox type: $type"          \
+       "Type must be either master or slave."
+   exit 1
+fi
+
+if [ $port -le 1024 ]; then
+   err "Invalid port number: $port"  \
+       "Port number must be > 1024"
+   exit 1
+fi
+
+if [ "$type" = "slave" ] && [ -z "$master_port" ]; then
+   err "No master port given for the slave."
+   exit 1
+fi
+
+if [ ! -d "/tmp/$master_port" ]; then
+   err "Master sandbox does not exist: /tmp/$master_port"
+   exit 1
+fi
+
+# ###########################################################################
+# Sanity check the environment.
+# ###########################################################################
+if [ -z "$MAATKIT_TRUNK" ]; then
+   err "MAATKIT_TRUNK environment variable is not set."
+   exit 1
+fi
+
+if [ ! -d "$MAATKIT_TRUNK" ]; then
+   err "Invalid Maakit trunk directory: $MAATKIT_TRUNK"
+   exit 1
+fi
+
+cd $MAATKIT_TRUNK/sandbox
+
+# This script is usually called by mk-test-env which discovers and
+# sets MAATKIT_SANDBOX_BASEDIR.  If this script is called directly,
+# then the caller is reponsible for setting MAATKIT_SANDBOX_BASEDIR.
+# MAATKIT_SANDBOX_BASEDIR points to a base directory containing the
+# MySQL executables like MAATKIT_SANDBOX_BASEDIR/bin/mysqld_safe.
+if [ -z "$MAATKIT_SANDBOX_BASEDIR" ]; then
+   err "MAATKIT_SANDBOX_BASEDIR environment variable is not set."
+   exit 1
+fi
+
+mysqld=''
+if [ -x "$MAATKIT_SANDBOX_BASEDIR/bin/mysqld" ]; then
+   mysqld='bin/mysqld';
+elif [ -x "$MAATKIT_SANDBOX_BASEDIR/sbin/mysqld" ]; then
+   mysqld='sbin/mysqld';
+else
+   err "$MAATKIT_SANDBOX_BASEDIR/bin/mysqld or $MAATKIT_SANDBOX_BASEDIR/sbin/mysqld does not exist or is not executable."
+   exit 1
+fi
+
+# ###########################################################################
+# Determine the MySQL version.
+# ###########################################################################
+
+# bin/mysqld -V should print something like:
+#  /usr/bin/mysqld  Ver 5.1.34 for linux-gnu on x86_64 (MySQL Community Server)
+version=`$MAATKIT_SANDBOX_BASEDIR/$mysqld -V | awk '{print $3}' | cut -d. -f 1,2`;
+if [ "$version" != "5.0" ] && [ "$version" != "5.1" ]; then
+   err "MySQL version not supported: $version" \
+       "Supported versions are 5.0 and 5.1."
+   exit 1
+fi
+
+# ###########################################################################
+# Start and configure the sandbox server.
+# ###########################################################################
+PIDFILE="/tmp/$port/data/mysql_sandbox$port.pid"
+
+if [ -f $PIDFILE ]; then
+   echo "Sandbox $port already started (found pid file $PIDFILE)"
+else
+   # Make the sandbox dir and extract the base files.
+   mkdir /tmp/$port >/dev/null 2>&1
+   tar xzf "server-$version.tar.gz" -C /tmp/$port
+   for file in `grep -rl PORT /tmp/$port`; do
+      sed -i -e "s/PORT/$port/g" $file
+      # Use ! instead of / because the replacment has / (it's a directory)
+      sed -i -e "s!MAATKIT_SANDBOX_BASEDIR!$MAATKIT_SANDBOX_BASEDIR!g" $file
+   done
+
+   # Start the sandbox and check that it has InnoDB.
+   /tmp/$port/start
+   if [ $? -eq 0 ]; then
+      /tmp/$port/use -e 'show innodb status' | grep 'INNODB MONITOR OUTPUT' >/dev/null 2>&1
+      # grep exits 0 if lines are found
+      if [ $? -ne 0 ]; then
+         echo "****** WARNING sandbox doesn't have a working InnoDB! ******"
+         exit 1
+      fi
+   else
+      echo "Sandbox $type $port failed to start."
+      exit 1
+   fi
+
+   # If the sandbox is a slave, start the slave.
+   if [ "$type" = "slave" ]; then
+      /tmp/$port/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=$master_port"
+      /tmp/$port/use -e "start slave"
+      /tmp/$port/use -e "set global read_only=1"
+   fi
+fi
+
+exit 0

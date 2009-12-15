@@ -1,6 +1,0 @@
-#!/bin/sh
-
-for a in /tmp/123[0-9]*; do
-   $a/stop
-   rm -rf $a
-done

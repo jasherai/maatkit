@@ -1,0 +1,41 @@
+#!/bin/sh
+
+err() {
+   echo
+   for msg; do
+      echo $msg
+   done
+   echo "See http://code.google.com/p/maatkit/wiki/Testing for more information."
+   echo
+}
+
+# ###########################################################################
+# Sanity check the cmd line options.
+# ###########################################################################
+if [ $# -lt 1 ]; then
+   err "Usage: stop-sandbox all|port [port...]"           \
+       "The 'all' option stops sandboxes /tmp/123[0-9]*." \
+       "The sandbox directorys are not removed."
+   exit 1
+fi
+
+# ###########################################################################
+# Stop the sandboxes.
+# ###########################################################################
+for port in $@; do
+
+   # Exit values and errors are ignored.  We assume everything stops ok.
+
+   if [ "$port" = "all" ]; then
+      for a in /tmp/123[0-9]*; do 
+         $a/stop >/dev/null 2>&1
+      done
+      break
+   fi
+
+   if [ -d "/tmp/$port" ]; then
+      /tmp/$port/stop >/dev/null 2>&1
+   fi
+done
+
+exit 0
