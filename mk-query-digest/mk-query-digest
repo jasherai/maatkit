@@ -2237,7 +2237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5292
+# MySQLProtocolParser package 5305
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2542,12 +2542,12 @@ sub parse_event {
       if ( $session->{buff} && $session->{buff_left} <= 0 ) {
          MKDEBUG && _d('Data is complete');
       }
-      elsif ( $packet->{mysql_data_len} > $packet->{data_len} ) {
+      elsif ( $packet->{mysql_data_len} > ($packet->{data_len} - 4) ) {
          $session->{mysql_data_len} = $packet->{mysql_data_len};
          $session->{buff}           = $packet->{data};
          
          $session->{buff_left}
-            ||= $packet->{mysql_data_len} - $packet->{data_len};
+            ||= $packet->{mysql_data_len} - ($packet->{data_len} - 4);
 
          MKDEBUG && _d('Data not complete; expecting',
             $session->{buff_left}, 'more bytes');
