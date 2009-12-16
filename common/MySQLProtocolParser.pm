@@ -364,7 +364,7 @@ sub parse_event {
       if ( $session->{buff} && $session->{buff_left} <= 0 ) {
          MKDEBUG && _d('Data is complete');
       }
-      elsif ( $packet->{mysql_data_len} > $packet->{data_len} ) {
+      elsif ( $packet->{mysql_data_len} > ($packet->{data_len} - 4) ) {
          # There is more MySQL data than this packet contains.
          # Save the data and wait for more packets.
          $session->{mysql_data_len} = $packet->{mysql_data_len};
@@ -373,7 +373,7 @@ sub parse_event {
          # Do this just once here.  For the next packets, buff_left
          # will be decremented above.
          $session->{buff_left}
-            ||= $packet->{mysql_data_len} - $packet->{data_len};
+            ||= $packet->{mysql_data_len} - ($packet->{data_len} - 4);
 
          MKDEBUG && _d('Data not complete; expecting',
             $session->{buff_left}, 'more bytes');
@@ -1003,7 +1003,7 @@ sub parse_error_packet {
 # Bytes         Field
 # ===========   ====================================
 # 00 00 00 01   MySQL proto header (already removed)
-# 00            OK  (already removed)
+# 00            OK/Field count (already removed)
 # 1-9           Affected rows (LCB)
 # 1-9           Insert ID (LCB)
 # 00 00         Server status
