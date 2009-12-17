@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 57;
+use Test::More tests => 59;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -1283,6 +1283,36 @@ run_test({
          port => '35957',
          pos_in_log => 534,
          ts => '091207 20:54:54.795250',
+         user => undef
+      }
+   ],
+});
+
+# #############################################################################
+# Issue 761: mk-query-digest --tcpdump does not handle incomplete packets
+# #############################################################################
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+run_test({
+   file   => 'samples/tcpdump032.txt',
+   desc   => 'issue 761',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000431',
+         Rows_affected => 1,
+         Thread_id => '4294967296',
+         Warning_count => 21032,
+         arg => 'UPDATEDDDDNNNN',
+         bytes => 14,
+         cmd => 'Query',
+         db => undef,
+         host => '1.2.3.4',
+         ip => '1.2.3.4',
+         port => '35957',
+         pos_in_log => 1768,
+         ts => '091208 20:54:54.795250',
          user => undef
       }
    ],

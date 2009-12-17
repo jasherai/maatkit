@@ -281,7 +281,7 @@ sub parse_event {
       MKDEBUG && _d('Packet is not to or from a MySQL server');
       return;
    }
-   MKDEBUG && _d('Client:', $client);
+   MKDEBUG && _d('Client', $client);
 
    # Get the client's session info or create a new session if the
    # client hasn't been seen before.
@@ -299,6 +299,7 @@ sub parse_event {
       };
    };
    my $session = $self->{sessions}->{$client};
+   MKDEBUG && _d('Client state:', $session->{state});
 
    # Return early if there's TCP/MySQL data.  These are usually ACK
    # packets, but they could also be FINs in which case, we should close
@@ -325,7 +326,7 @@ sub parse_event {
    if ( $session->{buff} && $packet_from eq 'client' ) {
       # Previous packets were not complete so append this data
       # to what we've been buffering.  Afterwards, do *not* attempt
-      # to remove_mysql_header() because it was already done (for
+      # to remove_mysql_header() because it was already done (from
       # the first packet).
       $packet->{data}        = $session->{buff} . $packet->{data};
       $session->{buff_left} -= $packet->{data_len};
@@ -334,6 +335,7 @@ sub parse_event {
       # So set it to the real, complete data len (from the first
       # packet's MySQL header).
       $packet->{mysql_data_len} = $session->{mysql_data_len};
+      $packet->{number}         = $session->{number};
 
       MKDEBUG && _d('Appending data to buff; expecting',
          $session->{buff_left}, 'more bytes');
@@ -366,10 +368,12 @@ sub parse_event {
       }
       elsif ( $packet->{mysql_data_len} > ($packet->{data_len} - 4) ) {
          # There is more MySQL data than this packet contains.
-         # Save the data and wait for more packets.
-         $session->{mysql_data_len} = $packet->{mysql_data_len};
+         # Save the data and the original MySQL header values
+         # then wait for the rest of the data.
          $session->{buff}           = $packet->{data};
-         
+         $session->{mysql_data_len} = $packet->{mysql_data_len};
+         $session->{number}         = $packet->{number};
+
          # Do this just once here.  For the next packets, buff_left
          # will be decremented above.
          $session->{buff_left}
@@ -379,11 +383,8 @@ sub parse_event {
             $session->{buff_left}, 'more bytes');
          return;
       }
+      $self->_delete_buff($session);
       $event = $self->_packet_from_client($packet, $session, $args{misc});
-
-      $session->{buff}           = '';
-      $session->{buff_left}      = 0;
-      $session->{mysql_data_len} = 0;
    }
    else {
       # Should not get here.
@@ -448,6 +449,11 @@ sub _packet_from_server {
          }
          $session->{state}     = 'server_handshake';
          $session->{thread_id} = $handshake->{thread_id};
+      }
+      elsif ( $session->{buff} ) {
+         $self->fail_session($session,
+            'got server response before full buffer');
+         return;
       }
       else {
          MKDEBUG && _d('Ignoring mid-stream server response');
@@ -708,8 +714,13 @@ sub _packet_from_client {
       return;
    }
    else {
-      # Otherwise, it should be a query.  We ignore the commands
-      # that take arguments (COM_CHANGE_USER, COM_PROCESS_KILL).
+      # Otherwise, it should be a query if its the first packet (number 0).
+      # We ignore the commands that take arguments (COM_CHANGE_USER,
+      # COM_PROCESS_KILL).
+      if ( $packet->{number} != 0 ) {
+         $self->fail_session($session, 'client cmd not packet 0');
+         return;
+      }
 
       # Detect compression in-stream only if $session->{compress} is
       # not defined.  This means we didn't see the client handshake.
@@ -797,10 +808,8 @@ sub _make_event {
    MKDEBUG && _d('Making event');
 
    # Clear packets that preceded this event.
-   $session->{raw_packets}    = [];
-   $session->{buff}           = '';
-   $session->{buff_left}      = 0;
-   $session->{mysql_data_len} = 0;
+   $session->{raw_packets}  = [];
+   $self->_delete_buff($session);
 
    if ( !$session->{thread_id} ) {
       # Only the server handshake packet gives the thread id, so for
@@ -1313,7 +1322,7 @@ sub detect_compression {
    # parse this packet and it looks like a COM_SLEEP (00) which is not a
    # command that the client can send, then chances are the client is using
    # compression.
-   my $com = parse_com_packet($packet->{data}, $packet->{data_len});
+   my $com = parse_com_packet($packet->{data}, $packet->{mysql_data_len});
    if ( $com && $com->{code} eq COM_SLEEP ) {
       MKDEBUG && _d('Client is using compression');
       $session->{compress} = 1;
@@ -1433,6 +1442,7 @@ sub _get_errors_fh {
 
 sub fail_session {
    my ( $self, $session, $reason ) = @_;
+   MKDEBUG && _d('Client', $session->{client}, 'failed because', $reason);
    my $errors_fh = $self->_get_errors_fh();
    if ( $errors_fh ) {
       my $raw_packets = $session->{raw_packets};
@@ -1448,8 +1458,15 @@ sub fail_session {
          print $errors_fh "\n";
       }
    }
-   MKDEBUG && _d('Failed session', $session->{client}, 'because', $reason);
    delete $self->{sessions}->{$session->{client}};
+   return;
+}
+
+# Delete anything we added to the session related to
+# buffering a large query received in multiple packets.
+sub _delete_buff {
+   my ( $session ) = @_;
+   map { delete $session->{$_} } qw(buff buff_left mysql_data_len);
    return;
 }
 
