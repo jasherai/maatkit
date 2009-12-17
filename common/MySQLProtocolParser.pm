@@ -328,7 +328,8 @@ sub parse_event {
       # to what we've been buffering.  Afterwards, do *not* attempt
       # to remove_mysql_header() because it was already done (from
       # the first packet).
-      $packet->{data}        = $session->{buff} . $packet->{data};
+      $session->{buff}      .= $packet->{data};
+      $packet->{data}        = $session->{buff};
       $session->{buff_left} -= $packet->{data_len};
 
       # We didn't remove_mysql_header(), so mysql_data_len isn't set.
@@ -363,8 +364,14 @@ sub parse_event {
       $event = $self->_packet_from_server($packet, $session, $args{misc});
    }
    elsif ( $packet_from eq 'client' ) {
-      if ( $session->{buff} && $session->{buff_left} <= 0 ) {
-         MKDEBUG && _d('Data is complete');
+      if ( $session->{buff} ) {
+         if ( $session->{buff_left} <= 0 ) {
+            MKDEBUG && _d('Data is complete');
+            $self->_delete_buff($session);
+         }
+         else {
+            return;  # waiting for more data; buff_left was reported earlier
+         }
       }
       elsif ( $packet->{mysql_data_len} > ($packet->{data_len} - 4) ) {
          # There is more MySQL data than this packet contains.
@@ -383,7 +390,7 @@ sub parse_event {
             $session->{buff_left}, 'more bytes');
          return;
       }
-      $self->_delete_buff($session);
+
       $event = $self->_packet_from_client($packet, $session, $args{misc});
    }
    else {
