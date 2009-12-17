@@ -2237,7 +2237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5305
+# MySQLProtocolParser package 5312
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2481,7 +2481,7 @@ sub parse_event {
       MKDEBUG && _d('Packet is not to or from a MySQL server');
       return;
    }
-   MKDEBUG && _d('Client:', $client);
+   MKDEBUG && _d('Client', $client);
 
    if ( !exists $self->{sessions}->{$client} ) {
       MKDEBUG && _d('New session');
@@ -2497,6 +2497,7 @@ sub parse_event {
       };
    };
    my $session = $self->{sessions}->{$client};
+   MKDEBUG && _d('Client state:', $session->{state});
 
    if ( $packet->{data_len} == 0 ) {
       MKDEBUG && _d('No TCP/MySQL data');
@@ -2518,6 +2519,7 @@ sub parse_event {
       $session->{buff_left} -= $packet->{data_len};
 
       $packet->{mysql_data_len} = $session->{mysql_data_len};
+      $packet->{number}         = $session->{number};
 
       MKDEBUG && _d('Appending data to buff; expecting',
          $session->{buff_left}, 'more bytes');
@@ -2543,9 +2545,10 @@ sub parse_event {
          MKDEBUG && _d('Data is complete');
       }
       elsif ( $packet->{mysql_data_len} > ($packet->{data_len} - 4) ) {
-         $session->{mysql_data_len} = $packet->{mysql_data_len};
          $session->{buff}           = $packet->{data};
-         
+         $session->{mysql_data_len} = $packet->{mysql_data_len};
+         $session->{number}         = $packet->{number};
+
          $session->{buff_left}
             ||= $packet->{mysql_data_len} - ($packet->{data_len} - 4);
 
@@ -2553,11 +2556,8 @@ sub parse_event {
             $session->{buff_left}, 'more bytes');
          return;
       }
+      $self->_delete_buff($session);
       $event = $self->_packet_from_client($packet, $session, $args{misc});
-
-      $session->{buff}           = '';
-      $session->{buff_left}      = 0;
-      $session->{mysql_data_len} = 0;
    }
    else {
       die 'Packet origin unknown';
@@ -2600,6 +2600,11 @@ sub _packet_from_server {
          }
          $session->{state}     = 'server_handshake';
          $session->{thread_id} = $handshake->{thread_id};
+      }
+      elsif ( $session->{buff} ) {
+         $self->fail_session($session,
+            'got server response before full buffer');
+         return;
       }
       else {
          MKDEBUG && _d('Ignoring mid-stream server response');
@@ -2822,6 +2827,10 @@ sub _packet_from_client {
       return;
    }
    else {
+      if ( $packet->{number} != 0 ) {
+         $self->fail_session($session, 'client cmd not packet 0');
+         return;
+      }
 
       if ( !defined $session->{compress} ) {
          return unless $self->detect_compression($packet, $session);
@@ -2901,10 +2910,8 @@ sub _make_event {
    my ( $self, $event, $packet, $session ) = @_;
    MKDEBUG && _d('Making event');
 
-   $session->{raw_packets}    = [];
-   $session->{buff}           = '';
-   $session->{buff_left}      = 0;
-   $session->{mysql_data_len} = 0;
+   $session->{raw_packets}  = [];
+   $self->_delete_buff($session);
 
    if ( !$session->{thread_id} ) {
       MKDEBUG && _d('Giving session fake thread id', $self->{fake_thread_id});
@@ -3313,7 +3320,7 @@ sub uncompress_data {
 sub detect_compression {
    my ( $self, $packet, $session ) = @_;
    MKDEBUG && _d('Checking for client compression');
-   my $com = parse_com_packet($packet->{data}, $packet->{data_len});
+   my $com = parse_com_packet($packet->{data}, $packet->{mysql_data_len});
    if ( $com && $com->{code} eq COM_SLEEP ) {
       MKDEBUG && _d('Client is using compression');
       $session->{compress} = 1;
@@ -3413,6 +3420,7 @@ sub _get_errors_fh {
 
 sub fail_session {
    my ( $self, $session, $reason ) = @_;
+   MKDEBUG && _d('Client', $session->{client}, 'failed because', $reason);
    my $errors_fh = $self->_get_errors_fh();
    if ( $errors_fh ) {
       my $raw_packets = $session->{raw_packets};
@@ -3428,8 +3436,13 @@ sub fail_session {
          print $errors_fh "\n";
       }
    }
-   MKDEBUG && _d('Failed session', $session->{client}, 'because', $reason);
    delete $self->{sessions}->{$session->{client}};
+   return;
+}
+
+sub _delete_buff {
+   my ( $session ) = @_;
+   map { delete $session->{$_} } qw(buff buff_left mysql_data_len);
    return;
 }
 
