@@ -2237,7 +2237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5312
+# MySQLProtocolParser package 5315
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2515,7 +2515,8 @@ sub parse_event {
    }
 
    if ( $session->{buff} && $packet_from eq 'client' ) {
-      $packet->{data}        = $session->{buff} . $packet->{data};
+      $session->{buff}      .= $packet->{data};
+      $packet->{data}        = $session->{buff};
       $session->{buff_left} -= $packet->{data_len};
 
       $packet->{mysql_data_len} = $session->{mysql_data_len};
@@ -2541,8 +2542,14 @@ sub parse_event {
       $event = $self->_packet_from_server($packet, $session, $args{misc});
    }
    elsif ( $packet_from eq 'client' ) {
-      if ( $session->{buff} && $session->{buff_left} <= 0 ) {
-         MKDEBUG && _d('Data is complete');
+      if ( $session->{buff} ) {
+         if ( $session->{buff_left} <= 0 ) {
+            MKDEBUG && _d('Data is complete');
+            $self->_delete_buff($session);
+         }
+         else {
+            return;  # waiting for more data; buff_left was reported earlier
+         }
       }
       elsif ( $packet->{mysql_data_len} > ($packet->{data_len} - 4) ) {
          $session->{buff}           = $packet->{data};
@@ -2556,7 +2563,7 @@ sub parse_event {
             $session->{buff_left}, 'more bytes');
          return;
       }
-      $self->_delete_buff($session);
+
       $event = $self->_packet_from_client($packet, $session, $args{misc});
    }
    else {
