@@ -19,7 +19,7 @@ my $output = `perl ../mk-slave-delay --help`;
 like($output, qr/Prompt for a password/, 'It compiles');
 
 # Check daemonization
-my $cmd = '../mk-slave-delay --delay 1m --interval 15s --run-time 10m --daemonize --pid /tmp/mk-slave-delay.pid h=127.1,P=12346';
+my $cmd = '../mk-slave-delay --delay 1m --interval 15s --run-time 10m --daemonize --pid /tmp/mk-slave-delay.pid h=127.1,P=12346,u=msandbox,p=msandbox';
 diag(`$cmd 1>/dev/null 2>/dev/null`);
 $output = `ps -eaf | grep 'mk-slave-delay \-\-delay'`;
 like($output, qr/$cmd/, 'It lives daemonized');
@@ -48,17 +48,18 @@ unlike($output, qr/Missing DSN part 'h'/, 'Does not require h DSN part');
 # easily when you connect to a SLAVE-HOST twice by accident.)  To reproduce,
 # just disable log-bin and log-slave-updates on the slave.
 # #############################################################################
+diag `cp /tmp/12346/my.sandbox.cnf /tmp/12346/my.sandbox.cnf-original`;
 diag `sed -i '/log.bin\\|log.slave/d' /tmp/12346/my.sandbox.cnf`;
 diag `/tmp/12346/stop; /tmp/12346/start;`;
-$output = `../mk-slave-delay --delay 1s h=127.1,P=12346 h=127.1 2>&1`;
+$output = `../mk-slave-delay --delay 1s h=127.1,P=12346,u=msandbox,p=msandbox h=127.1 2>&1`;
 like($output, qr/Binary logging is disabled/,
    'Detects master that is not a master');
-diag `/tmp/12346/stop; rm -rf /tmp/12346; ../../sandbox/make_slave 12346`;
+diag `/tmp/12346/stop; mv /tmp/12346/my.sandbox.cnf-original /tmp/12346/my.sandbox.cnf; /tmp/12346/start`;
 
 # #############################################################################
 # Check that SLAVE-HOST can be given by cmd line opts.
 # #############################################################################
-$output = `../mk-slave-delay --run-time 1s --interval 1s --host 127.1 --port 12346`;
+$output = `../mk-slave-delay --run-time 1s --interval 1s --host 127.1 --port 12346 -u msandbox -p msandbox`;
 sleep 1;
 like(
    $output,
@@ -67,7 +68,7 @@ like(
 );
 
 # And check issue 248: that the slave host will inhert from --port, etc.
-$output = `../mk-slave-delay --run-time 1s --interval 1s 127.1 --port 12346`;
+$output = `../mk-slave-delay --run-time 1s --interval 1s 127.1 --port 12346 -u msandbox -p msandbox`;
 sleep 1;
 like(
    $output,
@@ -78,7 +79,7 @@ like(
 # #############################################################################
 # Check --use-master
 # #############################################################################
-$output = `../mk-slave-delay --run-time 1s --interval 1s --use-master --host 127.1 --port 12346`;
+$output = `../mk-slave-delay --run-time 1s --interval 1s --use-master --host 127.1 --port 12346 -u msandbox -p msandbox`;
 sleep 1;
 like(
    $output,
@@ -86,7 +87,7 @@ like(
    '--use-master'
 );
 
-$output = `../mk-slave-delay --run-time 1s --interval 1s --use-master --host 127.1 --port 12345 2>&1`;
+$output = `../mk-slave-delay --run-time 1s --interval 1s --use-master --host 127.1 --port 12345 -u msandbox -p msandbox 2>&1`;
 like(
    $output,
    qr/No SLAVE STATUS found/,
@@ -96,7 +97,7 @@ like(
 # #############################################################################
 # Check --log.
 # #############################################################################
-`../mk-slave-delay --run-time 1s --interval 1s -h 127.1 -P 12346 --log /tmp/mk-slave-delay.log --daemonize`;
+`../mk-slave-delay --run-time 1s --interval 1s -h 127.1 -P 12346 -u msandbox -p msandbox --log /tmp/mk-slave-delay.log --daemonize`;
 sleep 2;
 $output = `cat /tmp/mk-slave-delay.log`;
 `rm -f /tmp/mk-slave-delay.log`;
@@ -110,7 +111,7 @@ like(
 # Issue 391: Add --pid option to all scripts
 # #########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `../mk-slave-delay --run-time 1s --interval 1s --use-master --host 127.1 --port 12346 --pid /tmp/mk-script.pid 2>&1`;
+$output = `../mk-slave-delay --run-time 1s --interval 1s --use-master --host 127.1 --port 12346 -u msandbox -p msandbox --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},
