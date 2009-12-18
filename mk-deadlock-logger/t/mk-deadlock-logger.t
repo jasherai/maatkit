@@ -16,6 +16,8 @@ or BAIL_OUT('Cannot connect to sandbox master');
 
 $sb->create_dbs($dbh1, ['test']);
 
+my $opts = '/tmp/12345/my.sandbox.cnf';
+
 # Set up the table for creating a deadlock.
 $dbh1->do("drop table if exists test.dl");
 $dbh1->do("create table test.dl(a int) engine=innodb");
@@ -67,14 +69,14 @@ foreach my $child ( keys %children ) {
 my ($stat) = $dbh1->selectrow_array('show innodb status');
 like($stat, qr/WE ROLL BACK/, 'There was a deadlock');
 
-my $output = `perl ../mk-deadlock-logger --print h=127.1,P=12345`;
+my $output = `perl ../mk-deadlock-logger --print h=127.1,P=12345,u=msandbox,p=msandbox`;
 like(
    $output,
    qr/127\.1.+msandbox.+GEN_CLUST_INDEX/,
    'Deadlock logger prints the output'
 );
 
-$output = `perl ../mk-deadlock-logger h=127.1,P=12345`;
+$output = `perl ../mk-deadlock-logger h=127.1,P=12345,u=msandbox,p=msandbox`;
 like(
    $output,
    qr/127\.1.+msandbox.+GEN_CLUST_INDEX/,
@@ -91,7 +93,7 @@ $dbh1->do('USE test');
 $dbh1->do('DROP TABLE IF EXISTS deadlocks');
 $dbh1->do("$deadlocks_tbl");
 
-my $cmd = '../mk-deadlock-logger --dest D=test,t=deadlocks h=127.1,P=12345 --daemonize --run-time 1s --interval 1s --pid /tmp/mk-deadlock-logger.pid';
+my $cmd = "../mk-deadlock-logger --dest D=test,t=deadlocks F=$opts --daemonize --run-time 1s --interval 1s --pid /tmp/mk-deadlock-logger.pid";
 `$cmd 1>/dev/null 2>/dev/null`;
 $output = `ps -eaf | grep 'mk-deadlock-logger \-\-dest '`;
 like($output, qr/$cmd/, 'It lives daemonized');
@@ -112,7 +114,7 @@ ok(
    'PID file already exists'
 );
 
-$cmd = '../mk-deadlock-logger --dest D=test,t=deadlocks h=127.1,P=12345 --daemonize --run-time 1s --interval 1s --pid /tmp/mk-deadlock-logger.pid';
+$cmd = "../mk-deadlock-logger --dest D=test,t=deadlocks F=$opts --daemonize --run-time 1s --interval 1s --pid /tmp/mk-deadlock-logger.pid";
 $output = `$cmd 2>&1`;
 like(
    $output,
@@ -143,7 +145,7 @@ ok(
 # #############################################################################
 $output = 'foo';
 $dbh1->do('TRUNCATE TABLE test.deadlocks');
-$cmd = '../mk-deadlock-logger --dest D=test,t=deadlocks h=127.1,P=12345';
+$cmd = "../mk-deadlock-logger --dest D=test,t=deadlocks F=$opts";
 $output = `$cmd`;
 is(
    $output,
@@ -159,7 +161,7 @@ ok(
 
 $output = '';
 $dbh1->do('TRUNCATE TABLE test.deadlocks');
-$cmd = '../mk-deadlock-logger --print --dest D=test,t=deadlocks --host 127.1 --port 12345';
+$cmd = "../mk-deadlock-logger --print --dest D=test,t=deadlocks --host 127.1 --port 12345 --user msandbox --password msandbox";
 $output = `$cmd`;
 like(
    $output,
@@ -203,7 +205,7 @@ like(
 
 # The clear-deadlocks table comes and goes quickly so we can really
 # only search the debug output for evidence that it was created.
-$output = `MKDEBUG=1 ../mk-deadlock-logger h=127.1,P=12345,D=test --clear-deadlocks test.make_deadlock 2>&1`;
+$output = `MKDEBUG=1 ../mk-deadlock-logger F=$opts,D=test --clear-deadlocks test.make_deadlock 2>&1`;
 like(
    $output,
    qr/INSERT INTO test.make_deadlock/,
@@ -220,7 +222,7 @@ like(
 # #############################################################################
 
 # Test that source DSN inherits from --user, etc.
-$output = `../mk-deadlock-logger h=127.1,D=test --clear-deadlocks test.make_deadlock --port 12345 2>&1`;
+$output = `../mk-deadlock-logger h=127.1,D=test,u=msandbox,p=msandbox --clear-deadlocks test.make_deadlock --port 12345 2>&1`;
 unlike(
    $output,
    qr/failed/,
@@ -232,7 +234,7 @@ unlike(
 # Issue 391: Add --pid option to all scripts
 # #########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `../mk-deadlock-logger h=127.1,D=test --clear-deadlocks test.make_deadlock --port 12345 --pid /tmp/mk-script.pid 2>&1`;
+$output = `../mk-deadlock-logger F=$opts,D=test --clear-deadlocks test.make_deadlock --port 12345 --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},
@@ -249,7 +251,7 @@ is_deeply(
    'Deadlocks table does not exit (issue 386)'
 );
 
-`../mk-deadlock-logger --dest D=test,t=issue_386 h=127.1,P=12345 --run-time 1s --interval 1s --create-dest-table`;
+`../mk-deadlock-logger --dest D=test,t=issue_386 F=$opts --run-time 1s --interval 1s --create-dest-table`;
 
 is_deeply(
    $dbh1->selectall_arrayref('show tables from `test` like "issue_386"'),
