@@ -95,7 +95,7 @@ sub get_dbh_for {
    $cxn_ops ||= { AutoCommit => 1 };
    MKDEBUG && _d('dbh for', $server, 'on port', $port_for{$server});
    my $dp = $self->{DSNParser};
-   my $dsn = $dp->parse('h=127.0.0.1,P=' . $port_for{$server});
+   my $dsn = $dp->parse('h=127.0.0.1,u=msandbox,p=msandbox,P=' . $port_for{$server});
    my $dbh;
    eval { $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), $cxn_ops) };
    if ( $EVAL_ERROR ) {
