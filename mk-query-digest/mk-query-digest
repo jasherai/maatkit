@@ -8957,6 +8957,7 @@ sub main {
                line_width       => 74,
                long_last_column => 1,
             );
+            $report->set_title('Profile');
             $report->set_columns(
                { name => 'Rank',          right_justify => 1, },
                { name => 'Query ID',                          },
@@ -8989,6 +8990,7 @@ sub main {
                line_width       => 74,
                long_last_column => 1,
             );
+            $report->set_title('Prepared statements');
             $report->set_columns(
                { name => 'Rank',          right_justify => 1, },
                { name => 'Query ID',                          },
