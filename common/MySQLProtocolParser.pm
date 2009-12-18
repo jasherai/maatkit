@@ -1472,7 +1472,7 @@ sub fail_session {
 # Delete anything we added to the session related to
 # buffering a large query received in multiple packets.
 sub _delete_buff {
-   my ( $session ) = @_;
+   my ( $self, $session ) = @_;
    map { delete $session->{$_} } qw(buff buff_left mysql_data_len);
    return;
 }
