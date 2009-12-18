@@ -93,7 +93,7 @@ SKIP: {
    `/tmp/12345/use -D test < samples/fke.sql 1>/dev/null 2>/dev/null`;
 
    # Then get and save that fke.
-   output('h=127.1,P=12345', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors');
+   output('h=127.1,P=12345,u=msandbox,p=msandbox', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors');
 
    # And then test that it was actually saved.
    my $today = $dbh->selectall_arrayref('SELECT NOW()')->[0]->[0];
@@ -113,7 +113,7 @@ SKIP: {
 
    # Check again to make sure that the same fke isn't saved twice.
    my $first_ts = $fke->[0]->[0];
-   output('h=127.1,P=12345', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors');
+   output('h=127.1,P=12345,u=msandbox,p=msandbox', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors');
    $fke = $dbh->selectall_arrayref('SELECT * FROM test.foreign_key_errors');
    is(
       $fke->[0]->[0],  # Timestamp
@@ -133,7 +133,7 @@ SKIP: {
    eval {
       $dbh->do('DELETE FROM parent WHERE id = 2');  # Causes foreign key error.
    };
-   output('h=127.1,P=12345', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors');
+   output('h=127.1,P=12345,u=msandbox,p=msandbox', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors');
    $fke = $dbh->selectall_arrayref('SELECT * FROM test.foreign_key_errors');
    like(
       $fke->[1]->[1],  # Error
@@ -155,7 +155,7 @@ SKIP: {
       $dbh->do('DELETE FROM parent WHERE id = 2');  # Causes foreign key error.
    };
    like(
-      output('h=127.1,P=12345'),
+      output('h=127.1,P=12345,u=msandbox,p=msandbox'),
       qr/DELETE FROM parent WHERE id = 2/,
       'Print foreign key error'
    );
@@ -172,7 +172,7 @@ SKIP: {
    # Issue 391: Add --pid option to all scripts
    # #########################################################################
    `touch /tmp/mk-script.pid`;
-   my $output = `../mk-fk-error-logger h=127.1,P=12345 --print --pid /tmp/mk-script.pid 2>&1`;
+   my $output = `../mk-fk-error-logger h=127.1,P=12345,u=msandbox,p=msandbox --print --pid /tmp/mk-script.pid 2>&1`;
    like(
       $output,
       qr{PID file /tmp/mk-script.pid already exists},
