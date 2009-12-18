@@ -8699,7 +8699,8 @@ sub main {
          my @table_access;
          my @profiles;
          my $total_r = 0;
-         my @prepared;  # prepared statements
+         my @prepared;       # prepared statements
+         my %seen_prepared;  # report each PREP-EXEC pair once
 
          # Print a header for this groupby/class if we're doing the standard
          # query report and there's more than one class or there's one class
@@ -8742,21 +8743,42 @@ sub main {
             # ###############################################################
             # Saved prepared statement values.
             # ###############################################################
-            if ( $stats->{Statement_id} && $item =~ m/^prepare / ) {
-               # Convert the prepare to its execute form to get the
-               # corresponding exec stats.
-               (my $exec_stmt = $item) =~ s/^prepare /execute /;
-               my $exec       = $ea->results->{classes}->{$exec_stmt};
-               my $exec_r     = $exec->{Query_time}->{sum};
-               my $exec_cnt   = 0;
-               map { $exec_cnt += $_ } values %{$exec->{Statement_id}->{unq}};
-               push @prepared, {
-                  %profile,    # reuse profile info
-                  prep_cnt  => scalar keys %{$stats->{Statement_id}->{unq}},
-                  exec_cnt  => $exec_cnt,
-                  exec_r    => $exec_r,
+            if ( $stats->{Statement_id} && $item =~ m/^(?:prepare|execute) / ) {
+               # Each PREPARE (probably) has some EXECUTE and each EXECUTE
+               # (should) have some PREPARE.  But these are only the top N
+               # events so we can get here a PREPARE but not its EXECUTE or
+               # vice-versa.  The prepared statements report requires both
+               # so this code gets the missing pair from the ea stats.
+               my ($prep_stmt, $prep, $prep_r, $prep_cnt);
+               my ($exec_stmt, $exec, $exec_r, $exec_cnt);
+               if ( $item =~ m/^prepare / ) {
+                  $prep_stmt           = $item;
+                  ($exec_stmt = $item) =~ s/^prepare /execute /;
+               }
+               else {
+                  ($prep_stmt = $item) =~ s/^execute /prepare /;
+                  $exec_stmt           = $item;
+               }
 
-               };
+               # If both the PREPARE and EXECUTE are in the top N, then
+               # only report the pair once.
+               if ( !$seen_prepared{$prep_stmt}++ ) {
+                  $exec     = $ea->results->{classes}->{$exec_stmt};
+                  $exec_r   = $exec->{Query_time}->{sum};
+                  $exec_cnt = $exec->{Query_time}->{cnt};
+
+                  $prep     = $ea->results->{classes}->{$prep_stmt};
+                  $prep_r   = $prep->{Query_time}->{sum};
+                  $prep_cnt = scalar keys %{$prep->{Statement_id}->{unq}},
+
+                  push @prepared, {
+                     prep_r    => $prep_r, 
+                     prep_cnt  => $prep_cnt,
+                     exec_r    => $exec_r,
+                     exec_cnt  => $exec_cnt,
+                     %profile,    # reuse profile for rank, id and sample
+                  };
+               }
             }
 
             # ###############################################################
@@ -8980,15 +9002,15 @@ sub main {
             foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @prepared ) {
                my $exec_rt   = sprintf('%10.4f', $item->{exec_r});
                my $exec_rtp  = sprintf('%4.1f%%', $item->{exec_r} / ($total_r || 1) * 100);
-               my $prep_rt   = sprintf('%10.4f', $item->{r});
-               my $prep_rtp  = sprintf('%4.1f%%', $item->{r} / ($total_r || 1) * 100);
+               my $prep_rt   = sprintf('%10.4f', $item->{prep_r});
+               my $prep_rtp  = sprintf('%4.1f%%', $item->{prep_r} / ($total_r || 1) * 100);
 
                $report->add_line(
                   $item->{rank},
                   "0x$item->{id}",
-                  $item->{prep_cnt},
+                  $item->{prep_cnt} || 0,
                   "$prep_rt $prep_rtp",
-                  $item->{exec_cnt},
+                  $item->{exec_cnt} || 0,
                   "$exec_rt $exec_rtp",
                   $item->{sample},
                );
