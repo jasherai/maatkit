@@ -29,7 +29,7 @@ SKIP: {
    skip 'Sandbox master does not have the sakila database', 1
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
-   $output = `perl ../mk-archiver --source h=127.1,D=sakila,t=film  --where "film_id < 100" --purge --dry-run --port 12345 | diff samples/issue-248.txt -`;
+   $output = `perl ../mk-archiver --source F=$opt_file,h=127.1,D=sakila,t=film  --where "film_id < 100" --purge --dry-run --port 12345 | diff samples/issue-248.txt -`;
    is(
       $output,
       '',
@@ -429,7 +429,7 @@ like($output, qr/copy\s+$chks/, 'copy checksum');
 # in different order than source table
 # #############################################################################
 $sb->load_file('master', 'samples/issue_131.sql');
-$output = `perl ../mk-archiver --where 1=1 --source h=127.1,P=12345,D=test,t=issue_131_src --statistics --dest t=issue_131_dst 2>&1`;
+$output = `perl ../mk-archiver --where 1=1 --source F=$opt_file,D=test,t=issue_131_src --statistics --dest t=issue_131_dst 2>&1`;
 $rows = $dbh->selectall_arrayref('SELECT * FROM test.issue_131_dst');
 is_deeply(
    $rows,
@@ -444,7 +444,7 @@ is_deeply(
 # Issue 391: Add --pid option to mk-table-sync
 # #############################################################################
 `touch /tmp/mk-archiver.pid`;
-$output = `perl ../mk-archiver --where 1=1 --source h=127.1,P=12345,D=test,t=issue_131_src --statistics --dest t=issue_131_dst --pid /tmp/mk-archiver.pid 2>&1`;
+$output = `perl ../mk-archiver --where 1=1 --source F=$opt_file,D=test,t=issue_131_src --statistics --dest t=issue_131_dst --pid /tmp/mk-archiver.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-archiver.pid already exists},
@@ -457,7 +457,7 @@ like(
 # Issue 524: mk-archiver --no-delete --dry-run prints out DELETE statement
 # #############################################################################
 $sb->load_file('master', 'samples/issue_131.sql');
-$output = `perl ../mk-archiver --where 1=1 --dry-run --no-delete --source h=127.1,P=12345,D=test,t=issue_131_src --dest t=issue_131_dst 2>&1`;
+$output = `perl ../mk-archiver --where 1=1 --dry-run --no-delete --source F=$opt_file,D=test,t=issue_131_src --dest t=issue_131_dst 2>&1`;
 unlike(
    $output,
    qr/DELETE/,
@@ -479,7 +479,7 @@ SKIP: {
 
    $dbh2->do('TRUNCATE TABLE test.table_2');
 
-   $output = `MKDEBUG=1 perl ../mk-archiver --where 1=1 --source h=127.1,P=12345,D=test,t=table_1,p=foo --dest P=12346,t=table_2 --statistics 2>&1`;
+   $output = `MKDEBUG=1 perl ../mk-archiver --where 1=1 --source h=127.1,P=12345,D=test,t=table_1,u=msandbox,p=foo --dest P=12346,t=table_2 --statistics 2>&1`;
    my $r = $dbh2->selectall_arrayref('SELECT * FROM test.table_2');
    is(
       scalar @$r,
@@ -508,7 +508,7 @@ is_deeply(
    'gt_n.t has 12 ok before archive'
 );
 
-diag(`../mk-archiver --where '1=1' --purge --source h=127.1,P=12345,D=gt_n,t=t1,m=gt_n 2>&1`);
+diag(`../mk-archiver --where '1=1' --purge --source F=$opt_file,D=gt_n,t=t1,m=gt_n 2>&1`);
 
 is_deeply(
    $dbh->selectall_arrayref($sql),
@@ -541,7 +541,7 @@ is_deeply(
 );
 
 # MUST USE --txn-size 0
-diag(`../mk-archiver --where 'id=2' --source h=127.1,P=12345,D=test,t=comp,m=res_fk --dest D=test_archived,t=comp --txn-size 0`);
+diag(`../mk-archiver --where 'id=2' --source F=$opt_file,D=test,t=comp,m=res_fk --dest D=test_archived,t=comp --txn-size 0`);
 
 is_deeply(
    $dbh->selectall_arrayref($sql),
@@ -589,7 +589,7 @@ is_deeply(
 # perl error
 # #############################################################################
 $dbh->do('CREATE TABLE test.t (i int)');
-$output = `../mk-archiver --where 1=1 --source h=127.1,P=12345,D=test,t=t --purge --primary-key-only 2>&1`;
+$output = `../mk-archiver --where 1=1 --source F=$opt_file,D=test,t=t --purge --primary-key-only 2>&1`;
 unlike(
    $output,
    qr/undefined value/,
@@ -617,12 +617,12 @@ SKIP: {
 
    # Once this goes through repl, the slave will sleep causing
    # seconds behind master to increase > 0.
-   system('/tmp/12345/use -e "insert into issue_758.t select sleep(2)" >/dev/null 2>&1');
+   system('/tmp/12345/use -e "insert into issue_758.t select sleep(2)"');
 
    # Slave seems to be lagging now so the first row should get purged
    # immediately, then the script should wait about 2 seconds until
    # slave lag is gone.
-   system('perl ../mk-archiver --source h=127.1,P=12345,D=issue_758,t=t --purge --where "i>0" --check-slave-lag h=127.1,P=12346 >/dev/null 2>&1 &');
+   system("perl ../mk-archiver --source F=$opt_file,D=issue_758,t=t --purge --where 'i>0' --check-slave-lag h=127.1,P=12346,u=msandbox,p=msandbox >/dev/null 2>&1 &");
 
    sleep 1;
    is_deeply(
