@@ -30,9 +30,9 @@ SKIP: {
 
    # Shell out to a sleep(10) query and try to capture the query.
    # Backticks don't work here.
-   system("mysql -h127.1 -P12345 -e 'select sleep(10)' >/dev/null&");
+   system("mysql -h127.1 -P12345 -umsandbox -pmsandbox -e 'select sleep(10)' >/dev/null&");
 
-   $output = output(qw(-P 12345 -h 127.1 --busy-time 1s --print --iterations 20));
+   $output = output(qw(-P 12345 -h 127.1 -umsandbox -pmsandbox --busy-time 1s --print --iterations 20));
 
    # $output ought to be something like
    # 2009-05-27T22:19:40 KILL 5 (Query 1 sec) select sleep(10)
@@ -51,8 +51,8 @@ SKIP: {
    # This is to catch a bad bug where there wasn't any sleep time when
    # --iterations  was 0, and another bug when --run-time was not respected.
    # Do it all over again, this time with --iterations 0.
-   system("mysql -h127.1 -P12345 -e 'select sleep(10)' >/dev/null&");
-   output(qw(-P 12345 -h 127.1 --busy-time 1s --print --iterations 0 --run-time 11s));
+   system("mysql -h127.1 -P12345 -umsandbox -pmsandbox -e 'select sleep(10)' >/dev/null&");
+   output(qw(-P 12345 -h 127.1 -umsandbox -pmsandbox --busy-time 1s --print --iterations 0 --run-time 11s));
    @times = $output =~ m/\(Query (\d+) sec\)/g;
    ok(@times > 7 && @times < 12, 'Approximately 9 or 10 captures with --iterations 0');
 
