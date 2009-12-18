@@ -96,7 +96,7 @@ is(
 # Issue 352: Add port to mk-heartbeat --check output
 # #############################################################################
 sleep 1;
-$output = `../mk-heartbeat --host 127.1 --port 12345 -D test --check --recurse 1`;
+$output = `../mk-heartbeat --host 127.1 --user msandbox --password msandbox --port 12345 -D test --check --recurse 1`;
 like(
    $output,
    qr/:12346\s+\d/,
@@ -112,7 +112,7 @@ like(
 # Issue 391: Add --pid option to all scripts
 # #########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `../mk-heartbeat --host 127.1 --port 12345 -D test --check --recurse 1 --pid /tmp/mk-script.pid 2>&1`;
+$output = `../mk-heartbeat --host 127.1 -u msandbox -p msandbox --port 12345 -D test --check --recurse 1 --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},
