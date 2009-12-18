@@ -4,6 +4,7 @@ Changelog for mk-query-digest:
    * Tcpdump parsing did not always get the complete query (issue 760).
    * The script crashed immediately on some OS or versions of Perl (issue 733).
    * Added support for prepared statements (issue 740).
+   * Added "prepared" report to default --report-format (issue 740).
 
 2009-12-02: version 0.9.12
 

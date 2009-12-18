@@ -195,6 +195,7 @@ insert into test1.tbl6
       on duplicate key update metric11 = metric11 + 1,
          metric12 = metric12 + values(metric12), secs = secs + values(secs)\G
 
+# Profile
 # Rank Query ID           Response time    Calls R/Call     Item
 # ==== ================== ================ ===== ========== ==============
 #    1 0xCD948EAF18BC614E 20704.0000 16.7%     1 20704.0000 REPLACE SELECT test?.tbl? test?.tblo test?.tbl?

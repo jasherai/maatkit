@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 116;
+use Test::More tests => 117;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -290,9 +290,9 @@ ok(
 # #############################################################################
 # Test cmd line op sanity.
 # #############################################################################
-my $output = `../mk-query-digest --review h=127.1,P=12345`;
+my $output = `../mk-query-digest --review h=127.1,P=12345,u=msandbox,p=msandbox`;
 like($output, qr/--review DSN requires a D/, 'Dies if no D part in --review DSN');
-$output = `../mk-query-digest --review h=127.1,P=12345,D=test`;
+$output = `../mk-query-digest --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test`;
 like($output, qr/--review DSN requires a D/, 'Dies if no t part in --review DSN');
 
 # #############################################################################
@@ -312,7 +312,7 @@ SKIP: {
    # #########################################################################
    # Daemonizing and pid creation
    # #########################################################################
-   `../mk-query-digest --daemonize --pid /tmp/mk-query-digest.pid --processlist h=127.1,P=12345 --log /dev/null`;
+   `../mk-query-digest --daemonize --pid /tmp/mk-query-digest.pid --processlist h=127.1,P=12345,u=msandbox,p=msandbox --log /dev/null`;
    $output = `ps -eaf | grep mk-query-digest | grep daemonize`;
    like($output, qr/perl ...mk-query-digest/, 'It is running');
    ok(-f '/tmp/mk-query-digest.pid', 'PID file created');
@@ -338,7 +338,7 @@ SKIP: {
       skip 'Sakila database is loaded which breaks this test', 1
          if @{$dbh1->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
       ok(
-         no_diff($run_with.'slow001.txt --explain h=127.1,P=12345',
+         no_diff($run_with.'slow001.txt --explain h=127.1,P=12345,u=msandbox,p=msandbox',
             'samples/slow001_explainreport.txt'),
          'Analysis for slow001 with --explain',
       );
@@ -349,7 +349,7 @@ SKIP: {
    # Test --create-review and --create-review-history-table
    $output = 'foo'; # clear previous test results
    $cmd = "${run_with}slow006.txt --create-review-table --review "
-      . "h=127.1,P=12345,D=test,t=query_review --create-review-history-table "
+      . "h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review --create-review-history-table "
       . "--review-history t=query_review_history";
    $output = `$cmd >/dev/null 2>&1`;
 
@@ -361,7 +361,7 @@ SKIP: {
    is($table, 'query_review_history', '--create-review-history-table');
 
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review "
+   $cmd = "${run_with}slow006.txt --review h=127.1,u=msandbox,p=msandbox,P=12345,D=test,t=query_review "
       . "--review-history t=query_review_history";
    $output = `$cmd`;
    my $res = $dbh1->selectall_arrayref( 'SELECT * FROM test.query_review',
@@ -461,7 +461,7 @@ SKIP: {
    # have been reviewed, the report should include both of them with
    # their respective query review info added to the report.
    ok(
-      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_1.txt'),
+      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review', 'samples/slow006_AR_1.txt'),
       'Analyze-review pass 1 reports not-reviewed queries'
    );
 
@@ -471,7 +471,7 @@ SKIP: {
       SET reviewed_by="daniel", reviewed_on="2008-12-24 12:00:00", comments="foo_tbl is ok, so are cranberries"
       WHERE checksum=11676753765851784517');
    ok(
-      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_2.txt'),
+      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review', 'samples/slow006_AR_2.txt'),
       'Analyze-review pass 2 does not report the reviewed query'
    );
 
@@ -479,7 +479,7 @@ SKIP: {
    # to re-appear in the report with the reviewed_by, reviewed_on and comments
    # info included.
    ok(
-      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,D=test,t=query_review   --report-all', 'samples/slow006_AR_4.txt'),
+      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review   --report-all', 'samples/slow006_AR_4.txt'),
       'Analyze-review pass 4 with --report-all reports reviewed query'
    );
 
@@ -488,7 +488,7 @@ SKIP: {
    $dbh1->do('UPDATE test.query_review
       SET foo=42 WHERE checksum=15334040482108055940');
    ok(
-      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_5.txt'),
+      no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review', 'samples/slow006_AR_5.txt'),
       'Analyze-review pass 5 reports new review info column'
    );
 
@@ -497,7 +497,7 @@ SKIP: {
    $dbh1->do("update test.query_review set first_seen='0000-00-00 00:00:00', "
       . " last_seen='0000-00-00 00:00:00'");
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow022.txt --review h=127.1,P=12345,D=test,t=query_review"; 
+   $cmd = "${run_with}slow022.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review"; 
    $output = `$cmd`;
    unlike($output, qr/last_seen/, 'no last_seen when 0000 timestamp');
    unlike($output, qr/first_seen/, 'no first_seen when 0000 timestamp');
@@ -511,7 +511,7 @@ SKIP: {
    # Make sure a missing Time property does not cause a crash.  Don't test data
    # in table, because it varies based on when you run the test.
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow021.txt --review h=127.1,P=12345,D=test,t=query_review"; 
+   $cmd = "${run_with}slow021.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review"; 
    $output = `$cmd`;
    unlike($output, qr/Use of uninitialized value/, 'didnt crash due to undef ts');
 
@@ -519,7 +519,7 @@ SKIP: {
    # crash.  Don't test data in table, because it varies based on when you run
    # the test.
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow022.txt --review h=127.1,P=12345,D=test,t=query_review"; 
+   $cmd = "${run_with}slow022.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review"; 
    $output = `$cmd`;
    # Don't test data in table, because it varies based on when you run the test.
    unlike($output, qr/Use of uninitialized value/, 'no crash due to totally missing ts');
@@ -529,8 +529,8 @@ SKIP: {
    # ##########################################################################
    $dbh1->do('set global read_only=0');
    $dbh2->do('set global read_only=1');
-   $cmd  = "perl ../mk-query-digest --processlist h=127.1,P=12345 "
-            . "--execute h=127.1,P=12346 --mirror 1 "
+   $cmd  = "perl ../mk-query-digest --processlist h=127.1,P=12345,u=msandbox,p=msandbox "
+            . "--execute h=127.1,P=12346,u=msandbox,p=msandbox --mirror 1 "
             . "--pid foobar";
    # --pid actually does nothing because the script is not daemonizing.
    # I include it for the identifier (foobar) so that we can more easily
@@ -785,12 +785,12 @@ SKIP: {
    # The result file is correct: it's the one that has all quries from
    # slow033.txt.
    ok(
-      no_diff($run_with.'slow033.txt --aux-dsn h=127.1,P=12345 --since "\'2009-07-08\' - INTERVAL 7 DAY"', 'samples/slow033-since-Nd.txt'),
+      no_diff($run_with.'slow033.txt --aux-dsn h=127.1,P=12345,u=msandbox,p=msandbox --since "\'2009-07-08\' - INTERVAL 7 DAY"', 'samples/slow033-since-Nd.txt'),
       '--since "\'2009-07-08\' - INTERVAL 7 DAY"',
    );
 
    ok(
-      no_diff($run_with.'slow033.txt --aux-dsn h=127.1,P=12345 --until "\'2009-07-28\' - INTERVAL 1 DAY"', 'samples/slow033-until-date.txt'),
+      no_diff($run_with.'slow033.txt --aux-dsn h=127.1,P=12345,u=msandbox,p=msandbox --until "\'2009-07-28\' - INTERVAL 1 DAY"', 'samples/slow033-until-date.txt'),
       '--until "\'2009-07-28\' - INTERVAL 1 DAY"',
    );
 };
@@ -808,7 +808,7 @@ ok(
 SKIP: {
    skip 'Cannot connect to sandbox master', 2 unless $dbh1;
    $sb->load_file('master', 'samples/query_review.sql');
-   my $output = `${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review --no-report --create-review-table`;
+   my $output = `${run_with}slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review --no-report --create-review-table`;
    my $res = $dbh1->selectall_arrayref('SELECT * FROM test.query_review');
    is(
       $res->[0]->[1],
@@ -844,7 +844,7 @@ ok(
 SKIP: {
    skip 'Cannot connect to sandbox master', 2 unless $dbh1;
    $dbh1->do('DROP TABLE IF EXISTS test.query_review');
-   `../mk-query-digest --processlist h=127.1,P=12345 --interval 0.01 --create-review-table --review h=127.1,P=12345,D=test,t=query_review --daemonize --log /tmp/mk-query-digest.log --pid /tmp/mk-query-digest.pid --run-time 2`;
+   `../mk-query-digest --processlist h=127.1,P=12345,u=msandbox,p=msandbox --interval 0.01 --create-review-table --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review --daemonize --log /tmp/mk-query-digest.log --pid /tmp/mk-query-digest.pid --run-time 2`;
    `/tmp/12345/use < ../../mk-archiver/t/before.sql`;
    `rm -rf /tmp/mk-query-digest.log`;
    my @ts = $dbh1->selectrow_array('SELECT first_seen, last_seen FROM test.query_review LIMIT 1');
@@ -863,7 +863,7 @@ SKIP: {
 # #############################################################################
 SKIP: {
    skip 'Cannot connect to sandbox master', 1 unless $dbh1;
-   $output = `../mk-query-digest --processlist 127.1 --run-time 1 --port 12345`;
+   $output = `../mk-query-digest --processlist 127.1,P=12345,u=msandbox,p=msandbox --run-time 1 --port 12345`;
    like(
       $output,
       qr/Rank\s+Query ID/,
@@ -876,7 +876,7 @@ SKIP: {
 # #############################################################################
 SKIP: {
    skip 'Cannot connect to sandbox master', 5 unless $dbh1;
-   `../mk-query-digest --processlist 127.1 --run-time 3 --port 12345 --log /tmp/mk-query-digest.log --pid /tmp/mk-query-digest.pid --daemonize 1>/dev/null 2>/dev/null`;
+   `../mk-query-digest --processlist h=127.1,P=12345,u=msandbox,p=msandbox --run-time 3 --port 12345 --log /tmp/mk-query-digest.log --pid /tmp/mk-query-digest.pid --daemonize 1>/dev/null 2>/dev/null`;
    chomp(my $pid = `cat /tmp/mk-query-digest.pid`);
    sleep 2;
    my $output = `ps ax | grep $pid | grep processlist | grep -v grep`;
@@ -901,7 +901,7 @@ SKIP: {
    # --run-for is tested above.  This tests --iterations by checking that
    # its value multiplies --run-for.  So if --run-for is 2 and we do 2
    # iterations, we should run for 4 seconds total.
-   `../mk-query-digest --processlist 127.1 --run-time 2 --iterations 2 --port 12345 --pid /tmp/mk-query-digest.pid --daemonize 1>/dev/null 2>/dev/null`;
+   `../mk-query-digest --processlist h=127.1,P=12345,u=msandbox,p=msandbox --run-time 2 --iterations 2 --port 12345 --pid /tmp/mk-query-digest.pid --daemonize 1>/dev/null 2>/dev/null`;
    chomp($pid = `cat /tmp/mk-query-digest.pid`);
    sleep 3;
    $output = `ps ax | grep $pid | grep processlist | grep -v grep`;
@@ -960,7 +960,7 @@ SKIP: {
 
    diag(`/tmp/12345/use < samples/issue_611.sql`);
 
-   $output = `../mk-query-digest samples/slow-issue-611.txt --explain h=127.1,P=12345 2>&1`;
+   $output = `../mk-query-digest samples/slow-issue-611.txt --explain h=127.1,P=12345,u=msandbox,p=msandbox 2>&1`;
    like(
       $output,
       qr/partitions: p\d/,
@@ -1031,6 +1031,10 @@ ok(
 ok(
    no_diff($run_with.'tcpdump025.txt --type tcpdump --watch-server 127.0.0.1:12345', 'samples/tcpdump025.txt'),
    'Analysis for tcpdump025 with prepared statements'
+);
+ok(
+   no_diff($run_with.'tcpdump033.txt --report-format header,query_report,profile,prepared --type tcpdump --watch-server 127.0.0.1:12345', 'samples/tcpdump033.txt'),
+   'Analysis for tcpdump033 with prepared statements report'
 );
 
 # #############################################################################

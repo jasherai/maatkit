@@ -107,6 +107,7 @@ SELECT foo
                          WHERE col=12345
                          ORDER BY col\G
 
+# Profile
 # Rank Query ID           Response time    Calls R/Call   Item
 # ==== ================== ================ ===== ======== ==========
 #    1 0x261703E684370D2C     0.0000  0.0%     2   0.0000 
