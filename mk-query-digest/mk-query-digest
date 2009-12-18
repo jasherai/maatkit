@@ -8697,7 +8697,9 @@ sub main {
  
          my @table_access;
          my @profiles;
-         my $total_r = 0;
+         my $total_r          = 0;
+         my $total_prepared_r = 0;
+         my @prepared;  # prepared statements
 
          # Print a header for this groupby/class if we're doing the standard
          # query report and there's more than one class or there's one class
@@ -8736,6 +8738,27 @@ sub main {
             );
             $total_r += $profile{r};
             push @profiles, \%profile;
+
+            # ###############################################################
+            # Saved prepared statement values.
+            # ###############################################################
+            if ( $stats->{Statement_id} && $item =~ m/^prepare / ) {
+               # Convert the prepare to its execute form to get the
+               # corresponding exec stats.
+               (my $exec_stmt = $item) =~ s/^prepare /execute /;
+               my $exec       = $ea->results->{classes}->{$exec_stmt};
+               my $exec_r     = $exec->{Query_time}->{sum};
+               my $exec_cnt   = 0;
+               map { $exec_cnt += $_ } values %{$exec->{Statement_id}->{unq}};
+               push @prepared, {
+                  %profile,    # reuse profile info
+                  prep_cnt  => scalar keys %{$stats->{Statement_id}->{unq}},
+                  exec_cnt  => $exec_cnt,
+                  exec_r    => $exec_r,
+
+               };
+               $total_prepared_r += ($profile{r} + $exec_r);
+            }
 
             # ###############################################################
             # Prepare for --review and --review-history.
@@ -8932,6 +8955,42 @@ sub main {
                   "$rt $rtp",
                   $item->{cnt},
                   $rc,
+                  $item->{sample},
+               );
+            }
+            print "\n" . $report->get_report();
+         }
+
+         # Print prepared statements (issue 740).
+         if ( $o->get('report') && $o->get('report-format')->{prepared}
+              && scalar @prepared ) {
+            my $report = new ReportFormatter(
+               line_width       => 74,
+               long_last_column => 1,
+            );
+            $report->set_columns(
+               { name => 'Rank',          right_justify => 1, },
+               { name => 'Query ID',                          },
+               { name => 'PREP',          right_justify => 1, },
+               { name => 'PREP Response', right_justify => 1, },
+               { name => 'EXEC',          right_justify => 1, },
+               { name => 'EXEC Response', right_justify => 1, },
+               { name => 'Item',                              },
+            );
+
+            foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @prepared ) {
+               my $exec_rt   = sprintf('%10.4f', $item->{exec_r});
+               my $exec_rtp  = sprintf('%4.1f%%', $item->{exec_r} / ($total_prepared_r || 1) * 100);
+               my $prep_rt   = sprintf('%10.4f', $item->{r});
+               my $prep_rtp  = sprintf('%4.1f%%', $item->{r} / ($total_prepared_r || 1) * 100);
+
+               $report->add_line(
+                  $item->{rank},
+                  "0x$item->{id}",
+                  $item->{prep_cnt},
+                  "$prep_rt $prep_rtp",
+                  $item->{exec_cnt},
+                  "$exec_rt $exec_rtp",
                   $item->{sample},
                );
             }
@@ -10111,15 +10170,17 @@ Include all queries, even if they have already been reviewed.
 
 =item --report-format
 
-type: Hash; default: rusage,header,query_report,profile
+type: Hash; default: rusage,header,query_report,profile,prepared
 
 Print these elements in the query analysis report.  Valid element names are
-rusage, header, query_report, and profile.  The rusage is information about CPU
-times and memory usage.  The header is information about the entire analysis
-run.  The query_report is detailed information on each query in the report.  The
-profile is a compact table of queries for an at-a-glance view of the report.
-Order does not matter; you cannot use this parameter to influence the order of
-items in the report, only the presence or absence of items.
+rusage, header, query_report, profile and prepared.  The rusage is information
+about CPU times and memory usage.  The header is information about the entire
+analysis run.  The query_report is detailed information on each query in the
+report.  The profile is a compact table of queries for an at-a-glance view of
+the report. Order does not matter; you cannot use this parameter to influence
+the order of items in the report, only the presence or absence of items.
+The prepared report listed prepared statements, the number of times each
+was prepared and executed.  It only prints if there were prepared statements.
 
 See L<"OUTPUT"> for more information on the various parts of the query report.
 
