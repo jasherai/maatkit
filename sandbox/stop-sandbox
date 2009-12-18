@@ -22,20 +22,29 @@ fi
 # ###########################################################################
 # Stop the sandboxes.
 # ###########################################################################
-for port in $@; do
 
-   # Exit values and errors are ignored.  We assume everything stops ok.
+exit_status=0
 
-   if [ "$port" = "all" ]; then
-      for a in /tmp/123[0-9]*; do 
-         $a/stop >/dev/null 2>&1
-      done
-      break
-   fi
+ls /tmp/1234* >/dev/null 2>1
+if [ $? -eq 0 ]; then
+   for port in $@; do
+      if [ "$port" = "all" ]; then
+         for a in /tmp/123[0-9]*; do 
+            $a/stop
+            if [ $? -ne 0 ]; then
+               exit_status=1
+            fi
+         done
+         break
+      fi
 
-   if [ -d "/tmp/$port" ]; then
-      /tmp/$port/stop >/dev/null 2>&1
-   fi
-done
+      if [ -d "/tmp/$port" ]; then
+         /tmp/$port/stop
+         if [ $? -ne 0 ]; then
+            exit_status=1
+         fi
+      fi
+   done
+fi
 
-exit 0
+exit $exit_status

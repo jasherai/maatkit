@@ -7,6 +7,18 @@
 # exit status is 0 on success and 1 on any failure.  There's no option to
 # disable output, so just >/dev/null if you only care about the exit status.
 
+_d() {
+   if [ -z "$MKDEBUG" ]; then
+      return 0
+   fi
+
+   # Is there a way to echo directly to STDERR?
+   # This is my hackish way.
+   for msg; do
+      echo "$msg" 1>/dev/null 1>&2
+   done
+}
+
 err() {
    echo
    for msg; do
@@ -22,12 +34,16 @@ usage() {
 
 mysql_basedir_ok() {
    local basedir=$1
+   _d "basedir=$basedir"
    if [ ! -d "$basedir" ] || [ ! -d "$basedir/bin" ]; then
+      _d "basedir invalid"
       return 0
    fi
    if [ ! -x "$basedir/bin/mysqld_safe" ]; then
+      _d "$basedir/bin/mysqld_safe doesn't exist"
       return 0
    fi
+   _d "basedir ok"
    return 1  # basedir is ok
 }
 
@@ -36,8 +52,16 @@ set_mysql_basedir() {
    if [ -z "$MAATKIT_SANDBOX_BASEDIR" ]; then
       BASEDIR_AUTO_DETECTED=1
       local mysqld=`which mysqld`
-      if [ $? ]; then
+      if [ -n "$mysqld" ]; then
+         _d "Found mysqld: $mysqld"
          MAATKIT_SANDBOX_BASEDIR=`$mysqld --verbose --help | grep 'basedir ' | awk '{print $2}'`
+         if [ -z "$MAATKIT_SANDBOX_BASEDIR" ]; then      
+            _d "$mysqld --verbose --help | grep | ask failed"
+            return 0
+         fi
+      else
+         _d "Could not find mysqld"
+         return 0
       fi
    fi
    mysql_basedir_ok $MAATKIT_SANDBOX_BASEDIR
@@ -93,11 +117,19 @@ sandbox_status() {
    echo -n "  PID file exists - "
    if [ -f "/tmp/$port/data/mysql_sandbox$port.pid" ]; then
       echo "yes"
-      pid=`cat /tmp/$port/data/mysql_sandbox$port.pid`
-      kill -0 $pid
-      echo -n "  process $pid is alive - "
-      if [ $? -eq 0 ]; then
+      echo -n "  PID file has a PID - "
+      local pid=`cat /tmp/$port/data/mysql_sandbox$port.pid 2>/dev/null`
+      _d "$type $port PID: $pid"
+      if [ -n "$pid" ]; then
          echo "yes"
+         echo -n "  process $pid is alive - "
+         kill -0 $pid >/dev/null 2>&1
+         if [ $? -eq 0 ]; then
+            echo "yes"
+         else
+            echo "NO"
+            status=1
+         fi
       else
          echo "NO"
          status=1
@@ -112,7 +144,7 @@ sandbox_status() {
    if [ $? -eq 0 ]; then
       echo "yes"
       echo -n "  sakila db is loaded - "
-      /tmp/$port/use -e 'show databases like "sakila"' | grep sakila >/dev/null 2>&1
+      /tmp/$port/use -e 'show databases like "sakila"' 2>/dev/null | grep sakila >/dev/null 2>&1
       if [ $? -eq 0 ]; then
          echo "yes"
       else
@@ -159,15 +191,18 @@ if [ $# -lt 1 ]; then
    exit 1
 fi
 
-CMD=$1
+opt=$1
 
 # ###########################################################################
-# Process the cmd.
+# Process the option.
 # ###########################################################################
 
 exit_status=0
 
-if [ $CMD = 'checkconfig' ]; then
+# Print some debug info about this run.
+_d "" "`date`" "cwd: `pwd`" "`env | grep PATH`" "$0 $*"
+
+if [ $opt = 'checkconfig' ]; then
    checkconfig 1
    echo -n "Maatkit test environment config is "
    if [ $conf_err -eq 0 ]; then
@@ -186,29 +221,39 @@ else
    fi
 fi
 
-case $CMD in
+case $opt in
    start)
       cd $MAATKIT_TRUNK/sandbox
       ./start-sandbox master 12345
-      ./start-sandbox slave  12346 12345
-      echo "Loading sakila database..."
-      ./load-sakila-db 12345
       exit_status=$?
+      if [ $exit_status -eq 0 ]; then
+         ./start-sandbox slave 12346 12345
+         exit_status=$?
+         if [ $? -eq 0 ]; then
+            echo "Loading sakila database..."
+            ./load-sakila-db 12345
+            exit_status=$?
+         fi
+      fi
       if [ $exit_status -eq 0 ]; then
          echo "Maatkit test environment started!"
       else
+         # Stop but don't remove the sandboxes.  The mysql error log
+         # may say why MySQL failed to start.
+         ./stop-sandbox all >/dev/null 2>&1
          err "There was an error starting the Maatkit test environment."
       fi
       ;;
    stop)
       cd $MAATKIT_TRUNK/sandbox
       ./stop-sandbox all
-      rm -rf /tmp/1234[5-9]*
       exit_status=$?
       if [ $exit_status -eq 0 ]; then
          echo "Maatkit test environment stopped."
+         rm -rf /tmp/1234[5-9]* >/dev/null 2>&1
       else
-         err "There was an error stopping the Maatkit test environment."
+         err "There was an error stopping the Maatkit test environment." \
+             "The Maatkit sandboxes may still be running."
       fi
       ;;
    restart)
