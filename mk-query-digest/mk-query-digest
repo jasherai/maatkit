@@ -7813,6 +7813,7 @@ package mk_query_digest;
 use English qw(-no_match_vars);
 use Time::Local qw(timelocal);
 use Time::HiRes qw(time usleep);
+use List::Util qw(max);
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 $OUTPUT_AUTOFLUSH     = 1;
@@ -8697,8 +8698,7 @@ sub main {
  
          my @table_access;
          my @profiles;
-         my $total_r          = 0;
-         my $total_prepared_r = 0;
+         my $total_r = 0;
          my @prepared;  # prepared statements
 
          # Print a header for this groupby/class if we're doing the standard
@@ -8757,7 +8757,6 @@ sub main {
                   exec_r    => $exec_r,
 
                };
-               $total_prepared_r += ($profile{r} + $exec_r);
             }
 
             # ###############################################################
@@ -8980,9 +8979,9 @@ sub main {
 
             foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @prepared ) {
                my $exec_rt   = sprintf('%10.4f', $item->{exec_r});
-               my $exec_rtp  = sprintf('%4.1f%%', $item->{exec_r} / ($total_prepared_r || 1) * 100);
+               my $exec_rtp  = sprintf('%4.1f%%', $item->{exec_r} / ($total_r || 1) * 100);
                my $prep_rt   = sprintf('%10.4f', $item->{r});
-               my $prep_rtp  = sprintf('%4.1f%%', $item->{r} / ($total_prepared_r || 1) * 100);
+               my $prep_rtp  = sprintf('%4.1f%%', $item->{r} / ($total_r || 1) * 100);
 
                $report->add_line(
                   $item->{rank},
