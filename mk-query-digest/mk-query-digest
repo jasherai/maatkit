@@ -2237,7 +2237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5315
+# MySQLProtocolParser package 5317
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -3448,7 +3448,7 @@ sub fail_session {
 }
 
 sub _delete_buff {
-   my ( $session ) = @_;
+   my ( $self, $session ) = @_;
    map { delete $session->{$_} } qw(buff buff_left mysql_data_len);
    return;
 }
