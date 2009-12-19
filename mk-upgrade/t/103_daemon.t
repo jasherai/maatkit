@@ -9,7 +9,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 require '../mk-upgrade';
 
-my $cmd = '../mk-upgrade h=127.1,P=12345 P=12347 --compare results,warnings --zero-query-times';
+my $cmd = '../mk-upgrade h=127.1,P=12345,u=msandbox,p=msandbox P=12347 --compare results,warnings --zero-query-times';
 
 # Issue 391: Add --pid option to all scripts
 `touch /tmp/mk-script.pid`;

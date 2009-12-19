@@ -43,7 +43,7 @@ sub no_diff {
    return !$retval;
 }
 
-my $cmd = '../mk-upgrade h=127.1,P=12345 P=12347 --compare results,warnings --zero-query-times';
+my $cmd = '../mk-upgrade h=127.1,P=12345,u=msandbox,p=msandbox P=12347 --compare results,warnings --zero-query-times';
 
 ok(
    no_diff(

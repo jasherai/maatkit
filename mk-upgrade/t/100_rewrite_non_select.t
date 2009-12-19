@@ -13,7 +13,7 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 
-diag(`../../sandbox/make_sandbox 12347`) unless -d '/tmp/12347';
+diag(`../../sandbox/start-sandbox master 12347`) unless -d '/tmp/12347';
 # Not really slave2, we just use its port.
 my $dbh2 = $sb->get_dbh_for('slave2')
    or BAIL_OUT('Cannot connect to second sandbox master');
@@ -37,7 +37,7 @@ sub no_diff {
 
 # Issue 747: Make mk-upgrade rewrite non-SELECT
 
-my $cmd = '../mk-upgrade h=127.1,P=12345 P=12347 --compare results,warnings --zero-query-times --non-select --fingerprints';
+my $cmd = '../mk-upgrade h=127.1,P=12345 P=12347 -u msandbox -p msandbox --compare results,warnings --zero-query-times --non-select --fingerprints';
 
 my $c1 = $dbh1->selectrow_arrayref('checksum table test.t')->[1];
 my $c2 = $dbh2->selectrow_arrayref('checksum table test.t')->[1];

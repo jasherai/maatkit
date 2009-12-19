@@ -10,7 +10,7 @@ require '../../common/Sandbox.pm';
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
-diag(`../../sandbox/make_sandbox 12347 >/dev/null 2>&1`)
+diag(`../../sandbox/start-sandbox master 12347 >/dev/null 2>&1`)
    unless -d '/tmp/12347';
 
 # Not really slave2, we just use its port.
