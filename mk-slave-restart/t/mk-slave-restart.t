@@ -40,7 +40,7 @@ my $output = `/tmp/12346/use -e 'show slave status'`;
 like($output, qr/Table 'test.t' doesn't exist'/, 'It is busted');
 
 # Start an instance
-diag(`perl ../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 --daemonize --pid /tmp/mk-slave-restart.pid --log /tmp/mk-slave-restart.log`);
+diag(`perl ../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --daemonize --pid /tmp/mk-slave-restart.pid --log /tmp/mk-slave-restart.log`);
 $output = `ps -eaf | grep 'perl ../mk-slave-restart' | grep -v grep | grep -v mk-slave-restart.t`;
 like($output, qr/mk-slave-restart --max/, 'It lives');
 
@@ -87,7 +87,7 @@ like(
 );
 
 # Start an instance
-$output = `perl ../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 --error-text "doesn't exist" --run-time 1s 2>&1`;
+$output = `perl ../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --error-text "doesn't exist" --run-time 1s 2>&1`;
 unlike(
    $output,
    qr/Error does not match/,
@@ -98,7 +98,7 @@ unlike(
 # Issue 391: Add --pid option to all scripts
 # ###########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 --pid /tmp/mk-script.pid 2>&1`;
+$output = `../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},
@@ -109,7 +109,7 @@ like(
 # #############################################################################
 # Issue 662: Option maxlength does not exist
 # #############################################################################
-my $ret = system('../mk-slave-restart -h 127.0.0.1 -P 12346 --monitor --stop --max-sleep 1 --run-time 1 >/dev/null 2>&1');
+my $ret = system('../mk-slave-restart -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --monitor --stop --max-sleep 1 --run-time 1 >/dev/null 2>&1');
 is(
    $ret >> 8,
    0,
