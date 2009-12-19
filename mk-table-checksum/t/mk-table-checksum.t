@@ -104,7 +104,7 @@ $output = `$cmd --checksum --function MD5 --algorithm ACCUM 2>&1`;
 like($output, qr/28c8edde3d61a0411511d3b1866f0636/, 'MD5 ACCUM' );
 
 # Check --schema
-$output = `perl ../mk-table-checksum --tables checksum_test --checksum --schema h=127.1,P=12345 2>&1`;
+$output = `perl ../mk-table-checksum --tables checksum_test --checksum --schema h=127.1,P=12345,u=msandbox,p=msandbox 2>&1`;
 like($output, qr/2752458186\s+127.1.test2.checksum_test/, 'Checksum test with --schema' );
 # Should output the same thing, it only lacks the AUTO_INCREMENT specifier.
 like($output, qr/2752458186\s+127.1.test.checksum_test/, 'Checksum 2 test with --schema' );
@@ -145,7 +145,7 @@ $output2 = `/tmp/12345/use --skip-column-names -e "select since from test.argtes
 like($output2, qr/^\d{4}-\d\d-\d\d/, '--save-since saved the current timestamp');
 
 # Check --offset with --modulo
-$output = `../mk-table-checksum --databases mysql --chunk-size 5 h=127.0.0.1,P=12345 --modulo 7 --offset 'weekday(now())' --tables help_relation 2>&1`;
+$output = `../mk-table-checksum --databases mysql --chunk-size 5 h=127.0.0.1,P=12345,u=msandbox,p=msandbox --modulo 7 --offset 'weekday(now())' --tables help_relation 2>&1`;
 like($output, qr/^mysql\s+help_relation\s+\d+/m, '--modulo --offset runs');
 my @chunks = $output =~ m/help_relation\s+(\d+)/g;
 my $chunks = scalar @chunks;
@@ -186,7 +186,7 @@ like($output, qr/ROUND\(`b`, 3/, 'Column b is rounded');
 like($output, qr/ISNULL\(`b`\)/, 'Column b is not rounded inside ISNULL');
 
 # Ensure --probability works
-$output = `perl ../mk-table-checksum --probability 0 --chunk-size 4 h=127.0.0.1,P=12345 | grep -v DATABASE`;
+$output = `perl ../mk-table-checksum --probability 0 --chunk-size 4 h=127.0.0.1,P=12345,u=msandbox,p=msandbox | grep -v DATABASE`;
 chomp $output;
 @chunks = $output =~ m/(\d+)\s+127\.0\.0\.1/g;
 is(sum(@chunks), 0, 'Nothing with --probability 0!');
@@ -205,7 +205,7 @@ my $create_missing_slave_tbl_cmd
    = "/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;CREATE TABLE test.only_on_master(a int);'";
 diag(`$create_missing_slave_tbl_cmd`);
 
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -t test.only_on_master 2>&1`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 -t test.only_on_master 2>&1`;
 like($output, qr/MyISAM\s+NULL\s+0/, 'Table on master checksummed');
 like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed');
 like(
@@ -230,25 +230,25 @@ $sb->wipe_clean($master_dbh);
 
 my $awk_slice = "awk '{print \$1,\$2,\$7}'";
 
-$cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --ignore-databases sakila --schema | $awk_slice | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
+$cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --ignore-databases sakila --schema | $awk_slice | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
 my $ret_val = system($cmd);
 cmp_ok($ret_val, '==', 0, '--schema basic output');
 
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --schema --quiet`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --schema --quiet`;
 is(
    $output,
    '',
    '--schema respects --quiet'
 );
 
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --schema --ignore-databases mysql,sakila`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --schema --ignore-databases mysql,sakila`;
 is(
    $output,
    '',
    '--schema respects --ignore-databases'
 );
 
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --schema --ignore-tables users`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --schema --ignore-tables users`;
 unlike(
    $output,
    qr/users/,
@@ -279,7 +279,7 @@ my @opt_combos = ( # --schema and
 );
 
 foreach my $opt_combo ( @opt_combos ) {
-   $output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --ignore-databases sakila --schema $opt_combo 2>&1`;
+   $output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --ignore-databases sakila --schema $opt_combo 2>&1`;
    my ($other_opt) = $opt_combo =~ m/^([\w-]+\b)/;
    like(
       $output,
@@ -289,7 +289,7 @@ foreach my $opt_combo ( @opt_combos ) {
 }
 # Have to do this one manually be --no-verify is --verify in the
 # error output which confuses the regex magic for $other_opt.
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --ignore-databases sakila --schema --no-verify 2>&1`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --ignore-databases sakila --schema --no-verify 2>&1`;
 like(
    $output,
    qr/--schema is not allowed with --verify/,
@@ -297,10 +297,10 @@ like(
 );
 
 # Check that --schema does NOT lock by default
-$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --schema 2>&1`;
+$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --schema 2>&1`;
 unlike($output, qr/LOCK TABLES /, '--schema does not lock tables by default');
 
-$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --schema --lock 2>&1`;
+$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --schema --lock 2>&1`;
 unlike($output, qr/LOCK TABLES /, '--schema does not lock tables even with --lock');
 
 # #############################################################################
@@ -317,7 +317,7 @@ $sb->load_file('master', 'samples/checksum_tbl.sql');
 $sb->load_file('master', 'samples/issue_21.sql');
 
 # Run --replication once to populate test.checksum
-$cmd = 'perl ../mk-table-checksum h=127.0.0.1,P=12345 -d test --replicate test.checksum | diff ./samples/basic_replicate_output -';
+$cmd = 'perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum | diff ./samples/basic_replicate_output -';
 $ret_val = system($cmd);
 # Might as well test this while we're at it
 cmp_ok($ret_val >> 8, '==', 0, 'Basic --replicate works');
@@ -327,7 +327,7 @@ my $repl_row = "INSERT INTO test.checksum VALUES ('foo', 'bar', 0, 'a', 'b', 0, 
 diag(`/tmp/12345/use -e "$repl_row"`);
 # Run --replicate again which should completely clear test.checksum,
 # including our bogus row
-`perl ../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum -d test --empty-replicate-table 2>&1 > /dev/null`;
+`perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --replicate test.checksum -d test --empty-replicate-table 2>&1 > /dev/null`;
 # Make sure bogus row is actually gone
 $cmd = "/tmp/12345/use -e \"SELECT db FROM test.checksum WHERE db = 'foo';\"";
 $output = `$cmd`;
@@ -337,7 +337,7 @@ unlike($output, qr/foo/, '--empty-replicate-table completely empties the table (
 # "Ignored if L<"--replicate"> is not specified."
 $repl_row = "INSERT INTO test.checksum VALUES ('foo', 'bar', 0, 'a', 'b', 0, 'c', 0,  NOW())";
 diag(`/tmp/12345/use -e "$repl_row"`);
-`perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --empty-replicate-table 2>&1 > /dev/null`;
+`perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --empty-replicate-table 2>&1 > /dev/null`;
 # Now make sure bogus row is still present
 $cmd = "/tmp/12345/use -e \"SELECT db FROM test.checksum WHERE db = 'foo';\"";
 $output = `$cmd`;
@@ -346,7 +346,7 @@ diag(`/tmp/12345/use -D test -e "DELETE FROM checksum WHERE db = 'foo'"`);
 
 # Screw up the data on the slave and make sure --replicate-check works
 $slave_dbh->do("update test.checksum set this_crc='' where test.checksum.tbl = 'issue_21'");
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 -d test --replicate test.checksum --replicate-check 1 2>&1`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 2>&1`;
 like($output, qr/issue_21/, '--replicate-check works');
 cmp_ok($CHILD_ERROR>>8, '==', 1, 'Exit status is correct with --replicate-check failure');
 
@@ -356,13 +356,13 @@ cmp_ok($CHILD_ERROR>>8, '==', 1, 'Exit status is correct with --replicate-check 
 
 # This test relies on the previous test which checked that --replicate-check works
 # and left an inconsistent checksum on columns_priv.
-$output = `../mk-table-checksum h=127.1,P=12345 -d test --replicate test.checksum --replicate-check 1 --recheck | diff samples/issue_69.txt -`;
+$output = `../mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 --recheck | diff samples/issue_69.txt -`;
 ok(!$output, '--recheck reports inconsistent table like --replicate');
 
 # Now check that --recheck actually caused the inconsistent table to be
 # re-checksummed on the master.
 $output = 'foo';
-$output = `../mk-table-checksum h=127.1,P=12345 --replicate test.checksum --replicate-check 1`;
+$output = `../mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox --replicate test.checksum --replicate-check 1`;
 ok(!$output, '--recheck re-checksummed inconsistent table; it is now consistent');
 
 $master_dbh->do('DROP TABLE test.issue_21');
@@ -376,7 +376,7 @@ $master_dbh->do('DROP TABLE test.issue_21');
 
 # First re-checksum and replicate using chunks so we can more easily break,
 # resume and test it.
-`../mk-table-checksum h=127.0.0.1,P=12345 --ignore-databases sakila --replicate test.checksum --empty-replicate-table --chunk-size 100`;
+`../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --ignore-databases sakila --replicate test.checksum --empty-replicate-table --chunk-size 100`;
 
 # Make sure the results propagate
 sleep 1;
@@ -387,7 +387,7 @@ sleep 1;
 `/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl LIKE 'proc%' OR tbl LIKE 't%' OR tbl = 'user'"`;
 
 # And now test --resume with --replicate
-`../mk-table-checksum h=127.0.0.1,P=12345 --ignore-databases sakila --resume-replicate --replicate test.checksum --chunk-size 100 > /tmp/mktc_issue36.txt`;
+`../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --ignore-databases sakila --resume-replicate --replicate test.checksum --chunk-size 100 > /tmp/mktc_issue36.txt`;
 
 # We have to chop the output because a simple diff on the whole thing won't
 # work well because the TIME column can sometimes change from 0 to 1.
@@ -405,7 +405,7 @@ ok(!$output, 'Resumes with --replicate (2/2)');
 # Issue 81: put some data that's too big into the boundaries table
 # #############################################################################
 diag(`/tmp/12345/use < samples/checksum_tbl_truncated.sql`);
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --ignore-databases sakila --empty-replicate-table --replicate test.checksum 2>&1`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --ignore-databases sakila --empty-replicate-table --replicate test.checksum 2>&1`;
 like($output, qr/boundaries/, 'Truncation causes an error');
 
 # Restore the proper checksum table.
@@ -416,7 +416,7 @@ diag(`/tmp/12345/use < samples/checksum_tbl.sql`);
 # #############################################################################
 diag(`$create_missing_slave_tbl_cmd`);
 
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -t test.only_on_master --schema 2>&1`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 -t test.only_on_master --schema 2>&1`;
 like($output, qr/MyISAM\s+NULL\s+23678842/, 'Table on master checksummed with --schema');
 like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed with --schema');
 like($output, qr/test.only_on_master does not exist on slave 127.0.0.1:12346/, 'Debug reports missing slave table with --schema');
@@ -429,7 +429,7 @@ diag(`$rm_missing_slave_tbl_cmd`);
 diag(`/tmp/12345/use -D test < samples/issue_47.sql`);
 $output = `/tmp/12345/use -e 'SELECT * FROM test.issue_47'`;
 like($output, qr/18446744073709551615/, 'Loaded max unsigned bigint for testing issue 47');
-$output = `../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -d test -t issue_47 --chunk-size 4 2>&1`;
+$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 -d test -t issue_47 --chunk-size 4 2>&1`;
 unlike($output, qr/Chunk size is too small/, 'Unsigned bigint chunks (issue 47)');
 
 # #############################################################################
@@ -440,10 +440,10 @@ unlike($output, qr/Chunk size is too small/, 'Unsigned bigint chunks (issue 47)'
 # That is: there's really no way for us to see if MySQL is indeed using
 # the index that we told it to.
 
-$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -d test -t issue_47 --algorithm ACCUM 2>&1 | grep 'SQL for chunk 0:'`;
+$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 -d test -t issue_47 --algorithm ACCUM 2>&1 | grep 'SQL for chunk 0:'`;
 like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47` (?:FORCE|USE) INDEX \(`idx`\) WHERE/, 'Injects correct USE INDEX by default');
 
-$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -d test -t issue_47 --algorithm ACCUM --no-use-index 2>&1 | grep 'SQL for chunk 0:'`;
+$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 -d test -t issue_47 --algorithm ACCUM --no-use-index 2>&1 | grep 'SQL for chunk 0:'`;
 like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not inject USE INDEX with --no-use-index');
 
 # #############################################################################
@@ -451,11 +451,11 @@ like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not in
 # #############################################################################
 
 # This tests just one database...
-$output = `../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12346 -d test --chunk-size 3 --resume samples/resume01_partial.txt | diff samples/resume01_whole.txt -`;
+$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox h=127.1,P=12346 -d test --chunk-size 3 --resume samples/resume01_partial.txt | diff samples/resume01_whole.txt -`;
 ok(!$output, 'Resumes checksum of chunked data (1 db)');
 
 # but this tests two.
-$output = `../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12346 --ignore-databases sakila --resume samples/resume03_partial.txt | diff samples/resume03_whole.txt -`;
+$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox h=127.1,P=12346 --ignore-databases sakila --resume samples/resume03_partial.txt | diff samples/resume03_whole.txt -`;
 ok(!$output, 'Resumes checksum of non-chunked data (2 dbs)');
 
 # #############################################################################
@@ -464,26 +464,26 @@ ok(!$output, 'Resumes checksum of non-chunked data (2 dbs)');
 
 # First check that, like a Klingon, it dies with honor.
 `/tmp/12345/use -e 'DROP TABLE test.checksum'`;
-$output = `../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum 2>&1`;
+$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --replicate test.checksum 2>&1`;
 like($output, qr/replicate table .+ does not exist/, 'Dies with honor when replication table does not exist');
 
-$output = `../mk-table-checksum h=127.0.0.1,P=12345 --ignore-databases sakila --replicate test.checksum --create-replicate-table`;
+$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --ignore-databases sakila --replicate test.checksum --create-replicate-table`;
 like($output, qr/DATABASE\s+TABLE\s+CHUNK/, '--create-replicate-table creates the replicate table');
 
 # #############################################################################
 # Issue 94: Enhance mk-table-checksum, add a --ignore-columns option
 # #############################################################################
 diag(`/tmp/12345/use < samples/issue_94.sql`);
-$output = `../mk-table-checksum -d test -t issue_94 h=127.1,P=12345 P=12346 --algorithm ACCUM | awk '{print \$7}'`;
+$output = `../mk-table-checksum -d test -t issue_94 h=127.1,P=12345,u=msandbox,p=msandbox P=12346 --algorithm ACCUM | awk '{print \$7}'`;
 like($output, qr/CHECKSUM\n00000006B6BDB8E6\n00000006B6BDB8E6/, 'Checksum ok with all 3 columns (issue 94 1/2)');
 
-$output = `../mk-table-checksum -d test -t issue_94 h=127.1,P=12345 P=12346 --algorithm ACCUM --ignore-columns c | awk '{print \$7}'`;
+$output = `../mk-table-checksum -d test -t issue_94 h=127.1,P=12345,u=msandbox,p=msandbox P=12346 --algorithm ACCUM --ignore-columns c | awk '{print \$7}'`;
 like($output, qr/CHECKSUM\n000000066094F8AA\n000000066094F8AA/, 'Checksum ok with ignored column (issue 94 2/2)');
 
 # #############################################################################
 # Issue 103: mk-table-checksum doesn't honor --checksum in --schema mode
 # #############################################################################
-$output = `../mk-table-checksum --checksum h=127.1,P=12345 --schema --ignore-databases sakila`;
+$output = `../mk-table-checksum --checksum h=127.1,P=12345,u=msandbox,p=msandbox --schema --ignore-databases sakila`;
 unlike($output, qr/DATABASE\s+TABLE/, '--checksum in --schema mode prints terse output');
 
 # #############################################################################
@@ -492,7 +492,7 @@ unlike($output, qr/DATABASE\s+TABLE/, '--checksum in --schema mode prints terse 
 
 # Reusing issue_21.sql
 $sb->load_file('master', 'samples/issue_21.sql'); 
-$output = `../mk-table-checksum --since 'current_date - interval 7 day' h=127.1,P=12345 -t test.issue_21`;
+$output = `../mk-table-checksum --since 'current_date - interval 7 day' h=127.1,P=12345,u=msandbox,p=msandbox -t test.issue_21`;
 like($output, qr/test\s+issue_21\s+0\s+127\.1\s+InnoDB/, 'InnoDB table is checksummed with temporal --since');
 
 # #############################################################################
@@ -500,19 +500,19 @@ like($output, qr/test\s+issue_21\s+0\s+127\.1\s+InnoDB/, 'InnoDB table is checks
 # #############################################################################
 
 $sb->load_file('master', 'samples/issue_122.sql');
-$output = `../mk-table-checksum --arg-table test.argtable --save-since h=127.1,P=12345 -t test.issue_122 --chunk-size 2`;
+$output = `../mk-table-checksum --arg-table test.argtable --save-since h=127.1,P=12345,u=msandbox,p=msandbox -t test.issue_122 --chunk-size 2`;
 my $res = $master_dbh->selectall_arrayref("SELECT since FROM test.argtable WHERE db='test' AND tbl='issue_122'");
 is_deeply($res, [[undef]], 'Numeric since is not saved when table is empty');
 
 $master_dbh->do("INSERT INTO test.issue_122 VALUES (null,'a'),(null,'b')");
-$output = `../mk-table-checksum --arg-table test.argtable --save-since h=127.1,P=12345 -t test.issue_122 --chunk-size 2`;
+$output = `../mk-table-checksum --arg-table test.argtable --save-since h=127.1,P=12345,u=msandbox,p=msandbox -t test.issue_122 --chunk-size 2`;
 $res = $master_dbh->selectall_arrayref("SELECT since FROM test.argtable WHERE db='test' AND tbl='issue_122'");
 is_deeply($res, [[2]], 'Numeric since is saved when table is not empty');
 
 # Test non-empty table that is chunkable with a temporal --since and
 # --save-since to make sure that the current ts gets saved and not the maxval.
 $master_dbh->do('UPDATE test.argtable SET since = "current_date - interval 3 day" WHERE db = "test" AND tbl = "issue_122"');
-$output = `../mk-table-checksum --arg-table test.argtable --save-since h=127.1,P=12345 -t test.issue_122 --chunk-size 2`;
+$output = `../mk-table-checksum --arg-table test.argtable --save-since h=127.1,P=12345,u=msandbox,p=msandbox -t test.issue_122 --chunk-size 2`;
 $res = $master_dbh->selectall_arrayref("SELECT since FROM test.argtable WHERE db='test' AND tbl='issue_122'");
 like($res->[0]->[0], qr/^\d{4}-\d{2}-\d{2}(?:.[0-9:]+)?/, 'Temporal since is saved when temporal since is given');
 
@@ -537,7 +537,7 @@ like($res->[0]->[0], qr/^\d{4}-\d{2}-\d{2}(?:.[0-9:]+)?/, 'Temporal since is sav
 $master_dbh->do('DELETE FROM test.checksum');
 # Give it something to think about. 
 $slave_dbh->do('DELETE FROM test.issue_94 WHERE a > 5');
-`perl ../mk-table-checksum --replicate=test.checksum --algorithm=BIT_XOR h=127.1,P=12345 --databases test --tables issue_94 --chunk-size 500000 --wait 900`;
+`perl ../mk-table-checksum --replicate=test.checksum --algorithm=BIT_XOR h=127.1,P=12345,u=msandbox,p=msandbox --databases test --tables issue_94 --chunk-size 500000 --wait 900`;
 $res = $master_dbh->selectall_arrayref("SELECT * FROM test.checksum");
 is($res->[0]->[1], 'issue_94', '--wait does not prevent update to --replicate tbl (issue 51)');
 
@@ -557,7 +557,7 @@ $master_dbh->do("INSERT INTO test.argtable (db, tbl, since, modulo, offset, `chu
 
 $master_dbh->do("INSERT INTO test.issue_122 VALUES (3,'c'),(4,'d'),(5,'e'),(6,'f'),(7,'g'),(8,'h'),(9,'i'),(10,'j')");
 
-`perl ../mk-table-checksum h=127.1,P=12345 -d test -t issue_122,issue_94 --arg-table test.argtable > /tmp/mk-table-sync-issue-467-output.txt`;
+`perl ../mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test -t issue_122,issue_94 --arg-table test.argtable > /tmp/mk-table-sync-issue-467-output.txt`;
 $output = `diff samples/issue_467.txt /tmp/mk-table-sync-issue-467-output.txt`;
 is(
    $output,
@@ -570,7 +570,7 @@ diag(`rm -rf /tmp/mk-table-sync-issue-467-output.txt`);
 # Issue 391: Add --pid option to all scripts
 # #########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `../mk-table-checksum h=127.1,P=12345 -d test -t issue_122,issue_94 --pid /tmp/mk-script.pid 2>&1`;
+$output = `../mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test -t issue_122,issue_94 --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},
