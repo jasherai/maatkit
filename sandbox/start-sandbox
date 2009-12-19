@@ -1,5 +1,9 @@
 #!/bin/sh
 
+# This script makes Maatkit sandbox servers for mk-test-env.
+# It's a "low level" script that is not usually called directly.
+# Exit 0 means everything was successful, else exit 1 on problems.
+
 err() {
    echo
    for msg; do
@@ -9,23 +13,50 @@ err() {
    echo
 }
 
+make_sandbox() {
+   # Make the sandbox dir and extract the base files.
+   mkdir /tmp/$port >/dev/null 2>&1
+   tar xzf "server-$version.tar.gz" -C /tmp/$port
+   for file in `grep -rl PORT /tmp/$port`; do
+      sed -i -e "s/PORT/$port/g" $file
+      # Use ! instead of / because the replacment has / (it's a directory)
+      sed -i -e "s!MAATKIT_SANDBOX_BASEDIR!$MAATKIT_SANDBOX_BASEDIR!g" $file
+   done
+
+   # Start the sandbox and check that it has InnoDB.
+   /tmp/$port/start
+   if [ $? -eq 0 ]; then
+      /tmp/$port/use -e 'show innodb status' | grep 'INNODB MONITOR OUTPUT' >/dev/null 2>&1
+      # grep exits 0 if lines are found
+      if [ $? -ne 0 ]; then
+         echo "****** WARNING sandbox doesn't have a working InnoDB! ******"
+         exit 1
+      fi
+   else
+      echo "Sandbox $type $port failed to start."
+      exit 1
+   fi
+
+   return 0
+}
+
 # ###########################################################################
 # Sanity check the cmd line options.
 # ###########################################################################
 if [ $# -lt 2 ]; then
-   err "Usage: start-sandbox master|slave port [master port]" \
+   err "Usage: start-sandbox master|slave|master-master port [master port]" \
        "Example: start-sandbox master 12345"                  \
        "Example: start-sandbox slave 12346 12345"
    exit 1
 fi
 
-type=$1         # either "master" or "slave"
+type=$1         # master, slave or master-master
 port=$2         # sandbox port number, e.g. 12345
-master_port=$3  # master port if slave
+master_port=$3  # master port if slave or master-master
 
-if [ "$type" != "master" ] && [ "$type" != "slave" ]; then
+if [ "$type" != "master" ] && [ "$type" != "slave" ] && [ "$type" != "master-master" ]; then
    err "Invalid sandbox type: $type"          \
-       "Type must be either master or slave."
+       "Type must be either master, slave or master-master."
    exit 1
 fi
 
@@ -35,12 +66,14 @@ if [ $port -le 1024 ]; then
    exit 1
 fi
 
-if [ "$type" = "slave" ] && [ -z "$master_port" ]; then
-   err "No master port given for the slave."
+if [ "$type" = "slave" -o "$type" = "master-master" ] && [ -z "$master_port" ]; then
+   err "No master port given for the $type."
    exit 1
 fi
 
-if [ ! -d "/tmp/$master_port" ]; then
+# If creating a slave, the master must exist first.  Not true for creating
+# a master-master though.
+if [ "$type" = "slave" ] && [ ! -d "/tmp/$master_port" ]; then
    err "Master sandbox does not exist: /tmp/$master_port"
    exit 1
 fi
@@ -65,9 +98,13 @@ cd $MAATKIT_TRUNK/sandbox
 # then the caller is reponsible for setting MAATKIT_SANDBOX_BASEDIR.
 # MAATKIT_SANDBOX_BASEDIR points to a base directory containing the
 # MySQL executables like MAATKIT_SANDBOX_BASEDIR/bin/mysqld_safe.
+
 if [ -z "$MAATKIT_SANDBOX_BASEDIR" ]; then
-   err "MAATKIT_SANDBOX_BASEDIR environment variable is not set."
-   exit 1
+   MAATKIT_SANDBOX_BASEDIR=`./mk-test-env checkconfig | grep MAATKIT_SANDBOX_BASEDIR | cut -d= -f2 | awk '{print $1}'`
+   if [ -z "$MAATKIT_SANDBOX_BASEDIR" ]; then
+      err "MAATKIT_SANDBOX_BASEDIR environment variable is not set."
+      exit 1
+   fi
 fi
 
 mysqld=''
@@ -101,28 +138,7 @@ PIDFILE="/tmp/$port/data/mysql_sandbox$port.pid"
 if [ -f $PIDFILE ]; then
    echo "Sandbox $port already started (found pid file $PIDFILE)"
 else
-   # Make the sandbox dir and extract the base files.
-   mkdir /tmp/$port >/dev/null 2>&1
-   tar xzf "server-$version.tar.gz" -C /tmp/$port
-   for file in `grep -rl PORT /tmp/$port`; do
-      sed -i -e "s/PORT/$port/g" $file
-      # Use ! instead of / because the replacment has / (it's a directory)
-      sed -i -e "s!MAATKIT_SANDBOX_BASEDIR!$MAATKIT_SANDBOX_BASEDIR!g" $file
-   done
-
-   # Start the sandbox and check that it has InnoDB.
-   /tmp/$port/start
-   if [ $? -eq 0 ]; then
-      /tmp/$port/use -e 'show innodb status' | grep 'INNODB MONITOR OUTPUT' >/dev/null 2>&1
-      # grep exits 0 if lines are found
-      if [ $? -ne 0 ]; then
-         echo "****** WARNING sandbox doesn't have a working InnoDB! ******"
-         exit 1
-      fi
-   else
-      echo "Sandbox $type $port failed to start."
-      exit 1
-   fi
+   make_sandbox
 
    # If the sandbox is a slave, start the slave.
    if [ "$type" = "slave" ]; then
@@ -130,6 +146,23 @@ else
       /tmp/$port/use -e "start slave"
       /tmp/$port/use -e "set global read_only=1"
    fi
+
+   # If the sandbox is a master-master, start the second master and slave the
+   # two together.
+   if [ "$type" = "master-master" ]; then
+      mm1_port=$port
+      mm2_port=$master_port
+      port=$master_port  # make_sandbox uses $port
+      make_sandbox
+
+      # Slave mm2 -> mm1
+      /tmp/$mm2_port/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=$mm1_port"
+      /tmp/$mm2_port/use -e "start slave"
+
+      # Slave mm1 -> mm2
+      /tmp/$mm1_port/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=$mm2_port"
+      /tmp/$mm1_port/use -e "start slave"
+   fi
 fi
 
-exit 0
+exit $?
