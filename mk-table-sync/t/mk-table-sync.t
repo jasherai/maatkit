@@ -26,14 +26,14 @@ sub query_slave {
 sub run {
    my ($src, $dst, $other) = @_;
    my $output;
-   my $cmd = "../mk-table-sync --print --execute h=127.1,P=12345,D=test,t=$src h=127.1,P=12346,D=test,t=$dst $other 2>&1";
+   my $cmd = "../mk-table-sync --print --execute h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=$src h=127.1,P=12346,D=test,t=$dst $other 2>&1";
    chomp($output=`$cmd`);
    return $output;
 }
 
 # Pre-create a second host while the other test are running
 # so we won't have to wait for it to load when we need it.
-diag(`../../sandbox/make_sandbox 12347 >/dev/null &`);
+diag(`../../sandbox/start-sandbox master 12347 >/dev/null &`);
 
 # Test DSN value inheritance.
 $output = `../mk-table-sync h=127.1 h=127.2,P=12346 --port 12345 --explain-hosts`;
@@ -154,18 +154,19 @@ $ENV{MKDEBUG} = $dbg || 0;
 SKIP: {
    skip "I'm impatient", 1 if 0;
 
-   diag(`../../sandbox/make_master-master`);
+   diag(`../../sandbox/start-sandbox master-master 12348 12349 2>/dev/null`);
    diag(`/tmp/12348/use -e 'CREATE DATABASE test'`);
    diag(`/tmp/12348/use < samples/before.sql`);
    # Make master2 different from master1
    diag(`/tmp/12349/use -e 'set sql_log_bin=0;update test.test1 set b="mm" where a=1'`);
    # This will make master1's data match the changed data on master2 (that is not
    # a typo).
-   `perl ../mk-table-sync --no-check-slave --sync-to-master --print --execute h=127.0.0.1,P=12348,D=test,t=test1`;
+   `perl ../mk-table-sync --no-check-slave --sync-to-master --print --execute h=127.0.0.1,P=12348,u=msandbox,p=msandbox,D=test,t=test1`;
    sleep 1;
    $output = `/tmp/12348/use -e 'select b from test.test1 where a=1' -N`;
    like($output, qr/mm/, 'Master-master sync worked');
-   diag(`../../sandbox/stop_master-master >/dev/null &`);
+   diag(`../../sandbox/stop-sandbox 12348 12349`);
+   diag(`rm -rf /tmp/1234[89]`);
 };
 
 # #############################################################################
@@ -173,12 +174,12 @@ SKIP: {
 # #############################################################################
 SKIP: {
    skip 'MySQL version < 5.0.2 does not support triggers', 9
-      unless $vp->version_ge($master_dbh, '5.0-2');
+      unless $vp->version_ge($master_dbh, '5.0.2');
 
    $sb->load_file('master', 'samples/issue_37.sql');
    $sb->use('master', '-e "SET SQL_LOG_BIN=0; INSERT INTO test.issue_37 VALUES (1), (2);"');
    $sb->load_file('master', 'samples/checksum_tbl.sql');
-   `../../mk-table-checksum/mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum -d test 2>&1 > /dev/null`;
+   `../../mk-table-checksum/mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --replicate test.checksum -d test 2>&1 > /dev/null`;
 
    $output = `../mk-table-sync --no-check-slave --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 2>&1`;
    like($output,
@@ -186,20 +187,20 @@ SKIP: {
       'Die on trigger tbl write with one table (1/4, issue 37)'
    );
 
-   $output = `../mk-table-sync --replicate test.checksum --sync-to-master --execute h=127.1,P=12346 -d test -t issue_37 2>&1`;
+   $output = `../mk-table-sync --replicate test.checksum --sync-to-master --execute h=127.1,P=12346,u=msandbox,p=msandbox -d test -t issue_37 2>&1`;
    like($output,
       qr/Triggers are defined/,
       'Die on trigger tbl write with --replicate --sync-to-master (2/4, issue 37)'
    );
 
-   $output = `../mk-table-sync --replicate test.checksum --execute h=127.1,P=12345 -d test -t issue_37 2>&1`;
+   $output = `../mk-table-sync --replicate test.checksum --execute h=127.1,P=12345,u=msandbox,p=msandbox -d test -t issue_37 2>&1`;
    like(
       $output,
       qr/Triggers are defined/,
       'Die on trigger tbl write with --replicate (3/4, issue 37)'
    );
 
-   $output = `../mk-table-sync --execute --ignore-databases mysql h=127.0.0.1,P=12345 h=127.1,P=12346 2>&1`;
+   $output = `../mk-table-sync --execute --ignore-databases mysql h=127.0.0.1,P=12345,u=msandbox,p=msandbox h=127.1,P=12346 2>&1`;
    like(
       $output,
       qr/Triggers are defined/,
@@ -231,10 +232,10 @@ SKIP: {
    # ########################################################################
    $sb->use('master', '-e \'INSERT INTO test.issue_37 VALUES (5), (6), (7), (8), (9);\'');
 
-   $output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 --algorithms Chunk --chunk-size 3 --no-check-slave --no-check-triggers --print 2>&1 | grep 'src: '`;
+   $output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 -d test -t issue_37 --algorithms Chunk --chunk-size 3 --no-check-slave --no-check-triggers --print 2>&1 | grep 'src: '`;
    like($output, qr/FROM `test`\.`issue_37` FORCE INDEX \(`idx_a`\) WHERE/, 'Injects USE INDEX hint by default');
 
-   $output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 --algorithms Chunk --chunk-size 3 --no-check-slave --no-check-triggers --no-index-hint --print 2>&1 | grep 'src: '`;
+   $output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 -d test -t issue_37 --algorithms Chunk --chunk-size 3 --no-check-slave --no-check-triggers --no-index-hint --print 2>&1 | grep 'src: '`;
    like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --no-index-hint');
 };
 
@@ -269,21 +270,21 @@ is($output, $output2, 'test2.messages matches test.messages (issue 22)');
 # out of sync. Now we also unsync test2 on the slave and then re-sync only
 # it. If --tables is honored, only test2 on the slave will be synced.
 $sb->use('master', "-D test -e \"SET SQL_LOG_BIN=0; INSERT INTO test2 VALUES (1,'a'),(2,'b')\"");
-diag(`../../mk-table-checksum/mk-table-checksum --replicate=test.checksum h=127.1,P=12345 -d test > /dev/null`);
+diag(`../../mk-table-checksum/mk-table-checksum --replicate=test.checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test > /dev/null`);
 
 # Test that what the doc says about --tables is true:
 # "Table names may be qualified with the database name."
 # In the code, a qualified db.tbl name is used.
 # So we'll test first an unqualified tbl name.
-$output = `../mk-table-sync h=127.1,P=12345 --replicate test.checksum --execute -d test -t test2 -v`;
+$output = `../mk-table-sync h=127.1,P=12345,u=msandbox,p=msandbox --replicate test.checksum --execute -d test -t test2 -v`;
 unlike($output, qr/messages/, '--replicate honors --tables (1/4)');
 like($output,   qr/test2/,    '--replicate honors --tables (2/4)');
 
 # Now we'll test with a qualified db.tbl name.
 $sb->use('slave1', '-D test -e "TRUNCATE TABLE test2; TRUNCATE TABLE messages"');
-diag(`../../mk-table-checksum/mk-table-checksum --replicate=test.checksum h=127.1,P=12345 -d test > /dev/null`);
+diag(`../../mk-table-checksum/mk-table-checksum --replicate=test.checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test > /dev/null`);
 
-$output = `../mk-table-sync h=127.1,P=12345 --replicate test.checksum --execute -d test -t test.test2 -v`;
+$output = `../mk-table-sync h=127.1,P=12345,u=msandbox,p=msandbox --replicate test.checksum --execute -d test -t test.test2 -v`;
 unlike($output, qr/messages/, '--replicate honors --tables (3/4)');
 like($output,   qr/test2/,    '--replicate honors --tables (4/4)');
 
@@ -292,7 +293,7 @@ like($output,   qr/test2/,    '--replicate honors --tables (4/4)');
 # #############################################################################
 diag(`/tmp/12345/use -D test < ../../common/t/samples/issue_96.sql`);
 sleep 1;
-$output = `../mk-table-sync h=127.1,P=12345,D=issue_96,t=t h=127.1,P=12345,D=issue_96,t=t2 --algorithms Nibble --chunk-size 2 --print`;
+$output = `../mk-table-sync h=127.1,P=12345,u=msandbox,p=msandbox,D=issue_96,t=t h=127.1,P=12345,D=issue_96,t=t2 --algorithms Nibble --chunk-size 2 --print`;
 chomp $output;
 is(
    $output,
@@ -305,7 +306,7 @@ is(
 # #############################################################################
 
 # This test reuses the test.message table created above for issue 22.
-$output = `../mk-table-sync h=127.1,P=12345,D=test,t=messages P=12346`;
+$output = `../mk-table-sync h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=messages P=12346`;
 like($output, qr/Specify at least one of --print, --execute or --dry-run/,
    'Requires --print, --execute or --dry-run');
 
@@ -316,7 +317,7 @@ $sb->create_dbs($master_dbh, ['foo']);
 $sb->use('master', '-e "create table foo.t1 (i int)"');
 $sb->use('master', '-e "SET SQL_LOG_BIN=0; insert into foo.t1 values (1)"');
 $sb->use('slave1', '-e "truncate table foo.t1"');
-$output = `perl ../mk-table-sync --no-check-slave --print h=127.1,P=12345 -d mysql,foo h=127.1,P=12346 2>&1`;
+$output = `perl ../mk-table-sync --no-check-slave --print h=127.1,P=12345,u=msandbox,p=msandbox -d mysql,foo h=127.1,P=12346 2>&1`;
 like(
    $output,
    qr/INSERT INTO `foo`\.`t1`\(`i`\) VALUES \(1\)/,
@@ -346,14 +347,14 @@ EOF
 $sb->create_dbs($master_dbh, [qw(issue218)]);
 $sb->use('master', '-e "CREATE TABLE issue218.t1 (i INT)"');
 $sb->use('master', '-e "INSERT INTO issue218.t1 VALUES (NULL)"');
-qx(../mk-table-sync --no-check-slave --print --database issue218 h=127.1,P=12345 P=12346);
+qx(../mk-table-sync --no-check-slave --print --database issue218 h=127.1,P=12345,u=msandbox,p=msandbox P=12346);
 ok(!$?, 'Issue 218: NULL values compare as equal');
 
 # #############################################################################
 # Issue 313: Add --ignore-columns (and add tests for --columns).
 # #############################################################################
 $sb->load_file('master', 'samples/before.sql');
-$output = `perl ../mk-table-sync --print h=127.1,P=12345,D=test,t=test3 t=test4`;
+$output = `perl ../mk-table-sync --print h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test3 t=test4`;
 # This test changed because the row sql now does ORDER BY key_col (id here)
 is($output, <<EOF,
 UPDATE `test`.`test4` SET `name`='001' WHERE `id`=1 LIMIT 1;
@@ -361,13 +362,13 @@ UPDATE `test`.`test4` SET `name`=51707 WHERE `id`=15034 LIMIT 1;
 EOF
   'Baseline for --columns: found differences');
 
-$output = `perl ../mk-table-sync --columns=id --print h=127.1,P=12345,D=test,t=test3 t=test4`;
+$output = `perl ../mk-table-sync --columns=id --print h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test3 t=test4`;
 is($output, "", '--columns id: found no differences');
 
-$output = `perl ../mk-table-sync --ignore-columns name --print h=127.1,P=12345,D=test,t=test3 t=test4`;
+$output = `perl ../mk-table-sync --ignore-columns name --print h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test3 t=test4`;
 is($output, "", '--ignore-columns name: found no differences');
 
-$output = `perl ../mk-table-sync --ignore-columns id --print h=127.1,P=12345,D=test,t=test3 t=test4`;
+$output = `perl ../mk-table-sync --ignore-columns id --print h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test3 t=test4`;
 # This test changed for the same reason as above.
 is($output, <<EOF,
 UPDATE `test`.`test4` SET `name`='001' WHERE `id`=1 LIMIT 1;
@@ -375,7 +376,7 @@ UPDATE `test`.`test4` SET `name`=51707 WHERE `id`=15034 LIMIT 1;
 EOF
   '--ignore-columns id: found differences');
 
-$output = `perl ../mk-table-sync --columns name --print h=127.1,P=12345,D=test,t=test3 t=test4`;
+$output = `perl ../mk-table-sync --columns name --print h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test3 t=test4`;
 # This test changed for the same reason as above.
 is($output, <<EOF,
 UPDATE `test`.`test4` SET `name`='001' WHERE `id`=1 LIMIT 1;
@@ -396,7 +397,7 @@ like($output, qr/requires exactly two/,
 # "swapped", so we'll put a marker in each table to test the swapping.
 `/tmp/12345/use -e "alter table test.test1 comment='test1'"`;
 
-$output = `perl ../mk-table-sync --execute --lock-and-rename h=127.1,P=12345,D=test,t=test1 t=test2 2>&1`;
+$output = `perl ../mk-table-sync --execute --lock-and-rename h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test1 t=test2 2>&1`;
 diag $output if $output;
 
 $output = `/tmp/12345/use -e 'show create table test.test2'`;
@@ -413,7 +414,7 @@ SKIP: {
    skip 'Cannot connect to second sandbox server', 1
       unless $dbh2;
 
-   $output = `perl ../mk-table-sync --databases test --execute h=127.1,P=12345 h=127.1,P=12347 2>&1`;
+   $output = `perl ../mk-table-sync --databases test --execute h=127.1,P=12345,u=msandbox,p=msandbox h=127.1,P=12347 2>&1`;
    like(
       $output,
       qr/Unknown database 'test'/,
@@ -425,7 +426,7 @@ SKIP: {
 # Issue 391: Add --pid option to mk-table-sync
 # #############################################################################
 `touch /tmp/mk-table-sync.pid`;
-$output = `../mk-table-sync h=127.1,P=12346 --sync-to-master --print --no-check-triggers --pid /tmp/mk-table-sync.pid 2>&1`;
+$output = `../mk-table-sync h=127.1,P=12346,u=msandbox,p=msandbox --sync-to-master --print --no-check-triggers --pid /tmp/mk-table-sync.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-table-sync.pid already exists},
@@ -448,7 +449,7 @@ SKIP: {
    $dbh2->do('CREATE DATABASE d2');
    $dbh2->do('CREATE TABLE d2.test2 (a INT NOT NULL, b char(2) NOT NULL, PRIMARY KEY  (`a`,`b`) )');
 
-   $output = `../mk-table-sync --no-check-slave --execute h=127.1,P=12345,D=test,t=test1  h=127.1,P=12347,D=d2,t=test2 2>&1`;
+   $output = `../mk-table-sync --no-check-slave --execute h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test1  h=127.1,P=12347,D=d2,t=test2 2>&1`;
    is(
       $output,
       '',
@@ -478,7 +479,7 @@ SKIP: {
    $slave_dbh->do('DELETE FROM db2.t1 WHERE i > 4');
 
    # Replicate checksum of db2.t1.
-   $output = `../../mk-table-checksum/mk-table-checksum h=127.1,P=12345 --replicate db1.checksum --create-replicate-table --databases db1,db2 2>&1`;
+   $output = `../../mk-table-checksum/mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox --replicate db1.checksum --create-replicate-table --databases db1,db2 2>&1`;
    like(
       $output,
       qr/db2\s+t1\s+0\s+127\.1\s+MyISAM\s+5/,
@@ -489,7 +490,7 @@ SKIP: {
    # --replicate which has entries for both db1 and db2.  db1 has a
    # trigger but since we also specify --databases db2, then db1 should
    # be ignored.
-   $output = `../mk-table-sync h=127.1,P=12345  --databases db2 --replicate db1.checksum --execute 2>&1`;
+   $output = `../mk-table-sync h=127.1,P=12345,u=msandbox,p=msandbox  --databases db2 --replicate db1.checksum --execute 2>&1`;
    unlike(
       $output,
       qr/Cannot write to table with triggers/,
@@ -508,7 +509,7 @@ SKIP: {
 # #############################################################################
 
 # It's not really master1, we just use its port 12348.
-diag(`../../sandbox/make_slave 12348`);
+diag(`../../sandbox/start-sandbox slave 12348 12345 2>/dev/null`);
 my $dbh3 = $sb->get_dbh_for('master1');
 SKIP: {
    skip 'Cannot connect to second sandbox slave', 4
@@ -569,7 +570,7 @@ SKIP: {
       'do-replicate-db is out of sync before sync'
    );
 
-   diag(`../mk-table-sync h=127.1,P=12348 --sync-to-master --execute --no-check-triggers --ignore-databases sakila,mysql 2>&1`);
+   diag(`../mk-table-sync h=127.1,P=12348,u=msandbox,p=msandbox --sync-to-master --execute --no-check-triggers --ignore-databases sakila,mysql 2>&1`);
 
    $r = $dbh3->selectall_arrayref('SELECT * FROM onlythisdb.t');
    is_deeply(
@@ -594,7 +595,7 @@ SKIP: {
 # Issue 86: mk-table-sync: lock level 3
 # #############################################################################
 
-$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,D=test,t=t --print  --lock 3 2>&1`;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox,D=test,t=t --print  --lock 3 2>&1`;
 unlike(
    $output,
    qr/Failed to lock server/,
@@ -612,7 +613,7 @@ $slave_dbh->do('update test.fl set d = 2.0000013 where id = 1');
 
 # The columns really are different at this point so we should
 # get a REPLACE without using --float-precision.
-$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,D=test,t=fl --print 2>&1`;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox,D=test,t=fl --print 2>&1`;
 is(
    $output,
    "REPLACE INTO `test`.`fl`(`id`, `f`, `d`) VALUES (1, '1.0000011921', '2.0000012');
@@ -623,7 +624,7 @@ is(
 # Now use --float-precision to roundoff the differing columns.
 # We have 2.0000012
 #     vs. 2.0000013, so if we round at 6 places, they should be the same.
-$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,D=test,t=fl --print --float-precision 6 2>&1`;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox,D=test,t=fl --print --float-precision 6 2>&1`;
 is(
    $output,
    '',
@@ -635,7 +636,7 @@ is(
 # #############################################################################
 diag(`/tmp/12345/use -D test < ../../common/t/samples/issue_616.sql`);
 sleep 1;
-`../mk-table-sync --sync-to-master h=127.1,P=12346 --databases issue_616 --execute`;
+`../mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox --databases issue_616 --execute`;
 my $ok_r = [
    [  1, 'from master' ],
    [ 11, 'from master' ],
@@ -664,14 +665,14 @@ is_deeply(
 # #############################################################################
 diag(`/tmp/12345/use -D test < samples/issue_375.sql`);
 sleep 1;
-$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_375 --print -v -v  --chunk-size 50 --chunk-index updated_at`;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox -d issue_375 --print -v -v  --chunk-size 50 --chunk-index updated_at`;
 like(
    $output,
    qr/FROM `issue_375`.`t` FORCE INDEX \(`updated_at`\) WHERE \(`updated_at` < "2009-09-05 02:38:12"/,
    '--chunk-index',
 );
 
-$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_375 --print -v -v  --chunk-size 50 --chunk-column updated_at`;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox -d issue_375 --print -v -v  --chunk-size 50 --chunk-column updated_at`;
 like(
    $output,
    qr/FROM `issue_375`.`t` FORCE INDEX \(`updated_at`\) WHERE \(`updated_at` < "2009-09-05 02:38:12"/,
@@ -692,11 +693,11 @@ $slave_dbh->do('UPDATE issue_375.t SET foo="z" WHERE id=10');
 $slave_dbh->do('UPDATE issue_375.t SET foo="zz" WHERE id=100');
 
 # Checksum and replicate.
-diag(`../../mk-table-checksum/mk-table-checksum --create-replicate-table --replicate issue_375.checksum h=127.1,P=12345 -d issue_375 -t t > /dev/null`);
-diag(`../../mk-table-checksum/mk-table-checksum --replicate issue_375.checksum h=127.1,P=12345  --replicate-check 1 > /dev/null`);
+diag(`../../mk-table-checksum/mk-table-checksum --create-replicate-table --replicate issue_375.checksum h=127.1,P=12345,u=msandbox,p=msandbox -d issue_375 -t t > /dev/null`);
+diag(`../../mk-table-checksum/mk-table-checksum --replicate issue_375.checksum h=127.1,P=12345,u=msandbox,p=msandbox  --replicate-check 1 > /dev/null`);
 
 # And now sync using the replicated checksum results/differences.
-$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 --replicate issue_375.checksum --print`;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox --replicate issue_375.checksum --print`;
 is(
    $output,
    "REPLACE INTO `issue_375`.`t`(`id`, `updated_at`, `foo`) VALUES (10, '2009-09-03 14:18:00', 'k');
@@ -713,14 +714,14 @@ REPLACE INTO `issue_375`.`t`(`id`, `updated_at`, `foo`) VALUES (100, '2009-09-06
 # #############################################################################
 diag(`/tmp/12345/use < samples/issue_631.sql`);
 
-$output = `../mk-table-sync h=127.1,P=12345,D=d1,t=t h=127.1,P=12345,D=d2,t=t h=127.1,P=12345,D=d3,t=t --print -v --algorithms GroupBy`;
+$output = `../mk-table-sync h=127.1,P=12345,u=msandbox,p=msandbox,D=d1,t=t h=127.1,P=12345,D=d2,t=t h=127.1,P=12345,D=d3,t=t --print -v --algorithms GroupBy`;
 is(
    $output,
-"# Syncing D=d2,P=12345,h=127.1,t=t
+"# Syncing D=d2,P=12345,h=127.1,p=...,t=t,u=msandbox
 # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
 INSERT INTO `d2`.`t`(`x`) VALUES (1);
 #      0       0      1      0 GroupBy   2    d1.t
-# Syncing D=d3,P=12345,h=127.1,t=t
+# Syncing D=d3,P=12345,h=127.1,p=...,t=t,u=msandbox
 # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
 INSERT INTO `d3`.`t`(`x`) VALUES (1);
 INSERT INTO `d3`.`t`(`x`) VALUES (2);
@@ -729,14 +730,14 @@ INSERT INTO `d3`.`t`(`x`) VALUES (2);
    'GroupBy can sync issue 631'
 );
 
-$output = `../mk-table-sync h=127.1,P=12345,D=d1,t=t h=127.1,P=12345,D=d2,t=t h=127.1,P=12345,D=d3,t=t --print -v --algorithms Stream`;
+$output = `../mk-table-sync h=127.1,P=12345,u=msandbox,p=msandbox,D=d1,t=t h=127.1,P=12345,D=d2,t=t h=127.1,P=12345,D=d3,t=t --print -v --algorithms Stream`;
 is(
    $output,
-"# Syncing D=d2,P=12345,h=127.1,t=t
+"# Syncing D=d2,P=12345,h=127.1,p=...,t=t,u=msandbox
 # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
 INSERT INTO `d2`.`t`(`x`) VALUES (1);
 #      0       0      1      0 Stream    2    d1.t
-# Syncing D=d3,P=12345,h=127.1,t=t
+# Syncing D=d3,P=12345,h=127.1,p=...,t=t,u=msandbox
 # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
 INSERT INTO `d3`.`t`(`x`) VALUES (1);
 INSERT INTO `d3`.`t`(`x`) VALUES (2);
@@ -755,12 +756,12 @@ sleep 1;
 $slave_dbh->do('UPDATE issue_560.buddy_list SET buddy_id=0 WHERE player_id IN (333,334)');
 $slave_dbh->do('UPDATE issue_560.buddy_list SET buddy_id=0 WHERE player_id=486');
 
-diag(`../../mk-table-checksum/mk-table-checksum --replicate issue_560.checksum h=127.1,P=12345  -d issue_560 --chunk-size 50 > /dev/null`);
+diag(`../../mk-table-checksum/mk-table-checksum --replicate issue_560.checksum h=127.1,P=12345,u=msandbox,p=msandbox  -d issue_560 --chunk-size 50 > /dev/null`);
 sleep 1;
-$output = `../../mk-table-checksum/mk-table-checksum --replicate issue_560.checksum h=127.1,P=12345  -d issue_560 --replicate-check 1 --chunk-size 50`;
+$output = `../../mk-table-checksum/mk-table-checksum --replicate issue_560.checksum h=127.1,P=12345,u=msandbox,p=msandbox  -d issue_560 --replicate-check 1 --chunk-size 50`;
 is(
    $output,
-"Differences on P=12346,h=127.0.0.1
+"Differences on P=12346,h=127.0.0.1,p=...,u=msandbox
 DB        TBL        CHUNK CNT_DIFF CRC_DIFF BOUNDARIES
 issue_560 buddy_list     6        0        1 `player_id` >= 301 AND `player_id` < 351
 issue_560 buddy_list     9        0        1 `player_id` >= 451
@@ -769,10 +770,10 @@ issue_560 buddy_list     9        0        1 `player_id` >= 451
    'Found checksum differences (issue 560)'
 );
 
-$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_560 --print -v -v  --chunk-size 50 --replicate issue_560.checksum`;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox -d issue_560 --print -v -v  --chunk-size 50 --replicate issue_560.checksum`;
 is(
    $output,
-"# Syncing via replication P=12346,h=127.1
+"# Syncing via replication P=12346,h=127.1,p=...,u=msandbox
 # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
 # SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((`player_id` >= 301 AND `player_id` < 351)) FOR UPDATE
 # SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((`player_id` >= 301 AND `player_id` < 351)) LOCK IN SHARE MODE
@@ -799,7 +800,7 @@ REPLACE INTO `issue_560`.`buddy_list`(`player_id`, `buddy_id`) VALUES (486, 1660
 # #############################################################################
 diag(`/tmp/12345/use < samples/issue_634.sql`);
 $slave_dbh->do('insert into issue_634.t values (1)');
-$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_634 --execute --algorithms Nibble 2>&1`;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox -d issue_634 --execute --algorithms Nibble 2>&1`;
 unlike(
    $output,
    qr/Cannot nibble/,
@@ -816,10 +817,10 @@ is_deeply(
 # #############################################################################
 diag(`/tmp/12345/use < samples/issue_644.sql`);
 sleep 1;
-$output = `../mk-table-sync --sync-to-master h=127.1,P=12346 -d issue_644 --print --chunk-size 2 -v`;
+$output = `../mk-table-sync --sync-to-master h=127.1,P=12346,u=msandbox,p=msandbox -d issue_644 --print --chunk-size 2 -v`;
 is(
    $output,
-"# Syncing P=12346,h=127.1
+"# Syncing P=12346,h=127.1,p=...,u=msandbox
 # DELETE REPLACE INSERT UPDATE ALGORITHM EXIT DATABASE.TABLE
 #      0       0      0      0 Nibble    0    issue_644.t
 ",
