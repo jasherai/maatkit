@@ -18,9 +18,7 @@ my $slave_1_dbh  = $sb->get_dbh_for('slave1')
 # Create slave2 as slave of slave1.
 diag(`/tmp/12347/stop 2> /dev/null`);
 diag(`rm -rf /tmp/12347 2> /dev/null`);
-diag(`../../sandbox/make_sandbox 12347`);
-diag(`/tmp/12347/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=12346"`);
-diag(`/tmp/12347/use -e "start slave"`);
+diag(`../../sandbox/start-sandbox slave 12347 12346`);
 my $slave_2_dbh = $sb->get_dbh_for('slave2')
    or BAIL_OUT('Cannot connect to sandbox slave2');
 
@@ -47,7 +45,7 @@ is(
 );
 
 # Move slave2 from being slave of slave1 to slave of master.
-mk_slave_move::main('--sibling-of-master', 'h=127.1,P=12347');
+mk_slave_move::main('--sibling-of-master', 'h=127.1,P=12347,u=msandbox,p=msandbox');
 $row = $slave_2_dbh->selectall_arrayref('SHOW SLAVE STATUS', {Slice => {}});
 ok(
    $row->[0]->{Master_Port} eq '12345',
@@ -55,7 +53,7 @@ ok(
 );
 
 # Move slave2 back to being slave of slave1.
-mk_slave_move::main(qw(--slave-of-sibling h=127.1 --port 12347), 'h=127.1,P=12346');
+mk_slave_move::main('--slave-of-sibling', 'h=127.1,u=msandbox,p=msandbox', qw(--port 12347), 'h=127.1,P=12346,u=msandbox,p=msandbox');
 $row = $slave_2_dbh->selectall_arrayref('SHOW SLAVE STATUS', {Slice => {}});
 ok(
    $row->[0]->{Master_Port} eq '12346',
@@ -66,7 +64,7 @@ ok(
 # Issue 391: Add --pid option to all scripts
 # #########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `../mk-slave-move --sibling-of-master h=127.1,P=12347 --pid /tmp/mk-script.pid 2>&1`;
+$output = `../mk-slave-move --sibling-of-master h=127.1,P=12347,u=msandbox,p=msandbox --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},
