@@ -559,7 +559,7 @@ sub _packet_from_server {
                cmd       => 'Admin',
                arg       => 'administrator command: Connect',
                ts        => $packet->{ts},
-               Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
+               Error_no  => $error->{errno},
             };
             return $self->_make_event($event, $packet, $session);
             $session->{state} = 'closing';

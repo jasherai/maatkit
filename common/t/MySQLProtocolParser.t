@@ -184,7 +184,7 @@ run_test({
          pos_in_log => 1455,
          bytes      => length('administrator command: Connect'),
          cmd        => 'Admin',
-         Error_no   => "#1045",
+         Error_no   => 1045,
          Rows_affected => 0,
          Warning_count      => 0,
          No_good_index_used => 'No',
