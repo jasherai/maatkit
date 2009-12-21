@@ -1,6 +1,8 @@
 Changelog for mk-parallel-restore:
 
+   * DELETE statements replicated despite --no-bin-log (issue 726).
    * The script crashed immediately on some OS or versions of Perl (issue 733).
+
 2009-12-02: version 1.0.18
 
    * Failed to restore InnoDB tables (issue 683).

@@ -2642,7 +2642,7 @@ sub do_table {
             = $args{tp}->remove_secondary_indexes($table_ddl);
       }
 
-      my @sql;      
+      my @sql;
       push @sql, "USE `$db`";
       push @sql, 'SET SQL_LOG_BIN=0' unless $o->get('bin-log');
       push @sql, 'SET FOREIGN_KEY_CHECKS=0' unless $o->get('foreign-key-checks');
@@ -2904,17 +2904,13 @@ sub skip_finished_chunks {
       if ( defined $chunks->[$first_missing_chunk] ) {
          # We need to DELETE the first missing chunk otherwise we may try to
          # INSERT dupliate values.
-         my $sql = "DELETE FROM $db_tbl WHERE "
-                 . $chunks->[$first_missing_chunk];
-         MKDEBUG && _d($sql);
-         eval {
-            $dbh->do($sql);
-         };
-         if ( $EVAL_ERROR ) {
-            warn "Failed to delete first missing chunk.\n"
-               . "SQL: $sql\n"
-               . "Error: $EVAL_ERROR";
-         }
+         my @sql;
+         push @sql, 'SET FOREIGN_KEY_CHECKS=0'
+            unless $o->get('foreign-key-checks');
+         push @sql, 'SET SQL_LOG_BIN=0'
+            unless $o->get('bin-log');
+         push @sql, "DELETE FROM $db_tbl WHERE $chunks->[$first_missing_chunk]";
+         _do($dbh, $o->get('dry-run'), @sql);
       }
 
       my $first_file = 0;
@@ -3100,8 +3096,8 @@ mk-parallel-restore writes and modifies data unless the L<"--dry-run"> option
 is used.  Restore operations may be replicated unless C<--no-bin-log> is
 given, so be careful when restoring on a master.  See L<"--[no]bin-log">.
 
-At the time of this release there is a bug which allows DELETE statements
-to replicate despite --no-bin-log, unless --no-resume is specified.
+At the time of this release, we know of no bugs that could cause serious harm to
+users.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
