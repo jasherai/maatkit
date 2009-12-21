@@ -37,7 +37,7 @@ sub no_diff {
 
 # Issue 747: Make mk-upgrade rewrite non-SELECT
 
-my $cmd = '../mk-upgrade h=127.1,P=12345 P=12347 -u msandbox -p msandbox --compare results,warnings --zero-query-times --non-select --fingerprints';
+my $cmd = '../mk-upgrade h=127.1,P=12345 P=12347 -u msandbox -p msandbox --compare results,warnings --zero-query-times --convert-to-select --fingerprints';
 
 my $c1 = $dbh1->selectrow_arrayref('checksum table test.t')->[1];
 my $c2 = $dbh2->selectrow_arrayref('checksum table test.t')->[1];

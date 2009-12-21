@@ -3,7 +3,7 @@ Changelog for mk-upgrade:
    * The script crashed immediately on some OS or versions of Perl (issue 733).
    * Changed output to print sample query instead of fingerprints.
    * Added --fingerprints.
-   * Added --non-select to convert non-SELECT statements (issue 747).
+   * Added --convert-to-select (issue 747).
    * Added --shorten.
    * Script crashed when subreport query IDs were too long.
 
