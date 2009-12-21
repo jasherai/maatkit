@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 117;
+use Test::More tests => 118;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -236,6 +236,12 @@ ok(
    no_diff($run_with . 'slow030.txt --no-report --table-access',
       'samples/slow030_table_access.txt'),
    'Analysis for slow030 with --table-access'
+);
+
+ok(
+   no_diff($run_with . 'tcpdump003.txt --type tcpdump',
+      'samples/tcpdump003.txt'),
+   'Analysis for tcpdump003 with numeric Error_no'
 );
 
 # #############################################################################

@@ -2237,7 +2237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5317
+# MySQLProtocolParser package 5346
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2706,7 +2706,7 @@ sub _packet_from_server {
                cmd       => 'Admin',
                arg       => 'administrator command: Connect',
                ts        => $packet->{ts},
-               Error_no  => $error->{errno} ? "#$error->{errno}" : 'none',
+               Error_no  => $error->{errno},
             };
             return $self->_make_event($event, $packet, $session);
             $session->{state} = 'closing';
@@ -8459,6 +8459,7 @@ sub main {
             key_print    => 'string',
             Status_code  => 'string',
             Statement_id => 'string',
+            Error_no     => 'string',
          },
       );
       push @ea, $ea;
