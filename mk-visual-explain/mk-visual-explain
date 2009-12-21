@@ -2823,7 +2823,14 @@ See also L<mk-query-profiler>.
 
 =head1 AUTHOR
 
-Baron "Xaprb" Schwartz.
+Baron "Xaprb" Schwartz
+
+=head1 ABOUT MAATKIT
+
+This tool is part of Maatkit, a toolkit for power users of MySQL.  Maatkit
+was created by Baron Schwartz; Baron and Daniel Nichter are the primary
+code contributors.  Both are employed by Percona.  Financial support for
+Maatkit development is primarily provided by Percona and its clients. 
 
 =head1 VERSION
 
