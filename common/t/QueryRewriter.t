@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 144;
+use Test::More tests => 149;
 
 require "../QueryRewriter.pm";
 require '../QueryParser.pm';
@@ -72,12 +72,6 @@ is(
    $qr->fingerprint('# administrator command: Init DB'),
    '# administrator command: Init DB',
    'Fingerprints admin commands as themselves',
-);
-
-is(
-   $qr->distill('# administrator command: Init DB'),
-   'ADMIN',
-   'Distills admin commands together',
 );
 
 is(
@@ -983,5 +977,45 @@ foreach my $show ( @show ) {
       "distills SHOW $show"
    );
 }
+
+# #############################################################################
+#  Issue 735: mk-query-digest doesn't distill query correctly
+# #############################################################################
+
+is( 
+	$qr->distill('SHOW /*!50002 GLOBAL */ STATUS'),
+	'SHOW STATUS',
+	"distills SHOW STATUS"
+);
+
+is( 
+	$qr->distill('SHOW /*!50002 ENGINE */ INNODB STATUS'),
+	'SHOW INNODB STATUS',
+	"distills SHOW INNODB STATUS"
+);
+
+is( 
+	$qr->distill('SHOW MASTER LOGS'),
+	'SHOW MASTER LOGS',
+	"distills SHOW MASTER LOGS"
+);
+
+is( 
+	$qr->distill('SHOW GLOBAL STATUS'),
+	'SHOW GLOBAL STATUS',
+	"distills SHOW GLOBAL STATUS"
+);
+
+is( 
+	$qr->distill('SHOW GLOBAL VARIABLES'),
+	'SHOW VARIABLES',
+	"distills SHOW VARIABLES"
+);
+
+is( 
+	$qr->distill('# administrator command: Statistics'),
+	'ADMIN STATISTICS',
+	"distills ADMIN STATISTICS"
+);
 
 exit;

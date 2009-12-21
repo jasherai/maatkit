@@ -47,6 +47,8 @@ $bal         = qr/
 # performance.  The multi-line pattern does not match version-comments.
 my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
+my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;                  # But for replacing SHOW + /*!version */
+my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;    		# ^^ if its starts with SHOW followed by version
 
 sub new {
    my ( $class, %args ) = @_;
@@ -57,8 +59,12 @@ sub new {
 # Strips comments out of queries.
 sub strip_comments {
    my ( $self, $query ) = @_;
+   return unless $query;
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
+   if ( $query =~ m/$vlc_rf/i ) { # contains show + version
+   			$query =~ s/$vlc_re//go;
+   }
    return $query;
 }
 
@@ -198,8 +204,11 @@ sub _distill_verbs {
    # Special cases.
    $query =~ m/\A\s*call\s+(\S+)\(/i
       && return "CALL $1"; # Warning! $1 used, be careful.
-   $query =~ m/\A# administrator/
-      && return "ADMIN";
+   if ( $query =~ m/\A# administrator command:/ ) {
+		$query =~ s/# administrator command:/ADMIN/go;
+		$query = uc $query;
+       	return "$query";
+   }
    $query =~ m/\A\s*use\s+/
       && return "USE";
    $query =~ m/\A\s*UNLOCK TABLES/i
@@ -214,12 +223,13 @@ sub _distill_verbs {
       MKDEBUG && _d('SHOW', @what);
       return unless scalar @what;
       @what = map { uc $_ } grep { defined $_ } @what; 
-      # Handles SHOW CREATE * and SHOW * STATUS.
-      if ( $what[0] =~ m/CREATE/ || ($what[1] && $what[1] =~ m/STATUS/) ) {
-         return "SHOW $what[0] $what[1]";
+
+      # Handles SHOW CREATE * 			and SHOW * STATUS 					and SHOW MASTER *.
+      if ( $what[0] =~ m/CREATE/ || ($what[1] && $what[1] =~ m/STATUS/) || $what[0] =~ m/MASTER/ ) {
+        return "SHOW $what[0] $what[1]";
       }
       else {
-         return "SHOW $what[0]";
+		$what[0] =~ m/GLOBAL/ ? return "SHOW $what[1]" : return "SHOW $what[0]";
       }
    }
 
