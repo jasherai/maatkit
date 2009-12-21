@@ -30,11 +30,15 @@ SKIP: {
    diag(`rm -f $out_file.err`);
 
    like(`grep 'Server Specs' $out_file`, qr/Server Specs/, 'Server Specs');
-   like(`grep 'MySQL Instance' $out_file`, qr/MySQL Instance\s+\d+/, 'MySQL Instance');
 
-   # The persistent sandbox is purposefully broken so that
-   # long_query_time is out of sync.
-   like(`grep long_query_time $out_file`, qr/long_query_time\s+3\s+1/, 'long_query_time out of sync');
+   SKIP: {
+      skip 'mk-audit is deprecated', 2 if 1;
+      like(`grep 'MySQL Instance' $out_file`, qr/MySQL Instance\s+\d+/, 'MySQL Instance');
+
+      # The persistent sandbox is purposefully broken so that
+      # long_query_time is out of sync.
+      like(`grep long_query_time $out_file`, qr/long_query_time\s+3\s+1/, 'long_query_time out of sync');
+   };
 
    diag(`rm -f $out_file`);
 
