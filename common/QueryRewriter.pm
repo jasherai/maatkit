@@ -224,12 +224,15 @@ sub _distill_verbs {
       return unless scalar @what;
       @what = map { uc $_ } grep { defined $_ } @what; 
 
-      # Handles SHOW CREATE * 			and SHOW * STATUS 					and SHOW MASTER *.
-      if ( $what[0] =~ m/CREATE/ || ($what[1] && $what[1] =~ m/STATUS/) || $what[0] =~ m/MASTER/ ) {
-        return "SHOW $what[0] $what[1]";
+      # Handles SHOW CREATE * and SHOW * STATUS and SHOW MASTER *.
+      if ( $what[0] =~ m/CREATE/
+           || ($what[1] && $what[1] =~ m/STATUS/)
+           || $what[0] =~ m/MASTER/ ) {
+         return "SHOW $what[0] $what[1]";
       }
       else {
-		$what[0] =~ m/GLOBAL/ ? return "SHOW $what[1]" : return "SHOW $what[0]";
+         $what[0] =~ m/GLOBAL/ ? return "SHOW $what[1]"
+                  :              return "SHOW $what[0]";
       }
    }
 
