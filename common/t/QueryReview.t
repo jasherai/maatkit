@@ -60,8 +60,9 @@ my $log;
 open $log, '<', 'samples/slow006.txt' or bail_out($OS_ERROR);
 while ( $more_events ) {
    $event = $lp->parse_event(
-      fh      => $log,
-      oktorun => sub { $more_events = $_[0]; },
+      next_event => sub { return <$log>;    },
+      tell       => sub { return tell $log; },
+      oktorun    => sub { $more_events = $_[0]; },
    );
    $callback->($event) if $event;
 }
@@ -70,8 +71,9 @@ $more_events = 1;
 open $log, '<', 'samples/slow021.txt' or bail_out($OS_ERROR);
 while ( $more_events ) {
    $event = $lp->parse_event(
-      fh      => $log,
-      oktorun => sub { $more_events = $_[0]; },
+      next_event => sub { return <$log>;    },
+      tell       => sub { return tell $log; },
+      oktorun    => sub { $more_events = $_[0]; },
    );
    $callback->($event) if $event;
 }
