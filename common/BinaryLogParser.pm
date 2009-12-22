@@ -47,22 +47,22 @@ my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)
 # events from the filehandle and calls the callback with each event.
 sub parse_event {
    my ( $self, %args ) = @_;
-   my @required_args = qw(fh);
+   my @required_args = qw(next_event tell);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
+   my ($next_event, $tell) = @args{@required_args};
 
    local $INPUT_RECORD_SEPARATOR = ";\n#";
-   my $pos_in_log = tell($fh);
+   my $pos_in_log = $tell->();
    my $stmt;
    my ($delim, $delim_len) = ($self->{delim}, $self->{delim_len});
 
    EVENT:
-   while ( defined($stmt = <$fh>) ) {
+   while ( defined($stmt = $next_event->()) ) {
       my @properties = ('pos_in_log', $pos_in_log);
       my ($ts, $sid, $end, $type, $rest);
-      $pos_in_log = tell($fh);
+      $pos_in_log = $tell->();
       $stmt =~ s/;\n#?\Z//;
 
       my ( $got_offset, $got_hdr );
