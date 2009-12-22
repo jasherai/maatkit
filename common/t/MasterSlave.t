@@ -242,6 +242,7 @@ ok($res, 'Waited for some events');
 # Clear any START SLAVE UNTIL conditions.
 map { $ms->stop_slave($_) } @slaves;
 map { $ms->start_slave($_) } @slaves;
+sleep 1;
 
 $ms->stop_slave($slaves[0]);
 $dbh->do('drop database if exists test'); # Any stmt will do
