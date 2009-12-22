@@ -11,43 +11,19 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 require "../GeneralLogParser.pm";
+require "../MaatkitTest.pm";
+
+MaatkitTest->import(qw(test_log_parser));
 
 my $p = new GeneralLogParser();
 
-sub run_test {
-   my ( $def ) = @_;
-   map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:misc|file|result|num_events|oktorun)$/ }
-      keys %$def;
-   my @e;
-   eval {
-      open my $fh, "<", $def->{file} or die $OS_ERROR;
-      my %args = (
-         fh      => $fh,
-         misc    => $def->{misc},
-         oktorun => $def->{oktorun},
-      );
-      while ( my $e = $p->parse_event(%args) ) {
-         push @e, $e;
-      }
-      close $fh;
-   };
-   is($EVAL_ERROR, '', "No error on $def->{file}");
-   if ( defined $def->{result} ) {
-      is_deeply(\@e, $def->{result}, $def->{file})
-         or print "Got: ", Dumper(\@e);
-   }
-   if ( defined $def->{num_events} ) {
-      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
-   }
-}
-
 my $oktorun = 1;
 
-run_test({
+test_log_parser(
+   parser  => $p,
    file    => 'samples/genlog001.txt',
    oktorun => sub { $oktorun = $_[0]; },
-   result => [
+   result  => [
       {  ts         => '051007 21:55:24',
          Thread_id  => '42',
          arg        => 'administrator command: Connect',
@@ -116,7 +92,7 @@ run_test({
          Query_time => 0,
       },
    ]
-});
+);
 
 is(
    $oktorun,

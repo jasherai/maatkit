@@ -11,46 +11,16 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Indent    = 1;
 
 require "../SlowLogParser.pm";
+require "../MaatkitTest.pm";
+
+MaatkitTest->import(qw(test_log_parser));
 
 my $p = new SlowLogParser;
 
-sub _read {
-   my ( $fh ) = @_;
-   return <$fh>;
-}
-
-sub run_test {
-   my ( $def ) = @_;
-   map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:misc|file|result|num_events|oktorun)$/ }
-      keys %$def;
-   my @e;
-   eval {
-      open my $fh, "<", $def->{file} or die $OS_ERROR;
-      my %args = (
-         next_event => sub { return _read($fh); },
-         tell       => sub { return tell($fh);  },
-         misc       => $def->{misc},
-         oktorun    => $def->{oktorun},
-      );
-      while ( my $e = $p->parse_event(%args) ) {
-         push @e, $e;
-      }
-      close $fh;
-   };
-   is($EVAL_ERROR, '', "No error on $def->{file}");
-   if ( defined $def->{result} ) {
-      is_deeply(\@e, $def->{result}, $def->{file})
-         or print "Got: ", Dumper(\@e);
-   }
-   if ( defined $def->{num_events} ) {
-      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
-   }
-}
-
 # Check that I can parse a slow log in the default slow log format.
-run_test({
-   file => 'samples/slow001.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow001.txt',
    result => [
       {  ts            => '071015 21:43:52',
          user          => 'root',
@@ -81,11 +51,12 @@ run_test({
          cmd           => 'Query',
       },
    ],
-});
+);
 
 # This one has complex SET insert_id=34484549,timestamp=1197996507;
-run_test({
-   file => 'samples/slow002.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow002.txt',
    result => [
       {  arg            => 'BEGIN',
          ts             => '071218 11:48:27',
@@ -309,11 +280,12 @@ SET    biz = \'91848182522\'',
          bytes          => 41,
       },
    ],
-});
+);
 
 # Microsecond format.
-run_test({
-   file => 'samples/microslow001.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/microslow001.txt',
    result => [
       {  ts            => '071015 21:43:52',
          user          => 'root',
@@ -343,12 +315,13 @@ run_test({
          bytes          => 68,
       },
    ],
-});
+);
 
 # A log that starts with a blank line.
-run_test(
-   {  file   => 'samples/slow003.txt',
-      result => [
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow003.txt',
+   result => [
          {  Disk_filesort  => 'No',
             Disk_tmp_table => 'No',
             Filesort       => 'No',
@@ -372,12 +345,12 @@ run_test(
             bytes          => 5,
          },
       ],
-   }
 );
 
-run_test(
-   {  file   => 'samples/slow004.txt',
-      result => [
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow004.txt',
+   result => [
          {  Lock_time     => '0',
             Query_time    => '2',
             Rows_examined => '0',
@@ -392,13 +365,13 @@ run_test(
             bytes      => 59,
          },
       ],
-   },
 );
 
 # Check a slow log that has tabs in it.
-run_test(
-   {  file   => 'samples/slow005.txt',
-      result => [
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow005.txt',
+   result => [
          {  arg            => "foo\nbar\n\t\t\t0 AS counter\nbaz",
             ts             => '071218 11:48:27',
             Disk_filesort  => 'No',
@@ -422,12 +395,12 @@ run_test(
             bytes          => 27,
          },
       ],
-   }
 );
 
 # A bunch of case-sensitive and case-insensitive USE stuff.
-run_test({
-   file => 'samples/slow006.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow006.txt',
    result => [
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -568,11 +541,12 @@ run_test({
          bytes          => 23,
       }
    ],
-});
+);
 
 # Schema
-run_test({
-   file => 'samples/slow007.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow007.txt',
    result => [
       {  Schema         => 'food',
          arg            => 'SELECT fruit FROM trees',
@@ -598,13 +572,14 @@ run_test({
          bytes          => 23,
       },
    ],
-});
+);
 
 # Check for number of events to see that it doesn't just run forever
 # to the end of the file without returning between events.
 # Also check it parses commented event (admin cmd).
-run_test({
-   file => 'samples/slow008.txt',
+test_log_parser(
+   parser     => $p,
+   file       => 'samples/slow008.txt',
    num_events => 3,
    result => [
       {  'Schema'        => 'db1',
@@ -651,10 +626,11 @@ run_test({
          bytes           => 31,
       },
    ],
-});
+);
 
 # Parse embedded meta-attributes
-run_test({
+test_log_parser(
+   parser => $p,
    misc   => { embed   => qr/ -- .*/, capture => qr/(\w+): ([^,]+)/ },
    file   => 'samples/slow010.txt',
    result => [
@@ -675,12 +651,14 @@ run_test({
          bytes         => 91,
       },
    ],
-});
+);
+
 $p = new SlowLogParser;
 
 # Parses commented event lines after uncommented meta-lines
-run_test({
-   file => 'samples/slow011.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow011.txt',
    result => [
       {  'Schema'        => 'db1',
          'arg'           => '# administrator command: Quit',
@@ -742,11 +720,12 @@ run_test({
          bytes           => 14,
       }
    ],
-});
+);
 
 # events that might look like meta data
-run_test({
-   file => 'samples/slow012.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow012.txt',
    result => [
       {  'Schema'        => 'sab',
          'arg'           => 'SET autocommit=1',
@@ -777,12 +756,13 @@ run_test({
          bytes           => 16,
       },
    ],
-});
+);
 
 # A pathological test case to be sure a crash doesn't happen.  Has a bunch of
 # "use" and "set" and administrator commands etc.
-run_test({
-   file => 'samples/slow013.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow013.txt',
    result => [
       {  'Schema'        => 'abc',
          'cmd'           => 'Query',
@@ -859,11 +839,12 @@ run_test({
          bytes           => 6,
       }
    ],
-});
+);
 
 # events with a lot of headers
-run_test({
-   file => 'samples/slow014.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow014.txt',
    result => [
       {  ts            => '071015 21:43:52',
          cmd           => 'Query',
@@ -894,16 +875,18 @@ run_test({
          bytes         => 22,
       },
    ],
-});
+);
 
 # No error parsing truncated event with no newline
-run_test({
-   file => 'samples/slow015.txt',
-});
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow015.txt',
+);
 
 # Some more silly stuff with USE meta-data lines.
-run_test({
-   file => 'samples/slow016.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow016.txt',
    result => [
       {  user          => 'root',
          cmd           => 'Query',
@@ -940,13 +923,14 @@ run_test({
          bytes         => 23,
       },
    ],
-});
+);
 
 # This is fixed in EventAggregator so that we can parse
 # Client: IP:port because an IP looks like a broken Query_time.
 # Check that issue 234 doesn't kill us (broken Query_time).
-#run_test({
-#   file => 'samples/slow017.txt',
+#test_log_parser(
+#   parser => $p,
+#   file   => 'samples/slow017.txt',
 #   result => [
 #      {  ts            => '081116 15:07:11',
 #         cmd           => 'Query',
@@ -969,8 +953,9 @@ run_test({
 
 # Has some more combinations of meta-data and explicit query lines and
 # administrator commands.
-run_test({
-   file => 'samples/slow019.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow019.txt',
    result => [
       {  Lock_time     => '0.000000',
          Query_time    => '0.000002',
@@ -1017,12 +1002,13 @@ run_test({
          bytes         => 29,
       }
    ],
-});
+);
 
 # Parse files that begin with Windows paths.  It also has TWO lines of
 # meta-data.  This is from MySQL 5.1 on Windows.
-run_test({
-   file => 'samples/slow031.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow031.txt',
    result => [
       {  Lock_time     => '0.000000',
          Query_time    => '0.453125',
@@ -1040,13 +1026,14 @@ run_test({
          bytes         => 22,
       },
    ],
-});
+);
 
 # samples/slow021.txt is for mk-query-digest.  It has an entry without a Time.
 
 # samples/slow022.txt has garbled Time entries.
-run_test({
-   file => 'samples/slow022.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow022.txt',
    result => [
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -1181,11 +1168,12 @@ run_test({
          bytes         => 23,
       },
    ],
-});
+);
 
 # samples/slow025.txt has an empty Schema.
-run_test({
-   file => 'samples/slow025.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow025.txt',
    result => [
       {  Lock_time     => '0.000066',
          Query_time    => '17.737502',
@@ -1203,14 +1191,15 @@ run_test({
          user          => 'root'
       }
    ],
-});
+);
 
 # #############################################################################
 # Test a callback chain.
 # #############################################################################
 my $oktorun = 1;
 
-run_test({
+test_log_parser(
+   parser  => $p,
    file    => 'samples/slow001.txt',
    oktorun => sub { $oktorun = $_[0]; },
    result => [
@@ -1243,7 +1232,7 @@ run_test({
          cmd           => 'Query',
       },
    ],
-});
+);
 
 is(
    $oktorun,
@@ -1254,8 +1243,9 @@ is(
 # #############################################################################
 # Parse "Client: IP:port".
 # #############################################################################
-run_test({
-   file => 'samples/slow036.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/slow036.txt',
    result => [
       {  Lock_time     => '0.000000',
          Query_time    => '0.000000',
@@ -1269,7 +1259,7 @@ run_test({
          Client        => '127.0.0.1:12345',
       }
    ],
-});
+);
 
 # #############################################################################
 # Done.

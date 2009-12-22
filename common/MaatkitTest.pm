@@ -33,8 +33,11 @@ our %EXPORT_TAGS = ();
 our @EXPORT      = qw();
 our @EXPORT_OK   = qw(
    output
+   load_data
    load_file
    wait_until
+   test_log_parser
+   test_tcpdump_parser
 );
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
@@ -49,6 +52,16 @@ sub output {
    close $output_fh;
    select STDOUT;
    return $EVAL_ERROR ? $EVAL_ERROR : $output;
+}
+
+# Load hex dump data from file and removes spaces.
+sub load_data {
+   my ( $file ) = @_;
+   open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
+   my $contents = do { local $/ = undef; <$fh> };
+   close $fh;
+   (my $data = join('', $contents =~ m/(.*)/g)) =~ s/\s+//g;
+   return $data;
 }
 
 sub load_file {
@@ -68,11 +81,104 @@ sub wait_until {
    $max_t ||= 5;
    $t *= 1_000_000;
    while ( $slept <= $max_t ) {
+      return if $code->();
       usleep($t);
       $slept += $sleep_int;
-      return if $code->();
    }
    return;
+}
+
+
+sub _read {
+   my ( $fh ) = @_;
+   return <$fh>;
+}
+
+sub test_log_parser {
+   my ( %args ) = @_;
+   foreach my $arg ( qw(parser file) ) {
+      BAIL_OUT("I need a $arg argument") unless $args{$arg};
+   }
+   my $p = $args{parser};
+
+   # Make sure caller isn't giving us something we don't understand.
+   # We could ignore it, but then caller might not get the results
+   # they expected.
+   map  { BAIL_OUT("What is $_ for?") }
+   grep { $_ !~ m/^(?:parser|misc|file|result|num_events|oktorun)$/ }
+   keys %args;
+
+   my @e;
+   eval {
+      open my $fh, "<", $args{file}
+         or BAIL_OUT("Cannot open $args{file}: $OS_ERROR");
+      my %args = (
+         next_event => sub { return _read($fh); },
+         tell       => sub { return tell($fh);  },
+         misc       => $args{misc},
+         oktorun    => $args{oktorun},
+      );
+      while ( my $e = $p->parse_event(%args) ) {
+         push @e, $e;
+      }
+      close $fh;
+   };
+
+   is(
+      $EVAL_ERROR,
+      '',
+      "No error on $args{file}"
+   );
+
+   if ( defined $args{result} ) {
+      is_deeply(
+         \@e,
+         $args{result},
+         $args{file}
+      ) or print "Got: ", Dumper(\@e);
+   }
+
+   if ( defined $args{num_events} ) {
+      is(
+         scalar @e,
+         $args{num_events},
+         "$args{file} num_events"
+      );
+   }
+
+   return;
+}
+
+sub run_tcpdump_test {
+   my ( $tcpdump, $p, $def ) = @_;
+   map     { die "What is $_ for?" }
+      grep { $_ !~ m/^(?:misc|file|result|num_events|desc)$/ }
+      keys %$def;
+   my @e;
+   eval {
+      open my $fh, "<", $def->{file}
+         or BAIL_OUT("Cannot open $def->{file}: $OS_ERROR");
+      my %args = (
+         fh   => $fh,
+         misc => $def->{misc},
+      );
+      while ( my $packet = $tcpdump->parse_event(%args) ) {
+         my $e = $p->parse_event(%args, event => $packet);
+         push @e, $e if $e;
+      }
+      close $fh;
+   };
+   is($EVAL_ERROR, '', "No error on $def->{file}");
+   if ( defined $def->{result} ) {
+      is_deeply(
+         \@e,
+         $def->{result},
+         $def->{file} . ($def->{desc} ? ": $def->{desc}" : '')
+      ) or print "Got: ", Dumper(\@e);
+   }
+   if ( defined $def->{num_events} ) {
+      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
+   }
 }
 
 1;

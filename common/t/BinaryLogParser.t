@@ -11,49 +11,19 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 require "../BinaryLogParser.pm";
+require "../MaatkitTest.pm";
+
+MaatkitTest->import(qw(test_log_parser));
 
 my $p = new BinaryLogParser();
 
 my $oktorun = 1;
 
-sub _read {
-   my ( $fh ) = @_;
-   return <$fh>;
-}
-
-sub run_test {
-   my ( $def ) = @_;
-   map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:misc|file|result|num_events|oktorun)$/ }
-      keys %$def;
-   my @e;
-   eval {
-      open my $fh, "<", $def->{file} or die $OS_ERROR;
-      my %args = (
-         next_event => sub { return _read($fh); },
-         tell       => sub { return tell($fh);  },
-         misc       => $def->{misc},
-         oktorun    => $def->{oktorun},
-      );
-      while ( my $e = $p->parse_event(%args) ) {
-         push @e, $e;
-      }
-      close $fh;
-   };
-   is($EVAL_ERROR, '', "No error on $def->{file}");
-   if ( defined $def->{result} ) {
-      is_deeply(\@e, $def->{result}, $def->{file})
-         or print "Got: ", Dumper(\@e);
-   }
-   if ( defined $def->{num_events} ) {
-      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
-   }
-}
-
-run_test({
+test_log_parser(
+   parser  => $p,
    file    => 'samples/binlog001.txt',
    oktorun => sub { $oktorun = $_[0]; },
-   result => [
+   result  => [
   {
     '@@session.character_set_client' => '8',
     '@@session.collation_connection' => '8',
@@ -213,7 +183,7 @@ run_test({
     ts => undef
   }
 ]
-});
+);
 
 is(
    $oktorun,
@@ -221,8 +191,9 @@ is(
    'Sets oktorun'
 );
 
-run_test({
-   file => 'samples/binlog002.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/binlog002.txt',
    result => [
   {
     arg => 'ROLLBACK',
@@ -293,15 +264,16 @@ run_test({
     ts => undef
   }
    ]
-});
+);
 
 # #############################################################################
 # Issue 606: Unknown event type Rotate at ./mk-slave-prefetch
 # #############################################################################
-run_test({
-   file => 'samples/binlog006.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'samples/binlog006.txt',
    result => [],
-});
+);
 
 # #############################################################################
 # Done.

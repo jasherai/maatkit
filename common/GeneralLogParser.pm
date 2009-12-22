@@ -56,18 +56,21 @@ my $genlog_line_1= qr{
 # callback with each event.
 sub parse_event {
    my ( $self, %args ) = @_;
-   my @required_args = qw(fh);
+   my @required_args = qw(next_event tell);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
+   my ($next_event, $tell) = @args{@required_args};
 
    my $pending = $self->{pending};
    my $db_for  = $self->{db_for};
    my $line;
-   my $pos_in_log = tell($fh);
+   my $pos_in_log = $tell->();
    LINE:
-   while ( (defined($line = shift @$pending) or defined($line = <$fh>)) ) {
+   while (
+         defined($line = shift @$pending)
+      or defined($line = $next_event->())
+   ) {
       MKDEBUG && _d($line);
       my ($ts, $thread_id, $cmd, $arg) = $line =~ m/$genlog_line_1/;
       if ( !($thread_id && $cmd) ) {
@@ -78,14 +81,14 @@ sub parse_event {
       my @properties = ('pos_in_log', $pos_in_log, 'ts', $ts,
          'Thread_id', $thread_id);
 
-      $pos_in_log = tell($fh);
+      $pos_in_log = $tell->();
 
       @$pending = ();
       if ( $cmd eq 'Query' ) {
          # There may be more lines to this query.
          my $done = 0;
          do {
-            $line = <$fh>;
+            $line = $next_event->();
             if ( $line ) {
                ($ts, $thread_id, $cmd, undef) = $line =~ m/$genlog_line_1/;
                if ( $thread_id && $cmd ) {
