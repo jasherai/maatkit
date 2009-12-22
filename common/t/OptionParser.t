@@ -323,6 +323,8 @@ like(
 
 @ARGV = qw(--bar);
 eval {
+   local *STDERR;
+   open STDERR, '>', '/dev/null';
    $o->get_opts();
    $o->get('bar');
 };
@@ -549,7 +551,11 @@ is(
 );
 
 @ARGV = qw(--nodog);
-$o->get_opts();
+{
+   local *STDERR;
+   open STDERR, '>', '/dev/null';
+   $o->get_opts();
+}
 is_deeply(
    $o->get('dog'),
    undef,
@@ -613,9 +619,9 @@ is(
    $o->print_usage(),
 <<EOF
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 
-Usage: OptionParser.t [OPTIONS]
+Usage: $PROGRAM_NAME [OPTIONS]
 
 Options:
 
@@ -650,9 +656,9 @@ is(
    $o->print_usage(),
 <<EOF
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: $PROGRAM_NAME <options>
 
 Options:
 
@@ -714,13 +720,13 @@ is_deeply(
 is(
    $o->print_errors(),
 <<EOF
-Usage: OptionParser.t <options>
+Usage: $PROGRAM_NAME <options>
 
 Errors in command-line arguments:
   * Required option --cat must be specified
 
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 EOF
 ,
    'Error output includes note about missing required option'
@@ -751,9 +757,9 @@ is(
    $o->print_usage(),
 <<EOF
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: $PROGRAM_NAME <options>
 
 Options:
 
@@ -1154,9 +1160,9 @@ is(
    $o->print_usage(),
 <<EOF
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: $PROGRAM_NAME <options>
 
 Options:
 
@@ -1198,9 +1204,9 @@ is(
    $o->print_usage(),
 <<EOF
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: $PROGRAM_NAME <options>
 
 Options:
 
@@ -1270,9 +1276,9 @@ is(
    $o->print_usage(),
 <<EOF
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: $PROGRAM_NAME <options>
 
 Options:
 
@@ -1394,9 +1400,9 @@ is(
    $o->print_usage(),
 <<EOF
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: $PROGRAM_NAME <options>
 
 Options:
 
@@ -1452,9 +1458,9 @@ is(
    $o->print_usage(),
 <<EOF
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: $PROGRAM_NAME <options>
 
 Options:
 
@@ -1621,9 +1627,9 @@ is(
    $o->print_usage(),
 <<EOF
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: $PROGRAM_NAME <options>
 
 Options:
 
@@ -1661,9 +1667,9 @@ is(
    $o->print_usage(),
 <<EOF
 OptionParser.t parses command line options.  For more details, please use the
---help option, or try 'perldoc OptionParser.t' for complete documentation.
+--help option, or try 'perldoc $PROGRAM_NAME' for complete documentation.
 
-Usage: OptionParser.t <options>
+Usage: $PROGRAM_NAME <options>
 
 Options:
 
@@ -1690,7 +1696,11 @@ $o->_parse_specs(
 );
 
 @ARGV=qw(--cat --config /path/to/config);
-$o->get_opts();
+{
+   local *STDERR;
+   open STDERR, '>', '/dev/null';
+   $o->get_opts();
+}
 is_deeply(
    $o->errors(),
    ['Error parsing options', 'Unrecognized command-line options /path/to/config'],
