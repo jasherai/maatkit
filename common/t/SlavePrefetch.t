@@ -672,8 +672,9 @@ sub parse_binlog {
    my $more_events = 1;
    while ( $more_events ) {
       my $e = $parser->parse_event(
-         fh      => $fh,
-         oktorun => sub { $more_events = $_[0]; },
+         next_event => sub { return <$fh>;    },
+         tell       => sub { return tell $fh; },
+         oktorun    => sub { $more_events = $_[0]; },
       );
       push @events, $e if $e;
    }
