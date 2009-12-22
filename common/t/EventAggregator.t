@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 74;
+use Test::More tests => 73;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -28,8 +28,9 @@ sub parse_file {
    eval {
       open my $fh, "<", $file or BAIL_OUT($OS_ERROR);
       my %args = (
-         fh   => $fh,
-         misc => undef,
+         next_event => sub { return <$fh>;    },
+         tell       => sub { return tell $fh; },
+         misc       => undef,
       );
       while ( my $e = $p->parse_event(%args) ) {
          push @e, $e;
@@ -529,10 +530,10 @@ test_bucket_idx(20, 345);
 test_bucket_idx(97.356678643, 378);
 test_bucket_idx(100, 378);
 
-TODO: {
-   local $TODO = 'probably a float precision limitation';
-   test_bucket_idx(1402556844201353.5, 999); # first val in last bucket
-};
+#TODO: {
+#   local $TODO = 'probably a float precision limitation';
+#   test_bucket_idx(1402556844201353.5, 999); # first val in last bucket
+#};
 
 test_bucket_idx(9000000000000000.0, 999);
 
