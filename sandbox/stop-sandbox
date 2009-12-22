@@ -13,9 +13,9 @@ err() {
 # Sanity check the cmd line options.
 # ###########################################################################
 if [ $# -lt 1 ]; then
-   err "Usage: stop-sandbox all|port [port...]"           \
+   err "Usage: stop-sandbox [remove] all|port [port...]"  \
        "The 'all' option stops sandboxes /tmp/123[0-9]*." \
-       "The sandbox directorys are not removed."
+       "The sandbox directories are removed if the first option is 'remove'."
    exit 1
 fi
 
@@ -28,11 +28,18 @@ exit_status=0
 ls /tmp/1234* >/dev/null 2>&1
 if [ $? -eq 0 ]; then
    for port in $@; do
+      if [ "$port" = "remove" ]; then
+         continue
+      fi
+
       if [ "$port" = "all" ]; then
          for a in /tmp/123[0-9]*; do 
             $a/stop
             if [ $? -ne 0 ]; then
                exit_status=1
+            fi
+            if [ $1 = "remove" ]; then
+               rm -rf $a
             fi
          done
          break
@@ -42,6 +49,9 @@ if [ $? -eq 0 ]; then
          /tmp/$port/stop
          if [ $? -ne 0 ]; then
             exit_status=1
+         fi
+         if [ $1 = "remove" ]; then
+            rm -rf /tmp/$port
          fi
       fi
    done

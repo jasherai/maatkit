@@ -246,11 +246,10 @@ case $opt in
       ;;
    stop)
       cd $MAATKIT_TRUNK/sandbox
-      ./stop-sandbox all
+      ./stop-sandbox remove all
       exit_status=$?
       if [ $exit_status -eq 0 ]; then
          echo "Maatkit test environment stopped."
-         rm -rf /tmp/1234[5-9]* >/dev/null 2>&1
       else
          err "There was an error stopping the Maatkit test environment." \
              "The Maatkit sandboxes may still be running."
