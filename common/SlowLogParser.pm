@@ -72,11 +72,11 @@ my $slow_log_hd_line = qr{
 # form for performance reasons -- sometimes as much as 20x better performance.
 sub parse_event {
    my ( $self, %args ) = @_;
-   my @required_args = qw(fh);
+   my @required_args = qw(next_event tell);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
+   my ($next_event, $tell) = @args{@required_args};
 
    # Read a whole stmt at a time.  But, to make things even more fun, sometimes
    # part of the log entry might continue past the separator.  In these cases we
@@ -88,13 +88,16 @@ sub parse_event {
    my $pending = $self->{pending};
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $trimlen    = length($INPUT_RECORD_SEPARATOR);
-   my $pos_in_log = tell($fh);
+   my $pos_in_log = $tell->();
    my $stmt;
 
    EVENT:
-   while ( (defined($stmt = shift @$pending) or defined($stmt = <$fh>)) ) {
+   while (
+         defined($stmt = shift @$pending)
+      or defined($stmt = $next_event->())
+   ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
-      $pos_in_log = tell($fh);
+      $pos_in_log = $tell->();
 
       # If there were such lines in the file, we may have slurped > 1 event.
       # Delete the lines and re-split if there were deletes.  This causes the
@@ -218,7 +221,7 @@ sub parse_event {
             if ( !$found_arg && $pos == $len ) {
                MKDEBUG && _d("Did not find arg, looking for special cases");
                local $INPUT_RECORD_SEPARATOR = ";\n";
-               if ( defined(my $l = <$fh>) ) {
+               if ( defined(my $l = $next_event->()) ) {
                   chomp $l;
                   MKDEBUG && _d("Found admin statement", $l);
                   push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
@@ -260,7 +263,7 @@ sub parse_event {
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
       return $event;
-   }
+   } # EVENT
 
    @$pending = ();
    $args{oktorun}->(0) if $args{oktorun};

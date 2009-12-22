@@ -14,6 +14,11 @@ require "../SlowLogParser.pm";
 
 my $p = new SlowLogParser;
 
+sub _read {
+   my ( $fh ) = @_;
+   return <$fh>;
+}
+
 sub run_test {
    my ( $def ) = @_;
    map     { die "What is $_ for?" }
@@ -23,9 +28,10 @@ sub run_test {
    eval {
       open my $fh, "<", $def->{file} or die $OS_ERROR;
       my %args = (
-         fh      => $fh,
-         misc    => $def->{misc},
-         oktorun => $def->{oktorun},
+         next_event => sub { return _read($fh); },
+         tell       => sub { return tell($fh);  },
+         misc       => $def->{misc},
+         oktorun    => $def->{oktorun},
       );
       while ( my $e = $p->parse_event(%args) ) {
          push @e, $e;
