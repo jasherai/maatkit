@@ -66,25 +66,19 @@ sub new {
 # modular parser objects.
 sub parse_event {
    my ( $self, %args ) = @_;
-   my @required_args = qw(fh);
+   my @required_args = qw(next_event tell);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
-
-   # In case we get a closed fh, trying tell() on it will cause an error.
-   if ( !$fh ) {
-      MKDEBUG && _d('No filehandle');
-      return;
-   }
+   my ($next_event, $tell) = @args{@required_args};
 
    # We read a packet at a time.  Assuming that all packets begin with a
    # timestamp "20.....", we just use that as the separator, and restore it.
    # This will be good until the year 2100.
    local $INPUT_RECORD_SEPARATOR = "\n20";
 
-   my $pos_in_log = tell($fh);
-   while ( defined(my $raw_packet = <$fh>) ) {
+   my $pos_in_log = $tell->();
+   while ( defined(my $raw_packet = $next_event->()) ) {
       next if $raw_packet =~ m/^$/;  # issue 564
       $pos_in_log -= 1 if $pos_in_log;
 

@@ -85,11 +85,21 @@ is_deeply(
 
 my $oktorun = 1;
 
+sub _read {
+   my ( $fh ) = @_;
+   return <$fh>;
+}
+
 sub run_test {
    my ( $file, $desc, $result ) = @_;
    my @packets;
    open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
-   while ( my $packet = $p->parse_event(fh=>$fh, oktorun=>sub { $oktorun=$_[0]; }) ) {
+   my %args = (
+      next_event => sub { return _read($fh); },
+      tell       => sub { return tell($fh);  },
+      oktorun    => sub { $oktorun = $_[0];  },
+   );
+   while ( my $packet = $p->parse_event(%args) ) {
       push @packets, $packet;
    }
 
