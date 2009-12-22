@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 34;
+use Test::More tests => 31;
 
 require "../MasterSlave.pm";
 require "../DSNParser.pm";
@@ -29,68 +29,68 @@ my $slave_2_dbh = $sb->get_dbh_for('slave2');
 # Make slave2 slave of master.
 #diag(`../../mk-slave-move/mk-slave-move --sibling-of-master h=127.1,P=12347`);
 
-SKIP: {
-   skip 'idea for future improvement', 3;
-
-# Make sure we're messed up nicely.
-my $rows = $master_dbh->selectall_arrayref('SHOW SLAVE HOSTS', {Slice => {}});
-is_deeply(
-   $rows,
-   [
-      {
-         Server_id => '12346',
-         Host      => '127.0.0.1',
-         Port      => '12346',
-         Rpl_recovery_rank => '0',
-         Master_id => '12345',
-      },
-   ],
-   'show slave hosts on master is precisely inaccurate'
-);
-
-$rows = $slave_dbh->selectall_arrayref('SHOW SLAVE HOSTS', {Slice => {}});
-is_deeply(
-   $rows,
-   [
-      {
-         Server_id => '12347',     # This is what's messed up because
-         Host      => '127.0.0.1', # slave2 (12347) was made a slave
-         Port      => '12347',     # of the master (12345), yet here
-         Rpl_recovery_rank => '0', # it still shows as a slave of
-         Master_id => '12346', # <-- slave1 (12346)
-      },
-      {
-         Server_id => '12346',
-         Host      => '127.0.0.1',
-         Port      => '12346',
-         Rpl_recovery_rank => '0',
-         Master_id => '12345',
-      },
-   ],
-   'show slave hosts on slave1 is precisely inaccurate'
-);
-
-$rows = $slave_2_dbh->selectall_arrayref('SHOW SLAVE HOSTS', {Slice => {}});
-is_deeply(
-   $rows,
-   [
-      {
-         Server_id => '12347',     
-         Host      => '127.0.0.1', 
-         Port      => '12347',     # Even slave2 itself is confused about
-         Rpl_recovery_rank => '0', # which sever it is really a slave to:
-         Master_id => '12346', # <-- slave1 (123456) wrong again
-      },
-      {
-         Server_id => '12346',
-         Host      => '127.0.0.1',
-         Port      => '12346',
-         Rpl_recovery_rank => '0',
-         Master_id => '12345',
-      },
-   ],
-   'show slave hosts on slave2 is precisely inaccurate'
-);
+#SKIP: {
+#   skip 'idea for future improvement', 3;
+#
+## Make sure we're messed up nicely.
+#my $rows = $master_dbh->selectall_arrayref('SHOW SLAVE HOSTS', {Slice => {}});
+#is_deeply(
+#   $rows,
+#   [
+#      {
+#         Server_id => '12346',
+#         Host      => '127.0.0.1',
+#         Port      => '12346',
+#         Rpl_recovery_rank => '0',
+#         Master_id => '12345',
+#      },
+#   ],
+#   'show slave hosts on master is precisely inaccurate'
+#);
+#
+#$rows = $slave_dbh->selectall_arrayref('SHOW SLAVE HOSTS', {Slice => {}});
+#is_deeply(
+#   $rows,
+#   [
+#      {
+#         Server_id => '12347',     # This is what's messed up because
+#         Host      => '127.0.0.1', # slave2 (12347) was made a slave
+#         Port      => '12347',     # of the master (12345), yet here
+#         Rpl_recovery_rank => '0', # it still shows as a slave of
+#         Master_id => '12346', # <-- slave1 (12346)
+#      },
+#      {
+#         Server_id => '12346',
+#         Host      => '127.0.0.1',
+#         Port      => '12346',
+#         Rpl_recovery_rank => '0',
+#         Master_id => '12345',
+#      },
+#   ],
+#   'show slave hosts on slave1 is precisely inaccurate'
+#);
+#
+#$rows = $slave_2_dbh->selectall_arrayref('SHOW SLAVE HOSTS', {Slice => {}});
+#is_deeply(
+#   $rows,
+#   [
+#      {
+#         Server_id => '12347',     
+#         Host      => '127.0.0.1', 
+#         Port      => '12347',     # Even slave2 itself is confused about
+#         Rpl_recovery_rank => '0', # which sever it is really a slave to:
+#         Master_id => '12346', # <-- slave1 (123456) wrong again
+#      },
+#      {
+#         Server_id => '12346',
+#         Host      => '127.0.0.1',
+#         Port      => '12346',
+#         Rpl_recovery_rank => '0',
+#         Master_id => '12345',
+#      },
+#   ],
+#   'show slave hosts on slave2 is precisely inaccurate'
+#);
 
 # The real picture is:
 #    12345
@@ -115,7 +115,7 @@ is_deeply(
 # Stop and remove slave2.
 #diag(`/tmp/12347/stop`);
 #diag(`rm -rf /tmp/12347`);
-};
+#};
 
 # #############################################################################
 # First we need to setup a special replication sandbox environment apart from
@@ -134,11 +134,12 @@ my %port_for = (
    slave1 => 2902,
    slave2 => 2903,
 );
-foreach my $port ( sort values %port_for ) {
-   diag(`../../sandbox/make_sandbox $port`);
-}
+diag(`../../sandbox/start-sandbox master 2900`);
+diag(`../../sandbox/start-sandbox slave 2903 2900`);
+diag(`../../sandbox/start-sandbox slave 2901 2900`);
+diag(`../../sandbox/start-sandbox slave 2902 2901`);
 
-# I discovered something weird while updating this test. Below, you see that
+# I discovered something weird while updating this test. Above, you see that
 # slave2 is started first, then the others. Before, slave2 was started last,
 # but this caused the tests to fail because SHOW SLAVE HOSTS on the master
 # returned:
@@ -152,14 +153,6 @@ foreach my $port ( sort values %port_for ) {
 # Since the tests are senstive to the order of @slaves, they failed
 # because $slaves->[1] was no longer slave1 but slave0. Starting slave2
 # last fixes/works around this.
-diag(`/tmp/$port_for{slave2}/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=$port_for{master}"`);
-diag(`/tmp/$port_for{slave2}/use -e "start slave"`);
-
-diag(`/tmp/$port_for{slave0}/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=$port_for{master}"`);
-diag(`/tmp/$port_for{slave0}/use -e "start slave"`);
-
-diag(`/tmp/$port_for{slave1}/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=$port_for{slave0}"`);
-diag(`/tmp/$port_for{slave1}/use -e "start slave"`);
 
 # #############################################################################
 # Now the test.
@@ -168,7 +161,7 @@ my $dbh;
 my @slaves;
 my @sldsns;
 
-my $dsn = $dp->parse("h=127.0.0.1,P=$port_for{master}");
+my $dsn = $dp->parse("h=127.0.0.1,P=$port_for{master},u=msandbox,p=msandbox");
 $dbh    = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 
 my $callback = sub {
@@ -246,6 +239,10 @@ eval {
 };
 ok($res, 'Waited for some events');
 
+# Clear any START SLAVE UNTIL conditions.
+map { $ms->stop_slave($_) } @slaves;
+map { $ms->start_slave($_) } @slaves;
+
 $ms->stop_slave($slaves[0]);
 $dbh->do('drop database if exists test'); # Any stmt will do
 eval {
@@ -266,6 +263,10 @@ eval {
 };
 diag $EVAL_ERROR if $EVAL_ERROR;
 ok(!$EVAL_ERROR, 'Made slave sibling of master');
+
+# Clear any START SLAVE UNTIL conditions.
+map { $ms->stop_slave($_) } @slaves;
+map { $ms->start_slave($_) } @slaves;
 
 # The picture now:
 # 127.0.0.1:master
@@ -335,9 +336,8 @@ is($ms->get_slave_status($slaves[0]), 0, 'slave 1 detached');
 is($ms->get_slave_status($slaves[1])->{master_port}, $port_for{master}, 'slave 2 port');
 is($ms->get_slave_status($slaves[2])->{master_port}, $port_for{master}, 'slave 3 port');
 
-foreach my $port ( reverse sort values %port_for ) {
-   diag(`/tmp/$port/stop`);
-   diag(`rm -rf /tmp/$port`);
-}
-
+# #############################################################################
+# Done.
+# #############################################################################
+diag(`../../sandbox/stop-sandbox remove 2903 2902 2901 2900`);
 exit;
