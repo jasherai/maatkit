@@ -475,8 +475,8 @@ SKIP: {
    # This may fail because Rows and Avg_row_length can vary
    # slightly for InnoDB tables.
    ok(
-      $avg >= 185 && $avg <= 206,
-      'size_to_rows() returns average row length in list context'
+      $avg >= 173 && $avg <= 206,
+      "size_to_rows() returns avg row len in list context (173<=$avg<=206)"
    );
 
    ($size, $avg) = $c->size_to_rows(
@@ -487,7 +487,7 @@ SKIP: {
       avg_row_length => 1,
    );
    ok(
-      $size == 5 && ($avg >= 185 && $avg <= 206),
+      $size == 5 && ($avg >= 173 && $avg <= 206),
       'size_to_rows() gets avg row length if asked'
    );
 };
