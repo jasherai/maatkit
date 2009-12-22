@@ -3,69 +3,25 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 59;
+use Test::More tests => 60;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
 require "../TcpdumpParser.pm";
-require '../MaatkitTest.pm';
+require "../MaatkitTest.pm";
 
-MaatkitTest->import('load_file');
-
-use Data::Dumper;
-$Data::Dumper::Quotekeys = 0;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Indent    = 1;
+MaatkitTest->import(qw(test_protocol_parser load_data load_file));
 
 my $tcpdump  = new TcpdumpParser();
 my $protocol; # Create a new MySQLProtocolParser for each test.
 
-sub load_data {
-   my ( $file ) = @_;
-   open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   (my $data = join('', $contents =~ m/(.*)/g)) =~ s/\s+//g;
-   return $data;
-}
-
-sub run_test {
-   my ( $def ) = @_;
-   map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:misc|file|result|num_events|desc)$/ }
-      keys %$def;
-   my @e;
-   eval {
-      open my $fh, "<", $def->{file}
-         or BAIL_OUT("Cannot open $def->{file}: $OS_ERROR");
-      my %args = (
-         fh   => $fh,
-         misc => $def->{misc},
-      );
-      while ( my $p = $tcpdump->parse_event(%args) ) {
-         my $e = $protocol->parse_event(%args, event => $p);
-         push @e, $e if $e;
-      }
-      close $fh;
-   };
-   is($EVAL_ERROR, '', "No error on $def->{file}");
-   if ( defined $def->{result} ) {
-      is_deeply(
-         \@e,
-         $def->{result},
-         $def->{file} . ($def->{desc} ? ": $def->{desc}" : '')
-      ) or print "Got: ", Dumper(\@e);
-   }
-   if ( defined $def->{num_events} ) {
-      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
-   }
-}
-
 # Check that I can parse a really simple session.
 $protocol = new MySQLProtocolParser();
-run_test({
-   file   => 'samples/tcpdump001.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump001.txt',
+   result   => [
       {  ts            => '090412 09:50:16.805123',
          db            => undef,
          user          => undef,
@@ -85,13 +41,15 @@ run_test({
          No_index_used      => 'No',
       },
    ],
-});
+);
 
 # A more complex session with a complete login/logout cycle.
 $protocol = new MySQLProtocolParser();
-run_test({
-   file   => 'samples/tcpdump002.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump002.txt',
+   result   => [
       {  ts         => "090412 11:00:13.118191",
          db         => 'mysql',
          user       => 'msandbox',
@@ -165,13 +123,15 @@ run_test({
          No_index_used      => 'No',
       },
    ],
-});
+);
 
 # A session that has an error during login.
 $protocol = new MySQLProtocolParser();
-run_test({
-   file   => 'samples/tcpdump003.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump003.txt',
+   result   => [
       {  ts         => "090412 12:41:46.357853",
          db         => '',
          user       => 'msandbox',
@@ -191,13 +151,15 @@ run_test({
          No_index_used      => 'No',
       },
    ],
-});
+);
 
 # A session that has an error executing a query
 $protocol = new MySQLProtocolParser();
-run_test({
-   file   => 'samples/tcpdump004.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump004.txt',
+   result   => [
       {  ts         => "090412 12:58:02.036002",
          db         => undef,
          user       => undef,
@@ -217,13 +179,15 @@ run_test({
          No_index_used      => 'No',
       },
    ],
-});
+);
 
 # A session that has a single-row insert and a multi-row insert
 $protocol = new MySQLProtocolParser();
-run_test({
-   file   => 'samples/tcpdump005.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump005.txt',
+   result   => [
       {  Error_no   => 'none',
          Rows_affected => 1,
          Query_time => '0.000435',
@@ -261,13 +225,15 @@ run_test({
          No_index_used      => 'No',
       },
    ],
-});
+);
 
 # A session that causes a slow query because it doesn't use an index.
 $protocol = new MySQLProtocolParser();
-run_test({
-   file   => 'samples/tcpdump006.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump006.txt',
+   result   => [
       {  ts         => '100412 20:46:10.776899',
          db         => undef,
          user       => undef,
@@ -287,13 +253,15 @@ run_test({
          No_index_used      => 'Yes',
       },
    ],
-});
+);
 
 # A session that truncates an insert.
 $protocol = new MySQLProtocolParser();
-run_test({
-   file   => 'samples/tcpdump007.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump007.txt',
+   result   => [
       {  ts         => '090412 20:57:22.798296',
          db         => undef,
          user       => undef,
@@ -313,7 +281,7 @@ run_test({
          No_index_used      => 'No',
       },
    ],
-});
+);
 
 # #############################################################################
 # Check the individual packet parsing subs.
@@ -420,9 +388,11 @@ is_deeply(
 $protocol = new MySQLProtocolParser(
    server => '192.168.1.1:3307',
 );
-run_test({
-   file   => 'samples/tcpdump012.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump012.txt',
+   result   => [
       {  ts            => '090412 09:50:16.805123',
          db            => undef,
          user          => undef,
@@ -442,7 +412,7 @@ run_test({
          No_index_used      => 'No',
       },
    ],
-});
+);
 
 # #############################################################################
 # Issue 447: MySQLProtocolParser does not handle old password algo or
@@ -451,10 +421,12 @@ run_test({
 $protocol = new MySQLProtocolParser(
    server => '10.55.200.15:3306',
 );
-run_test({
-   file   => 'samples/tcpdump013.txt',
-   desc   => 'old password and compression',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump013.txt',
+   desc     => 'old password and compression',
+   result   => [
       {  Error_no => 'none',
          No_good_index_used => 'No',
          No_index_used => 'No',
@@ -474,16 +446,18 @@ run_test({
          user => 'luck'
       },
    ],
-});
+);
 
 # Check in-stream compression detection.
 $protocol = new MySQLProtocolParser(
    server => '10.55.200.15:3306',
 );
-run_test({
-   file   => 'samples/tcpdump014.txt',
-   desc   => 'in-stream compression detection',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump014.txt',
+   desc     => 'in-stream compression detection',
+   result   => [
       {
          Error_no           => 'none',
          No_good_index_used => 'No',
@@ -504,16 +478,18 @@ run_test({
          user               => undef,
       },
    ],
-});
+);
 
 # Check data decompression.
 $protocol = new MySQLProtocolParser(
    server => '127.0.0.1:12345',
 );
-run_test({
-   file   => 'samples/tcpdump015.txt',
-   desc   => 'compressed data',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump015.txt',
+   desc     => 'compressed data',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -572,17 +548,19 @@ run_test({
          user => 'msandbox',
       },
    ],
-});
+);
 
 # TCP retransmission.
 # Check data decompression.
 $protocol = new MySQLProtocolParser(
    server => '10.55.200.15:3306',
 );
-run_test({
-   file   => 'samples/tcpdump016.txt',
-   desc   => 'TCP retransmission',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump016.txt',
+   desc     => 'TCP retransmission',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -603,17 +581,19 @@ run_test({
          user => 'ppppadri',
       },
    ],
-});
+);
 
 # #############################################################################
 # Issue 537: MySQLProtocolParser and MemcachedProtocolParser do not handle
 # multiple servers.
 # #############################################################################
 $protocol = new MySQLProtocolParser();
-run_test({
-   file   => 'samples/tcpdump018.txt',
-   desc   => 'Multiple servers',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump018.txt',
+   desc     => 'Multiple servers',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -653,14 +633,16 @@ run_test({
          user => undef,
       },
    ],
-});
+);
 
 # Test that --watch-server causes just the given server to be watched.
 $protocol = new MySQLProtocolParser(server=>'10.0.0.1:3306');
-run_test({
-   file   => 'samples/tcpdump018.txt',
-   desc   => 'Multiple servers but watch only one',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump018.txt',
+   desc     => 'Multiple servers but watch only one',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -681,52 +663,43 @@ run_test({
          user => undef,
       },
    ]
-});
+);
 
 
 # #############################################################################
 # Issue 558: Make mk-query-digest handle big/fragmented packets
 # #############################################################################
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
-{
-   my $file = 'samples/tcpdump019.txt';
-   my @e;
-   eval {
-      open my $fh, "<", $file
-         or BAIL_OUT("Cannot open $file: $OS_ERROR");
-      my %args = (
-         fh   => $fh,
-      );
-      while ( my $p = $tcpdump->parse_event(%args) ) {
-         my $e = $protocol->parse_event(%args, event => $p);
-         push @e, $e if $e;
-      }
-      close $fh;
-   };
+my $e = test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump019.txt',
+);
 
-   like(
-      $e[0]->{arg},
-      qr/--THE END--'\)$/,
-      'Handles big, fragmented MySQL packets (issue 558)'
-   );
+like(
+   $e->[0]->{arg},
+   qr/--THE END--'\)$/,
+   'Handles big, fragmented MySQL packets (issue 558)'
+);
 
-   my $arg = load_file('samples/tcpdump019-arg.txt');
-   chomp $arg;
-   is(
-      $e[0]->{arg},
-      $arg,
-      'Re-assembled data is correct (issue 558)'
-   );
-}
+my $arg = load_file('samples/tcpdump019-arg.txt');
+chomp $arg;
+is(
+   $e->[0]->{arg},
+   $arg,
+   'Re-assembled data is correct (issue 558)'
+);
 
 # #############################################################################
 # Issue 740: Handle prepared statements
 # #############################################################################
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
-run_test({
-   file   => 'samples/tcpdump021.txt',
-   desc   => 'prepared statements, simple, no NULL',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump021.txt',
+   desc     => 'prepared statements, simple, no NULL',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -787,13 +760,15 @@ run_test({
           user => undef
       },
    ],
-});
+);
 
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
-run_test({
-   file   => 'samples/tcpdump022.txt',
-   desc   => 'prepared statements, NULL value',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump022.txt',
+   desc     => 'prepared statements, NULL value',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -835,13 +810,15 @@ run_test({
          Statement_id => 2,
       }
    ],
-});
+);
 
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
-run_test({
-   file   => 'samples/tcpdump023.txt',
-   desc   => 'prepared statements, string, char and float',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump023.txt',
+   desc     => 'prepared statements, string, char and float',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -883,13 +860,15 @@ run_test({
          Statement_id => 2,
       }
    ],
-});
+);
 
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
-run_test({
-   file   => 'samples/tcpdump024.txt',
-   desc   => 'prepared statements, all NULL',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump024.txt',
+   desc     => 'prepared statements, all NULL',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -931,13 +910,15 @@ run_test({
          Statement_id => 2,
       },
    ],
-});
+);
 
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
-run_test({
-   file   => 'samples/tcpdump025.txt',
-   desc   => 'prepared statements, no params',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump025.txt',
+   desc     => 'prepared statements, no params',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -979,13 +960,15 @@ run_test({
          Statement_id => 2,
       }
    ],
-});
+);
 
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
-run_test({
-   file   => 'samples/tcpdump026.txt',
-   desc   => 'prepared statements, close statement',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump026.txt',
+   desc     => 'prepared statements, close statement',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -1006,13 +989,15 @@ run_test({
          user => undef
       }
    ],
-});
+);
 
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
-run_test({
-   file   => 'samples/tcpdump027.txt',
-   desc   => 'prepared statements, reset statement',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump027.txt',
+   desc     => 'prepared statements, reset statement',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -1034,12 +1019,14 @@ run_test({
          user => undef
       }
    ],
-});
+);
 
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
-run_test({
-   file   => 'samples/tcpdump028.txt',
-   desc   => 'prepared statements, multiple exec, new param',
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump028.txt',
+   desc     => 'prepared statements, multiple exec, new param',
    result => [
       {
          Error_no => 'none',
@@ -1122,12 +1109,14 @@ run_test({
          user => undef
       }
    ],
-});
+);
 
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
-run_test({
-   file   => 'samples/tcpdump029.txt',
-   desc   => 'prepared statements, real param types',
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump029.txt',
+   desc     => 'prepared statements, real param types',
    result => [
       {
          Error_no => 'none',
@@ -1208,12 +1197,14 @@ run_test({
          user => undef
       },
    ]
-});
+);
 
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
-run_test({
-   file   => 'samples/tcpdump030.txt',
-   desc   => 'prepared statements, ok response to execute',
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump030.txt',
+   desc     => 'prepared statements, ok response to execute',
    result => [
       {
          Error_no => 'none',
@@ -1256,16 +1247,18 @@ run_test({
          user => undef
       }
    ],
-});
+);
 
 
 # #############################################################################
 # Issue 761: mk-query-digest --tcpdump does not handle incomplete packets
 # #############################################################################
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
-run_test({
-   file   => 'samples/tcpdump032.txt',
-   desc   => 'issue 761',
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump032.txt',
+   desc     => 'issue 761',
    result => [
       {
          Error_no => 'none',
@@ -1287,16 +1280,18 @@ run_test({
          user => undef
       }
    ],
-});
+);
 
 # #############################################################################
 # Issue 760: mk-query-digest --tcpdump might not get the whole query
 # #############################################################################
 $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
-run_test({
-   file   => 'samples/tcpdump031.txt',
-   desc   => 'issue 760',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump031.txt',
+   desc     => 'issue 760',
+   result   => [
       {
          Error_no => 'none',
          No_good_index_used => 'No',
@@ -1317,7 +1312,7 @@ run_test({
          user => undef
       }
    ],
-});
+);
 
 # #############################################################################
 # Done.

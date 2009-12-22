@@ -7,61 +7,20 @@ use Test::More tests => 26;
 
 require "../MemcachedProtocolParser.pm";
 require "../TcpdumpParser.pm";
+require "../MaatkitTest.pm";
 
-use Data::Dumper;
-$Data::Dumper::Quotekeys = 0;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Indent    = 1;
+MaatkitTest->import(qw(test_protocol_parser load_data));
 
 my $tcpdump  = new TcpdumpParser();
 my $protocol; # Create a new MemcachedProtocolParser for each test.
 
-sub load_data {
-   my ( $file ) = @_;
-   open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   (my $data = join('', $contents =~ m/(.*)/g)) =~ s/\s+//g;
-   return $data;
-}
-
-sub run_test {
-   my ( $def ) = @_;
-   map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:misc|file|result|num_events|desc)$/ }
-      keys %$def;
-   my @e;
-   eval {
-      open my $fh, "<", $def->{file}
-         or BAIL_OUT("Cannot open $def->{file}: $OS_ERROR");
-      my %args = (
-         fh   => $fh,
-         misc => $def->{misc},
-      );
-      while ( my $p = $tcpdump->parse_event(%args) ) {
-         my $e = $protocol->parse_event(%args, event => $p);
-         push @e, $e if $e;
-      }
-      close $fh;
-   };
-   is($EVAL_ERROR, '', "No error on $def->{file}");
-   if ( defined $def->{result} ) {
-      is_deeply(
-         \@e,
-         $def->{result},
-         $def->{file} . ($def->{desc} ? ": $def->{desc}" : '')
-      ) or print "Got: ", Dumper(\@e);
-   }
-   if ( defined $def->{num_events} ) {
-      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
-   }
-}
-
 # A session with a simple set().
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump001.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump001.txt',
+   result   => [
       {  ts            => '2009-07-04 21:33:39.229179',
          host          => '127.0.0.1',
          cmd           => 'set',
@@ -75,13 +34,15 @@ run_test({
          pos_in_log    => 0,
       },
    ],
-});
+);
 
 # A session with a simple get().
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump002.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump002.txt',
+   result   => [
       {  Query_time => '0.000067',
          cmd        => 'get',
          key        => 'my_key',
@@ -95,13 +56,15 @@ run_test({
          ts         => '2009-07-04 22:12:06.174390'
       },
    ],
-});
+);
 
 # A session with a simple incr() and decr().
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump003.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump003.txt',
+   result   => [
       {  Query_time => '0.000073',
          cmd        => 'incr',
          key        => 'key',
@@ -127,13 +90,15 @@ run_test({
          val => '7',
       },
    ],
-});
+);
 
 # A session with a simple incr() and decr(), but the value doesn't exist.
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump004.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump004.txt',
+   result   => [
       {  Query_time => '0.000131',
          bytes      => 0,
          cmd        => 'incr',
@@ -160,13 +125,15 @@ run_test({
          val        => '',
       },
    ],
-});
+);
 
 # A session with a huge set() that will not fit into a single TCP packet.
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump005.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump005.txt',
+   result   => [
       {  Query_time => '0.003928',
          bytes      => 17946,
          cmd        => 'set',
@@ -180,13 +147,15 @@ run_test({
          val        => ('lorem ipsum dolor sit amet' x 690) . ' fini!',
       },
    ],
-});
+);
 
 # A session with a huge get() that will not fit into a single TCP packet.
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump006.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump006.txt',
+   result   => [
       {
          Query_time => '0.000196',
          bytes      => 17946,
@@ -201,13 +170,15 @@ run_test({
          val        => ('lorem ipsum dolor sit amet' x 690) . ' fini!',
       },
    ],
-});
+);
 
 # A session with a get() that doesn't exist.
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump007.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump007.txt',
+   result   => [
       {
          Query_time => '0.000016',
          bytes      => 0,
@@ -222,15 +193,17 @@ run_test({
          val        => '',
       },
    ],
-});
+);
 
 # A session with a huge get() that will not fit into a single TCP packet, but
 # the connection seems to be broken in the middle of the receive and then the
 # new client picks up and asks for something different.
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump008.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump008.txt',
+   result   => [
       {
          Query_time => '0.000003',
          bytes      => 17946,
@@ -257,13 +230,15 @@ run_test({
          ts         => '2009-07-06 22:07:14.411334',
       },
    ],
-});
+);
 
 # A session with a delete() that doesn't exist. TODO: delete takes a queue_time.
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump009.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump009.txt',
+   result   => [
       {
          Query_time => '0.000022',
          bytes      => 0,
@@ -278,13 +253,15 @@ run_test({
          val        => '',
       },
    ],
-});
+);
 
 # A session with a delete() that does exist.
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump010.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump010.txt',
+   result   => [
       {
          Query_time => '0.000120',
          bytes      => 0,
@@ -299,16 +276,18 @@ run_test({
          val        => '',
       },
    ],
-});
+);
 
 # #############################################################################
 # Issue 537: MySQLProtocolParser and MemcachedProtocolParser do not handle
 # multiple servers.
 # #############################################################################
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump011.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump011.txt',
+   result   => [
       {  Query_time => '0.000067',
          cmd        => 'get',
          key        => 'my_key',
@@ -334,7 +313,7 @@ run_test({
          pos_in_log    => 638,
       },
    ],
-});
+);
 
 # #############################################################################
 # Issue 544: memcached parse error
@@ -342,9 +321,11 @@ run_test({
 
 # Multiple delete in one packet.
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump014.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump014.txt',
+   result   => [
       {  ts          => '2009-10-06 10:31:56.323538',
          Query_time  => '0.000024',
          bytes       => 0,
@@ -358,13 +339,15 @@ run_test({
          val         => ''
       },
    ],
-});
+);
 
 # Multiple mixed commands: get delete delete
 $protocol = new MemcachedProtocolParser();
-run_test({
-   file   => 'samples/memc_tcpdump015.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/memc_tcpdump015.txt',
+   result   => [
       {  ts          => '2009-10-06 10:31:56.330709',
          Query_time  => '0.000013',
          bytes       => 0,
@@ -379,7 +362,7 @@ run_test({
          val => ''
       },
    ],
-});
+);
 
 # #############################################################################
 # Done.

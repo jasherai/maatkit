@@ -8,61 +8,20 @@ use Test::More tests => 16;
 require '../TcpdumpParser.pm';
 require '../ProtocolParser.pm';
 require '../HTTPProtocolParser.pm';
+require "../MaatkitTest.pm";
 
-use Data::Dumper;
-$Data::Dumper::Quotekeys = 0;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Indent    = 1;
+MaatkitTest->import(qw(test_protocol_parser load_data));
 
 my $tcpdump  = new TcpdumpParser();
 my $protocol; # Create a new HTTPProtocolParser for each test.
 
-sub load_data {
-   my ( $file ) = @_;
-   open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   (my $data = join('', $contents =~ m/(.*)/g)) =~ s/\s+//g;
-   return $data;
-}
-
-sub run_test {
-   my ( $def ) = @_;
-   map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:misc|file|result|num_events|desc)$/ }
-      keys %$def;
-   my @e;
-   eval {
-      open my $fh, "<", $def->{file}
-         or BAIL_OUT("Cannot open $def->{file}: $OS_ERROR");
-      my %args = (
-         fh   => $fh,
-         misc => $def->{misc},
-      );
-      while ( my $p = $tcpdump->parse_event(%args) ) {
-         my $e = $protocol->parse_event(%args, event => $p);
-         push @e, $e if $e;
-      }
-      close $fh;
-   };
-   is($EVAL_ERROR, '', "No error on $def->{file}");
-   if ( defined $def->{result} ) {
-      is_deeply(
-         \@e,
-         $def->{result},
-         $def->{file} . ($def->{desc} ? ": $def->{desc}" : '')
-      ) or print "Got: ", Dumper(\@e);
-   }
-   if ( defined $def->{num_events} ) {
-      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
-   }
-}
-
 # GET a very simple page.
 $protocol = new HTTPProtocolParser();
-run_test({
-   file   => 'samples/http_tcpdump001.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/http_tcpdump001.txt',
+   result   => [
       { ts              => '2009-11-09 11:31:52.341907',
         bytes           => '715',
         host            => '10.112.2.144',
@@ -74,13 +33,15 @@ run_test({
         Transmit_time   => '0.000000',
       },
    ],
-});
+);
 
 # Get http://www.percona.com/about-us.html
 $protocol = new HTTPProtocolParser();
-run_test({
-   file   => 'samples/http_tcpdump002.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/http_tcpdump002.txt',
+   result   => [
       {
          ts             => '2009-11-09 15:31:09.074855',
          Query_time     => '0.070097',
@@ -192,13 +153,15 @@ run_test({
          pos_in_log     => 170117,
       },
    ],
-});
+);
 
 # A reponse received in out of order packet.
 $protocol = new HTTPProtocolParser();
-run_test({
-   file   => 'samples/http_tcpdump004.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/http_tcpdump004.txt',
+   result   => [
       {  ts             => '2009-11-12 11:27:10.757573',
          Query_time     => '0.327356',
          Status_code    => '200',
@@ -210,13 +173,15 @@ run_test({
          pos_in_log     => 776,
       },
    ],
-});
+);
 
 # A client request broken over 2 packets.
 $protocol = new HTTPProtocolParser();
-run_test({
-   file   => 'samples/http_tcpdump005.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/http_tcpdump005.txt',
+   result   => [
       {  ts             => '2009-11-13 09:20:31.041924',
          Query_time     => '0.342166',
          Status_code    => '200',
@@ -228,14 +193,16 @@ run_test({
          pos_in_log     => 785, 
       },
    ],
-});
+);
 
 # Out of order header that might look like the text header
 # but is really data; text header arrives last.
 $protocol = new HTTPProtocolParser();
-run_test({
-   file   => 'samples/http_tcpdump006.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/http_tcpdump006.txt',
+   result   => [
       {  ts             => '2009-11-13 09:50:44.432099',
          Query_time     => '0.140878',
          Status_code    => '200',
@@ -247,13 +214,15 @@ run_test({
          pos_in_log     => 782,
       },
    ],
-});
+);
 
 # One 2.6M image that took almost a minute to load (very slow wifi).
 $protocol = new HTTPProtocolParser();
-run_test({
-   file   => 'samples/http_tcpdump007.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/http_tcpdump007.txt',
+   result   => [
       {  ts             => '2009-11-13 10:09:53.251620',
          Query_time     => '0.121971',
          Status_code    => '200',
@@ -265,13 +234,15 @@ run_test({
          pos_in_log     => 640,
       }
    ],
-});
+);
 
 # A simple POST.
 $protocol = new HTTPProtocolParser();
-run_test({
-   file   => 'samples/http_tcpdump008.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/http_tcpdump008.txt',
+   result   => [
       {  ts             => '2009-11-13 10:53:48.349465',
          Query_time     => '0.030740',
          Status_code    => '200',
@@ -283,13 +254,15 @@ run_test({
          pos_in_log     => 0,
       }
    ],
-});
+);
 
 # .http instead of .80
 $protocol = new HTTPProtocolParser();
-run_test({
-   file   => 'samples/http_tcpdump009.txt',
-   result => [
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/http_tcpdump009.txt',
+   result   => [
       { ts              => '2009-11-09 11:31:52.341907',
         bytes           => '715',
         host            => '10.112.2.144',
@@ -301,7 +274,7 @@ run_test({
         Transmit_time   => '0.000000',
       },
    ],
-});
+);
 
 # #############################################################################
 # Done.
