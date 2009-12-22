@@ -115,7 +115,8 @@ sub split {
       EVENT:
       while ( $oktorun ) {
          $event = $lp->parse_event(
-            fh      => $fh,
+            next_event => sub { return <$fh>;    },
+            tell       => sub { return tell $fh; },
             oktorun => $more_events_sub,
          );
          if ( $event ) {
