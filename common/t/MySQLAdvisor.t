@@ -3,7 +3,8 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More;
+plan skip_all => 'Deprecated mk-audit module';
 
 require '../MySQLAdvisor.pm';
 require '../MySQLInstance.pm';
