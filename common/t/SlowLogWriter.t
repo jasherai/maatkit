@@ -18,7 +18,11 @@ sub no_diff {
    my $tmp_file = '/tmp/SlowLogWriter-test.txt';
    open my $rewritten_fh, '>', $tmp_file or BAIL_OUT($EVAL_ERROR);
    open my $fh, "<", $filename or BAIL_OUT($OS_ERROR);
-   while ( my $e = $p->parse_event(fh => $fh) ) {
+   my %args = (
+      next_event => sub { return <$fh>;    },
+      tell       => sub { return tell $fh; },
+   );
+   while ( my $e = $p->parse_event(%args) ) {
       $w->write($rewritten_fh, $e);
    }
    close $fh;
@@ -83,4 +87,5 @@ ok(
 # #############################################################################
 # Done.
 # #############################################################################
+diag(`rm -rf SlowLogWriter-test.txt >/dev/null 2>&1`);
 exit;

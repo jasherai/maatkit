@@ -134,10 +134,10 @@ my %port_for = (
    slave1 => 2902,
    slave2 => 2903,
 );
-diag(`../../sandbox/start-sandbox master 2900`);
-diag(`../../sandbox/start-sandbox slave 2903 2900`);
-diag(`../../sandbox/start-sandbox slave 2901 2900`);
-diag(`../../sandbox/start-sandbox slave 2902 2901`);
+diag(`../../sandbox/start-sandbox master 2900 >/dev/null`);
+diag(`../../sandbox/start-sandbox slave 2903 2900 >/dev/null`);
+diag(`../../sandbox/start-sandbox slave 2901 2900 >/dev/null`);
+diag(`../../sandbox/start-sandbox slave 2902 2901 >/dev/null`);
 
 # I discovered something weird while updating this test. Above, you see that
 # slave2 is started first, then the others. Before, slave2 was started last,
@@ -339,5 +339,5 @@ is($ms->get_slave_status($slaves[2])->{master_port}, $port_for{master}, 'slave 3
 # #############################################################################
 # Done.
 # #############################################################################
-diag(`../../sandbox/stop-sandbox remove 2903 2902 2901 2900`);
+diag(`../../sandbox/stop-sandbox remove 2903 2902 2901 2900 >/dev/null`);
 exit;

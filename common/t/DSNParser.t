@@ -222,7 +222,7 @@ is_deeply (
 );
 
 # Make sure we can connect to MySQL with a charset
-my $d = $dp->parse('h=127.0.0.1,P=12345,A=utf8');
+my $d = $dp->parse('h=127.0.0.1,P=12345,A=utf8,u=msandbox,p=msandbox');
 my $dbh;
 eval {
    $dbh = $dp->get_dbh($dp->get_cxn_params($d), {});
@@ -390,7 +390,7 @@ SKIP: {
 
    $dp = new DSNParser();
    $dp->prop('set-vars', 'wait_timeout=1000');
-   $d  = $dp->parse('h=127.0.0.1,P=12345,A=utf8');
+   $d  = $dp->parse('h=127.0.0.1,P=12345,A=utf8,u=msandbox,p=msandbox');
    my $dbh2 = $dp->get_dbh($dp->get_cxn_params($d), {});
    sleep 2;
    eval {
