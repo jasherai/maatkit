@@ -7828,15 +7828,10 @@ use English qw(-no_match_vars);
 use Time::Local qw(timelocal);
 use Time::HiRes qw(time usleep);
 use List::Util qw(max);
+use POSIX qw(signal_h);
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 $OUTPUT_AUTOFLUSH     = 1;
-
-eval {
-   require POSIX;
-   POSIX->import(qw(:signal_h));
-};
-my $have_alarms = $EVAL_ERROR ? 0 : 1;
 
 Transformers->import(qw(shorten micro_t percentage_of ts make_checksum
    any_unix_timestamp));
