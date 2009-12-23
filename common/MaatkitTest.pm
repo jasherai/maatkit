@@ -38,6 +38,7 @@ our @EXPORT_OK   = qw(
    wait_until
    test_log_parser
    test_protocol_parser
+   no_diff
 );
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
@@ -204,6 +205,22 @@ sub test_protocol_parser {
    }
 
    return \@e;
+}
+
+# Returns true (1) if there's no difference between the
+# cmd's output and the expected output.
+sub no_diff {
+   my ( $cmd, $expected_output, $update_sample ) = @_;
+   MKDEBUG && diag($cmd);
+   `$cmd > /tmp/mk-query-digest_test`;
+   if ( $ENV{UPDATE_SAMPLES} || $update_sample ) {
+      `cat /tmp/mk-query-digest_test > $expected_output`;
+      print STDERR "Updated $expected_output\n";
+   }
+   my $retval = system("diff /tmp/mk-query-digest_test $expected_output");
+   `rm -rf /tmp/mk-query-digest_test`;
+   $retval = $retval >> 8; 
+   return !$retval;
 }
 
 1;
