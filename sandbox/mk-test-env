@@ -261,9 +261,9 @@ case $opt in
       ;;
    status)
       sandbox_status 'master' '12345'
-      local master_status=$?
+      master_status=$?
       sandbox_status 'slave' '12346' '12345'
-      local slave_status=$?
+      slave_status=$?
       echo -n "Maaktit test environment is "
       if [ $master_status -eq 0 ] && [ $slave_status -eq 0 ]; then
          echo "ok!"
