@@ -54,7 +54,7 @@ set_mysql_basedir() {
       local mysqld=`which mysqld`
       if [ -n "$mysqld" ]; then
          _d "Found mysqld: $mysqld"
-         MAATKIT_SANDBOX_BASEDIR=`$mysqld --verbose --help | grep 'basedir ' | awk '{print $2}'`
+         MAATKIT_SANDBOX_BASEDIR=`$mysqld --verbose --help 2>/dev/null | grep 'basedir ' | awk '{print $2}'`
          if [ -z "$MAATKIT_SANDBOX_BASEDIR" ]; then      
             _d "$mysqld --verbose --help | grep | ask failed"
             return 0
