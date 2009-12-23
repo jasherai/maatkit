@@ -26,6 +26,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 use Time::HiRes qw(usleep);
+use POSIX qw(signal_h);
 
 require Exporter;
 our @ISA         = qw(Exporter);
@@ -36,6 +37,7 @@ our @EXPORT_OK   = qw(
    load_data
    load_file
    wait_until
+   wait_for
    test_log_parser
    test_protocol_parser
    no_diff
@@ -90,6 +92,28 @@ sub wait_until {
    return;
 }
 
+# Wait t seconds for code to return.
+sub wait_for {
+   my ( $code, $t ) = @_;
+   $t ||= 0;
+   my $mask   = POSIX::SigSet->new(&POSIX::SIGALRM);
+   my $action = POSIX::SigAction->new(
+      sub { die },
+      $mask,
+   );
+   my $oldaction = POSIX::SigAction->new();
+   sigaction(&POSIX::SIGALRM, $action, $oldaction);
+   eval {
+      alarm $t;
+      $code->();
+      alarm 0;
+   };
+   if ( $EVAL_ERROR ) {
+      # alarm was raised
+      return 1;
+   }
+   return 0;
+}
 
 sub _read {
    my ( $fh ) = @_;
