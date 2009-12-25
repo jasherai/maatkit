@@ -1233,7 +1233,7 @@ sub parse_execute_packet {
    for my $i ( 0..($sth->{num_params}-1) ) {
       my $val;
       my $len;  # in bytes
-      if ( $null_bitmap & ($i+1) ) {
+      if ( $null_bitmap & (2**$i) ) {
          MKDEBUG && _d('Param', $i, 'is NULL (bitmap)');
          $val = 'NULL';
          $len = 0;

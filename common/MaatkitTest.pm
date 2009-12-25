@@ -27,6 +27,10 @@ use English qw(-no_match_vars);
 use Test::More;
 use Time::HiRes qw(usleep);
 use POSIX qw(signal_h);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 require Exporter;
 our @ISA         = qw(Exporter);

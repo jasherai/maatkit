@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 60;
+use Test::More tests => 62;
 use English qw(-no_match_vars);
 
 require "../MySQLProtocolParser.pm";
@@ -1249,6 +1249,55 @@ test_protocol_parser(
    ],
 );
 
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'samples/tcpdump034.txt',
+   desc     => 'prepared statements, NULL bitmap',
+   result => [
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000288',
+         Rows_affected => 0,
+         Statement_id => 1,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'PREPARE SELECT * FROM d.t WHERE i=? OR u=? OR v=? OR d=? OR f=? OR t > ? OR dt > ? OR i2=? OR i3=? OR i4=?',
+         bytes => 106,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '43607',
+         pos_in_log => 0,
+         ts => '091224 16:47:24.204501',
+         user => undef
+      },
+      {
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000322',
+         Rows_affected => 0,
+         Statement_id => 1,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'EXECUTE SELECT * FROM d.t WHERE i=42 OR u=2009 OR v="hello world" OR d=1.23 OR f=4.56 OR t > "2009-12-01" OR dt > "2009-12-01" OR i2=NULL OR i3=NULL OR i4=NULL',
+         bytes => 159,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '43607',
+         pos_in_log => 2748,
+         ts => '091224 16:47:24.204965',
+         user => undef
+      }
+   ],
+);
 
 # #############################################################################
 # Issue 761: mk-query-digest --tcpdump does not handle incomplete packets
