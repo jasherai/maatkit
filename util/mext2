@@ -1,7 +1,7 @@
 #!/bin/sh
 
 usage() {
-   echo "Usage: $0 -c N -i N [-r] -- commandline"
+   echo "Usage: $0 -c -i [-r] -- commandline"
    echo "   -c     Count: number of iterations to make."
    echo "   -r     Relative: subtract each column from the previous column."
    echo "   -i     Sleep between iterations."
@@ -49,10 +49,13 @@ if [[ $SLEEP -eq 0 ]] || [[ $SLEEP -gt 360 ]];then
         SLEEP=1
 fi
 
-if [[ $STOP -le 1 ]]; then
-        echo "You don't want me to run at least once?.. Weird.."
+if [[ $STOP -lt 1 ]]; then
+        echo "You don't want me to run no times?.. Weird.."
         exit 1
 fi
+
+# is mysqladmin?
+MYADM=`echo $* | grep -c -i mysqladmin`
 
 ## MAX RUNTIME = STOPS * SLEEP +2seconds safedelay
 MAXT=2
@@ -65,11 +68,13 @@ fi
 #re-architecturing 
 proceed_output() {
         COMMAND=$1
-        STOPS=$2
-        TIMEDIFF=$3
+        if [[ $MYADM -ge 1 ]];then
+                STOPS="-c$2"
+                TIMEDIFF="-i$3"
+        fi
         # Split the output on empty lines and put each into a different file; eliminate
         # lines that don't have "real" content.
-        $1 -c$STOPS -i$TIMEDIFF | grep -v '+' | grep -v Variable_name | sed 's/|//g' >${FILE}large &
+        $1 $STOPS $TIMEDIFF | grep -v '+' | grep -v Variable_name | sed 's/|//g' >${FILE}large &
 }
 
 organize_output() {
@@ -104,7 +109,6 @@ while [[ $JOBS -gt 0 ]]; do
 done
 organize_output 
 echo -en "\n"
-
 # Count how many files there are and prepare to format the output
 SPEC="%-33s %13d"
 AWKS=""

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 2;
+use Test::More tests => 4;
 require "../../common/MaatkitTest.pm";
 MaatkitTest->import(qw(no_diff));
 
@@ -28,10 +28,10 @@ test('../mext -- cat samples/mext-001.txt',
 test('../mext -r -- cat samples/mext-002.txt',
    'samples/mext-002-result.txt', 'Basic output');
 
-test('../mext2 -- cat samples/mext-001.txt',
+test('../mext2 -c 4 -i 1 -- cat samples/mext-001.txt',
    'samples/mext-001-result.txt', 'Basic output');
 
-test('../mext2 -r -- cat samples/mext-002.txt',
+test('../mext2 -c 4 -i 1 -r -- cat samples/mext-002.txt',
    'samples/mext-002-result.txt', 'Basic output');
 
 # #############################################################################
