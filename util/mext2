@@ -92,12 +92,12 @@ cat ${FILE}large  | while read line; do
 START_PROCEED=`date +%s`
 proceed_output "$*" "$STOP" "$SLEEP"
 JOBS=`jobs -r |grep -c .`
-echo -en "Proceeding.. "
+#echo -en "Proceeding.. "
 while [[ $JOBS -gt 0 ]]; do
         CURR_DATE=`date +%s`
         let CURR_DATE=CURR_DATE-START_PROCEED
         if [[ $CURR_DATE -lt $MAXT ]];then
-                echo -en " ."
+#                echo -en " ."
                 sleep 1
                 JOBS=`jobs -r | grep -c .`;
         else
@@ -108,7 +108,7 @@ while [[ $JOBS -gt 0 ]]; do
         fi
 done
 organize_output 
-echo -en "\n"
+#echo -en "\n"
 # Count how many files there are and prepare to format the output
 SPEC="%-33s %13d"
 AWKS=""
