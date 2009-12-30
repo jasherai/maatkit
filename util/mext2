@@ -30,12 +30,30 @@ fi
 
 
 #exporting definied arguments
-# mysql admin could be difficult...
-for startvals in `echo $*`;do
-	export $startvals
+#maybe looks a bit messy, but works on all platform with super-limited resoures
+IS_DEF=`echo $* | grep -ic mysqladmin`
+if [[ IS_DEF -ge 1 ]];then 
+	STOP_ARG_PARS=`expr $# - 1`
+	ALL_ARG=$#
+fi
+
+CNT=0
+ARG_ARR=( $* )
+while [[ $CNT -lt $STOP_ARG_PARS ]];do
+	export "${ARG_ARR[$CNT]}"
+	let CNT=CNT+1
 done
 
-echo $ma
+#lets start from the back to find mysqladmin...
+# all argument could be 4 and we nead at least 2 right ?
+ALL_MAX_ARG=4
+SEE_IF_4_IS_MADM=`echo $4 | cut -d'=' -f2 | cut -d' ' -f1 | grep -ic mysql`
+if [[ $SEE_IF_4_IS_MADM -ne 1 ]]; then
+	export "$3"
+else
+	export "$4"
+fi
+
 SLEEP=$i
 STOP=$c
 
@@ -60,8 +78,8 @@ else
 fi
 
 ## MAX RUNTIME = STOPS * SLEEP +2seconds safedelay
-MAXT=2
-let MAXT=STOP*SLEEP
+MAXT=0
+let MAXT=STOP*SLEEP+1
 
 if [ -z "$1" ]; then
    usage;
@@ -69,15 +87,19 @@ fi
 
 #re-architecturing
 find_mysqladmin() {
-	if [ -z $ma ]; then
+	if [[ $IS_DEF -lt 1 ]];then
 		ma=`which mysqladmin`
+			if [ -f $ma ];then 
+				echo "can't find mysqladmin!"
+				exit 1
+			fi
+	else
+		my_adm_ex=`echo $ma | cut -d' ' -f1`
+		if [ ! -x $my_adm_ex ];then 
+			echo "mysqladmin not executable!"
+			exit 1
+		fi
 	fi
-	
-	if [ ! -x $ma ]; then
-		echo "mysqladmin not executable $ma"
-		exit 1
-	fi
-	
 }
  
 proceed_output() {
