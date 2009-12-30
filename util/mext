@@ -56,7 +56,7 @@ NUM=`expr $NUM - 3`;
 
 # Join each file with the next file, joining on the first field. Build a printf
 # spec and awk spec at the same time.
-for i in `seq 0 $NUM`; do
+for i in `eval echo {0..$NUM}`; do
    NEXTFILE=`expr $i + 1`;
    join $FILE$i $FILE${NEXTFILE} | grep . > $FILE;
    # Find the max length of the [numeric only] values in the file so we know how
