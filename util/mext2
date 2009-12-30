@@ -32,9 +32,11 @@ fi
 #exporting definied arguments
 #maybe looks a bit messy, but works on all platform with super-limited resoures
 IS_DEF=`echo $* | grep -ic mysqladmin`
+ALL_ARG=$#
 if [[ IS_DEF -ge 1 ]];then 
 	STOP_ARG_PARS=`expr $# - 1`
-	ALL_ARG=$#
+else
+	STOP_ARG_PARS=$ALL_ARG
 fi
 
 CNT=0
@@ -89,16 +91,6 @@ fi
 find_mysqladmin() {
 	if [[ $IS_DEF -lt 1 ]];then
 		ma=`which mysqladmin`
-			if [ -f $ma ];then 
-				echo "can't find mysqladmin!"
-				exit 1
-			fi
-	else
-		my_adm_ex=`echo $ma | cut -d' ' -f1`
-		if [ ! -x $my_adm_ex ];then 
-			echo "mysqladmin not executable!"
-			exit 1
-		fi
 	fi
 }
  
