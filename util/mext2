@@ -75,11 +75,25 @@ if [[ $STOP -lt 1 ]]; then
         exit 1
 fi
 
-if [ "$r" == "true" ] || [ "$r" == "test" ]; then
-	REL="1"
-else
-	REL="0"
-fi
+case "$r" in
+	truetest)
+		REL="1"
+		IS_DEF=5
+	;;
+	falsetest)
+		REL="0"
+		IS_DEF=5
+	;;
+	true)
+		REL="1"
+	;;
+	false)
+		REL="0"
+	;;
+	*)
+		REL="0"
+	;;
+esac
 
 ## MAX RUNTIME = STOPS * SLEEP +2seconds safedelay
 MAXT=0
@@ -91,15 +105,14 @@ fi
 
 #re-architecturing
 find_mysqladmin() {
-	if [[ $IS_DEF -lt 1 ]] && [ "$r" != "test" ];then
+	if [[ $IS_DEF -lt 1 ]];then
 		echo $ma
 		ma=`which mysqladmin`
 	fi
 }
  
 proceed_output() {
-	IS_HERE=`echo $1 | grep -ic mysql`
-	if [[ $IS_HERE -lt 1 ]];then
+	if [[ $IS_DEF -gt 1 ]];then
     	    $1 | grep -v '+' | grep -v Variable_name | sed 's/|//g' >${FILE}large &	    
 	else
     	    $1 ext -c$2 -i$3 | grep -v '+' | grep -v Variable_name | sed 's/|//g' >${FILE}large &
@@ -148,7 +161,7 @@ NUM=`expr $NUM - 3`;
 
 # Join each file with the next file, joining on the first field. Build a printf
 # spec and awk spec at the same time.
-for i in `eval echo {0..$NUM}`; do
+for i in `seq 0 $NUM`; do
    NEXTFILE=`expr $i + 1`;
    join $FILE$i $FILE${NEXTFILE} | grep . > $FILE;
    # Find the max length of the [numeric only] values in the file so we know how

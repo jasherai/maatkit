@@ -28,10 +28,10 @@ test('../mext -- cat samples/mext-001.txt',
 test('../mext -r -- cat samples/mext-002.txt',
   'samples/mext-002-result.txt', 'Basic output');
 
-test('../mext2 c=4 i=1 r=test "ma=cat samples/mext-001.txt"',
+test('../mext2 c=4 i=1 r=falsetest "ma=cat samples/mext-001.txt"',
    'samples/mext-001-result.txt', 'Basic output');
 
-test('../mext2 c=4 i=1 r=test "ma=cat samples/mext-002.txt"',
+test('../mext2 c=4 i=1 r=truetest "ma=cat samples/mext-002.txt"',
    'samples/mext-002-result.txt', 'Basic output');
 
 # #############################################################################
