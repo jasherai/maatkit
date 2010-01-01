@@ -30,7 +30,13 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-my $ts = qr/(\d{6}\s{1,2}[\d:]+)\s+/;
+my $ts = qr/(\d{6}\s{1,2}[\d:]+)\s*/;
+my $ml = qr{\A(?:
+   InnoDB:\s
+   |-\smysqld\sgot\ssignal
+   |Status\sinformation
+   |Memory\sstatus
+)}x;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -91,21 +97,24 @@ sub parse_event {
       $line =~ s/\s{2,}/ /;
       $line =~ s/\s+$//;
 
-      # TODO: some of these can local INPUT_RECORD_SEPARATOR to $ts
-      # and read 1 chunk instead of line by line until $ts
-
+      # Handle multi-line error messagess.  There are several types: debug
+      # messages from 'mysqladmin debug', crash and stack trace, and InnoDB.
       # InnoDB prints multi-line messages like:
       #   080821 19:14:12  InnoDB: Database was not shut down normally!
       #   InnoDB: Starting crash recovery.
-      if ( $line =~ m/^InnoDB: / ) {
-         MKDEBUG && _d('InnoDB message:', $line);
+      # We strip off the InnoDB: prefix after the first line, and keep going
+      # until we find a line that begins a new message.
+
+      if ( $line =~ m/$ml/o ) {
+         MKDEBUG && _d('Multi-line message:', $line);
+         $line =~ s/- //; # Trim "- msyqld got signal" special case.
          my $next_line;
          while ( defined($next_line = <$fh>)
-                 && $next_line =~ m/^InnoDB: / ) {
+                 && $next_line !~ m/^$ts/o ) {
             chomp $next_line;
-            MKDEBUG && _d('InnoDB message:', $next_line);
-            $next_line =~ s/^InnoDB://;
-            $line     .= $next_line;
+            next if $next_line eq '';
+            $next_line =~ s/^InnoDB: //; # InnoDB special-case.
+            $line     .= " " . $next_line;
          }
          MKDEBUG && _d('Pending next line:', $next_line);
          push @$pending, $next_line;
@@ -121,33 +130,6 @@ sub parse_event {
             $line     .= $next_line;
             $last_line = 1 if $next_line =~ m/, Error_code:/;
          }
-      }
-      # MySQL crash and stack trace
-      elsif ( $line =~ m/mysqld got signal 6/ ) {
-         MKDEBUG && _d('Stack trace:', $line);
-         $line .= "\n";
-         my $next_line;
-         while ( defined($next_line = <$fh>)
-                 && $next_line !~ m/^$ts/o ) {
-            MKDEBUG && _d('Stack trace:', $next_line);
-            $line .= $next_line;
-         }
-         MKDEBUG && _d('Pending next line:', $next_line);
-         push @$pending, $next_line;
-      }
-      # Debug
-      elsif ( $line =~ m/(?:Status information|Memory status):/ ) {
-         MKDEBUG && _d('Debug:', $line);
-         $line .= "\n";
-         my $next_line;
-         while ( defined($next_line = <$fh>)
-                 && $next_line !~ m/^$ts/o ) {
-            next if $next_line =~ m/^$/;
-            MKDEBUG && _d('Debug:', $next_line);
-            $line .= $next_line;
-         }
-         MKDEBUG && _d('Pending next line:', $next_line);
-         push @$pending, $next_line;
       }
 
       # Save the error line.
