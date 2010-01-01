@@ -1013,7 +1013,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ErrorLogParser package 5254
+# ErrorLogParser package 5396
 # ###########################################################################
 package ErrorLogParser;
 
@@ -1028,7 +1028,13 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-my $ts = qr/(\d{6}\s{1,2}[\d:]+)\s+/;
+my $ts = qr/(\d{6}\s{1,2}[\d:]+)\s*/;
+my $ml = qr{\A(?:
+   InnoDB:\s
+   |-\smysqld\sgot\ssignal
+   |Status\sinformation
+   |Memory\sstatus
+)}x;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1086,15 +1092,16 @@ sub parse_event {
       $line =~ s/\s+$//;
 
 
-      if ( $line =~ m/^InnoDB: / ) {
-         MKDEBUG && _d('InnoDB message:', $line);
+      if ( $line =~ m/$ml/o ) {
+         MKDEBUG && _d('Multi-line message:', $line);
+         $line =~ s/- //; # Trim "- msyqld got signal" special case.
          my $next_line;
          while ( defined($next_line = <$fh>)
-                 && $next_line =~ m/^InnoDB: / ) {
+                 && $next_line !~ m/^$ts/o ) {
             chomp $next_line;
-            MKDEBUG && _d('InnoDB message:', $next_line);
-            $next_line =~ s/^InnoDB://;
-            $line     .= $next_line;
+            next if $next_line eq '';
+            $next_line =~ s/^InnoDB: //; # InnoDB special-case.
+            $line     .= " " . $next_line;
          }
          MKDEBUG && _d('Pending next line:', $next_line);
          push @$pending, $next_line;
@@ -1109,31 +1116,6 @@ sub parse_event {
             $line     .= $next_line;
             $last_line = 1 if $next_line =~ m/, Error_code:/;
          }
-      }
-      elsif ( $line =~ m/mysqld got signal 6/ ) {
-         MKDEBUG && _d('Stack trace:', $line);
-         $line .= "\n";
-         my $next_line;
-         while ( defined($next_line = <$fh>)
-                 && $next_line !~ m/^$ts/o ) {
-            MKDEBUG && _d('Stack trace:', $next_line);
-            $line .= $next_line;
-         }
-         MKDEBUG && _d('Pending next line:', $next_line);
-         push @$pending, $next_line;
-      }
-      elsif ( $line =~ m/(?:Status information|Memory status):/ ) {
-         MKDEBUG && _d('Debug:', $line);
-         $line .= "\n";
-         my $next_line;
-         while ( defined($next_line = <$fh>)
-                 && $next_line !~ m/^$ts/o ) {
-            next if $next_line =~ m/^$/;
-            MKDEBUG && _d('Debug:', $next_line);
-            $line .= $next_line;
-         }
-         MKDEBUG && _d('Pending next line:', $next_line);
-         push @$pending, $next_line;
       }
 
       chomp $line;
@@ -1370,6 +1352,9 @@ sub main {
       push @ARGV, '-'; # Magical STDIN filename.
    }
 
+   # ##########################################################################
+   # Here's the main work.
+   # ##########################################################################
    my %cnt;
    my $file;
    while ( $file = shift @ARGV ) {
@@ -1435,16 +1420,96 @@ sub main {
 # ##########################################################################
 # Subroutines
 # ##########################################################################
+
+# ##########################################################################
+# This is a good place to add your own rules to match log events you're
+# familiar with.  Each pattern/rule is a name, level and regular expression.
+# The name will be printed out in the output, so make it representative of
+# the log event.
+# ##########################################################################
 sub load_known_patterns {
    my ( $matcher ) = @_;
    my @known_patterns = (
-      # name               level     regex
-      ['mysqld started',   'info',   'mysqld started'                        ],
-      ['mysqld ended',     'info',   'mysqld ended'                          ],
-      ['version',          'info',   '^Version: \S+ '                        ],
-      ['memory status',    'info',   '^Memory status:'                       ],
-      ['debug',            'info',   '^Status information:',                 ],
-      ['InnoDB started',   'info',   '^InnoDB: Started; log sequence number' ],
+      [ 'mysqld started',
+        'info',
+        'mysqld started'
+      ],
+      [ 'mysqld ended',
+         'info',
+         'mysqld ended'
+      ],
+      [ 'mysqld version info',
+         'info',
+         '^Version: \S+ '
+      ],
+      [ 'mysqladmin debug memory status',
+         'info',
+         '^Memory status:'
+      ],
+      [ 'mysqladmin debug',
+         'info',
+         '^Status information:'
+      ],
+      [ 'InnoDB: Started',
+         'info',
+         '^InnoDB: Started; log sequence number'
+      ],
+      [ 'InnoDB: Starting an apply batch',
+         'info',
+         '^InnoDB: Starting an apply batch of log'
+      ],
+      [ 'InnoDB: Starting log scan',
+         'info',
+         '^InnoDB: Starting log scan based on'
+      ],
+      [ 'InnoDB: Database was not shut down properly!',
+         'error',
+         '^InnoDB: Database was not shut down'
+      ],
+      [ 'InnoDB: Starting shutdown',
+         'info',
+         '^InnoDB: Starting shutdown...'
+      ],
+      [ 'InnoDB: Shutdown completed',
+         'info',
+         '^InnoDB: Shutdown completed;'
+      ],
+      [ 'InnoDB: Rolling back trx',
+         'info',
+         '^InnoDB: Rolling back trx with id',
+      ],
+      [  'mysqld got signal',
+         'error',
+         'mysqld got signal \d',
+      ],
+      [  'InnoDB: Assertion failure',
+         'error',
+         'InnoDB: Assertion failure in thread',
+      ],
+      [  'InnoDB: Log file did not exist!',
+         'info',
+         'InnoDB: Log file .*? did not exist',
+      ],
+      [  'InnoDB: Setting file size',
+         'info',
+         'InnoDB: Setting file \S+ size',
+      ],
+      [  'InnoDB: The first specified data file did not exist!',
+         'info',
+         'InnoDB: The first specified data file \S+',
+      ],
+      [  'InnoDB: Warning: cannot find a free slot',
+         'warning',
+         'InnoDB: Warning: cannot find a free slot',
+      ],
+      [  'InnoDB: Rolling back of trx complete',
+         'info',
+         'InnoDB: Rolling back of trx id .*?complete',
+      ],
+      [  'mysqld restarted',
+         'info',
+         'mysqld restarted',
+      ],
    );
    $matcher->add_patterns(\@known_patterns);
    return;
