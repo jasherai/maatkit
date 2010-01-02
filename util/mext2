@@ -27,11 +27,19 @@ if [ -z "$1" ]; then
    usage;
 fi
 
+
+# predef some variables
 FILE=/tmp/mext_temp_file; # work file prefix
 NUM=0;   				  # Counter
 REL=0;   				  # subtract columns from each other?
 STOP=0;  				  # how many times to run
 SLEEP=0; 				  # how many seconds to sleep between
+c=0;					  # counts
+i=0;					  # sleeps
+ma=""					  # myadm
+COL=""					  #empty
+IS_DEF=''				  # if mysqladmin defined
+MAXT=0					  # max runtime 
 rm -f $FILE*; 			  #clean up on startup
 
 # exporting definied arguments
@@ -42,7 +50,7 @@ export_arguments() {
 	IS_DEF=`echo $* | grep -ic mysqladmin`	
 	ALL_ARG=$#
 	# if there is mysqladmin in the command line, stop exporting arguments before the last element
-	if [[ IS_DEF -ge 1 ]];then 
+	if [[ IS_DEF -ge 1 ]] || [ "$4" == "" ];then 
 		STOP_ARG_PARS=`expr $# - 1`
 	else
 		STOP_ARG_PARS=$ALL_ARG
@@ -52,7 +60,7 @@ export_arguments() {
 	CNT=0
 	ARG_ARR=( $* )
 	while [[ $CNT -lt $STOP_ARG_PARS ]];do
-		export "${ARG_ARR[$CNT]}"
+		export "${ARG_ARR[$CNT]}"	
 		let CNT=CNT+1
 	done
 
@@ -63,14 +71,14 @@ export_arguments() {
 	if [[ $SEE_IF_4_IS_MADM -ne 1 ]]; then
 		export "$3"
 		#need to pass the test?
-		export "$4"
+		if [ "$4" != "" ];then export "$4"; fi
 	else
 		export "$4"
 	fi
 	
 	SLEEP=$i
 	STOP=$c
-
+	COL=$r
 }
 
 # Pre-condition checks
@@ -87,7 +95,7 @@ pre_cond_checks() {
 		fi
 
 	#this isn't that beauty, but this is just a bash script and we need to handle tests somehow
-	case "$r" in
+	case "$COL" in
 		truetest)
 			REL="1"
 			IS_DEF=5
@@ -102,31 +110,27 @@ pre_cond_checks() {
 		false)
 			REL="0"
 		;;
-		*)
-			REL="0"
-		;;
 	esac
 
 	## MAX RUNTIME = STOPS * SLEEP +2seconds safedelay
-	MAXT=0
 	let MAXT=STOP*SLEEP+1
 
-	if [ -z "$1" ]; then
-		usage;
-	fi
 }
 
 #re-architecturing
 find_mysqladmin() {
 	if [[ $IS_DEF -lt 1 ]];then
-		echo $ma
 		ma=`which mysqladmin`
+		if [[ $? -gt 0 ]]; then
+			echo "Can't find mysqladmin!"
+			exit 1
+		fi
 	fi
 }
  
 proceed_output() {
 	if [[ $IS_DEF -gt 1 ]];then
-    	    $1 | grep -v '+' | grep -v Variable_name | sed 's/|//g' >${FILE}large &	    
+    	    $1 | grep -v '+' | grep -v Variable_name | sed 's/|//g' >${FILE}large &
 	else
     	    $1 ext -c$2 -i$3 | grep -v '+' | grep -v Variable_name | sed 's/|//g' >${FILE}large &
 	fi 
@@ -161,6 +165,25 @@ daycare() {
 	done
 }
 
+seq_couz_fun() {
+	START=$1
+	STOP=$2
+	RETVAL=( $START )
+	if [[ $START -lt $STOP ]];then
+		#go for it
+		while [[ $START -le $STOP ]]; do
+			echo -en "$START "
+			let START=START+1
+#			RETVAL=( ${ARR[*]} $START)
+
+		done
+	else
+		RETVAL=1
+	fi
+	
+	return $RETVAL
+}
+
 format_and_print_output() {
 	# Count how many files there are and prepare to format the output
 	SPEC="%-33s %13d"
@@ -168,10 +191,16 @@ format_and_print_output() {
 	NUM=`ls $FILE* |grep -v large| wc -l`;
 	# The last file will be empty...
 	NUM=`expr $NUM - 3`;
-
+	
+	if [[ `cat ${FILE}large | wc -l` -lt 1 ]];then
+		echo "Something goes wrong! Result file EMPTY!"
+		exit 1
+	fi
+	
 	# Join each file with the next file, joining on the first field. Build a printf
 	# spec and awk spec at the same time.
-	for i in `seq 0 $NUM`; do
+	COUNTARR=( `seq_couz_fun 0 $NUM` )
+	for i in `echo ${COUNTARR[*]}`; do
 	   NEXTFILE=`expr $i + 1`;
 	   join $FILE$i $FILE${NEXTFILE} | grep . > $FILE;
 	   # Find the max length of the [numeric only] values in the file so we know how
@@ -193,11 +222,13 @@ format_and_print_output() {
 
 ######	WORKFLOW	######
 
-# lets see if everything defined well
-pre_cond_checks;
+if [ -z "$1" ]; then usage; fi
 
 # export each arguents, export used to become more platform independent
-export_arguments;
+export_arguments "$1" "$2" "$3" "$4";
+
+# lets see if everything defined well
+pre_cond_checks;
 
 # lets see where is it
 find_mysqladmin;
@@ -218,4 +249,4 @@ organize_output;
 format_and_print_output;
 
 # Remove all temporary files.
-rm -f $FILE*;
+#rm -f $FILE*;
