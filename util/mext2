@@ -1,14 +1,25 @@
 #!/bin/bash
 
+################################################################################
+# mext2 - Tool to see columnized output of mysqladmin
+#
+# @author  Istvan Podor <istvan.podor@percona.com>
+#
+# @date    2010-01-02
+# @license GPL v2
+#     
+################################################################################
+
+
 usage() {
-   echo "Usage: $0 c=N i=N [r=true] [ma=/path/to/mysqladmin and options]"
-   echo "   c=N                    Count: number of iterations to make."
-   echo "   i=N                    Sleep between iterations."
-   echo "   ma=[\"command\"]         mysqladmin command and parameters."
-   echo "   r=[true|false]         Relative: subtract each column from the previous column."
-   echo " "
-   echo "mext columnizes repeated output from mysqladmin extended."
-   echo "Example: 'mext c=3 i=5 r=true ma=\"/usr/bin/mysql50/bin/mysqladmin ext -S /var/sock/mysql.sock\"'"
+   echo -en "Usage: $0 c=N i=N [r=true] [ma=/path/to/mysqladmin and options]\n"
+   echo -en "   c=N                    Count: number of iterations to make.\n"
+   echo -en "   i=N                    Sleep between iterations.\n"
+   echo -en "   r=[true|false]         Relative: subtract each column from the previous column.\n"
+   echo -en "   \"ma=[command]\"         mysqladmin command and parameters.\n\n"
+   echo -en "mext columnizes repeated output from mysqladmin extended.\n"
+   echo -en "Example: 'mext c=3 i=5 r=true \"ma=/usr/bin/mysql50/bin/mysqladmin ext -S /var/sock/mysql.sock\"'\n"
+   echo -en "Pay attention for the quotation marks (\") before and after the mysqladmin definition!\n"
    exit 1
 }
 
@@ -16,92 +27,94 @@ if [ -z "$1" ]; then
    usage;
 fi
 
-FILE=/tmp/mext_temp_file;
-NUM=0;
-REL=0;
-STOP=0;
-SLEEP=0;
-rm -f $FILE*;
+FILE=/tmp/mext_temp_file; # work file prefix
+NUM=0;   				  # Counter
+REL=0;   				  # subtract columns from each other?
+STOP=0;  				  # how many times to run
+SLEEP=0; 				  # how many seconds to sleep between
+rm -f $FILE*; 			  #clean up on startup
 
-# Command-line parsing.
-if [ "$?" = "1" ]; then
-   usage;
-fi
+# exporting definied arguments
+export_arguments() {
+	# if mysqladmin is defined, that means it should run with special arguments
+	# ma argument cannot be exported that easy because of the space and other special characters
+	# this is why this part needed
+	IS_DEF=`echo $* | grep -ic mysqladmin`	
+	ALL_ARG=$#
+	# if there is mysqladmin in the command line, stop exporting arguments before the last element
+	if [[ IS_DEF -ge 1 ]];then 
+		STOP_ARG_PARS=`expr $# - 1`
+	else
+		STOP_ARG_PARS=$ALL_ARG
+	fi
 
+	# This while exports each argument
+	CNT=0
+	ARG_ARR=( $* )
+	while [[ $CNT -lt $STOP_ARG_PARS ]];do
+		export "${ARG_ARR[$CNT]}"
+		let CNT=CNT+1
+	done
 
-#exporting definied arguments
-#maybe looks a bit messy, but works on all platform with super-limited resoures
-IS_DEF=`echo $* | grep -ic mysqladmin`
-ALL_ARG=$#
-if [[ IS_DEF -ge 1 ]];then 
-	STOP_ARG_PARS=`expr $# - 1`
-else
-	STOP_ARG_PARS=$ALL_ARG
-fi
+	#lets start from the back to find mysqladmin...
+	# this part is only needed to avoid throwing of errors if ma= undef
+	ALL_MAX_ARG=4
+	SEE_IF_4_IS_MADM=`echo $4 | cut -d'=' -f2 | cut -d' ' -f1 | grep -ic mysql`
+	if [[ $SEE_IF_4_IS_MADM -ne 1 ]]; then
+		export "$3"
+		#need to pass the test?
+		export "$4"
+	else
+		export "$4"
+	fi
+	
+	SLEEP=$i
+	STOP=$c
 
-CNT=0
-ARG_ARR=( $* )
-while [[ $CNT -lt $STOP_ARG_PARS ]];do
-	export "${ARG_ARR[$CNT]}"
-	let CNT=CNT+1
-done
+}
 
-#lets start from the back to find mysqladmin...
-# all argument could be 4 and we nead at least 2 right ?
-ALL_MAX_ARG=4
-SEE_IF_4_IS_MADM=`echo $4 | cut -d'=' -f2 | cut -d' ' -f1 | grep -ic mysql`
-if [[ $SEE_IF_4_IS_MADM -ne 1 ]]; then
-	export "$3"
-	#need to pass the test?
-	export "$4"
-else
-	export "$4"
-fi
+# Pre-condition checks
+pre_cond_checks() {
+	# if sleep time not given or >5min, exit
+	if [[ $SLEEP -eq 0 ]] || [[ $SLEEP -gt 360 ]];then
+        	echo "Invalid sleep time given, should be beetween 1-360!"
+        	usage;
+		fi
+		
+		if [[ $STOP -lt 1 ]]; then
+        	echo "You don't want me to run no times?.. Weird.."
+        	usage;
+		fi
 
-SLEEP=$i
-STOP=$c
+	#this isn't that beauty, but this is just a bash script and we need to handle tests somehow
+	case "$r" in
+		truetest)
+			REL="1"
+			IS_DEF=5
+		;;
+		falsetest)
+			REL="0"
+			IS_DEF=5
+		;;
+		true)
+			REL="1"
+		;;
+		false)
+			REL="0"
+		;;
+		*)
+			REL="0"
+		;;
+	esac
 
-# Precond checks
+	## MAX RUNTIME = STOPS * SLEEP +2seconds safedelay
+	MAXT=0
+	let MAXT=STOP*SLEEP+1
 
-# if sleep time not given or >5min, exit
-if [[ $SLEEP -eq 0 ]] || [[ $SLEEP -gt 360 ]];then
-        echo "Invalid sleep time given: $SLEEP"
-        echo "Setting to: 1"
-        SLEEP=1
-fi
-
-if [[ $STOP -lt 1 ]]; then
-        echo "You don't want me to run no times?.. Weird.."
-        exit 1
-fi
-
-case "$r" in
-	truetest)
-		REL="1"
-		IS_DEF=5
-	;;
-	falsetest)
-		REL="0"
-		IS_DEF=5
-	;;
-	true)
-		REL="1"
-	;;
-	false)
-		REL="0"
-	;;
-	*)
-		REL="0"
-	;;
-esac
-
-## MAX RUNTIME = STOPS * SLEEP +2seconds safedelay
-MAXT=0
-let MAXT=STOP*SLEEP+1
-
-if [ -z "$1" ]; then
-   usage;
-fi
+	if [ -z "$1" ]; then
+		usage;
+	fi
+}
 
 #re-architecturing
 find_mysqladmin() {
@@ -120,65 +133,89 @@ proceed_output() {
 }
 
 organize_output() {
-cat ${FILE}large  | while read line; do
-        if [ "$line" == "" ]; then
-                NUM=`expr $NUM + 1`;
-                echo "" > $FILE$NUM;
-        fi
-        echo "$line" >> $FILE$NUM;
-        done
+	cat ${FILE}large  | while read line; do
+		if [ "$line" == "" ]; then
+			NUM=`expr $NUM + 1`;
+			echo "" > $FILE$NUM;
+		fi
+		echo "$line" >> $FILE$NUM;
+    done
 }
 
-find_mysqladmin
+# daycare to take care of the processes living in the background 
+daycare() {
+	# if it runs for too many times, we have to stop him whatever he is doing ..
+	JOBS=`jobs -r |grep -c .`
+	while [[ $JOBS -gt 0 ]]; do
+	        CURR_DATE=`date +%s`
+	        let CURR_DATE=CURR_DATE-START_PROCEED
+	        if [[ $CURR_DATE -lt $MAXT ]];then
+	                sleep 1
+	                JOBS=`jobs -r | grep -c .`;
+	        else
+	                echo -en "\nForce quitting of mysqladmin..."
+	                killall -9 mysqladmin 1>/dev/null 2>/dev/null
+	                echo -en "done\n"
+	                break;
+	        fi
+	done
+}
 
+format_and_print_output() {
+	# Count how many files there are and prepare to format the output
+	SPEC="%-33s %13d"
+	AWKS=""
+	NUM=`ls $FILE* |grep -v large| wc -l`;
+	# The last file will be empty...
+	NUM=`expr $NUM - 3`;
+
+	# Join each file with the next file, joining on the first field. Build a printf
+	# spec and awk spec at the same time.
+	for i in `seq 0 $NUM`; do
+	   NEXTFILE=`expr $i + 1`;
+	   join $FILE$i $FILE${NEXTFILE} | grep . > $FILE;
+	   # Find the max length of the [numeric only] values in the file so we know how
+	   # wide to make the columns
+	   MAXLEN=`awk '{print $2}' $FILE${NEXTFILE} | grep -v '[^0-9]' | awk '{print length($1)}' | sort -rn | head -n1`
+	   mv $FILE $FILE${NEXTFILE};
+	   SPEC="$SPEC %${MAXLEN}d";
+	   if [ "$REL" = "1" ]; then
+	      AWKS="$AWKS, \$`expr $i + 3` - \$`expr $i + 2`";
+	   else
+	      AWKS="$AWKS, \$`expr $i + 3`";
+	   fi
+	done
+
+	# Print output
+	AWKCMD="printf(\"$SPEC\n\", \$1, \$2$AWKS);";
+	awk "{$AWKCMD}" $FILE`expr $NUM + 1`;
+}
+
+######	WORKFLOW	######
+
+# lets see if everything defined well
+pre_cond_checks;
+
+# export each arguents, export used to become more platform independent
+export_arguments;
+
+# lets see where is it
+find_mysqladmin;
+
+#this defines the timestamp when we started
 START_PROCEED=`date +%s`
 
+# call mysqladmin
 proceed_output "$ma" "$STOP" "$SLEEP"
 
-JOBS=`jobs -r |grep -c .`
+# young child goes to daycare, old got killed
+daycare;
 
-while [[ $JOBS -gt 0 ]]; do
-        CURR_DATE=`date +%s`
-        let CURR_DATE=CURR_DATE-START_PROCEED
-        if [[ $CURR_DATE -lt $MAXT ]];then
-                sleep 1
-                JOBS=`jobs -r | grep -c .`;
-        else
-                echo -en "\nForce quitting of mysqladmin..."
-                killall -9 mysqladmin 1>/dev/null 2>/dev/null
-                echo -en "done\n"
-                break;
-        fi
-done
-organize_output 
+# lets prepare the result for printing
+organize_output;
 
-# Count how many files there are and prepare to format the output
-SPEC="%-33s %13d"
-AWKS=""
-NUM=`ls $FILE* |grep -v large| wc -l`;
-# The last file will be empty...
-NUM=`expr $NUM - 3`;
-
-# Join each file with the next file, joining on the first field. Build a printf
-# spec and awk spec at the same time.
-for i in `seq 0 $NUM`; do
-   NEXTFILE=`expr $i + 1`;
-   join $FILE$i $FILE${NEXTFILE} | grep . > $FILE;
-   # Find the max length of the [numeric only] values in the file so we know how
-   # wide to make the columns
-   MAXLEN=`awk '{print $2}' $FILE${NEXTFILE} | grep -v '[^0-9]' | awk '{print length($1)}' | sort -rn | head -n1`
-   mv $FILE $FILE${NEXTFILE};
-   SPEC="$SPEC %${MAXLEN}d";
-   if [ "$REL" = "1" ]; then
-      AWKS="$AWKS, \$`expr $i + 3` - \$`expr $i + 2`";
-   else
-      AWKS="$AWKS, \$`expr $i + 3`";
-   fi
-done
-
-# Print output
-AWKCMD="printf(\"$SPEC\n\", \$1, \$2$AWKS);";
-awk "{$AWKCMD}" $FILE`expr $NUM + 1`;
+# and now, give it to them! :)
+format_and_print_output;
 
 # Remove all temporary files.
-#rm -f $FILE*;
+rm -f $FILE*;
