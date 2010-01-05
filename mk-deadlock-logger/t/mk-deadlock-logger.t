@@ -66,7 +66,7 @@ foreach my $child ( keys %children ) {
 }
 
 # Test that there is a deadlock
-my ($stat) = $dbh1->selectrow_array('show innodb status');
+my $stat = $dbh1->selectrow_hashref('show innodb status')->{Status};
 like($stat, qr/WE ROLL BACK/, 'There was a deadlock');
 
 my $output = `perl ../mk-deadlock-logger --print h=127.1,P=12345,u=msandbox,p=msandbox`;
