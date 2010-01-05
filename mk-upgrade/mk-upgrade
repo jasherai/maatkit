@@ -9423,6 +9423,17 @@ first option on the command line.
 
 Continue working even if there is an error.
 
+=item --convert-to-select
+
+Convert non-SELECT statements to SELECTs and compare.
+
+By default non-SELECT statements are not allowed.  This option causes
+non-SELECT statments (like UPDATE, INSERT and DELETE) to be converted
+to SELECT statements, executed and compared.
+
+For example, C<DELETE col FROM tbl WHERE id=1> is converted to
+C<SELECT col FROM tbl WHERE id=1>.
+
 =item --daemonize
 
 Fork to the background and detach from the shell.  POSIX
@@ -9540,17 +9551,6 @@ type: int; default: 10
 
 Stop comparing rows for C<--compare-results-method rows> after this many
 differences are found.
-
-=item --convert-to-select
-
-Convert non-SELECT statements to SELECTs and compare.
-
-By default non-SELECT statements are not allowed.  This option causes
-non-SELECT statments (like UPDATE, INSERT and DELETE) to be converted
-to SELECT statements, executed and compared.
-
-For example, C<DELETE col FROM tbl WHERE id=1> is converted to
-C<SELECT col FROM tbl WHERE id=1>.
 
 =item --order-by
 
