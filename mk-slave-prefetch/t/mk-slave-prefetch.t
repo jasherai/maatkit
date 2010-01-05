@@ -37,7 +37,7 @@ like($output, qr/Prompt for a password/, 'It compiles');
 # ###########################################################################
 # Test making queries for secondary indexes.
 # ###########################################################################
-$sb->load_file('slave1', 'samples/secondary_indexes.sql');
+$sb->load_file('slave1', 'mk-slave-prefetch/t/samples/secondary_indexes.sql');
 
 my @queries = mk_slave_prefetch::get_secondary_index_queries(
    dbh         => $slave_dbh,

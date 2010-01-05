@@ -1274,7 +1274,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 5266
+# BinaryLogParser package 5358
 # ###########################################################################
 package BinaryLogParser;
 
@@ -1304,22 +1304,22 @@ my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)
 
 sub parse_event {
    my ( $self, %args ) = @_;
-   my @required_args = qw(fh);
+   my @required_args = qw(next_event tell);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
+   my ($next_event, $tell) = @args{@required_args};
 
    local $INPUT_RECORD_SEPARATOR = ";\n#";
-   my $pos_in_log = tell($fh);
+   my $pos_in_log = $tell->();
    my $stmt;
    my ($delim, $delim_len) = ($self->{delim}, $self->{delim_len});
 
    EVENT:
-   while ( defined($stmt = <$fh>) ) {
+   while ( defined($stmt = $next_event->()) ) {
       my @properties = ('pos_in_log', $pos_in_log);
       my ($ts, $sid, $end, $type, $rest);
-      $pos_in_log = tell($fh);
+      $pos_in_log = $tell->();
       $stmt =~ s/;\n#?\Z//;
 
       my ( $got_offset, $got_hdr );
@@ -1467,7 +1467,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5266
+# QueryRewriter package 5356
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1494,6 +1494,8 @@ $bal         = qr/
 
 my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
+my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;                  # But for replacing SHOW + /*!version */
+my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;    		# ^^ if its starts with SHOW followed by version
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1503,8 +1505,12 @@ sub new {
 
 sub strip_comments {
    my ( $self, $query ) = @_;
+   return unless $query;
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
+   if ( $query =~ m/$vlc_rf/i ) { # contains show + version
+   			$query =~ s/$vlc_re//go;
+   }
    return $query;
 }
 
@@ -1601,8 +1607,11 @@ sub _distill_verbs {
 
    $query =~ m/\A\s*call\s+(\S+)\(/i
       && return "CALL $1"; # Warning! $1 used, be careful.
-   $query =~ m/\A# administrator/
-      && return "ADMIN";
+   if ( $query =~ m/\A# administrator command:/ ) {
+		$query =~ s/# administrator command:/ADMIN/go;
+		$query = uc $query;
+       	return "$query";
+   }
    $query =~ m/\A\s*use\s+/
       && return "USE";
    $query =~ m/\A\s*UNLOCK TABLES/i
@@ -1617,11 +1626,15 @@ sub _distill_verbs {
       MKDEBUG && _d('SHOW', @what);
       return unless scalar @what;
       @what = map { uc $_ } grep { defined $_ } @what; 
-      if ( $what[0] =~ m/CREATE/ || ($what[1] && $what[1] =~ m/STATUS/) ) {
+
+      if ( $what[0] =~ m/CREATE/
+           || ($what[1] && $what[1] =~ m/STATUS/)
+           || $what[0] =~ m/MASTER/ ) {
          return "SHOW $what[0] $what[1]";
       }
       else {
-         return "SHOW $what[0]";
+         $what[0] =~ m/GLOBAL/ ? return "SHOW $what[1]"
+                  :              return "SHOW $what[0]";
       }
    }
 
@@ -3847,7 +3860,7 @@ sub main {
       stats_file      => shift @ARGV,
       %spf_options,
    );
- 
+
    $time = $o->get('run-time');
    $now  = time();
    $end  = $now + ( $time || 0 );  # When we should exit
@@ -3856,7 +3869,9 @@ sub main {
       while ( oktorun(%oktorun_args) ) {
          $spf->_get_slave_status();
          if ( $spf->slave_is_running() ) {
-            my $fh = $spf->open_relay_log( tmpdir => $o->get('tmpdir') );
+            my $fh          = $spf->open_relay_log(tmpdir => $o->get('tmpdir'));
+            my $next_event  = sub { return <$fh>;    };
+            my $tell        = sub { return tell $fh; };
             my $more_events     = 1;
             my $more_events_sub = sub { $more_events = $_[0]; };
             EVENT:
@@ -3867,8 +3882,9 @@ sub main {
                   %oktorun_args) )
             {
                my $event = $lp->parse_event(
-                  fh      => $fh,
-                  oktorun => $more_events_sub,
+                  next_event => $next_event,
+                  tell       => $tell,
+                  oktorun    => $more_events_sub,
                );
                if ( $event ) {
                   $spf->pipeline_event($event, @callbacks);
