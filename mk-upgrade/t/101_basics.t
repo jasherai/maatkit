@@ -25,8 +25,8 @@ else {
    plan tests => 6;
 }
 
-$sb->load_file('master', 'samples/001/tables.sql');
-$sb->load_file('slave2', 'samples/001/tables.sql');
+$sb->load_file('master', 'mk-upgrade/t/samples/001/tables.sql');
+$sb->load_file('slave2', 'mk-upgrade/t/samples/001/tables.sql');
 
 # Returns true (1) if there's no difference between the
 # cmd's output and the expected output.

@@ -2187,7 +2187,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 5266
+# SlowLogParser package 5357
 # ###########################################################################
 package SlowLogParser;
 
@@ -2220,22 +2220,25 @@ my $slow_log_hd_line = qr{
 
 sub parse_event {
    my ( $self, %args ) = @_;
-   my @required_args = qw(fh);
+   my @required_args = qw(next_event tell);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
+   my ($next_event, $tell) = @args{@required_args};
 
    my $pending = $self->{pending};
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $trimlen    = length($INPUT_RECORD_SEPARATOR);
-   my $pos_in_log = tell($fh);
+   my $pos_in_log = $tell->();
    my $stmt;
 
    EVENT:
-   while ( (defined($stmt = shift @$pending) or defined($stmt = <$fh>)) ) {
+   while (
+         defined($stmt = shift @$pending)
+      or defined($stmt = $next_event->())
+   ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
-      $pos_in_log = tell($fh);
+      $pos_in_log = $tell->();
 
       if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
          my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
@@ -2312,7 +2315,7 @@ sub parse_event {
             if ( !$found_arg && $pos == $len ) {
                MKDEBUG && _d("Did not find arg, looking for special cases");
                local $INPUT_RECORD_SEPARATOR = ";\n";
-               if ( defined(my $l = <$fh>) ) {
+               if ( defined(my $l = $next_event->()) ) {
                   chomp $l;
                   MKDEBUG && _d("Found admin statement", $l);
                   push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
@@ -2341,7 +2344,7 @@ sub parse_event {
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
       return $event;
-   }
+   } # EVENT
 
    @$pending = ();
    $args{oktorun}->(0) if $args{oktorun};
@@ -3221,7 +3224,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5266
+# QueryRewriter package 5356
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3248,6 +3251,8 @@ $bal         = qr/
 
 my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
+my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;                  # But for replacing SHOW + /*!version */
+my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;    		# ^^ if its starts with SHOW followed by version
 
 sub new {
    my ( $class, %args ) = @_;
@@ -3257,8 +3262,12 @@ sub new {
 
 sub strip_comments {
    my ( $self, $query ) = @_;
+   return unless $query;
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
+   if ( $query =~ m/$vlc_rf/i ) { # contains show + version
+   			$query =~ s/$vlc_re//go;
+   }
    return $query;
 }
 
@@ -3355,8 +3364,11 @@ sub _distill_verbs {
 
    $query =~ m/\A\s*call\s+(\S+)\(/i
       && return "CALL $1"; # Warning! $1 used, be careful.
-   $query =~ m/\A# administrator/
-      && return "ADMIN";
+   if ( $query =~ m/\A# administrator command:/ ) {
+		$query =~ s/# administrator command:/ADMIN/go;
+		$query = uc $query;
+       	return "$query";
+   }
    $query =~ m/\A\s*use\s+/
       && return "USE";
    $query =~ m/\A\s*UNLOCK TABLES/i
@@ -3371,11 +3383,15 @@ sub _distill_verbs {
       MKDEBUG && _d('SHOW', @what);
       return unless scalar @what;
       @what = map { uc $_ } grep { defined $_ } @what; 
-      if ( $what[0] =~ m/CREATE/ || ($what[1] && $what[1] =~ m/STATUS/) ) {
+
+      if ( $what[0] =~ m/CREATE/
+           || ($what[1] && $what[1] =~ m/STATUS/)
+           || $what[0] =~ m/MASTER/ ) {
          return "SHOW $what[0] $what[1]";
       }
       else {
-         return "SHOW $what[0]";
+         $what[0] =~ m/GLOBAL/ ? return "SHOW $what[1]"
+                  :              return "SHOW $what[0]";
       }
    }
 
@@ -8917,6 +8933,8 @@ sub main {
    # Parse the input.
    # ##########################################################################
    my $fh;
+   my $next_event = sub { return <$fh>; };
+   my $tell       = sub { return tell $fh; };
    my $start = time();
    my $end   = $start + ($o->get('run-time') || 0); # When we should exit
    my $now   = $start;
@@ -8961,9 +8979,11 @@ sub main {
                last unless $oktorun;  # the global oktorun var
                $event = $callback->(
                   $event,
-                  event   => $event,  # new interface
-                  fh      => $fh,
-                  oktorun => $oktorun_sub,
+                  event      => $event,  # new interface
+                  fh         => $fh,
+                  next_event => $next_event,
+                  tell       => $tell,
+                  oktorun    => $oktorun_sub,
                );
                last unless $event;
             }

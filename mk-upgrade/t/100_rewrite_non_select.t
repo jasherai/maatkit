@@ -18,8 +18,8 @@ diag(`../../sandbox/start-sandbox master 12347`) unless -d '/tmp/12347';
 my $dbh2 = $sb->get_dbh_for('slave2')
    or BAIL_OUT('Cannot connect to second sandbox master');
 
-$sb->load_file('master', 'samples/001/tables.sql');
-$sb->load_file('slave2', 'samples/001/tables.sql');
+$sb->load_file('master', 'mk-upgrade/t/samples/001/tables.sql');
+$sb->load_file('slave2', 'mk-upgrade/t/samples/001/tables.sql');
 
 # Returns true (1) if there's no difference between the
 # cmd's output and the expected output.
