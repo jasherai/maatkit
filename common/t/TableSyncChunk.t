@@ -1,13 +1,21 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
 # Open a connection to MySQL, or skip the rest of the tests.
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
+
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -21,16 +29,16 @@ else {
 
 $sb->create_dbs($dbh, ['test']);
 
-require "../TableSyncChunk.pm";
-require "../Quoter.pm";
-require "../ChangeHandler.pm";
-require "../TableChecksum.pm";
-require "../TableChunker.pm";
-require "../TableParser.pm";
-require "../MySQLDump.pm";
-require "../VersionParser.pm";
-require "../TableSyncer.pm";
-require "../MasterSlave.pm";
+use TableSyncChunk;
+use Quoter;
+use ChangeHandler;
+use TableChecksum;
+use TableChunker;
+use TableParser;
+use MySQLDump;
+use VersionParser;
+use TableSyncer;
+use MasterSlave;
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -40,7 +48,7 @@ sub throws_ok {
 
 my $mysql = $sb->_use_for('master');
 
-diag(`$mysql < samples/before-TableSyncChunk.sql`);
+diag(`$mysql < $trunk/common/t/samples/before-TableSyncChunk.sql`);
 
 my $q  = new Quoter();
 my $tp = new TableParser(Quoter => $q);

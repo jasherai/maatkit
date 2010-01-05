@@ -1,17 +1,25 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 51;
 
-require "../TableChecksum.pm";
-require "../VersionParser.pm";
-require "../TableParser.pm";
-require "../Quoter.pm";
-require "../MySQLDump.pm";
-require "../DSNParser.pm";
-require '../Sandbox.pm';
+use TableChecksum;
+use VersionParser;
+use TableParser;
+use Quoter;
+use MySQLDump;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
@@ -28,14 +36,6 @@ my $t;
 
 my %args = map { $_ => undef }
    qw(db tbl tbl_struct algorithm function crc_wid crc_type opt_slice);
-
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
 
 sub throws_ok {
    my ( $code, $re, $msg ) = @_;
@@ -232,7 +232,7 @@ is (
    'XOR slice optimized in slice 1',
 );
 
-$t = $tp->parse(load_file('samples/sakila.film.sql'));
+$t = $tp->parse(load_file('common/t/samples/sakila.film.sql'));
 
 is (
    $c->make_row_checksum(
@@ -314,7 +314,7 @@ is (
    'Really bad separator',
 );
 
-$t = $tp->parse(load_file('samples/sakila.rental.float.sql'));
+$t = $tp->parse(load_file('common/t/samples/sakila.rental.float.sql'));
 is (
    $c->make_row_checksum(
       function      => 'SHA1',
@@ -334,7 +334,7 @@ is (
    'FLOAT column is rounded to 5 places',
 );
 
-$t = $tp->parse(load_file('samples/sakila.film.sql'));
+$t = $tp->parse(load_file('common/t/samples/sakila.film.sql'));
 
 like (
    $c->make_row_checksum(
@@ -641,7 +641,7 @@ is_deeply(
 # #############################################################################
 # Issue 94: Enhance mk-table-checksum, add a --ignorecols option
 # #############################################################################
-$sb->load_file('master', 'samples/issue_94.sql');
+$sb->load_file('master', 'common/t/samples/issue_94.sql');
 $t= $tp->parse( $du->get_create_table($dbh, $q, 'test', 'issue_94') );
 my $query = $c->make_checksum_query(
    db         => 'test',

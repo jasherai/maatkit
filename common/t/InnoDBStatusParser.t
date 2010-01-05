@@ -1,31 +1,30 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 2;
 
-require "../InnoDBStatusParser.pm";
+use InnoDBStatusParser;
+use MaatkitTest;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-};
-
 my $is = new InnoDBStatusParser();
 isa_ok($is, 'InnoDBStatusParser');
 
 # Very basic status on quiet sandbox server.
 is_deeply(
-   $is->parse(load_file('samples/is001.txt')),
+   $is->parse(load_file('common/t/samples/is001.txt')),
       {
         deadlock_locks => [],
         deadlock_transactions => [],

@@ -1,5 +1,11 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 # This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
@@ -61,16 +67,14 @@ use Test::More tests => $tests;
 use English qw(-no_match_vars);
 use DBI;
 
-require '../RowDiff.pm';
-require '../MockSth.pm';
-require '../Sandbox.pm';
-require '../DSNParser.pm';
-require '../TableParser.pm';
-require '../MySQLDump.pm';
-require '../Quoter.pm';
-
-use Data::Dumper;
-$Data::Dumper::Indent=1;
+use RowDiff;
+use MockSth;
+use Sandbox;
+use DSNParser;
+use TableParser;
+use MySQLDump;
+use Quoter;
+use MaatkitTest;
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -442,7 +446,7 @@ is_deeply(
 $d = new RowDiff(dbh => $master_dbh);
 
 $sb->create_dbs($master_dbh, [qw(test)]);
-$sb->load_file('master', 'samples/issue_11.sql');
+$sb->load_file('master', 'common/t/samples/issue_11.sql');
 
 my $tbl = $tp->parse(
    $du->get_create_table($master_dbh, $q, 'test', 'issue_11'));

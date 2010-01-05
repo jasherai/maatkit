@@ -1,22 +1,21 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 12;
 
-require "../WatchStatus.pm";
-require "../DSNParser.pm";
-require "../Sandbox.pm";
-require "../MaatkitTest.pm";
-require "../InnoDBStatusParser.pm";
-
-MaatkitTest->import(qw(load_file));
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
+use WatchStatus;
+use DSNParser;
+use Sandbox;
+use InnoDBStatusParser;
+use MaatkitTest;
 
 my $is  = new InnoDBStatusParser();
 my $dp  = new DSNParser();
@@ -83,7 +82,7 @@ $w = new WatchStatus(
 );
 $w->set_callbacks( show_innodb_status => \&show_innodb_status );
 
-$status = load_file('samples/is001.txt');
+$status = load_file('common/t/samples/is001.txt');
 
 is(
    $w->check(),

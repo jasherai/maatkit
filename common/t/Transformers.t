@@ -1,17 +1,24 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+
+   # The timestamps for unix_timestamp are East Coast (EST), so GMT-4.
+   $ENV{TZ}='EST5EDT';
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 39;
 
-BEGIN {
-   # The timestamps for unix_timestamp are East Coast (EST), so GMT-4.
-   $ENV{TZ}='EST5EDT';
-   require '../Transformers.pm';
-   Transformers->import( qw(parse_timestamp micro_t shorten secs_to_time
+use Transformers;
+use MaatkitTest;
+
+Transformers->import( qw(parse_timestamp micro_t shorten secs_to_time
    percentage_of unix_timestamp make_checksum any_unix_timestamp ts) );
-};
 
 # #############################################################################
 # micro_t() tests.
@@ -114,8 +121,8 @@ is(
    'any_unix_timestamp proper timestamp without hh:mm:ss'
 );
 
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use DSNParser;
+use Sandbox;
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');

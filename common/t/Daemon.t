@@ -1,12 +1,19 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 23;
 
-require '../Daemon.pm';
-require '../OptionParser.pm';
+use Daemon;
+use OptionParser;
+use MaatkitTest;
 
 my $o = new OptionParser(
    description => 'foo',
@@ -18,7 +25,7 @@ my $log_file = '/tmp/daemonizes.output';
 
 isa_ok($d, 'Daemon');
 
-my $cmd     = 'samples/daemonizes.pl';
+my $cmd     = "$trunk/common/t/samples/daemonizes.pl";
 my $ret_val = system("$cmd 2 --daemonize --pid $pid_file");
 SKIP: {
    skip 'Cannot test Daemon.pm because t/daemonizes.pl is not working',
@@ -89,7 +96,7 @@ SKIP: {
       chomp($pid = `cat $pid_file`);
       my $proc_fd_0 = -l "/proc/$pid/0"    ? "/proc/$pid/0"
                     : -l "/proc/$pid/fd/0" ? "/proc/$pid/fd/0"
-                    : BAIL_OUT("Cannot find fd 0 symlink in /proc/$pid");
+                    : die "Cannot find fd 0 symlink in /proc/$pid";
       my $stdin = readlink $proc_fd_0;
       is(
          $stdin,
@@ -102,7 +109,7 @@ SKIP: {
       chomp($pid = `cat $pid_file`);
       $proc_fd_0 = -l "/proc/$pid/0"    ? "/proc/$pid/0"
                  : -l "/proc/$pid/fd/0" ? "/proc/$pid/fd/0"
-                 : BAIL_OUT("Cannot find fd 0 symlink in /proc/$pid");
+                 : die "Cannot find fd 0 symlink in /proc/$pid";
       $stdin = readlink $proc_fd_0;
       like(
          $stdin,

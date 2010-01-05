@@ -1,16 +1,20 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 16;
 
-require '../TcpdumpParser.pm';
-require '../ProtocolParser.pm';
-require '../HTTPProtocolParser.pm';
-require "../MaatkitTest.pm";
-
-MaatkitTest->import(qw(test_protocol_parser load_data));
+use TcpdumpParser;
+use ProtocolParser;
+use HTTPProtocolParser;
+use MaatkitTest;
 
 my $tcpdump  = new TcpdumpParser();
 my $protocol; # Create a new HTTPProtocolParser for each test.
@@ -20,7 +24,7 @@ $protocol = new HTTPProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/http_tcpdump001.txt',
+   file     => 'common/t/samples/http_tcpdump001.txt',
    result   => [
       { ts              => '2009-11-09 11:31:52.341907',
         bytes           => '715',
@@ -40,7 +44,7 @@ $protocol = new HTTPProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/http_tcpdump002.txt',
+   file     => 'common/t/samples/http_tcpdump002.txt',
    result   => [
       {
          ts             => '2009-11-09 15:31:09.074855',
@@ -160,7 +164,7 @@ $protocol = new HTTPProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/http_tcpdump004.txt',
+   file     => 'common/t/samples/http_tcpdump004.txt',
    result   => [
       {  ts             => '2009-11-12 11:27:10.757573',
          Query_time     => '0.327356',
@@ -180,7 +184,7 @@ $protocol = new HTTPProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/http_tcpdump005.txt',
+   file     => 'common/t/samples/http_tcpdump005.txt',
    result   => [
       {  ts             => '2009-11-13 09:20:31.041924',
          Query_time     => '0.342166',
@@ -201,7 +205,7 @@ $protocol = new HTTPProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/http_tcpdump006.txt',
+   file     => 'common/t/samples/http_tcpdump006.txt',
    result   => [
       {  ts             => '2009-11-13 09:50:44.432099',
          Query_time     => '0.140878',
@@ -221,7 +225,7 @@ $protocol = new HTTPProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/http_tcpdump007.txt',
+   file     => 'common/t/samples/http_tcpdump007.txt',
    result   => [
       {  ts             => '2009-11-13 10:09:53.251620',
          Query_time     => '0.121971',
@@ -241,7 +245,7 @@ $protocol = new HTTPProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/http_tcpdump008.txt',
+   file     => 'common/t/samples/http_tcpdump008.txt',
    result   => [
       {  ts             => '2009-11-13 10:53:48.349465',
          Query_time     => '0.030740',
@@ -261,7 +265,7 @@ $protocol = new HTTPProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/http_tcpdump009.txt',
+   file     => 'common/t/samples/http_tcpdump009.txt',
    result   => [
       { ts              => '2009-11-09 11:31:52.341907',
         bytes           => '715',

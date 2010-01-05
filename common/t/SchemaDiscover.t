@@ -1,23 +1,30 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 5;
 
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use SchemaDiscover;
+use DSNParser;
+use MySQLDump;
+use Quoter;
+use TableParser;
+use VersionParser;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
+
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
-
-require '../SchemaDiscover.pm';
-require '../DSNParser.pm';
-require '../MySQLDump.pm';
-require '../Quoter.pm';
-require '../TableParser.pm';
-require '../VersionParser.pm';
 
 my $du = new MySQLDump();
 my $q  = new Quoter();

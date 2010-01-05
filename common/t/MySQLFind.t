@@ -1,5 +1,11 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -7,12 +13,13 @@ use Test::More tests => 44;
 
 use List::Util qw(max);
 
-require "../MySQLFind.pm";
-require "../Quoter.pm";
-require "../TableParser.pm";
-require "../MySQLDump.pm";
-require "../DSNParser.pm";
-require "../Sandbox.pm";
+use MySQLFind;
+use Quoter;
+use TableParser;
+use MySQLDump;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
 
 my $f;
 my %found;
@@ -457,7 +464,7 @@ is_deeply(
 #           possible
 # Issue 23: Table filtering isn't efficient
 # #############################################################################
-my $output = `MKDEBUG=1 samples/MySQLFind.pl 2>&1 | grep 'SHOW CREATE' | wc -l`;
+my $output = `MKDEBUG=1 $trunk/common/t/samples/MySQLFind.pl 2>&1 | grep 'SHOW CREATE' | wc -l`;
 chomp $output;
 is($output, '1', 'Does SHOW CREATE only for filtered tables');
 
@@ -468,7 +475,7 @@ is($output, '1', 'Does SHOW CREATE only for filtered tables');
 # #############################################################################
 # Issue 262
 # #############################################################################
-$sb->load_file('master', 'samples/issue_262.sql');
+$sb->load_file('master', 'common/t/samples/issue_262.sql');
 $f = new MySQLFind(
    quoter    => $q,
    dumper    => $d,
@@ -504,7 +511,7 @@ is_deeply(
 # The underlying problem for issue 170 is that MySQLDump doesn't eval some
 # of its queries so when MySQLFind uses it and hits a broken table it dies.
 
-diag(`cp ../../mk-parallel-dump/t/samples/broken_tbl.frm /tmp/12345/data/test/broken_tbl.frm`);
+diag(`cp $trunk/mk-parallel-dump/t/samples/broken_tbl.frm /tmp/12345/data/test/broken_tbl.frm`);
 $f = new MySQLFind(
    quoter    => $q,
    dumper    => $d,

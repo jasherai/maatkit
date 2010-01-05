@@ -21,6 +21,13 @@ package MaatkitTest;
 
 # These are common subs used in Maatkit test scripts.
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+our $trunk = $ENV{MAATKIT_TRUNK};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -35,25 +42,28 @@ $Data::Dumper::Quotekeys = 0;
 require Exporter;
 our @ISA         = qw(Exporter);
 our %EXPORT_TAGS = ();
-our @EXPORT      = qw();
-our @EXPORT_OK   = qw(
-   output
+our @EXPORT      = qw(
    load_data
    load_file
+   parse_file
    wait_until
    wait_for
    test_log_parser
    test_protocol_parser
+   test_packet_parser
    no_diff
+   $trunk
 );
+our @EXPORT_OK   = qw(output);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 
 # This sub doesn't work yet because "mk_upgrade::main" needs to be ref somehow.
 sub output {
    my $output = '';
    open my $output_fh, '>', \$output
-      or BAIL_OUT("Cannot capture output to variable: $OS_ERROR");
+      or die "Cannot capture output to variable: $OS_ERROR";
    select $output_fh;
    eval { mk_upgrade::main(@_); };
    close $output_fh;
@@ -61,23 +71,47 @@ sub output {
    return $EVAL_ERROR ? $EVAL_ERROR : $output;
 }
 
-# Load data from file and removes spaces.
+# Load data from file and removes spaces.  Used to load tcpdump dumps.
 sub load_data {
    my ( $file ) = @_;
-   open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
+   $file = "$trunk/$file";
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
    close $fh;
    (my $data = join('', $contents =~ m/(.*)/g)) =~ s/\s+//g;
    return $data;
 }
 
+# Slurp file and return its entire contents.
 sub load_file {
    my ( $file, %args ) = @_;
+   $file = "$trunk/$file";
    open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
    my $contents = do { local $/ = undef; <$fh> };
    close $fh;
    chomp $contents if $args{chomp_contents};
    return $contents;
+}
+
+sub parse_file {
+   my ( $file, $p, $ea ) = @_;
+   $file = "$trunk/$file";
+   my @e;
+   eval {
+      open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+      my %args = (
+         next_event => sub { return <$fh>;    },
+         tell       => sub { return tell $fh; },
+         fh         => $fh,
+      );
+      while ( my $e = $p->parse_event(%args) ) {
+         push @e, $e;
+         $ea->aggregate($e) if $ea;
+      }
+      close $fh;
+   };
+   die $EVAL_ERROR if $EVAL_ERROR;
+   return \@e;
 }
 
 # Wait until code returns true.
@@ -127,24 +161,25 @@ sub _read {
 sub test_log_parser {
    my ( %args ) = @_;
    foreach my $arg ( qw(parser file) ) {
-      BAIL_OUT("I need a $arg argument") unless $args{$arg};
+      die "I need a $arg argument" unless $args{$arg};
    }
    my $p = $args{parser};
 
    # Make sure caller isn't giving us something we don't understand.
    # We could ignore it, but then caller might not get the results
    # they expected.
-   map  { BAIL_OUT("What is $_ for?") }
+   map  { die "What is $_ for?"; }
    grep { $_ !~ m/^(?:parser|misc|file|result|num_events|oktorun)$/ }
    keys %args;
 
+   my $file = "$trunk/$args{file}";
    my @e;
    eval {
-      open my $fh, "<", $args{file}
-         or BAIL_OUT("Cannot open $args{file}: $OS_ERROR");
+      open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
       my %parser_args = (
          next_event => sub { return _read($fh); },
          tell       => sub { return tell($fh);  },
+         fh         => $fh,
          misc       => $args{misc},
          oktorun    => $args{oktorun},
       );
@@ -182,7 +217,7 @@ sub test_log_parser {
 sub test_protocol_parser {
    my ( %args ) = @_;
    foreach my $arg ( qw(parser protocol file) ) {
-      BAIL_OUT("I need a $arg argument") unless $args{$arg};
+      die "I need a $arg argument" unless $args{$arg};
    }
    my $parser   = $args{parser};
    my $protocol = $args{protocol};
@@ -190,14 +225,14 @@ sub test_protocol_parser {
    # Make sure caller isn't giving us something we don't understand.
    # We could ignore it, but then caller might not get the results
    # they expected.
-   map { BAIL_OUT("What is $_ for?") }
+   map { die "What is $_ for?"; }
    grep { $_ !~ m/^(?:parser|protocol|misc|file|result|num_events|desc)$/ }
    keys %args;
 
+   my $file = "$trunk/$args{file}";
    my @e;
    eval {
-      open my $fh, "<", $args{file}
-         or BAIL_OUT("Cannot open $args{file}: $OS_ERROR");
+      open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
       my %parser_args = (
          next_event => sub { return _read($fh); },
          tell       => sub { return tell($fh);  },
@@ -235,6 +270,50 @@ sub test_protocol_parser {
    return \@e;
 }
 
+sub test_packet_parser {
+   my ( %args ) = @_;
+   foreach my $arg ( qw(parser file) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $parser   = $args{parser};
+
+   # Make sure caller isn't giving us something we don't understand.
+   # We could ignore it, but then caller might not get the results
+   # they expected.
+   map { die "What is $_ for?"; }
+   grep { $_ !~ m/^(?:parser|misc|file|result|desc|oktorun)$/ }
+   keys %args;
+
+   my $file = "$trunk/$args{file}";
+   my @packets;
+   open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
+   my %parser_args = (
+      next_event => sub { return _read($fh); },
+      tell       => sub { return tell($fh);  },
+      misc       => $args{misc},
+      oktorun    => $args{oktorun},
+   );
+   while ( my $packet = $parser->parse_event(%parser_args) ) {
+      push @packets, $packet;
+   }
+
+   # raw_packet is the actual dump text from the file.  It's used
+   # in MySQLProtocolParser but I don't think we need to double-check
+   # it here.  It will make the results very long.
+   foreach my $packet ( @packets ) {
+      delete $packet->{raw_packet};
+   }
+
+   if ( !is_deeply(
+         \@packets,
+         $args{result},
+         "$args{file}" . ($args{desc} ? ": $args{desc}" : '')
+      ) ) {
+      print Dumper(\@packets);
+   }
+
+   return;
+}
 # Returns true (1) if there's no difference between the
 # cmd's output and the expected output.
 sub no_diff {

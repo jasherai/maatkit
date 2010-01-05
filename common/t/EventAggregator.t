@@ -1,46 +1,28 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 73;
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Quotekeys = 0;
-$Data::Dumper::Sortkeys  = 1;
-
-require '../QueryRewriter.pm';
-require '../EventAggregator.pm';
-require '../QueryParser.pm';
-require '../SlowLogParser.pm';
-require '../BinaryLogParser.pm';
+use QueryRewriter;
+use EventAggregator;
+use QueryParser;
+use SlowLogParser;
+use BinaryLogParser;
+use MaatkitTest;
 
 my $qr = new QueryRewriter();
 my $qp = new QueryParser();
 my $p  = new SlowLogParser();
 my $bp = new BinaryLogParser();
 my ( $result, $events, $ea, $expected );
-
-sub parse_file {
-   my ( $file, $p ) = @_;
-   my @e;
-   eval {
-      open my $fh, "<", $file or BAIL_OUT($OS_ERROR);
-      my %args = (
-         next_event => sub { return <$fh>;    },
-         tell       => sub { return tell $fh; },
-         misc       => undef,
-      );
-      while ( my $e = $p->parse_event(%args) ) {
-         push @e, $e;
-         $ea->aggregate($e);
-      }
-      close $fh;
-   };
-   die $EVAL_ERROR if $EVAL_ERROR;
-   return \@e;
-}
 
 $ea = new EventAggregator(
    groupby    => 'fingerprint',
@@ -1428,7 +1410,7 @@ $ea = new EventAggregator(
 # timestamp prop shows up only in the one event.  The bug is that it appears
 # to be in all events by the time we get to QueryReportFormatter.
 is_deeply(
-   parse_file('samples/slow029.txt', $p),
+   parse_file('common/t/samples/slow029.txt', $p, $ea),
    [
       {
        Schema => 'mysql',
@@ -1499,7 +1481,7 @@ $ea = new EventAggregator(
    worst        => 'Query_time',
 );
 # In slow030, event 180 is a new class with new attributes.
-parse_file('samples/slow030.txt', $p);
+parse_file('common/t/samples/slow030.txt', $p, $ea);
 ok(
    exists $ea->{unrolled_for}->{InnoDB_rec_lock_wait},
    'Handler sub created for new attrib; default unroll_limit (issue 514)'
@@ -1514,7 +1496,7 @@ $ea = new EventAggregator(
    worst        => 'Query_time',
    unroll_limit => 50,
 );
-parse_file('samples/slow030.txt', $p);
+parse_file('common/t/samples/slow030.txt', $p, $ea);
 ok(
    !exists $ea->{unrolled_for}->{InnoDB_rec_lock_wait},
    'Handler sub not created for new attrib; unroll_limit=50 (issue 514)'
@@ -1580,7 +1562,7 @@ $ea = new EventAggregator(
    unroll_limit => 1,
 );
 eval {
-   parse_file('samples/binlog004.txt', $bp);
+   parse_file('common/t/samples/binlog004.txt', $bp, $ea);
 };
 is(
    $EVAL_ERROR,

@@ -1,16 +1,18 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 6;
 
-use Data::Dumper;
-$Data::Dumper::Quotekeys = 0;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Indent    = 1;
-
-require "../TcpdumpParser.pm";
+use TcpdumpParser;
+use MaatkitTest;
 
 my $p = new TcpdumpParser();
 
@@ -85,45 +87,13 @@ is_deeply(
 
 my $oktorun = 1;
 
-sub _read {
-   my ( $fh ) = @_;
-   return <$fh>;
-}
-
-sub run_test {
-   my ( $file, $desc, $result ) = @_;
-   my @packets;
-   open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
-   my %args = (
-      next_event => sub { return _read($fh); },
-      tell       => sub { return tell($fh);  },
-      oktorun    => sub { $oktorun = $_[0];  },
-   );
-   while ( my $packet = $p->parse_event(%args) ) {
-      push @packets, $packet;
-   }
-
-   # raw_packet is the actual dump text from the file.  It's used
-   # in MySQLProtocolParser but I don't think we need to double-check
-   # it here.  It will make the results very long.
-   foreach my $packet ( @packets ) {
-      delete $packet->{raw_packet};
-   }
-
-   if ( !is_deeply(
-         \@packets,
-         $result,
-         "$file: $desc"
-      ) ) {
-      print Dumper(\@packets);
-   }
-   return;
-}
-
 # Check that parsing multiple packets and callback works.
-run_test(
-   'samples/tcpdump001.txt',
-   'basic packets',
+test_packet_parser(
+   parser  => $p,
+   oktorun => sub { $oktorun = $_[0]; },
+   file    => 'common/t/samples/tcpdump001.txt',
+   desc    => 'basic packets',
+   result  => 
    [
       {  ts          => '2009-04-12 09:50:16.804849',
          ack         => '2903937561',
@@ -183,9 +153,11 @@ is(
 # #############################################################################
 
 # This issue is caused by having extra info in the tcpdump output.
-run_test(
-   'samples/memc_tcpdump013.txt',
-   'verbose tcpdump output with ascii dump',
+test_packet_parser(
+   parser => $p,
+   file   => 'common/t/samples/memc_tcpdump013.txt',
+   desc   => 'verbose tcpdump output with ascii dump',
+   result =>
    [
       {  ts          => '2009-08-03 19:56:37.683157',
          ack         => '1391934401',
@@ -213,9 +185,11 @@ run_test(
 # #############################################################################
 # Issue 564: mk-query-digest --type tcpdump|memcached crashes on empty input
 # #############################################################################
-run_test(
-   'samples/tcpdump020.txt',
-   'Empty input (issue 564)',
+test_packet_parser(
+   parser => $p,
+   file   => 'common/t/samples/tcpdump020.txt',
+   desc   => 'Empty input (issue 564)',
+   result =>
    [
    ],
 );

@@ -53,7 +53,7 @@ sub parse_event {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
+   my ($fh) = @args{@required_args};
 
    my $pending = $self->{pending};
 

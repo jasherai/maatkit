@@ -1,18 +1,20 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 8;
 
-require '../QueryRewriter.pm';
-require '../ErrorLogPatternMatcher.pm';
-require '../ErrorLogParser.pm';
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
+use QueryRewriter;
+use ErrorLogPatternMatcher;
+use ErrorLogParser;
+use MaatkitTest;
 
 my $qr = new QueryRewriter();
 my $p  = new ErrorLogParser();
@@ -24,6 +26,7 @@ my $output;
 
 sub parse {
    my ( $file ) = @_;
+   $file = "$trunk/$file";
    my @e;
    my @m;
    open my $fh, "<", $file or die $OS_ERROR;
@@ -41,7 +44,7 @@ sub parse {
 }
 
 is_deeply(
-   parse('samples/errlog001.txt'),
+   parse('common/t/samples/errlog001.txt', $p),
    [
       {
         Level        => 'unknown',
@@ -386,7 +389,7 @@ is_deeply(
 
 $m = new ErrorLogPatternMatcher(QueryRewriter => $qr);
 is_deeply(
-   parse('samples/errlog002.txt'),
+   parse('common/t/samples/errlog002.txt', $p),
    [
       {
          New_pattern => 'Yes',
@@ -439,7 +442,8 @@ is_deeply(
    'Does not load known patterns by default'
 );
 
-open my $fh, '<', 'samples/patterns.txt' or BAIL_OUT($OS_ERROR);
+open my $fh, '<', "$trunk/common/t/samples/patterns.txt"
+   or die "Cannot open $trunk/common/t/samples/patterns.txt: $OS_ERROR";
 $m->load_patterns_file($fh);
 @patterns = $m->patterns;
 is_deeply(

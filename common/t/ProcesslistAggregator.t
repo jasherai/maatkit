@@ -1,33 +1,28 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 5;
 
-require '../ProcesslistAggregator.pm';
-require '../TextResultSetParser.pm';
-require '../DSNParser.pm';
-require '../MySQLDump.pm';
-require '../Quoter.pm';
-require '../TableParser.pm';
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Quotekeys = 0;
+use ProcesslistAggregator;
+use TextResultSetParser;
+use DSNParser;
+use MySQLDump;
+use Quoter;
+use TableParser;
+use MaatkitTest;
 
 my $r   = new TextResultSetParser();
 my $apl = new ProcesslistAggregator();
 
 isa_ok($apl, 'ProcesslistAggregator');
-
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
 
 sub test_aggregate {
    my ($file, $expected, $msg) = @_;
@@ -41,7 +36,7 @@ sub test_aggregate {
 }
 
 test_aggregate(
-   'samples/recset001.txt',
+   'common/t/samples/recset001.txt',
    {
       command => { query     => { time => 0, count => 1 } },
       db      => { ''        => { time => 0, count => 1 } },
@@ -53,7 +48,7 @@ test_aggregate(
 );
 
 test_aggregate(
-   'samples/recset004.txt',
+   'common/t/samples/recset004.txt',
    {
       db => {
          NULL   => { count => 1,  time => 0 },
@@ -79,7 +74,7 @@ test_aggregate(
    'Sample with 51 processes',
 );
 
-my $aggregate = $apl->aggregate($r->parse(load_file('samples/recset003.txt')));
+my $aggregate = $apl->aggregate($r->parse(load_file('common/t/samples/recset003.txt')));
 cmp_ok(
    $aggregate->{db}->{NULL}->{count},
    '==',

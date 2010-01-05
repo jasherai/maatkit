@@ -1,24 +1,24 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 6;
 
-require '../TextResultSetParser.pm';
-require '../MaatkitTest.pm';
-
-MaatkitTest->import(qw(load_file));
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Quotekeys = 0;
+use TextResultSetParser;
+use MaatkitTest;
 
 my $r = new TextResultSetParser();
 isa_ok($r, 'TextResultSetParser');
 
 is_deeply(
-   $r->parse( load_file('samples/recset001.txt') ),
+   $r->parse( load_file('common/t/samples/recset001.txt') ),
    [
       {
          Time     => '0',
@@ -35,7 +35,7 @@ is_deeply(
 );
 
 is_deeply(
-   $r->parse( load_file('samples/recset002.txt') ),
+   $r->parse( load_file('common/t/samples/recset002.txt') ),
    [
       {
          Time     => '4',
@@ -61,7 +61,7 @@ is_deeply(
    '2 row vertical processlist'
 );
 
-my $recset = $r->parse ( load_file('samples/recset003.txt') );
+my $recset = $r->parse ( load_file('common/t/samples/recset003.txt') );
 cmp_ok(
    scalar @$recset,
    '==',
@@ -69,7 +69,7 @@ cmp_ok(
    '113 row vertical processlist'
 );
 
-$recset = $r->parse( load_file('samples/recset004.txt') );
+$recset = $r->parse( load_file('common/t/samples/recset004.txt') );
 cmp_ok(
    scalar @$recset,
    '==',
@@ -78,7 +78,7 @@ cmp_ok(
 );
 
 is_deeply(
-   $r->parse( load_file('samples/recset005.txt') ),
+   $r->parse( load_file('common/t/samples/recset005.txt') ),
    [
       {
          Id    => '29392005',

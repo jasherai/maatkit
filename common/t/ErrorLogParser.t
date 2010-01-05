@@ -1,53 +1,28 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 16;
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
-require "../ErrorLogParser.pm";
+use ErrorLogParser;
+use MaatkitTest;
 
 my $p = new ErrorLogParser();
 
 my $oktorun = 1;
 
-sub run_test {
-   my ( $def ) = @_;
-   map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:misc|file|result|num_events|oktorun)$/ }
-      keys %$def;
-   my @e;
-   eval {
-      open my $fh, "<", $def->{file} or die $OS_ERROR;
-      my %args = (
-         fh      => $fh,
-         misc    => $def->{misc},
-         oktorun => $def->{oktorun},
-      );
-      while ( my $e = $p->parse_event(%args) ) {
-         push @e, $e;
-      }
-      close $fh;
-   };
-   is($EVAL_ERROR, '', "No error on $def->{file}");
-   if ( defined $def->{result} ) {
-      is_deeply(\@e, $def->{result}, $def->{file})
-         or print "Got: ", Dumper(\@e);
-   }
-   if ( defined $def->{num_events} ) {
-      is(scalar @e, $def->{num_events}, "$def->{file} num_events");
-   }
-}
-
-run_test({
-   file    => 'samples/errlog001.txt',
+test_log_parser(
+   parser  => $p,
+   file    => 'common/t/samples/errlog001.txt',
    oktorun => sub { $oktorun = $_[0]; },
-   result => [
+   result  => [
       {
        arg        => 'mysqld started',
        pos_in_log => 0,
@@ -272,10 +247,11 @@ run_test({
        ts         => '081117 16:32:55',
       },
    ],
-});
+);
 
-run_test({
-   file    => 'samples/errlog003.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/errlog003.txt',
    result => [
       {
          Level       => 'error',
@@ -296,7 +272,7 @@ run_test({
          ts          => '090902 10:43:55'
       },
    ]
-});
+);
 
 my $big_arg = <<'EOF';
 mysqld got signal 6 ;
@@ -364,8 +340,9 @@ EOF
 chomp $big_arg;
 $big_arg =~ s/\n+/ /g;
 
-run_test({
-   file    => 'samples/errlog004.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/errlog004.txt',
    result => [
       {
          Level       => 'error',
@@ -397,7 +374,7 @@ run_test({
          Level       => 'unknown',
       },
    ]
-});
+);
 
 $big_arg = <<'EOF';
 Status information:
@@ -537,8 +514,9 @@ EOF
 chomp $big_arg;
 $big_arg =~ s/\n+/ /g;
 
-run_test({
-   file    => 'samples/errlog005.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/errlog005.txt',
    result => [
       {
          pos_in_log  => 0,
@@ -563,7 +541,7 @@ run_test({
          Level       => 'warning',
       },
    ],
-});
+);
 
 $big_arg = <<'EOF';
 Memory status:
@@ -862,8 +840,9 @@ EOF
 chomp $big_arg;
 $big_arg =~ s/\n+/ /g;
 
-run_test({
-   file    => 'samples/errlog009.txt',
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/errlog009.txt',
    result => [
       {
          Level       => 'warning',
@@ -883,11 +862,12 @@ run_test({
          ts          => '080523  7:26:27',
       },
    ],
-});
+);
 
-run_test(
-   {  file   => 'samples/errlog006.txt',
-      result => [
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/errlog006.txt',
+   result => [
          {  Level => 'unknown',
             ts    => '091119 22:27:11',
             arg =>
@@ -904,8 +884,7 @@ run_test(
                . 'concurrently?',
             pos_in_log => '233'
          },
-      ],
-   }
+   ],
 );
 
 $big_arg = <<'EOF';
@@ -3347,9 +3326,10 @@ EOF
 chomp $big_arg;
 $big_arg =~ s/\n+/ /g;
 
-run_test(
-   {  file   => 'samples/errlog007.txt',
-      result => [
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/errlog007.txt',
+   result => [
          {  Level => 'unknown',
             ts    => '091121 13:17:58',
             arg   => 'InnoDB: Warning: cannot find a free slot for an '
@@ -3369,7 +3349,6 @@ run_test(
             ts         => '091205  4:49:04',
          },
       ],
-   }
 );
 
 $big_arg = <<'EOF';
@@ -3405,9 +3384,10 @@ EOF
 chomp $big_arg;
 $big_arg =~ s/\n+/ /g;
 
-run_test(
-   {  file   => 'samples/errlog008.txt',
-      result => [
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/errlog008.txt',
+   result => [
          {  Level => 'unknown',
             arg =>
                'InnoDB: Assertion failure in thread 1525901664 in file srv0srv.c line 2093 We intentionally generate a memory trap. Submit a detailed bug report to http://bugs.mysql.com. If you get repeated assertion failures or crashes, even immediately after the mysqld startup, there may be corruption in the InnoDB tablespace. Please refer to http://dev.mysql.com/doc/refman/5.0/en/forcing-recovery.html about forcing recovery.',
@@ -3424,8 +3404,7 @@ run_test(
             pos_in_log => '1722',
             ts         => '091205 04:49:10'
          },
-      ],
-   }
+   ],
 );
 
 # #############################################################################

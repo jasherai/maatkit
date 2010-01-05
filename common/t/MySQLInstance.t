@@ -1,37 +1,34 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 plan skip_all => 'Deprecated mk-audit module';
 
-require '../MySQLInstance.pm';
-require '../OptionParser.pm';
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use MySQLInstance;
+use OptionParser;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Quotekeys = 0;
-
 my $o = new OptionParser(
    description => 'for MySQLInstance.t',
    dp          => $dp,
 );
-$o->get_specs('../../mk-audit/mk-audit');
+$o->get_specs("$trunk/mk-audit/mk-audit");
 
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
 
 # We must get the basedir to the mysqld bin because this path will
 # differ from my machine to yours. For example, on my machine it is:

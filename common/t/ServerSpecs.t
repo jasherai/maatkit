@@ -1,46 +1,20 @@
 #!/usr/bin/perl
 
-# This program is copyright 2008 Percona Inc.
-# Feedback and improvements are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
-# systems, you can issue `man perlgpl' or `man perlartistic' to read these
-# licenses.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
-# Add samples dir to our PATH so that ServerSpecs will see the
-# dummy dmesg, megarc, etc. and fill in $server->{storage}->{raid}
-# as well as the dummy vgs.
 $ENV{PATH} = "./samples/:$ENV{PATH}";
 
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 11;
 use English qw(-no_match_vars);
+use Test::More tests => 11;
 
-require '../ServerSpecs.pm';
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Quotekeys = 0;
-
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
+use ServerSpecs;
+use MaatkitTest;
 
 my $server = ServerSpecs::server_specs();
 

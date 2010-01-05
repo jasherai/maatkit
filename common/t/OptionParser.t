@@ -1,12 +1,19 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 141;
 
-require "../OptionParser.pm";
-require "../DSNParser.pm";
+use OptionParser;
+use DSNParser;
+use MaatkitTest;
 
 my $dp = new DSNParser();
 my $o  = new OptionParser(
@@ -1825,7 +1832,7 @@ $o = new OptionParser(
    description  => 'parses command line options.',
    dp           => $dp,
 );
-$o->get_specs('../../mk-archiver/mk-archiver');
+$o->get_specs("$trunk/mk-archiver/mk-archiver");
 @ARGV = (
    '--source',    'h=127.1,S=/tmp/mysql.socket',
    '--port',      '12345',
@@ -1884,7 +1891,7 @@ $o = new OptionParser(
    description  => 'parses command line options.',
    dp           => $dp,
 );
-$o->get_specs('../../mk-query-digest/mk-query-digest');
+$o->get_specs("$trunk/mk-query-digest/mk-query-digest");
 @ARGV = (qw(--iterations 9));
 $o->get_opts();
 is(
@@ -1903,7 +1910,7 @@ $o = new OptionParser(
    description  => 'parses command line options.',
    dp           => $dp,
 );
-$o->get_specs('../../mk-query-digest/mk-query-digest');
+$o->get_specs("$trunk/mk-query-digest/mk-query-digest");
 @ARGV = (qw(--run-time +9));
 $o->get_opts();
 is(

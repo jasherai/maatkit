@@ -1,18 +1,22 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 18;
 
-require '../KeySize.pm';
-require '../TableParser.pm';
-require '../Quoter.pm';
-require '../DSNParser.pm';
-require '../Sandbox.pm';
-
-use Data::Dumper;
-$Data::Dumper::Indent=1;
+use KeySize;
+use TableParser;
+use Quoter;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
 
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -26,14 +30,6 @@ my $tbl;
 my $struct;
 my %key;
 my ($size, $chosen_key); 
-
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
 
 sub key_info {
    my ( $file, $db, $tbl, $key, $cols ) = @_;
@@ -55,7 +51,7 @@ isa_ok($ks, 'KeySize');
 
 # With an empty table, the WHERE is impossible, so MySQL should optimize
 # away the query, and key_len and rows will be NULL in EXPLAIN.
-%key = key_info('samples/dupe_key.sql', 'test', 'dupe_key', 'a');
+%key = key_info('common/t/samples/dupe_key.sql', 'test', 'dupe_key', 'a');
 is(
    $ks->get_key_size(%key),
    undef,
@@ -77,8 +73,8 @@ is(
    'Two column int key'
 );
 
-$sb->load_file('master', 'samples/issue_331-parent.sql', 'test');
-%key = key_info('samples/issue_331.sql', 'test', 'issue_331_t2', 'fk_1', ['id']);
+$sb->load_file('master', 'common/t/samples/issue_331-parent.sql', 'test');
+%key = key_info('common/t/samples/issue_331.sql', 'test', 'issue_331_t2', 'fk_1', ['id']);
 ($size, $chosen_key) = $ks->get_key_size(%key);
 is(
    $size,
@@ -98,13 +94,13 @@ is(
 $dbh->do('USE test');
 $dbh->do('DROP TABLE IF EXISTS test.issue_364');
 %key = key_info(
-   'samples/issue_364.sql',
+   'common/t/samples/issue_364.sql',
    'test',
    'issue_364',
    'BASE_KID_ID',
    [qw(BASE_KID_ID ID)]
 );
-$sb->load_file('master', 'samples/issue_364-data.sql', 'test');
+$sb->load_file('master', 'common/t/samples/issue_364-data.sql', 'test');
 
 # This issue had another issue: the key is ALL CAPS, but TableParser
 # lowercases all identifies, so KeySize said the key didn't exist.

@@ -3,22 +3,28 @@
 # This script is used by Daemon.t because that test script
 # cannot daemonize itself.
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-require '../Daemon.pm';
-require '../OptionParser.pm';
+use Daemon;
+use OptionParser;
+use MaatkitTest;
 
 my $o = new OptionParser(
    strict      => 0,
    description => 'daemonizes, prints to STDOUT and STDERR, sleeps and exits.',
    prompt      => 'SLEEP_TIME [ARGS]',
 );
-$o->get_specs('samples/daemonizes.pl');
+$o->get_specs("$trunk/common/t/samples/daemonizes.pl");
 $o->get_opts();
 
 if ( scalar @ARGV < 1 ) {

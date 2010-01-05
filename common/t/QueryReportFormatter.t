@@ -1,18 +1,21 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 17;
 use English qw(-no_match_vars);
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Quotekeys = 0;
+use Test::More tests => 17;
 
-require '../Transformers.pm';
-require '../QueryReportFormatter.pm';
-require '../EventAggregator.pm';
-require '../QueryRewriter.pm';
+use Transformers;
+use QueryReportFormatter;
+use EventAggregator;
+use QueryRewriter;
+use MaatkitTest;
 
 my ( $qrf, $result, $events, $expected, $qr, $ea );
 
@@ -427,7 +430,7 @@ is($result, $expected, 'No zero bool vals');
 # Issue 458: mk-query-digest Use of uninitialized value in division (/) at
 # line 3805
 # #############################################################################
-require '../SlowLogParser.pm';
+use SlowLogParser;
 my $p = new SlowLogParser();
 
 sub report_from_file {
@@ -436,6 +439,7 @@ sub report_from_file {
       worst   => 'Query_time',
    );
    my ( $file ) = @_;
+   $file = "$trunk/$file";
    my @e;
    my @callbacks;
    push @callbacks, sub {
@@ -478,7 +482,7 @@ sub report_from_file {
 # interesting about this sample, but we just want to make sure that the
 # timestamp prop shows up only in the one event.  The bug is that it appears
 eval {
-   report_from_file('samples/slow029.txt');
+   report_from_file('common/t/samples/slow029.txt');
 };
 is(
    $EVAL_ERROR,

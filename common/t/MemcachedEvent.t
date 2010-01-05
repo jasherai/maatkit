@@ -1,16 +1,18 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 15;
 
-require "../MemcachedEvent.pm";
-
-use Data::Dumper;
-$Data::Dumper::Quotekeys = 0;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Indent    = 1;
+use MemcachedEvent;
+use MaatkitTest;
 
 my $memce = new MemcachedEvent();
 isa_ok($memce, 'MemcachedEvent');

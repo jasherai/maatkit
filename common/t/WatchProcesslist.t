@@ -1,18 +1,22 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 6;
 
-require "../WatchProcesslist.pm";
-require "../DSNParser.pm";
-require "../Sandbox.pm";
-require "../ProcesslistAggregator.pm";
-require '../TextResultSetParser.pm';
-require '../MaatkitTest.pm';
-
-MaatkitTest->import(qw(load_file));
+use WatchProcesslist;
+use DSNParser;
+use Sandbox;
+use ProcesslistAggregator;
+use TextResultSetParser;
+use MaatkitTest;
 
 my $pla = new ProcesslistAggregator();
 my $r   = new TextResultSetParser();
@@ -23,7 +27,7 @@ my $dbh = $sb->get_dbh_for('master');
 my $proc;
 sub show_processlist { return $proc };
 
-$proc = $r->parse( load_file('samples/recset004.txt') );
+$proc = $r->parse( load_file('common/t/samples/recset004.txt') );
 
 my $w = new WatchProcesslist(
    params => 'state:Locked:count:<:1000',

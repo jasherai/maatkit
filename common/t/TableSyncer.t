@@ -1,32 +1,40 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 43;
 
 # TableSyncer and its required modules:
-require "../TableSyncer.pm";
-require "../MasterSlave.pm";
-require "../Quoter.pm";
-require "../TableChecksum.pm";
-require "../VersionParser.pm";
+use TableSyncer;
+use MasterSlave;
+use Quoter;
+use TableChecksum;
+use VersionParser;
 # The sync plugins:
-require "../TableSyncChunk.pm";
-require "../TableSyncNibble.pm";
-require "../TableSyncGroupBy.pm";
-require "../TableSyncStream.pm";
+use TableSyncChunk;
+use TableSyncNibble;
+use TableSyncGroupBy;
+use TableSyncStream;
 # Helper modules for the sync plugins:
-require "../TableChunker.pm";
-require "../TableNibbler.pm";
+use TableChunker;
+use TableNibbler;
 # Modules for sync():
-require "../ChangeHandler.pm";
-require "../RowDiff.pm";
+use ChangeHandler;
+use RowDiff;
 # And other modules:
-require "../MySQLDump.pm";
-require "../TableParser.pm";
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use MySQLDump;
+use TableParser;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $src_dbh  = $sb->get_dbh_for('master')
@@ -36,14 +44,9 @@ my $dst_dbh  = $sb->get_dbh_for('slave1')
 my $dbh      = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
 $sb->create_dbs($dbh, ['test']);
 my $mysql = $sb->_use_for('master');
-$sb->load_file('master', 'samples/before-TableSyncChunk.sql');
+$sb->load_file('master', 'common/t/samples/before-TableSyncChunk.sql');
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -498,7 +501,7 @@ $dst->{dbh} = $dst_dbh;
 # Test TableSyncGroupBy.
 # ###########################################################################
 
-$sb->load_file('master', 'samples/before-TableSyncGroupBy.sql');
+$sb->load_file('master', 'common/t/samples/before-TableSyncGroupBy.sql');
 sleep 1;
 $tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'test','test1'));
 
@@ -533,7 +536,7 @@ is_deeply(
 # Issue 96: mk-table-sync: Nibbler infinite loop
 # #############################################################################
 
-$sb->load_file('master', 'samples/issue_96.sql');
+$sb->load_file('master', 'common/t/samples/issue_96.sql');
 sleep 1;
 $tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q,'issue_96','t'));
 

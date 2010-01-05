@@ -1,14 +1,22 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 18;
 
-require "../ChangeHandler.pm";
-require "../Quoter.pm";
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use ChangeHandler;
+use Quoter;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
@@ -102,7 +110,7 @@ SKIP: {
    @rows = ();
    $ch->{queue} = 0;
    $ch->fetch_back($dbh);
-   `/tmp/12345/use < samples/before-TableSyncChunk.sql`;
+   `/tmp/12345/use < $trunk/common/t/samples/before-TableSyncChunk.sql`;
    # This should cause it to fetch the row from test.test1 where a=1
    $ch->change('UPDATE', { a => 1, __foo => 'bar' }, [qw(a)] );
    $ch->change('DELETE', { a => 1, __foo => 'bar' }, [qw(a)] );

@@ -1,24 +1,27 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 68;
 
-require '../SlavePrefetch.pm';
-require '../QueryRewriter.pm';
-require '../BinaryLogParser.pm';
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use SlavePrefetch;
+use QueryRewriter;
+use BinaryLogParser;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $qr      = new QueryRewriter();
 my $dbh     = 1;  # we don't need to connect yet
@@ -74,7 +77,7 @@ my $fh;
 eval {
    $fh = $spf->open_relay_log(
       tmpdir    => '/dev/null',
-      datadir   => '../../common/t/samples',
+      datadir   => "$trunk/common/t/samples",
       start_pos => 1708,
       file      => 'relay-binlog001',
    );
@@ -93,7 +96,7 @@ SKIP: {
    skip "Cannot open $tmp_file for writing", 1 unless $tmp_fh;
    print $tmp_fh $_ while ( <$fh> );
    close $tmp_fh;
-   my $output = `diff $tmp_file ./samples/relay-binlog001-at-1708.txt 2>&1`;
+   my $output = `diff $tmp_file $trunk/common/t/samples/relay-binlog001-at-1708.txt 2>&1`;
    is(
       $output,
       '',
@@ -682,7 +685,7 @@ sub parse_binlog {
    return;
 }
 
-parse_binlog('samples/binlog003.txt');
+parse_binlog("$trunk/common/t/samples/binlog003.txt");
 # print Dumper(\@events);  # uncomment if you want to see what's going on
 
 $spf->set_window(100, 300);
@@ -899,7 +902,7 @@ sub use_db {
    push @dbs, "USE $db";
 };
 
-parse_binlog('samples/binlog003.txt');
+parse_binlog("$trunk/common/t/samples/binlog003.txt");
 
 $oktorun = 1;
 $spf->set_window(100, 9000);

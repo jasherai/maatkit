@@ -1,34 +1,35 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 56;
 
-require '../Quoter.pm';
-require '../MySQLDump.pm';
-require '../TableParser.pm';
-require '../DSNParser.pm';
-require '../QueryParser.pm';
-require '../TableSyncer.pm';
-require '../TableChecksum.pm';
-require '../VersionParser.pm';
-require '../TableSyncGroupBy.pm';
-require '../MockSyncStream.pm';
-require '../MockSth.pm';
-require '../Outfile.pm';
-require '../RowDiff.pm';
-require '../ChangeHandler.pm';
-require '../ReportFormatter.pm';
-require '../Transformers.pm';
-require '../MaatkitTest.pm';
-require '../Sandbox.pm';
-require '../CompareResults.pm';
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
+use Quoter;
+use MySQLDump;
+use TableParser;
+use DSNParser;
+use QueryParser;
+use TableSyncer;
+use TableChecksum;
+use VersionParser;
+use TableSyncGroupBy;
+use MockSyncStream;
+use MockSth;
+use Outfile;
+use RowDiff;
+use ChangeHandler;
+use ReportFormatter;
+use Transformers;
+use Sandbox;
+use CompareResults;
+use MaatkitTest;
 
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -98,7 +99,7 @@ sub get_id {
 # Test the checksum method.
 # #############################################################################
 
-diag(`/tmp/12345/use < samples/compare-results.sql`);
+diag(`/tmp/12345/use < $trunk/common/t/samples/compare-results.sql`);
 
 $cr = new CompareResults(
    method     => 'checksum',
@@ -318,7 +319,7 @@ is_deeply(
 
 my $tmpdir = '/tmp/mk-upgrade-res';
 
-diag(`/tmp/12345/use < samples/compare-results.sql`);
+diag(`/tmp/12345/use < $trunk/common/t/samples/compare-results.sql`);
 diag(`rm -rf $tmpdir; mkdir $tmpdir`);
 
 $cr = new CompareResults(

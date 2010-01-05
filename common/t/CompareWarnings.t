@@ -1,23 +1,24 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 20;
 
-require '../Quoter.pm';
-require '../QueryParser.pm';
-require '../ReportFormatter.pm';
-require '../Transformers.pm';
-require '../DSNParser.pm';
-require '../MaatkitTest.pm';
-require '../Sandbox.pm';
-require '../CompareWarnings.pm';
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
+use Quoter;
+use QueryParser;
+use ReportFormatter;
+use Transformers;
+use DSNParser;
+use Sandbox;
+use CompareWarnings;
+use MaatkitTest;
 
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -66,7 +67,7 @@ sub get_id {
 # Test it.
 # #############################################################################
 
-diag(`/tmp/12345/use < samples/compare-warnings.sql`);
+diag(`/tmp/12345/use < $trunk/common/t/samples/compare-warnings.sql`);
 
 @events = (
    {

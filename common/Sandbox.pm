@@ -14,17 +14,24 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
-
 # ###########################################################################
 # Sandbox package $Revision$
 # ###########################################################################
 package Sandbox;
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+my $trunk = $ENV{MAATKIT_TRUNK};
 
 my %port_for = (
    master  => 12345,
@@ -108,6 +115,7 @@ sub get_dbh_for {
 sub load_file {
    my ( $self, $server, $file, $use_db ) = @_;
    _check_server($server);
+   $file = "$trunk/$file";
    if ( !-f $file ) {
       die "$file is not a file";
    }

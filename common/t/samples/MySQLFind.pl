@@ -1,10 +1,16 @@
 #!/usr/bin/env perl
 
-require '../MySQLFind.pm';
-require '../DSNParser.pm';
-require '../Quoter.pm';
-require '../MySQLDump.pm';
-require '../TableParser.pm';
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
+use MySQLFind;
+use DSNParser;
+use Quoter;
+use MySQLDump;
+use TableParser;
 
 use English qw(-no_match_vars);
 use Data::Dumper;

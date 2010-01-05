@@ -1,19 +1,22 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 3;
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Quotekeys = 0;
-
-require '../Transformers.pm';
-require '../EventAggregator.pm';
-require '../QueryRewriter.pm';
-require '../ReportFormatter.pm';
-require '../UpgradeReportFormatter.pm';
+use Transformers;
+use EventAggregator;
+use QueryRewriter;
+use ReportFormatter;
+use UpgradeReportFormatter;
+use MaatkitTest;
 
 my $result;
 my $expected;

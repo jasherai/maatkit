@@ -1,12 +1,19 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 26;
 
-require "../DSNParser.pm";
-require '../OptionParser.pm';
+use DSNParser;
+use OptionParser;
+use MaatkitTest;
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;

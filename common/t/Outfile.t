@@ -1,32 +1,30 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 1;
 
-require "../MaatkitTest.pm";
-require "../Outfile.pm";
-
-MaatkitTest->import(qw(load_file));
+use Outfile;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
 
 # This is just for grabbing stuff from fetchrow_arrayref()
 # instead of writing test rows by hand.
-require '../DSNParser.pm';
-require '../Sandbox.pm';
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
-#print Dumper($dbh->selectall_arrayref('SELECT * FROM test.t'));
-#exit;
 
 my $outfile = new Outfile();
 
-sub no_diff {
+sub test_outfile {
    my ( $rows, $expected_output ) = @_;
    my $tmp_file = '/tmp/Outfile-output.txt';
    open my $fh, '>', $tmp_file or die "Cannot open $tmp_file: $OS_ERROR";
@@ -40,7 +38,7 @@ sub no_diff {
 
 
 ok(
-   no_diff(
+   test_outfile(
       [
          [
           '1',
@@ -63,7 +61,7 @@ ok(
           '2009-08-19 08:49:17'
          ]
       ],
-      'samples/outfile001.txt',
+      "$trunk/common/t/samples/outfile001.txt",
    ),
    'outfile001.txt'
 );

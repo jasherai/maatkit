@@ -1,13 +1,20 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 24;
 
-require "../TableParser.pm";
-require "../TableNibbler.pm";
-require "../Quoter.pm";
+use TableParser;
+use TableNibbler;
+use Quoter;
+use MaatkitTest;
 
 my $q  = new Quoter();
 my $tp = new TableParser(Quoter => $q);
@@ -18,21 +25,13 @@ my $n  = new TableNibbler(
 
 my $t;
 
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
-
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
    eval { $code->(); };
    like ( $EVAL_ERROR, $pat, $msg );
 }
 
-$t = $tp->parse( load_file('samples/sakila.film.sql') );
+$t = $tp->parse( load_file('common/t/samples/sakila.film.sql') );
 
 is_deeply(
    $n->generate_asc_stmt (
@@ -203,7 +202,7 @@ is_deeply(
 # ##########################################################################
 # Switch to the rental table
 # ##########################################################################
-$t = $tp->parse( load_file('samples/sakila.rental.sql') );
+$t = $tp->parse( load_file('common/t/samples/sakila.rental.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
@@ -253,7 +252,7 @@ is_deeply(
 );
 
 # Check that I can select from one table and insert into another OK
-my $f = $tp->parse( load_file('samples/sakila.film.sql') );
+my $f = $tp->parse( load_file('common/t/samples/sakila.film.sql') );
 is_deeply(
    $n->generate_ins_stmt(
       ins_tbl  => $f,
@@ -266,8 +265,8 @@ is_deeply(
    'Generated an INSERT statement from film into rental',
 );
 
-my $sel_tbl = $tp->parse( load_file('samples/issue_131_sel.sql') );
-my $ins_tbl = $tp->parse( load_file('samples/issue_131_ins.sql') );  
+my $sel_tbl = $tp->parse( load_file('common/t/samples/issue_131_sel.sql') );
+my $ins_tbl = $tp->parse( load_file('common/t/samples/issue_131_ins.sql') );  
 is_deeply(
    $n->generate_ins_stmt(
       ins_tbl  => $ins_tbl,
@@ -340,7 +339,7 @@ is_deeply(
 # ##########################################################################
 # Switch to the rental table with customer_id nullable
 # ##########################################################################
-$t = $tp->parse( load_file('samples/sakila.rental.null.sql') );
+$t = $tp->parse( load_file('common/t/samples/sakila.rental.null.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
@@ -432,7 +431,7 @@ is_deeply(
 # ##########################################################################
 # Switch to the rental table with inventory_id nullable
 # ##########################################################################
-$t = $tp->parse( load_file('samples/sakila.rental.null2.sql') );
+$t = $tp->parse( load_file('common/t/samples/sakila.rental.null2.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
@@ -516,7 +515,7 @@ is_deeply(
 # ##########################################################################
 # Switch to the rental table with cols in a different order.
 # ##########################################################################
-$t = $tp->parse( load_file('samples/sakila.rental.remix.sql') );
+$t = $tp->parse( load_file('common/t/samples/sakila.rental.remix.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
@@ -552,7 +551,7 @@ is_deeply(
 # ##########################################################################
 # Switch to table without any indexes
 # ##########################################################################
-$t = $tp->parse( load_file('samples/t1.sql') );
+$t = $tp->parse( load_file('common/t/samples/t1.sql') );
 
 # This test is no longer needed because TableSyncNibble shouldn't
 # ask TableNibbler to asc an indexless table.

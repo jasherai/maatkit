@@ -1,29 +1,35 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 6;
 use English qw(-no_match_vars);
+use Test::More tests => 6;
 
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use Transformers;
+use QueryReview;
+use QueryRewriter;
+use MySQLDump;
+use TableParser;
+use Quoter;
+use SlowLogParser;
+use OptionParser;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
 
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 $sb->create_dbs($dbh, ['test']);
-$sb->load_file('master', 'samples/query_review.sql');
+$sb->load_file('master', "common/t/samples/query_review.sql");
 
-require '../Transformers.pm';
-require '../QueryReview.pm';
-require '../QueryRewriter.pm';
-require '../MySQLDump.pm';
-require '../TableParser.pm';
-require '../Quoter.pm';
-require '../SlowLogParser.pm';
-require '../OptionParser.pm';
 my $qr = new QueryRewriter();
 my $lp = new SlowLogParser;
 my $q  = new Quoter();
@@ -57,7 +63,7 @@ my $callback = sub {
 my $event       = {};
 my $more_events = 1;
 my $log;
-open $log, '<', 'samples/slow006.txt' or bail_out($OS_ERROR);
+open $log, '<', "$trunk/common/t/samples/slow006.txt" or die $OS_ERROR;
 while ( $more_events ) {
    $event = $lp->parse_event(
       next_event => sub { return <$log>;    },
@@ -68,7 +74,7 @@ while ( $more_events ) {
 }
 close $log;
 $more_events = 1;
-open $log, '<', 'samples/slow021.txt' or bail_out($OS_ERROR);
+open $log, '<', "$trunk/common/t/samples/slow021.txt" or die $OS_ERROR;
 while ( $more_events ) {
    $event = $lp->parse_event(
       next_event => sub { return <$log>;    },
@@ -138,11 +144,11 @@ is_deeply([$qv->review_cols],
 # ##############################################################################
 # Test review history stuff
 # ##############################################################################
-my $pat = $opt_parser->read_para_after('../../mk-query-digest/mk-query-digest',
+my $pat = $opt_parser->read_para_after("$trunk/mk-query-digest/mk-query-digest",
    qr/MAGIC_history_cols/);
 $pat =~ s/\s+//g;
 my $create_table = $opt_parser->read_para_after(
-   '../../mk-query-digest/mk-query-digest', qr/MAGIC_create_review_history/);
+   "$trunk/mk-query-digest/mk-query-digest", qr/MAGIC_create_review_history/);
 $create_table =~ s/query_review_history/test.query_review_history/;
 $dbh->do($create_table);
 my $hist_struct = $tp->parse(

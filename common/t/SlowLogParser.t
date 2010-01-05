@@ -1,26 +1,25 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 46;
 
-use Data::Dumper;
-$Data::Dumper::Quotekeys = 0;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Indent    = 1;
-
-require "../SlowLogParser.pm";
-require "../MaatkitTest.pm";
-
-MaatkitTest->import(qw(test_log_parser));
+use SlowLogParser;
+use MaatkitTest;
 
 my $p = new SlowLogParser;
 
 # Check that I can parse a slow log in the default slow log format.
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow001.txt',
+   file   => 'common/t/samples/slow001.txt',
    result => [
       {  ts            => '071015 21:43:52',
          user          => 'root',
@@ -56,7 +55,7 @@ test_log_parser(
 # This one has complex SET insert_id=34484549,timestamp=1197996507;
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow002.txt',
+   file   => 'common/t/samples/slow002.txt',
    result => [
       {  arg            => 'BEGIN',
          ts             => '071218 11:48:27',
@@ -285,7 +284,7 @@ SET    biz = \'91848182522\'',
 # Microsecond format.
 test_log_parser(
    parser => $p,
-   file   => 'samples/microslow001.txt',
+   file   => 'common/t/samples/microslow001.txt',
    result => [
       {  ts            => '071015 21:43:52',
          user          => 'root',
@@ -320,7 +319,7 @@ test_log_parser(
 # A log that starts with a blank line.
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow003.txt',
+   file   => 'common/t/samples/slow003.txt',
    result => [
          {  Disk_filesort  => 'No',
             Disk_tmp_table => 'No',
@@ -349,7 +348,7 @@ test_log_parser(
 
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow004.txt',
+   file   => 'common/t/samples/slow004.txt',
    result => [
          {  Lock_time     => '0',
             Query_time    => '2',
@@ -370,7 +369,7 @@ test_log_parser(
 # Check a slow log that has tabs in it.
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow005.txt',
+   file   => 'common/t/samples/slow005.txt',
    result => [
          {  arg            => "foo\nbar\n\t\t\t0 AS counter\nbaz",
             ts             => '071218 11:48:27',
@@ -400,7 +399,7 @@ test_log_parser(
 # A bunch of case-sensitive and case-insensitive USE stuff.
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow006.txt',
+   file   => 'common/t/samples/slow006.txt',
    result => [
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -546,7 +545,7 @@ test_log_parser(
 # Schema
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow007.txt',
+   file   => 'common/t/samples/slow007.txt',
    result => [
       {  Schema         => 'food',
          arg            => 'SELECT fruit FROM trees',
@@ -579,7 +578,7 @@ test_log_parser(
 # Also check it parses commented event (admin cmd).
 test_log_parser(
    parser     => $p,
-   file       => 'samples/slow008.txt',
+   file       => 'common/t/samples/slow008.txt',
    num_events => 3,
    result => [
       {  'Schema'        => 'db1',
@@ -632,7 +631,7 @@ test_log_parser(
 test_log_parser(
    parser => $p,
    misc   => { embed   => qr/ -- .*/, capture => qr/(\w+): ([^,]+)/ },
-   file   => 'samples/slow010.txt',
+   file   => 'common/t/samples/slow010.txt',
    result => [
       {  Lock_time     => '0',
          Query_time    => '2',
@@ -658,7 +657,7 @@ $p = new SlowLogParser;
 # Parses commented event lines after uncommented meta-lines
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow011.txt',
+   file   => 'common/t/samples/slow011.txt',
    result => [
       {  'Schema'        => 'db1',
          'arg'           => '# administrator command: Quit',
@@ -725,7 +724,7 @@ test_log_parser(
 # events that might look like meta data
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow012.txt',
+   file   => 'common/t/samples/slow012.txt',
    result => [
       {  'Schema'        => 'sab',
          'arg'           => 'SET autocommit=1',
@@ -762,7 +761,7 @@ test_log_parser(
 # "use" and "set" and administrator commands etc.
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow013.txt',
+   file   => 'common/t/samples/slow013.txt',
    result => [
       {  'Schema'        => 'abc',
          'cmd'           => 'Query',
@@ -844,7 +843,7 @@ test_log_parser(
 # events with a lot of headers
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow014.txt',
+   file   => 'common/t/samples/slow014.txt',
    result => [
       {  ts            => '071015 21:43:52',
          cmd           => 'Query',
@@ -880,13 +879,13 @@ test_log_parser(
 # No error parsing truncated event with no newline
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow015.txt',
+   file   => 'common/t/samples/slow015.txt',
 );
 
 # Some more silly stuff with USE meta-data lines.
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow016.txt',
+   file   => 'common/t/samples/slow016.txt',
    result => [
       {  user          => 'root',
          cmd           => 'Query',
@@ -930,7 +929,7 @@ test_log_parser(
 # Check that issue 234 doesn't kill us (broken Query_time).
 #test_log_parser(
 #   parser => $p,
-#   file   => 'samples/slow017.txt',
+#   file   => 'common/t/samples/slow017.txt',
 #   result => [
 #      {  ts            => '081116 15:07:11',
 #         cmd           => 'Query',
@@ -949,13 +948,13 @@ test_log_parser(
 #   ],
 #});
 
-# samples/slow018.txt is a test for mk-query-digest.
+# common/t/samples/slow018.txt is a test for mk-query-digest.
 
 # Has some more combinations of meta-data and explicit query lines and
 # administrator commands.
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow019.txt',
+   file   => 'common/t/samples/slow019.txt',
    result => [
       {  Lock_time     => '0.000000',
          Query_time    => '0.000002',
@@ -1008,7 +1007,7 @@ test_log_parser(
 # meta-data.  This is from MySQL 5.1 on Windows.
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow031.txt',
+   file   => 'common/t/samples/slow031.txt',
    result => [
       {  Lock_time     => '0.000000',
          Query_time    => '0.453125',
@@ -1028,12 +1027,12 @@ test_log_parser(
    ],
 );
 
-# samples/slow021.txt is for mk-query-digest.  It has an entry without a Time.
+# common/t/samples/slow021.txt is for mk-query-digest.  It has an entry without a Time.
 
-# samples/slow022.txt has garbled Time entries.
+# common/t/samples/slow022.txt has garbled Time entries.
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow022.txt',
+   file   => 'common/t/samples/slow022.txt',
    result => [
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -1170,10 +1169,10 @@ test_log_parser(
    ],
 );
 
-# samples/slow025.txt has an empty Schema.
+# common/t/samples/slow025.txt has an empty Schema.
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow025.txt',
+   file   => 'common/t/samples/slow025.txt',
    result => [
       {  Lock_time     => '0.000066',
          Query_time    => '17.737502',
@@ -1200,7 +1199,7 @@ my $oktorun = 1;
 
 test_log_parser(
    parser  => $p,
-   file    => 'samples/slow001.txt',
+   file    => 'common/t/samples/slow001.txt',
    oktorun => sub { $oktorun = $_[0]; },
    result => [
       {  ts            => '071015 21:43:52',
@@ -1245,7 +1244,7 @@ is(
 # #############################################################################
 test_log_parser(
    parser => $p,
-   file   => 'samples/slow036.txt',
+   file   => 'common/t/samples/slow036.txt',
    result => [
       {  Lock_time     => '0.000000',
          Query_time    => '0.000000',

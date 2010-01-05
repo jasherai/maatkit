@@ -1,16 +1,24 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 30;
 
-require "../TableParser.pm";
-require "../TableChunker.pm";
-require "../MySQLDump.pm";
-require "../Quoter.pm";
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use TableParser;
+use TableChunker;
+use MySQLDump;
+use Quoter;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
@@ -29,15 +37,7 @@ sub throws_ok {
    like ( $EVAL_ERROR, $pat, $msg );
 }
 
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
-
-$t = $p->parse( load_file('samples/sakila.film.sql') );
+$t = $p->parse( load_file('common/t/samples/sakila.film.sql') );
 is_deeply(
    [ $c->find_chunk_columns(tbl_struct=>$t) ],
    [ 0,
@@ -72,7 +72,7 @@ is_deeply(
 #   'Found preferred chunkable columns on sakila.film',
 #);
 
-$t = $p->parse( load_file('samples/pk_not_first.sql') );
+$t = $p->parse( load_file('common/t/samples/pk_not_first.sql') );
 is_deeply(
    [ $c->find_chunk_columns(tbl_struct=>$t) ],
    [ 0,
@@ -206,7 +206,7 @@ SKIP: {
       'Nullable column adds IS NULL chunk',
    );
 
-   $t = $p->parse( load_file('samples/daycol.sql') );
+   $t = $p->parse( load_file('common/t/samples/daycol.sql') );
 
    @chunks = $c->calculate_chunks(
       tbl_struct    => $t,
@@ -229,7 +229,7 @@ SKIP: {
       'Date column chunks OK',
    );
 
-   $t = $p->parse( load_file('samples/date.sql') );
+   $t = $p->parse( load_file('common/t/samples/date.sql') );
    @chunks = $c->calculate_chunks(
       tbl_struct    => $t,
       chunk_col     => 'a',
@@ -268,7 +268,7 @@ SKIP: {
       'Date column where min date is 0000-00-00',
    );
 
-   $t = $p->parse( load_file('samples/datetime.sql') );
+   $t = $p->parse( load_file('common/t/samples/datetime.sql') );
    @chunks = $c->calculate_chunks(
       tbl_struct    => $t,
       chunk_col     => 'a',
@@ -307,7 +307,7 @@ SKIP: {
       'Datetime where min is 0000-00-00 00:00:00',
    );
 
-   $t = $p->parse( load_file('samples/timecol.sql') );
+   $t = $p->parse( load_file('common/t/samples/timecol.sql') );
    @chunks = $c->calculate_chunks(
       tbl_struct    => $t,
       chunk_col     => 'a',
@@ -327,7 +327,7 @@ SKIP: {
       'Time column chunks OK',
    );
 
-   $t = $p->parse( load_file('samples/doublecol.sql') );
+   $t = $p->parse( load_file('common/t/samples/doublecol.sql') );
    @chunks = $c->calculate_chunks(
       tbl_struct    => $t,
       chunk_col     => 'a',
@@ -382,7 +382,7 @@ SKIP: {
       'Throws OK when too many chunks',
    );
 
-   $t = $p->parse( load_file('samples/floatcol.sql') );
+   $t = $p->parse( load_file('common/t/samples/floatcol.sql') );
    @chunks = $c->calculate_chunks(
       tbl_struct    => $t,
       chunk_col     => 'a',
@@ -402,7 +402,7 @@ SKIP: {
       'Float column chunks OK',
    );
 
-   $t = $p->parse( load_file('samples/decimalcol.sql') );
+   $t = $p->parse( load_file('common/t/samples/decimalcol.sql') );
    @chunks = $c->calculate_chunks(
       tbl_struct    => $t,
       chunk_col     => 'a',
@@ -495,7 +495,7 @@ SKIP: {
 # #############################################################################
 # Issue 47: TableChunker::range_num broken for very large bigint
 # #############################################################################
-$sb->load_file('master', 'samples/issue_47.sql');
+$sb->load_file('master', 'common/t/samples/issue_47.sql');
 $t = $p->parse( $du->get_create_table($dbh, $q, 'test', 'issue_47') );
 my %params = $c->get_range_statistics(
    dbh       => $dbh,
@@ -532,7 +532,7 @@ is(
    'Adds USE INDEX (issue 8)'
 );
 
-$sb->load_file('master', 'samples/issue_8.sql');
+$sb->load_file('master', 'common/t/samples/issue_8.sql');
 $t = $p->parse( $du->get_create_table($dbh, $q, 'test', 'issue_8') );
 my @candidates = $c->find_chunk_columns(tbl_struct=>$t);
 is_deeply(

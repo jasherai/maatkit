@@ -1,16 +1,19 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 62;
 use English qw(-no_match_vars);
+use Test::More tests => 62;
 
-require "../MySQLProtocolParser.pm";
-require "../TcpdumpParser.pm";
-require "../MaatkitTest.pm";
-
-MaatkitTest->import(qw(test_protocol_parser load_data load_file));
+use MySQLProtocolParser;
+use TcpdumpParser;
+use MaatkitTest;
 
 my $tcpdump  = new TcpdumpParser();
 my $protocol; # Create a new MySQLProtocolParser for each test.
@@ -20,7 +23,7 @@ $protocol = new MySQLProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump001.txt',
+   file     => 'common/t/samples/tcpdump001.txt',
    result   => [
       {  ts            => '090412 09:50:16.805123',
          db            => undef,
@@ -48,7 +51,7 @@ $protocol = new MySQLProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump002.txt',
+   file     => 'common/t/samples/tcpdump002.txt',
    result   => [
       {  ts         => "090412 11:00:13.118191",
          db         => 'mysql',
@@ -130,7 +133,7 @@ $protocol = new MySQLProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump003.txt',
+   file     => 'common/t/samples/tcpdump003.txt',
    result   => [
       {  ts         => "090412 12:41:46.357853",
          db         => '',
@@ -158,7 +161,7 @@ $protocol = new MySQLProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump004.txt',
+   file     => 'common/t/samples/tcpdump004.txt',
    result   => [
       {  ts         => "090412 12:58:02.036002",
          db         => undef,
@@ -186,7 +189,7 @@ $protocol = new MySQLProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump005.txt',
+   file     => 'common/t/samples/tcpdump005.txt',
    result   => [
       {  Error_no   => 'none',
          Rows_affected => 1,
@@ -232,7 +235,7 @@ $protocol = new MySQLProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump006.txt',
+   file     => 'common/t/samples/tcpdump006.txt',
    result   => [
       {  ts         => '100412 20:46:10.776899',
          db         => undef,
@@ -260,7 +263,7 @@ $protocol = new MySQLProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump007.txt',
+   file     => 'common/t/samples/tcpdump007.txt',
    result   => [
       {  ts         => '090412 20:57:22.798296',
          db         => undef,
@@ -295,7 +298,7 @@ MySQLProtocolParser->import(qw(
 ));
  
 is_deeply(
-   parse_error_packet(load_data('samples/mysql_proto_001.txt')),
+   parse_error_packet(load_data('common/t/samples/mysql_proto_001.txt')),
    {
       errno    => '1046',
       sqlstate => '#3D000',
@@ -317,7 +320,7 @@ is_deeply(
 );
 
 is_deeply(
-   parse_server_handshake_packet(load_data('samples/mysql_proto_002.txt')),
+   parse_server_handshake_packet(load_data('common/t/samples/mysql_proto_002.txt')),
    {
       thread_id      => '9',
       server_version => '5.0.67-0ubuntu6-log',
@@ -346,7 +349,7 @@ is_deeply(
 );
 
 is_deeply(
-   parse_client_handshake_packet(load_data('samples/mysql_proto_003.txt')),
+   parse_client_handshake_packet(load_data('common/t/samples/mysql_proto_003.txt')),
    {
       db    => 'mysql',
       user  => 'msandbox',
@@ -391,7 +394,7 @@ $protocol = new MySQLProtocolParser(
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump012.txt',
+   file     => 'common/t/samples/tcpdump012.txt',
    result   => [
       {  ts            => '090412 09:50:16.805123',
          db            => undef,
@@ -424,7 +427,7 @@ $protocol = new MySQLProtocolParser(
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump013.txt',
+   file     => 'common/t/samples/tcpdump013.txt',
    desc     => 'old password and compression',
    result   => [
       {  Error_no => 'none',
@@ -455,7 +458,7 @@ $protocol = new MySQLProtocolParser(
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump014.txt',
+   file     => 'common/t/samples/tcpdump014.txt',
    desc     => 'in-stream compression detection',
    result   => [
       {
@@ -487,7 +490,7 @@ $protocol = new MySQLProtocolParser(
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump015.txt',
+   file     => 'common/t/samples/tcpdump015.txt',
    desc     => 'compressed data',
    result   => [
       {
@@ -558,7 +561,7 @@ $protocol = new MySQLProtocolParser(
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump016.txt',
+   file     => 'common/t/samples/tcpdump016.txt',
    desc     => 'TCP retransmission',
    result   => [
       {
@@ -591,7 +594,7 @@ $protocol = new MySQLProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump018.txt',
+   file     => 'common/t/samples/tcpdump018.txt',
    desc     => 'Multiple servers',
    result   => [
       {
@@ -640,7 +643,7 @@ $protocol = new MySQLProtocolParser(server=>'10.0.0.1:3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump018.txt',
+   file     => 'common/t/samples/tcpdump018.txt',
    desc     => 'Multiple servers but watch only one',
    result   => [
       {
@@ -673,7 +676,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
 my $e = test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump019.txt',
+   file     => 'common/t/samples/tcpdump019.txt',
 );
 
 like(
@@ -682,7 +685,7 @@ like(
    'Handles big, fragmented MySQL packets (issue 558)'
 );
 
-my $arg = load_file('samples/tcpdump019-arg.txt');
+my $arg = load_file('common/t/samples/tcpdump019-arg.txt');
 chomp $arg;
 is(
    $e->[0]->{arg},
@@ -697,7 +700,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump021.txt',
+   file     => 'common/t/samples/tcpdump021.txt',
    desc     => 'prepared statements, simple, no NULL',
    result   => [
       {
@@ -766,7 +769,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump022.txt',
+   file     => 'common/t/samples/tcpdump022.txt',
    desc     => 'prepared statements, NULL value',
    result   => [
       {
@@ -816,7 +819,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump023.txt',
+   file     => 'common/t/samples/tcpdump023.txt',
    desc     => 'prepared statements, string, char and float',
    result   => [
       {
@@ -866,7 +869,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump024.txt',
+   file     => 'common/t/samples/tcpdump024.txt',
    desc     => 'prepared statements, all NULL',
    result   => [
       {
@@ -916,7 +919,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump025.txt',
+   file     => 'common/t/samples/tcpdump025.txt',
    desc     => 'prepared statements, no params',
    result   => [
       {
@@ -966,7 +969,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump026.txt',
+   file     => 'common/t/samples/tcpdump026.txt',
    desc     => 'prepared statements, close statement',
    result   => [
       {
@@ -995,7 +998,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump027.txt',
+   file     => 'common/t/samples/tcpdump027.txt',
    desc     => 'prepared statements, reset statement',
    result   => [
       {
@@ -1025,7 +1028,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump028.txt',
+   file     => 'common/t/samples/tcpdump028.txt',
    desc     => 'prepared statements, multiple exec, new param',
    result => [
       {
@@ -1115,7 +1118,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump029.txt',
+   file     => 'common/t/samples/tcpdump029.txt',
    desc     => 'prepared statements, real param types',
    result => [
       {
@@ -1203,7 +1206,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump030.txt',
+   file     => 'common/t/samples/tcpdump030.txt',
    desc     => 'prepared statements, ok response to execute',
    result => [
       {
@@ -1253,7 +1256,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump034.txt',
+   file     => 'common/t/samples/tcpdump034.txt',
    desc     => 'prepared statements, NULL bitmap',
    result => [
       {
@@ -1306,7 +1309,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump032.txt',
+   file     => 'common/t/samples/tcpdump032.txt',
    desc     => 'issue 761',
    result => [
       {
@@ -1338,7 +1341,7 @@ $protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/tcpdump031.txt',
+   file     => 'common/t/samples/tcpdump031.txt',
    desc     => 'issue 760',
    result   => [
       {

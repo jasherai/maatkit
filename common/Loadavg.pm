@@ -119,12 +119,12 @@ sub innodb {
    my $var     = $args{var};
 
    # Get and parse SHOW INNODB STATUS text.
-   my ($status_text, undef) = $dbh->selectrow_array("SHOW INNODB STATUS");
-   if ( !$status_text ) {
+   my @status_text = $dbh->selectrow_array("SHOW INNODB STATUS");
+   if ( !$status_text[0] || !$status_text[2] ) {
       MKDEBUG && _d('SHOW INNODB STATUS failed');
       return 0;
    }
-   my $idb_stats = $is->parse($status_text);
+   my $idb_stats = $is->parse($status_text[2] ? $status_text[2] : $status_text[0]);
 
    if ( !exists $idb_stats->{$section} ) {
       MKDEBUG && _d('idb status section', $section, 'does not exist');

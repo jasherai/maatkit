@@ -1,12 +1,19 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 20;
 
-require '../LogSplitter.pm';
-require '../SlowLogParser.pm';
+use LogSplitter;
+use SlowLogParser;
+use MaatkitTest;
 
 # Returns true (1) if there's no difference between the
 # output and the expected output.
@@ -38,7 +45,7 @@ diag(`rm -rf $tmpdir ; mkdir $tmpdir`);
 # exists. It should just use the existing dir.
 diag(`mkdir $tmpdir/1`); 
 
-$ls->split('samples/slow006.txt');
+$ls->split("$trunk/common/t/samples/slow006.txt");
 is(
    $ls->{n_sessions_saved},
    0,
@@ -63,28 +70,28 @@ $ls = new LogSplitter(
    quiet          => 1,
    merge_sessions => 0,
 );
-$ls->split('samples/slow006.txt');
+$ls->split("$trunk/common/t/samples/slow006.txt");
 ok(-f "$tmpdir/1/session-1.txt", 'Basic split session 1 file exists');
 ok(-f "$tmpdir/1/session-2.txt", 'Basic split session 2 file exists');
 ok(-f "$tmpdir/1/session-3.txt", 'Basic split session 3 file exists');
 
 my $output;
 
-$output = `diff $tmpdir/1/session-1.txt samples/slow006-session-1.txt`;
+$output = `diff $tmpdir/1/session-1.txt $trunk/common/t/samples/slow006-session-1.txt`;
 is(
    $output,
    '',
    'Session 1 file has correct SQL statements'
 );
 
-$output = `diff $tmpdir/1/session-2.txt samples/slow006-session-2.txt`;
+$output = `diff $tmpdir/1/session-2.txt $trunk/common/t/samples/slow006-session-2.txt`;
 is(
    $output,
    '',
    'Session 2 file has correct SQL statements'
 );
 
-$output = `diff $tmpdir/1/session-3.txt samples/slow006-session-3.txt`;
+$output = `diff $tmpdir/1/session-3.txt $trunk/common/t/samples/slow006-session-3.txt`;
 is(
    $output,
    '',
@@ -103,7 +110,7 @@ $ls = new LogSplitter(
    quiet          => 1,
    merge_sessions => 0,
 );
-$ls->split('samples/slow009.txt');
+$ls->split("$trunk/common/t/samples/slow009.txt");
 chomp($output = `ls -1 $tmpdir/1/ | wc -l`);
 is(
    $output,
@@ -137,7 +144,7 @@ $ls = new LogSplitter(
    merge_sessions => 0,
    max_sessions   => 10,
 );
-$ls->split('samples/slow009.txt');
+$ls->split("$trunk/common/t/samples/slow009.txt");
 chomp($output = `ls -1 $tmpdir/1/ | wc -l`);
 is(
    $output,
@@ -165,15 +172,15 @@ is_deeply(
 );
 
 #diag(`rm -rf $tmpdir/*`);
-#$output = `cat samples/slow006.txt | samples/log_splitter.pl`;
+#$output = `cat $trunk/common/t/samples/slow006.txt | $trunk/common/t/samples/log_splitter.pl`;
 #like($output, qr/Parsed sessions\s+3/, 'Reads STDIN implicitly');
 
 #diag(`rm -rf $tmpdir/*`);
-#$output = `cat samples/slow006.txt | samples/log_splitter.pl -`;
+#$output = `cat $trunk/common/t/samples/slow006.txt | $trunk/common/t/samples/log_splitter.pl -`;
 #like($output, qr/Parsed sessions\s+3/, 'Reads STDIN explicitly');
 
 #diag(`rm -rf $tmpdir/*`);
-#$output = `cat samples/slow006.txt | samples/log_splitter.pl blahblah`;
+#$output = `cat $trunk/common/t/samples/slow006.txt | $trunk/common/t/samples/log_splitter.pl blahblah`;
 #like($output, qr/Parsed sessions\s+0/, 'Does nothing if no valid logs are given');
 
 # #############################################################################
@@ -187,7 +194,7 @@ $ls = new LogSplitter(
    session_files  => 10,
    quiet          => 1,
 );
-$ls->split('samples/slow009.txt');
+$ls->split("$trunk/common/t/samples/slow009.txt");
 $output = `grep 'START SESSION' $tmpdir/sessions-*.txt | cut -d' ' -f 4 | sort -n`;
 like(
    $output,
@@ -214,8 +221,8 @@ $ls = new LogSplitter(
    quiet         => 1,
    session_files => 1,
 );
-$ls->split('samples/slow020.txt');
-$output = `diff $tmpdir/sessions-1.txt samples/split_slow020.txt`;
+$ls->split("$trunk/common/t/samples/slow020.txt");
+$output = `diff $tmpdir/sessions-1.txt $trunk/common/t/samples/split_slow020.txt`;
 is(
    $output,
    '',
@@ -231,8 +238,8 @@ is(
 #   verbose         => 0,
 #   maxsessionfiles => 1,
 #);
-#$ls->split(['samples/slow020.txt' ]);
-#$output = `diff $tmpdir/1/session-0001 samples/split_slow020_msf.txt`;
+#$ls->split(['common/t/samples/slow020.txt' ]);
+#$output = `diff $tmpdir/1/session-0001 $trunk/common/t/samples/split_slow020_msf.txt`;
 #is(
 #   $output,
 #   '',
@@ -253,7 +260,7 @@ $ls = new LogSplitter(
    quiet         => 1,
    callbacks     => [$callback],
 );
-$ls->split('samples/slow006.txt');
+$ls->split("$trunk/common/t/samples/slow006.txt");
 is(
    $ls->{n_sessions_saved},
    0,

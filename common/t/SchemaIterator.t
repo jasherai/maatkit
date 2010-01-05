@@ -1,5 +1,11 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -7,18 +13,14 @@ use Test::More tests => 28;
 
 use List::Util qw(max);
 
-require "../SchemaIterator.pm";
-require "../Quoter.pm";
-require "../DSNParser.pm";
-require "../Sandbox.pm";
-require "../OptionParser.pm";
+use SchemaIterator;
+use Quoter;
+use DSNParser;
+use Sandbox;
+use OptionParser;
+use MaatkitTest;
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $q   = new Quoter();
 my $dp  = new DSNParser();
@@ -47,7 +49,7 @@ sub get_all {
 # Test simple, unfiltered get_db_itr().
 # ###########################################################################
 
-$sb->load_file('master', 'samples/SchemaIterator.sql');
+$sb->load_file('master', 'common/t/samples/SchemaIterator.sql');
 my @dbs = sort map { $_->[0] } @{ $dbh->selectall_arrayref('show databases') };
 
 my $next_db = $si->get_db_itr(dbh=>$dbh);
@@ -101,7 +103,7 @@ is_deeply(
 my $o = new OptionParser(
    description => 'SchemaIterator'
 );
-$o->get_specs('../../mk-parallel-dump/mk-parallel-dump');
+$o->get_specs("$trunk/mk-parallel-dump/mk-parallel-dump");
 $o->get_opts();
 
 my $filter = $si->make_filter($o);

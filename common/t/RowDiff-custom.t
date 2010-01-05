@@ -1,5 +1,11 @@
 #!/usr/bin/perl -w
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 # RowDiff-custom.t tests some of the basic RowDiff functionalities
 # as RowDiff.t but uses a different Perl lib if the MK_PERL_LIB
 # environment var is set. This allows us to test these functionalities
@@ -38,16 +44,7 @@ sub key_cols {
 # #############################################################################
 
 package main;
-BEGIN {
-   if ( defined $ENV{MK_PERL_LIB} ) {
-      die "The MK_PERL_LIB environment variable is not a valid directory: "
-         . $ENV{MK_PERL_LIB}
-         if !-d $ENV{MK_PERL_LIB};
 
-      print "# Using Perl lib $ENV{MK_PERL_LIB}\n";
-      use lib ($ENV{MK_PERL_LIB} ? "$ENV{MK_PERL_LIB}" : ());
-   }
-};
 use strict;
 use warnings FATAL => 'all';
 
@@ -63,12 +60,12 @@ SKIP: {
       . "# DBD::mysql v$DBD::mysql::VERSION\n";
 
 
-   require '../RowDiff.pm';
-   require '../Sandbox.pm';
-   require '../DSNParser.pm';
-   require '../TableParser.pm';
-   require '../MySQLDump.pm';
-   require '../Quoter.pm';
+   use RowDiff;
+   use Sandbox;
+   use DSNParser;
+   use TableParser;
+   use MySQLDump;
+   use Quoter;
 
    my $d  = new RowDiff(dbh => 1);
    my $s  = new MockSync();
@@ -85,7 +82,7 @@ SKIP: {
       or BAIL_OUT('Cannot connect to sandbox slave');
 
    $sb->create_dbs($master_dbh, [qw(test)]);
-   $sb->load_file('master', 'samples/issue_11.sql');
+   $sb->load_file('master', 'common/t/samples/issue_11.sql');
 
    my $tbl = $tp->parse(
       $du->get_create_table($master_dbh, $q, 'test', 'issue_11'));

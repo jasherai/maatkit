@@ -1,22 +1,29 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 plan skip_all => 'Deprecated mk-audit module';
 
-require '../MySQLInstanceReporter.pm';
-require '../MySQLInstance.pm';
-require '../OptionParser.pm';
-require '../MySQLAdvisor.pm';
-require '../SchemaDiscover.pm';
-require '../TableParser.pm';
-require '../MySQLDump.pm';
-require '../DSNParser.pm';
-require '../VersionParser.pm';
-require '../Quoter.pm';
-require '../Sandbox.pm';
+use MySQLInstanceReporter;
+use MySQLInstance;
+use OptionParser;
+use MySQLAdvisor;
+use SchemaDiscover;
+use TableParser;
+use MySQLDump;
+use DSNParser;
+use VersionParser;
+use Quoter;
+use Sandbox;
+use MaatkitTest;
 
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);

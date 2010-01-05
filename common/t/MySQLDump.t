@@ -1,14 +1,22 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 12;
 
-require "../MySQLDump.pm";
-require "../Quoter.pm";
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use MySQLDump;
+use Quoter;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
@@ -21,9 +29,6 @@ my $du = new MySQLDump();
 my $q  = new Quoter();
 
 my $dump;
-
-use Data::Dumper;
-$Data::Dumper::Indent=1;
 
 # TODO: get_create_table() seems to return an arrayref sometimes!
 
@@ -59,7 +64,7 @@ SKIP: {
 # The underlying problem for issue 170 is that MySQLDump doesn't eval some
 # of its queries so when MySQLFind uses it and hits a broken table it dies.
 
-diag(`cp ../../mk-parallel-dump/t/samples/broken_tbl.frm /tmp/12345/data/test/broken_tbl.frm`);
+diag(`cp $trunk/mk-parallel-dump/t/samples/broken_tbl.frm /tmp/12345/data/test/broken_tbl.frm`);
 my $output = '';
 eval {
    local *STDERR;

@@ -1,23 +1,32 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 4;
 
-require "../SlowLogParser.pm";
-require "../SlowLogWriter.pm";
+use SlowLogParser;
+use SlowLogWriter;
+use MaatkitTest;
 
 my $p = new SlowLogParser;
 my $w = new SlowLogWriter;
 
-sub no_diff {
+sub __no_diff {
    my ( $filename, $expected ) = @_;
-   
+
    # Parse and rewrite the original file.
    my $tmp_file = '/tmp/SlowLogWriter-test.txt';
-   open my $rewritten_fh, '>', $tmp_file or BAIL_OUT($EVAL_ERROR);
-   open my $fh, "<", $filename or BAIL_OUT($OS_ERROR);
+   open my $rewritten_fh, '>', $tmp_file
+      or die "Cannot write to $tmp_file: $OS_ERROR";
+   open my $fh, "<", "$trunk/$filename"
+      or die "Cannot open $trunk/$filename: $OS_ERROR";
    my %args = (
       next_event => sub { return <$fh>;    },
       tell       => sub { return tell $fh; },
@@ -29,7 +38,7 @@ sub no_diff {
    close $rewritten_fh;
 
    # Compare the contents of the two files.
-   my $retval = system("diff $tmp_file $expected");
+   my $retval = system("diff $tmp_file $trunk/$expected");
    `rm -rf $tmp_file`;
    $retval = $retval >> 8;
    return !$retval;
@@ -41,7 +50,7 @@ sub write_event {
    open my $fh, '>', $tmp_file or die "Cannot open $tmp_file: $OS_ERROR";
    $w->write($fh, $event);
    close $fh;
-   my $retval = system("diff $tmp_file $expected_output");
+   my $retval = system("diff $tmp_file $trunk/$expected_output");
    `rm -rf $tmp_file`;
    $retval = $retval >> 8;
    return !$retval;
@@ -49,13 +58,13 @@ sub write_event {
 
 # Check that I can write a slow log in the default slow log format.
 ok(
-   no_diff('samples/slow001.txt', 'samples/slow001-rewritten.txt'),
+   __no_diff('common/t/samples/slow001.txt', 'common/t/samples/slow001-rewritten.txt'),
    'slow001.txt rewritten'
 );
 
 # Test writing a Percona-patched slow log with Thread_id and hi-res Query_time.
 ok(
-   no_diff('samples/slow032.txt', 'samples/slow032-rewritten.txt'),
+   __no_diff('common/t/samples/slow032.txt', 'common/t/samples/slow032-rewritten.txt'),
    'slow032.txt rewritten'
 );
 
@@ -67,7 +76,7 @@ ok(
          ip         => '127.0.0.1',
          port       => '12345',
       },
-      'samples/slowlogwriter001.txt',
+      'common/t/samples/slowlogwriter001.txt',
    ),
    'Writes Client attrib from tcpdump',
 );
@@ -79,7 +88,7 @@ ok(
          Lock_time  => '0.000001',
          arg        => 'select * from foo',
       },
-      'samples/slowlogwriter002.txt',
+      'common/t/samples/slowlogwriter002.txt',
    ),
    'Writes microsecond times'
 );

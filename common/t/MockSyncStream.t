@@ -1,14 +1,21 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 5;
 
-require "../MockSyncStream.pm";
-require "../Quoter.pm";
-require "../MockSth.pm";
-require "../RowDiff.pm";
+use MockSyncStream;
+use Quoter;
+use MockSth;
+use RowDiff;
+use MaatkitTest;
 
 my $rd = new RowDiff( dbh => 1 );
 my @rows;
@@ -70,8 +77,8 @@ is_deeply(
 # #############################################################################
 # Test online stuff, e.g. get_cols_and_struct().
 # #############################################################################
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use DSNParser;
+use Sandbox;
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -81,7 +88,7 @@ SKIP: {
       unless $dbh;
 
    diag(`/tmp/12345/use -e 'CREATE DATABASE test' 2>/dev/null`);
-   diag(`/tmp/12345/use < samples/col_types.sql`);
+   diag(`/tmp/12345/use < $trunk/common/t/samples/col_types.sql`);
 
    my $sth = $dbh->prepare('SELECT * FROM test.col_types_1');
    $sth->execute();

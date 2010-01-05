@@ -1,28 +1,35 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 30;
 
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use DSNParser;
+use Sandbox;
+use TableSyncNibble;
+use Quoter;
+use ChangeHandler;
+use TableChecksum;
+use TableChunker;
+use TableNibbler;
+use TableParser;
+use MySQLDump;
+use VersionParser;
+use MasterSlave;
+use TableSyncer;
+use MaatkitTest;
+
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
-
-require "../TableSyncNibble.pm";
-require "../Quoter.pm";
-require "../ChangeHandler.pm";
-require "../TableChecksum.pm";
-require "../TableChunker.pm";
-require "../TableNibbler.pm";
-require "../TableParser.pm";
-require "../MySQLDump.pm";
-require "../VersionParser.pm";
-require "../MasterSlave.pm";
-require "../TableSyncer.pm";
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -78,7 +85,7 @@ my $syncer = new TableSyncer(
 );
 
 $sb->create_dbs($dbh, ['test']);
-diag(`$mysql < samples/before-TableSyncNibble.sql`);
+diag(`$mysql < $trunk/common/t/samples/before-TableSyncNibble.sql`);
 my $ddl        = $du->get_create_table($dbh, $q, 'test', 'test1');
 my $tbl_struct = $tp->parse($ddl);
 my $src = {
@@ -337,7 +344,7 @@ like(
 # #########################################################################
 # Issue 96: mk-table-sync: Nibbler infinite loop
 # #########################################################################
-$sb->load_file('master', 'samples/issue_96.sql');
+$sb->load_file('master', 'common/t/samples/issue_96.sql');
 $tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_96', 't'));
 $t->prepare_to_sync(
    ChangeHandler  => $ch,
@@ -423,7 +430,7 @@ is(
 # #############################################################################
 # Issue 560: mk-table-sync generates impossible WHERE
 # #############################################################################
-$sb->load_file('master', '../../mk-table-sync/t/samples/issue_560.sql');
+$sb->load_file('master', 'mk-table-sync/t/samples/issue_560.sql');
 $tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_560', 'buddy_list'));
 my (undef, %plugin_args) = $t->can_sync(tbl_struct => $tbl_struct);
 $t->prepare_to_sync(

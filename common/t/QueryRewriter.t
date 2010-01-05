@@ -1,20 +1,19 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 149;
 
-require "../QueryRewriter.pm";
-require '../QueryParser.pm';
-
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
+use QueryRewriter;
+use QueryParser;
+use MaatkitTest;
 
 my $qp = new QueryParser();
 my $qr  = new QueryRewriter(QueryParser=>$qp);
@@ -864,29 +863,29 @@ is(
 # Issue 322: mk-query-digest segfault before report
 # #############################################################################
 is(
-   $qr->fingerprint( load_file('samples/huge_replace_into_values.txt') ),
+   $qr->fingerprint( load_file('common/t/samples/huge_replace_into_values.txt') ),
    q{replace into `film_actor` values(?+)},
    'huge replace into values() (issue 322)',
 );
 is(
-   $qr->fingerprint( load_file('samples/huge_insert_ignore_into_values.txt') ),
+   $qr->fingerprint( load_file('common/t/samples/huge_insert_ignore_into_values.txt') ),
    q{insert ignore into `film_actor` values(?+)},
    'huge insert ignore into values() (issue 322)',
 );
 is(
-   $qr->fingerprint( load_file('samples/huge_explicit_cols_values.txt') ),
+   $qr->fingerprint( load_file('common/t/samples/huge_explicit_cols_values.txt') ),
    q{insert into foo (a,b,c,d,e,f,g,h) values(?+)},
    'huge insert with explicit columns before values() (issue 322)',
 );
 
 # Those ^ aren't huge enough.  This one is 1.2M large. 
-my $huge_insert = `zcat samples/slow039.txt.gz | tail -n 1`;
+my $huge_insert = `zcat $trunk/common/t/samples/slow039.txt.gz | tail -n 1`;
 is(
    $qr->fingerprint($huge_insert),
    q{insert into the_universe values(?+)},
    'truly huge insert 1/2 (issue 687)'
 );
-$huge_insert = `zcat samples/slow040.txt.gz | tail -n 2`;
+$huge_insert = `zcat $trunk/common/t/samples/slow040.txt.gz | tail -n 2`;
 is(
    $qr->fingerprint($huge_insert),
    q{insert into the_universe values(?+)},

@@ -1,27 +1,24 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 33;
 
-require "../DuplicateKeyFinder.pm";
-require "../Quoter.pm";
-require "../TableParser.pm";
-use Data::Dumper;
-$Data::Dumper::Indent=1;
+use DuplicateKeyFinder;
+use Quoter;
+use TableParser;
+use MaatkitTest;
 
 my $dk = new DuplicateKeyFinder();
 my $q  = new Quoter();
 my $tp = new TableParser(Quoter => $q);
-
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
 
 my $dupes;
 my $callback = sub {
@@ -34,7 +31,7 @@ my $tbl;
 
 isa_ok($dk, 'DuplicateKeyFinder');
 
-$ddl   = load_file('samples/one_key.sql');
+$ddl   = load_file('common/t/samples/one_key.sql');
 $dupes = [];
 my ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -48,7 +45,7 @@ is_deeply(
    'One key, no dupes'
 );
 
-$ddl   = load_file('samples/dupe_key.sql');
+$ddl   = load_file('common/t/samples/dupe_key.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -72,7 +69,7 @@ is_deeply(
    'Two dupe keys on table dupe_key'
 );
 
-$ddl   = load_file('samples/dupe_key_reversed.sql');
+$ddl   = load_file('common/t/samples/dupe_key_reversed.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -99,7 +96,7 @@ is_deeply(
 # This test might fail if your system sorts a_3 before a_2, because the
 # keys are sorted by columns, not name. If this happens, then a_3 will
 # duplicate a_2.
-$ddl   = load_file('samples/dupe_keys_thrice.sql');
+$ddl   = load_file('common/t/samples/dupe_keys_thrice.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -133,7 +130,7 @@ is_deeply(
    'Dupe keys only output once (may fail due to different sort order)'
 );
 
-$ddl   = load_file('samples/nondupe_fulltext.sql');
+$ddl   = load_file('common/t/samples/nondupe_fulltext.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -169,7 +166,7 @@ is_deeply(
    'Dupe keys when ignoring structure'
 );
 
-$ddl   = load_file('samples/nondupe_fulltext_not_exact.sql');
+$ddl   = load_file('common/t/samples/nondupe_fulltext_not_exact.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -182,7 +179,7 @@ is_deeply(
    'No dupe keys b/c fulltext requires exact match (issue 10)'
 );
 
-$ddl   = load_file('samples/dupe_fulltext_exact.sql');
+$ddl   = load_file('common/t/samples/dupe_fulltext_exact.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -206,7 +203,7 @@ is_deeply(
    'Dupe exact fulltext keys (issue 10)'
 );
 
-$ddl   = load_file('samples/dupe_fulltext_reverse_order.sql');
+$ddl   = load_file('common/t/samples/dupe_fulltext_reverse_order.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -230,7 +227,7 @@ is_deeply(
    'Dupe reverse order fulltext keys (issue 10)'
 );
 
-$ddl   = load_file('samples/dupe_key_unordered.sql');
+$ddl   = load_file('common/t/samples/dupe_key_unordered.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -269,7 +266,7 @@ is_deeply(
 # #############################################################################
 # Clustered key tests.
 # #############################################################################
-$ddl   = load_file('samples/innodb_dupe.sql');
+$ddl   = load_file('common/t/samples/innodb_dupe.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -308,7 +305,7 @@ is_deeply(
    'Duplicate keys with cluster option'
 );
 
-$ddl = load_file('samples/dupe_if_it_were_innodb.sql');
+$ddl = load_file('common/t/samples/dupe_if_it_were_innodb.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -325,7 +322,7 @@ is_deeply(
 
 # This table is a test case for an infinite loop I ran into while writing the
 # cluster stuff
-$ddl = load_file('samples/mysql_db.sql');
+$ddl = load_file('common/t/samples/mysql_db.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -343,7 +340,7 @@ is_deeply(
 # #############################################################################
 # Duplicate FOREIGN KEY tests.
 # #############################################################################
-$ddl   = load_file('samples/dupe_fk_one.sql');
+$ddl   = load_file('common/t/samples/dupe_fk_one.sql');
 $dupes = [];
 $dk->get_duplicate_fks(
    $tp->get_fks($ddl, {database => 'test'}),
@@ -365,7 +362,7 @@ is_deeply(
    'Two duplicate foreign keys'
 );
 
-$ddl   = load_file('samples/sakila_film.sql');
+$ddl   = load_file('common/t/samples/sakila_film.sql');
 $dupes = [];
 $dk->get_duplicate_fks(
    $tp->get_fks($ddl, {database => 'sakila'}),
@@ -380,7 +377,7 @@ is_deeply(
 # Issue 9: mk-duplicate-key-checker should treat unique and FK indexes specially
 # #############################################################################
 
-$ddl   = load_file('samples/issue_9-1.sql');
+$ddl   = load_file('common/t/samples/issue_9-1.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -393,7 +390,7 @@ is_deeply(
    'Unique and non-unique keys with common prefix not dupes (issue 9)'
 );
 
-$ddl   = load_file('samples/issue_9-2.sql');
+$ddl   = load_file('common/t/samples/issue_9-2.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -406,7 +403,7 @@ is_deeply(
    'PRIMARY and non-unique keys with common prefix not dupes (issue 9)'
 );
 
-$ddl   = load_file('samples/issue_9-3.sql');
+$ddl   = load_file('common/t/samples/issue_9-3.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -430,7 +427,7 @@ is_deeply(
    'Non-unique key dupes unique key with same col cover (issue 9)'
 );
 
-$ddl   = load_file('samples/issue_9-4.sql');
+$ddl   = load_file('common/t/samples/issue_9-4.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -454,7 +451,7 @@ is_deeply(
    'Non-unique key dupes PRIMARY key same col cover (issue 9)'
 );
 
-$ddl   = load_file('samples/issue_9-5.sql');
+$ddl   = load_file('common/t/samples/issue_9-5.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -467,7 +464,7 @@ is_deeply(
    'Two unique keys with common prefix are not dupes'
 );
 
-$ddl   = load_file('samples/uppercase_names.sql');
+$ddl   = load_file('common/t/samples/uppercase_names.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -491,7 +488,7 @@ is_deeply(
    'Finds duplicates OK on uppercase columns',
 );
 
-$ddl   = load_file('samples/issue_9-7.sql');
+$ddl   = load_file('common/t/samples/issue_9-7.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -515,7 +512,7 @@ is_deeply(
    'Redundantly unique key dupes normal key after unconstraining'
 );
 
-$ddl   = load_file('samples/issue_9-6.sql');
+$ddl   = load_file('common/t/samples/issue_9-6.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -572,7 +569,7 @@ is_deeply(
 # #############################################################################
 # Issue 269: mk-duplicate-key-checker: Wrongly suggesting removing index
 # #############################################################################
-$ddl   = load_file('samples/issue_269-1.sql');
+$ddl   = load_file('common/t/samples/issue_269-1.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(
@@ -589,7 +586,7 @@ is_deeply(
 # #############################################################################
 # Issue 331: mk-duplicate-key-checker crashes when printing column types
 # #############################################################################
-$ddl   = load_file('samples/issue_331.sql');
+$ddl   = load_file('common/t/samples/issue_331.sql');
 $dupes = [];
 $dk->get_duplicate_fks(
    $tp->get_fks($ddl, {database => 'test'}),
@@ -632,7 +629,7 @@ is(
    "shorten_clustered_duplicate('`a`,`b`', '`c`,`a`,`b`'),"
 );
 
-$ddl   = load_file('samples/issue_295-1.sql');
+$ddl   = load_file('common/t/samples/issue_295-1.sql');
 $dupes = [];
 ($keys, $ck) = $tp->get_keys($ddl, $opt);
 $dk->get_duplicate_keys(

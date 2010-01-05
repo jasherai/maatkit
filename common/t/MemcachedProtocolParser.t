@@ -1,15 +1,19 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 26;
 
-require "../MemcachedProtocolParser.pm";
-require "../TcpdumpParser.pm";
-require "../MaatkitTest.pm";
-
-MaatkitTest->import(qw(test_protocol_parser load_data));
+use MemcachedProtocolParser;
+use TcpdumpParser;
+use MaatkitTest;
 
 my $tcpdump  = new TcpdumpParser();
 my $protocol; # Create a new MemcachedProtocolParser for each test.
@@ -19,7 +23,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump001.txt',
+   file     => 'common/t/samples/memc_tcpdump001.txt',
    result   => [
       {  ts            => '2009-07-04 21:33:39.229179',
          host          => '127.0.0.1',
@@ -41,7 +45,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump002.txt',
+   file     => 'common/t/samples/memc_tcpdump002.txt',
    result   => [
       {  Query_time => '0.000067',
          cmd        => 'get',
@@ -63,7 +67,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump003.txt',
+   file     => 'common/t/samples/memc_tcpdump003.txt',
    result   => [
       {  Query_time => '0.000073',
          cmd        => 'incr',
@@ -97,7 +101,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump004.txt',
+   file     => 'common/t/samples/memc_tcpdump004.txt',
    result   => [
       {  Query_time => '0.000131',
          bytes      => 0,
@@ -132,7 +136,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump005.txt',
+   file     => 'common/t/samples/memc_tcpdump005.txt',
    result   => [
       {  Query_time => '0.003928',
          bytes      => 17946,
@@ -154,7 +158,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump006.txt',
+   file     => 'common/t/samples/memc_tcpdump006.txt',
    result   => [
       {
          Query_time => '0.000196',
@@ -177,7 +181,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump007.txt',
+   file     => 'common/t/samples/memc_tcpdump007.txt',
    result   => [
       {
          Query_time => '0.000016',
@@ -202,7 +206,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump008.txt',
+   file     => 'common/t/samples/memc_tcpdump008.txt',
    result   => [
       {
          Query_time => '0.000003',
@@ -237,7 +241,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump009.txt',
+   file     => 'common/t/samples/memc_tcpdump009.txt',
    result   => [
       {
          Query_time => '0.000022',
@@ -260,7 +264,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump010.txt',
+   file     => 'common/t/samples/memc_tcpdump010.txt',
    result   => [
       {
          Query_time => '0.000120',
@@ -286,7 +290,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump011.txt',
+   file     => 'common/t/samples/memc_tcpdump011.txt',
    result   => [
       {  Query_time => '0.000067',
          cmd        => 'get',
@@ -324,7 +328,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump014.txt',
+   file     => 'common/t/samples/memc_tcpdump014.txt',
    result   => [
       {  ts          => '2009-10-06 10:31:56.323538',
          Query_time  => '0.000024',
@@ -346,7 +350,7 @@ $protocol = new MemcachedProtocolParser();
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
-   file     => 'samples/memc_tcpdump015.txt',
+   file     => 'common/t/samples/memc_tcpdump015.txt',
    result   => [
       {  ts          => '2009-10-06 10:31:56.330709',
          Query_time  => '0.000013',

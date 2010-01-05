@@ -1,19 +1,23 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 10;
 
-require "../MaatkitTest.pm";
-require "../MaatkitCommon.pm";
+use MaatkitCommon;
+use MaatkitTest;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
-
-MaatkitTest->import(qw(load_file));
 
 MaatkitCommon->import(qw(
    get_number_of_cpus
@@ -30,7 +34,7 @@ is(
 );
    
 is(
-   get_number_of_cpus(load_file('samples/cpuinfo01.txt')),
+   get_number_of_cpus(load_file("common/t/samples/cpuinfo01.txt")),
    2,
    'get_number_of_cpus from /proc/cpuinfo'
 );

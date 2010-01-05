@@ -1,23 +1,24 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 19;
 
-require '../Processlist.pm';
-require '../MaatkitTest.pm';
-require '../TextResultSetParser.pm';
-require '../Transformers.pm';
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Quotekeys = 0;
+use Processlist;
+use MaatkitTest;
+use TextResultSetParser;
+use Transformers;
+use MaatkitTest;
 
 my $pl  = new Processlist();
 my $rsp = new TextResultSetParser();
-
-MaatkitTest->import(qw(load_file));
 
 my @events;
 my $procs;
@@ -443,7 +444,7 @@ is(scalar(@queries), 0, 'Did not find any query');
 is_deeply(
    [
       $pl->find(
-         $rsp->parse(load_file('samples/recset003.txt')),
+         $rsp->parse(load_file('common/t/samples/recset003.txt')),
          %find_spec,
       )
    ],

@@ -1,14 +1,22 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 49;
 
-require "../TableParser.pm";
-require "../Quoter.pm";
-require '../DSNParser.pm';
-require '../Sandbox.pm';
+use TableParser;
+use Quoter;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
+
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -22,25 +30,17 @@ sub throws_ok {
    like( $EVAL_ERROR, $pat, $msg );
 }
 
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
-
 eval {
-   $tp->parse( load_file('samples/noquotes.sql') );
+   $tp->parse( load_file('common/t/samples/noquotes.sql') );
 };
 like($EVAL_ERROR, qr/quoting/, 'No quoting');
 
 eval {
-   $tp->parse( load_file('samples/ansi_quotes.sql') );
+   $tp->parse( load_file('common/t/samples/ansi_quotes.sql') );
 };
 like($EVAL_ERROR, qr/quoting/, 'ANSI quoting');
 
-$tbl = $tp->parse( load_file('samples/t1.sql') );
+$tbl = $tp->parse( load_file('common/t/samples/t1.sql') );
 is_deeply(
    $tbl,
    {  cols         => [qw(a)],
@@ -61,7 +61,7 @@ is_deeply(
    'Basic table is OK',
 );
 
-$tbl = $tp->parse( load_file('samples/TableParser-prefix_idx.sql') );
+$tbl = $tp->parse( load_file('common/t/samples/TableParser-prefix_idx.sql') );
 is_deeply(
    $tbl,
    {
@@ -115,7 +115,7 @@ is_deeply(
    'Indexes with prefixes parse OK (fixes issue 1)'
 );
 
-$tbl = $tp->parse( load_file('samples/sakila.film.sql') );
+$tbl = $tp->parse( load_file('common/t/samples/sakila.film.sql') );
 is_deeply(
    $tbl,
    {  cols => [
@@ -293,7 +293,7 @@ throws_ok (
    'Index does not exist',
 );
 
-$tbl = $tp->parse( load_file('samples/temporary_table.sql') );
+$tbl = $tp->parse( load_file('common/t/samples/temporary_table.sql') );
 is_deeply(
    $tbl,
    {  cols         => [qw(a)],
@@ -314,7 +314,7 @@ is_deeply(
    'Temporary table',
 );
 
-$tbl = $tp->parse( load_file('samples/hyphentest.sql') );
+$tbl = $tp->parse( load_file('common/t/samples/hyphentest.sql') );
 is_deeply(
    $tbl,
    {  'is_autoinc' => {
@@ -395,7 +395,7 @@ is_deeply(
    'Hyphens in indexed columns',
 );
 
-$tbl = $tp->parse( load_file('samples/ndb_table.sql') );
+$tbl = $tp->parse( load_file('common/t/samples/ndb_table.sql') );
 is_deeply(
    $tbl,
    {  cols        => [qw(id)],
@@ -428,7 +428,7 @@ is_deeply(
    'NDB table',
 );
 
-$tbl = $tp->parse( load_file('samples/mixed-case.sql') );
+$tbl = $tp->parse( load_file('common/t/samples/mixed-case.sql') );
 is_deeply(
    $tbl,
    {  cols         => [qw(a b mixedcol)],
@@ -465,7 +465,7 @@ is_deeply(
    'Mixed-case identifiers',
 );
 
-$tbl = $tp->parse( load_file('samples/one_key.sql') );
+$tbl = $tp->parse( load_file('common/t/samples/one_key.sql') );
 is_deeply(
    $tbl,
    {  cols          => [qw(a b)],
@@ -505,13 +505,13 @@ is_deeply(
 # Test get_fks()
 # #############################################################################
 is_deeply(
-   $tp->get_fks( load_file('samples/one_key.sql') ),
+   $tp->get_fks( load_file('common/t/samples/one_key.sql') ),
    {},
    'no fks'
 );
 
 is_deeply(
-   $tp->get_fks( load_file('samples/one_fk.sql') ),   
+   $tp->get_fks( load_file('common/t/samples/one_fk.sql') ),   
    {
       't1_ibfk_1' => {
          name            => 't1_ibfk_1',
@@ -527,7 +527,7 @@ is_deeply(
 );
 
 is_deeply(
-   $tp->get_fks( load_file('samples/one_fk.sql'), {database=>'foo'} ),   
+   $tp->get_fks( load_file('common/t/samples/one_fk.sql'), {database=>'foo'} ),   
    {
       't1_ibfk_1' => {
          name            => 't1_ibfk_1',
@@ -543,7 +543,7 @@ is_deeply(
 );
 
 is_deeply(
-   $tp->get_fks( load_file('samples/issue_331.sql') ),   
+   $tp->get_fks( load_file('common/t/samples/issue_331.sql') ),   
    {
       'fk_1' => {
          name            => 'fk_1',
@@ -588,7 +588,7 @@ sub test_rsi {
 }
 
 test_rsi(
-   'samples/t1.sql',
+   'common/t/samples/t1.sql',
    'MyISAM table, no indexes',
 "CREATE TABLE `t1` (
   `a` int(11) default NULL
@@ -598,7 +598,7 @@ test_rsi(
 );
 
 test_rsi(
-   'samples/one_key.sql',
+   'common/t/samples/one_key.sql',
    'MyISAM table, one pk',
 "CREATE TABLE `t2` (
   `a` int(11) NOT NULL,
@@ -610,7 +610,7 @@ test_rsi(
 );
 
 test_rsi(
-   'samples/date.sql',
+   'common/t/samples/date.sql',
    'one pk',
 "CREATE TABLE `checksum_test_5` (
   `a` date NOT NULL,
@@ -622,7 +622,7 @@ test_rsi(
 );
 
 test_rsi(
-   'samples/auto-increment-actor.sql',
+   'common/t/samples/auto-increment-actor.sql',
    'pk, key (no trailing comma)',
 "CREATE TABLE `actor` (
   `actor_id` smallint(5) unsigned NOT NULL auto_increment,
@@ -636,7 +636,7 @@ test_rsi(
 );
 
 test_rsi(
-   'samples/one_fk.sql',
+   'common/t/samples/one_fk.sql',
    'key, fk, no clustered key',
 "CREATE TABLE `t1` (
   `a` int(11) NOT NULL,
@@ -648,7 +648,7 @@ test_rsi(
 );
 
 test_rsi(
-   'samples/sakila.film.sql',
+   'common/t/samples/sakila.film.sql',
    'pk, keys and fks',
 "CREATE TABLE `film` (
   `film_id` smallint(5) unsigned NOT NULL auto_increment,
@@ -673,7 +673,7 @@ test_rsi(
 );
 
 test_rsi(
-   'samples/issue_729.sql',
+   'common/t/samples/issue_729.sql',
    'issue 729',
 "CREATE TABLE `posts` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
@@ -693,7 +693,7 @@ test_rsi(
 SKIP: {
    skip 'Cannot connect to sandbox master', 8 unless $dbh;
 
-   $sb->load_file('master', 'samples/check_table.sql');
+   $sb->load_file('master', 'common/t/samples/check_table.sql');
 
    # msandbox user does not have GRANT privs.
    my $root_dbh = DBI->connect(
@@ -823,12 +823,12 @@ sub cmp_ddls {
    return;
 }
 
-cmp_ddls('v5.0 vs. v5.1', 'samples/issue_109-01-v50.sql', 'samples/issue_109-01-v51.sql');
+cmp_ddls('v5.0 vs. v5.1', 'common/t/samples/issue_109-01-v50.sql', 'common/t/samples/issue_109-01-v51.sql');
 
 # #############################################################################
 # Issue 132: mk-parallel-dump halts with error when enum contains backtick
 # #############################################################################
-$tbl = $tp->parse( load_file('samples/issue_132.sql') );
+$tbl = $tp->parse( load_file('common/t/samples/issue_132.sql') );
 is_deeply(
    $tbl,
    {  cols         => [qw(country)],
@@ -852,8 +852,8 @@ is_deeply(
 # #############################################################################
 # issue 328: remove AUTO_INCREMENT from schema for checksumming.
 # #############################################################################
-my $schema1 = load_file('samples/auto-increment-actor.sql');
-my $schema2 = load_file('samples/no-auto-increment-actor.sql');
+my $schema1 = load_file('common/t/samples/auto-increment-actor.sql');
+my $schema2 = load_file('common/t/samples/no-auto-increment-actor.sql');
 is(
    $tp->remove_auto_increment($schema1),
    $schema2,
@@ -863,7 +863,7 @@ is(
 # #############################################################################
 # Issue 330: mk-parallel-dump halts with error when comments contain pairing `
 # #############################################################################
-$tbl = $tp->parse( load_file('samples/issue_330_backtick_pair_in_col_comments.sql') );
+$tbl = $tp->parse( load_file('common/t/samples/issue_330_backtick_pair_in_col_comments.sql') );
 is_deeply(
    $tbl,
    {  cols         => [qw(a)],
@@ -906,7 +906,7 @@ is(
 # #############################################################################
 
 # Make sure get_keys() gets a clustered index that's not the primary key.
-my $ddl = load_file('samples/non_pk_ck.sql');
+my $ddl = load_file('common/t/samples/non_pk_ck.sql');
 my (undef, $ck) = $tp->get_keys($ddl, {}, {i=>0,j=>1});
 is(
    $ck,

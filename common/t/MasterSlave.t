@@ -1,13 +1,20 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 31;
 
-require "../MasterSlave.pm";
-require "../DSNParser.pm";
-require '../Sandbox.pm';
+use MasterSlave;
+use DSNParser;
+use Sandbox;
+use MaatkitTest;
 
 my $ms = new MasterSlave();
 my $dp = new DSNParser();
@@ -20,14 +27,14 @@ my $slave_dbh  = $sb->get_dbh_for('slave1')
 # Create slave2 as slave of slave1.
 #diag(`/tmp/12347/stop 2> /dev/null`);
 #diag(`rm -rf /tmp/12347 2> /dev/null`);
-#diag(`../../sandbox/make_sandbox 12347`);
+#diag(`$trunk/sandbox/make_sandbox 12347`);
 #diag(`/tmp/12347/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=12346"`);
 #diag(`/tmp/12347/use -e "start slave"`);
 my $slave_2_dbh = $sb->get_dbh_for('slave2');
 #   or BAIL_OUT('Cannot connect to sandbox slave2');
 
 # Make slave2 slave of master.
-#diag(`../../mk-slave-move/mk-slave-move --sibling-of-master h=127.1,P=12347`);
+#diag(`$trunk/mk-slave-move/mk-slave-move --sibling-of-master h=127.1,P=12347`);
 
 #SKIP: {
 #   skip 'idea for future improvement', 3;
@@ -134,10 +141,10 @@ my %port_for = (
    slave1 => 2902,
    slave2 => 2903,
 );
-diag(`../../sandbox/start-sandbox master 2900 >/dev/null`);
-diag(`../../sandbox/start-sandbox slave 2903 2900 >/dev/null`);
-diag(`../../sandbox/start-sandbox slave 2901 2900 >/dev/null`);
-diag(`../../sandbox/start-sandbox slave 2902 2901 >/dev/null`);
+diag(`$trunk/sandbox/start-sandbox master 2900 >/dev/null`);
+diag(`$trunk/sandbox/start-sandbox slave 2903 2900 >/dev/null`);
+diag(`$trunk/sandbox/start-sandbox slave 2901 2900 >/dev/null`);
+diag(`$trunk/sandbox/start-sandbox slave 2902 2901 >/dev/null`);
 
 # I discovered something weird while updating this test. Above, you see that
 # slave2 is started first, then the others. Before, slave2 was started last,
@@ -340,5 +347,5 @@ is($ms->get_slave_status($slaves[2])->{master_port}, $port_for{master}, 'slave 3
 # #############################################################################
 # Done.
 # #############################################################################
-diag(`../../sandbox/stop-sandbox remove 2903 2902 2901 2900 >/dev/null`);
+diag(`$trunk/sandbox/stop-sandbox remove 2903 2902 2901 2900 >/dev/null`);
 exit;

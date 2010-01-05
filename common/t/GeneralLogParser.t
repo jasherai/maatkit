@@ -1,19 +1,18 @@
 #!/usr/bin/perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 3;
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
-require "../GeneralLogParser.pm";
-require "../MaatkitTest.pm";
-
-MaatkitTest->import(qw(test_log_parser));
+use GeneralLogParser;
+use MaatkitTest;
 
 my $p = new GeneralLogParser();
 
@@ -21,7 +20,7 @@ my $oktorun = 1;
 
 test_log_parser(
    parser  => $p,
-   file    => 'samples/genlog001.txt',
+   file    => 'common/t/samples/genlog001.txt',
    oktorun => sub { $oktorun = $_[0]; },
    result  => [
       {  ts         => '051007 21:55:24',
