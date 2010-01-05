@@ -41,7 +41,7 @@ $sb->wipe_clean($dbh);
 is(`$cmd -d test --nosummary`, '', 'No dupes on clean sandbox');
 
 $sb->create_dbs($dbh, ['test']);
-$sb->load_file('master', '../../common/t/samples/dupe_key.sql', 'test');
+$sb->load_file('master', 'common/t/samples/dupe_key.sql', 'test');
 
 ok(
    no_diff("$cmd -d test", 'samples/basic_output.txt'),
@@ -58,14 +58,14 @@ ok(
    '--nosummary'
 );
 
-$sb->load_file('master', '../../common/t/samples/uppercase_names.sql', 'test');
+$sb->load_file('master', 'common/t/samples/uppercase_names.sql', 'test');
 
 ok(
    no_diff("$cmd -d test -t UPPER_TEST", 'samples/uppercase_names.txt'),
    'Issue 306 crash on uppercase column names'
 );
 
-$sb->load_file('master', '../../common/t/samples/issue_269-1.sql', 'test');
+$sb->load_file('master', 'common/t/samples/issue_269-1.sql', 'test');
 
 ok(
    no_diff("$cmd -d test -t a", 'samples/issue_269.txt'),
@@ -89,7 +89,7 @@ unlike($output, qr/Use of uninitialized var/, 'Does not crash on undef var');
 # Issue 331: mk-duplicate-key-checker crashes getting size of foreign keys
 # #############################################################################
 $sb->create_dbs($dbh, ['test']);
-$sb->load_file('master', 'samples/issue_331.sql', 'test');
+$sb->load_file('master', 'mk-duplicate-key-checker/t/samples/issue_331.sql', 'test');
 ok(
    no_diff("$cmd -d issue_331", 'samples/issue_331.txt'),
    'Issue 331 crash on fks'
@@ -98,7 +98,7 @@ ok(
 # #############################################################################
 # Issue 295: Enhance rules for clustered keys in mk-duplicate-key-checker
 # #############################################################################
-$sb->load_file('master', 'samples/issue_295.sql', 'test');
+$sb->load_file('master', 'mk-duplicate-key-checker/t/samples/issue_295.sql', 'test');
 ok(
    no_diff("$cmd -d issue_295", 'samples/issue_295.txt'),
    "Shorten, not remove, clustered dupes"
