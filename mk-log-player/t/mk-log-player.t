@@ -83,7 +83,7 @@ like(
 SKIP: {
    skip 'Cannot connect to sandbox master', 3 unless $dbh;
 
-   $sb->load_file('master', 'samples/log.sql');
+   $sb->load_file('master', 'mk-log-player/t/samples/log.sql');
 
    # Using --port implicitly tests that the DSN inherits
    # values from --port, etc. (issue 248).
@@ -96,7 +96,7 @@ SKIP: {
       '--play made table changes',
    );
 
-   $sb->load_file('master', 'samples/log.sql');
+   $sb->load_file('master', 'mk-log-player/t/samples/log.sql');
    $output = `../mk-log-player --only-select --play $tmpdir/ F=/tmp/12345/my.sandbox.cnf`;
    $r = $dbh->selectall_arrayref('select * from mk_log_player_1.tbl1 where a = 100 OR a = 555;');
    is_deeply(
