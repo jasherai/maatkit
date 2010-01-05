@@ -20,7 +20,7 @@ my $slave_dbh  = $sb->get_dbh_for('slave1')
 eval { $master_dbh->do('DROP FUNCTION test.fnv_64'); };
 
 # If this fails, you need to build the fnv_64 UDF and copy it to /lib
-$sb->load_file('master', 'samples/before.sql');
+$sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
 
 my $cnf='/tmp/12345/my.sandbox.cnf';
 my ($output, $output2);
@@ -313,8 +313,8 @@ unlike($output, qr/LOCK TABLES /, '--schema does not lock tables even with --loc
 $sb->wipe_clean($master_dbh);
 $sb->create_dbs($master_dbh, ['test']);
 
-$sb->load_file('master', 'samples/checksum_tbl.sql');
-$sb->load_file('master', 'samples/issue_21.sql');
+$sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
+$sb->load_file('master', 'mk-table-checksum/t/samples/issue_21.sql');
 
 # Run --replication once to populate test.checksum
 $cmd = 'perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum | diff ./samples/basic_replicate_output -';
@@ -491,7 +491,7 @@ unlike($output, qr/DATABASE\s+TABLE/, '--checksum in --schema mode prints terse 
 # #############################################################################
 
 # Reusing issue_21.sql
-$sb->load_file('master', 'samples/issue_21.sql'); 
+$sb->load_file('master', 'mk-table-checksum/t/samples/issue_21.sql'); 
 $output = `../mk-table-checksum --since 'current_date - interval 7 day' h=127.1,P=12345,u=msandbox,p=msandbox -t test.issue_21`;
 like($output, qr/test\s+issue_21\s+0\s+127\.1\s+InnoDB/, 'InnoDB table is checksummed with temporal --since');
 
@@ -499,7 +499,7 @@ like($output, qr/test\s+issue_21\s+0\s+127\.1\s+InnoDB/, 'InnoDB table is checks
 # Issue 122: mk-table-checksum doesn't --save-since correctly on empty tables
 # #############################################################################
 
-$sb->load_file('master', 'samples/issue_122.sql');
+$sb->load_file('master', 'mk-table-checksum/t/samples/issue_122.sql');
 $output = `../mk-table-checksum --arg-table test.argtable --save-since h=127.1,P=12345,u=msandbox,p=msandbox -t test.issue_122 --chunk-size 2`;
 my $res = $master_dbh->selectall_arrayref("SELECT since FROM test.argtable WHERE db='test' AND tbl='issue_122'");
 is_deeply($res, [[undef]], 'Numeric since is not saved when table is empty');
