@@ -21,10 +21,11 @@ if ( !@progs ) {
 }
 
 foreach my $prog ( @progs ) {
-   my ($program) = $prog =~ m{/([a-z-]+)$};
+   my ($base, $program) = $prog =~ m{([a-z-]+)/([a-z-]+)$};
    next unless $program;
 
-   my $contents = load_file($prog);
+   # Arg to load_file is relative to MAATKIT_TRUNK.
+   my $contents = load_file("$base/$program");
 
    my %uses   = map  { $_ => 1 } $contents =~ m/new (\w+)/gm;
    my @unused = grep {
