@@ -45,6 +45,15 @@ sub key_cols {
 
 package main;
 
+BEGIN {
+   if ( defined $ENV{MK_PERL_LIB} ) {
+      die "The MK_PERL_LIB environment variable is not a valid directory: "
+         . $ENV{MK_PERL_LIB} unless -d $ENV{MK_PERL_LIB};
+      print "# Using Perl lib $ENV{MK_PERL_LIB}\n";
+      use lib ($ENV{MK_PERL_LIB} ? "$ENV{MK_PERL_LIB}" : ());
+   }
+};
+
 use strict;
 use warnings FATAL => 'all';
 
