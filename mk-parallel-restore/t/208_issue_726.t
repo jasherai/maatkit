@@ -36,7 +36,7 @@ diag(`rm -rf $basedir`);
 # --no-bin-log
 # #############################################################################
 $sb->create_dbs($dbh, ['test']);
-$sb->load_file('master', 'samples/issue_30.sql');
+$sb->load_file('master', 'mk-parallel-restore/t/samples/issue_30.sql');
 `../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25`;
 # The above makes the following chunks:
 #

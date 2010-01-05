@@ -30,7 +30,7 @@ my $basedir = '/tmp/dump/';
 my $output;
 
 diag(`rm -rf $basedir`);
-$sb->load_file('master', 'samples/issue_506.sql');
+$sb->load_file('master', 'mk-parallel-restore/t/samples/issue_506.sql');
 
 # #############################################################################
 # Issue 506: mk-parallel-restore might cause a slave error when checking if
