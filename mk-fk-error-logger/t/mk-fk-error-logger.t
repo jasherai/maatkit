@@ -32,7 +32,7 @@ sub output {
 # #############################################################################
 sub test_get_fk_error {
    my ( $file, $expected_ts, $expected_fke_file ) = @_;
-   my $contents = load_file($file);
+   my $contents = load_file('mk-fk-error-logger/t/'.$file);
    chomp $contents;
    my ($ts, $fke) = mk_fk_error_logger::get_fk_error($contents);
    is(
@@ -40,7 +40,7 @@ sub test_get_fk_error {
       $expected_ts,
       "$file timestamp"
    );
-   my $expected_fke = load_file($expected_fke_file);
+   my $expected_fke = load_file('mk-fk-error-logger/t/'.$expected_fke_file);
    chomp $expected_fke;
    is(
       $fke,
