@@ -48,7 +48,7 @@ is(
 # #############################################################################
 # Test basic master-slave syncing
 # #############################################################################
-$sb->load_file('master', 'samples/before.sql');
+$sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = run('test1', 'test2', '');
 like($output, qr/Can't make changes/, 'It dislikes changing a slave');
 
@@ -61,7 +61,7 @@ is_deeply(
    'Synced OK with no alg'
 );
 
-$sb->load_file('master', 'samples/before.sql');
+$sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = run('test1', 'test2', '--algorithms Stream --no-bin-log');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Stream sync');
@@ -71,7 +71,7 @@ is_deeply(
    'Synced OK with Stream'
 );
 
-$sb->load_file('master', 'samples/before.sql');
+$sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = run('test1', 'test2', '--algorithms GroupBy --no-bin-log');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic GroupBy sync');
@@ -81,7 +81,7 @@ is_deeply(
    'Synced OK with GroupBy'
 );
 
-$sb->load_file('master', 'samples/before.sql');
+$sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = run('test1', 'test2', '--algorithms Chunk,GroupBy --no-bin-log');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Chunk sync');
@@ -91,7 +91,7 @@ is_deeply(
    'Synced OK with Chunk'
 );
 
-$sb->load_file('master', 'samples/before.sql');
+$sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = run('test1', 'test2', '--algorithms Nibble --no-bin-log');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
@@ -104,7 +104,7 @@ is_deeply(
 # Save original MKDEBUG env because we modify it below.
 my $dbg = $ENV{MKDEBUG};
 
-$sb->load_file('master', 'samples/before.sql');
+$sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $ENV{MKDEBUG} = 1;
 $output = run('test1', 'test2', '--algorithms Nibble --no-bin-log --chunk-size 1 --transaction --lock 1');
 delete $ENV{MKDEBUG};
@@ -176,9 +176,9 @@ SKIP: {
    skip 'MySQL version < 5.0.2 does not support triggers', 9
       unless $vp->version_ge($master_dbh, '5.0.2');
 
-   $sb->load_file('master', 'samples/issue_37.sql');
+   $sb->load_file('master', 'mk-table-sync/t/samples/issue_37.sql');
    $sb->use('master', '-e "SET SQL_LOG_BIN=0; INSERT INTO test.issue_37 VALUES (1), (2);"');
-   $sb->load_file('master', 'samples/checksum_tbl.sql');
+   $sb->load_file('master', 'mk-table-sync/t/samples/checksum_tbl.sql');
    `../../mk-table-checksum/mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --replicate test.checksum -d test 2>&1 > /dev/null`;
 
    $output = `../mk-table-sync --no-check-slave --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 2>&1`;
@@ -239,7 +239,7 @@ SKIP: {
    like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --no-index-hint');
 };
 
-$sb->load_file('master', 'samples/checksum_tbl.sql');
+$sb->load_file('master', 'mk-table-sync/t/samples/checksum_tbl.sql');
 
 # #############################################################################
 # Issue 22: mk-table-sync fails with uninitialized value at line 2330
@@ -353,7 +353,7 @@ ok(!$?, 'Issue 218: NULL values compare as equal');
 # #############################################################################
 # Issue 313: Add --ignore-columns (and add tests for --columns).
 # #############################################################################
-$sb->load_file('master', 'samples/before.sql');
+$sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 $output = `perl ../mk-table-sync --print h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=test3 t=test4`;
 # This test changed because the row sql now does ORDER BY key_col (id here)
 is($output, <<EOF,
@@ -387,7 +387,7 @@ EOF
 # #############################################################################
 # Issue 363: lock and rename.
 # #############################################################################
-$sb->load_file('master', 'samples/before.sql');
+$sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
 
 $output = `perl ../mk-table-sync --lock-and-rename h=127.1,P=12345 P=12346 2>&1`;
 like($output, qr/requires exactly two/,
@@ -441,7 +441,7 @@ like(
 
 # It's not really slave2, we just use slave2's port.
 SKIP: {
-   skip 'Cannot connect to second sandbox server', 1
+   skip 'Cannot connect to second sandbox server', 2
       unless $dbh2;
 
    # master (12345) should have test.test1 from an earlier test.
@@ -468,11 +468,26 @@ SKIP: {
 # #############################################################################
 #  Issue 367: mk-table-sync incorrectly advises --ignore-triggers
 # #############################################################################
+
 SKIP: {
    skip 'MySQL version < 5.0.2 does not support triggers', 3
-      unless $vp->version_ge($master_dbh, '5.0-2');
+      unless $vp->version_ge($master_dbh, '5.0.2');
 
-   $sb->load_file('master', 'samples/issue_367.sql');
+   $sb->load_file('master', 'mk-table-sync/t/samples/issue_367.sql');
+   my $i = 0;
+   MaatkitTest::wait_until(
+      sub {
+         my $r;
+         eval {
+            $r = $slave_dbh->selectrow_arrayref('SHOW TABLES FROM db1');
+         };
+         return 1 if ($r->[0] || '') eq 't1';
+         diag('Waiting for slave...') unless $i++;
+         return 0;
+      },
+      0.5,
+      30,
+   );
 
    # Make slave db1.t1 and db2.t1 differ from master.
    $slave_dbh->do('INSERT INTO db1.t1 VALUES (9)');
