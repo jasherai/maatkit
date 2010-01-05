@@ -28,7 +28,7 @@ my @tbls;
 # Issue 275: mk-parallel-dump --chunksize does not work properly with --csv
 # #############################################################################
 
-$sb->load_file('master', 'samples/issue_223.sql');
+$sb->load_file('master', 'mk-parallel-dump/t/samples/issue_223.sql');
 diag(`rm -rf $basedir`);
 
 # This test relies on issue_223.sql loaded above which creates test.t1.

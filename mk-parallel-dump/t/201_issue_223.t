@@ -31,7 +31,7 @@ my @tbls;
 # Triggers are no longer dumped, but we'll keep part of this test to make
 # sure triggers really aren't dumped.
 
-$sb->load_file('master', 'samples/issue_223.sql');
+$sb->load_file('master', 'mk-parallel-dump/t/samples/issue_223.sql');
 diag(`rm -rf $basedir`);
 
 # Dump table t1 and make sure its trig def is not in any chunk.

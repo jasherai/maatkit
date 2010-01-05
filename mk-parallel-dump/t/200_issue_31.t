@@ -27,7 +27,7 @@ my @tbls;
 # ##########################################################################
 # Issue 31: Make mk-parallel-dump and mk-parallel-restore do biggest-first
 ############################################################################
-$sb->load_file('master', 'samples/issue_31.sql');
+$sb->load_file('master', 'mk-parallel-dump/t/samples/issue_31.sql');
 # Tables in order of size: t4 t1 t3 t2
 
 $output = `$cmd --base-dir $basedir -d issue_31 --dry-run --threads 1 2>&1 | grep 'result\-file'`;
