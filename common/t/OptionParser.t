@@ -32,7 +32,7 @@ my %opts;
 # #############################################################################
 
 # Quick test of standard interface.
-$o->get_specs('samples/pod_sample_01.txt');
+$o->get_specs("$trunk/common/t/samples/pod_sample_01.txt");
 %opts = $o->opts();
 ok(
    exists $opts{help},
@@ -45,7 +45,7 @@ $o  = new OptionParser(
    dp           => $dp,
 );
 ok(!$o->has('time'), 'There is no --time yet');
-@opt_specs = $o->_pod_to_specs('samples/pod_sample_01.txt');
+@opt_specs = $o->_pod_to_specs("$trunk/common/t/samples/pod_sample_01.txt");
 is_deeply(
    \@opt_specs,
    [
@@ -361,21 +361,21 @@ ok(
 # #############################################################################
 # Test hostile, broken usage.
 # #############################################################################
-eval { $o->_pod_to_specs('samples/pod_sample_02.txt'); };
+eval { $o->_pod_to_specs("$trunk/common/t/samples/pod_sample_02.txt"); };
 like(
    $EVAL_ERROR,
    qr/POD has no OPTIONS section/,
    'Dies on POD without an OPTIONS section'
 );
 
-eval { $o->_pod_to_specs('samples/pod_sample_03.txt'); };
+eval { $o->_pod_to_specs("$trunk/common/t/samples/pod_sample_03.txt"); };
 like(
    $EVAL_ERROR,
    qr/No valid specs in POD OPTIONS/,
    'Dies on POD with an OPTIONS section but no option items'
 );
 
-eval { $o->_pod_to_specs('samples/pod_sample_04.txt'); };
+eval { $o->_pod_to_specs("$trunk/common/t/samples/pod_sample_04.txt"); };
 like(
    $EVAL_ERROR,
    qr/No description after option spec foo/,
@@ -1438,7 +1438,7 @@ EOF
 $o = new OptionParser(
    description  => 'parses command line options.',
 );
-$o->get_specs('samples/pod_sample_05.txt');
+$o->get_specs("$trunk/common/t/samples/pod_sample_05.txt");
 
 is_deeply(
    $o->get_groups(),
@@ -1566,7 +1566,7 @@ is(
 #    =item --foo
 #    negatable: yes
 # #############################################################################
-@opt_specs = $o->_pod_to_specs('samples/pod_sample_issue_140.txt');
+@opt_specs = $o->_pod_to_specs("$trunk/common/t/samples/pod_sample_issue_140.txt");
 is_deeply(
    \@opt_specs,
    [
@@ -1580,7 +1580,7 @@ is_deeply(
 # Issue 92: extract a paragraph from POD.
 # #############################################################################
 is(
-   $o->read_para_after("samples/pod_sample_issue_92.txt", qr/magic/),
+   $o->read_para_after("$trunk/common/t/samples/pod_sample_issue_92.txt", qr/magic/),
    'This is the paragraph, hooray',
    'read_para_after'
 );
@@ -1589,7 +1589,7 @@ is(
 # always get the same thing on each subsequent call no matter what regex you
 # pass in.  This is to test and make sure I don't do that again.
 is(
-   $o->read_para_after("samples/pod_sample_issue_92.txt", qr/abracadabra/),
+   $o->read_para_after("$trunk/common/t/samples/pod_sample_issue_92.txt", qr/abracadabra/),
    'This is the next paragraph, hooray',
    'read_para_after again'
 );
@@ -1598,7 +1598,7 @@ is(
 # Issue 231: read configuration files
 # #############################################################################
 is_deeply(
-   [$o->_read_config_file("samples/config_file_1.conf")],
+   [$o->_read_config_file("$trunk/common/t/samples/config_file_1.conf")],
    ['--foo', 'bar', '--verbose', '/path/to/file', 'h=127.1,P=12346'],
    'Reads a config file',
 );
@@ -1666,7 +1666,7 @@ $o->_parse_specs(
 eval { $o->get_opts(); };
 like($EVAL_ERROR, qr/Cannot open/, 'No config file found');
 
-@ARGV = qw(--config samples/empty --cat);
+@ARGV = ('--config',"$trunk/common/t/samples/empty",'--cat');
 $o->get_opts();
 ok($o->got('config'), 'Got --config');
 
@@ -1687,7 +1687,7 @@ Options:
 Options and values after processing arguments:
 
   --cat     TRUE
-  --config  samples/empty
+  --config  $trunk/common/t/samples/empty
 EOF
 ,
    'Parses special --config option first',
@@ -1727,7 +1727,7 @@ $o->_parse_specs(
 );
 is($o->{strict}, 0, 'setting strict to 0 worked');
 
-@ARGV = qw(--config samples/config_file_1.conf);
+@ARGV = ('--config', "$trunk/common/t/samples/config_file_1.conf");
 $o->get_opts();
 is_deeply(
    [@ARGV],
@@ -1739,7 +1739,7 @@ is($o->get('foo'), 'bar', 'Got --foo value');
 ok($o->got('verbose'), 'Got --verbose');
 is($o->get('verbose'), 1, 'Got --verbose value');
 
-@ARGV = ('--config', 'samples/config_file_1.conf,samples/config_file_2.conf');
+@ARGV = ('--config', "$trunk/common/t/samples/config_file_1.conf,$trunk/common/t/samples/config_file_2.conf");
 $o->get_opts();
 is_deeply(
    [@ARGV],
@@ -1778,7 +1778,7 @@ is_deeply(
 $o = new OptionParser(
    description  => 'parses command line options.',
 );
-eval { $o->get_specs('samples/pod_sample_06.txt'); };
+eval { $o->get_specs("$trunk/common/t/samples/pod_sample_06.txt"); };
 like(
    $EVAL_ERROR,
    qr/Unrecognized attribute for --verbose: culumative/,
