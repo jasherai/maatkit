@@ -26,7 +26,7 @@ my $output;
 my $cmd;
 
 $sb->create_dbs($dbh, ['test']);
-$sb->load_file('master', 'samples/query_review.sql');
+$sb->load_file('master', 'mk-query-digest/t/samples/query_review.sql');
 
 # Test --create-review and --create-review-history-table
 $output = 'foo'; # clear previous test results
@@ -209,7 +209,7 @@ unlike($output, qr/Use of uninitialized value/, 'no crash due to totally missing
 # #############################################################################
 # --review --no-report
 # #############################################################################
-$sb->load_file('master', 'samples/query_review.sql');
+$sb->load_file('master', 'mk-query-digest/t/samples/query_review.sql');
 $output = `${run_with}slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review --no-report --create-review-table`;
 $res = $dbh->selectall_arrayref('SELECT * FROM test.query_review');
 is(
