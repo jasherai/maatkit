@@ -92,7 +92,7 @@ SKIP: {
    SKIP: {
       skip 'No /proc', 2 unless -d '/proc';
 
-      $output = `$cmd 1 --daemonize --pid $pid_file --log $log_file 2>&1`;
+      system("$cmd 1 --daemonize --pid $pid_file --log $log_file");
       chomp($pid = `cat $pid_file`);
       my $proc_fd_0 = -l "/proc/$pid/0"    ? "/proc/$pid/0"
                     : -l "/proc/$pid/fd/0" ? "/proc/$pid/fd/0"
@@ -105,7 +105,7 @@ SKIP: {
       );
 
       sleep 1;
-      $output = `echo "foo" | $cmd 1 --daemonize --pid $pid_file --log $log_file 2>&1`;
+      system("echo foo | $cmd 1 --daemonize --pid $pid_file --log $log_file");
       chomp($pid = `cat $pid_file`);
       $proc_fd_0 = -l "/proc/$pid/0"    ? "/proc/$pid/0"
                  : -l "/proc/$pid/fd/0" ? "/proc/$pid/fd/0"
@@ -184,7 +184,7 @@ SKIP: {
 # #############################################################################
 {
    @ARGV = qw(--pid /tmp/d2.pid);
-   $o->get_specs('samples/daemonizes.pl');
+   $o->get_specs("$trunk/common/t/samples/daemonizes.pl");
    $o->get_opts();
    my $d2 = new Daemon(o=>$o);
    $d2->make_PID_file();
