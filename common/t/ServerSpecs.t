@@ -11,7 +11,8 @@ $ENV{PATH} = "./samples/:$ENV{PATH}";
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More;
+plan skip_all => 'Deprecated mk-audit module';
 
 use ServerSpecs;
 use MaatkitTest;
