@@ -861,7 +861,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 5266
+# SlowLogParser package 5357
 # ###########################################################################
 package SlowLogParser;
 
@@ -894,22 +894,25 @@ my $slow_log_hd_line = qr{
 
 sub parse_event {
    my ( $self, %args ) = @_;
-   my @required_args = qw(fh);
+   my @required_args = qw(next_event tell);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
+   my ($next_event, $tell) = @args{@required_args};
 
    my $pending = $self->{pending};
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $trimlen    = length($INPUT_RECORD_SEPARATOR);
-   my $pos_in_log = tell($fh);
+   my $pos_in_log = $tell->();
    my $stmt;
 
    EVENT:
-   while ( (defined($stmt = shift @$pending) or defined($stmt = <$fh>)) ) {
+   while (
+         defined($stmt = shift @$pending)
+      or defined($stmt = $next_event->())
+   ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
-      $pos_in_log = tell($fh);
+      $pos_in_log = $tell->();
 
       if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
          my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
@@ -986,7 +989,7 @@ sub parse_event {
             if ( !$found_arg && $pos == $len ) {
                MKDEBUG && _d("Did not find arg, looking for special cases");
                local $INPUT_RECORD_SEPARATOR = ";\n";
-               if ( defined(my $l = <$fh>) ) {
+               if ( defined(my $l = $next_event->()) ) {
                   chomp $l;
                   MKDEBUG && _d("Found admin statement", $l);
                   push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
@@ -1015,7 +1018,7 @@ sub parse_event {
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
       return $event;
-   }
+   } # EVENT
 
    @$pending = ();
    $args{oktorun}->(0) if $args{oktorun};
@@ -1037,7 +1040,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 5266
+# BinaryLogParser package 5358
 # ###########################################################################
 package BinaryLogParser;
 
@@ -1067,22 +1070,22 @@ my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)
 
 sub parse_event {
    my ( $self, %args ) = @_;
-   my @required_args = qw(fh);
+   my @required_args = qw(next_event tell);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
+   my ($next_event, $tell) = @args{@required_args};
 
    local $INPUT_RECORD_SEPARATOR = ";\n#";
-   my $pos_in_log = tell($fh);
+   my $pos_in_log = $tell->();
    my $stmt;
    my ($delim, $delim_len) = ($self->{delim}, $self->{delim_len});
 
    EVENT:
-   while ( defined($stmt = <$fh>) ) {
+   while ( defined($stmt = $next_event->()) ) {
       my @properties = ('pos_in_log', $pos_in_log);
       my ($ts, $sid, $end, $type, $rest);
-      $pos_in_log = tell($fh);
+      $pos_in_log = $tell->();
       $stmt =~ s/;\n#?\Z//;
 
       my ( $got_offset, $got_hdr );
@@ -1230,7 +1233,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# GeneralLogParser package 5266
+# GeneralLogParser package 5359
 # ###########################################################################
 package GeneralLogParser;
 
@@ -1268,18 +1271,21 @@ my $genlog_line_1= qr{
 
 sub parse_event {
    my ( $self, %args ) = @_;
-   my @required_args = qw(fh);
+   my @required_args = qw(next_event tell);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
+   my ($next_event, $tell) = @args{@required_args};
 
    my $pending = $self->{pending};
    my $db_for  = $self->{db_for};
    my $line;
-   my $pos_in_log = tell($fh);
+   my $pos_in_log = $tell->();
    LINE:
-   while ( (defined($line = shift @$pending) or defined($line = <$fh>)) ) {
+   while (
+         defined($line = shift @$pending)
+      or defined($line = $next_event->())
+   ) {
       MKDEBUG && _d($line);
       my ($ts, $thread_id, $cmd, $arg) = $line =~ m/$genlog_line_1/;
       if ( !($thread_id && $cmd) ) {
@@ -1289,13 +1295,13 @@ sub parse_event {
       my @properties = ('pos_in_log', $pos_in_log, 'ts', $ts,
          'Thread_id', $thread_id);
 
-      $pos_in_log = tell($fh);
+      $pos_in_log = $tell->();
 
       @$pending = ();
       if ( $cmd eq 'Query' ) {
          my $done = 0;
          do {
-            $line = <$fh>;
+            $line = $next_event->();
             if ( $line ) {
                ($ts, $thread_id, $cmd, undef) = $line =~ m/$genlog_line_1/;
                if ( $thread_id && $cmd ) {
@@ -1378,7 +1384,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 5225
+# LogSplitter package 5363
 # ###########################################################################
 
 package LogSplitter;
@@ -1472,7 +1478,8 @@ sub split {
       EVENT:
       while ( $oktorun ) {
          $event = $lp->parse_event(
-            fh      => $fh,
+            next_event => sub { return <$fh>;    },
+            tell       => sub { return tell $fh; },
             oktorun => $more_events_sub,
          );
          if ( $event ) {

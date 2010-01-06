@@ -1223,7 +1223,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 5266
+# MasterSlave package 5362
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1479,18 +1479,19 @@ sub get_master_status {
 sub wait_for_master {
    my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
    my $result;
-   MKDEBUG && _d('Waiting for slave to catch up to master');
+   $time = 60 unless defined $time;
+   MKDEBUG && _d('Waiting for slave to catch up to master timeout ok:',
+      $timeoutok);
    $ms ||= $self->get_master_status($master);
    if ( $ms ) {
-      $time = 60 unless defined $time;
       my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
       MKDEBUG && _d($slave, $query);
       ($result) = $slave->selectrow_array($query);
       my $stat = defined $result ? $result : 'NULL';
+      MKDEBUG && _d('Result of waiting:', $stat);
       if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
          die "MASTER_POS_WAIT returned $stat";
       }
-      MKDEBUG && _d('Result of waiting:', $stat);
    }
    else {
       MKDEBUG && _d('Not waiting: this server is not a master');
@@ -1543,6 +1544,9 @@ sub catchup_to_master {
          if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
             $slave_status = $self->get_slave_status($slave);
             if ( !$self->slave_is_running($slave_status) ) {
+               MKDEBUG && _d('Master position:',
+                  $self->pos_to_string($master_pos),
+                  'Slave position:', $self->pos_to_string($slave_pos));
                $slave_pos = $self->repl_posn($slave_status);
                if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
                   die "$EVAL_ERROR but slave has not caught up to master";

@@ -2755,7 +2755,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# WatchStatus package 5266
+# WatchStatus package 5401
 # ###########################################################################
 package WatchStatus;
 
@@ -2883,8 +2883,8 @@ sub _get_val_from_status {
 
 sub _show_innodb_status {
    my ( $dbh, %args ) = @_;
-   my ($status_text, undef) = $dbh->selectrow_array("SHOW INNODB STATUS");
-   return $status_text;
+   my @text = $dbh->selectrow_array("SHOW INNODB STATUS");
+   return $text[2] || $text[0];
 }
 
 sub _get_val_from_innodb {
