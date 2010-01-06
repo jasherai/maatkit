@@ -3483,7 +3483,8 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-duplicate-key-checker only reads information so there is little to no risk.
+mk-duplicate-key-checker is a read-only tool that executes SHOW CREATE TABLE and
+related queries to inspect table structures, and thus is very low-risk.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.

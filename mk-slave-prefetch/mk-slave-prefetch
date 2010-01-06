@@ -4128,21 +4128,16 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-slave-prefetch converts non-SELECT statements to SELECT in order to execute
-them on the slave when running in C<--execute> mode.  Statements that cannot
-be converted to SELECT are ignored, but in the case of a bug this might fail
-and cause problems.  It would be a very good idea to connect as a read-only
-user.  Here is an example of how to grant the necessary privileges:
+mk-slave-prefetch is read-only by default, and is generally low-risk.  It does
+execute SQL statements, but these should be SELECT only.  Despite this, it might
+be a good idea to make it connect to MySQL with a user account that has minimal
+privileges.  Here is an example of how to grant the necessary privileges:
 
    GRANT SELECT, REPLICATION CLIENT, REPLICATION SLAVE ON *.*
       TO 'prefetch'@'%' IDENTIFIED BY 'sp33dmeup!';
 
-If only L<"--print"> is given, then mk-slave-prefetch will only read and print
-information.
-
-At the time of this release, there are bugs parsing certain INSERT statements,
-a bug which causes MySQL's relay-log option to be ignored, and a potential
-bug preventing secondary threads from starting.
+At the time of this release, we know of no bugs that could cause serious harm to
+users.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

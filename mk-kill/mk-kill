@@ -2402,10 +2402,9 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-kill can kill queries if the L<"--kill"> option is given.  The
-L<"--execute-command"> option is not restricted so it should be tested before
-being used in production.  Using the L<"--print"> option alone is safe and will
-not cause any changes.
+mk-kill is designed to kill queries if you use the L<"--kill"> option is given,
+and that might disrupt your database's users, of course.  You should test with
+the <"--print"> option, which is safe, if you're unsure what the tool will do.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.

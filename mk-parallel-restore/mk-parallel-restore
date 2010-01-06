@@ -3089,12 +3089,10 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-parallel-restore is not a backup program!  It is only for fast data imports.
-Do not rely on mk-parallel-restore for your backups.  You have been warned.
-
-mk-parallel-restore writes and modifies data unless the L<"--dry-run"> option
-is used.  Restore operations may be replicated unless C<--no-bin-log> is
-given, so be careful when restoring on a master.  See L<"--[no]bin-log">.
+mk-parallel-restore is not a backup program!  It is only for fast data imports,
+for purposes such as loading test data into a system quickly.  Do not use
+mk-parallel-restore for backups.  mk-parallel-restore inserts data unless you
+use the L<"--dry-run"> option.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.

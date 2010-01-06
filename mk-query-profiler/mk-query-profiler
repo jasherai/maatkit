@@ -2141,11 +2141,10 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-query-profiler will flush tables if L<"--flush"> is given.  Otherwise it
-only reads information.
+mk-query-profiler is generally read-only and very low risk.  It will execute FLUSH TABLES if you specify L<"--flush">.
 
-At the time of this release, there is a bug causing MAX_ULONG to be handled
-incorrectly on 64-bit servers.
+At the time of this release, we know of no bugs that could cause serious harm to
+users.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

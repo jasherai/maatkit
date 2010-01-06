@@ -1685,8 +1685,8 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-show-grants will C<FLUSH PRIVILEGES> if L<"--flush"> is given.  Otherwise
-it only reads information.
+mk-show-grants is read-only by default, and very low-risk.  If you specify
+L<"--flush">, it will execute C<FLUSH PRIVILEGES>.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.

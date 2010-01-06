@@ -2574,8 +2574,10 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-Indiscriminate use of this tool can easily screw up a server that you might have
-had a chance to truly fix.  You have been warned.
+mk-slave-restart is a brute-force way to try to keep a slave server running when
+it is having problems with replication.  Don't be too hasty to use it unless you
+need to.  If you use this tool carelessly, you might miss the chance to really
+solve the slave server's problems.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.

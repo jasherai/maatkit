@@ -9249,12 +9249,9 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-upgrade is in active development.  It should only be used on test servers.
-
-mk-upgrade executes queries on the given servers.  It filters out everything
-except SELECT queries for safety.  If there were to be a bug in the filter,
-other queries might be executed.  The queries it executes might cause extra load
-on the server.
+mk-upgrade is a read-only tool that is meant to be used on non-production
+servers.  It executes the SQL that you give it as input, which could cause
+undesired load on a production server.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.

@@ -2795,17 +2795,8 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-In L<"--split"> mode, mk-log-player can create up to millions of session
-files depending on the number of sessions in the given log file.  Splitting
-and merging these session files may significantly load both server CPU and
-disk resources.  The original log file is not modified.
-
-In L<"--play"> mode, mk-log-player can execute any SQL statement, including
-DROP statements, unless L<"--only-select"> is given.  Then, it will only
-execute statements that begin with SELECT or USE.
-
-L<"--play"> is meant to load a server as much as possible.  Therefore, it
-should not be used on production servers.
+L<"--play"> is meant to load a server as much as possible, for stress-testing
+purposes.  It is not designed to be used on production servers.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.

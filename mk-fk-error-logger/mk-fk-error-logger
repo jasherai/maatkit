@@ -1904,8 +1904,8 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-fk-error-logger only writes to L<"--dest"> if given.  Otherwise it only
-reads information.
+mk-fk-error-logger is read-only unless you specify L<"--dest">.  It should be
+very low-risk.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.

@@ -1180,9 +1180,9 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-fifo-split creates the L<"--fifo"> file.  It also deletes the L<"--fifo">
-file if it already exists and L<"--force"> is given.  Otherwise, no other files
-are modified.
+mk-fifo-split creates and/or deletes the L<"--fifo"> file.  Otherwise, no other
+files are modified, and it merely reads lines from the file given on the
+command-line.  It should be very low-risk.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.

@@ -6845,8 +6845,12 @@ replication is inherently tricky, and it's easy to make mistakes.  Yyou need to
 be sure you're using the tool correctly for master-master replication.  See the
 L<"SYNOPSIS"> for the overview of the correct usage.
 
+In general, this tool is best suited when your tables have a primary key or
+unique index.  Although it can synchronize data in tables lacking a primary key
+or unique index, it might be best to sychronize that data by another means.
+
 At the time of this release, there is a bug that causes invalid SQL when
-syncing columns with binary data and a potential bug using
+syncing columns with binary data, and a potential bug using
 L<"--lock-and-rename"> with MySQL 5.1.
 
 The authoritative source for updated information is always the online issue

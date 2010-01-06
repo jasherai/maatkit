@@ -1032,7 +1032,7 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-checksum-filter only reads information.
+mk-checksum-filter is read-only and very low-risk.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.

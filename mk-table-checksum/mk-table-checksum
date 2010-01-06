@@ -5408,14 +5408,13 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-table-checksum only reads information unless L<"--replicate"> is used.
-It make cause significant server load and lock tables while it is checksumming.
+mk-table-checksum executes queries that cause the MySQL server to checksum its
+data.  This can cause significant server load.  It is read-only unless you use
+the L<"--replicate"> option, in which case it inserts a small amount of data
+into the specified table.
 
-At the time of this release, there are bugs which cause mk-table-checksum to
-crash, a bug which causes bad <"--where"> clauses with L<"--since">, a
-bug which prevents L<"--chunk-size"> from being used, a bug caused by
-invalid dates, and a bug with L<"--replicate"> and the transaction isolation
-level.
+At the time of this release, we know of no bugs that could cause serious harm to
+users.  There are miscellaneous bugs that might be annoying.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

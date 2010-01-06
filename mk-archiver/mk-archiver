@@ -4089,14 +4089,17 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-achiver deletes data unless the L<"--dry-run"> option is used.  L<"--plugin">
-modules are not restricted so they should be well coded and well tested before
-being used in production.  mk-archiver is meant to have a low impact on
-server resources, but in can impact performance if certain options like
-L<"--limit">, L<"--retries"> and L<"--txn-size"> are not set well.
+mk-achiver is a read-write tool.  It deletes data from the source by default, so
+you should test your archiving jobs with the L<"--dry-run"> option if you're not
+sure about them.  It is designed to have as little impact on production systems
+as possible, but tuning with L<"--limit">, L<"--txn-size"> and similar options
+might be a good idea too.
 
-At the time of this release there is a potential bug that causes the script
-to delete less rows than it inserts/archives.
+If you write or use L<"--plugin"> modules, you should ensure they are good
+quality and well-tested. 
+
+At the time of this release, a user has reported that DBI quoting might cause
+the tool not to delete some rows from the source table.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
