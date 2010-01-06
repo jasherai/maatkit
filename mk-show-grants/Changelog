@@ -1,5 +1,7 @@
 Changelog for mk-show-grants:
 
+2010-01-06: version 1.0.21
+
    * The script crashed immediately on some OS or versions of Perl (issue 733).
 
 2009-10-30: version 1.0.20

@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+2010-01-06: version 1.0.19
+
    * DELETE statements replicated despite --no-bin-log (issue 726).
    * The script crashed immediately on some OS or versions of Perl (issue 733).
 

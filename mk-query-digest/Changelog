@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2010-01-06: version 0.9.13
+
    * Missing packets caused mutant queries (issue 761).
    * Tcpdump parsing did not always get the complete query (issue 760).
    * The script crashed immediately on some OS or versions of Perl (issue 733).
