@@ -1,4 +1,3 @@
 Changelog for mk-error-log:
 
-   * The script crashed immediately on some OS or versions of Perl (issue 733).
    * Initial release.

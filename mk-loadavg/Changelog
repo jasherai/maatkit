@@ -1,6 +1,7 @@
 Changelog for mk-loadavg:
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).
+
 2009-12-02: version 0.9.2
 
    * The script did not attempt to reconnect to MySQL (issue 692).

@@ -1,6 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).
+
 2009-12-02: version 1.2.10
 
    * Removed REPLACE INTO for checking replicate table (issue 365).

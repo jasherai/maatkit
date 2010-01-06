@@ -1,6 +1,7 @@
 Changelog for mk-parallel-dump:
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).
+
 2009-12-02: version 1.0.19
 
    * Tables were not dumped on MySQL 4.

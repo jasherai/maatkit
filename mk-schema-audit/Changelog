@@ -1,4 +1,3 @@
 Changelog for mk-schema-audit:
 
-   * The script crashed immediately on some OS or versions of Perl (issue 733).
    * Initial release.
