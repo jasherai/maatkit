@@ -6846,7 +6846,8 @@ be sure you're using the tool correctly for master-master replication.  See the
 L<"SYNOPSIS"> for the overview of the correct usage.
 
 At the time of this release, there is a bug that causes invalid SQL when
-syncing columns with binary data.
+syncing columns with binary data and a potential bug using
+L<"--lock-and-rename"> with MySQL 5.1.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

@@ -4095,8 +4095,8 @@ being used in production.  mk-archiver is meant to have a low impact on
 server resources, but in can impact performance if certain options like
 L<"--limit">, L<"--retries"> and L<"--txn-size"> are not set well.
 
-At the time of this release, we know of no bugs that could cause serious harm to
-users.
+At the time of this release there is a potential bug that causes the script
+to delete less rows than it inserts/archives.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
