@@ -25,7 +25,7 @@ foreach my $package ( @packages ) {
    close $file;
    die "$package has a tab in its changelog"
       if $contents =~ m/\t/;
-   my ($log) = $contents =~ m/^(200.*?)(?=^200|\Z)/sm;
+   my ($log) = $contents =~ m/^(20[0-9].*?)(?=^20[0-9]|\Z)/sm;
    my ($date) = $log =~ m/^(\d{4}-\d\d-\d\d): version/;
    next unless $date ge $d;
 
