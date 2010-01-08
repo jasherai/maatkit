@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 149;
+use Test::More tests => 150;
 
 use QueryRewriter;
 use QueryParser;
@@ -1015,6 +1015,16 @@ is(
 	$qr->distill('# administrator command: Statistics'),
 	'ADMIN STATISTICS',
 	"distills ADMIN STATISTICS"
+);
+
+# #############################################################################
+# Issue 781: mk-query-digest doesn't distill or extract tables properly
+# #############################################################################
+
+is( 
+	$qr->distill("SELECT `id` FROM (`field`) WHERE `id` = '10000016228434112371782015185031'"),
+	'SELECT field',
+	'distills SELECT clm from (`tbl`)'
 );
 
 exit;

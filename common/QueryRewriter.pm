@@ -209,6 +209,7 @@ sub _distill_verbs {
 		$query = uc $query;
        	return "$query";
    }
+
    $query =~ m/\A\s*use\s+/
       && return "USE";
    $query =~ m/\A\s*UNLOCK TABLES/i
@@ -308,6 +309,15 @@ sub distill {
       # all special statements so we pass it this special table in case
       # it's a statement it can't handle.  If it can handle it, it will
       # eliminate any duplicate tables.
+		# This one to take care of "FROM (`TABLE`)" like queries
+   		if ( $query =~ m/FROM \(`(.*)`\)/ ) {
+			my $q_start = $`;
+			my $q_end   = $';
+			my $matched = $&;
+			$matched =~ s/\(//ig;
+			$matched =~ s/\)//ig;
+			$query = "$q_start $matched $q_end";	
+   		}
       my ($verbs, $table)  = $self->_distill_verbs($query, %args);
       my @tables           = $self->_distill_tables($query, $table, %args);
       $query               = join(q{ }, $verbs, @tables);
