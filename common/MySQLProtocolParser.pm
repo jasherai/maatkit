@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Percona Inc.
+# This program is copyright 2007-2010 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -283,45 +283,63 @@ sub parse_event {
    }
    MKDEBUG && _d('Client', $client);
 
-   # Get the client's session info or create a new session if the
-   # client hasn't been seen before.
+   # Get the client's session info or create a new session if
+   # we catch the TCP SYN sequence or the packetno is 0.
+   my $packetno = -1;
+   if ( $packet->{data_len} >= 5 ) {
+      # 5 bytes is the minimum length of any valid MySQL packet.
+      # If there's less, it's probably some TCP control packet
+      # with other data.  Peek at the MySQL packet number.  The
+      # only time a server sends packetno 0 is for its handshake.
+      # Client packetno 0 marks start of new query.
+      $packetno = to_num(substr($packet->{data}, 6, 2));
+   }
    if ( !exists $self->{sessions}->{$client} ) {
-
-      # See http://code.google.com/p/maatkit/issues/detail?id=794
-      if ( $packet->{fin} || $packet->{rst} ) {
-         MKDEBUG && _d('Ignoring FIN/RST');
+      if ( $packet->{syn} ) {
+         MKDEBUG && _d('New session (SYN)');
+      }
+      elsif ( $packetno == 0 ) {
+         MKDEBUG && _d('New session (packetno 0)');
+      }
+      else {
+         MKDEBUG && _d('Ignoring mid-stream', $packet_from, 'data,',
+            'packetno', $packetno);
          return;
       }
 
-      MKDEBUG && _d('New session');
       $self->{sessions}->{$client} = {
-         client      => $client,
-         ts          => ($packet->{syn} ? $packet->{ts} : undef),
-         state       => undef,
-         compress    => undef,
-         raw_packets => [],
-         buff        => '',
-         sths        => {},
-         attribs     => {},
+         client        => $client,
+         ts            => $packet->{ts},
+         state         => undef,
+         compress      => undef,
+         raw_packets   => [],
+         buff          => '',
+         sths          => {},
+         attribs       => {},
+         n_queries     => 0,
+         last_packetno => -1,
       };
-   };
+   }
    my $session = $self->{sessions}->{$client};
    MKDEBUG && _d('Client state:', $session->{state});
 
-   # Return early if there's TCP/MySQL data.  These are usually ACK
-   # packets, but they could also be FINs in which case, we should close
-   # and delete the client's session.
+   # Check client port reuse.
+   # http://code.google.com/p/maatkit/issues/detail?id=794
+   if ( $packet->{syn} && $session->{n_queries} > 0 ) {
+      MKDEBUG && _d('Client port reuse and last session did not quit');
+      # Fail the session so we can see the last thing the previous
+      # session was doing.
+      $self->fail_session($session,
+            'client port reuse and last session did not quit');
+      # Then recurse to create a New session.
+      return $self->parse_event(%args);
+   }
+
+   # Return early if there's no TCP/MySQL data.  These are usually
+   # TCP control packets: SYN, ACK, FIN, etc.
    if ( $packet->{data_len} == 0 ) {
-      MKDEBUG && _d('No TCP/MySQL data');
-      # Is the session ready to close?
-      if ( (($session->{state} || '') eq 'closing')
-           || $session->{closed} ) {
-         # Session marked closed in _packet_from_*() should have been
-         # deleted earlier at the end of this sub after _packet_from_*()
-         # returned.  So if we get here, it's a "late" delete.
-         delete $self->{sessions}->{$session->{client}};
-         MKDEBUG && _d('Session deleted late'); 
-      }
+      MKDEBUG && _d('TCP control:',
+         map { uc $_ } grep { $packet->{$_} } qw(syn ack fin rst));
       return;
    }
 
@@ -355,8 +373,8 @@ sub parse_event {
    else { 
       # Remove the first MySQL header.  A single TCP packet can contain many
       # MySQL packets, but we only look at the first.  The 2nd and subsequent
-      # packets are usually parts of a resultset returned by the server, but
-      # we're not interested in resultsets.
+      # packets are usually parts of a result set returned by the server, but
+      # we're not interested in result sets.
       eval {
          remove_mysql_header($packet);
       };
@@ -367,6 +385,17 @@ sub parse_event {
          return;
       }
    }
+
+   # The packetno should always increase.  It's reset to -1 in _make_event().
+   # Do < not <= because retransmissions are handled elsewhere.  We could
+   # reorder packets by TCP seq or MySQL packetno, but currently we don't.
+   if ( $packet->{number} < $session->{last_packetno} ) {
+      MKDEBUG && _d('Out of order MySQL packets; last packetno',
+         $session->{last_packetno});
+      $self->fail_session($session, 'out of order MySQL packets');
+      return;
+   }
+   $session->{last_packetno} = $packet->{number};
 
    # Finally, parse the packet and maybe create an event.
    # The returned event may be empty if no event was ready to be created.
@@ -879,6 +908,11 @@ sub _make_event {
 
    # Clear the attribs for this event.
    $session->{attribs} = {};
+
+   $session->{n_queries}++;
+   $session->{last_packetno} = -1;
+   $session->{server_retransmissions} = [];
+   $session->{client_retransmissions} = [];
 
    return $new_event;
 }

@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -151,7 +151,7 @@ sub _parse_packet {
       tcp_hlen  => $tcp_hlen,
       dgram_len => $ip_plen,
       data_len  => $ip_plen - (($ip_hlen + $tcp_hlen) * 4),
-      data      => $data ? substr($data, 0, 8).(length $data > 8 ? '...' : '')
+      data      => $data ? substr($data, 0, 10).(length $data > 10 ? '...' : '')
                          : '',
    };
    MKDEBUG && _d('packet:', Dumper($pkt));
