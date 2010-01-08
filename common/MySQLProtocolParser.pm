@@ -317,7 +317,6 @@ sub parse_event {
          sths          => {},
          attribs       => {},
          n_queries     => 0,
-         last_packetno => -1,
       };
    }
    my $session = $self->{sessions}->{$client};
@@ -385,17 +384,6 @@ sub parse_event {
          return;
       }
    }
-
-   # The packetno should always increase.  It's reset to -1 in _make_event().
-   # Do < not <= because retransmissions are handled elsewhere.  We could
-   # reorder packets by TCP seq or MySQL packetno, but currently we don't.
-   if ( $packet->{number} < $session->{last_packetno} ) {
-      MKDEBUG && _d('Out of order MySQL packets; last packetno',
-         $session->{last_packetno});
-      $self->fail_session($session, 'out of order MySQL packets');
-      return;
-   }
-   $session->{last_packetno} = $packet->{number};
 
    # Finally, parse the packet and maybe create an event.
    # The returned event may be empty if no event was ready to be created.
@@ -910,7 +898,6 @@ sub _make_event {
    $session->{attribs} = {};
 
    $session->{n_queries}++;
-   $session->{last_packetno} = -1;
    $session->{server_retransmissions} = [];
    $session->{client_retransmissions} = [];
 
