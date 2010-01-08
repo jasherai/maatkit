@@ -286,10 +286,17 @@ sub parse_event {
    # Get the client's session info or create a new session if the
    # client hasn't been seen before.
    if ( !exists $self->{sessions}->{$client} ) {
+
+      # See http://code.google.com/p/maatkit/issues/detail?id=794
+      if ( $packet->{fin} || $packet->{rst} ) {
+         MKDEBUG && _d('Ignoring FIN/RST');
+         return;
+      }
+
       MKDEBUG && _d('New session');
       $self->{sessions}->{$client} = {
          client      => $client,
-         ts          => $packet->{ts},
+         ts          => ($packet->{syn} ? $packet->{ts} : undef),
          state       => undef,
          compress    => undef,
          raw_packets => [],
@@ -307,9 +314,13 @@ sub parse_event {
    if ( $packet->{data_len} == 0 ) {
       MKDEBUG && _d('No TCP/MySQL data');
       # Is the session ready to close?
-      if ( ($session->{state} || '') eq 'closing' ) {
+      if ( (($session->{state} || '') eq 'closing')
+           || $session->{closed} ) {
+         # Session marked closed in _packet_from_*() should have been
+         # deleted earlier at the end of this sub after _packet_from_*()
+         # returned.  So if we get here, it's a "late" delete.
          delete $self->{sessions}->{$session->{client}};
-         MKDEBUG && _d('Session deleted'); 
+         MKDEBUG && _d('Session deleted late'); 
       }
       return;
    }
@@ -399,6 +410,11 @@ sub parse_event {
    }
 
    MKDEBUG && _d('Done parsing packet; client state:', $session->{state});
+   if ( $session->{closed} ) {
+      delete $self->{sessions}->{$session->{client}};
+      MKDEBUG && _d('Session deleted');
+   }
+
    return $event;
 }
 
@@ -456,6 +472,9 @@ sub _packet_from_server {
          }
          $session->{state}     = 'server_handshake';
          $session->{thread_id} = $handshake->{thread_id};
+
+         # See http://code.google.com/p/maatkit/issues/detail?id=794
+         $session->{ts} = $packet->{ts} unless $session->{ts};
       }
       elsif ( $session->{buff} ) {
          $self->fail_session($session,
@@ -561,8 +580,8 @@ sub _packet_from_server {
                ts        => $packet->{ts},
                Error_no  => $error->{errno},
             };
+            $session->{closed} = 1;  # delete session when done
             return $self->_make_event($event, $packet, $session);
-            $session->{state} = 'closing';
          }
          elsif ( $session->{cmd} ) {
             # This error should be in response to a query or something
@@ -777,6 +796,10 @@ sub _packet_from_client {
 
       if ( $com->{code} eq COM_QUIT ) { # Fire right away; will cleanup later.
          MKDEBUG && _d('Got a COM_QUIT');
+
+         # See http://code.google.com/p/maatkit/issues/detail?id=794
+         $session->{closed} = 1;  # delete session when done
+
          return $self->_make_event(
             {  cmd       => 'Admin',
                arg       => 'administrator command: Quit',
@@ -784,7 +807,6 @@ sub _packet_from_client {
             },
             $packet, $session
          );
-         $session->{state} = 'closing';
       }
       elsif ( $com->{code} eq COM_STMT_CLOSE ) {
          # Apparently, these are not acknowledged by the server.
@@ -802,7 +824,6 @@ sub _packet_from_client {
             },
             $packet, $session
          );
-         $session->{state} = 'closing';
       }
    }
 
