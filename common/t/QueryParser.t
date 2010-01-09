@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 127;
+use Test::More tests => 129;
 use English qw(-no_match_vars);
 
 use QueryRewriter;
@@ -836,6 +836,18 @@ is_deeply(
    [ $qp->get_tables($sql) ],
    [qw(foo bar)],
    'Get tables from special case multi-line query'
+);
+
+is_deeply(
+   [$qp->get_tables('select * from (`mytable`)')],
+   [qw(`mytable`)],
+   'Get tables when there are parens around table name (issue 781)',
+);
+
+is_deeply(
+   [$qp->get_tables('select * from (select * from mytable) t')],
+   [qw(mytable)],
+   'Does not consider subquery SELECT as a table (issue 781)',
 );
 
 # #############################################################################

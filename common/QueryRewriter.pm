@@ -296,15 +296,6 @@ sub _distill_tables {
 sub distill {
    my ( $self, $query, %args ) = @_;
 
-	# This one to take care of "FROM (`TABLE`)" like queries
-	if ( $query =~ m/(FROM|^INSERT INTO|^UPDATE) \(`(.*)`\)/i ) {
-		my $q_start = $`;
-		my $q_end   = $';
-		my $matched = $&;
-		$matched =~ s/(\(|\))//ig;
-		$query = "$q_start$matched$q_end";	
-	}
-
    if ( $args{generic} ) {
       # Do a generic distillation which returns the first two words
       # of a simple "cmd arg" query, like memcached and HTTP stuff.

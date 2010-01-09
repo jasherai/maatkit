@@ -31,6 +31,7 @@ our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 our $tbl_regex = qr{
          \b(?:FROM|JOIN|(?<!KEY\s)UPDATE|INTO) # Words that precede table names
          \b\s*
+         \(?                                   # Optional paren around tables
          # Capture the identifier and any number of comma-join identifiers that
          # follow it, optionally with aliases with or without the AS keyword
          ($tbl_ident
@@ -111,6 +112,16 @@ sub get_tables {
    my @tables;
    foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
       MKDEBUG && _d('Match tables:', $tbls);
+
+      # Some queries coming from certain ORM systems will have superfluous
+      # parens around table names, like SELECT * FROM (`mytable`);  We match
+      # these so the table names can be extracted more simply with regexes.  But
+      # in case of subqueries, this can cause us to match SELECT as a table
+      # name, for example, in SELECT * FROM (SELECT ....) AS X;  It's possible
+      # that SELECT is really a table name, but so unlikely that we just skip
+      # this case.
+      next if $tbls =~ m/\ASELECT\b/i;
+
       foreach my $tbl ( split(',', $tbls) ) {
          # Remove implicit or explicit (AS) alias.
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
