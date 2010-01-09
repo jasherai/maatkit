@@ -1,5 +1,6 @@
 #!/usr/bin/perl
 
+
 BEGIN {
    die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
       unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
@@ -9,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 150;
+use Test::More tests => 152;
 
 use QueryRewriter;
 use QueryParser;
@@ -1027,4 +1028,17 @@ is(
 	'distills SELECT clm from (`tbl`)'
 );
 
+is(  
+	$qr->distill("INSERT INTO (`jedi_forces`) (name, side, email) values ('Anakin Skywalker', 'jedi', 'anakin_skywalker_at_jedi.sw')"),
+	'INSERT jedi_forces',
+	'distills INSERT INTO (`tbl`)' 
+);
+
+is(  
+	$qr->distill("UPDATE (`jedi_forces`) set side = 'dark' and name = 'Lord Vader' where name = 'Anakin Skywalker'"),
+	'UPDATE jedi_forces',
+	'distills UPDATE (`tbl`)'
+);
+
 exit;
+ 

@@ -296,6 +296,15 @@ sub _distill_tables {
 sub distill {
    my ( $self, $query, %args ) = @_;
 
+	# This one to take care of "FROM (`TABLE`)" like queries
+	if ( $query =~ m/(FROM|^INSERT INTO|^UPDATE) \(`(.*)`\)/i ) {
+		my $q_start = $`;
+		my $q_end   = $';
+		my $matched = $&;
+		$matched =~ s/(\(|\))//ig;
+		$query = "$q_start$matched$q_end";	
+	}
+
    if ( $args{generic} ) {
       # Do a generic distillation which returns the first two words
       # of a simple "cmd arg" query, like memcached and HTTP stuff.
@@ -309,15 +318,6 @@ sub distill {
       # all special statements so we pass it this special table in case
       # it's a statement it can't handle.  If it can handle it, it will
       # eliminate any duplicate tables.
-		# This one to take care of "FROM (`TABLE`)" like queries
-   		if ( $query =~ m/FROM \(`(.*)`\)/ ) {
-			my $q_start = $`;
-			my $q_end   = $';
-			my $matched = $&;
-			$matched =~ s/\(//ig;
-			$matched =~ s/\)//ig;
-			$query = "$q_start $matched $q_end";	
-   		}
       my ($verbs, $table)  = $self->_distill_verbs($query, %args);
       my @tables           = $self->_distill_tables($query, $table, %args);
       $query               = join(q{ }, $verbs, @tables);
