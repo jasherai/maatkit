@@ -322,9 +322,12 @@ sub parse_event {
    my $session = $self->{sessions}->{$client};
    MKDEBUG && _d('Client state:', $session->{state});
 
+   # Save raw packets to dump later in case something fails.
+   push @{$session->{raw_packets}}, $packet->{raw_packet};
+
    # Check client port reuse.
    # http://code.google.com/p/maatkit/issues/detail?id=794
-   if ( $packet->{syn} && $session->{n_queries} > 0 ) {
+   if ( $packet->{syn} && ($session->{n_queries} > 0 || $session->{state}) ) {
       MKDEBUG && _d('Client port reuse and last session did not quit');
       # Fail the session so we can see the last thing the previous
       # session was doing.
@@ -341,9 +344,6 @@ sub parse_event {
          map { uc $_ } grep { $packet->{$_} } qw(syn ack fin rst));
       return;
    }
-
-   # Save raw packets to dump later in case something fails.
-   push @{$session->{raw_packets}}, $packet->{raw_packet};
 
    # Return unless the compressed packet can be uncompressed.
    # If it cannot, then we're helpless and must return.
@@ -417,6 +417,20 @@ sub parse_event {
          MKDEBUG && _d('Data not complete; expecting',
             $session->{buff_left}, 'more bytes');
          return;
+      }
+
+      if ( $session->{cmd} && ($session->{state} || '') eq 'awaiting_reply' ) {
+         # Buffer handling above should ensure that by this point we have
+         # the full client query.  If there's a previous client query for
+         # which we're "awaiting_reply" and then we get another client
+         # query, chances are we missed the server's OK response to the
+         # first query.  So fail the first query and re-parse this second
+         # query.
+         MKDEBUG && _d('No server OK to previous command');
+         $self->fail_session($session, 'no server OK to previous command');
+         # The MySQL header is removed by this point, so put it back.
+         $packet->{data} = $packet->{mysql_hdr} . $packet->{data};
+         return $self->parse_event(%args);
       }
 
       $event = $self->_packet_from_client($packet, $session, $args{misc});

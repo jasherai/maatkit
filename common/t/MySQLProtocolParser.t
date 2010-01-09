@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 66;
+use Test::More tests => 68;
 
 use MySQLProtocolParser;
 use TcpdumpParser;
@@ -1568,6 +1568,52 @@ test_protocol_parser(
          pos_in_log => 6028,
          user => 'msandbox',
       }
+   ],
+);
+
+$protocol = new MySQLProtocolParser();
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'common/t/samples/tcpdump037.txt',
+   desc     => 'no server ok (issue 794)',
+   result   => [
+      {  ts => '090412 12:00:01.000000',
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '0.000000',
+         Rows_affected => 0,
+         Thread_id => '4294967296',
+         Warning_count => 0,
+         arg => 'administrator command: Quit',
+         bytes => 27,
+         cmd => 'Admin',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '57890',
+         pos_in_log => 390,
+         user => undef
+      },
+      {  ts => '090412 12:00:03.000000',
+         Error_no => 'none',
+         No_good_index_used => 'No',
+         No_index_used => 'No',
+         Query_time => '1.000000',
+         Rows_affected => 0,
+         Thread_id => 4294967297,
+         Warning_count => 0,
+         arg => 'select "paris in the the spring" as trick',
+         bytes => 41,
+         cmd => 'Query',
+         db => undef,
+         host => '127.0.0.1',
+         ip => '127.0.0.1',
+         port => '57890',
+         pos_in_log => 646,
+         user => undef,
+      },
    ],
 );
 
