@@ -2121,7 +2121,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 5360
+# TcpdumpParser package 5436
 # ###########################################################################
 package TcpdumpParser;
 
@@ -2213,7 +2213,7 @@ sub _parse_packet {
       tcp_hlen  => $tcp_hlen,
       dgram_len => $ip_plen,
       data_len  => $ip_plen - (($ip_hlen + $tcp_hlen) * 4),
-      data      => $data ? substr($data, 0, 8).(length $data > 8 ? '...' : '')
+      data      => $data ? substr($data, 0, 10).(length $data > 10 ? '...' : '')
                          : '',
    };
    MKDEBUG && _d('packet:', Dumper($pkt));
@@ -2245,7 +2245,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5432
+# MySQLProtocolParser package 5439
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2491,39 +2491,52 @@ sub parse_event {
    }
    MKDEBUG && _d('Client', $client);
 
+   my $packetno = -1;
+   if ( $packet->{data_len} >= 5 ) {
+      $packetno = to_num(substr($packet->{data}, 6, 2));
+   }
    if ( !exists $self->{sessions}->{$client} ) {
-
-      if ( $packet->{fin} || $packet->{rst} ) {
-         MKDEBUG && _d('Ignoring FIN/RST');
+      if ( $packet->{syn} ) {
+         MKDEBUG && _d('New session (SYN)');
+      }
+      elsif ( $packetno == 0 ) {
+         MKDEBUG && _d('New session (packetno 0)');
+      }
+      else {
+         MKDEBUG && _d('Ignoring mid-stream', $packet_from, 'data,',
+            'packetno', $packetno);
          return;
       }
 
-      MKDEBUG && _d('New session');
       $self->{sessions}->{$client} = {
-         client      => $client,
-         ts          => ($packet->{syn} ? $packet->{ts} : undef),
-         state       => undef,
-         compress    => undef,
-         raw_packets => [],
-         buff        => '',
-         sths        => {},
-         attribs     => {},
+         client        => $client,
+         ts            => $packet->{ts},
+         state         => undef,
+         compress      => undef,
+         raw_packets   => [],
+         buff          => '',
+         sths          => {},
+         attribs       => {},
+         n_queries     => 0,
       };
-   };
+   }
    my $session = $self->{sessions}->{$client};
    MKDEBUG && _d('Client state:', $session->{state});
 
-   if ( $packet->{data_len} == 0 ) {
-      MKDEBUG && _d('No TCP/MySQL data');
-      if ( (($session->{state} || '') eq 'closing')
-           || $session->{closed} ) {
-         delete $self->{sessions}->{$session->{client}};
-         MKDEBUG && _d('Session deleted late'); 
-      }
-      return;
+   push @{$session->{raw_packets}}, $packet->{raw_packet};
+
+   if ( $packet->{syn} && ($session->{n_queries} > 0 || $session->{state}) ) {
+      MKDEBUG && _d('Client port reuse and last session did not quit');
+      $self->fail_session($session,
+            'client port reuse and last session did not quit');
+      return $self->parse_event(%args);
    }
 
-   push @{$session->{raw_packets}}, $packet->{raw_packet};
+   if ( $packet->{data_len} == 0 ) {
+      MKDEBUG && _d('TCP control:',
+         map { uc $_ } grep { $packet->{$_} } qw(syn ack fin rst));
+      return;
+   }
 
    if ( $session->{compress} ) {
       return unless $self->uncompress_packet($packet, $session);
@@ -2577,6 +2590,13 @@ sub parse_event {
          MKDEBUG && _d('Data not complete; expecting',
             $session->{buff_left}, 'more bytes');
          return;
+      }
+
+      if ( $session->{cmd} && ($session->{state} || '') eq 'awaiting_reply' ) {
+         MKDEBUG && _d('No server OK to previous command');
+         $self->fail_session($session, 'no server OK to previous command');
+         $packet->{data} = $packet->{mysql_hdr} . $packet->{data};
+         return $self->parse_event(%args);
       }
 
       $event = $self->_packet_from_client($packet, $session, $args{misc});
@@ -2976,6 +2996,10 @@ sub _make_event {
    $session->{state} = undef;
 
    $session->{attribs} = {};
+
+   $session->{n_queries}++;
+   $session->{server_retransmissions} = [];
+   $session->{client_retransmissions} = [];
 
    return $new_event;
 }
