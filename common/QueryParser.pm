@@ -69,7 +69,7 @@ sub get_tables {
    MKDEBUG && _d('Getting tables for', $query);
 
    # Handle CREATE, ALTER, TRUNCATE and DROP TABLE.
-   my ( $ddl_stmt ) = $query =~ /^\s*($data_def_stmts)\b/i;
+   my ( $ddl_stmt ) = $query =~ m/^\s*($data_def_stmts)\b/i;
    if ( $ddl_stmt ) {
       MKDEBUG && _d('Special table type:', $ddl_stmt);
       $query =~ s/IF NOT EXISTS//i;
@@ -356,7 +356,7 @@ sub split_subquery {
 
 sub query_type {
    my ( $self, $query, $qr ) = @_;
-   my ($type, undef) = $qr->_distill_verbs($query);
+   my ($type, undef) = $qr->distill_verbs($query);
    my $rw;
    if ( $type =~ m/^SELECT\b/ ) {
       $rw = 'read';

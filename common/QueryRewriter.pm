@@ -47,8 +47,8 @@ $bal         = qr/
 # performance.  The multi-line pattern does not match version-comments.
 my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
-my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;                  # But for replacing SHOW + /*!version */
-my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;    		# ^^ if its starts with SHOW followed by version
+my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;             # For SHOW + /*!version */
+my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;     # Variation for SHOW
 
 sub new {
    my ( $class, %args ) = @_;
@@ -63,7 +63,7 @@ sub strip_comments {
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    if ( $query =~ m/$vlc_rf/i ) { # contains show + version
-   			$query =~ s/$vlc_re//go;
+      $query =~ s/$vlc_re//go;
    }
    return $query;
 }
@@ -198,16 +198,17 @@ sub fingerprint {
    return $query;
 }
 
-sub _distill_verbs {
+# Gets the verbs from an SQL query, such as SELECT, UPDATE, etc.
+sub distill_verbs {
    my ( $self, $query ) = @_;
 
    # Special cases.
    $query =~ m/\A\s*call\s+(\S+)\(/i
       && return "CALL $1"; # Warning! $1 used, be careful.
    if ( $query =~ m/\A# administrator command:/ ) {
-		$query =~ s/# administrator command:/ADMIN/go;
-		$query = uc $query;
-       	return "$query";
+      $query =~ s/# administrator command:/ADMIN/go;
+      $query = uc $query;
+      return $query;
    }
 
    $query =~ m/\A\s*use\s+/
@@ -268,7 +269,7 @@ sub _distill_verbs {
    return $verbs;
 }
 
-sub _distill_tables {
+sub __distill_tables {
    my ( $self, $query, $table, %args ) = @_;
    my $qp = $args{QueryParser} || $self->{QueryParser};
    die "I need a QueryParser argument" unless $qp;
@@ -304,13 +305,13 @@ sub distill {
       $query = (uc $cmd) . ($arg ? " $arg" : '');
    }
    else {
-      # _distill_verbs() may return a table if it's a special statement
-      # like TRUNCATE TABLE foo.  _distill_tables() handles some but not
+      # distill_verbs() may return a table if it's a special statement
+      # like TRUNCATE TABLE foo.  __distill_tables() handles some but not
       # all special statements so we pass it this special table in case
       # it's a statement it can't handle.  If it can handle it, it will
       # eliminate any duplicate tables.
-      my ($verbs, $table)  = $self->_distill_verbs($query, %args);
-      my @tables           = $self->_distill_tables($query, $table, %args);
+      my ($verbs, $table)  = $self->distill_verbs($query, %args);
+      my @tables           = $self->__distill_tables($query, $table, %args);
       $query               = join(q{ }, $verbs, @tables);
    }
    
