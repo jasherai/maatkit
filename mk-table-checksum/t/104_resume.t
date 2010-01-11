@@ -27,61 +27,62 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 10;
+   plan tests => 3;
 }
 
+my $output;
 my $cnf='/tmp/12345/my.sandbox.cnf';
-my ($output, $output2);
-my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
+my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.0.0.1";
 
 $sb->create_dbs($master_dbh, [qw(test)]);
-$sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
+$sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
+$sb->load_file('master', 'mk-table-checksum/t/samples/resume.sql');
 
 # #############################################################################
-# Issue 36: Add --resume option to mk-table-checksum (1/2)
+# Issue 36: Add --resume option to mk-table-checksum
 # #############################################################################
 
-# The following tests rely on a clean test db, that's why we dropped
-# test.issue_21 above.
+# Test --resume.
+
+# This tests just one database...
+$output = `$cmd h=127.1,P=12346 -d test -t resume --chunk-size 3 --resume $trunk/mk-table-checksum/t/samples/resume-chunked-partial.txt | diff $trunk/mk-table-checksum/t/samples/resume-chunked-complete.txt -`;
+is(
+   $output,
+   '',
+   'Resumes checksum of chunked data (1 db)'
+);
+
+# but this tests two.
+#$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox h=127.1,P=12346 --ignore-databases sakila --resume samples/resume03_partial.txt | diff samples/resume03_whole.txt -`;
+#ok(!$output, 'Resumes checksum of non-chunked data (2 dbs)');
+
+# Test --resume-replicate.
 
 # First re-checksum and replicate using chunks so we can more easily break,
 # resume and test it.
-`../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --ignore-databases sakila --replicate test.checksum --empty-replicate-table --chunk-size 100`;
+`$cmd -d test --replicate test.checksum --empty-replicate-table --chunk-size 3`;
 
-# Make sure the results propagate
+# Make sure the results propagate.
 sleep 1;
 
-# Now break the results as if that run didn't finish
-`/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl = 'help_relation' AND chunk > 4"`;
-`/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl = 'help_topic' OR tbl = 'host'"`;
-`/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl LIKE 'proc%' OR tbl LIKE 't%' OR tbl = 'user'"`;
+# Now break the results as if that run didn't finish.
+`/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl='resume' AND chunk=2"`;
 
-# And now test --resume with --replicate
-`../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --ignore-databases sakila --resume-replicate --replicate test.checksum --chunk-size 100 > /tmp/mktc_issue36.txt`;
+# And now test --resume with --replicate.
+$output = `$cmd -d test --resume-replicate --replicate test.checksum --chunk-size 3`;
 
-# We have to chop the output because a simple diff on the whole thing won't
-# work well because the TIME column can sometimes change from 0 to 1.
-# So, instead, we check that the top part lists the chunks already done,
-# and then we simplify the latter lines which should be the
-# resumed/not-yet-done chunks.
-$output = `head -n 14 /tmp/mktc_issue36.txt | diff samples/resume02_already_done.txt -`;
-ok(!$output, 'Resumes with --replicate (1/2)');
-$output = `tail -n 19 /tmp/mktc_issue36.txt | awk '{print \$1,\$2,\$3,\$4}' | diff samples/resume02_resumed.txt -`;
-ok(!$output, 'Resumes with --replicate (2/2)');
+# The TIME value can fluctuate between 1 and 0.  Make it 0.
+$output =~ s/bce55ff5    \d+/bce55ff5    0/;
 
-`rm /tmp/mktc_issue36.txt`;
-
-# #############################################################################
-# Issue 36: Add --resume option to mk-table-checksum (2/2)
-# #############################################################################
-
-# This tests just one database...
-$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox h=127.1,P=12346 -d test --chunk-size 3 --resume samples/resume01_partial.txt | diff samples/resume01_whole.txt -`;
-ok(!$output, 'Resumes checksum of chunked data (1 db)');
-
-# but this tests two.
-$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox h=127.1,P=12346 --ignore-databases sakila --resume samples/resume03_partial.txt | diff samples/resume03_whole.txt -`;
-ok(!$output, 'Resumes checksum of non-chunked data (2 dbs)');
+is(
+   $output,
+"DATABASE TABLE  CHUNK HOST      ENGINE      COUNT         CHECKSUM TIME WAIT STAT  LAG
+# already checksummed: test resume 0 127.0.0.1
+# already checksummed: test resume 1 127.0.0.1
+test     resume     2 127.0.0.1 InnoDB          4         bce55ff5    0 NULL NULL NULL
+",
+   '--resume-replicate'
+);
 
 # #############################################################################
 # Done.
