@@ -21,7 +21,7 @@ my $output;
 $output = `../mk-log-player 2>&1`;
 like(
    $output,
-   qr/Specify at least one of --play or --split/,
+   qr/Specify at least one of --play, --split or --split-random/,
    'Needs --play or --split to run'
 );
 

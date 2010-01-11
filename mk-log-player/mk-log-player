@@ -1384,7 +1384,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 5363
+# LogSplitter package 5447
 # ###########################################################################
 
 package LogSplitter;
@@ -1411,6 +1411,11 @@ sub new {
    }
 
    $args{base_dir} .= '/' if substr($args{base_dir}, -1, 1) ne '/';
+
+   if ( $args{split_random} ) {
+      MKDEBUG && _d('Split random');
+      $args{attribute} = '_sessionno';  # set round-robin 1..session_files
+   }
 
    my $self = {
       base_file_name    => 'session',
@@ -1444,6 +1449,11 @@ sub split {
    $oktorun = 1; # True as long as we haven't created too many
 
    my $callbacks = $self->{callbacks};
+
+   my $next_sessionno;
+   if ( $self->{split_random} ) {
+      $next_sessionno = make_rr_iter(1, $self->{session_files});
+   }
 
    if ( @logs == 0 ) {
       MKDEBUG && _d('Implicitly reading STDIN because no logs were given');
@@ -1484,6 +1494,9 @@ sub split {
          );
          if ( $event ) {
             $self->{n_events_total}++;
+            if ( $self->{split_random} ) {
+               $event->{_sessionno} = $next_sessionno->();
+            }
             if ( $callbacks ) {
                foreach my $callback ( @$callbacks ) {
                   $event = $callback->($event);
@@ -1691,7 +1704,13 @@ sub _merge_session_files {
    my $i = make_rr_iter(0, $#multi_session_files);  # round-robin iterator
    foreach my $single_session_file ( @single_session_files ) {
       my $multi_session_file = $multi_session_files[ $i->() ];
-      my $cmd = "cat $single_session_file >> $multi_session_file";
+      my $cmd;
+      if ( $self->{split_random} ) {
+         $cmd = "mv $single_session_file $multi_session_file";
+      }
+      else {
+         $cmd = "cat $single_session_file >> $multi_session_file";
+      }
       eval { `$cmd`; };
       if ( $EVAL_ERROR ) {
          warn "Failed to `$cmd`: $OS_ERROR";
@@ -2397,6 +2416,11 @@ sub main {
 
    $dp->prop('set-vars', $o->get('set-vars'));
 
+   # LogSplitter will override the split attribute if split_random is true.
+   # Set --split to some arbitrary value so we don't have to check for both
+   # and --play will not be invoked.
+   $o->set('split', 'random') if $o->get('split-random');
+
    # If not --split then the remaining arg should be a DSN for --play.
    my $dsn;
    if ( !$o->get('split') && !$o->get('print') ) {
@@ -2471,6 +2495,7 @@ sub main {
                  : die("Unknown type " . $o->get('type'));
       my $ls = new LogSplitter(
          attribute      => $split,
+         split_random   => $o->get('split-random'),
          base_dir       => $base_dir,
          base_file_name => $o->get('base-file-name'),
          max_sessions   => $o->get('max-sessions'),
@@ -2859,7 +2884,7 @@ header: the only attributes printed are Thread_id, Query_time and Schema.
 
 =head1 OPTIONS
 
-Specify at least one of L<"--play"> or L<"--split">.
+Specify at least one of L<"--play">, L<"--split"> or L<"--split-random">.
 
 L<"--play"> and L<"--split"> are mutually exclusive.
 
@@ -3091,6 +3116,18 @@ Split log by given attribute to create session files.
 
 Valid attributes are any which appear in the log: Thread_id, Schema,
 etc.
+
+=item --split-random
+
+group: Split
+
+Split log without an attribute, write queries round-robin to session files.
+
+This option, if specified, overrides L<"--split"> and causes the log to be
+split query-by-query, writing each query to the next session file in round-robin
+style.  If you don't care about "sessions" and just want to split a lot into
+N many session files and the relation or order of the queries does not matter,
+then use this option.
 
 =item --threads
 
