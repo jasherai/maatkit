@@ -44,6 +44,11 @@ sub new {
    # TODO: this is probably problematic on Windows
    $args{base_dir} .= '/' if substr($args{base_dir}, -1, 1) ne '/';
 
+   if ( $args{split_random} ) {
+      MKDEBUG && _d('Split random');
+      $args{attribute} = '_sessionno';  # set round-robin 1..session_files
+   }
+
    my $self = {
       # %args will override these default args if given explicitly.
       base_file_name    => 'session',
@@ -80,6 +85,12 @@ sub split {
                  # session files or too many dirs and files
 
    my $callbacks = $self->{callbacks};
+
+   my $next_sessionno;
+   if ( $self->{split_random} ) {
+      # round-robin iterator
+      $next_sessionno = make_rr_iter(1, $self->{session_files});
+   }
 
    if ( @logs == 0 ) {
       MKDEBUG && _d('Implicitly reading STDIN because no logs were given');
@@ -121,6 +132,9 @@ sub split {
          );
          if ( $event ) {
             $self->{n_events_total}++;
+            if ( $self->{split_random} ) {
+               $event->{_sessionno} = $next_sessionno->();
+            }
             if ( $callbacks ) {
                foreach my $callback ( @$callbacks ) {
                   $event = $callback->($event);
@@ -362,7 +376,13 @@ sub _merge_session_files {
    my $i = make_rr_iter(0, $#multi_session_files);  # round-robin iterator
    foreach my $single_session_file ( @single_session_files ) {
       my $multi_session_file = $multi_session_files[ $i->() ];
-      my $cmd = "cat $single_session_file >> $multi_session_file";
+      my $cmd;
+      if ( $self->{split_random} ) {
+         $cmd = "mv $single_session_file $multi_session_file";
+      }
+      else {
+         $cmd = "cat $single_session_file >> $multi_session_file";
+      }
       eval { `$cmd`; };
       if ( $EVAL_ERROR ) {
          warn "Failed to `$cmd`: $OS_ERROR";

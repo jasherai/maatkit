@@ -9,21 +9,13 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 20;
+use Test::More tests => 22;
 
 use LogSplitter;
 use SlowLogParser;
 use MaatkitTest;
 
-# Returns true (1) if there's no difference between the
-# output and the expected output.
-sub test_diff {
-   my ( $output, $expected_output ) = @_;
-   my $retval = system("diff $output $expected_output");
-   $retval = $retval >> 8;
-   return !$retval;
-}
-
+my $output;
 my $tmpdir = '/tmp/LogSplitter';
 diag(`rm -rf $tmpdir ; mkdir $tmpdir`);
 
@@ -74,8 +66,6 @@ $ls->split("$trunk/common/t/samples/slow006.txt");
 ok(-f "$tmpdir/1/session-1.txt", 'Basic split session 1 file exists');
 ok(-f "$tmpdir/1/session-2.txt", 'Basic split session 2 file exists');
 ok(-f "$tmpdir/1/session-3.txt", 'Basic split session 3 file exists');
-
-my $output;
 
 $output = `diff $tmpdir/1/session-1.txt $trunk/common/t/samples/slow006-session-1.txt`;
 is(
@@ -268,7 +258,36 @@ is(
 );
 
 # #############################################################################
+# Issue 798: Make mk-log-player --split work without an attribute
+# #############################################################################
+diag(`rm -rf $tmpdir/*`);
+$ls = new LogSplitter(
+   attribute      => 'Thread_id',
+   split_random   => 1,
+   base_dir       => $tmpdir,
+   parser         => $lp,
+   session_files  => 2,
+   quiet          => 1,
+
+);
+$ls->split("$trunk/common/t/samples/slow006.txt");
+
+$output = `diff $tmpdir/sessions-1.txt $trunk/common/t/samples/LogSplitter/slow006-random-1.txt`;
+is(
+   $output,
+   '',
+   'Random file 1 file has correct SQL statements'
+);
+
+$output = `diff $tmpdir/sessions-2.txt $trunk/common/t/samples/LogSplitter/slow006-random-2.txt`;
+is(
+   $output,
+   '',
+   'Random file 2 file has correct SQL statements'
+);
+
+# #############################################################################
 # Done.
 # #############################################################################
-diag(`rm -rf $tmpdir`);
+#diag(`rm -rf $tmpdir`);
 exit;
