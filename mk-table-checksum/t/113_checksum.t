@@ -18,34 +18,42 @@ require "$trunk/mk-table-checksum/mk-table-checksum";
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
-my $slave_dbh  = $sb->get_dbh_for('slave1');
 
 if ( !$master_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
-elsif ( !$slave_dbh ) {
-   plan skip_all => 'Cannot connect to sandbox slave';
-}
 else {
-   plan tests => 1;
+   plan tests => 2;
 }
 
+my $output;
 my $cnf='/tmp/12345/my.sandbox.cnf';
-my ($output, $output2);
-my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
+my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.0.0.1";
 
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
 
+$output = `$cmd --checksum --ignore-databases sakila -d test -t checksum_test`;
+is(
+   $output,
+   "3036305396        127.0.0.1.test.checksum_test.0
+",
+   '--checksum terse output'
+);
+
 # #############################################################################
 # Issue 103: mk-table-checksum doesn't honor --checksum in --schema mode
 # #############################################################################
-$output = `../mk-table-checksum --checksum h=127.1,P=12345,u=msandbox,p=msandbox --schema --ignore-databases sakila`;
-unlike($output, qr/DATABASE\s+TABLE/, '--checksum in --schema mode prints terse output');
+$output = `$cmd --checksum --schema --ignore-databases sakila -d test -t checksum_test`;
+unlike(
+   $output,
+   qr/DATABASE\s+TABLE/,
+   '--checksum in --schema mode prints terse output'
+);
+
 
 # #############################################################################
 # Done.
 # #############################################################################
 $sb->wipe_clean($master_dbh);
-$sb->wipe_clean($slave_dbh);
 exit;

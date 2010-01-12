@@ -30,16 +30,17 @@ else {
    plan tests => 31;
 }
 
+my $output;
 my $cnf='/tmp/12345/my.sandbox.cnf';
-my ($output, $output2);
-my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
+my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.1";
 
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
 
 # Check --schema
-$output = `perl ../mk-table-checksum --tables checksum_test --checksum --schema h=127.1,P=12345,u=msandbox,p=msandbox 2>&1`;
+$output = `$cmd --tables checksum_test --checksum --schema 2>&1`;
 like($output, qr/2752458186\s+127.1.test2.checksum_test/, 'Checksum test with --schema' );
+
 # Should output the same thing, it only lacks the AUTO_INCREMENT specifier.
 like($output, qr/2752458186\s+127.1.test.checksum_test/, 'Checksum 2 test with --schema' );
 
@@ -54,32 +55,31 @@ $sb->wipe_clean($master_dbh);
 
 my $awk_slice = "awk '{print \$1,\$2,\$7}'";
 
-$cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --ignore-databases sakila --schema | $awk_slice | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
-my $ret_val = system($cmd);
+my $ret_val = system("$cmd P=12346 --ignore-databases sakila --schema | $awk_slice | diff $trunk/mk-table-checksum/t/samples/sample_schema_opt -");
 cmp_ok($ret_val, '==', 0, '--schema basic output');
 
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --schema --quiet`;
+$output = `$cmd --schema --quiet`;
 is(
    $output,
    '',
    '--schema respects --quiet'
 );
 
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --schema --ignore-databases mysql,sakila`;
+$output = `$cmd --schema --ignore-databases mysql,sakila`;
 is(
    $output,
    '',
    '--schema respects --ignore-databases'
 );
 
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --schema --ignore-tables users`;
+$output = `$cmd --schema --ignore-tables users`;
 unlike(
    $output,
    qr/users/,
    '--schema respects --ignore-tables'
 );
 
-# Remember to add $#opt_combos+1 number of tests to line 6
+# Remember to add $#opt_combos+1 number of tests to line 30.
 my @opt_combos = ( # --schema and
    '--algorithm=BIT_XOR',
    '--algorithm=ACCUM',
@@ -103,7 +103,7 @@ my @opt_combos = ( # --schema and
 );
 
 foreach my $opt_combo ( @opt_combos ) {
-   $output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --ignore-databases sakila --schema $opt_combo 2>&1`;
+   $output = `$cmd P=12346 --ignore-databases sakila --schema $opt_combo 2>&1`;
    my ($other_opt) = $opt_combo =~ m/^([\w-]+\b)/;
    like(
       $output,
@@ -113,7 +113,7 @@ foreach my $opt_combo ( @opt_combos ) {
 }
 # Have to do this one manually be --no-verify is --verify in the
 # error output which confuses the regex magic for $other_opt.
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --ignore-databases sakila --schema --no-verify 2>&1`;
+$output = `$cmd P=12346 --ignore-databases sakila --schema --no-verify 2>&1`;
 like(
    $output,
    qr/--schema is not allowed with --verify/,
@@ -121,28 +121,24 @@ like(
 );
 
 # Check that --schema does NOT lock by default
-$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --schema 2>&1`;
+$output = `MKDEBUG=1 $cmd P=12346 --schema 2>&1`;
 unlike($output, qr/LOCK TABLES /, '--schema does not lock tables by default');
 
-$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --schema --lock 2>&1`;
+$output = `MKDEBUG=1 $cmd P=12346 --schema --lock 2>&1`;
 unlike($output, qr/LOCK TABLES /, '--schema does not lock tables even with --lock');
 
 # #############################################################################
 # Test issue 5 + 35: --schema a missing table
 # #############################################################################
 $sb->create_dbs($master_dbh, [qw(test)]);
-my $create_missing_slave_tbl_cmd
-   = "/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;CREATE TABLE test.only_on_master(a int);'";
-diag(`$create_missing_slave_tbl_cmd`);
+diag(`/tmp/12345/use -e 'SET SQL_LOG_BIN=0; CREATE TABLE test.only_on_master(a int);'`);
 
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 -t test.only_on_master --schema 2>&1`;
+$output = `$cmd P=12346 -t test.only_on_master --schema 2>&1`;
 like($output, qr/MyISAM\s+NULL\s+23678842/, 'Table on master checksummed with --schema');
 like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed with --schema');
-like($output, qr/test.only_on_master does not exist on slave 127.0.0.1:12346/, 'Debug reports missing slave table with --schema');
+like($output, qr/test.only_on_master does not exist on slave 127\.1:12346/, 'Debug reports missing slave table with --schema');
 
-my $rm_missing_slave_tbl_cmd
-   = "/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;DROP TABLE test.only_on_master;'";
-diag(`$rm_missing_slave_tbl_cmd`);
+diag(`/tmp/12345/use -e 'DROP TABLE IF EXISTS test.only_on_master'`);
 
 # #############################################################################
 # Done.

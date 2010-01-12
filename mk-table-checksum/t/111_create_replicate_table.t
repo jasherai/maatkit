@@ -18,21 +18,17 @@ require "$trunk/mk-table-checksum/mk-table-checksum";
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
-my $slave_dbh  = $sb->get_dbh_for('slave1');
 
 if ( !$master_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
-elsif ( !$slave_dbh ) {
-   plan skip_all => 'Cannot connect to sandbox slave';
-}
 else {
-   plan tests => 2;
+   plan tests => 3;
 }
 
+my $output;
 my $cnf='/tmp/12345/my.sandbox.cnf';
-my ($output, $output2);
-my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
+my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.0.0.1";
 
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
@@ -44,15 +40,39 @@ $sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
 
 # First check that, like a Klingon, it dies with honor.
 `/tmp/12345/use -e 'DROP TABLE test.checksum'`;
-$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --replicate test.checksum 2>&1`;
-like($output, qr/replicate table .+ does not exist/, 'Dies with honor when replication table does not exist');
+$output = `$cmd --replicate test.checksum 2>&1`;
+like(
+   $output,
+   qr/replicate table .+ does not exist/,
+   'Dies with honor when replication table does not exist'
+);
 
-$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --ignore-databases sakila --replicate test.checksum --create-replicate-table`;
-like($output, qr/DATABASE\s+TABLE\s+CHUNK/, '--create-replicate-table creates the replicate table');
+$output = `$cmd --ignore-databases sakila --replicate test.checksum --create-replicate-table`;
+like(
+   $output,
+   qr/DATABASE\s+TABLE\s+CHUNK/,
+   '--create-replicate-table creates the replicate table'
+);
+
+is(
+   $master_dbh->selectrow_hashref('show create table test.checksum')->{'Create Table'},
+"CREATE TABLE `checksum` (
+  `db` char(64) NOT NULL,
+  `tbl` char(64) NOT NULL,
+  `chunk` int(11) NOT NULL,
+  `boundaries` char(100) NOT NULL,
+  `this_crc` char(40) NOT NULL,
+  `this_cnt` int(11) NOT NULL,
+  `master_crc` char(40) default NULL,
+  `master_cnt` int(11) default NULL,
+  `ts` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
+  PRIMARY KEY  (`db`,`tbl`,`chunk`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1",
+   'Creates the replicate table'
+);
 
 # #############################################################################
 # Done.
 # #############################################################################
 $sb->wipe_clean($master_dbh);
-$sb->wipe_clean($slave_dbh);
 exit;

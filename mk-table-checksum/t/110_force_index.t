@@ -30,9 +30,9 @@ else {
    plan tests => 2;
 }
 
+my $output;
 my $cnf='/tmp/12345/my.sandbox.cnf';
-my ($output, $output2);
-my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
+my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.0.0.1";
 
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'mk-table-checksum/t/samples/issue_47.sql');
@@ -45,11 +45,19 @@ $sb->load_file('master', 'mk-table-checksum/t/samples/issue_47.sql');
 # That is: there's really no way for us to see if MySQL is indeed using
 # the index that we told it to.
 
-$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 -d test -t issue_47 --algorithm ACCUM 2>&1 | grep 'SQL for chunk 0:'`;
-like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47` (?:FORCE|USE) INDEX \(`idx`\) WHERE/, 'Injects correct USE INDEX by default');
+$output = `MKDEBUG=1 $cmd P=12346 -d test -t issue_47 --algorithm ACCUM 2>&1 | grep 'SQL for chunk 0:'`;
+like(
+   $output,
+   qr/SQL for chunk 0:.*FROM `test`\.`issue_47` (?:FORCE|USE) INDEX \(`idx`\) WHERE/,
+   'Injects correct USE INDEX by default'
+);
 
-$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 -d test -t issue_47 --algorithm ACCUM --no-use-index 2>&1 | grep 'SQL for chunk 0:'`;
-like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not inject USE INDEX with --no-use-index');
+$output = `MKDEBUG=1 $cmd P=12346 -d test -t issue_47 --algorithm ACCUM --no-use-index 2>&1 | grep 'SQL for chunk 0:'`;
+like(
+   $output,
+   qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/,
+   'Does not inject USE INDEX with --no-use-index'
+);
 
 # #############################################################################
 # Done.

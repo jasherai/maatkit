@@ -27,7 +27,7 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 3;
+   plan tests => 4;
 }
 
 my $output;
@@ -37,6 +37,7 @@ my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.0.0.1";
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
 $sb->load_file('master', 'mk-table-checksum/t/samples/resume.sql');
+$sb->load_file('master', 'mk-table-checksum/t/samples/resume2.sql');
 
 # #############################################################################
 # Issue 36: Add --resume option to mk-table-checksum
@@ -44,17 +45,29 @@ $sb->load_file('master', 'mk-table-checksum/t/samples/resume.sql');
 
 # Test --resume.
 
-# This tests just one database...
-$output = `$cmd h=127.1,P=12346 -d test -t resume --chunk-size 3 --resume $trunk/mk-table-checksum/t/samples/resume-chunked-partial.txt | diff $trunk/mk-table-checksum/t/samples/resume-chunked-complete.txt -`;
+# Child processes checksum each db.tbl on each host and print the results
+# when done.  So the output is nondeterministic.  sort helps fix this.
+
+$output = `$cmd h=127.1,P=12346 -d test -t resume --chunk-size 3 --resume $trunk/mk-table-checksum/t/samples/resume-chunked-partial.txt | sort | diff $trunk/mk-table-checksum/t/samples/resume-chunked-complete.txt -`;
 is(
    $output,
    '',
-   'Resumes checksum of chunked data (1 db)'
+   '--resume --chunk-size'
 );
 
-# but this tests two.
-#$output = `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox h=127.1,P=12346 --ignore-databases sakila --resume samples/resume03_partial.txt | diff samples/resume03_whole.txt -`;
-#ok(!$output, 'Resumes checksum of non-chunked data (2 dbs)');
+$output = `$cmd h=127.1,P=12346 -d test -t resume --resume $trunk/mk-table-checksum/t/samples/resume-partial.txt | sort | diff $trunk/mk-table-checksum/t/samples/resume-complete.txt -`;
+is(
+   $output,
+   '',
+   '--resume'
+);
+
+$output = `$cmd h=127.1,P=12346 -d test,test2 -t resume,resume2 --chunk-size 3 --resume $trunk/mk-table-checksum/t/samples/resume2-chunked-partial.txt | sort | diff $trunk/mk-table-checksum/t/samples/resume2-chunked-complete.txt -`;
+is(
+   $output,
+   '',
+   '--resume --chunk-size 2 dbs'
+);
 
 # Test --resume-replicate.
 

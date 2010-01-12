@@ -18,20 +18,16 @@ require "$trunk/mk-table-checksum/mk-table-checksum";
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
-my $slave_dbh  = $sb->get_dbh_for('slave1');
 
 if ( !$master_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
-}
-elsif ( !$slave_dbh ) {
-   plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
    plan tests => 10;
 }
 
-my $cnf='/tmp/12345/my.sandbox.cnf';
 my ($output, $output2);
+my $cnf='/tmp/12345/my.sandbox.cnf';
 my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
 
 $sb->create_dbs($master_dbh, [qw(test)]);
@@ -74,12 +70,11 @@ like($output2, qr/^\d{4}-\d\d-\d\d/, '--save-since saved the current timestamp')
 
 # Reusing issue_21.sql
 $sb->load_file('master', 'mk-table-checksum/t/samples/issue_21.sql'); 
-$output = `../mk-table-checksum --since 'current_date - interval 7 day' h=127.1,P=12345,u=msandbox,p=msandbox -t test.issue_21`;
+$output = `$trunk/mk-table-checksum/mk-table-checksum --since 'current_date - interval 7 day' h=127.1,P=12345,u=msandbox,p=msandbox -t test.issue_21`;
 like($output, qr/test\s+issue_21\s+0\s+127\.1\s+InnoDB/, 'InnoDB table is checksummed with temporal --since');
 
 # #############################################################################
 # Done.
 # #############################################################################
 $sb->wipe_clean($master_dbh);
-$sb->wipe_clean($slave_dbh);
 exit;
