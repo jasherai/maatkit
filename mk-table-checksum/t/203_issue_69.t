@@ -27,39 +27,35 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-      plan tests => 2;
+   plan tests => 2;
 }
 
+my $output;
 my $cnf='/tmp/12345/my.sandbox.cnf';
-my ($output, $output2);
-my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
+my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.0.0.1";
 
 $sb->create_dbs($master_dbh, [qw(test)]);
-$sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
+$sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
+$sb->load_file('master', 'mk-table-checksum/t/samples/issue_21.sql');
 
 # #############################################################################
 # Issue 69: mk-table-checksum should be able to re-checksum things that differ
 # #############################################################################
 
-$sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
-$sb->load_file('master', 'mk-table-checksum/t/samples/issue_21.sql');
- `../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum`;
-
+`$cmd -d test --replicate test.checksum`;
 $slave_dbh->do("update test.checksum set this_crc='' where test.checksum.tbl = 'issue_21'");
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 2>&1`;
 
-# This test relies on the previous test which checked that --replicate-check works
-# and left an inconsistent checksum on columns_priv.
-$output = `../mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 --recheck | diff samples/issue_69.txt -`;
+# Can't use $cmd; see http://code.google.com/p/maatkit/issues/detail?id=802
+`$trunk/mk-table-checksum/mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 2>&1`;
+
+$output = `$trunk/mk-table-checksum/mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 --recheck | diff $trunk/mk-table-checksum/t/samples/issue_69.txt -`;
 ok(!$output, '--recheck reports inconsistent table like --replicate');
 
 # Now check that --recheck actually caused the inconsistent table to be
 # re-checksummed on the master.
 $output = 'foo';
-$output = `../mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox --replicate test.checksum --replicate-check 1`;
+$output = `$cmd --replicate test.checksum --replicate-check 1`;
 ok(!$output, '--recheck re-checksummed inconsistent table; it is now consistent');
-
-$master_dbh->do('DROP TABLE test.issue_21');
 
 # #############################################################################
 # Done.

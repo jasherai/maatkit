@@ -27,13 +27,13 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-      plan tests => 1;
+   plan tests => 1;
 }
 
-my $cnf='/tmp/12345/my.sandbox.cnf';
-my ($output, $output2);
+my $output;
 my $res;
-my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
+my $cnf='/tmp/12345/my.sandbox.cnf';
+my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.1";
 
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
@@ -60,9 +60,12 @@ $sb->load_file('master', 'mk-table-checksum/t/samples/issue_94.sql');
 $master_dbh->do('DELETE FROM test.checksum');
 # Give it something to think about. 
 $slave_dbh->do('DELETE FROM test.issue_94 WHERE a > 5');
-`perl ../mk-table-checksum --replicate=test.checksum --algorithm=BIT_XOR h=127.1,P=12345,u=msandbox,p=msandbox --databases test --tables issue_94 --chunk-size 500000 --wait 900`;
-$res = $master_dbh->selectall_arrayref("SELECT * FROM test.checksum");
-is($res->[0]->[1], 'issue_94', '--wait does not prevent update to --replicate tbl (issue 51)');
+`$cmd --replicate=test.checksum --algorithm=BIT_XOR --databases test --tables issue_94 --chunk-size 500000 --wait 900`;
+is(
+   $master_dbh->selectrow_arrayref("SELECT * FROM test.checksum")->[1],
+   'issue_94',
+   '--wait does not prevent update to --replicate tbl (issue 51)'
+);
 
 # #############################################################################
 # Done.

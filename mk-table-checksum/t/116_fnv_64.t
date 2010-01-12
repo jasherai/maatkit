@@ -18,17 +18,13 @@ require "$trunk/mk-table-checksum/mk-table-checksum";
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
-my $slave_dbh  = $sb->get_dbh_for('slave1');
 
 if ( !$master_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
-elsif ( !$slave_dbh ) {
-   plan skip_all => 'Cannot connect to sandbox slave';
-}
 
+my $output;
 my $cnf='/tmp/12345/my.sandbox.cnf';
-my ($output, $output2);
 my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
 
 $sb->create_dbs($master_dbh, [qw(test)]);
@@ -63,5 +59,4 @@ like($output, qr/a84792031e4ff43f/, 'FNV_64 BIT_XOR' );
 # Done.
 # #############################################################################
 $sb->wipe_clean($master_dbh);
-$sb->wipe_clean($slave_dbh);
 exit;

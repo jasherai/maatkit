@@ -27,16 +27,16 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-      plan tests => 5;
+   plan tests => 5;
 }
 
-my $cnf='/tmp/12345/my.sandbox.cnf';
-my ($output, $output2);
+my $output;
 my $ret_val;
-my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
+my $cnf='/tmp/12345/my.sandbox.cnf';
+my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf 127.0.0.1";
 
+$sb->wipe_clean($master_dbh);
 $sb->create_dbs($master_dbh, [qw(test)]);
-$sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
 
 # #############################################################################
 # Issue 21: --empty-replicate-table doesn't empty if previous runs leave info
@@ -45,44 +45,43 @@ $sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
 # This test requires that the test db has only the table created by
 # issue_21.sql. If there are other tables, the first test below
 # will fail because samples/basic_replicate_output will differ.
-$sb->wipe_clean($master_dbh);
-$sb->create_dbs($master_dbh, ['test']);
-
 $sb->load_file('master', 'mk-table-checksum/t/samples/checksum_tbl.sql');
 $sb->load_file('master', 'mk-table-checksum/t/samples/issue_21.sql');
 
-# Run --replication once to populate test.checksum
-$cmd = 'perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum | diff ./samples/basic_replicate_output -';
-$ret_val = system($cmd);
-# Might as well test this while we're at it
+# Run --replication once to populate test.checksum.
+$ret_val = system("$cmd -d test --replicate test.checksum | diff $trunk/mk-table-checksum/t/samples/basic_replicate_output -");
+# Might as well test this while we're at it.
 cmp_ok($ret_val >> 8, '==', 0, 'Basic --replicate works');
 
-# Insert a bogus row into test.checksum
-my $repl_row = "INSERT INTO test.checksum VALUES ('foo', 'bar', 0, 'a', 'b', 0, 'c', 0,  NOW())";
-diag(`/tmp/12345/use -e "$repl_row"`);
+# Insert a bogus row into test.checksum.
+diag(`/tmp/12345/use -e "INSERT INTO test.checksum VALUES ('foo', 'bar', 0, 'a', 'b', 0, 'c', 0,  NOW())"`);
+
 # Run --replicate again which should completely clear test.checksum,
-# including our bogus row
-`perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox --replicate test.checksum -d test --empty-replicate-table 2>&1 > /dev/null`;
-# Make sure bogus row is actually gone
-$cmd = "/tmp/12345/use -e \"SELECT db FROM test.checksum WHERE db = 'foo';\"";
-$output = `$cmd`;
+# including our bogus row.
+`$cmd --replicate test.checksum -d test --empty-replicate-table >/dev/null`;
+
+# Make sure bogus row is actually gone.
+$output = `/tmp/12345/use -e "SELECT db FROM test.checksum WHERE db = 'foo'"`;
 unlike($output, qr/foo/, '--empty-replicate-table completely empties the table (fixes issue 21)');
 
 # While we're at it, let's test what the doc says about --empty-replicate-table:
 # "Ignored if L<"--replicate"> is not specified."
-$repl_row = "INSERT INTO test.checksum VALUES ('foo', 'bar', 0, 'a', 'b', 0, 'c', 0,  NOW())";
-diag(`/tmp/12345/use -e "$repl_row"`);
-`perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox P=12346 --empty-replicate-table 2>&1 > /dev/null`;
-# Now make sure bogus row is still present
-$cmd = "/tmp/12345/use -e \"SELECT db FROM test.checksum WHERE db = 'foo';\"";
-$output = `$cmd`;
+diag(`/tmp/12345/use -e "INSERT INTO test.checksum VALUES ('foo', 'bar', 0, 'a', 'b', 0, 'c', 0,  NOW())"`);
+`$cmd P=12346 --empty-replicate-table >/dev/null`;
+
+# Now make sure bogus row is still present.
+$output = `/tmp/12345/use -e "SELECT db FROM test.checksum WHERE db = 'foo';"`;
 like($output, qr/foo/, '--empty-replicate-table is ignored if --replicate is not specified');
-diag(`/tmp/12345/use -D test -e "DELETE FROM checksum WHERE db = 'foo'"`);
+
+diag(`/tmp/12345/use -e "DELETE FROM test.checksum WHERE db = 'foo'"`);
 
 # Screw up the data on the slave and make sure --replicate-check works
 $slave_dbh->do("update test.checksum set this_crc='' where test.checksum.tbl = 'issue_21'");
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 2>&1`;
+
+# Can't use $cmd here; see http://code.google.com/p/maatkit/issues/detail?id=802
+$output = `$trunk/mk-table-checksum/mk-table-checksum h=127.1,P=12345,u=msandbox,p=msandbox -d test --replicate test.checksum --replicate-check 1 2>&1`;
 like($output, qr/issue_21/, '--replicate-check works');
+
 cmp_ok($CHILD_ERROR>>8, '==', 1, 'Exit status is correct with --replicate-check failure');
 
 # #############################################################################
