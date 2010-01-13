@@ -3466,7 +3466,7 @@ sub watch_server {
       if ( $dbh ) {
          while ( !$dbh->ping ) {
             my $wait = $o->get('wait');
-            _log($o, "MySQL not responding; waiting $wait to reconnect");
+            _log($o, "MySQL not responding; waiting ${wait}s to reconnect");
             sleep $wait;
             eval {
                $dbh = $dp->get_dbh(
@@ -3842,7 +3842,7 @@ would get average values since last reboot.
 
 =item --wait
 
-type: int; default: 60s
+type: time; default: 60s
 
 Wait this long to reconnect to MySQL.
 
