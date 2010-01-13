@@ -2666,16 +2666,24 @@ sub play_session {
    my $only_select = $o->get('only-select');
    my $warnings    = $o->get('warnings');
    my $print       = $o->get('print');
+   my $results     = $o->get('results');
    my $dbh         = get_cxn($dsn) unless $print;
 
    # Each thread writes to its own file because contention will not allow
    # them all to write correctly to STDOUT at once.
    my $base_dir    = $o->get('base-dir');
-   my $output_file = $base_dir . '/'
+   my $output_file = $o->get('base-dir')
+                   . '/'
                    . $o->get('base-file-name') . "-results-$PID.txt";
-   open my $output_fh, '>', $output_file
-      or die "Cannot open $output_file for writing: $OS_ERROR";
-   MKDEBUG && _d('Proc', $childno, 'writing to', $output_file);
+   my $output_fh;
+   if ( $results || $print ) {
+      open $output_fh, '>', $output_file
+         or die "Cannot open $output_file for writing: $OS_ERROR";
+      MKDEBUG && _d('Proc', $childno, 'writing to', $output_file);
+   }
+   else {
+      MKDEBUG && _d('Proc', $childno, 'not writing results');
+   }
 
    local $INPUT_RECORD_SEPARATOR = '';
 
@@ -2726,12 +2734,14 @@ sub play_session {
                next QUERY;
             }
 
-            chomp $query;
-            printf $output_fh $slowlog_fmt,
-               "$childno$session_n",
-               time - $query_time,
-               ($db || ''),
-               $query;
+            if ( $results ) {
+               chomp $query;
+               printf $output_fh $slowlog_fmt,
+                  "$childno$session_n",
+                  time - $query_time,
+                  ($db || ''),
+                  $query;
+            }
          } # QUERY
 
          MKDEBUG && _d('No more sessions in', $session_file);
@@ -2739,7 +2749,7 @@ sub play_session {
       } # SESSION_FILE
    } # ITERATION
 
-   close $output_fh;
+   close $output_fh if $output_fh;
    $dbh->disconnect() if $dbh;
    return;
 }
@@ -3074,6 +3084,12 @@ read.
 =item --quiet
 
 Do not print anything.
+
+=item --[no]results
+
+default: yes
+
+Print L<"--play"> results to files in L<"--base-dir">.
 
 =item --session-files
 
