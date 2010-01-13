@@ -48,12 +48,12 @@ diag(`rm -rf /tmp/mk-kill-test.txt`);
 SKIP: {
    skip 'Cannot connect to sandbox master', 2 unless $master_dbh;
 
-   system("/tmp/12345/use -e 'select sleep(3)' >/dev/null 2>&1 &");
+   system("/tmp/12345/use -e 'select sleep(2)' >/dev/null 2>&1 &");
 
    $output = `$cmd --match-info 'select sleep' --run-time 2 --print --execute-command 'echo batty > /tmp/mk-kill-test.txt'`;
    like(
       $output,
-      qr/KILL .+ select sleep\(3\)/,
+      qr/KILL .+ select sleep\(2\)/,
       '--print with --execute-command'
    );
 
@@ -63,6 +63,9 @@ SKIP: {
       'batty',
       '--execute-command (online)'
    );
+   
+   # Let our select sleep(2) go away before other tests are ran.
+   sleep 1;
 }
 
 diag(`rm -rf /tmp/mk-kill-test.txt`);
