@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 28;
+use Test::More tests => 33;
 
 use List::Util qw(max);
 
@@ -21,6 +21,11 @@ use OptionParser;
 use MaatkitTest;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 my $q   = new Quoter();
 my $dp  = new DSNParser();
@@ -43,6 +48,23 @@ sub get_all {
    }
    @objs = sort @objs;
    return \@objs;
+}
+
+sub get_all_db_tbls {
+   my ( $dbh, $si ) = @_;
+   my @db_tbls;
+   my $next_db = $si->get_db_itr(dbh=>$dbh);
+   while ( my $db = $next_db->() ) {
+      my $next_tbl = $si->get_tbl_itr(
+         dbh   => $dbh,
+         db    => $db,
+         views => 0,
+      );
+      while ( my $tbl = $next_tbl->() ) {
+         push @db_tbls, "$db.$tbl";
+      }
+   }
+   return \@db_tbls;
 }
 
 # ###########################################################################
@@ -157,7 +179,7 @@ $next_tbl = $si->get_tbl_itr(dbh=>$dbh, db=>'d1');
 is_deeply(
    get_all($next_tbl),
    ['t2'],
-   '--database and --tables'
+   '--databases and --tables'
 );
 
 # Ignore some dbs and tbls.
@@ -327,6 +349,63 @@ is_deeply(
    get_all($next_tbl),
    [qw(t2 t3)],
    '--ignore-tables-regex'
+);
+
+
+# #############################################################################
+# Issue 806: mk-table-sync --tables does not honor schema qualier
+# #############################################################################
+
+# Filter by db-qualified table.  There is t1 in both d1 and d2.
+# We want only d1.t1.
+@ARGV=qw(-t d1.t1);
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+
+is_deeply(
+   get_all_db_tbls($dbh, $si),
+   [qw(d1.t1)],
+   '-t d1.t1 (issue 806)'
+);
+
+@ARGV=qw(-d d1 -t d1.t1);
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+
+is_deeply(
+   get_all_db_tbls($dbh, $si),
+   [qw(d1.t1)],
+   '-d d1 -t d1.t1 (issue 806)'
+);
+
+@ARGV=qw(-d d2 -t d1.t1);
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+
+is_deeply(
+   get_all_db_tbls($dbh, $si),
+   [],
+   '-d d2 -t d1.t1 (issue 806)'
+);
+
+@ARGV=('-t','d1.t1,d1.t3');
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+
+is_deeply(
+   get_all_db_tbls($dbh, $si),
+   [qw(d1.t1 d1.t3)],
+   '-t d1.t1,d1.t3 (issue 806)'
+);
+
+@ARGV=('--ignore-databases', 'information_schema,mysql,sakila', '--ignore-tables', 'd1.t2');
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+
+is_deeply(
+   get_all_db_tbls($dbh, $si),
+   [qw(d1.t1 d1.t3 d2.t1)],
+   '--ignore-tables d1.t2 (issue 806)'
 );
 
 # #############################################################################
