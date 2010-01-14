@@ -5,6 +5,12 @@
 # That causes OptionParser to be updated in all scripts
 # which have an out-of-date version of the module.
 
+if [ -z $1 ]; then
+   echo "Specify a module to update in all scripts."
+   echo "Usage: $0 MODULE"
+   exit 1
+fi
+
 set -e
 
 for FILE in `ls ../mk-*/mk-* | cut -d'/' -f 2`; do
