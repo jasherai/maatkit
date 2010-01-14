@@ -5564,28 +5564,6 @@ sub new {
    return bless $self, $class;
 }
 
-# Required args:
-#   * o  obj: OptionParser module
-# Returns: subref
-# Can die: yes
-# make_filter() uses an OptionParser obj and the following standard filter
-# options to make a filter sub suitable for set_filter():
-#   --databases -d            List of allowed databases
-#   --ignore-databases        List of databases to ignore
-#   --databases-regex         List of allowed databases that match pattern
-#   --ignore-databases-regex  List of ignored database that match pattern
-#   --tables    -t            List of allowed tables
-#   --ignore-tables           List of tables to ignore
-#   --tables-regex            List of allowed tables that match pattern
-#   --ignore-tables-regex     List of ignored tables that match pattern
-#   --engines   -e            List of allowed engines
-#   --ignore-engines          List of engines to ignore 
-# The filters in the sub are created in that order for efficiency.  For
-# example, the table filters are not checked if the database doesn't first
-# pass its filters.  Each filter is only created if specified.  Since the
-# database and tables are given separately we no longer have to worry about
-# splitting db.tbl to match db and/or tbl.  The filter returns true if the
-# schema object is allowed.
 sub make_filter {
    my ( $self, $o ) = @_;
    my @lines = (
@@ -5594,8 +5572,6 @@ sub make_filter {
       '   my $engine = undef;',
    );
 
-   # Filter schema objs in this order: db, tbl, engine.  It's not efficient
-   # to check the table if, for example, the database isn't allowed.
 
    my @permit_dbs = _make_filter('unless', '$db', $o->get('databases'))
       if $o->has('databases');
@@ -5675,7 +5651,6 @@ sub make_filter {
 
    push @lines, '   return 1;',  '}';
 
-   # Make the subroutine.
    my $code = join("\n", @lines);
    MKDEBUG && _d('filter sub:', $code);
    my $filter_sub= eval $code
@@ -5684,14 +5659,6 @@ sub make_filter {
    return $filter_sub;
 }
 
-# Required args:
-#   * filter_sub  subref: Filter sub, usually from make_filter()
-# Returns: undef
-# Can die: no
-# set_filter() sets the filter sub that get_db_itr() and get_tbl_itr()
-# use to filter the schema objects they find.  If no filter sub is set
-# then every possible schema object is returned by the iterators.  The
-# filter should return true if the schema object is allowed.
 sub set_filter {
    my ( $self, $filter_sub ) = @_;
    $self->{filter} = $filter_sub;
@@ -5699,12 +5666,6 @@ sub set_filter {
    return;
 }
 
-# Required args:
-#   * dbh  dbh: an active dbh
-# Returns: itr
-# Can die: no
-# get_db_itr() returns an iterator which returns the next db found,
-# according to any set filters, when called successively.
 sub get_db_itr {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh);
@@ -5730,17 +5691,6 @@ sub get_db_itr {
    };
 }
 
-# Required args:
-#   * dbh    dbh: an active dbh
-#   * db     scalar: database name
-# Optional args:
-#   * views  bool: Permit/return views (default no)
-# Returns: itr
-# Can die: no
-# get_tbl_itr() returns an iterator which returns the next table found,
-# in the given db, according to any set filters, when called successively.
-# Make sure $dbh->{FetchHashKeyName} = 'NAME_lc' was set, else engine
-# filters won't work.
 sub get_tbl_itr {
    my ( $self, %args ) = @_;
    my @required_args = qw(dbh db);
@@ -5763,13 +5713,6 @@ sub get_tbl_itr {
             my ($tbl, $type) = @$_;
             my $ok = $filter ? $filter->($dbh, $db, $tbl) : 1;
             if ( !$views ) {
-               # We don't want views therefore we have to check the table
-               # type.  Views are actually available in 5.0.1 but "FULL"
-               # in SHOW FULL TABLES was not added until 5.0.2.  So 5.0.1
-               # is an edge case that we ignore.  If >=5.0.2 then there
-               # might be views and $type will be Table_type and we check
-               # as normal.  Else, there cannot be views so there will be
-               # no $type.
                $ok = 0 if ($type || '') eq 'VIEW';
             }
             $ok;
@@ -5787,15 +5730,6 @@ sub get_tbl_itr {
    };
 }
 
-# Required args:
-#   * cond      scalar: condition for check, "if" or "unless"
-#   * var_name  scalar: literal var name to compare to obj values
-#   * objs      hashref: object values (as the hash keys)
-# Optional args:
-#   * lc  bool: lowercase object values
-# Returns: scalar
-# Can die: no
-# _make_filter() return a test condtion like "$var eq 'foo' || $var eq 'bar'".
 sub _make_filter {
    my ( $cond, $var_name, $objs, $lc ) = @_;
    my @lines;
