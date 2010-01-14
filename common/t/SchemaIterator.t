@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 33;
+use Test::More tests => 34;
 
 use List::Util qw(max);
 
@@ -406,6 +406,16 @@ is_deeply(
    get_all_db_tbls($dbh, $si),
    [qw(d1.t1 d1.t3 d2.t1)],
    '--ignore-tables d1.t2 (issue 806)'
+);
+
+@ARGV=('-t','d1.t3,d2.t1');
+$o->get_opts();
+$si->set_filter($si->make_filter($o));
+
+is_deeply(
+   get_all_db_tbls($dbh, $si),
+   [qw(d1.t3 d2.t1)],
+   '-t d1.t3,d2.t1 (issue 806)'
 );
 
 # #############################################################################

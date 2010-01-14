@@ -38,6 +38,7 @@ sub new {
    my $self = {
       %args,
       filter => undef,
+      dbs    => [],
    };
    return bless $self, $class;
 }
@@ -103,24 +104,26 @@ sub make_filter {
 
       # Have created the "my $qtbls = ..." line for db-qualified tbls.
       # http://code.google.com/p/maatkit/issues/detail?id=806
-      my $have_qtbl = 0;
+      my $have_qtbl       = 0;
+      my $have_only_qtbls = 0;
+      my %qtbls;
 
       my @permit_tbls;
       my @permit_qtbls;
+      my %permit_qtbls;
       if ( $o->get('tables') ) {
          my %tbls;
-         my %qtbls;
          map {
             if ( $_ =~ m/\./ ) {
                # Table is db-qualified (db.tbl).
-               $qtbls{$_} = 1;
+               $permit_qtbls{$_} = 1;
             }
             else {
                $tbls{$_} = 1;
             }
          } keys %{ $o->get('tables') };
          @permit_tbls  = _make_filter('unless', '$tbl', \%tbls);
-         @permit_qtbls = _make_filter('unless', '$qtbl', \%qtbls);
+         @permit_qtbls = _make_filter('unless', '$qtbl', \%permit_qtbls);
 
          if ( @permit_qtbls ) {
             push @lines,
@@ -131,24 +134,45 @@ sub make_filter {
 
       my @reject_tbls;
       my @reject_qtbls;
+      my %reject_qtbls;
       if ( $o->get('ignore-tables') ) {
          my %tbls;
-         my %qtbls;
          map {
             if ( $_ =~ m/\./ ) {
                # Table is db-qualified (db.tbl).
-               $qtbls{$_} = 1;
+               $reject_qtbls{$_} = 1;
             }
             else {
                $tbls{$_} = 1;
             }
          } keys %{ $o->get('ignore-tables') };
          @reject_tbls= _make_filter('if', '$tbl', \%tbls);
-         @reject_qtbls = _make_filter('if', '$qtbl', \%qtbls);
+         @reject_qtbls = _make_filter('if', '$qtbl', \%reject_qtbls);
 
          if ( @reject_qtbls && !$have_qtbl ) {
             push @lines,
                '   my $qtbl   = ($db ? "$db." : "") . ($tbl ? $tbl : "");';
+         }
+      }
+
+      # If all -t are db-qualified but there are no explicit -d, then
+      # we add all unique dbs from the -t to -d and recurse.  This
+      # prevents wasted effort looking at db that are implicitly filtered
+      # by the db-qualified -t.
+      if ( keys %permit_qtbls  && !@permit_dbs ) {
+         my $dbs = {};
+         map {
+            my ($db, undef) = split(/\./, $_);
+            $dbs->{$db} = 1;
+         } keys %permit_qtbls;
+         MKDEBUG && _d('Adding restriction "--databases',
+               (join(',', keys %$dbs) . '"'));
+         if ( keys %$dbs ) {
+            # Only recurse if extracting the dbs worked. Else, the
+            # following code will still work and we just lose this
+            # optimization.
+            $o->set('databases', $dbs);
+            return $self->make_filter($o);
          }
       }
 
