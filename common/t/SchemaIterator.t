@@ -72,7 +72,7 @@ sub get_all_db_tbls {
 # ###########################################################################
 
 $sb->load_file('master', 'common/t/samples/SchemaIterator.sql');
-my @dbs = sort map { $_->[0] } @{ $dbh->selectall_arrayref('show databases') };
+my @dbs = sort grep { $_ !~ m/information_schema|lost\+found/; } map { $_->[0] } @{ $dbh->selectall_arrayref('show databases') };
 
 my $next_db = $si->get_db_itr(dbh=>$dbh);
 is(
@@ -183,7 +183,7 @@ is_deeply(
 );
 
 # Ignore some dbs and tbls.
-@ARGV=('--ignore-databases', 'mysql,sakila,information_schema,d1,d3');
+@ARGV=('--ignore-databases', 'mysql,sakila,d1,d3');
 $o->get_opts();
 $si->set_filter($si->make_filter($o));
 
@@ -201,7 +201,7 @@ is_deeply(
    '--ignore-databases filter does not affect tables'
 );
 
-@ARGV=('--ignore-databases', 'mysql,sakila,information_schema,d2,d3',
+@ARGV=('--ignore-databases', 'mysql,sakila,d2,d3',
        '--ignore-tables', 't1,t2');
 $o->get_opts();
 $si->set_filter($si->make_filter($o));
@@ -398,7 +398,7 @@ is_deeply(
    '-t d1.t1,d1.t3 (issue 806)'
 );
 
-@ARGV=('--ignore-databases', 'information_schema,mysql,sakila', '--ignore-tables', 'd1.t2');
+@ARGV=('--ignore-databases', 'mysql,sakila', '--ignore-tables', 'd1.t2');
 $o->get_opts();
 $si->set_filter($si->make_filter($o));
 
