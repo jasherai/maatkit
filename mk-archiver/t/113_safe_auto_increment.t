@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 4;
 }
 
 my $output;
@@ -31,31 +31,21 @@ my $rows;
 my $cnf = "/tmp/12345/my.sandbox.cnf";
 my $cmd = "$trunk/mk-archiver/mk-archiver";
 
-# ###########################################################################
-# Test the custom plugin gt_n.
-# ###########################################################################
-$sb->load_file('master', 'mk-archiver/t/samples/gt_n.sql');
-my $sql = 'select status, count(*) from gt_n.t1 group by status';
-is_deeply(
-   $dbh->selectall_arrayref($sql),
-   [
-      [qw(bad 7)],
-      [qw(ok 12)],
-   ],
-   'gt_n.t has 12 ok before archive'
-);
+$sb->create_dbs($dbh, ['test']);
 
-# Add path to samples to Perl's INC so the tool can find the module.
-diag(`perl -I $trunk/mk-archiver/t/samples $cmd --where '1=1' --purge --source F=$cnf,D=gt_n,t=t1,m=gt_n 2>&1`);
+# Safe auto-increment behavior.
+$sb->load_file('master', 'mk-archiver/t/samples/table12.sql');
+$output = `$cmd --purge --where 1=1 --source D=test,t=table_12,F=$cnf 2>&1`;
+is($output, '', 'Purge worked OK');
+$output = `mysql --defaults-file=$cnf -N -e "select min(a),count(*) from test.table_12"`;
+like($output, qr/^3\t1$/, 'Did not touch the max auto_increment');
 
-is_deeply(
-   $dbh->selectall_arrayref($sql),
-   [
-      [qw(bad 1)],
-      [qw(ok 5)],
-   ],
-   'gt_n.t has max 5 ok after archive'
-);
+# Safe auto-increment behavior, disabled.
+$sb->load_file('master', 'mk-archiver/t/samples/table12.sql');
+$output = `$cmd --no-safe-auto-increment --purge --where 1=1 --source D=test,t=table_12,F=$cnf 2>&1`;
+is($output, '', 'Disabled safeautoinc worked OK');
+$output = `mysql --defaults-file=$cnf -N -e "select count(*) from test.table_12"`;
+is($output + 0, 0, "Disabled safeautoinc purged whole table");
 
 # #############################################################################
 # Done.

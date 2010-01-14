@@ -29,7 +29,8 @@ else {
 my $output;
 my $sql;
 my $cnf = "/tmp/12345/my.sandbox.cnf";
-my $cmd = "$trunk/mk-archiver/mk-archiver";
+# Add path to samples to Perl's INC so the tool can find the module.
+my $cmd = "perl -I $trunk/mk-archiver/t/samples $trunk/mk-archiver/mk-archiver";
 
 # ###########################################################################
 # Test the custom plugin res_fk.

@@ -31,30 +31,23 @@ my $rows;
 my $cnf = "/tmp/12345/my.sandbox.cnf";
 my $cmd = "$trunk/mk-archiver/mk-archiver";
 
-# ###########################################################################
-# Test the custom plugin gt_n.
-# ###########################################################################
-$sb->load_file('master', 'mk-archiver/t/samples/gt_n.sql');
-my $sql = 'select status, count(*) from gt_n.t1 group by status';
-is_deeply(
-   $dbh->selectall_arrayref($sql),
-   [
-      [qw(bad 7)],
-      [qw(ok 12)],
-   ],
-   'gt_n.t has 12 ok before archive'
+$sb->create_dbs($dbh, ['test']);
+
+# #############################################################################
+# Issue 655: Using --primary-key-only on a table without a primary key causes
+# perl error
+# #############################################################################
+$dbh->do('CREATE TABLE test.t (i int)');
+$output = `$cmd --where 1=1 --source F=$cnf,D=test,t=t --purge --primary-key-only 2>&1`;
+unlike(
+   $output,
+   qr/undefined value/,
+   'No error using --primary-key-only on table without pk (issue 655)'
 );
-
-# Add path to samples to Perl's INC so the tool can find the module.
-diag(`perl -I $trunk/mk-archiver/t/samples $cmd --where '1=1' --purge --source F=$cnf,D=gt_n,t=t1,m=gt_n 2>&1`);
-
-is_deeply(
-   $dbh->selectall_arrayref($sql),
-   [
-      [qw(bad 1)],
-      [qw(ok 5)],
-   ],
-   'gt_n.t has max 5 ok after archive'
+like(
+   $output,
+   qr/does not have a PRIMARY KEY/,
+   "Says that table doesn't have a pk (issue 655)"
 );
 
 # #############################################################################

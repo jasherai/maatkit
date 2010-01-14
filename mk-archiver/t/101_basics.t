@@ -36,11 +36,13 @@ if ( ($rows || 0) != 4 ) {
    plan skip_all => 'Failed to load tables1-4.sql';
 }
 else {
-   plan tests => 12;
+   plan tests => 23;
 }
 
-# These are all dry-run tests of various options to test that
-# the correct SQL statements are generated.
+# ###########################################################################
+# These are dry-run tests of various options to test that the correct
+# SQL statements are generated.
+# ###########################################################################
 
 # Test --for-update
 $output = `$cmd --where 1=1 --dry-run --source D=test,t=table_1,F=$cnf --for-update --purge 2>&1`;
@@ -87,6 +89,55 @@ $output = `$cmd --where 1=1 --dry-run --dest t=table_4 --source D=test,t=table_1
 like($output, qr/The following columns exist in --source /, 'Column check throws error');
 $output = `$cmd --where 1=1 --dry-run --no-check-columns --dest t=table_4 --source D=test,t=table_1,F=$cnf --purge 2>&1`;
 like($output, qr/SELECT/, 'I can disable the check OK');
+
+# ###########################################################################
+# These are online tests that check various options.
+# ###########################################################################
+
+# Test --why-quit and --statistics output
+$sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
+$output = `$cmd --where 1=1 --source D=test,t=table_1,F=$cnf --purge --why-quit --statistics 2>&1`;
+like($output, qr/Started at \d/, 'Start timestamp');
+like($output, qr/Source:/, 'source');
+like($output, qr/SELECT 4\nINSERT 0\nDELETE 4\n/, 'row counts');
+like($output, qr/Exiting because there are no more rows/, 'Exit reason');
+
+# Test basic functionality with OPTIMIZE
+$sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
+$output = `$cmd --where 1=1 --optimize ds --source D=test,t=table_1,F=$cnf --purge 2>&1`;
+is($output, '', 'OPTIMIZE did not fail');
+
+# Test an empty table
+$sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
+$output = `mysql --defaults-file=$cnf -N -e "delete from test.table_1"`;
+$output = `$cmd --where 1=1 --source D=test,t=table_1,F=$cnf --purge 2>&1`;
+is($output, "", 'Empty table OK');
+
+# Test the output
+$sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
+$output = `$cmd --where 1=1 --source D=test,t=table_1,F=$cnf --purge --progress 2 2>&1 | awk '{print \$3}'`;
+is($output, <<EOF
+COUNT
+0
+2
+4
+4
+EOF
+,'Progress output looks okay');
+
+# Statistics
+$sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
+$output = `$cmd --statistics --where 1=1 --source D=test,t=table_1,F=$cnf --dest t=table_2 2>&1`;
+like($output, qr/commit *10/, 'Stats print OK');
+
+# Test --no-delete.
+$sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
+$output = `$cmd --no-delete --purge --where 1=1 --source D=test,t=table_1,F=$cnf --dry-run 2>&1`;
+like($output, qr/> /, '--no-delete implies strict ascending');
+unlike($output, qr/>=/, '--no-delete implies strict ascending');
+$output = `$cmd --no-delete --purge --where 1=1 --source D=test,t=table_1,F=$cnf 2>&1`;
+$output = `mysql --defaults-file=$cnf -N -e "select count(*) from test.table_1"`;
+is($output + 0, 4, 'All 4 rows are still there');
 
 # #############################################################################
 # Done.

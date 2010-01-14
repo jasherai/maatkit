@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 1;
 }
 
 my $output;
@@ -31,30 +31,17 @@ my $rows;
 my $cnf = "/tmp/12345/my.sandbox.cnf";
 my $cmd = "$trunk/mk-archiver/mk-archiver";
 
-# ###########################################################################
-# Test the custom plugin gt_n.
-# ###########################################################################
-$sb->load_file('master', 'mk-archiver/t/samples/gt_n.sql');
-my $sql = 'select status, count(*) from gt_n.t1 group by status';
-is_deeply(
-   $dbh->selectall_arrayref($sql),
-   [
-      [qw(bad 7)],
-      [qw(ok 12)],
-   ],
-   'gt_n.t has 12 ok before archive'
-);
+$sb->create_dbs($dbh, ['test']);
 
-# Add path to samples to Perl's INC so the tool can find the module.
-diag(`perl -I $trunk/mk-archiver/t/samples $cmd --where '1=1' --purge --source F=$cnf,D=gt_n,t=t1,m=gt_n 2>&1`);
-
-is_deeply(
-   $dbh->selectall_arrayref($sql),
-   [
-      [qw(bad 1)],
-      [qw(ok 5)],
-   ],
-   'gt_n.t has max 5 ok after archive'
+# #############################################################################
+# Issue 524: mk-archiver --no-delete --dry-run prints out DELETE statement
+# #############################################################################
+$sb->load_file('master', 'mk-archiver/t/samples/issue_131.sql');
+$output = `$cmd --where 1=1 --dry-run --no-delete --source F=$cnf,D=test,t=issue_131_src --dest t=issue_131_dst 2>&1`;
+unlike(
+   $output,
+   qr/DELETE/,
+   'No DELETE with --no-delete --dry-run (issue 524)'
 );
 
 # #############################################################################

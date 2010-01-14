@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 1;
 }
 
 my $output;
@@ -31,30 +31,22 @@ my $rows;
 my $cnf = "/tmp/12345/my.sandbox.cnf";
 my $cmd = "$trunk/mk-archiver/mk-archiver";
 
-# ###########################################################################
-# Test the custom plugin gt_n.
-# ###########################################################################
-$sb->load_file('master', 'mk-archiver/t/samples/gt_n.sql');
-my $sql = 'select status, count(*) from gt_n.t1 group by status';
-is_deeply(
-   $dbh->selectall_arrayref($sql),
-   [
-      [qw(bad 7)],
-      [qw(ok 12)],
-   ],
-   'gt_n.t has 12 ok before archive'
-);
+$sb->create_dbs($dbh, ['test']);
 
-# Add path to samples to Perl's INC so the tool can find the module.
-diag(`perl -I $trunk/mk-archiver/t/samples $cmd --where '1=1' --purge --source F=$cnf,D=gt_n,t=t1,m=gt_n 2>&1`);
-
+# #############################################################################
+# Issue 131: mk-archiver fails to insert records if destination table columns
+# in different order than source table
+# #############################################################################
+$sb->load_file('master', 'mk-archiver/t/samples/issue_131.sql');
+$output = `$cmd --where 1=1 --source F=$cnf,D=test,t=issue_131_src --statistics --dest t=issue_131_dst 2>&1`;
+$rows = $dbh->selectall_arrayref('SELECT * FROM test.issue_131_dst');
 is_deeply(
-   $dbh->selectall_arrayref($sql),
+   $rows,
    [
-      [qw(bad 1)],
-      [qw(ok 5)],
+      ['aaa','1'],
+      ['bbb','2'],
    ],
-   'gt_n.t has max 5 ok after archive'
+   'Dest table has different column order (issue 131)'
 );
 
 # #############################################################################
