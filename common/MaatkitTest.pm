@@ -49,6 +49,7 @@ require Exporter;
 our @ISA         = qw(Exporter);
 our %EXPORT_TAGS = ();
 our @EXPORT      = qw(
+   output
    load_data
    load_file
    parse_file
@@ -60,21 +61,22 @@ our @EXPORT      = qw(
    no_diff
    $trunk
 );
-our @EXPORT_OK   = qw(output);
+our @EXPORT_OK   = qw();
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-
-# This sub doesn't work yet because "mk_upgrade::main" needs to be ref somehow.
 sub output {
+   my ( $code ) = @_;
+   die "I need a code argument" unless $code;
    my $output = '';
    open my $output_fh, '>', \$output
       or die "Cannot capture output to variable: $OS_ERROR";
    select $output_fh;
-   eval { mk_upgrade::main(@_); };
+   eval { $code->() };
    close $output_fh;
    select STDOUT;
-   return $EVAL_ERROR ? $EVAL_ERROR : $output;
+   die $EVAL_ERROR if $EVAL_ERROR;
+   return $output;
 }
 
 # Load data from file and removes spaces.  Used to load tcpdump dumps.
