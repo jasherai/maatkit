@@ -1,12 +1,20 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use DSNParser;
+use Sandbox;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master');
@@ -30,7 +38,8 @@ my $cmd;
 # ##########################################################################
 $dbh1->do('set global read_only=0');
 $dbh2->do('set global read_only=1');
-$cmd  = "perl ../mk-query-digest --processlist h=127.1,P=12345,u=msandbox,p=msandbox "
+$cmd  = "$trunk/mk-query-digest/mk-query-digest "
+         . "--processlist h=127.1,P=12345,u=msandbox,p=msandbox "
          . "--execute h=127.1,P=12346,u=msandbox,p=msandbox --mirror 1 "
          . "--pid foobar";
 # --pid actually does nothing because the script is not daemonizing.

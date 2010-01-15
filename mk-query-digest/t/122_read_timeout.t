@@ -1,12 +1,17 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 2;
 
-require '../../common/MaatkitTest.pm';
-MaatkitTest->import(qw(wait_for));
+use MaatkitTest;
 
 # #########################################################################
 # Issue 226: Fix mk-query-digest signal handling
@@ -17,7 +22,7 @@ my ($start, $end, $waited);
 my $timeout = wait_for(
    sub {
       $start = time;
-      `../mk-query-digest --read-timeout 2 --pid /tmp/mqd.pid 2>/dev/null`;
+      `$trunk/mk-query-digest/mk-query-digest --read-timeout 2 --pid /tmp/mqd.pid 2>/dev/null`;
       return;
    },
    4,
@@ -37,12 +42,12 @@ ok(
 
 diag(`rm -rf /tmp/mqd.pid`);
 diag(`rm -rf /tmp/mqd.fifo; mkfifo /tmp/mqd.fifo`);
-system('samples/write-to-fifo.pl /tmp/mqd.fifo 4 &');
+system("$trunk/mk-query-digest/t/samples/write-to-fifo.pl /tmp/mqd.fifo 4 &");
 
 $timeout = wait_for(
    sub {
       $start = time;
-      `../mk-query-digest --read-timeout 2 --pid /tmp/mqd.pid /tmp/mqd.fifo`;
+      `$trunk/mk-query-digest/mk-query-digest --read-timeout 2 --pid /tmp/mqd.pid /tmp/mqd.fifo`;
       return;
    },
    4,

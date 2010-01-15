@@ -1,13 +1,21 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/VersionParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use DSNParser;
+use VersionParser;
+use Sandbox;
+
 my $dp = new DSNParser();
 my $vp = new VersionParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
@@ -26,9 +34,9 @@ else {
 # #############################################################################
 # Issue 611: EXPLAIN PARTITIONS in mk-query-digest if partitions are used
 # #############################################################################
-diag(`/tmp/12345/use < samples/issue_611.sql`);
+diag(`/tmp/12345/use < $trunk/mk-query-digest/t/samples/issue_611.sql`);
 
-my $output = `../mk-query-digest samples/slow-issue-611.txt --explain h=127.1,P=12345,u=msandbox,p=msandbox 2>&1`;
+my $output = `$trunk/mk-query-digest/mk-query-digest $trunk/mk-query-digest/t/samples/slow-issue-611.txt --explain h=127.1,P=12345,u=msandbox,p=msandbox 2>&1`;
 like(
    $output,
    qr/partitions: p\d/,

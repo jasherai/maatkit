@@ -1,12 +1,20 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+use DSNParser;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -18,10 +26,7 @@ else {
    plan tests => 15;
 }
 
-require '../../common/MaatkitTest.pm';
-MaatkitTest->import(qw(no_diff));
-
-my $run_with = '../mk-query-digest --report-format=query_report --limit 10 ../../common/t/samples/';
+my $run_with = "$trunk/mk-query-digest/mk-query-digest --report-format=query_report --limit 10 $trunk/common/t/samples/";
 my $output;
 my $cmd;
 
@@ -143,7 +148,7 @@ is_deeply(
 # have been reviewed, the report should include both of them with
 # their respective query review info added to the report.
 ok(
-   no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review', 'samples/slow006_AR_1.txt'),
+   no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review', "mk-query-digest/t/samples/slow006_AR_1.txt"),
    'Analyze-review pass 1 reports not-reviewed queries'
 );
 
@@ -153,7 +158,7 @@ $dbh->do('UPDATE test.query_review
    SET reviewed_by="daniel", reviewed_on="2008-12-24 12:00:00", comments="foo_tbl is ok, so are cranberries"
    WHERE checksum=11676753765851784517');
 ok(
-   no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review', 'samples/slow006_AR_2.txt'),
+   no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review', "mk-query-digest/t/samples/slow006_AR_2.txt"),
    'Analyze-review pass 2 does not report the reviewed query'
 );
 
@@ -161,7 +166,7 @@ ok(
 # to re-appear in the report with the reviewed_by, reviewed_on and comments
 # info included.
 ok(
-   no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review   --report-all', 'samples/slow006_AR_4.txt'),
+   no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review   --report-all', "mk-query-digest/t/samples/slow006_AR_4.txt"),
    'Analyze-review pass 4 with --report-all reports reviewed query'
 );
 
@@ -170,7 +175,7 @@ $dbh->do('ALTER TABLE test.query_review ADD COLUMN foo INT');
 $dbh->do('UPDATE test.query_review
    SET foo=42 WHERE checksum=15334040482108055940');
 ok(
-   no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review', 'samples/slow006_AR_5.txt'),
+   no_diff($run_with.'slow006.txt --review h=127.1,P=12345,u=msandbox,p=msandbox,D=test,t=query_review', "mk-query-digest/t/samples/slow006_AR_5.txt"),
    'Analyze-review pass 5 reports new review info column'
 );
 

@@ -1,29 +1,32 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 2;
 
-require '../../common/MaatkitTest.pm';
+use MaatkitTest;
 
-MaatkitTest->import(qw(no_diff));
-
-my $run_with = '../mk-query-digest --report-format=query_report --limit 10 ../../common/t/samples/';
-my $run_notop = '../mk-query-digest --report-format=query_report ../../common/t/samples/';
+my $run_with = "$trunk/mk-query-digest/mk-query-digest --report-format=query_report --limit 10 $trunk/common/t/samples/";
 
 # #############################################################################
 # Issue 479: Make mk-query-digest carry Schema and ts attributes along the
 # pipeline
 # #############################################################################
 ok(
-   no_diff($run_with.'slow034.txt --no-report --print', 'samples/slow034-inheritance.txt'),
+   no_diff($run_with.'slow034.txt --no-report --print', "mk-query-digest/t/samples/slow034-inheritance.txt"),
    'Analysis for slow034 with inheritance'
 );
 
 # Make sure we can turn off some default inheritance, 'ts' in this test.
 ok(
-   no_diff($run_with.'slow034.txt --no-report --print --inherit-attributes db', 'samples/slow034-no-ts-inheritance.txt'),
+   no_diff($run_with.'slow034.txt --no-report --print --inherit-attributes db', "mk-query-digest/t/samples/slow034-no-ts-inheritance.txt"),
    'Analysis for slow034 without default ts inheritance'
 );
 

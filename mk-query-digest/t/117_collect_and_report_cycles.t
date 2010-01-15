@@ -1,12 +1,20 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+use DSNParser;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -18,10 +26,7 @@ else {
    plan tests => 3;
 }
 
-require '../../common/MaatkitTest.pm';
-MaatkitTest->import(qw(no_diff));
-
-my $run_with = '../mk-query-digest --report-format=query_report --limit 10 ../../common/t/samples/';
+my $run_with = "$trunk/mk-query-digest/mk-query-digest --report-format=query_report --limit 10 $trunk/common/t/samples/";
 
 # #############################################################################
 # Issue 173: Make mk-query-digest do collect-and-report cycles
@@ -33,7 +38,7 @@ my $run_with = '../mk-query-digest --report-format=query_report --limit 10 ../..
 my $pid;
 my $output;
 
-`../mk-query-digest --processlist h=127.1,P=12345,u=msandbox,p=msandbox --run-time 2 --iterations 2 --port 12345 --pid /tmp/mk-query-digest.pid --daemonize 1>/dev/null 2>/dev/null`;
+`$trunk/mk-query-digest/mk-query-digest --processlist h=127.1,P=12345,u=msandbox,p=msandbox --run-time 2 --iterations 2 --port 12345 --pid /tmp/mk-query-digest.pid --daemonize 1>/dev/null 2>/dev/null`;
 chomp($pid = `cat /tmp/mk-query-digest.pid`);
 sleep 3;
 $output = `ps ax | grep $pid | grep processlist | grep -v grep`;
@@ -54,7 +59,7 @@ ok(
 # entirely by the first iteration.
 ok(
    no_diff($run_with . 'slow002.txt --iterations 2   --report-format=query_report,profile --limit 1',
-   'samples/slow002_iters_2.txt'),
+   "mk-query-digest/t/samples/slow002_iters_2.txt"),
    '--iterations'
 );
 
