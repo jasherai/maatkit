@@ -1,21 +1,36 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 18;
+use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-find/mk-find";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
+my $dbh = $sb->get_dbh_for('master');
 
+if ( !$dbh ) {
+   plan skip_all => 'Cannot connect to sandbox master';
+}
+else {
+   plan tests => 18;
+}
+
+my $output;
 my $cnf = '/tmp/12345/my.sandbox.cnf';
-my $cmd = "perl ../mk-find -F $cnf ";
+my $cmd = "$trunk/mk-find/mk-find -F $cnf ";
 
-my $output = `$cmd mysql --tblregex column`;
+$output = `$cmd mysql --tblregex column`;
 like($output, qr/`mysql`.`columns_priv`/, 'Found mysql.columns_priv');
 
 $output = `$cmd mysql`;
@@ -159,7 +174,7 @@ SKIP: {
 # Issue 391: Add --pid option to all scripts
 # #########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `../mk-find mysql --pid /tmp/mk-script.pid 2>&1`;
+$output = `$cmd mysql --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},
