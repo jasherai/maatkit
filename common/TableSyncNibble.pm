@@ -280,7 +280,7 @@ sub __get_boundaries {
       # enough since the WHERE should use the same columns.
       if ( $self->{nibble} == 0 && !$self->{small_table} ) {
          my $explain_index = $self->__get_explain_index($sql);
-         if ( ($explain_index || '') ne $s->{index} ) {
+         if ( lc($explain_index || '') ne lc($s->{index}) ) {
             die 'Cannot nibble table '.$q->quote($args{database}, $args{table})
                . " because MySQL chose "
                . ($explain_index ? "the `$explain_index`" : 'no') . ' index'
@@ -364,7 +364,7 @@ sub __get_explain_index {
       return;
    }
    MKDEBUG && _d('EXPLAIN key:', $explain->[0]->{key}); 
-   return $explain->[0]->{key}
+   return $explain->[0]->{key};
 }
 
 sub same_row {

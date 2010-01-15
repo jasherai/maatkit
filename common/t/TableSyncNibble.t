@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 30;
+use Test::More tests => 33;
 
 use DSNParser;
 use Sandbox;
@@ -465,6 +465,54 @@ is(
    ),
    "SELECT /*rows in nibble*/ `player_id`, `buddy_id`, SHA1(CONCAT_WS('#', `a`, `b`, `c`)) AS __crc_col FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (player_id > 1 AND player_id <= 9) ORDER BY `player_id`, `buddy_id`",
    'Use only --replicate chunk boundary (row sql)'
+);
+
+
+# #############################################################################
+# Issue 804: mk-table-sync: can't nibble because index name isn't lower case?
+# #############################################################################
+$sb->load_file('master', 'common/t/samples/issue_804.sql');
+$tbl_struct = $tp->parse($du->get_create_table($dbh, $q, 'issue_804', 't'));
+my $can_sync;
+($can_sync, %plugin_args) = $t->can_sync(tbl_struct => $tbl_struct);
+is(
+   $can_sync,
+   1,
+   'Can sync issue_804 table'
+);
+is_deeply(
+   \%plugin_args,
+   {
+      chunk_index => 'purchases_accountid_purchaseid',
+      key_cols    => [qw(accountid purchaseid)],
+      small_table => 0,
+   },
+   'Plugin args for issue_804 table'
+);
+
+$t->prepare_to_sync(
+   ChangeHandler  => $ch,
+   cols           => $tbl_struct->{cols},
+   dbh            => $dbh,
+   db             => 'issue_804',
+   tbl            => 't',
+   tbl_struct     => $tbl_struct,
+   chunk_size     => 50,
+   chunk_index    => $plugin_args{chunk_index},
+   crc_col        => '__crc_col',
+   index_hint     => 'FORCE INDEX(`'.$plugin_args{chunk_index}.'`)',
+   key_cols       => $tbl_struct->{keys}->{$plugin_args{chunk_index}}->{cols},
+);
+
+# Before fixing issue 804, the code would die during this call, saying:
+# Cannot nibble table `issue_804`.`t` because MySQL chose the
+# `purchases_accountId_purchaseId` index instead of the
+# `purchases_accountid_purchaseid` index at TableSyncNibble.pm line 284.
+$sql = $t->get_sql(database=>'issue_804', table=>'t');
+is(
+   $sql,
+   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < 49) OR (`accountid` = 49 AND `purchaseid` <= 50)))",
+   'SQL nibble for issue_804 table'
 );
 
 # #############################################################################
