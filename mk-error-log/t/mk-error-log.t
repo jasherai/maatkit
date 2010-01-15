@@ -5,8 +5,8 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 1;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+#require '../../common/DSNParser.pm';
+#require '../../common/Sandbox.pm';
 #my $dp = new DSNParser();
 #my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 #my $dbh = $sb->get_dbh_for('master')
