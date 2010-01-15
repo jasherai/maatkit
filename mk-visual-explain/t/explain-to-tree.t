@@ -1,27 +1,26 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
-
 use English qw(-no_match_vars);
 use Test::More tests => 60;
 
-require "../mk-visual-explain";
+use MaatkitTest;
+require "$trunk/mk-visual-explain/mk-visual-explain";
 
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
 my $e = new ExplainTree;
 my $t;
 
 $t = $e->parse('');
 is_deeply( $t, undef, 'No valid input' );
 
-$t = $e->parse( load_file('samples/fulltext.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/fulltext.sql") );
 ## Please see file perltidy.ERR
 is_deeply(
    $t,
@@ -51,7 +50,7 @@ is_deeply(
    'Fulltext query',
 );
 
-$t = $e->parse( load_file('samples/impossible_where.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/impossible_where.sql") );
 is_deeply(
    $t,
    {  type  => 'IMPOSSIBLE',
@@ -62,7 +61,7 @@ is_deeply(
    'Impossible WHERE',
 );
 
-$t = $e->parse( load_file('samples/impossible_having.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/impossible_having.sql") );
 is_deeply(
    $t,
    {  type  => 'IMPOSSIBLE',
@@ -73,7 +72,7 @@ is_deeply(
    'Impossible HAVING',
 );
 
-$t = $e->parse( load_file('samples/const_row_not_found.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/const_row_not_found.sql") );
 is_deeply(
    $t,
    {  type     => 'UNION RESULT',
@@ -141,7 +140,7 @@ is_deeply(
    'Const row not found',
 );
 
-$t = $e->parse( load_file('samples/dual_union_in_subquery.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/dual_union_in_subquery.sql") );
 is_deeply(
    $t,
    {  type     => 'UNION RESULT',
@@ -183,7 +182,7 @@ is_deeply(
    'UNION of DUAL in a subquery',
 );
 
-$t = $e->parse( load_file('samples/no_const_row.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/no_const_row.sql") );
 is_deeply(
    $t,
    {  type     => 'Constant table access',
@@ -202,7 +201,7 @@ is_deeply(
    'No constant row found',
 );
 
-$t = $e->parse( load_file('samples/unique_row_not_found.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/unique_row_not_found.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -275,7 +274,7 @@ is_deeply(
    'Unique row not found',
 );
 
-$t = $e->parse( load_file('samples/no_min_max_row.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/no_min_max_row.sql") );
 is_deeply(
    $t,
    {  type    => 'IMPOSSIBLE',
@@ -286,7 +285,7 @@ is_deeply(
    'No min/max row',
 );
 
-$t = $e->parse( load_file('samples/simple_partition.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/simple_partition.sql") );
 is_deeply(
    $t,
    {  type     => 'Filesort',
@@ -308,7 +307,7 @@ is_deeply(
    'Partition',
 );
 
-$t = $e->parse( load_file('samples/full_scan_sakila_film.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/full_scan_sakila_film.sql") );
 is_deeply(
    $t,
    {  type     => 'Table scan',
@@ -326,7 +325,7 @@ is_deeply(
    'Simple scan',
 );
 
-$t = $e->parse( load_file('samples/actor_join_film_ref.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/actor_join_film_ref.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -367,7 +366,7 @@ is_deeply(
    'Simple join',
 );
 
-$t = $e->parse( load_file('samples/join_buffer.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/join_buffer.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -443,7 +442,7 @@ is_deeply(
    'Three-way join with buffer',
 );
 
-$t = $e->parse( load_file('samples/range_check.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/range_check.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -495,18 +494,18 @@ is_deeply(
 );
 
 is_deeply(
-   $e->parse( load_file('samples/range_check_3.sql') ),
+   $e->parse( load_file("mk-visual-explain/t/samples/range_check_3.sql") ),
    $t,
    'Key map same when decimal as when hex',
 );
 
 is_deeply(
-   $e->parse( load_file('samples/range_check_2.sql') ),
+   $e->parse( load_file("mk-visual-explain/t/samples/range_check_2.sql") ),
    $t,
    'Key map same as index map',
 );
 
-$t = $e->parse( load_file('samples/not_exists.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/not_exists.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -544,7 +543,7 @@ is_deeply(
    'Join that uses Not exists',
 );
 
-$t = $e->parse( load_file('samples/join_temporary_with_where_distinct.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/join_temporary_with_where_distinct.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -596,7 +595,7 @@ is_deeply(
    'Join that uses a temp table, WHERE, and Distinct',
 );
 
-$t = $e->parse( load_file('samples/simple_join_three_tables.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/simple_join_three_tables.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -640,7 +639,7 @@ is_deeply(
    'Simple join over three tables',
 );
 
-$t = $e->parse( load_file('samples/film_join_actor_eq_ref.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/film_join_actor_eq_ref.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -682,7 +681,7 @@ is_deeply(
 );
 
 $t = $e->parse(
-   load_file('samples/film_join_actor_eq_ref.sql'),
+   load_file("mk-visual-explain/t/samples/film_join_actor_eq_ref.sql"),
    { clustered => 1 },
 );
 is_deeply(
@@ -716,7 +715,7 @@ is_deeply(
    'Straight join assuming clustered PK',
 );
 
-$t = $e->parse( load_file('samples/full_row_pk_lookup_sakila_film.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/full_row_pk_lookup_sakila_film.sql") );
 is_deeply(
    $t,
    {  type     => 'Bookmark lookup',
@@ -741,7 +740,7 @@ is_deeply(
    'Constant lookup',
 );
 
-$t = $e->parse( load_file('samples/index_scan_sakila_film.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/index_scan_sakila_film.sql") );
 is_deeply(
    $t,
    {  type     => 'Bookmark lookup',
@@ -766,7 +765,7 @@ is_deeply(
    'Index scan',
 );
 
-$t = $e->parse( load_file('samples/index_scan_sakila_film_using_where.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/index_scan_sakila_film_using_where.sql") );
 is_deeply(
    $t,
    {  type     => 'Filter with WHERE',
@@ -795,7 +794,7 @@ is_deeply(
    'Index scan with WHERE clause',
 );
 
-$t = $e->parse( load_file('samples/pk_lookup_sakila_film.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/pk_lookup_sakila_film.sql") );
 is_deeply(
    $t,
    {  type          => 'Constant index lookup',
@@ -811,7 +810,7 @@ is_deeply(
    'PK lookup with covering index',
 );
 
-$t = $e->parse( load_file('samples/film_join_actor_const.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/film_join_actor_const.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -859,7 +858,7 @@ is_deeply(
    'Join from constant lookup in film to const ref in film_actor',
 );
 
-$t = $e->parse( load_file('samples/film_join_actor_const_using_index.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/film_join_actor_const_using_index.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -889,7 +888,7 @@ is_deeply(
    'Join from const film to const ref film_actor with covering index',
 );
 
-$t = $e->parse( load_file('samples/film_range_on_pk.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/film_range_on_pk.sql") );
 is_deeply(
    $t,
    {  type     => 'Filter with WHERE',
@@ -918,7 +917,7 @@ is_deeply(
    'Index range scan with WHERE clause',
 );
 
-$t = $e->parse( load_file('samples/loose_index_scan.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/loose_index_scan.sql") );
 is_deeply(
    $t,
    {  type          => 'Loose index scan',
@@ -935,7 +934,7 @@ is_deeply(
 );
 
 $t = $e->parse(
-   load_file('samples/film_ref_or_null_on_original_language_id.sql') );
+   load_file("mk-visual-explain/t/samples/film_ref_or_null_on_original_language_id.sql") );
 is_deeply(
    $t,
    {  type     => 'Filter with WHERE',
@@ -964,7 +963,7 @@ is_deeply(
    'Index ref_or_null scan',
 );
 
-$t = $e->parse( load_file('samples/rental_index_merge_intersect.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/rental_index_merge_intersect.sql") );
 is_deeply(
    $t,
    {  type     => 'Filter with WHERE',
@@ -1009,7 +1008,7 @@ is_deeply(
    'Index intersection merge',
 );
 
-$t = $e->parse( load_file('samples/index_merge_three_keys.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/index_merge_three_keys.sql") );
 is_deeply(
    $t,
    {  type     => 'Filter with WHERE',
@@ -1051,7 +1050,7 @@ is_deeply(
    'Index intersection merge with three keys and covering index',
 );
 
-$t = $e->parse( load_file('samples/index_merge_union_intersect.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/index_merge_union_intersect.sql") );
 is_deeply(
    $t,
    {  type     => 'Filter with WHERE',
@@ -1122,7 +1121,7 @@ is_deeply(
    'Index merge union-intersection',
 );
 
-$t = $e->parse( load_file('samples/index_merge_sort_union.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/index_merge_sort_union.sql") );
 is_deeply(
    $t,
    {  type     => 'Filter with WHERE',
@@ -1165,7 +1164,7 @@ is_deeply(
    'Index merge sort_union',
 );
 
-$t = $e->parse( load_file('samples/optimized_away.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/optimized_away.sql") );
 is_deeply(
    $t,
    {  type  => 'CONSTANT',
@@ -1175,7 +1174,7 @@ is_deeply(
    'No tables used - constant',
 );
 
-$t = $e->parse( load_file('samples/no_from.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/no_from.sql") );
 is_deeply(
    $t,
    {  type  => 'DUAL',
@@ -1185,7 +1184,7 @@ is_deeply(
    'No tables used - no FROM',
 );
 
-$t = $e->parse( load_file('samples/filesort.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/filesort.sql") );
 is_deeply(
    $t,
    {  type     => 'Filesort',
@@ -1207,7 +1206,7 @@ is_deeply(
    'Filesort',
 );
 
-$t = $e->parse( load_file('samples/temporary_filesort.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/temporary_filesort.sql") );
 is_deeply(
    $t,
    {  type     => 'Filesort',
@@ -1234,7 +1233,7 @@ is_deeply(
    'Filesort with temporary',
 );
 
-$t = $e->parse( load_file('samples/filesort_on_subsequent_tbl.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/filesort_on_subsequent_tbl.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -1303,7 +1302,7 @@ is_deeply(
    'Filesort on first non-constant table',
 );
 
-$t = $e->parse( load_file('samples/three_table_join_with_temp_filesort.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/three_table_join_with_temp_filesort.sql") );
 is_deeply(
    $t,
    {  type     => 'Filesort',
@@ -1359,12 +1358,12 @@ is_deeply(
 );
 
 eval {
-   $t = $e->parse( load_file('samples/too_many_unions.sql') );
+   $t = $e->parse( load_file("mk-visual-explain/t/samples/too_many_unions.sql") );
 };
 like($EVAL_ERROR, qr/UNION has too many tables/, 'Too many unions');
 
 
-$t = $e->parse( load_file('samples/simple_union.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/simple_union.sql") );
 is_deeply(
    $t,
    {  type     => 'Table scan',
@@ -1404,7 +1403,7 @@ is_deeply(
    'Simple union',
 );
 
-$t = $e->parse( load_file('samples/derived_over_bookmark_lookup.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/derived_over_bookmark_lookup.sql") );
 is_deeply(
    $t,
    {  type     => 'Table scan',
@@ -1443,7 +1442,7 @@ is_deeply(
    'Derived table over a bookmark lookup',
 );
 
-$t = $e->parse( load_file('samples/simple_derived.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/simple_derived.sql") );
 is_deeply(
    $t,
    {  type     => 'Table scan',
@@ -1473,7 +1472,7 @@ is_deeply(
    'Simple derived table',
 );
 
-$t = $e->parse( load_file('samples/derived_over_join.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/derived_over_join.sql") );
 is_deeply(
    $t,
    {  type     => 'Table scan',
@@ -1517,7 +1516,7 @@ is_deeply(
    'Simple derived table over a simple join',
 );
 
-$t = $e->parse( load_file('samples/join_two_derived_tables_of_joins.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/join_two_derived_tables_of_joins.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -1607,7 +1606,7 @@ is_deeply(
    'Join two derived tables which each contain a join',
 );
 
-$t = $e->parse( load_file('samples/union_of_derived_tables.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/union_of_derived_tables.sql") );
 is_deeply(
    $t,
    {  type     => 'Table scan',
@@ -1675,7 +1674,7 @@ is_deeply(
    'Union over two derived tables',
 );
 
-$t = $e->parse( load_file('samples/join_two_derived_tables_of_unions.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/join_two_derived_tables_of_unions.sql") );
 is_deeply(
    $t,
    {  type     => 'JOIN',
@@ -1781,7 +1780,7 @@ is_deeply(
    'Join over two derived tables of unions',
 );
 
-$t = $e->parse( load_file('samples/union_of_derived_unions.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/union_of_derived_unions.sql") );
 is_deeply(
    $t,
    {  type     => 'Table scan',
@@ -1898,7 +1897,7 @@ is_deeply(
    'Union over two derived tables of unions',
 );
 
-$t = $e->parse( load_file('samples/simple_subquery.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/simple_subquery.sql") );
 is_deeply(
    $t,
    {  type     => 'SUBQUERY',
@@ -1928,7 +1927,7 @@ is_deeply(
    'Simple subquery',
 );
 
-$t = $e->parse( load_file('samples/dependent_subquery.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/dependent_subquery.sql") );
 is_deeply(
    $t,
    {  type     => 'DEPENDENT SUBQUERY',
@@ -1962,7 +1961,7 @@ is_deeply(
    'Dependent subquery',
 );
 
-$t = $e->parse( load_file('samples/uncacheable_subquery.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/uncacheable_subquery.sql") );
 is_deeply(
    $t,
    {  type     => 'UNCACHEABLE SUBQUERY',
@@ -1992,7 +1991,7 @@ is_deeply(
    'Dependent uncacheable subquery',
 );
 
-$t = $e->parse( load_file('samples/join_in_subquery.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/join_in_subquery.sql") );
 is_deeply(
    $t,
    {  type     => 'SUBQUERY',
@@ -2036,7 +2035,7 @@ is_deeply(
    'Join inside a subquery',
 );
 
-$t = $e->parse( load_file('samples/unique_subquery_in_where_clause.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/unique_subquery_in_where_clause.sql") );
 is_deeply(
    $t,
    {  type     => 'DEPENDENT SUBQUERY',
@@ -2070,7 +2069,7 @@ is_deeply(
    'Unique subquery',
 );
 
-$t = $e->parse( load_file('samples/index_subquery_in_where_clause.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/index_subquery_in_where_clause.sql") );
 is_deeply(
    $t,
    {  type     => 'DEPENDENT SUBQUERY',
@@ -2104,7 +2103,7 @@ is_deeply(
    'Index subquery',
 );
 
-$t = $e->parse( load_file('samples/full_scan_on_null_key.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/full_scan_on_null_key.sql") );
 is_deeply(
    $t,
    {  type     => 'DEPENDENT SUBQUERY',
@@ -2173,7 +2172,7 @@ is_deeply(
    'Subqueries that do a full scan on a NULL key',
 );
 
-$t = $e->parse( load_file('samples/nested_derived_tables.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/nested_derived_tables.sql") );
 is_deeply(
    $t,
    {  type     => 'DEPENDENT SUBQUERY',
@@ -2273,7 +2272,7 @@ is_deeply(
    'Nested derived tables and subqueries',
 );
 
-$t = $e->parse( load_file('samples/adjacent_subqueries.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/adjacent_subqueries.sql") );
 is_deeply(
    $t,
    {  type     => 'DEPENDENT SUBQUERY',
@@ -2321,7 +2320,7 @@ is_deeply(
    'Adjacent subqueries',
 );
 
-$t = $e->parse( load_file('samples/complex_select_types.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/complex_select_types.sql") );
 is_deeply(
    $t,
    {  id       => '1',
@@ -2431,7 +2430,7 @@ is_deeply(
    'Complex SELECT types combined',
 );
 
-$t = $e->parse( load_file('samples/derived_without_table.sql') );
+$t = $e->parse( load_file("mk-visual-explain/t/samples/derived_without_table.sql") );
 is_deeply(
    $t,
    {  id       => 1,
@@ -2454,3 +2453,8 @@ is_deeply(
    },
    'Recursive table name with anonymous derived table',
 );
+
+# #############################################################################
+# Done.
+# #############################################################################
+exit;

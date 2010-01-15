@@ -1,16 +1,23 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 3;
 
-require '../mk-visual-explain';
+use MaatkitTest;
+require "$trunk/mk-visual-explain/mk-visual-explain";
 
 sub run {
-   my $output;
+   my $output = '';
    open OUTPUT, '>', \$output
-      or BAIL_OUT('Cannot open output to variable');
+      or die 'Cannot open output to variable';
    select OUTPUT;
    mk_visual_explain::main(@_);
    select STDOUT;
@@ -19,13 +26,13 @@ sub run {
 }
 
 like(
-   run('samples/simple_union.sql'),
+   run("$trunk/mk-visual-explain/t/samples/simple_union.sql"),
    qr/\+\- UNION/,
    'Read optional input file (issue 394)',
 );
 
 like(
-   run(qw(samples/simple_union.sql --format dump)),
+   run("$trunk/mk-visual-explain/t/samples/simple_union.sql", qw(--format dump)),
    qr/\$VAR1 = {/,
    '--format dump (issue 393)'
 );
@@ -34,7 +41,7 @@ like(
 # Issue 391: Add --pid option to all scripts
 # #########################################################################
 `touch /tmp/mk-script.pid`;
-my $output = `../mk-visual-explain samples/simple_union.sql --format dump --pid /tmp/mk-script.pid 2>&1`;
+my $output = `$trunk/mk-visual-explain/mk-visual-explain $trunk/mk-visual-explain/t/samples/simple_union.sql --format dump --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},

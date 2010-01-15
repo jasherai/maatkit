@@ -1,16 +1,23 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
-
+use English qw(-no_match_vars);
 use Test::More tests => 5;
 
-require "../mk-visual-explain";
+use MaatkitTest;
+require "$trunk/mk-visual-explain/mk-visual-explain";
 
 my $p = new ExplainParser;
 
 is_deeply(
-   $p->parse( load_file('samples/full_scan_sakila_film.sql') ),
+   $p->parse( load_file("mk-visual-explain/t/samples/full_scan_sakila_film.sql") ),
    [  {  id            => 1,
          select_type   => 'SIMPLE',
          table         => 'film',
@@ -27,7 +34,7 @@ is_deeply(
 );
 
 is_deeply(
-   $p->parse( load_file('samples/actor_join_film_ref.sql') ),
+   $p->parse( load_file("mk-visual-explain/t/samples/actor_join_film_ref.sql") ),
    [  {  id            => 1,
          select_type   => 'SIMPLE',
          table         => 'film',
@@ -55,7 +62,7 @@ is_deeply(
 );
 
 is_deeply(
-   $p->parse( load_file('samples/rental_index_merge_intersect.sql') ),
+   $p->parse( load_file("mk-visual-explain/t/samples/rental_index_merge_intersect.sql") ),
    [  {  id            => 1,
          select_type   => 'SIMPLE',
          table         => 'rental',
@@ -73,7 +80,7 @@ is_deeply(
 );
 
 is_deeply(
-   $p->parse( load_file('samples/index_merge_union_intersect.sql') ),
+   $p->parse( load_file("mk-visual-explain/t/samples/index_merge_union_intersect.sql") ),
    [  {  id            => 1,
          select_type   => 'SIMPLE',
          table         => 't1',
@@ -91,7 +98,7 @@ is_deeply(
 );
 
 is_deeply(
-   $p->parse( load_file('samples/simple_union.sql') ),
+   $p->parse( load_file("mk-visual-explain/t/samples/simple_union.sql") ),
    [  {  id            => 1,
          select_type   => 'PRIMARY',
          table         => 'actor_1',
@@ -129,10 +136,8 @@ is_deeply(
    'Tabular format with an empty cell',
 );
 
-sub load_file {
-   my ($file) = @_;
-   open my $fh, "<", $file or die $!;
-   my $contents = do { local $/ = undef; <$fh> };
-   close $fh;
-   return $contents;
-}
+
+# #############################################################################
+# Done.
+# #############################################################################
+exit;
