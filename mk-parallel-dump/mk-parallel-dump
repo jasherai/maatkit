@@ -2833,7 +2833,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaIterator package 5468
+# SchemaIterator package 5473
 # ###########################################################################
 package SchemaIterator;
 
@@ -2856,6 +2856,7 @@ sub new {
    my $self = {
       %args,
       filter => undef,
+      dbs    => [],
    };
    return bless $self, $class;
 }
@@ -2895,23 +2896,25 @@ sub make_filter {
    if ( $o->has('tables') || $o->has('ignore-tables')
         || $o->has('ignore-tables-regex') ) {
 
-      my $have_qtbl = 0;
+      my $have_qtbl       = 0;
+      my $have_only_qtbls = 0;
+      my %qtbls;
 
       my @permit_tbls;
       my @permit_qtbls;
+      my %permit_qtbls;
       if ( $o->get('tables') ) {
          my %tbls;
-         my %qtbls;
          map {
             if ( $_ =~ m/\./ ) {
-               $qtbls{$_} = 1;
+               $permit_qtbls{$_} = 1;
             }
             else {
                $tbls{$_} = 1;
             }
          } keys %{ $o->get('tables') };
          @permit_tbls  = _make_filter('unless', '$tbl', \%tbls);
-         @permit_qtbls = _make_filter('unless', '$qtbl', \%qtbls);
+         @permit_qtbls = _make_filter('unless', '$qtbl', \%permit_qtbls);
 
          if ( @permit_qtbls ) {
             push @lines,
@@ -2922,23 +2925,37 @@ sub make_filter {
 
       my @reject_tbls;
       my @reject_qtbls;
+      my %reject_qtbls;
       if ( $o->get('ignore-tables') ) {
          my %tbls;
-         my %qtbls;
          map {
             if ( $_ =~ m/\./ ) {
-               $qtbls{$_} = 1;
+               $reject_qtbls{$_} = 1;
             }
             else {
                $tbls{$_} = 1;
             }
          } keys %{ $o->get('ignore-tables') };
          @reject_tbls= _make_filter('if', '$tbl', \%tbls);
-         @reject_qtbls = _make_filter('if', '$qtbl', \%qtbls);
+         @reject_qtbls = _make_filter('if', '$qtbl', \%reject_qtbls);
 
          if ( @reject_qtbls && !$have_qtbl ) {
             push @lines,
                '   my $qtbl   = ($db ? "$db." : "") . ($tbl ? $tbl : "");';
+         }
+      }
+
+      if ( keys %permit_qtbls  && !@permit_dbs ) {
+         my $dbs = {};
+         map {
+            my ($db, undef) = split(/\./, $_);
+            $dbs->{$db} = 1;
+         } keys %permit_qtbls;
+         MKDEBUG && _d('Adding restriction "--databases',
+               (join(',', keys %$dbs) . '"'));
+         if ( keys %$dbs ) {
+            $o->set('databases', $dbs);
+            return $self->make_filter($o);
          }
       }
 
@@ -3026,6 +3043,7 @@ sub get_db_itr {
       MKDEBUG && _d($sql);
       @dbs =  grep {
          my $ok = $filter ? $filter->($dbh, $_, undef) : 1;
+         $ok = 0 if $_ =~ m/information_schema|lost\+found/;
          $ok;
       } @{ $dbh->selectcol_arrayref($sql) };
       MKDEBUG && _d('Found', scalar @dbs, 'databases');
