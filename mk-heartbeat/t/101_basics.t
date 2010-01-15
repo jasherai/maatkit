@@ -1,23 +1,36 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 17;
+use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
-my $dp = new DSNParser();
-my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-heartbeat/mk-heartbeat";
+
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
+
+if ( !$dbh ) {
+   plan skip_all => 'Cannot connect to sandbox master';
+}
+else {
+   plan tests => 16;
+}
 
 $sb->create_dbs($dbh, ['test']);
 
-my $cnf = '/tmp/12345/my.sandbox.cnf';
-my $cmd = "perl ../mk-heartbeat -F $cnf ";
-
 my $output;
+my $cnf = '/tmp/12345/my.sandbox.cnf';
+my $cmd = "$trunk/mk-heartbeat/mk-heartbeat -F $cnf ";
 
 $dbh->do('drop table if exists test.heartbeat');
 $dbh->do(q{CREATE TABLE test.heartbeat (
@@ -45,7 +58,7 @@ like($output, qr/^\d+$/, 'Output is just a number');
 # Start one daemonized instance to update it
 `$cmd --daemonize -D test --update --run-time 5s --pid /tmp/mk-heartbeat.pid 1>/dev/null 2>/dev/null`;
 $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
-like($output, qr/perl ...mk-heartbeat/, 'It is running');
+like($output, qr/$cmd/, 'It is running');
 
 ok(-f '/tmp/mk-heartbeat.pid', 'PID file created');
 my ($pid) = $output =~ /\s+(\d+)\s+/;
@@ -69,12 +82,12 @@ ok(! -f '/tmp/mk-heartbeat.pid', 'PID file removed');
 # daemon quit.
 `$cmd --daemonize -D test --update 1>/dev/null 2>/dev/null`;
 $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
-like($output, qr/perl ...mk-heartbeat/, 'It is running');
+like($output, qr/$cmd/, 'It is running');
 $output = `$cmd -D test --stop`;
 like($output, qr/Successfully created/, 'created sentinel');
 sleep(2);
 $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
-unlike($output, qr/perl ...mk-heartbeat/, 'It is not running');
+unlike($output, qr/$cmd/, 'It is not running');
 ok(-f '/tmp/mk-heartbeat-sentinel', 'Sentinel file is there');
 unlink('/tmp/mk-heartbeat-sentinel');
 $dbh->do('drop table if exists test.heartbeat'); # This will kill it
@@ -96,34 +109,12 @@ is(
 # Issue 352: Add port to mk-heartbeat --check output
 # #############################################################################
 sleep 1;
-$output = `../mk-heartbeat --host 127.1 --user msandbox --password msandbox --port 12345 -D test --check --recurse 1`;
+$output = `$cmd --host 127.1 --user msandbox --password msandbox --port 12345 -D test --check --recurse 1`;
 like(
    $output,
    qr/:12346\s+\d/,
    '--check output has :port'
 );
-
-# #############################################################################
-# Issue 150: mk-heartbeat dies when slave is shutting down
-# #############################################################################
-# Cannot reproduce with mk-heartbeat r3703.
-
-# #########################################################################
-# Issue 391: Add --pid option to all scripts
-# #########################################################################
-`touch /tmp/mk-script.pid`;
-$output = `../mk-heartbeat --host 127.1 -u msandbox -p msandbox --port 12345 -D test --check --recurse 1 --pid /tmp/mk-script.pid 2>&1`;
-like(
-   $output,
-   qr{PID file /tmp/mk-script.pid already exists},
-   'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
-);
-`rm -rf /tmp/mk-script.pid`;
-
-# #############################################################################
-# Issue 610: --no-newline option while using --file
-# #############################################################################
-# $output = `$cmd -D test --monitor --run-time 2s --file /tmp/mkhb.txt`;
 
 # #############################################################################
 # Done.
