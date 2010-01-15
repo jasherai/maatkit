@@ -19,7 +19,13 @@
 # ###########################################################################
 package MaatkitTest;
 
-# These are common subs used in Maatkit test scripts.
+# These are common subs used in Maatkit test scripts.  Any file
+# arguments (like no_diff() $expected_output) are relative to
+# MAATKIT_TRUNK.  So passing "commont/t/samples/foo" means
+# "MAATKIT_TRUNK/common/t/samples/foo".  Do not BAIL_OUT() because
+# this terminates the *entire* test process; die instead.  All
+# subs are exported by default, so is the variable $trunk, so there's
+# no need to import() in the test scripts.
 
 BEGIN {
    die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
@@ -286,7 +292,7 @@ sub test_packet_parser {
 
    my $file = "$trunk/$args{file}";
    my @packets;
-   open my $fh, '<', $file or BAIL_OUT("Cannot open $file: $OS_ERROR");
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
    my %parser_args = (
       next_event => sub { return _read($fh); },
       tell       => sub { return tell($fh);  },
@@ -315,9 +321,14 @@ sub test_packet_parser {
    return;
 }
 # Returns true (1) if there's no difference between the
-# cmd's output and the expected output.
+# cmd's output and the expected output.  If $update_sample
+# or the env var UPDATE_SAMPLES is true then the $cmd
+# output is written to the $expected_output file.
 sub no_diff {
    my ( $cmd, $expected_output, $update_sample ) = @_;
+   die "I need a cmd argument" unless $cmd;
+   die "I need an expected_output argument" unless $expected_output;
+   $expected_output = "$trunk/$expected_output";
    MKDEBUG && diag($cmd);
    `$cmd > /tmp/mk-query-digest_test`;
    if ( $ENV{UPDATE_SAMPLES} || $update_sample ) {
