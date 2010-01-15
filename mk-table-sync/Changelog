@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Nibble did not case-insensitively check its index (issue 804).
+
 2010-01-06: version 1.0.23
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).
