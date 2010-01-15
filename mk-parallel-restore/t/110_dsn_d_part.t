@@ -1,12 +1,20 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -19,7 +27,7 @@ else {
 }
 
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
 my $mysql   = $sb->_use_for('master');
 my $basedir = '/tmp/dump/';
 my $output;
@@ -33,9 +41,9 @@ diag(`rm -rf $basedir`);
 # I thought that no special handling was needed but I was wrong.
 # The db might not exists (user might be using --create-databases)
 # in which case DSN D might try to use an as-of-yet nonexistent db.
-`$mysql < samples/issue_506.sql`;
-`$cmd samples/issue_624/ --create-databases -D issue_624 -d d2`;
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d issue_506`;
+`$mysql < $trunk/mk-parallel-restore/t/samples/issue_506.sql`;
+`$cmd $trunk/mk-parallel-restore/t/samples/issue_624/ --create-databases -D issue_624 -d d2`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d issue_506`;
 $dbh->do('DROP TABLE IF EXISTS issue_506.t');
 $dbh->do('DROP TABLE IF EXISTS issue_624.t');
 

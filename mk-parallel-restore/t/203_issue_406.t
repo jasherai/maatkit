@@ -1,12 +1,20 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -19,21 +27,21 @@ else {
 }
 
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
 my $mysql   = $sb->_use_for('master');
 my $basedir = '/tmp/dump/';
 my $output;
 
 diag(`rm -rf $basedir`);
 $sb->create_dbs($dbh, ['test']);
-`$mysql < samples/issue_30.sql`;
+`$mysql < $trunk/mk-parallel-restore/t/samples/issue_30.sql`;
 
 # #############################################################################
 # Issue 406: Use of uninitialized value in concatenation (.) or string at
 # ./mk-parallel-restore line 1808
 # #############################################################################
 
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25`;
 
 $output = `$cmd -D test $basedir 2>&1`;
 

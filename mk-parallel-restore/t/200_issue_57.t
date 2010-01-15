@@ -1,16 +1,23 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master');
-
+my $dbh       = $sb->get_dbh_for('master');
 my $slave_dbh = $sb->get_dbh_for('slave1');
 
 if ( !$dbh ) {
@@ -24,20 +31,20 @@ else {
 }
 
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
 my $mysql   = $sb->_use_for('master');
 my $basedir = '/tmp/dump/';
 my $output;
 
 diag(`rm -rf $basedir`);
 $sb->create_dbs($dbh, ['test']);
-`$mysql < samples/issue_30.sql`;
+`$mysql < $trunk/mk-parallel-restore/t/samples/issue_30.sql`;
 
 # #############################################################################
 # Issue 57: mk-parallel-restore with --tab doesn't fully replicate 
 # #############################################################################
 
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --tab`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --tab`;
 
 # By default a --tab restore should not replicate.
 diag(`/tmp/12345/use -e 'DROP TABLE IF EXISTS test.issue_30'`);
@@ -70,7 +77,7 @@ is(scalar @$res, 100, '--tab with --bin-log allows replication');
 
 # Check that non-tab restores do replicate by default.
 `rm -rf $basedir/`;
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25`;
 
 diag(`/tmp/12345/use -e 'DROP TABLE IF EXISTS test.issue_30'`);
 `$cmd $basedir`;
@@ -97,7 +104,7 @@ $res = $dbh->selectall_arrayref('SHOW MASTER STATUS');
 is($master_pos, $res->[0]->[1], 'Bin log pos unchanged');
 
 # Check that triggers are neither restored nor replicated.
-`$cmd ./samples/tbls_with_trig/ --no-bin-log`;
+`$cmd $trunk/mk-parallel-restore/t/samples/tbls_with_trig/ --no-bin-log`;
 sleep 1;
 
 $dbh->do('USE test');

@@ -1,22 +1,28 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 3;
 
-my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
-my $basedir = '/tmp/dump/';
-my $output;
+use MaatkitTest;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
 
-diag(`rm -rf $basedir`);
+my $cnf     = '/tmp/12345/my.sandbox.cnf';
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
+my $output;
 
 # #############################################################################
 # Test "pure" restore and attendant options.
 # #############################################################################
 
-$output = `$cmd samples/fast_index --dry-run --quiet -t store`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/fast_index --dry-run --quiet -t store`;
 is(
    $output,
 "USE `sakila`
@@ -39,7 +45,7 @@ INSERT INTO `store` VALUES (1,1,1,'2006-02-15 11:57:12'),(2,2,2,'2006-02-15 11:5
    'Pure restore'
 );
 
-$output = `$cmd samples/fast_index --dry-run --quiet -t store --no-drop-tables`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/fast_index --dry-run --quiet -t store --no-drop-tables`;
 is(
    $output,
 "USE `sakila`
@@ -61,7 +67,7 @@ INSERT INTO `store` VALUES (1,1,1,'2006-02-15 11:57:12'),(2,2,2,'2006-02-15 11:5
    '--no-drop-tables'
 );
 
-$output = `$cmd samples/fast_index --dry-run --quiet -t store --no-create-tables`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/fast_index --dry-run --quiet -t store --no-create-tables`;
 is(
    $output,
 "USE `sakila`

@@ -1,21 +1,27 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 2;
 
-my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
-my $basedir = '/tmp/dump/';
-my $output;
+use MaatkitTest;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
 
-diag(`rm -rf $basedir`);
+my $cnf     = '/tmp/12345/my.sandbox.cnf';
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
+my $output;
 
 # #############################################################################
 # Test --fast-index.
 # #############################################################################
-$output = `$cmd samples/fast_index --dry-run --quiet -t store --fast-index`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/fast_index --dry-run --quiet -t store --fast-index`;
 is(
    $output,
 "USE `sakila`
@@ -38,7 +44,7 @@ ALTER TABLE `sakila`.`store` ADD KEY `idx_fk_address_id` (`address_id`), ADD UNI
 );
 
 # This table should not be affected by --fast-index because it's not InnoDB.
-$output = `$cmd samples/fast_index --dry-run --quiet -t store --fast-index -t film_text`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/fast_index --dry-run --quiet -t store --fast-index -t film_text`;
 is(
    $output,
 "USE `sakila`

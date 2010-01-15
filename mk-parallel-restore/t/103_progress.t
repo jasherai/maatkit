@@ -1,19 +1,25 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 1;
 
+use MaatkitTest;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
+
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
-my $basedir = '/tmp/dump/';
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
 my $output;
 
-diag(`rm -rf $basedir`);
-
 # This is kind of a contrived test, but it's better than nothing.
-$output = `$cmd samples/issue_31 --progress --dry-run`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/issue_31 --progress --dry-run`;
 like($output, qr/done: [\d\.]+[Mk]\/[\d\.]+[Mk]/, 'Reporting progress by bytes');
 
 # #############################################################################

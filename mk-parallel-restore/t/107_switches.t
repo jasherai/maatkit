@@ -1,21 +1,27 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 5;
 
-my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
-my $basedir = '/tmp/dump/';
-my $output;
+use MaatkitTest;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
 
-diag(`rm -rf $basedir`);
+my $cnf     = '/tmp/12345/my.sandbox.cnf';
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
+my $output;
 
 # #############################################################################
 # Test stuff like --disable-keys, --unique-checks, etc.
 # #############################################################################
-$output = `$cmd samples/fast_index --dry-run --quiet -t store -t film_text`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/fast_index --dry-run --quiet -t store -t film_text`;
 is(
    $output,
 "USE `sakila`
@@ -38,7 +44,7 @@ INSERT INTO `film_text` VALUES (1,'ACADEMY DINOSAUR','A Epic Drama of a Feminist
    'Disables/enables keys by default for MyISAM table'
 );
 
-$output = `$cmd samples/fast_index --dry-run --quiet -t store -t film_text --no-disable-keys`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/fast_index --dry-run --quiet -t store -t film_text --no-disable-keys`;
 is(
    $output,
 "USE `sakila`
@@ -59,7 +65,7 @@ INSERT INTO `film_text` VALUES (1,'ACADEMY DINOSAUR','A Epic Drama of a Feminist
    'Does not disables/enables keys with --no-disable-keys'
 );
 
-$output = `$cmd samples/fast_index --dry-run --quiet -t store -t film_text --no-no-auto-value-on-0`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/fast_index --dry-run --quiet -t store -t film_text --no-no-auto-value-on-0`;
 is(
    $output,
 "USE `sakila`
@@ -81,7 +87,7 @@ INSERT INTO `film_text` VALUES (1,'ACADEMY DINOSAUR','A Epic Drama of a Feminist
    '--no-no-auto-value-on-0'
 );
 
-$output = `$cmd samples/fast_index --dry-run --quiet -t store -t film_text --no-unique-checks`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/fast_index --dry-run --quiet -t store -t film_text --no-unique-checks`;
 is(
    $output,
 "USE `sakila`
@@ -105,7 +111,7 @@ INSERT INTO `film_text` VALUES (1,'ACADEMY DINOSAUR','A Epic Drama of a Feminist
    '--no-unique-checks'
 );
 
-$output = `$cmd samples/fast_index --dry-run --quiet -t store -t film_text --no-foreign-key-checks`;
+$output = `$cmd $trunk/mk-parallel-restore/t/samples/fast_index --dry-run --quiet -t store -t film_text --no-foreign-key-checks`;
 is(
    $output,
 "USE `sakila`

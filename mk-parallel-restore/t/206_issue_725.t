@@ -1,12 +1,20 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -19,17 +27,14 @@ else {
 }
 
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
 my $mysql   = $sb->_use_for('master');
-my $basedir = '/tmp/dump/';
 my $output;
-
-diag(`rm -rf $basedir`);
 
 # #############################################################################
 # Issue 729: mk-parallel-restore --fast-index does not restore secondary indexes
 # #############################################################################
-$output = `$cmd --create-databases samples/issue_729 --fast-index 2>&1`;
+$output = `$cmd --create-databases $trunk/mk-parallel-restore/t/samples/issue_729 --fast-index 2>&1`;
 unlike(
    $output,
    qr/failed/,

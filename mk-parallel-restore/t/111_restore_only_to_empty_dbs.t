@@ -1,12 +1,20 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -19,7 +27,7 @@ else {
 }
 
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
 my $mysql   = $sb->_use_for('master');
 my $basedir = '/tmp/dump/';
 my $output;
@@ -30,10 +38,10 @@ diag(`rm -rf $basedir`);
 # Issue 300: restore only to empty databases
 # #############################################################################
 
-`$cmd --create-databases samples/issue_625`;
+`$cmd --create-databases $trunk/mk-parallel-restore/t/samples/issue_625`;
 
 $dbh->do('truncate table issue_625.t');
-$output = `$cmd --only-empty-databases samples/issue_625`;
+$output = `$cmd --only-empty-databases $trunk/mk-parallel-restore/t/samples/issue_625`;
 
 is_deeply(
    $dbh->selectall_arrayref('select * from issue_625.t'),
@@ -52,7 +60,7 @@ like(
 );
 
 $dbh->do('drop database if exists issue_625');
-$output = `$cmd --create-databases --only-empty-databases samples/issue_625`;
+$output = `$cmd --create-databases --only-empty-databases $trunk/mk-parallel-restore/t/samples/issue_625`;
 
 is_deeply(
    $dbh->selectall_arrayref('select * from issue_625.t'),

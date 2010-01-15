@@ -1,12 +1,20 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -19,7 +27,7 @@ else {
 }
 
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
 my $mysql   = $sb->_use_for('master');
 my $basedir = '/tmp/dump/';
 my $output;
@@ -32,7 +40,7 @@ diag(`rm -rf $basedir`);
 # #############################################################################
 $sb->load_file('master', 'mk-parallel-restore/t/samples/issue_30.sql');
 
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 25`;
 # The above makes the following chunks:
 #
 # #   WHERE                         SIZE  FILE
@@ -57,7 +65,7 @@ like(
 );
 
 $output = 'foo';
-$output = `$mysql -e 'SELECT * FROM test.issue_30' | diff samples/issue_30_all_rows.txt -`;
+$output = `$mysql -e 'SELECT * FROM test.issue_30' | diff $trunk/mk-parallel-restore/t/samples/issue_30_all_rows.txt -`;
 ok(
    !$output,
    'Resume restored all 100 rows exactly (issue 30)'
@@ -77,7 +85,7 @@ like(
 );
 
 $output = 'foo';
-$output = `$mysql -e 'SELECT * FROM test.issue_30' | diff samples/issue_30_partial_chunk_2.txt -`;
+$output = `$mysql -e 'SELECT * FROM test.issue_30' | diff $trunk/mk-parallel-restore/t/samples/issue_30_partial_chunk_2.txt -`;
 ok(
    !$output,
    'Resume restored atomic chunks (issue 30)'
@@ -87,7 +95,7 @@ ok(
 
 # Test that resume doesn't do anything on a tab dump because there's
 # no chunks file
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --tab`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --tab`;
 $output = `MKDEBUG=1 $cmd --no-atomic-resume -D test --local --tab $basedir/test/ 2>&1`;
 like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab dump (issue 30)');
 
@@ -95,7 +103,7 @@ like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab 
 
 # Test that resume doesn't do anything on non-chunked dump because
 # there's only 1 chunk: where 1=1
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 10000`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d test -t issue_30 --chunk-size 10000`;
 $output = `MKDEBUG=1 $cmd --no-atomic-resume -D test $basedir/test/ 2>&1`;
 like(
    $output,

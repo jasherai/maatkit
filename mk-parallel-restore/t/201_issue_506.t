@@ -1,16 +1,23 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-parallel-restore/mk-parallel-restore";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master');
-
+my $dbh       = $sb->get_dbh_for('master');
 my $slave_dbh = $sb->get_dbh_for('slave1');
 
 if ( !$dbh ) {
@@ -24,7 +31,7 @@ else {
 }
 
 my $cnf     = '/tmp/12345/my.sandbox.cnf';
-my $cmd     = "perl ../mk-parallel-restore -F $cnf ";
+my $cmd     = "$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf ";
 my $mysql   = $sb->_use_for('master');
 my $basedir = '/tmp/dump/';
 my $output;
@@ -37,7 +44,7 @@ $sb->load_file('master', 'mk-parallel-restore/t/samples/issue_506.sql');
 # table exists
 # #############################################################################
 
-`../../mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d issue_506 --chunk-size 5`;
+`$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --base-dir $basedir -d issue_506 --chunk-size 5`;
 $dbh->do('TRUNCATE TABLE issue_506.t');
 sleep 1;
 $slave_dbh->do('DROP TABLE issue_506.t');
