@@ -1,12 +1,21 @@
 #!/usr/bin/env perl
 
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-require '../mk-parallel-dump';
-require '../../common/Sandbox.pm';
+
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-parallel-dump/mk-parallel-dump";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
@@ -21,8 +30,8 @@ else {
    plan tests => 24;
 }
 
-my $cnf = '/tmp/12345/my.sandbox.cnf';
-my $cmd = "perl ../mk-parallel-dump -F $cnf ";
+my $cnf   = '/tmp/12345/my.sandbox.cnf';
+my $cmd   = "$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf ";
 my $mysql = $sb->_use_for('master');
 
 $sb->create_dbs($dbh, ['test']);
@@ -73,7 +82,7 @@ ok(!-f "$basedir/foo/mrg.000000.sql", 'Merge table not dumped by default');
 diag(`rm -rf $basedir`);
 
 # Fixes bug #1850998 (workaround for MySQL bug #29408)
-`$mysql < samples/bug_29408.sql`;
+`$mysql < $trunk/mk-parallel-dump/t/samples/bug_29408.sql`;
 $output = `$cmd --ignore-engines foo --chunk-size 100 --base-dir $basedir --tab -d mk_parallel_dump_foo 2>&1`;
 unlike($output, qr/No database selected/, 'Bug did not affect it');
 `$mysql -e 'drop database if exists mk_parallel_dump_foo'`;
@@ -130,8 +139,8 @@ like(
 # For this issue we'll also test the filters in general, specially
 # the engine filters as they were previously treated specially.
 # sakila is mostly InnoDB tables so load some MyISAM tables.
-diag(`/tmp/12345/use < ../../mk-table-sync/t/samples/issue_560.sql`);
-diag(`/tmp/12345/use < ../../mk-table-sync/t/samples/issue_375.sql`);
+diag(`/tmp/12345/use < $trunk/mk-table-sync/t/samples/issue_560.sql`);
+diag(`/tmp/12345/use < $trunk/mk-table-sync/t/samples/issue_375.sql`);
 diag(`rm -rf $basedir`);
 
 # film_text is the only non-InnoDB table (it's MyISAM).

@@ -1,11 +1,18 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 3;
 
-require '../mk-parallel-dump';
+use MaatkitTest;
+require "$trunk/mk-parallel-dump/mk-parallel-dump";
 
 # #############################################################################
 # chunk_tables()
@@ -16,7 +23,7 @@ my $q = new Quoter();
 my $o = new OptionParser(
    description => 'mk-parallel-dump',
 );
-$o->get_specs('../mk-parallel-dump');
+$o->get_specs("$trunk/mk-parallel-dump/mk-parallel-dump");
 @ARGV = qw(--no-resume);
 $o->get_opts();
 
