@@ -445,8 +445,21 @@ is_deeply(
 
 $d = new RowDiff(dbh => $master_dbh);
 
+diag(`$trunk/sandbox/mk-test-env reset >/dev/null 2>&1`);
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'common/t/samples/issue_11.sql');
+MaatkitTest::wait_until(
+   sub {
+      my $r;
+      eval {
+         $r = $slave_dbh->selectrow_arrayref('SHOW TABLES FROM test LIKE "issue_11"');
+      };
+      return 1 if ($r->[0] || '') eq 'issue_11';
+      return 0;
+   },
+   0.25,
+   30,
+);
 
 my $tbl = $tp->parse(
    $du->get_create_table($master_dbh, $q, 'test', 'issue_11'));
