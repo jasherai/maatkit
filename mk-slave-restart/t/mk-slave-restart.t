@@ -1,20 +1,34 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 14;
+use Test::More;
 
-require '../mk-slave-restart';
-require '../../common/Sandbox.pm';
-require '../../common/MaatkitTest.pm';
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-slave-restart/mk-slave-restart";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $master_dbh = $sb->get_dbh_for('master');
+my $slave_dbh  = $sb->get_dbh_for('slave1');
 
-my $master_dbh = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
-my $slave_dbh  = $sb->get_dbh_for('slave1')
-   or BAIL_OUT('Cannot connect to sandbox slave1');
+if ( !$master_dbh ) {
+   plan skip_all => 'Cannot connect to sandbox master';
+}
+elsif ( !$slave_dbh ) {
+   plan skip_all => 'Cannot connect to sandbox slave';
+}
+else {
+   plan tests => 14;
+}
 
 $sb->create_dbs($master_dbh, ['test']);
 $master_dbh->do('CREATE TABLE test.t (a INT)');
@@ -40,8 +54,8 @@ my $output = `/tmp/12346/use -e 'show slave status'`;
 like($output, qr/Table 'test.t' doesn't exist'/, 'It is busted');
 
 # Start an instance
-diag(`perl ../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --daemonize --pid /tmp/mk-slave-restart.pid --log /tmp/mk-slave-restart.log`);
-$output = `ps -eaf | grep 'perl ../mk-slave-restart' | grep -v grep | grep -v mk-slave-restart.t`;
+diag(`$trunk/mk-slave-restart/mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --daemonize --pid /tmp/mk-slave-restart.pid --log /tmp/mk-slave-restart.log`);
+$output = `ps -eaf | grep 'mk-slave-restart \-\-max\-sleep ' | grep -v grep | grep -v mk-slave-restart.t`;
 like($output, qr/mk-slave-restart --max/, 'It lives');
 
 unlike($output, qr/Table 'test.t' doesn't exist'/, 'It is not busted');
@@ -53,7 +67,7 @@ my ($pid) = $output =~ /\s+(\d+)\s+/;
 $output = `cat /tmp/mk-slave-restart.pid`;
 is($output, $pid, 'PID file has correct PID');
 
-diag(`perl ../mk-slave-restart --stop -q`);
+diag(`$trunk/mk-slave-restart/mk-slave-restart --stop -q`);
 sleep 1;
 $output = `ps -eaf | grep mk-slave-restart | grep -v grep`;
 unlike($output, qr/mk-slave-restart --max/, 'It is dead');
@@ -64,7 +78,7 @@ ok(! -f '/tmp/mk-slave-restart.pid', 'PID file removed');
 # #############################################################################
 # Issue 118: mk-slave-restart --error-numbers option is broken
 # #############################################################################
-$output = `../mk-slave-restart --stop --sentinel /tmp/mk-slave-restartup --error-numbers=1205,1317`;
+$output = `$trunk/mk-slave-restart/mk-slave-restart --stop --sentinel /tmp/mk-slave-restartup --error-numbers=1205,1317`;
 like($output, qr{Successfully created file /tmp/mk-slave-restartup}, '--error-numbers works (issue 118)');
 
 diag(`rm -f /tmp/mk-slave-re*`);
@@ -87,7 +101,7 @@ like(
 );
 
 # Start an instance
-$output = `perl ../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --error-text "doesn't exist" --run-time 1s 2>&1`;
+$output = `$trunk/mk-slave-restart/mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --error-text "doesn't exist" --run-time 1s 2>&1`;
 unlike(
    $output,
    qr/Error does not match/,
@@ -98,7 +112,7 @@ unlike(
 # Issue 391: Add --pid option to all scripts
 # ###########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `../mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --pid /tmp/mk-script.pid 2>&1`;
+$output = `$trunk/mk-slave-restart/mk-slave-restart --max-sleep .25 -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},
@@ -109,7 +123,7 @@ like(
 # #############################################################################
 # Issue 662: Option maxlength does not exist
 # #############################################################################
-my $ret = system('../mk-slave-restart -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --monitor --stop --max-sleep 1 --run-time 1 >/dev/null 2>&1');
+my $ret = system("$trunk/mk-slave-restart/mk-slave-restart -h 127.0.0.1 -P 12346 -u msandbox -p msandbox --monitor --stop --max-sleep 1 --run-time 1 >/dev/null 2>&1");
 is(
    $ret >> 8,
    0,
@@ -119,7 +133,7 @@ is(
 # #############################################################################
 #  Issue 673: Use of uninitialized value in numeric gt (>)
 # #############################################################################
-$output = `../mk-slave-restart --monitor  --error-numbers 1205,1317 --quiet -F /tmp/12346/my.sandbox.cnf  --run-time 1 2>&1`;
+$output = `$trunk/mk-slave-restart/mk-slave-restart --monitor  --error-numbers 1205,1317 --quiet -F /tmp/12346/my.sandbox.cnf  --run-time 1 2>&1`;
 is(
    $output,
    '',
