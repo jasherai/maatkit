@@ -1,36 +1,51 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 7;
+use Test::More;
 
-require '../mk-slave-move';
-require '../../common/Sandbox.pm';
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-slave-move/mk-slave-move";
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-
-my $master_dbh = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
-my $slave_1_dbh  = $sb->get_dbh_for('slave1')
-   or BAIL_OUT('Cannot connect to sandbox slave1');
+my $master_dbh  = $sb->get_dbh_for('master');
+my $slave_1_dbh = $sb->get_dbh_for('slave1');
 
 # Create slave2 as slave of slave1.
-diag(`/tmp/12347/stop 2> /dev/null`);
-diag(`rm -rf /tmp/12347 2> /dev/null`);
-diag(`../../sandbox/start-sandbox slave 12347 12346`);
-my $slave_2_dbh = $sb->get_dbh_for('slave2')
-   or BAIL_OUT('Cannot connect to sandbox slave2');
+diag(`/tmp/12347/stop >/dev/null 2>&1`);
+diag(`rm -rf /tmp/12347 >/dev/null 2>&1`);
+diag(`$trunk/sandbox/start-sandbox slave 12347 12346 >/dev/null`);
+my $slave_2_dbh = $sb->get_dbh_for('slave2');
+
+if ( !$master_dbh ) {
+   plan skip_all => 'Cannot connect to sandbox master';
+}
+elsif ( !$slave_1_dbh ) {
+   plan skip_all => 'Cannot connect to sandbox slave';
+}
+elsif ( !$slave_2_dbh ) {
+   plan skip_all => 'Cannot connect to second sandbox slave';
+}
+else {
+   plan tests => 7;
+}
 
 my $output = '';
-# open my $output_fh, '>', \$output or die "Cannot open OUTPUT: $OS_ERROR";
 
 # #############################################################################
 # Sanity tests.
 # #############################################################################
-$output = `perl ../mk-slave-move --help`;
+$output = `$trunk/mk-slave-move/mk-slave-move --help`;
 like($output, qr/Prompt for a password/, 'It compiles');
-
 
 # #############################################################################
 # Test the moves.
@@ -64,7 +79,7 @@ ok(
 # Issue 391: Add --pid option to all scripts
 # #########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `../mk-slave-move --sibling-of-master h=127.1,P=12347,u=msandbox,p=msandbox --pid /tmp/mk-script.pid 2>&1`;
+$output = `$trunk/mk-slave-move/mk-slave-move --sibling-of-master h=127.1,P=12347,u=msandbox,p=msandbox --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},
@@ -73,8 +88,8 @@ like(
 `rm -rf /tmp/mk-script.pid`;
 
 # Stop and remove slave2.
-diag(`/tmp/12347/stop`);
-diag(`rm -rf /tmp/12347`);
+diag(`/tmp/12347/stop >/dev/null`);
+diag(`rm -rf /tmp/12347 >/dev/null`);
 
 # Make sure the sandbox slave is still running.
 eval { $slave_1_dbh->do('start slave'); };
