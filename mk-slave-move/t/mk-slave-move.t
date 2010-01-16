@@ -20,6 +20,12 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh  = $sb->get_dbh_for('master');
 my $slave_1_dbh = $sb->get_dbh_for('slave1');
 
+# Reset master and slave relay logs so the second slave
+# starts faster (i.e. so it doesn't have to replay the
+# masters logs which is stuff from previous tests that we
+# don't care about).
+diag(`$trunk/sandbox/mk-test-env reset`) if $master_dbh && $slave_1_dbh;
+
 # Create slave2 as slave of slave1.
 diag(`/tmp/12347/stop >/dev/null 2>&1`);
 diag(`rm -rf /tmp/12347 >/dev/null 2>&1`);
