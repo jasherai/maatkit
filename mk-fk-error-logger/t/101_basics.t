@@ -33,18 +33,6 @@ my $output;
 my $cnf = '/tmp/12345/my.sandbox.cnf';
 my $cmd = "$trunk/mk-fk-error-logger/mk-fk-error-logger -F $cnf ";
 
-
-sub output {
-   my $output = '';
-   open my $output_fh, '>', \$output
-      or die "Cannot capture output to variable: $OS_ERROR";
-   select $output_fh;
-   eval { mk_fk_error_logger::main(@_); };
-   close $output_fh;
-   select STDOUT;
-   return $EVAL_ERROR ? $EVAL_ERROR : $output;
-}
-
 $sb->load_file('master', 'mk-fk-error-logger/t/samples/fke_tbl.sql', 'test');
 
 # #########################################################################
@@ -55,7 +43,7 @@ $sb->load_file('master', 'mk-fk-error-logger/t/samples/fke_tbl.sql', 'test');
 `/tmp/12345/use -D test < $trunk/mk-fk-error-logger/t/samples/fke.sql 1>/dev/null 2>/dev/null`;
 
 # Then get and save that fke.
-output('h=127.1,P=12345,u=msandbox,p=msandbox', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors');
+output(sub { mk_fk_error_logger::main('h=127.1,P=12345,u=msandbox,p=msandbox', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors'); } );
 
 # And then test that it was actually saved.
 my $today = $dbh->selectall_arrayref('SELECT NOW()')->[0]->[0];
@@ -75,7 +63,7 @@ like(
 
 # Check again to make sure that the same fke isn't saved twice.
 my $first_ts = $fke->[0]->[0];
-output('h=127.1,P=12345,u=msandbox,p=msandbox', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors');
+output(sub { mk_fk_error_logger::main('h=127.1,P=12345,u=msandbox,p=msandbox', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors'); } );
 $fke = $dbh->selectall_arrayref('SELECT * FROM test.foreign_key_errors');
 is(
    $fke->[0]->[0],  # Timestamp
@@ -95,7 +83,7 @@ $dbh->do('INSERT INTO child VALUES (1, 2)');
 eval {
    $dbh->do('DELETE FROM parent WHERE id = 2');  # Causes foreign key error.
 };
-output('h=127.1,P=12345,u=msandbox,p=msandbox', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors');
+output( sub { mk_fk_error_logger::main('h=127.1,P=12345,u=msandbox,p=msandbox', '--dest', 'h=127.1,P=12345,D=test,t=foreign_key_errors'); } );
 $fke = $dbh->selectall_arrayref('SELECT * FROM test.foreign_key_errors');
 like(
    $fke->[1]->[1],  # Error
@@ -116,8 +104,9 @@ $dbh->do('USE test');
 eval {
    $dbh->do('DELETE FROM parent WHERE id = 2');  # Causes foreign key error.
 };
+$output = output(sub { mk_fk_error_logger::main('h=127.1,P=12345,u=msandbox,p=msandbox'); });
 like(
-   output('h=127.1,P=12345,u=msandbox,p=msandbox'),
+   $output,
    qr/DELETE FROM parent WHERE id = 2/,
    'Print foreign key error'
 );
