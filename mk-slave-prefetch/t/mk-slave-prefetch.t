@@ -1,24 +1,34 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 11;
+use Test::More;
 
-require '../mk-slave-prefetch';
-require '../../common/Sandbox.pm';
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-slave-prefetch/mk-slave-prefetch";
 
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $master_dbh = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
-my $slave_dbh  = $sb->get_dbh_for('slave1')
-   or BAIL_OUT('Cannot connect to sandbox slave1');
+my $master_dbh = $sb->get_dbh_for('master');
+my $slave_dbh  = $sb->get_dbh_for('slave1');
+
+if ( !$master_dbh ) {
+   plan skip_all => 'Cannot connect to sandbox master';
+}
+elsif ( !$slave_dbh ) {
+   plan skip_all => 'Cannot connect to sandbox slave';
+}
+else {
+   plan tests => 11;
+}
 
 my $q  = new Quoter();
 my $du = new MySQLDump(cache => 0);
@@ -31,7 +41,7 @@ my %common_modules = (
    Quoter      => $q,
 );
 
-my $output = `perl ../mk-slave-prefetch --help`;
+my $output = `$trunk/mk-slave-prefetch/mk-slave-prefetch --help`;
 like($output, qr/Prompt for a password/, 'It compiles');
 
 # ###########################################################################
@@ -106,7 +116,7 @@ UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AN
 # ###########################################################################
 # Check daemonization.
 # ###########################################################################
-my $cmd = '../mk-slave-prefetch -F /tmp/12346/my.sandbox.cnf --daemonize --pid /tmp/mk-slave-prefetch.pid --print';
+my $cmd = "$trunk/mk-slave-prefetch/mk-slave-prefetch -F /tmp/12346/my.sandbox.cnf --daemonize --pid /tmp/mk-slave-prefetch.pid --print";
 diag(`$cmd 1>/dev/null 2>/dev/null`);
 $output = `ps -eaf | grep 'mk-slave-prefetch \-F' | grep -v grep`;
 like($output, qr/$cmd/, 'It lives daemonized');
@@ -117,7 +127,7 @@ $output = `cat /tmp/mk-slave-prefetch.pid`;
 is($output, $pid, 'PID file has correct PID');
 
 # Kill it by testing --stop.
-$output = `../mk-slave-prefetch --stop`;
+$output = `$trunk/mk-slave-prefetch/mk-slave-prefetch --stop`;
 like(
    $output,
    qr{created file /tmp/mk-slave-prefetch-sentinel},
@@ -135,7 +145,7 @@ ok(! -f '/tmp/mk-slave-prefetch.pid', 'PID file removed');
 # Issue 391: Add --pid option to all scripts
 # #########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `../mk-slave-prefetch -F /tmp/12346/my.sandbox.cnf --print --pid /tmp/mk-script.pid 2>&1`;
+$output = `$trunk/mk-slave-prefetch/mk-slave-prefetch -F /tmp/12346/my.sandbox.cnf --print --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},
