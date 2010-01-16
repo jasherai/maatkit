@@ -9,10 +9,29 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 1;
+use Test::More;
 
 use MaatkitTest;
+use Sandbox;
 require "$trunk/mk-upgrade/mk-upgrade";
+
+# This runs immediately if the server is already running, else it starts it.
+diag(`$trunk/sandbox/start-sandbox master 12347 >/dev/null`);
+
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh1 = $sb->get_dbh_for('master');
+my $dbh2 = $sb->get_dbh_for('slave2');
+
+if ( !$dbh1 ) {
+   plan skip_all => 'Cannot connect to sandbox master';
+}
+elsif ( !$dbh2 ) {
+   plan skip_all => 'Cannot connect to second sandbox master';
+}
+else {
+   plan tests => 1;
+}
 
 my $cmd = "$trunk/mk-upgrade/mk-upgrade h=127.1,P=12345,u=msandbox,p=msandbox P=12347 --compare results,warnings --zero-query-times";
 
