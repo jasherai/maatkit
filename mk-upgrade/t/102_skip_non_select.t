@@ -1,17 +1,25 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-upgrade/mk-upgrade";
 
-require '../mk-upgrade';
-require '../../common/Sandbox.pm';
+# This runs immediately if the server is already running, else it starts it.
+diag(`$trunk/sandbox/start-sandbox master 12347 >/dev/null`);
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-
 my $dbh1 = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave2');
 
@@ -28,28 +36,13 @@ else {
 $sb->load_file('master', 'mk-upgrade/t/samples/001/tables.sql');
 $sb->load_file('slave2', 'mk-upgrade/t/samples/001/tables.sql');
 
-# Returns true (1) if there's no difference between the
-# cmd's output and the expected output.
-sub no_diff {
-   my ( $cmd, $expected_output ) = @_;
-   MKDEBUG && diag($cmd);
-   `$cmd > /tmp/mk-upgrade-output.txt`;
-   # Uncomment this line to update the $expected_output files when there is a
-   # fix.
-   # `cat /tmp/mk-upgrade-output.txt > $expected_output`;
-   my $retval = system("diff /tmp/mk-upgrade-output.txt $expected_output");
-   `rm -rf /tmp/mk-upgrade-output.txt`;
-   $retval = $retval >> 8; 
-   return !$retval;
-}
-
-my $cmd = '../mk-upgrade h=127.1,P=12345,u=msandbox,p=msandbox P=12347 --compare results,warnings --zero-query-times';
+my $cmd = "$trunk/mk-upgrade/mk-upgrade h=127.1,P=12345,u=msandbox,p=msandbox P=12347 --compare results,warnings --zero-query-times";
 
 # Test that non-SELECT queries are skipped by default.
 ok(
    no_diff(
-      "$cmd samples/001/non-selects.log",
-      'samples/001/non-selects.txt'
+      "$cmd $trunk/mk-upgrade/t/samples/001/non-selects.log",
+      'mk-upgrade/t/samples/001/non-selects.txt'
    ),
    'Non-SELECT are skipped by default'
 );

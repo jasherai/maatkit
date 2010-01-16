@@ -1,17 +1,25 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use MaatkitTest;
+use Sandbox;
+require "$trunk/mk-upgrade/mk-upgrade";
 
-require '../mk-upgrade';
-require '../../common/Sandbox.pm';
+# This runs immediately if the server is already running, else it starts it.
+diag(`$trunk/sandbox/start-sandbox master 12347 >/dev/null`);
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-
 my $dbh1 = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave2');
 
@@ -28,22 +36,8 @@ else {
 $sb->load_file('master', 'mk-upgrade/t/samples/001/tables.sql');
 $sb->load_file('slave2', 'mk-upgrade/t/samples/001/tables.sql');
 
-# Returns true (1) if there's no difference between the
-# cmd's output and the expected output.
-sub no_diff {
-   my ( $cmd, $expected_output ) = @_;
-   MKDEBUG && diag($cmd);
-   `$cmd > /tmp/mk-upgrade-output.txt`;
-   # Uncomment this line to update the $expected_output files when there is a
-   # fix.
-   # `cat /tmp/mk-upgrade-output.txt > $expected_output`;
-   my $retval = system("diff /tmp/mk-upgrade-output.txt $expected_output");
-   `rm -rf /tmp/mk-upgrade-output.txt`;
-   $retval = $retval >> 8; 
-   return !$retval;
-}
-
-my $cmd = '../mk-upgrade h=127.1,P=12345,u=msandbox,p=msandbox P=12347 --compare results,warnings --zero-query-times --compare-results-method rows --limit 10';
+my $output;
+my $cmd = "$trunk/mk-upgrade/mk-upgrade h=127.1,P=12345,u=msandbox,p=msandbox P=12347 --compare results,warnings --zero-query-times --compare-results-method rows --limit 10";
 
 # This test really deals with,
 #   http://code.google.com/p/maatkit/issues/detail?id=754
@@ -65,13 +59,11 @@ is(
 );
 
 
-diag(`$cmd samples/001/one-error.log >/dev/null 2>&1`);
-
-ok(
-   no_diff(
-      "$cmd samples/001/one-error.log",
-      'samples/001/one-error.txt',
-   ),
+diag(`$cmd $trunk/mk-upgrade/t/samples/001/one-error.log >/dev/null 2>&1`);
+$output = `$cmd $trunk/mk-upgrade/t/samples/001/one-error.log`;
+like(
+   $output,
+   qr/# 3B323396273BC4C7-1 P=12347,h=127.1,p=...,u=msandbox Failed to execute query.+Unknown column 'borked' in 'field list' \[for Statement "select borked"\] at .+?\n\n/,
    '--clear-warnings',
 );
 
@@ -81,11 +73,13 @@ ok(
 # warnings for the borked query (since it has no tables) so it skips the
 # CompareWarnings module (it skips any module that fails) thereby negating its
 # ability to check/report Warnings.
-ok(
-   no_diff(
-      "$cmd --no-clear-warnings samples/001/one-error.log",
-      'samples/001/one-error-no-clear-warnings.txt',
-   ),
+
+# Normalize path- and script-dependent parts of the error message (like the
+# line number at which the error occurs).
+$output = `$cmd --no-clear-warnings $trunk/mk-upgrade/t/samples/001/one-error.log`;
+like(
+   $output,
+   qr/# 3B323396273BC4C7-1 P=12347,h=127.1,p=...,u=msandbox Failed to execute query.+Unknown column 'borked' in 'field list' \[for Statement "select borked"\] at .+?\n\n/,
    '--no-clear-warnings'
 );
 
