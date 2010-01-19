@@ -9,10 +9,15 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 3;
+use Test::More tests => 4;
 
 use MaatkitTest;
+use Sandbox;
 require "$trunk/mk-parallel-dump/mk-parallel-dump";
+
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
 
 # #############################################################################
 # chunk_tables()
@@ -147,6 +152,81 @@ is_deeply(
    $chunks,
    'chunk_tables(), 2 dbs mixed'
 );
+
+SKIP: {
+   skip 'sakila db not loaded', 1
+      unless $dbh && @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
+
+   my $tp = new TableParser(Quoter => $q);
+   my $du = new MySQLDump(cache => 0);
+   my $tc = new TableChunker(Quoter => $q, MySQLDump => $du);
+
+   $args{dbh}          = $dbh;
+   $args{TableChunker} = $tc;
+
+   my $tbl_struct = $tp->parse(
+      $du->get_create_table($dbh, $q, 'sakila', 'actor'));
+
+   # Actually chunk a table (i.e. W => some range).
+   @ARGV = qw(--no-resume --chunk-size 50 --base-dir /tmp/mpr);
+   $o->get_opts();
+
+   @tbls = (
+      {
+         tbl        => 'actor',  # has 200 rows
+         db         => 'sakila',
+         tbl_struct => $tbl_struct,
+         size       => '100',
+      },
+   );
+
+   $chunks = [
+     {
+       C => 0,
+       D => 'sakila',
+       E => 'InnoDB',
+       L => '*',
+       N => 'actor',
+       W => '`actor_id` < 51',
+       Z => 4050,
+       first_tbl_in_db => 1
+     },
+     {
+       C => 1,
+       D => 'sakila',
+       E => 'InnoDB',
+       L => '*',
+       N => 'actor',
+       W => '`actor_id` >= 51 AND `actor_id` < 101',
+       Z => 4050
+     },
+     {
+       C => 2,
+       D => 'sakila',
+       E => 'InnoDB',
+       L => '*',
+       N => 'actor',
+       W => '`actor_id` >= 101 AND `actor_id` < 151',
+       Z => 4050
+     },
+     {
+       C => 3,
+       D => 'sakila',
+       E => 'InnoDB',
+       L => '*',
+       N => 'actor',
+       W => '`actor_id` >= 151',
+       Z => 4050,
+       last_chunk_in_tbl => 1
+     }
+   ];
+
+   is_deeply(
+      [ mk_parallel_dump::chunk_tables(%args) ],
+      $chunks,
+      'sakila.actor'
+   );
+}
 
 # #############################################################################
 # Done.
