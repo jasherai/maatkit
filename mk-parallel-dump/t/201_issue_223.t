@@ -27,7 +27,7 @@ else {
 }
 
 my $cnf = '/tmp/12345/my.sandbox.cnf';
-my $cmd = "$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf ";
+my $cmd = "$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --no-gzip ";
 my $mysql = $sb->_use_for('master');
 
 $sb->create_dbs($dbh, ['test']);

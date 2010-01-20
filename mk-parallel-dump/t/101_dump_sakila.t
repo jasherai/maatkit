@@ -114,8 +114,8 @@ like(
 
 # Checksum the original sakila db and the restored sakila2 db.
 diag(`rm -rf /tmp/sakila*-checksum.txt`);
-diag(`$trunk/mk-table-checksum/mk-table-checksum --algorithm CHECKSUM -F /tmp/12345/my.sandbox.cnf h=127.1,P=12345 -d sakila > /tmp/sakila-checksum.txt 2>&1`);
-diag(`$trunk/mk-table-checksum/mk-table-checksum --algorithm CHECKSUM -F /tmp/12345/my.sandbox.cnf h=127.1,P=12345 -d sakila2 | sed -s 's/sakila2/sakila /' > /tmp/sakila2-checksum.txt 2>&1`);
+diag(`$trunk/mk-table-checksum/mk-table-checksum --algorithm CHECKSUM -F /tmp/12345/my.sandbox.cnf h=127.1,P=12345 -d sakila | awk '{print \$7}' > /tmp/sakila-checksum.txt 2>&1`);
+diag(`$trunk/mk-table-checksum/mk-table-checksum --algorithm CHECKSUM -F /tmp/12345/my.sandbox.cnf h=127.1,P=12345 -d sakila2 | awk '{print \$7}' > /tmp/sakila2-checksum.txt 2>&1`);
 
 # This is failing because we don't know to restore blob data yet.
 $output = `diff /tmp/sakila-checksum.txt /tmp/sakila2-checksum.txt`;

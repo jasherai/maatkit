@@ -4026,14 +4026,16 @@ sub dump_sql_chunk {
    return $exit_status;
 }
 
-# Quick and dirty Perl version of escape_string_for_mysql() in mysys/charset.c.
+# Perl version of escape_string_for_mysql() in mysys/charset.c.
 sub escape_string_for_mysql {
    my ( $str ) = @_;
    return unless $str;
+   $str =~ s/\\/\\\\/g;  # match this first
+   $str =~ s/\x00/\\0/g;
    $str =~ s/\n/\\n/g;
    $str =~ s/\r/\\r/g;
-   $str =~ s/\\/\\\\/g;
    $str =~ s/(['"])/\\$1/g;
+   $str =~ s/\032/\\Z/g;
    return $str;
 }
 
