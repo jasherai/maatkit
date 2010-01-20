@@ -52,15 +52,19 @@ while ( my $chunk = <> ) {
    $chunk =~ s/\AThread.*$//m;                  # Delete first line
    $chunk =~ s/#$n_lines\s.*//s if $n_lines;    # Delete all but first N lines
    $chunk =~ s/(\A\s+)|(\s+\Z)//g;              # Trim whitespace
-   $traces{$chunk}->{count}++;
-   push @{$traces{$chunk}->{tids}}, $tid;
+   # Grab the signature of the chunk.
+   my $sig = join(',', $chunk =~ m/(^#\d+.*?)\(/gm);
+   $traces{$sig}->{count}++;
+   $traces{$sig}->{sample} ||= $chunk;
+   push @{$traces{$sig}->{tids}}, $tid;
 }
 
-foreach my $trace (
+foreach my $sig (
    reverse sort { $traces{$a}->{count} <=> $traces{$b}->{count} } keys %traces
 ) {
-   print $traces{$trace}->{count}, " threads with the following stack trace:\n";
+   print $traces{$sig}->{count}, " threads with the following stack trace:\n";
    # print "\t ", join(",", @{$traces{$trace}->{tids}}), "\n";
+   my $trace = $traces{$sig}->{sample};
    $trace =~ s/^/\t/gm;
    print $trace, "\n\n";
 }
