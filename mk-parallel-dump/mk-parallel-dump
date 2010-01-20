@@ -4047,8 +4047,8 @@ sub filename {
 }
 
 {
-   # Memoize...
-   my %dirs;
+   # Do not memorize else tests will fail because we don't
+   # recreate dirs that the tests rm.
 
    # If the directory doesn't exist, makes the directory.
    sub makedir {
@@ -4056,11 +4056,9 @@ sub filename {
       my @dirs = File::Spec->splitdir(dirname($filename));
       foreach my $i ( 0 .. $#dirs ) {
          my $dir = File::Spec->catdir(@dirs[0 .. $i]);
-         if ( !$dirs{$dir} ) {
-            if ( ! -d $dir ) {
-               mkdir($dir, 0777);
-            }
-            $dirs{$dir}++;
+         if ( ! -d $dir ) {
+            MKDEBUG && _d('mkdir', $dir);
+            mkdir($dir, 0777) or die "Failed to mkdir $dir: $OS_ERROR";
          }
       }
    }
@@ -4077,7 +4075,7 @@ sub dump_binlog_pos {
    my $file = filename($o->get('base-dir'), '', '00_master_data.sql');
    makedir($file) unless $o->get('dry-run');
    MKDEBUG && _d('Writing to', $file);
-   open my $fh, ">", $file or die $OS_ERROR;
+   open my $fh, ">", $file or die "Cannot open $file: $OS_ERROR";
    my %wanted = map { $_ => 1 }
       qw(file position master_host master_port master_log_file
       read_master_log_pos relay_log_file relay_log_pos

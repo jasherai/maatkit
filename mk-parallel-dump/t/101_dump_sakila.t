@@ -30,6 +30,9 @@ else {
    plan tests => 19;
 }
 
+# Don't die when mk_parallel_dump::main() forks.
+$dbh->{InactiveDestroy} = 1;
+
 my $cnf   = '/tmp/12345/my.sandbox.cnf';
 my $cmd   = "$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --no-gzip ";
 my $mysql = $sb->_use_for('master');
@@ -44,12 +47,15 @@ diag(`rm -rf $basedir`);
 # Test actual dumping.
 # ###########################################################################
 
-$output = `$cmd --chunk-size 100 --base-dir $basedir --tab -d sakila -t film --progress`;
+$output = output(
+   sub { mk_parallel_dump::main('-F', $cnf, qw(--chunk-size 100 --base-dir),
+      $basedir, qw(--tab -d sakila -t film --progress --no-gzip)) }
+);
 my ($tbl, $chunk) = $output =~ m/(\d+) tables,\s+(\d+) chunks/;
 is($tbl, 1, 'One table dumped');
 ok($chunk >= 5 && $chunk <= 15, 'Got some chunks');
 ok(-s "$basedir/sakila/film.000005.txt", 'chunk 5 exists');
-ok(-s "$basedir//00_master_data.sql", 'master_data exists');
+ok(-s "$basedir/00_master_data.sql", 'master_data exists');
 diag(`rm -rf $basedir`);
 
 # Fixes bug #1851461.
@@ -58,28 +64,41 @@ diag(`rm -rf $basedir`);
 `$mysql -e 'create table foo.bar(a int) engine=myisam'`;
 `$mysql -e 'insert into foo.bar(a) values(123)'`;
 `$mysql -e 'create table foo.mrg(a int) engine=merge union=(foo.bar)'`;
-$output = `$cmd --chunk-size 100 --base-dir $basedir --tab -d foo`;
+
+$output = output(
+   sub { mk_parallel_dump::main('-F', $cnf, qw(--chunk-size 100 --base-dir),
+      $basedir, qw(--tab -d foo --no-gzip)) }
+);
 ok(!-f "$basedir/foo/mrg.000000.sql", 'Merge table not dumped by default with --tab');
 ok(!-f "$basedir/foo/mrg.000000.txt", 'No tab-delim file found, so no data dumped');
 
 # And again, without --tab
 diag(`rm -rf $basedir`);
-$output = `$cmd --chunk-size 100 --base-dir $basedir -d foo`;
+$output = output(
+   sub { mk_parallel_dump::main('-F', $cnf, qw(--chunk-size 100 --base-dir),
+      $basedir,  qw(-d foo --no-gzip)) }
+);
 ok(!-f "$basedir/foo/mrg.000000.sql", 'Merge table not dumped by default');
 `$mysql -e 'drop database if exists foo'`;
 diag(`rm -rf $basedir`);
 
 # Fixes bug #1850998 (workaround for MySQL bug #29408)
 `$mysql < $trunk/mk-parallel-dump/t/samples/bug_29408.sql`;
-$output = `$cmd --ignore-engines foo --chunk-size 100 --base-dir $basedir --tab -d mk_parallel_dump_foo 2>&1`;
+$output = output(
+   sub { mk_parallel_dump::main('-F', $cnf, qw(--ignore-engines foo),
+      qw(--chunk-size 100 --base-dir), $basedir,
+      qw(--tab -d mk_parallel_dump_foo --no-gzip)) }
+);
 unlike($output, qr/No database selected/, 'Bug did not affect it');
 `$mysql -e 'drop database if exists mk_parallel_dump_foo'`;
 diag(`rm -rf $basedir`);
 
 # Make sure subsequent chunks don't have DROP/CREATE in them (fixes bug
 # #1863949).
-$output = `$cmd --quiet --chunk-size 100 --base-dir $basedir -d sakila -t film`;
-
+$output = output(
+   sub { mk_parallel_dump::main('-F', $cnf, qw(--quiet --chunk-size 100),
+      qw(--base-dir), $basedir, qw(-d sakila -t film --no-gzip)) }
+);
 is($output, '', 'No output with --quiet');
 
 ok(-f "$basedir/sakila/00_film.sql", 'CREATE TABLE file exists');
@@ -104,7 +123,10 @@ is($output, '', 'Second chunk does not have CREATE TABLE');
 
 $dbh->do('drop database if exists sakila2');
 $dbh->do('create database sakila2');
-`$cmd --quiet --chunk-size 1000 --base-dir $basedir -d sakila`;
+output(
+   sub { mk_parallel_dump::main('-F', $cnf, qw(--quiet --chunk-size 1000),
+      qw(--base-dir), $basedir, qw(-d sakila)) }
+);
 $output = `$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf -h 127.1 $basedir -D sakila2 --no-foreign-key-checks 2>&1`;
 like(
    $output,
