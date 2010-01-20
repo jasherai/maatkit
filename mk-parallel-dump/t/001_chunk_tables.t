@@ -68,7 +68,7 @@ my $chunks = [
     C => 0,
     D => 'd1',
     E => undef,
-    L => '*',
+    L => '',
     N => 't1',
     W => '1=1',
     Z => '12345',
@@ -79,7 +79,7 @@ my $chunks = [
     C => 0,
     D => 'd1',
     E => undef,
-    L => '*',
+    L => '',
     N => 't2',
     W => '1=1',
     Z => '1234',
@@ -89,7 +89,7 @@ my $chunks = [
     C => 0,
     D => 'd1',
     E => undef,
-    L => '*',
+    L => '',
     N => 't3',
     W => '1=1',
     Z => '123',
@@ -97,8 +97,11 @@ my $chunks = [
    },
 ];
 
+# The S key is for the chunk's table struct.  It's big and we
+# don't need to check it here.
+my @got_chunks = map { delete $_->{S}; $_ } mk_parallel_dump::chunk_tables(%args);
 is_deeply(
-   [ mk_parallel_dump::chunk_tables(%args) ],
+   \@got_chunks,
    $chunks,
    'chunk_tables(), 1 db with 3 tables'
 );
@@ -114,16 +117,16 @@ push @$chunks, {
     C => 0,
     D => 'd2',
     E => undef,
-    L => '*',
+    L => '',
     N => 't1',
     W => '1=1',
     Z => '120',
     last_chunk_in_tbl => 1,
     first_tbl_in_db   => 1,
 };
-
+@got_chunks = map { delete $_->{S}; $_ } mk_parallel_dump::chunk_tables(%args);
 is_deeply(
-   [ mk_parallel_dump::chunk_tables(%args) ],
+   \@got_chunks,
    $chunks,
    'chunk_tables(), 2 dbs'
 );
@@ -140,15 +143,15 @@ push @$chunks, {
     C => 0,
     D => 'd1',
     E => undef,
-    L => '*',
+    L => '',
     N => 't4',
     W => '1=1',
     Z => '100',
     last_chunk_in_tbl => 1,
 };
-
+@got_chunks = map { delete $_->{S}; $_ } mk_parallel_dump::chunk_tables(%args);
 is_deeply(
-   [ mk_parallel_dump::chunk_tables(%args) ],
+   \@got_chunks,
    $chunks,
    'chunk_tables(), 2 dbs mixed'
 );
@@ -185,7 +188,7 @@ SKIP: {
        C => 0,
        D => 'sakila',
        E => 'InnoDB',
-       L => '*',
+       L => '`actor_id`,`first_name`,`last_name`,`last_update`',
        N => 'actor',
        W => '`actor_id` < 51',
        Z => 4050,
@@ -195,7 +198,7 @@ SKIP: {
        C => 1,
        D => 'sakila',
        E => 'InnoDB',
-       L => '*',
+       L => '`actor_id`,`first_name`,`last_name`,`last_update`',
        N => 'actor',
        W => '`actor_id` >= 51 AND `actor_id` < 101',
        Z => 4050
@@ -204,7 +207,7 @@ SKIP: {
        C => 2,
        D => 'sakila',
        E => 'InnoDB',
-       L => '*',
+       L => '`actor_id`,`first_name`,`last_name`,`last_update`',
        N => 'actor',
        W => '`actor_id` >= 101 AND `actor_id` < 151',
        Z => 4050
@@ -213,16 +216,16 @@ SKIP: {
        C => 3,
        D => 'sakila',
        E => 'InnoDB',
-       L => '*',
+       L => '`actor_id`,`first_name`,`last_name`,`last_update`',
        N => 'actor',
        W => '`actor_id` >= 151',
        Z => 4050,
        last_chunk_in_tbl => 1
      }
    ];
-
+   @got_chunks = map { delete $_->{S}; $_ } mk_parallel_dump::chunk_tables(%args);
    is_deeply(
-      [ mk_parallel_dump::chunk_tables(%args) ],
+      \@got_chunks,
       $chunks,
       'sakila.actor'
    );

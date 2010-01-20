@@ -27,7 +27,7 @@ elsif ( !@{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')} ) {
    plan skip_all => 'sakila db not loaded';
 }
 else {
-   plan tests => 24;
+   plan tests => 19;
 }
 
 my $cnf   = '/tmp/12345/my.sandbox.cnf';
@@ -39,18 +39,6 @@ $sb->create_dbs($dbh, ['test']);
 my $output;
 my $basedir = '/tmp/dump/';
 diag(`rm -rf $basedir`);
-
-use File::Find;
-sub get_files {
-   my ( $dir ) = @_;
-   my @files;
-   find sub {
-      return if -d;
-      push @files, $File::Find::name;
-   }, $dir;
-   @files = sort @files;
-   return \@files;
-}
 
 # ###########################################################################
 # Test actual dumping.
@@ -110,90 +98,38 @@ is($output, '', 'First chunk does not have CREATE TABLE');
 $output = `grep -i 'CREATE TABLE' $basedir/sakila/film.000001.sql`;
 is($output, '', 'Second chunk does not have CREATE TABLE');
 
-diag(`rm -rf $basedir`);
+# ###########################################################################
+# Dump, restore and verify sakila database.
+# ###########################################################################
 
-# #########################################################################
-# Issue 495: mk-parallel-dump: permit to disable resuming behavior
-# #########################################################################
-diag(`$cmd --base-dir $basedir -d sakila -t film,actor > /dev/null`);
-$output = `$cmd --base-dir $basedir -d sakila -t film,actor --no-resume -v 2>&1`;
+$dbh->do('drop database if exists sakila2');
+$dbh->do('create database sakila2');
+`$cmd --quiet --chunk-size 1000 --base-dir $basedir -d sakila`;
+$output = `$trunk/mk-parallel-restore/mk-parallel-restore -F $cmd -h 127.1 $basedir -D sakila2 --no-foreign-key-checks 2>&1`;
 like(
    $output,
-   qr/all\s+\S+\s+0\s+0\s+\-/,
-   '--no-resume (no chunks)'
+   qr/16 tables,\s+\d+ files,\s+16 successes,\s+0 failures/,
+   'Restored sakila'
 );
 
-diag(`rm -rf $basedir`);
-diag(`$cmd --base-dir $basedir -d sakila -t film,actor --chunk-size 100 > /dev/null`);
-$output = `$cmd --base-dir $basedir -d sakila -t film,actor --no-resume -v --chunk-size 100 2>&1`;
-like(
+# Checksum the original sakila db and the restored sakila2 db.
+diag(`rm -rf /tmp/sakila*-checksum.txt`);
+diag(`$trunk/mk-table-checksum/mk-table-checksum --algorithm CHECKSUM -F /tmp/12345/my.sandbox.cnf h=127.1,P=12345 -d sakila > /tmp/sakila-checksum.txt 2>&1`);
+diag(`$trunk/mk-table-checksum/mk-table-checksum --algorithm CHECKSUM -F /tmp/12345/my.sandbox.cnf h=127.1,P=12345 -d sakila2 | sed -s 's/sakila2/sakila /' > /tmp/sakila2-checksum.txt 2>&1`);
+
+# This is failing because we don't know to restore blob data yet.
+$output = `diff /tmp/sakila-checksum.txt /tmp/sakila2-checksum.txt`;
+is(
    $output,
-   qr/all\s+\S+\s+0\s+0\s+\-/,
-   '--no-resume (with chunks)'
+   '',
+   'Restored sakila checksums'
 );
 
-# #########################################################################
-# Issue 573: 'mk-parallel-dump --progress --ignore-engine MyISAM' Reports
-# progress incorrectly
-# #########################################################################
-# For this issue we'll also test the filters in general, specially
-# the engine filters as they were previously treated specially.
-# sakila is mostly InnoDB tables so load some MyISAM tables.
-diag(`/tmp/12345/use < $trunk/mk-table-sync/t/samples/issue_560.sql`);
-diag(`/tmp/12345/use < $trunk/mk-table-sync/t/samples/issue_375.sql`);
-diag(`rm -rf $basedir`);
-
-# film_text is the only non-InnoDB table (it's MyISAM).
-$output = `$cmd --base-dir $basedir -d sakila --ignore-engines InnoDB --progress`;
-like(
-   $output,
-   qr/1 databases, 1 tables, 1 chunks/,
-   '--ignore-engines InnoDB'
-);
-
-# Make very sure that it dumped only film_text.
-is_deeply(
-   get_files($basedir),
-   [
-      "${basedir}00_master_data.sql",
-      "${basedir}sakila/00_film_text.sql",
-      "${basedir}sakila/film_text.000000.sql",
-   ],
-   '--ignore-engines InnoDB dumped files'
-);
-
-diag(`rm -rf $basedir`);
-
-$output = `$cmd --base-dir $basedir -d sakila --ignore-engines InnoDB --tab --progress`;
-like(
-   $output,
-   qr/1 databases, 1 tables, 1 chunks/,
-   '--ignore-engines InnoDB --tab'
-);
-is_deeply(
-   get_files($basedir),
-   [
-      "${basedir}00_master_data.sql",
-      "${basedir}sakila/00_film_text.sql",
-      "${basedir}sakila/film_text.000000.txt",
-   ],
-   '--ignore-engines InnoDB --tab dumped files'
-);
-
-diag(`rm -rf $basedir`);
-
-# Only issue_560.buddy_list is InnoDB so only its size should be used
-# to calculate --progress.
-$output = `$cmd --base-dir $basedir -d issue_375,issue_560 --ignore-engines MyISAM --progress`;
-like(
-   $output,
-   qr/16\.00k\/16\.00k 100\.00% ETA 00:00/,
-   "--progress doesn't count skipped tables (issue 573)"
-); 
-
-diag(`rm -rf $basedir`);
+diag(`rm -rf /tmp/sakila*-checksum.txt`);
 
 # #############################################################################
 # Done.
 # #############################################################################
+$sb->wipe_clean($dbh);
+diag(`rm -rf $basedir`);
 exit;

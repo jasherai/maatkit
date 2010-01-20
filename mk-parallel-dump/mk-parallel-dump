@@ -3144,7 +3144,6 @@ Transformers->import( qw(shorten secs_to_time ts) );
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Global variables.
-my @mysqldump_args;
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -3215,57 +3214,6 @@ sub main {
    if ( $o->get('ask-pass') ) {
       $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
-
-   my @conn_params = (
-      [qw(--defaults-file F)],
-      [qw(--host          h)],
-      [qw(--password      p)],
-      [qw(--port          P)],
-      [qw(--socket        S)],
-      [qw(--user          u)],
-   );
-   @conn_params = map  { "$_->[0]='".$o->get($_->[1])."'"; }
-                  grep { $o->got($_->[1]); }
-                  @conn_params;
-
-   # ########################################################################
-   # Decide on options to mysqldump.
-   # ########################################################################
-   if ( !$o->get('tab') ) {
-      # Choose sensible defaults.  Inspect mysqldump --help to see what
-      # options it accepts.
-      my $mysqldump = $o->get('mysqldump');
-      my $help      = `$mysqldump --help`;
-      return 1 if $CHILD_ERROR;
-
-      $help =~ s/\A.*?\n----//s;
-      my %is_opt = map { $_ => 1 } $help =~ m/^(\w[a-z_-]+)/gm;
-      my %skip   = map { $_ => 1 } qw(lock-all-tables lock-tables triggers);
-      @mysqldump_args = (
-         $mysqldump,
-         @conn_params,
-         (
-            map  { $skip{$_} ? "--skip-$_" : "--$_" }
-            grep { $is_opt{$_} }
-            qw(
-               compact
-               triggers
-               no-create-info
-               lock-all-tables
-               lock-tables
-            )
-         ),
-         "'\%D'",
-         "'\%N'",
-      );
-      if ( $o->get('chunk-size') ) {
-         push @mysqldump_args, qw(--where %W);
-      }
-      push @mysqldump_args,
-         qw(--result-file),
-         filename($o->get('base-dir'), "'\%D'", "'\%N.%6C.sql'");
-   }
-   MKDEBUG && _d('Args for mysqldump:', join(', ', @mysqldump_args));
 
    # ########################################################################
    # Connect.
@@ -3501,7 +3449,7 @@ sub main {
          $chunk->{start_time} = time;
 
          # See if this chunk has already been done.
-         if ( $o->get('resume') && -f "$file.sql" ) {
+         if ( $o->get('resume') && (-f "$file.sql" || -f "$file.sql.gz") ) {
             $done += $chunk->{Z} || 0;
             $stat_totals{skipped}++;
             $stats_for{$chunk->{D}}->{skipped}++;
@@ -3674,7 +3622,7 @@ sub chunk_tables {
    my @chunks;
    for my $tblno ( 0..$n_tables ) {
       my $tbl  = $tbls->[$tblno];
-      my $cols = join(', ', get_columns(tbl_struct=>$tbl->{tbl_struct}, %args));
+      my $cols = make_col_list(tbl_struct=>$tbl->{tbl_struct}, %args);
       eval {
          my $i = 0;
          push @chunks, map {
@@ -3686,6 +3634,7 @@ sub chunk_tables {
                Z => $_->{Z},  # Chunk size
                C => $i++,     # Chunk number for this table
                L => $cols,    # SELECT list
+               S => $tbl->{tbl_struct},
             };
 
             # @chunks is a continuous list of db.tbl.chunk.  To report per-db
@@ -3731,9 +3680,11 @@ sub chunk_tables {
    return @chunks;
 }
 
-# Decides on a SELECT list.  For FLOAT and DOUBLE, if lossless floating point
-# dumps are desired, wrap the column with REPLACE(FORMAT(col, 17), ',', '').
-sub get_columns {
+# Return a list of all columns not '*' so we can build a proper
+# "INSERT INTO tbl (cols) VALUES ..." in dump_sql_chunk().
+# For FLOAT and DOUBLE, if lossless floating point dumps are desired,
+# wrap the column with REPLACE(FORMAT(col, 17), ',', '').
+sub make_col_list {
    my ( %args ) = @_;
    my @required_args = qw(tbl_struct OptionParser Quoter);
    foreach my $arg ( @required_args ) {
@@ -3741,14 +3692,19 @@ sub get_columns {
    }
    my ($tbl_struct, $o, $q) = @args{@required_args};
 
-   return '*' unless $o->get('lossless-floats');
-
    my @cols = map {
-      $tbl_struct->{type_for}->{$_} =~ m/float|double/
-         ? sprintf("REPLACE(FORMAT(%s, 17), ',', '')", $q->quote($_))
-         : $q->quote($_)
+      my $col;
+      if ( $tbl_struct->{type_for}->{$_} =~ m/float|double/
+           && $o->get('lossless-floats') ) {
+         $col = sprintf("REPLACE(FORMAT(%s, 17), ',', '')", $q->quote($_));
+      }
+      else {
+         $col = $q->quote($_);
+      }
+      $col;
    } @{$tbl_struct->{cols}};
-   return @cols;
+
+   return join(',', @cols);
 }
 
 sub get_chunks {
@@ -3887,17 +3843,20 @@ sub dump_chunk {
 
    MKDEBUG && $chunk->{C} == 0 && _d('Dumping', Dumper($chunk));
 
-   # Dump SHOW CREATE TABLE  before the first chunk.
    my $dbh;
+   if ( !$o->get('dry-run') ) {
+      $dbh = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
+   }
+
+   # Dump SHOW CREATE TABLE  before the first chunk.
    if ( $chunk->{C} == 0 && !$o->get('dry-run') ) {
-      $dbh    = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
       my $ddl = $dbh->selectrow_arrayref("SHOW CREATE TABLE $D.$N")->[1];
       if ( $ddl ) {
-         my $fspec = '> ' . filename($o->get('base-dir'),
-            interp($chunk, '%D', '00_%N.sql'));
-         open my $fh, $fspec or die "Can't open $file: $OS_ERROR";
-         print $fh $ddl      or die "Can't print to $file: $OS_ERROR";
-         close $fh           or die "Can't close $file: $OS_ERROR";
+         my $ctfile = filename($o->get('base-dir'),
+                               interp($chunk, '%D', '00_%N.sql'));
+         open my $fh, '>', $ctfile or die "Can't open $ctfile: $OS_ERROR";
+         print $fh $ddl            or die "Can't print to $ctfile: $OS_ERROR";
+         close $fh                 or die "Can't close $ctfile: $OS_ERROR";
       }
       else {
          warn "Failed to dump SHOW CREATE TABLE $D.$N";
@@ -3906,17 +3865,13 @@ sub dump_chunk {
    }
 
    if ( $o->get('tab') ) {  # dump via SELECT INTO OUTFILE
-
-      $dbh ||= $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
-
-      # Dump the data.
       my $sql
         = $o->get('csv')
         ?    "SELECT $chunk->{L} INTO OUTFILE '$file.txt' "
            . "FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\\"' "
            . "LINES TERMINATED BY '\\n' FROM $D.$N WHERE $chunk->{W}"
         :    "SELECT $chunk->{L} INTO OUTFILE '$file.txt' "
-           . "FROM $D.$N WHERE $chunk->{W}";
+           . "FROM $D.$N WHERE $chunk->{W};";
       if ( $o->get('dry-run') ) {
          print $sql, "\n" unless $o->get('quiet');
       }
@@ -3929,16 +3884,116 @@ sub dump_chunk {
             $exit_status |= 1;
          }
       }
-   }  # --tab/SELECT INTO OUTFILE
-   else {  # dump via mysqldump
-      # Interpolate D, N and C for mysqldump args.
-      my @args = map { interp($chunk, $_) } @mysqldump_args;
-      $exit_status |= system_call($o, @args);
+   }
+   else {
+      $file = $o->get('gzip') ? "$file.sql.gz" : "$file.sql";
+      my $fh;
+      if ( !$o->get('dry-run') ) {
+         open $fh, '>', $file or die "Cannot open $file: $OS_ERROR";
+      }
+      $exit_status |= dump_sql_chunk(
+         chunk   => $chunk,
+         file    => $file,
+         fh      => $fh,
+         dbh     => $dbh,
+         dry_run => $o->get('dry-run'),
+         %args
+      );
+      if ( !$o->get('dry-run') ) {
+         close $fh or die "Cannot close $file: $OS_ERROR";
+      }
    }
 
    $dbh->disconnect() if $dbh;
 
    return $exit_status;
+}
+
+sub dump_sql_chunk {
+   my ( %args ) = @_;
+   my @required_args = qw(chunk file Quoter OptionParser);
+   push @required_args, qw(fh dbh) unless $args{dry_run};
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($chunk, $file, $q, $o, $fh, $dbh) = @args{@required_args};
+   my $exit_status = 0;
+   my $tbl_struct = $chunk->{S};
+   my $n_cols     = scalar @{$tbl_struct->{cols}};
+   my $db_tbl     = $q->quote($chunk->{D}, $chunk->{N});
+   my $tz_utc     = "/*!40103 SET TIME_ZONE='+00:00' */;";
+   my $sql        = "SELECT /*chunk $chunk->{C}*/ $chunk->{L} "
+                  . "FROM $db_tbl "
+                  . "WHERE  $chunk->{W};";
+
+   if ( $args{dry_run} ) {
+      print $tz_utc, "\n" if $o->get('tz-utc');
+      print $sql, "\n";
+      return $exit_status;
+   }
+
+   if ( $o->get('tz-utc') ) {
+      MKDEBUG && _d($dbh, $tz_utc);
+      $dbh->do($tz_utc);
+      print $fh $tz_utc, "\n";
+   }
+
+   MKDEBUG && _d($dbh, $sql);
+   my $rows;
+   eval {
+      my $sth = $dbh->prepare($sql);
+      $sth->execute();
+      $rows = $sth->fetchall_arrayref();
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($dbh, $EVAL_ERROR);
+      $exit_status = 1;
+      $exit_status = 3 if $EVAL_ERROR =~ m/ crashed /;
+   }
+   else {
+      $sql = "INSERT /*chunk $chunk->{C}*/ "
+           . "INTO " . $q->quote($chunk->{N}) . " ($chunk->{L}) VALUES ";
+      my @values;
+      ROW:
+      foreach my $row ( @$rows ) {
+         COL:
+         for my $i ( 0..($n_cols-1) ) {
+            # Escape and quote column values in place (i.e. in $row).
+            if ( $row->[$i] ) {
+               my $col = $tbl_struct->{cols}->[$i];
+               if ( !$tbl_struct->{is_numeric}->{$col} ) {
+                  $row->[$i] = "'".escape_string_for_mysql($row->[$i])."'";
+               }
+               # Numeric columns are not quoted.
+            }
+            else {
+               $row->[$i] = defined $row->[$i] ? q{''} : 'NULL';
+            }
+         }
+         my $val = '(' . join(',', @$row) . ')';
+         push @values, $val;
+      }
+      if ( @values ) {
+         $sql .= join(',', @values) . ";\n";
+         print $fh $sql or die "Cannot write to $file: $OS_ERROR";
+      }
+      else {
+         MKDEBUG && _d('Empty table:', $db_tbl);
+      }
+   }
+
+   return $exit_status;
+}
+
+# Quick and dirty Perl version of escape_string_for_mysql() in mysys/charset.c.
+sub escape_string_for_mysql {
+   my ( $str ) = @_;
+   return unless $str;
+   $str =~ s/\n/\\n/g;
+   $str =~ s/\r/\\r/g;
+   $str =~ s/\\/\\\\/g;
+   $str =~ s/(['"])/\\$1/g;
+   return $str;
 }
 
 # Makes a filename.
@@ -3966,55 +4021,6 @@ sub filename {
          }
       }
    }
-}
-
-# This tries to be a 99% solution by quoting Windows arguments with double
-# quotes, and everything else with single quotes. 
-sub make_shell_command {
-   my @cmd  = @_;
-   my $char = $OSNAME =~ m/MSWin/ ? q{"} : q{'};
-   # Modify @cmd in-place and return.  If you modify @cmd outside of this
-   # map you'll need to assign its results to a new array and return that.
-   map {
-      # Don't quote every argument.  We need at least the > and | not to be
-      # quoted for normal operation, and option names should not be quoted.
-      if ( $_ =~ m/['"]/ ) {
-         # Don't quote already quoted args.  This can cause problems on
-         # some shells.  E.g.:
-         #   --result-file '/tmp/dump/'test'/'issue 446.000000.sql''
-         # is interpreted as 3 args:
-         #   /tmp/dump/'test'/
-         #   issue
-         #   446.000000.sql
-         $_;
-      }
-      elsif ( $_ =~ m/[^a-z0-9_.><|-]/ ) {
-         $char . $_ . $char;
-      }
-      else {
-         $_;
-      }
-   } @cmd;
-}
-
-sub system_call {
-   my ( $o, @cmd ) = @_;
-   my $exit_status = 0;
-   my $exec = shift @cmd;  # Don't quote the executable.
-   my $cmd  = "$exec " . join(' ', make_shell_command(@cmd));
-   if ( $o->get('dry-run') ) {
-      print $cmd, "\n" unless $o->get('quiet');
-   }
-   else {
-      MKDEBUG && _d($cmd);
-      $exit_status = system($cmd);
-      # Must right-shift to get the actual exit status of the command.
-      # Otherwise the upstream exit() call that's about to happen will get a
-      # larger value than it likes, and will just report zero to waitpid().
-      $exit_status = $exit_status >> 8;
-   }
-   MKDEBUG && _d('Exit status', $exit_status);
-   return $exit_status;
 }
 
 sub dump_binlog_pos {
@@ -4568,6 +4574,10 @@ Execute C<FLUSH LOGS> when getting binlog positions.
 This option is NOT enabled by default because it causes the MySQL server to
 rotate its error log, potentially overwriting error messages.
 
+=item --[no]gzip
+
+Gzip the dump files.
+
 =item --help
 
 Show help and exit.
@@ -4763,6 +4773,20 @@ mk-parallel-dump, after all -- 1 is not parallel).  On GNU/Linux machines,
 the default is the number of times 'processor' appears in F</proc/cpuinfo>.  On
 Windows, the default is read from the environment.  In any case, the default is
 at least 2, even when there's only a single processor.
+
+=item --[no]tz-utc
+
+default: yes
+
+Enable TIMESTAMP columns to be dumped and reloaded between different time zones. 
+mk-parallel-dump sets its connection time zone to UTC and adds
+C<SET TIME_ZONE='+00:00'> to the dump file.  Without this option, TIMESTAMP
+columns are dumped and reloaded in the time zones local to the source and
+destination servers, which can cause the values to change.  This option also
+protects against changes due to daylight saving time.
+
+This option is identical to C<mysqldump --tz-utc>.  In fact, the above text
+was copied from mysqldump's man page.
 
 =item --umask
 

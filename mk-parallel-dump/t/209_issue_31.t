@@ -42,25 +42,18 @@ my @tbls;
 # Issue 31: Make mk-parallel-dump and mk-parallel-restore do biggest-first
 ############################################################################
 $sb->load_file('master', 'mk-parallel-dump/t/samples/issue_31.sql');
+
 # Tables in order of size: t4 t1 t3 t2
 
-$output = `$cmd --base-dir $basedir -d issue_31 --dry-run --threads 1 2>&1 | grep 'result\-file'`;
-# There will be several lines like:
-# mysqldump '--defaults-file='/tmp/12345/my.sandbox.cnf'' --skip-lock-all-tables --skip-lock-tables --add-drop-table --add-locks --allow-keywords --comments --complete-insert --create-options --disable-keys --extended-insert --quick --quote-names --set-charset --skip-triggers --tz-utc issue_31 t4 --result-file '/tmp/dump/issue_31/t4.000000.sql'
-# These vary from system to system due to varying mysqldump.  All we really
-# need is the last arg: the table name.
-@tbls = map {
-   my @args = split(/\s+/, $_);
-   $args[-1];
-} split(/\n/, $output);
-
+$output = `$cmd --base-dir $basedir -d issue_31 --dry-run --threads 1 2>&1 | grep SELECT`;
+@tbls = grep { $_ !~ m/^$/ } split(/\n/, $output);
 is_deeply(
    \@tbls,
    [
-      "/tmp/dump/'issue_31'/'t4.000000.sql'",
-      "/tmp/dump/'issue_31'/'t1.000000.sql'",
-      "/tmp/dump/'issue_31'/'t3.000000.sql'",
-      "/tmp/dump/'issue_31'/'t2.000000.sql'",
+      "SELECT /*chunk 0*/ `t` FROM `issue_31`.`t4` WHERE  1=1;",
+      "SELECT /*chunk 0*/ `t` FROM `issue_31`.`t1` WHERE  1=1;",
+      "SELECT /*chunk 0*/ `t` FROM `issue_31`.`t3` WHERE  1=1;",
+      "SELECT /*chunk 0*/ `t` FROM `issue_31`.`t2` WHERE  1=1;",
    ],
    'Dumps largest tables first'
 );
@@ -68,10 +61,10 @@ is_deeply(
 $output = `$cmd --base-dir $basedir -d issue_31 --tab --dry-run --threads 1 2>&1 | grep SELECT`;
 is(
    $output,
-"SELECT * INTO OUTFILE '/tmp/dump/issue_31/t4.000000.txt' FROM `issue_31`.`t4` WHERE 1=1
-SELECT * INTO OUTFILE '/tmp/dump/issue_31/t1.000000.txt' FROM `issue_31`.`t1` WHERE 1=1
-SELECT * INTO OUTFILE '/tmp/dump/issue_31/t3.000000.txt' FROM `issue_31`.`t3` WHERE 1=1
-SELECT * INTO OUTFILE '/tmp/dump/issue_31/t2.000000.txt' FROM `issue_31`.`t2` WHERE 1=1
+"SELECT `t` INTO OUTFILE '/tmp/dump/issue_31/t4.000000.txt' FROM `issue_31`.`t4` WHERE 1=1;
+SELECT `t` INTO OUTFILE '/tmp/dump/issue_31/t1.000000.txt' FROM `issue_31`.`t1` WHERE 1=1;
+SELECT `t` INTO OUTFILE '/tmp/dump/issue_31/t3.000000.txt' FROM `issue_31`.`t3` WHERE 1=1;
+SELECT `t` INTO OUTFILE '/tmp/dump/issue_31/t2.000000.txt' FROM `issue_31`.`t2` WHERE 1=1;
 ",
    'Dumps largest tables first with --tab'
 );
