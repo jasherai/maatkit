@@ -89,7 +89,7 @@ is_deeply(
    [
       "${basedir}00_master_data.sql",
       "${basedir}sakila/00_film_text.sql",
-      "${basedir}sakila/film_text.000000.sql",
+      "${basedir}sakila/film_text.000000.sql.gz",
    ],
    '--ignore-engines InnoDB dumped files'
 );

@@ -31,7 +31,7 @@ else {
 }
 
 my $cnf   = '/tmp/12345/my.sandbox.cnf';
-my $cmd   = "$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf ";
+my $cmd   = "$trunk/mk-parallel-dump/mk-parallel-dump -F $cnf --no-gzip ";
 my $mysql = $sb->_use_for('master');
 
 $sb->create_dbs($dbh, ['test']);
@@ -105,7 +105,7 @@ is($output, '', 'Second chunk does not have CREATE TABLE');
 $dbh->do('drop database if exists sakila2');
 $dbh->do('create database sakila2');
 `$cmd --quiet --chunk-size 1000 --base-dir $basedir -d sakila`;
-$output = `$trunk/mk-parallel-restore/mk-parallel-restore -F $cmd -h 127.1 $basedir -D sakila2 --no-foreign-key-checks 2>&1`;
+$output = `$trunk/mk-parallel-restore/mk-parallel-restore -F $cnf -h 127.1 $basedir -D sakila2 --no-foreign-key-checks 2>&1`;
 like(
    $output,
    qr/16 tables,\s+\d+ files,\s+16 successes,\s+0 failures/,

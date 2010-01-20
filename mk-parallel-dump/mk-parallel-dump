@@ -3139,6 +3139,12 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
+eval {
+  require IO::Compress::Gzip;
+  IO::Compress::Gzip->import(qw(gzip $GzipError));
+};
+my $can_gzip = $EVAL_ERROR ? 0 : 1;
+
 Transformers->import( qw(shorten secs_to_time ts) );
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
@@ -3191,6 +3197,11 @@ sub main {
 
    if ( $o->get('umask') ) {
       umask oct($o->get('umask'));
+   }
+
+   if ( $o->get('gzip') && !$can_gzip ) {
+      $o->save_error("Cannot --gzip because the IO::Compress::Gzip module "
+         . "is not installed.  Install the module or specify --no-gzip.");
    }
 
    $o->usage_or_errors();
@@ -3899,7 +3910,7 @@ sub dump_chunk {
          dry_run => $o->get('dry-run'),
          %args
       );
-      if ( !$o->get('dry-run') ) {
+      if ( $fh && !$o->get('dry-run') ) {
          close $fh or die "Cannot close $file: $OS_ERROR";
       }
    }
@@ -3918,6 +3929,20 @@ sub dump_sql_chunk {
    }
    my ($chunk, $file, $q, $o, $fh, $dbh) = @args{@required_args};
    my $exit_status = 0;
+
+   # Open a compressed filehandle if --gzip.  Else, just point
+   # $zfh to non-compressed $fh.  Only use $zfh after this point.
+   # Caller closes $fh so don't close $zfh here.
+   my $zfh;
+   if ( $o->get('gzip') && !$o->get('dry-run') ) {
+      our $GzipError;
+      $zfh = new IO::Compress::Gzip($fh)
+         or die "IO::Compress::Gzip failed: $GzipError\n";
+   }
+   else {
+      $zfh = $fh;  # no compression (--no-gzip)
+   }
+
    my $tbl_struct = $chunk->{S};
    my $n_cols     = scalar @{$tbl_struct->{cols}};
    my $db_tbl     = $q->quote($chunk->{D}, $chunk->{N});
@@ -3926,18 +3951,30 @@ sub dump_sql_chunk {
                   . "FROM $db_tbl "
                   . "WHERE  $chunk->{W};";
 
-   if ( $args{dry_run} ) {
-      print $tz_utc, "\n" if $o->get('tz-utc');
+   # Set timezone to UTC/GMT for consistent dump/restore
+   # of TIMESTAMP columns.
+   if ( $o->get('tz-utc') ) {
+      MKDEBUG && _d($dbh, $tz_utc);
+      if ( $o->get('dry-run') ) {
+         print $tz_utc, "\n";
+      }
+      else {
+         $dbh->do($tz_utc);
+         print $zfh $tz_utc, "\n";
+      }
+   }
+
+   # Print the SELECT chunk and return early if dry-run.  Everything
+   # below is actual data-accessing work.
+   if ( $o->get('dry-run') ) {
       print $sql, "\n";
       return $exit_status;
    }
 
-   if ( $o->get('tz-utc') ) {
-      MKDEBUG && _d($dbh, $tz_utc);
-      $dbh->do($tz_utc);
-      print $fh $tz_utc, "\n";
-   }
-
+   # Execute the SELECT chunk to get the rows to dump.  Don't use
+   # $dbh->selectall_arrayref() because it does not throw errors
+   # from execute, so we would miss stuff like "the table is marked
+   # as crashed".
    MKDEBUG && _d($dbh, $sql);
    my $rows;
    eval {
@@ -3947,13 +3984,19 @@ sub dump_sql_chunk {
    };
    if ( $EVAL_ERROR ) {
       MKDEBUG && _d($dbh, $EVAL_ERROR);
-      $exit_status = 1;
+      $exit_status = 1;  # general error unless...
       $exit_status = 3 if $EVAL_ERROR =~ m/ crashed /;
+      return $exit_status;
    }
-   else {
+
+   # Write the INSERT for the row values to the dump file, row by row.
+   # Don't build the whole INSERT else $sql may consume a lot of memory.
+   if ( @$rows ) {
       $sql = "INSERT /*chunk $chunk->{C}*/ "
            . "INTO " . $q->quote($chunk->{N}) . " ($chunk->{L}) VALUES ";
-      my @values;
+      MKDEBUG && _d('Write', $sql, 'to', $file);
+      print $zfh $sql;
+      my $rowno = 0;
       ROW:
       foreach my $row ( @$rows ) {
          COL:
@@ -3962,7 +4005,7 @@ sub dump_sql_chunk {
             if ( $row->[$i] ) {
                my $col = $tbl_struct->{cols}->[$i];
                if ( !$tbl_struct->{is_numeric}->{$col} ) {
-                  $row->[$i] = "'".escape_string_for_mysql($row->[$i])."'";
+                  $row->[$i] = q{'}.escape_string_for_mysql($row->[$i]).q{'};
                }
                # Numeric columns are not quoted.
             }
@@ -3970,16 +4013,14 @@ sub dump_sql_chunk {
                $row->[$i] = defined $row->[$i] ? q{''} : 'NULL';
             }
          }
-         my $val = '(' . join(',', @$row) . ')';
-         push @values, $val;
+         my $val = ($rowno++ ? ',(' : '(') . join(',', @$row) . ')';
+         print $zfh $val;
       }
-      if ( @values ) {
-         $sql .= join(',', @values) . ";\n";
-         print $fh $sql or die "Cannot write to $file: $OS_ERROR";
-      }
-      else {
-         MKDEBUG && _d('Empty table:', $db_tbl);
-      }
+      print $zfh ";\n";
+      MKDEBUG && _d('Dumped', $rowno, 'rows');
+   }
+   else {
+      MKDEBUG && _d('Empty table:', $db_tbl);
    }
 
    return $exit_status;
@@ -4576,7 +4617,18 @@ rotate its error log, potentially overwriting error messages.
 
 =item --[no]gzip
 
-Gzip the dump files.
+default: yes
+
+Compress (gzip) SQL dump files; does not work with L<"--format"> tab.
+
+The IO::Compress::Gzip Perl module is used to compress SQL dump files
+as they are written to disk.  The resulting dump files have a C<.gz>
+extension, like C<table.000000.sql.gz>.  They can be uncompressed with
+L<gzip>.  L<mk-parallel-restore> will automatically uncompress them, too,
+when restoring.
+
+This option does not work with L<"--format"> tab because the MySQL server
+writes the tab dump files directly using C<SELECT INTO OUTFILE>.
 
 =item --help
 

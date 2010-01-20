@@ -49,7 +49,7 @@ $dbh->do('INSERT INTO test.`issue 446` VALUES (1),(2),(3)');
 
 `$cmd --base-dir $basedir --ignore-databases sakila --databases test --tables 'issue 446'`;
 ok(
-   -f "$basedir/test/issue 446.000000.sql",
+   -f "$basedir/test/issue 446.000000.sql.gz",
    'Dumped table with space in name (issue 446)'
 );
 
