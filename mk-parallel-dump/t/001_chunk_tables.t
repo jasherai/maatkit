@@ -29,7 +29,7 @@ my $o = new OptionParser(
    description => 'mk-parallel-dump',
 );
 $o->get_specs("$trunk/mk-parallel-dump/mk-parallel-dump");
-@ARGV = qw(--no-resume);
+@ARGV = qw(--no-resume --dry-run);
 $o->get_opts();
 
 my @tbls = (
