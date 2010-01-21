@@ -1,111 +1,87 @@
 #!/bin/sh
 
-if [ -z $MAATKIT_BASEDIR ]; then
-   echo "The MAATKIT_BASEDIR environment variables is not set."
-   exit 1;
-fi;
+# This script controls Maatkit test coverage.
 
-COVERAGE_DIR=$MAATKIT_BASEDIR/coverage
-COVER_DB=$COVERAGE_DIR/cover_db
-
-reset_cover_db () {
-   if [ -d $COVER_DB ]; then
-      rm -rf $COVER_DB/*
-   fi
-}
-
-test_coverage () {
-   SCRIPT=`echo $1 | sed 's/\.t//'`
-   TEST_SCRIPT="$SCRIPT.t"
-   if [ -f ../$SCRIPT.pm ]; then
-      BASE_SCRIPT="../$SCRIPT.pm"
-      EXTENSION='.pm'
-      SCRIPT_TYPE='Module'
-      SUMMARY_DIR=$COVERAGE_DIR/common
-      COVERAGE_FILE=$SUMMARY_DIR/$SCRIPT$EXTENSION
-   elif [ -f ../$SCRIPT ]; then
-      BASE_SCRIPT="../$SCRIPT"
-      EXTENSION=''
-      SCRIPT_TYPE='Script'
-      SUMMARY_DIR=$COVERAGE_DIR
-      COVERAGE_FILE=$SUMMARY_DIR/$SCRIPT$EXTENSION
-   else
-      echo "Cannot find base script for $1; tried ../$SCRIPT.pm and ../$SCRIPT"
-      echo "Skipping $1"
-      return 1
-   fi
-
-   echo "$SCRIPT_TYPE: $BASE_SCRIPT"
-   echo "Test script: $TEST_SCRIPT"
-
-   reset_cover_db
-
-   perl -MDevel::Cover=-db,$COVER_DB,-ignore,'.+',-select,"$BASE_SCRIPT" $TEST_SCRIPT
-   cover -report text -silent $COVER_DB > $COVERAGE_FILE
-   echo "Wrote $SCRIPT$EXTENSION coverage to $COVERAGE_FILE"
-
-   return
-}
-
-_write_summary () {
-   if [ $SCRIPT_TYPE = "Script" ]; then
-      FILES='mk*'
-   else
-      FILES='*'
-   fi
-   SUMMARY_FILE=$SUMMARY_DIR/summary
-   rm -f $SUMMARY_FILE
-   echo "File                           stmt   bran   cond    sub    pod   time  total" >> $SUMMARY_FILE
-   head -q -n 4 $SUMMARY_DIR/$FILES | grep -v File | grep -v '\-\-'  >> $SUMMARY_FILE
-   echo "Wrote coverage summary to $SUMMARY_FILE"
-}
-
-write_summary () {
-   if [ $SCRIPT_TYPE = "Module" ]; then
-      _write_summary $COVERAGE_DIR/common $COVERAGE_DIR/common/summary
-   elif [ $SCRIPT_TYPE = "Script" ]; then
-      _write_summary $COVERAGE_DIR $COVERAGE_DIR/summary
-   elif [ $SCRIPT_TYPE = "All" ]; then
-      SCRIPT_TYPE="Module"
-      _write_summary $COVERAGE_DIR/common $COVERAGE_DIR/common/summary
-      SCRIPT_TYPE="Script"
-      _write_summary 'Script' $COVERAGE_DIR $COVERAGE_DIR/summary
-   else
-      echo "I don't know how to write a $SCRIPT_TYPE summary."
-      exit
-   fi
-}
-
-if [ -z "$1" ]; then
+err() {
    echo
-   echo "Usage: $0 SCRIPT|summary"
-   echo
-   echo "SCRIPT is a .t script with a corresponding ../SCRIPT[.pm]."
-   echo "Coverage results are written to $COVERAGE_DIR."
-   echo
-   echo "Instead of SCRIPT, 'summary' causes the coverage/summary file to be updated."
-   echo
-   exit 1
-fi
-
-if [ ! -d $COVERAGE_DIR ]; then
-   echo
-   echo "The coverage directory $COVERAGE_DIR does not exist."
-   echo "Create and svn add $COVERAGE_DIR."
-   echo
-   exit 1
-fi
-
-if [ $1 != "summary" ]; then
-   for script in $@; do
-      if [ -f $script ]; then
-         test_coverage $script
-      fi
+   for msg; do
+      echo $msg
    done
-else
-   SCRIPT_TYPE="All"
+   echo "See http://code.google.com/p/maatkit/wiki/Testing for more information."
+   echo
+}
+
+usage() {
+   err "Usage: mk-test-coverage script|module"
+}
+
+reset_cover_db() {
+   if [ -d "$cover_db" ]; then
+      rm -rf $cover_db/*
+   fi
+}
+
+update_summary() {
+   if [ $type = 'script' ]; then
+      coverage_files='mk*'
+   else
+      coverage_files='*'
+   fi
+   summary_file="$summary_dir/summary"
+   echo "File                           stmt   bran   cond    sub    pod   time  total" > $summary_file
+   head -q -n 4 $summary_dir/$coverage_files | grep -v File | grep -v '\-\-'  >> $summary_file
+   echo "Wrote summary to $summary_file"
+}
+
+test_coverage() {
+   if [ $type = 'module' ]; then
+      summary_dir="$cover_dir/common"
+      coverage_file="$summary_dir/$file.pm"
+      # Test coveage for just this module, not all modules.
+      test_file="$file.t"
+      cd $MAATKIT_TRUNK/common/t
+   else
+      summary_dir="$cover_dir"
+      coverage_file="$summary_dir/$file"
+      cd $MAATKIT_TRUNK/$file/t
+   fi
+
+   if [ -n "$test_file" ]; then
+      prove --perl "perl -MDevel::Cover=-db,$cover_db,-ignore,.+,-select,$file" $test_file
+   else
+      prove --perl "perl -MDevel::Cover=-db,$cover_db,-ignore,.+,-select,$file"
+   fi
+
+   cover -report text -silent $cover_db > $coverage_file
+   echo "Wrote coverage to $coverage_file"
+}
+
+
+# ###########################################################################
+# Sanity check cmd line and env var.
+# ###########################################################################
+if [ $# -lt 1 ]; then
+   usage
+   exit 1
 fi
 
-write_summary
+file=$1
 
-exit
+cover_dir="$MAATKIT_TRUNK/coverage"
+cover_db="$cover_dir/cover_db"
+
+# ###########################################################################
+# Test script/module coverage.
+# ###########################################################################
+
+if [ -f "$MAATKIT_TRUNK/common/$file.pm" ]; then
+   type='module'
+else
+   type='script'
+fi
+
+reset_cover_db
+test_coverage
+update_summary
+
+exit 0
