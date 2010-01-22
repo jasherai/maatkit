@@ -13,5 +13,3 @@ CREATE TABLE checksum (
  ts         timestamp    NOT NULL,
  PRIMARY KEY (db, tbl, chunk)
 );
-
-delete from mysql.proc;

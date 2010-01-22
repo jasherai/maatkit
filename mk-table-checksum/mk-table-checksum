@@ -4320,6 +4320,7 @@ sub checksum_tables {
    foreach my $table ( @$tbls ) {
       eval {
          my $final_o = $table->{final_o};
+         delete $table->{final_o};  # so we can Dumper($table) tersely
          my $do_table = 1;
          MKDEBUG && _d("Doing", $db, '.', $table->{table});
          MKDEBUG && _d("Table:", Dumper($table));
