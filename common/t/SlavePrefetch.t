@@ -92,28 +92,40 @@ ok(
    'Got a filehandle for the relay binglog'
 );
 
+is(
+   $spf->_mysqlbinlog_cmd(
+      tmpdir    => '/dev/null',
+      datadir   => "$trunk/common/t/samples",
+      start_pos => 1708,
+      file      => 'relay-binlog001',
+   ),
+   "mysqlbinlog -l /dev/null --start-pos=1708 $trunk/common/t/samples/relay-binlog001",
+   'mysqlbinlog cmd'
+);
+
 SKIP: {
    skip "Cannot open $tmp_file for writing", 1 unless $tmp_fh;
    print $tmp_fh $_ while ( <$fh> );
    close $tmp_fh;
-   my $output = `diff $tmp_file $trunk/common/t/samples/relay-binlog001-at-1708.txt 2>&1`;
-   is(
+   my $output = `cat $tmp_file 2>&1`;
+   like(
       $output,
-      '',
-      'Opened relay binlog at correct pos'
+      qr/090910  8:26:23 server id 12345  end_log_pos 1925/,
+      'Opened relay binlog'
    );
    diag(`rm -rf $tmp_file 2>/dev/null`);
 };
 
-# TODO: this doesn't seem to work?
-eval {
-   $spf->close_relay_log($fh);
-};
-is(
-   $EVAL_ERROR,
-   '',
-   'No error closing relay binlog'
-);
+# This doesn't work because mysqlbinlog is run in a shell so ps
+# show "[sh]" instead of "mysqlbinlog".
+#eval {
+#   $spf->close_relay_log($fh);
+#};
+#is(
+#   $EVAL_ERROR,
+#   '',
+#   'No error closing relay binlog'
+#);
 
 # ###########################################################################
 # Test that we can fake SHOW SLAVE STATUS with a callback.

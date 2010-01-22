@@ -171,7 +171,21 @@ sub open_relay_log {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my ($tmpdir)    = @args{@required_args};
+
+   my $cmd = $self->_mysqlbinlog_cmd(%args);
+
+   open my $fh, "$cmd |" or die $OS_ERROR; # Succeeds even on error
+   if ( $CHILD_ERROR ) {
+      die "$cmd returned exit code " . ($CHILD_ERROR >> 8)
+         . '.  Try running the command manually or using MKDEBUG=1' ;
+   }
+   $self->{cmd} = $cmd;
+   $self->{stats}->{mysqlbinlog}++;
+   return $fh;
+}
+
+sub _mysqlbinlog_cmd {
+   my ( $self, %args ) = @_;
    my $datadir     = $args{datadir}     || $self->{datadir};
    my $start_pos   = $args{start_pos}   || $self->{slave}->{pos};
    my $file        = $args{file}        || $self->{slave}->{file};
@@ -182,19 +196,12 @@ sub open_relay_log {
       die "Relay log $datadir/$file does not exist or is not readable";
    }
 
-   my $cmd = "$mysqlbinlog -l $tmpdir "
+   my $cmd = "$mysqlbinlog "
+           . ($args{tmpdir} ? "-l $args{tmpdir}" : '')
            . " --start-pos=$start_pos $datadir/$file"
            . (MKDEBUG ? ' 2>/dev/null' : '');
-   MKDEBUG && _d('Opening relay log:', $cmd);
-
-   open my $fh, "$cmd |" or die $OS_ERROR; # Succeeds even on error
-   if ( $CHILD_ERROR ) {
-      die "$cmd returned exit code " . ($CHILD_ERROR >> 8)
-         . '.  Try running the command manually or using MKDEBUG=1' ;
-   }
-   $self->{cmd} = $cmd;
-   $self->{stats}->{mysqlbinlog}++;
-   return $fh;
+   MKDEBUG && _d($cmd);
+   return $cmd;
 }
 
 sub close_relay_log {
