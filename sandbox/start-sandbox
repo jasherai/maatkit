@@ -109,9 +109,11 @@ fi
 
 mysqld=''
 if [ -x "$MAATKIT_SANDBOX_BASEDIR/bin/mysqld" ]; then
-   mysqld='bin/mysqld';
+   mysqld='bin/mysqld'
 elif [ -x "$MAATKIT_SANDBOX_BASEDIR/sbin/mysqld" ]; then
-   mysqld='sbin/mysqld';
+   mysqld='sbin/mysqld'
+elif [ -x "$MAATKIT_SANDBOX_BASEDIR/libexec/mysqld" ]; then
+   mysqld='libexec/mysqld'
 else
    err "$MAATKIT_SANDBOX_BASEDIR/bin/mysqld or $MAATKIT_SANDBOX_BASEDIR/sbin/mysqld does not exist or is not executable."
    exit 1
