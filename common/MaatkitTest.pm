@@ -332,13 +332,13 @@ sub no_diff {
    die "I need an expected_output argument" unless $expected_output;
    $expected_output = "$trunk/$expected_output";
    MKDEBUG && diag($cmd);
-   `$cmd > /tmp/mk-query-digest_test`;
+   `$cmd > /tmp/maatkit_test`;
    if ( $ENV{UPDATE_SAMPLES} || $update_sample ) {
-      `cat /tmp/mk-query-digest_test > $expected_output`;
+      `cat /tmp/maatkit_test > $expected_output`;
       print STDERR "Updated $expected_output\n";
    }
-   my $retval = system("diff /tmp/mk-query-digest_test $expected_output");
-   `rm -rf /tmp/mk-query-digest_test`;
+   my $retval = system("diff /tmp/maatkit_test $expected_output");
+   `rm -f /tmp/maatkit_test`;
    $retval = $retval >> 8; 
    return !$retval;
 }
