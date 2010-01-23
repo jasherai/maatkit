@@ -1,7 +1,6 @@
 #!/usr/bin/env perl
 
-# This program dumps MySQL tables in parallel via mysqldump or
-# SELECT INTO OUTFILE.
+# This program dumps MySQL tables in parallel.
 #
 # This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 # Feedback and improvements are welcome.
@@ -3161,8 +3160,7 @@ sub main {
    my $o  = new OptionParser(
       strict      => 0,
       prompt      => '[OPTION]...',
-      description => q{dumps sets of MySQL tables simultaneously via }
-                   . q{mysqldump or SELECT INTO OUTFILE.},
+      description => q{dumps sets of MySQL tables in parallel.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -3211,7 +3209,7 @@ sub main {
    # ########################################################################
    my $daemon;
    if ( $o->get('pid') ) {
-      # We're not daemoninzing, it just handles PID stuff.  Keep $daemon
+      # We're not daemonizing, it just handles PID stuff.  Keep $daemon
       # in the the scope of main() because when it's destroyed it automatically
       # removes the PID file.
       $daemon = new Daemon(o=>$o);
@@ -3219,16 +3217,12 @@ sub main {
    }
 
    # ########################################################################
-   # Gather connection parameters to pass to mysqldump.  Order matters;
-   # mysqldump will have a problem if --defaults-file isn't first.
+   # Connect.
    # ########################################################################
    if ( $o->get('ask-pass') ) {
       $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
 
-   # ########################################################################
-   # Connect.
-   # ########################################################################
    my $dsn                  = $dp->parse_options($o);
    my $dbh                  = $dp->get_dbh($dp->get_cxn_params($dsn));
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
@@ -3274,15 +3268,13 @@ sub main {
       TableChunker => $tc,
       MySQLDump    => $du,
    );
+   my $si = new SchemaIterator(
+      Quoter => $q,
+   );
 
    # ########################################################################
    # Find each db.tbl to dump.
    # ######################################################################## 
-   my $si = new SchemaIterator(
-      Quoter => $q,
-   );
-   $si->set_filter($si->make_filter($o));
-
    my @tbls;
    my %stat_totals;  # for all dbs and tbls
    my %stats_for;    # for each db and tbl
@@ -3291,6 +3283,7 @@ sub main {
    my $maxdb  = 0;  # for report
    my $maxtbl = 0;  # for report
 
+   $si->set_filter($si->make_filter($o));
    my $next_db = $si->get_db_itr(dbh => $dbh);
    DATABASE:
    while ( my $db = $next_db->() ) {
@@ -4395,8 +4388,7 @@ The EXIT column shows the exit status of the chunk.  EXIT codes are:
    > 0   Error
 
 Any non-zero exit signifies an error.  The cause of errors are usually
-printed to STDERR.  The exit code for non-L<"--tab"> dumps is the actual exit
-code of mysqldump.
+printed to STDERR.
 
 The SKIPPED column shows how many chunks were skipped.  These are not
 errors.  Chunks are skipped if the dump can be resumed.  See L<"--[no]resume">.
@@ -4475,12 +4467,6 @@ achieved the following dump times:
 While dumping two threads in parallel, this machine was at an average of 74%
 CPU utilization and 12% I/O wait.  This machine doesn't have enough disks and
 CPUs to do that many things at once, so it's not going to speed up much.
-
-Dumping lots of tiny tables by forking of lots of C<mysqldump> processes isn't
-usually much faster, because of the overhead of starting C<mysqldump>,
-connecting, inspecting the table, and dumping it.  Note that tab-separated
-dumps are typically much faster and don't suffer as much from the effects of
-many tiny tables, because they're not done via C<mysqldump>.
 
 See also L<http://www.paragon-cs.com/wordpress/?p=52> for a test of parallel
 dumping and restoring.
@@ -4693,16 +4679,6 @@ and reloading in most cases.  (I shamelessly stole this technique from them.  I
 don't know enough about floating-point math to have an opinion).
 
 This works only with L<"--tab">.
-
-=item --mysqldump
-
-type: string; default: mysqldump
-
-Command for mysqldump.
-
-The mysqldump executable in your PATH environment variable is used by default.
-This option allows you to specify the mysqldump command in case it is not
-in your PATH or you want to use something else.
 
 =item --password
 
