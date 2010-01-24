@@ -3822,7 +3822,19 @@ sub info {
    print "$msg\n" if $level <= ($o->get('verbose') || 0);
 }
 
-# Interpolates % directives from a db/tbl hashref.
+# Interpolates % directives from a db/tbl hashref, to insert % variables into
+# arguments.  The available macros are as follows:
+# 
+#  MACRO  MEANING
+#  =====  =================
+#  %D     The database name
+#  %N     The table name
+#  %C     The chunk number
+#  %W     The WHERE clause
+#
+# You can place a number between the % and the letter.  The macro replacement
+# then assumes it's a digit and pads it with leading zeroes (in practice, this is
+# only useful for %C).
 sub interp {
    my ( $chunk, @strings ) = @_;
    map {
@@ -4224,9 +4236,14 @@ Dump all databases and tables via SELECT INTO OUTFILE to /tmp/dumps:
 
   mk-parallel-dump --tab --base-dir /tmp/dumps
 
-Dump only table db.foo in chunks of 10k rows using 8 threads:
+Dump only table db.foo in chunks of ten thousand rows using 8 threads:
 
-  mk-parallel-dump --databases db --tables foo --chunk-size 10000 --threads 8
+  mk-parallel-dump --databases db --tables foo \
+     --chunk-size 10000 --threads 8
+
+Dump tables in chunks of approximately 10kb of data (not ten thousand rows!):
+
+  mk-parallel-dump --chunk-size 10k
 
 =head1 RISKS
 
@@ -4293,17 +4310,31 @@ after a successful dump, with a shell script like the following:
 
 mk-parallel-dump checks whether files have been created before dumping.  If the
 file has been created, it skips the table or chunk that would have created the
-file.  This makes dumps resumable.  If you don't want this behavior, and instead
-you want a full dump, then move away the old files or specify C<--no-resume>
-(see L<"--[no]resume">).
+file.  This makes it possible to resume dumps.  If you don't want this behavior,
+and instead you want a full dump, then move away the old files or specify
+L<"--[no]resume">.
 
 =head1 CHUNKS
 
 mk-parallel-dump can break your tables into chunks when dumping, and put
-approximately the amount of data you specify into each chunk.  This is useful to
-avoid enormous files for restoration, which can not only take a long time but
-may be a lot of extra work for transactional storage engines like InnoDB.  A
-huge file can create a huge rollback segment in your tablespace.
+approximately the amount of data you specify into each chunk.  This is useful
+for two reasons:
+
+=over
+
+=item *
+
+A table that is dumped in chunks can be dumped in many threads simultaneously.
+
+=item *
+
+Dumping in chunks creates small files, which can be imported more efficiently
+and safely.  Importing a single huge file can be a lot of extra work for
+transactional storage engines like InnoDB.  A huge file can create a huge
+rollback segment in your tablespace.  If the import fails, the rollback can take
+a very long time.
+
+=back
 
 To dump in chunks, specify the L<"--chunk-size"> option.  This option is an
 integer with an optional suffix.  Without the suffix, it's the number of rows
@@ -4329,87 +4360,83 @@ Generating a series of C<WHERE> clauses to divide a table into evenly-sized
 chunks is difficult.  If you have any ideas on how to improve the algorithm,
 please write to the author (see L<"BUGS">).
 
-=head1 MACROS
-
-mk-parallel-dump can insert C<%> variables into arguments.  The available macros
-are as follows:
-
-  MACRO  MEANING
-  =====  =================
-  %D     The database name
-  %N     The table name
-  %C     The chunk number
-  %W     The WHERE clause
-
-You can place a number between the C<%> and the letter.  The macro replacement
-then assumes it's a digit and pads it with leading zeroes (in practice, this is
-only useful for C<%C>).
-
 =head1 OUTPUT
 
 Output depends on L<"--verbose">, L<"--progress">, L<"--dry-run"> and
 L<"--quiet">.  If L<"--dry-run"> is specified mk-parallel-dump prints the
 commands or SQL statements that it would use to dump data but it does not
 actually dump any data.  If L<"--quiet"> is specified there is no output;
-this overrides all other out-affecting options.
+this overrides all other options that affect the output.
 
-The default output is:
+The default output is something like the following example:
 
   CHUNK  TIME  EXIT  SKIPPED DATABASE.TABLE 
      db  0.28     0        0 sakila         
     all  0.28     0        0 -
 
-If L<"--verbose"> is not specified then one line is printed for each database
-when it finishes dumping, as signified by "db" in the CHUNK column.  If you
-specify L<"--progress"> a PROGRESS column is added after DATABASE.TABLE, like:
+=over
 
-  CHUNK  TIME  EXIT  SKIPPED DATABASE.TABLE PROGRESS
-     db  0.28     0        0 sakila         4.10M/4.10M 100.00% ETA ... 00:00 (2009-10-16T15:37:49)
-    all  0.28     0        0 -              done at 2009-10-16T15:37:48, 1 databases, 16 tables, 16 chunks
+=item CHUNK
 
-The CHUNK column shows "db", "tbl" or a number if L<"--chunk-size"> was
-specified along with a high enough L<"--verbose">.  mk-parallel-dump treats
-evrything as a chunk.  If L<"--chunk-size"> is not specified, then each table is
-one big chunk and each database is a chunk (of all its tables).  Thus, there is
-output for numbered table chunks (L<"--chunk-size">), tables and databases.
-Table chunks summarize the results of their L<"--chunk-size"> chunks.  Database
-chunks summarize the results of their tables.  This will become more clear
-when we look at higher levels of verbosity.
+The CHUNK column signifies what kind of information is in the line:
 
-The TIME column shows the wallclock time that the chunk took to finish dumping.
-If CHUNK is "db" or "tbl", this time is the total wallclock time that the
-database or table took to dump.
+  Value  Meaning
+  =====  ========================================================
+  db     This line contains summary information about a database.
+  tbl    This line contains summary information about a table.
+  <int>  This line contains information about the Nth chunk of a
+         table.
 
-The EXIT column shows the exit status of the chunk.  EXIT codes are:
+The types of lines you'll see depend on the L<"--chunk-size"> option and
+L<"--verbose"> options.  mk-parallel-dump treats evrything as a chunk.  If you
+don't specify L<"--chunk-size">, then each table is one big chunk and each
+database is a chunk (of all its tables).  Thus, there is output for numbered
+table chunks (L<"--chunk-size">), table chunks, and database chunks.
 
-   EXIT  MEANING
-   ====  ==================
-   0     Success, no errors
-   > 0   Error
+=item TIME
 
-Any non-zero exit signifies an error.  The cause of errors are usually
-printed to STDERR.
+The TIME column shows the wallclock time elapsed while the chunk was dumped.  If
+CHUNK is "db" or "tbl", this time is the total wallclock time elapsed for the
+database or table.
+
+=item EXIT
+
+The EXIT column shows the exit status of the chunk.  Any non-zero exit signifies
+an error.  The cause of errors are usually printed to STDERR.
+
+=item SKIPPED
 
 The SKIPPED column shows how many chunks were skipped.  These are not
 errors.  Chunks are skipped if the dump can be resumed.  See L<"--[no]resume">.
 
-The DATABASE.TABLE column shows to which table the chunk belongs.  For
-"db" chunks, this shows just the database.  Chunks usually finish dumping
-out of order, so the output is unsorted and random.  Chunks are printed when
-they complete, so with higher verbosity you may see a chunk for db1.table_1,
-then a chunk for db2.table_2, then another chunk for db1.table_1, then the "db"
-chunk summary for db2.
+=item DATABASE.TABLE
 
-If L<"--progress"> is specified, the PROGRESS column prints information about
-the amount of data dumped so far, the amount of data left to dump, and an ETA
-which tries to predict when everything will be finished dumping.  Sometimes
-the ETA is very accurate, other times it can be significantly off.
+The DATABASE.TABLE column shows to which table the chunk belongs.  For "db"
+chunks, this shows just the database.  Chunks are printed when they complete,
+and this is often out of the order you'd expect.  For example, you might see a
+chunk for db1.table_1, then a chunk for db2.table_2, then another chunk for
+db1.table_1, then the "db" chunk summary for db2.
 
-The final line of the output is special: it summaries all chunks (all table
-chunks, tables and databases).  In older versions of mk-parallel-dump this
-was called the "final results."
+=item PROGRESS
 
-If you specify L<"--verbose"> once the output includes "tbl" CHUNKS:
+If you specify L<"--progress">, then the tool adds a PROGRESS column after
+DATABASE.TABLE, which contains text similar to the following:
+
+  PROGRESS
+  4.10M/4.10M 100.00% ETA ... 00:00 (2009-10-16T15:37:49)
+  done at 2009-10-16T15:37:48, 1 databases, 16 tables, 16 chunks
+
+This column shows information about the amount of data dumped so far, the
+amount of data left to dump, and an ETA ("estimated time of arrival").  The ETA
+is a best-effort prediction when everything will be finished dumping.  Sometimes
+the ETA is very accurate, but at other times it can be significantly wrong.
+
+=back
+
+The final line of the output is special: it summarizes all chunks (all table
+chunks, tables and databases).
+
+If you specify L<"--verbose"> once, then the output includes "tbl" CHUNKS:
 
   CHUNK  TIME  EXIT  SKIPPED DATABASE.TABLE 
     tbl  0.07     0        0 sakila.payment 
@@ -4418,8 +4445,8 @@ If you specify L<"--verbose"> once the output includes "tbl" CHUNKS:
      db  0.28     0        0 sakila         
     all  0.28     0        0 -
 
-And if you specify L<"--verbose"> twice the ouput includes the chunks for
-L<"--chunk-size"> if you also specify L<"--chunk-size">:
+And if you specify L<"--verbose"> twice in conjunction with L<"--chunk-size">,
+then the ouput includes the chunks:
 
   CHUNK  TIME  EXIT  SKIPPED DATABASE.TABLE       
       0  0.03     0        0 sakila.payment       
@@ -4430,46 +4457,29 @@ L<"--chunk-size"> if you also specify L<"--chunk-size">:
      db  0.20     0        1 sakila               
     all  0.21     0        1 -               
 
-The output shows that C<sakila.payment> was dumped in two chunks and
-C<sakila.store> was dumped in one chunk but this chunk was skipped.
+The output shows that C<sakila.payment> was dumped in two chunks, and
+C<sakila.store> was dumped in one chunk that was skipped.
 
 =head1 SPEED OF PARALLEL DUMPS
 
 How much faster is it to dump in parallel?  That depends on your hardware and
 data.  You may be able dump files twice as fast, or more if you have lots of
-disks and CPUs.  Here are some user-contributed figures.
+disks and CPUs.  At the time of writing, no benchmarks exist for the current
+release.  User-contributed results for older versions of mk-parallel-dump showed
+very good speedup depending on the hardware.  Here are two links you can use as
+reference: 
 
-The following table is for a 3.6GHz Xeon machine with 4 processors and a RAID-10
-array of 15k disks, directly attached to the server with a fibre channel.  Most
-of the space is in one huge table that wasn't dumped in parallel:
+=over
 
-  COMMAND                      SIZE  TIME
-  --------------------------  -----  ----
-  mk-parallel-dump            1.4GB   269
-  mysqldump                   1.4GB   345
+=item *
 
-On the same machine, in a database with lots of roughly equal-sized tables:
+L<http://www.paragon-cs.com/wordpress/?p=52>
 
-  COMMAND                      SIZE  TIME
-  --------------------------  -----  ----
-  mk-parallel-dump            117MB     7
-  mysqldump                   117MB    37
+=item *
 
-It doesn't always work that well.  A dual 2.80GHz Xeon server with a RAID-5
-array of three 7200RPM SATA disk drives running MySQL 5.0.38 on GNU/Linux
-achieved the following dump times:
+L<http://mituzas.lt/2009/02/03/mydumper/>
 
-  COMMAND                      SIZE  TIME
-  --------------------------  -----  ----
-  mk-parallel-dump            3.0GB  2596
-  mysqldump | gzip --fast     3.0GB  3195
-
-While dumping two threads in parallel, this machine was at an average of 74%
-CPU utilization and 12% I/O wait.  This machine doesn't have enough disks and
-CPUs to do that many things at once, so it's not going to speed up much.
-
-See also L<http://www.paragon-cs.com/wordpress/?p=52> for a test of parallel
-dumping and restoring.
+=back
 
 =head1 OPTIONS
 
