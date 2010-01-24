@@ -49,7 +49,8 @@ sub _d {
 
 # Returns the number of CPUs.  If no sys info is given, then it's gotten
 # from /proc/cpuinfo, sysctl or whatever method will work.  If sys info
-# is given, then we try to parse the number of CPUs from it.
+# is given, then we try to parse the number of CPUs from it.  Passing in
+# $sys_info makes this code easy to test.
 sub get_number_of_cpus {
    my ( $sys_info ) = @_;
    my $n_cpus; 
