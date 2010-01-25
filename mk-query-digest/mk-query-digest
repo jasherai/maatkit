@@ -449,7 +449,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5266
+# OptionParser package 5525
 # ###########################################################################
 package OptionParser;
 
@@ -1056,7 +1056,8 @@ sub descr {
               . "  For more details, please use the --help option, "
               . "or try 'perldoc $PROGRAM_NAME' "
               . "for complete documentation.";
-   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g)
+      unless $ENV{DONT_BREAK_LINES};
    $descr =~ s/ +$//mg;
    return $descr;
 }
@@ -6370,7 +6371,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedProtocolParser package 5266
+# MemcachedProtocolParser package 5535
 # ###########################################################################
 package MemcachedProtocolParser;
 
@@ -6579,7 +6580,7 @@ sub _packet_from_client {
       my @vals = $line1 =~ m/(\S+)/g;
       $cmd = lc shift @vals;
       MKDEBUG && _d('$cmd is a ', $cmd);
-      if ( $cmd eq 'set' || $cmd eq 'add' ) {
+      if ( $cmd eq 'set' || $cmd eq 'add' || $cmd eq 'replace' ) {
          ($key, $flags, $exptime, $bytes) = @vals;
          $session->{bytes} = $bytes;
       }
