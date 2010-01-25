@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * memcached replace commands were not handled (issue 818).
+
 2010-01-06: version 0.9.13
 
    * Missing packets caused mutant queries (issue 761).
