@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 28;
 
 use MemcachedProtocolParser;
 use TcpdumpParser;
@@ -365,6 +365,46 @@ test_protocol_parser(
          
          val => ''
       },
+   ],
+);
+
+
+# #############################################################################
+# Issue 818: mk-query-digest: error parsing memcached dump - use of
+# uninitialized value in addition
+# #############################################################################
+
+# A replace command.
+$protocol = new MemcachedProtocolParser();
+test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'common/t/samples/memc_tcpdump016.txt',
+   result   => [
+      {  ts         => '2010-01-20 10:27:18.510727',
+         Query_time => '0.000030',
+         bytes      => 56,
+         cmd        => 'replace',
+         exptime    => '43200',
+         flags      => '1',
+         host       => '192.168.0.3',
+         key        => 'BD_Uk_cms__20100120_095702tab_containerId_410',
+         pos_in_log => 0,
+         res        => 'STORED',
+         val        => 'a:3:{i:0;s:6:"a:0:{}";i:1;i:1263983238;i:2;s:5:"43200";}'
+      },
+      {  ts         => '2010-01-20 10:27:18.510876',
+         Query_time => '0.000066',
+         bytes      => '56',
+         cmd        => 'get',
+         exptime    => 0,
+         flags      => '1',
+         host       => '192.168.0.3',
+         key        => 'BD_Uk_cms__20100120_095702tab_containerId_410',
+         pos_in_log => 893,
+         res        => 'VALUE',
+         val        => 'a:3:{i:0;s:6:"a:0:{}";i:1;i:1263983238;i:2;s:5:"43200";}'
+      }
    ],
 );
 

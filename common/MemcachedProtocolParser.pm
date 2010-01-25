@@ -149,6 +149,7 @@ sub _packet_from_server {
    # handle multi-gets.
    if ( $session->{state} eq 'awaiting reply' ) {
       MKDEBUG && _d('State is awaiting reply');
+      # \r\n == 0d0a
       my ($line1, $rest) = $packet->{data} =~ m/\A(.*?)\r\n(.*)?/s;
 
       # Split up the first line into its parts.
@@ -256,7 +257,7 @@ sub _packet_from_client {
       my @vals = $line1 =~ m/(\S+)/g;
       $cmd = lc shift @vals;
       MKDEBUG && _d('$cmd is a ', $cmd);
-      if ( $cmd eq 'set' || $cmd eq 'add' ) {
+      if ( $cmd eq 'set' || $cmd eq 'add' || $cmd eq 'replace' ) {
          ($key, $flags, $exptime, $bytes) = @vals;
          $session->{bytes} = $bytes;
       }
