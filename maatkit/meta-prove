@@ -1,0 +1,63 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import optparse
+
+# Parse command line args.
+parser = optparse.OptionParser(usage='meta-prove [options] count')
+parser.add_option(
+   '--prove',
+   dest='prove_cmd',
+   default='prove -rs',
+   help='prove command to run (default: "prove -rs" from trunk)',
+)
+
+o, args = parser.parse_args()
+
+if len(args) < 1:
+   parser.error('No count provided.')
+
+count = int(args[0])
+if count <= 0:
+   print 'Count must be > 0.'
+   sys.exit(1)
+
+# Make sure MAATKIT_TRUNK is set else tests won't run.
+trunk = os.getenv('MAATKIT_TRUNK')
+if trunk is None:
+   print 'The MAATKIT_TRUNK environment variable is not set.'
+   sys.exit(1)
+
+# Run prove over and over again.
+print "Running", o.prove_cmd, count, "times..."
+
+total_failed = 0  # total test failures for all runs
+total_died   = 0  # total test deaths (die()) for all runs
+failed_runs  = 0  # number of runs that had a failure or death
+
+i = 1
+while i <= count:
+   print 'Run', i, 'of', count
+   i += 1
+
+   # prove returns the number of failed tests as its exit code.
+   retcode = os.system(o.prove_cmd)
+   retcode >>= 8
+   print "Exit code:", retcode
+
+   if retcode == 0:  # all tests were successful
+      continue
+
+   # at least one test failed or died
+   failed_runs += 1
+   if retcode == 255:  # some test died (can't tell which one or when)
+      total_died += 1
+   else:
+      total_failed += retcode  # numer of tests that failed
+
+# Print the final results.
+pct_failed = failed_runs * 100 / count
+print '%d/%d (%.2f%%) runs failed; %d test failures, %d deaths' % (failed_runs, count, pct_failed, total_failed, total_died)
+
+sys.exit(failed_runs)
