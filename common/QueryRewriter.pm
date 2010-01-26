@@ -50,6 +50,8 @@ my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
 my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;             # For SHOW + /*!version */
 my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;     # Variation for SHOW
 
+my $no_tables = "false";
+
 sub new {
    my ( $class, %args ) = @_;
    my $self = { %args };
@@ -225,16 +227,20 @@ sub distill_verbs {
       MKDEBUG && _d('SHOW', @what);
       return unless scalar @what;
       @what = map { uc $_ } grep { defined $_ } @what; 
-
-      # Handles SHOW CREATE * and SHOW * STATUS and SHOW MASTER *.
-      if ( $what[0] =~ m/CREATE/
-           || ($what[1] && $what[1] =~ m/STATUS/)
-           || $what[0] =~ m/MASTER/ ) {
+		
+      # Handles SHOW *.
+      if ( $what[0] =~ m/(CREATE|MASTER|BINARY|BINLOG|CHARACTER|CREATE|FUNCTION|OPEN|PROCEDURE)/ 
+           || ($what[1] && $what[0] =~ m/SLAVE/ ) && $what[0] !~ m/(SESSION|GLOBAL)/
+           || ($what[1] && $what[1] =~ m/STATUS/ ) && $what[0] !~ m/(SESSION|GLOBAL)/) {
          return "SHOW $what[0] $what[1]";
       }
       else {
-         $what[0] =~ m/GLOBAL/ ? return "SHOW $what[1]"
-                  :              return "SHOW $what[0]";
+         if ( $what[0] =~ m/(GLOBAL|SESSION|STORAGE|COLUMNS|FULL|COUNT\(\*\))/ && $what[1] ) {
+	 		return "SHOW $what[1]";
+		 }
+		 else {
+			 return "SHOW $what[0]";
+		}
       }
    }
 
@@ -246,7 +252,7 @@ sub distill_verbs {
    eval $QueryParser::data_def_stmts;
    eval $QueryParser::tbl_ident;
    my ( $dds ) = $query =~ /^\s*($QueryParser::data_def_stmts)\b/i;
-   if ( $dds ) {
+   if ( $dds && $no_tables eq "false" ) {
       my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
       $obj = uc $obj if $obj;
       MKDEBUG && _d('Data def statment:', $dds, 'obj:', $obj);
@@ -297,6 +303,38 @@ sub __distill_tables {
 sub distill {
    my ( $self, $query, %args ) = @_;
 
+   # if its a show , try to overwrite some predef expressions
+   my %queries_to_replace = (
+	   # Match This					=> # replace to this
+	   'SHOW COLUMNS'				=> 'SHOW COLUMNS',
+	   'SHOW CREATE SCHEMA' 		=> 'SHOW CREATE DATABASE',
+	   'SHOW ENGINE innodb status'	=> 'SHOW INNODB STATUS',
+	   'SHOW ENGINE ndb status'		=> 'SHOW NDB STATUS',
+	   'SHOW KEYS'					=> 'SHOW INDEXES',
+	   'SHOW SCHEMAS'				=> 'SHOW DATABASES',
+	   'SHOW DATABASES'				=> 'SHOW DATABASES',
+	   'SHOW TABLES'				=> 'SHOW TABLES',
+	   'SHOW TABLE STATUS'			=> 'SHOW TABLE STATUS',
+	   'SHOW FULL COLUMNS'			=> 'SHOW COLUMNS',
+	   'SHOW INDEX'					=> 'SHOW INDEX',
+	   'SHOW TRIGGERS'				=> 'SHOW TRIGGERS',
+	   'SHOW OPEN TABLES'			=> 'SHOW OPEN TABLES',
+   );
+
+	foreach my $key2 ( keys %queries_to_replace ) {
+		if ( $query =~ m/$key2/ ) {
+			#	print "im matched\n";
+			#	print "kveri na' : $query\n";
+			$query = $queries_to_replace{$key2};
+			#	print "and na'v $query\n";
+			$no_tables = "true";
+		}
+		else {
+			$no_tables = "false";
+		}
+	}
+
+
    if ( $args{generic} ) {
       # Do a generic distillation which returns the first two words
       # of a simple "cmd arg" query, like memcached and HTTP stuff.
@@ -312,7 +350,12 @@ sub distill {
       # eliminate any duplicate tables.
       my ($verbs, $table)  = $self->distill_verbs($query, %args);
       my @tables           = $self->__distill_tables($query, $table, %args);
-      $query               = join(q{ }, $verbs, @tables);
+      if ( $no_tables eq "false" ) {
+	       $query          = join(q{ }, $verbs, @tables); 
+	  } 
+	  else {
+	       $query          = join(q{ }, $verbs);
+	  }
    }
    
    if ( $args{trf} ) {

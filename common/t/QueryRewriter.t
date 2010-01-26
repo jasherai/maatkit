@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 152;
+use Test::More tests => 241;
 
 use QueryRewriter;
 use QueryParser;
@@ -1100,7 +1100,7 @@ is(
 
 is( 
 	$qr->distill('SHOW GLOBAL STATUS'),
-	'SHOW GLOBAL STATUS',
+	'SHOW STATUS',
 	"distills SHOW GLOBAL STATUS"
 );
 
