@@ -50,7 +50,6 @@ my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
 my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;             # For SHOW + /*!version */
 my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;     # Variation for SHOW
 
-my $no_tables = "false";
 
 sub new {
    my ( $class, %args ) = @_;
@@ -204,47 +203,48 @@ sub fingerprint {
 sub distill_verbs {
    my ( $self, $query ) = @_;
 
-   # Special cases.
-   $query =~ m/\A\s*call\s+(\S+)\(/i
-      && return "CALL $1"; # Warning! $1 used, be careful.
+   # Simple verbs that normally don't have comments, extra clauses, etc.
+   $query =~ m/\A\s*call\s+(\S+)\(/i && return "CALL $1";
+   $query =~ m/\A\s*use\s+/          && return "USE";
+   $query =~ m/\A\s*UNLOCK TABLES/i  && return "UNLOCK";
+   $query =~ m/\A\s*xa\s+(\S+)/i     && return "XA_$1";
+
    if ( $query =~ m/\A# administrator command:/ ) {
       $query =~ s/# administrator command:/ADMIN/go;
       $query = uc $query;
       return $query;
    }
 
-   $query =~ m/\A\s*use\s+/
-      && return "USE";
-   $query =~ m/\A\s*UNLOCK TABLES/i
-      && return "UNLOCK";
-   $query =~ m/\A\s*xa\s+(\S+)/i
-      && return "XA_$1";
-
+   # All other, more complex verbs. 
    $query = $self->strip_comments($query);
 
+   # SHOW statements are either 2 or 3 words: SHOW, $what[0], and
+   # maybe $what[1].  E.g. "SHOW TABLES" or "SHOW SLAVE STATUS".  There's
+   # a few common keywords that may be in place $what[0], so we remove
+   # them first.  Then there's some keywords that signify extra clauses
+   # that may be in place of $what[1] and since these clauses are at the
+   # end of the statement, we remove everything from the clause onward.
    if ( $query =~ m/\A\s*SHOW\s+/i ) {
+      MKDEBUG && _d($query);
+
+      # Remove common keywords.
+      $query =~ s/\s+(?:GLOBAL|SESSION|FULL|STORAGE|ENGINE)\b/ /ig;
+      # This should be in the regex above but Perl doesn't seem to match
+      # COUNT\(.+\) properly when it's grouped.
+      $query =~ s/\s+COUNT\(.+\)//ig;
+
+      # Remove clause keywords and everything after.
+      $query =~ s/\s+(?:FOR|FROM|LIKE|WHERE|LIMIT|IN)\b.+//msi;
+
+      # Get $what[0] and maybe $what[1];
       my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/i;
       MKDEBUG && _d('SHOW', @what);
-      return unless scalar @what;
+
       @what = map { uc $_ } grep { defined $_ } @what; 
-		
-      # Handles SHOW *.
-      if ( $what[0] =~ m/(CREATE|MASTER|BINARY|BINLOG|CHARACTER|CREATE|FUNCTION|OPEN|PROCEDURE)/ 
-           || ($what[1] && $what[0] =~ m/SLAVE/ ) && $what[0] !~ m/(SESSION|GLOBAL)/
-           || ($what[1] && $what[1] =~ m/STATUS/ ) && $what[0] !~ m/(SESSION|GLOBAL)/) {
-         return "SHOW $what[0] $what[1]";
-      }
-      else {
-         if ( $what[0] =~ m/(GLOBAL|SESSION|STORAGE|COLUMNS|FULL|COUNT\(\*\))/ && $what[1] ) {
-	 		return "SHOW $what[1]";
-		 }
-		 else {
-			 return "SHOW $what[0]";
-		}
-      }
+      return "SHOW $what[0]" . ($what[1] ? " $what[1]" : '');
    }
 
-   # More special cases for data defintion statements.
+   # Data defintion statements verbs like CREATE and ALTER.
    # The two evals are a hack to keep Perl from warning that
    # "QueryParser::data_def_stmts" used only once: possible typo at...".
    # Some day we'll group all our common regex together in a packet and
@@ -252,7 +252,7 @@ sub distill_verbs {
    eval $QueryParser::data_def_stmts;
    eval $QueryParser::tbl_ident;
    my ( $dds ) = $query =~ /^\s*($QueryParser::data_def_stmts)\b/i;
-   if ( $dds && $no_tables eq "false" ) {
+   if ( $dds) {
       my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
       $obj = uc $obj if $obj;
       MKDEBUG && _d('Data def statment:', $dds, 'obj:', $obj);
@@ -262,7 +262,8 @@ sub distill_verbs {
       return uc($dds . ($obj ? " $obj" : '')), $db_or_tbl;
    }
 
-   # First, get the query type -- just extract all the verbs and collapse them
+   # All other verbs, like SELECT, INSERT, UPDATE, etc.  First, get
+   # the query type -- just extract all the verbs and collapse them
    # together.
    my @verbs = $query =~ m/\b($verbs)\b/gio;
    @verbs    = do {
@@ -303,38 +304,6 @@ sub __distill_tables {
 sub distill {
    my ( $self, $query, %args ) = @_;
 
-   # if its a show , try to overwrite some predef expressions
-   my %queries_to_replace = (
-	   # Match This					=> # replace to this
-	   'SHOW COLUMNS'				=> 'SHOW COLUMNS',
-	   'SHOW CREATE SCHEMA' 		=> 'SHOW CREATE DATABASE',
-	   'SHOW ENGINE innodb status'	=> 'SHOW INNODB STATUS',
-	   'SHOW ENGINE ndb status'		=> 'SHOW NDB STATUS',
-	   'SHOW KEYS'					=> 'SHOW INDEXES',
-	   'SHOW SCHEMAS'				=> 'SHOW DATABASES',
-	   'SHOW DATABASES'				=> 'SHOW DATABASES',
-	   'SHOW TABLES'				=> 'SHOW TABLES',
-	   'SHOW TABLE STATUS'			=> 'SHOW TABLE STATUS',
-	   'SHOW FULL COLUMNS'			=> 'SHOW COLUMNS',
-	   'SHOW INDEX'					=> 'SHOW INDEX',
-	   'SHOW TRIGGERS'				=> 'SHOW TRIGGERS',
-	   'SHOW OPEN TABLES'			=> 'SHOW OPEN TABLES',
-   );
-
-	foreach my $key2 ( keys %queries_to_replace ) {
-		if ( $query =~ m/$key2/ ) {
-			#	print "im matched\n";
-			#	print "kveri na' : $query\n";
-			$query = $queries_to_replace{$key2};
-			#	print "and na'v $query\n";
-			$no_tables = "true";
-		}
-		else {
-			$no_tables = "false";
-		}
-	}
-
-
    if ( $args{generic} ) {
       # Do a generic distillation which returns the first two words
       # of a simple "cmd arg" query, like memcached and HTTP stuff.
@@ -345,19 +314,30 @@ sub distill {
    else {
       # distill_verbs() may return a table if it's a special statement
       # like TRUNCATE TABLE foo.  __distill_tables() handles some but not
-      # all special statements so we pass it this special table in case
-      # it's a statement it can't handle.  If it can handle it, it will
-      # eliminate any duplicate tables.
+      # all special statements so we pass the special table from distill_verbs()
+      # to __distill_tables() in case it's a statement that the latter
+      # can't handle.  If it can handle it, it will eliminate any duplicate
+      # tables.
       my ($verbs, $table)  = $self->distill_verbs($query, %args);
-      my @tables           = $self->__distill_tables($query, $table, %args);
-      if ( $no_tables eq "false" ) {
-	       $query          = join(q{ }, $verbs, @tables); 
-	  } 
-	  else {
-	       $query          = join(q{ }, $verbs);
-	  }
+
+      if ( $verbs && $verbs =~ m/^SHOW/ ) {
+         # Ignore tables for SHOW statements and normalize some
+         # aliases like SCHMEA==DATABASE, KEYS==INDEX.
+         my %alias_for = qw(
+            SCHEMA   DATABASE
+            KEYS     INDEX
+            INDEXES  INDEX
+         );
+         map { $verbs =~ s/$_/$alias_for{$_}/ } keys %alias_for;
+         $query = $verbs;
+      }
+      else {
+         # For everything else, distill the tables.
+         my @tables = $self->__distill_tables($query, $table, %args);
+	      $query     = join(q{ }, $verbs, @tables); 
+	   } 
    }
-   
+
    if ( $args{trf} ) {
       $query = $args{trf}->($query, %args);
    }
