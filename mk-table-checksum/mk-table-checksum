@@ -5946,13 +5946,14 @@ suffixes are k, M, G. Disallows C<--algorithm CHECKSUM>.
 
 If you specify a chunk size, mk-table-checksum will try to find an index that
 will let it split the table into ranges of approximately L<"--chunk-size">
-rows, based on the table's index statistics.  It will checksum each range
-separately with parameters in the checksum query's WHERE clause.
+rows, based on the table's index statistics.  Currently only numeric and date
+types can be chunked.
 
-If mk-table-checksum cannot find a suitable index, it will do the entire
-table in one chunk as though you had not specified L<"--chunk-size"> at all.
-Each table is handled individually, so some tables may be chunked and others
-not.
+If the table is chunkable, mk-table-checksum will checksum each range separately
+with parameters in the checksum query's WHERE clause.  If mk-table-checksum
+cannot find a suitable index, it will do the entire table in one chunk as though
+you had not specified L<"--chunk-size"> at all.  Each table is handled
+individually, so some tables may be chunked and others not.
 
 The chunks will be approximately sized, and depending on the distribution of
 values in the indexed column, some chunks may be larger than the value you
