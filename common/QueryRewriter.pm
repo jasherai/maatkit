@@ -218,11 +218,11 @@ sub distill_verbs {
    # All other, more complex verbs. 
    $query = $self->strip_comments($query);
 
-   # SHOW statements are either 2 or 3 words: SHOW, $what[0], and
-   # maybe $what[1].  E.g. "SHOW TABLES" or "SHOW SLAVE STATUS".  There's
-   # a few common keywords that may be in place $what[0], so we remove
-   # them first.  Then there's some keywords that signify extra clauses
-   # that may be in place of $what[1] and since these clauses are at the
+   # SHOW statements are either 2 or 3 words: SHOW A (B), where A and B
+   # are words; B is optional.  E.g. "SHOW TABLES" or "SHOW SLAVE STATUS". 
+   # There's a few common keywords that may show up in place of A, so we
+   # remove them first.  Then there's some keywords that signify extra clauses
+   # that may show up in place of B and since these clauses are at the
    # end of the statement, we remove everything from the clause onward.
    if ( $query =~ m/\A\s*SHOW\s+/i ) {
       MKDEBUG && _d($query);
