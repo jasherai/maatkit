@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 241;
+use Test::More tests => 242;
 
 use QueryRewriter;
 use QueryParser;
@@ -1045,6 +1045,7 @@ my %status_tests = (
    'SHOW WARNINGS'                              => 'SHOW WARNINGS',
    'SHOW WARNINGS LIMIT 5'                      => 'SHOW WARNINGS',
    'SHOW COUNT(*) WARNINGS'                     => 'SHOW WARNINGS',
+   'SHOW COUNT ( *) WARNINGS'                   => 'SHOW WARNINGS',
 );
 
 foreach my $key ( keys %status_tests ) {

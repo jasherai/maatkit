@@ -228,20 +228,21 @@ sub distill_verbs {
       MKDEBUG && _d($query);
 
       # Remove common keywords.
-      $query =~ s/\s+(?:GLOBAL|SESSION|FULL|STORAGE|ENGINE)\b/ /ig;
+      $query = uc $query;
+      $query =~ s/\s+(?:GLOBAL|SESSION|FULL|STORAGE|ENGINE)\b/ /g;
       # This should be in the regex above but Perl doesn't seem to match
       # COUNT\(.+\) properly when it's grouped.
-      $query =~ s/\s+COUNT\(.+\)//ig;
+      $query =~ s/\s+COUNT[^)]+\)//g;
 
       # Remove clause keywords and everything after.
-      $query =~ s/\s+(?:FOR|FROM|LIKE|WHERE|LIMIT|IN)\b.+//msi;
+      $query =~ s/\s+(?:FOR|FROM|LIKE|WHERE|LIMIT|IN)\b.+//ms;
 
-      # Get $what[0] and maybe $what[1];
-      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/i;
-      MKDEBUG && _d('SHOW', @what);
-
-      @what = map { uc $_ } grep { defined $_ } @what; 
-      return "SHOW $what[0]" . ($what[1] ? " $what[1]" : '');
+      # The query should now be like SHOW A B C ... delete everything after B,
+      # collapse whitespace, and we're done.
+      $query =~ s/\A(SHOW(?:\s+\S+){1,2}).*\Z/$1/s;
+      $query =~ s/\s+/ /g;
+      MKDEBUG && _d($query);
+      return $query;
    }
 
    # Data defintion statements verbs like CREATE and ALTER.
@@ -334,8 +335,8 @@ sub distill {
       else {
          # For everything else, distill the tables.
          my @tables = $self->__distill_tables($query, $table, %args);
-	      $query     = join(q{ }, $verbs, @tables); 
-	   } 
+         $query     = join(q{ }, $verbs, @tables); 
+      } 
    }
 
    if ( $args{trf} ) {
