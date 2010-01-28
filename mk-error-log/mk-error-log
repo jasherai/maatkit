@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 4805
+# OptionParser package 5568
 # ###########################################################################
 package OptionParser;
 
@@ -570,7 +570,7 @@ sub _validate_type {
       $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
-      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
+      $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
    }
    else {
       MKDEBUG && _d('Nothing to validate for option',
@@ -632,7 +632,8 @@ sub descr {
               . "  For more details, please use the --help option, "
               . "or try 'perldoc $PROGRAM_NAME' "
               . "for complete documentation.";
-   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g)
+      unless $ENV{DONT_BREAK_LINES};
    $descr =~ s/ +$//mg;
    return $descr;
 }
@@ -861,7 +862,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 5113
+# ReportFormatter package 5266
 # ###########################################################################
 package ReportFormatter;
 
@@ -1013,7 +1014,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ErrorLogParser package 5396
+# ErrorLogParser package 5401
 # ###########################################################################
 package ErrorLogParser;
 
@@ -1051,7 +1052,7 @@ sub parse_event {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $fh = @args{@required_args};
+   my ($fh) = @args{@required_args};
 
    my $pending = $self->{pending};
 
@@ -1147,7 +1148,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ErrorLogPatternMatcher package 5257
+# ErrorLogPatternMatcher package 5573
 # ###########################################################################
 package ErrorLogPatternMatcher;
 
@@ -1205,6 +1206,16 @@ sub load_patterns_file {
       }
       $self->add_patterns( [[$name, $level, $regex]] );
    }
+   return;
+}
+
+sub reset_patterns {
+   my ( $self ) = @_;
+   $self->{names}    = [];
+   $self->{levels}   = [];
+   $self->{patterns} = [];
+   $self->{compiled} = [];
+   MKDEBUG && _d('Reset patterns');
    return;
 }
 

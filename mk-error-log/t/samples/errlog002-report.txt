@@ -1,0 +1,6 @@
+===== ======= ==================================================
+    1 info    [Note] Slave SQL thread initialized, starting repl
+    1 warning [Warning] Statement may not be safe to log in stat
+    1 warning [Warning] Statement may not be safe to log in stat
+    1 warning [Warning] Statement may not be safe to log in stat
+Count Level   Message                                           
