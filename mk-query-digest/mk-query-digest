@@ -449,7 +449,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5525
+# OptionParser package 5568
 # ###########################################################################
 package OptionParser;
 
@@ -994,7 +994,7 @@ sub _validate_type {
       $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
-      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
+      $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
    }
    else {
       MKDEBUG && _d('Nothing to validate for option',
@@ -1496,7 +1496,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5559
+# QueryRewriter package 5563
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1651,16 +1651,16 @@ sub distill_verbs {
    if ( $query =~ m/\A\s*SHOW\s+/i ) {
       MKDEBUG && _d($query);
 
-      $query =~ s/\s+(?:GLOBAL|SESSION|FULL|STORAGE|ENGINE)\b/ /ig;
-      $query =~ s/\s+COUNT\(.+\)//ig;
+      $query = uc $query;
+      $query =~ s/\s+(?:GLOBAL|SESSION|FULL|STORAGE|ENGINE)\b/ /g;
+      $query =~ s/\s+COUNT[^)]+\)//g;
 
-      $query =~ s/\s+(?:FOR|FROM|LIKE|WHERE|LIMIT|IN)\b.+//msi;
+      $query =~ s/\s+(?:FOR|FROM|LIKE|WHERE|LIMIT|IN)\b.+//ms;
 
-      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/i;
-      MKDEBUG && _d('SHOW', @what);
-
-      @what = map { uc $_ } grep { defined $_ } @what; 
-      return "SHOW $what[0]" . ($what[1] ? " $what[1]" : '');
+      $query =~ s/\A(SHOW(?:\s+\S+){1,2}).*\Z/$1/s;
+      $query =~ s/\s+/ /g;
+      MKDEBUG && _d($query);
+      return $query;
    }
 
    eval $QueryParser::data_def_stmts;
@@ -1730,8 +1730,8 @@ sub distill {
       }
       else {
          my @tables = $self->__distill_tables($query, $table, %args);
-	      $query     = join(q{ }, $verbs, @tables); 
-	   } 
+         $query     = join(q{ }, $verbs, @tables); 
+      } 
    }
 
    if ( $args{trf} ) {
@@ -10109,7 +10109,7 @@ Connect to host.
 
 =item --ignore-attributes
 
-type: array; default: arg,cmd,insert_id,ip,port,Thread_id,timestamp,exptime,flags,key,res,val,server_id,offset,end_log_pos,Xid
+type: array; default: arg, cmd, insert_id, ip, port, Thread_id, timestamp, exptime, flags, key, res, val, server_id, offset, end_log_pos, Xid
 
 Do not aggregate these attributes when auto-detecting L<"--select">.
 
