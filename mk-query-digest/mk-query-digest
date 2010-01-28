@@ -2254,7 +2254,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5439
+# MySQLProtocolParser package 5570
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2589,6 +2589,14 @@ sub parse_event {
          }
       }
       elsif ( $packet->{mysql_data_len} > ($packet->{data_len} - 4) ) {
+
+         if ( $session->{cmd} && ($session->{state} || '') eq 'awaiting_reply' ) {
+            MKDEBUG && _d('No server OK to previous command (frag)');
+            $self->fail_session($session, 'no server OK to previous command');
+            $packet->{data} = $packet->{mysql_hdr} . $packet->{data};
+            return $self->parse_event(%args);
+         }
+
          $session->{buff}           = $packet->{data};
          $session->{mysql_data_len} = $packet->{mysql_data_len};
          $session->{number}         = $packet->{number};
