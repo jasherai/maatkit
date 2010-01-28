@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 11;
 
 use QueryRewriter;
 use ErrorLogPatternMatcher;
@@ -467,6 +467,34 @@ is(
    $patterns[0],
    'info',
    'levels'
+);
+
+# #############################################################################
+# Reset patterns.
+# #############################################################################
+
+# This assumes that some patterns have been loaded from above.
+$m->reset_patterns();
+
+@patterns = $m->patterns;
+is_deeply(
+   \@patterns,
+   [],
+   'Reset patterns'
+);
+
+@patterns = $m->names;
+is_deeply(
+   \@patterns,
+   [],
+   'Reset names'
+);
+
+@patterns = $m->levels;
+is_deeply(
+   \@patterns,
+   [],
+   'Reset levels'
 );
 
 # #############################################################################

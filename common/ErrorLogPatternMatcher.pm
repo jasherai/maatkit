@@ -76,6 +76,16 @@ sub load_patterns_file {
    return;
 }
 
+sub reset_patterns {
+   my ( $self ) = @_;
+   $self->{names}    = [];
+   $self->{levels}   = [];
+   $self->{patterns} = [];
+   $self->{compiled} = [];
+   MKDEBUG && _d('Reset patterns');
+   return;
+}
+
 sub patterns {
    my ( $self ) = @_;
    return @{$self->{patterns}};
