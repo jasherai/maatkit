@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 68;
+use Test::More tests => 70;
 
 use MySQLProtocolParser;
 use TcpdumpParser;
@@ -1615,6 +1615,23 @@ test_protocol_parser(
          user => undef,
       },
    ],
+);
+
+# #############################################################################
+# Issue 832: mk-query-digest tcpdump crashes on successive, fragmented
+# client query
+# #############################################################################
+$protocol = new MySQLProtocolParser(server => '127.0.0.1:12345');
+$e = test_protocol_parser(
+   parser   => $tcpdump,
+   protocol => $protocol,
+   file     => 'common/t/samples/tcpdump038.txt',
+);
+
+like(
+   $e->[0]->{arg},
+   qr/--THE END--'\)$/,
+   '2nd, fragmented client query (issue 832)',
 );
 
 # #############################################################################

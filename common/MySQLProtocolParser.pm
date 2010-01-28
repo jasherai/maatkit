@@ -402,6 +402,16 @@ sub parse_event {
          }
       }
       elsif ( $packet->{mysql_data_len} > ($packet->{data_len} - 4) ) {
+
+         # http://code.google.com/p/maatkit/issues/detail?id=832
+         if ( $session->{cmd} && ($session->{state} || '') eq 'awaiting_reply' ) {
+            MKDEBUG && _d('No server OK to previous command (frag)');
+            $self->fail_session($session, 'no server OK to previous command');
+            # The MySQL header is removed by this point, so put it back.
+            $packet->{data} = $packet->{mysql_hdr} . $packet->{data};
+            return $self->parse_event(%args);
+         }
+
          # There is more MySQL data than this packet contains.
          # Save the data and the original MySQL header values
          # then wait for the rest of the data.
