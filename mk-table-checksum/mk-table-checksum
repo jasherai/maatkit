@@ -5769,7 +5769,7 @@ The table's row count, unless you specified to skip it.
 
 =item CHECKSUM
 
-The table's checksum, unless you specifed to skip it or the table has no rows.
+The table's checksum, unless you specified to skip it or the table has no rows.
 some types of checksums will be 0 if there are no rows; others will print NULL.
 
 =item TIME
