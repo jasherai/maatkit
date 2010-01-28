@@ -10553,7 +10553,7 @@ several types:
   * Any time expression evaluated by MySQL: C<CURRENT_DATE - INTERVAL 7 DAY>
 
 If you give a MySQL time expression, then you must also specifiy a DSN
-so that mk-query-digest can connect to MySQL to evalue to expression.  If you
+so that mk-query-digest can connect to MySQL to evalue the expression.  If you
 specify L<"--execute">, L<"--explain">, L<"--processlist">, L<"--review">
 or L<"--review-history">, then one of these DSNs will be used automatically.
 Otherwise, you must specify an L<"--aux-dsn"> or mk-query-digest will die
