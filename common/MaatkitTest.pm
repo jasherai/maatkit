@@ -330,44 +330,59 @@ sub test_packet_parser {
 
    return;
 }
-# Returns true (1) if there's no difference between the
-# cmd's output and the expected output.  If $update_sample
-# or the env var UPDATE_SAMPLES is true then the $cmd
-# output is written to the $expected_output file.
+
+# no_diff() compares the STDOUT output of a cmd or code to expected output.
+# Returns true if there are no differences between the two outputs,
+# else returns false.  Dies if the cmd/code dies.  Does not capture STDERR.
+# Args:
+#   * cmd                 scalar or coderef: if cmd is a scalar then the
+#                         cmd is ran via the shell.  if it's a coderef then
+#                         the code is ran.  the latter is preferred because
+#                         it generates test coverage.
+#   * expected_output     scalar: file name relative to MAATKIT_TRUNK
+#   * args                hash: (optional) may include
+#       update_sample            overwrite expected_output with cmd/code output
+#       keep_output              keep last cmd/code output file
+#   *   trf                      transform cmd/code output before diff
+# The sub dies if cmd or code dies.  STDERR is not captured.
 sub no_diff {
-   my ( $cmd, $expected_output, $update_sample ) = @_;
+   my ( $cmd, $expected_output, %args ) = @_;
    die "I need a cmd argument" unless $cmd;
    die "I need an expected_output argument" unless $expected_output;
-   $expected_output = "$trunk/$expected_output";
-   die "$expected_output does not exist" unless -f $expected_output;
-   MKDEBUG && diag($cmd);
-   `$cmd > /tmp/maatkit_test`;
-   if ( $ENV{UPDATE_SAMPLES} || $update_sample ) {
-      `cat /tmp/maatkit_test > $expected_output`;
-      print STDERR "Updated $expected_output\n";
-   }
-   my $retval = system("diff /tmp/maatkit_test $expected_output");
-   `rm -f /tmp/maatkit_test`;
-   $retval = $retval >> 8; 
-   return !$retval;
-}
 
-# Like no_diff() above but runs the tool as a module
-# so the test creates coverage (hence, _c).
-sub no_diff_c {
-   my ( $code, $expected_output, $update_sample ) = @_;
-   die "I need a code argument" unless $code;
-   die "I need an expected_output argument" unless $expected_output;
    $expected_output = "$trunk/$expected_output";
    die "$expected_output does not exist" unless -f $expected_output;
-   my $tmp_file     = '/tmp/maatkit-test.txt';
-   output($code, $tmp_file);
-   if ( $ENV{UPDATE_SAMPLES} || $update_sample ) {
+
+   my $tmp_file      = '/tmp/maatkit-test-output.txt';
+   my $tmp_file_orig = '/tmp/maatkit-test-output-original.txt';
+
+   # Determine cmd type and run it.
+   if ( ref $cmd eq 'CODE' ) {
+      output($cmd, $tmp_file);
+   }
+   else {
+      `$cmd > $tmp_file`;
+   }
+
+   # Do optional arg stuff.
+   if ( my $trf = $args{trf} ) {
+      `cp $tmp_file $tmp_file_orig`;
+      `$trf $tmp_file_orig > $tmp_file`;
+   }
+   if ( $ENV{UPDATE_SAMPLES} || $args{update_sample} ) {
       `cat $tmp_file > $expected_output`;
       print STDERR "Updated $expected_output\n";
    }
+
+   # diff the outputs.
    my $retval = system("diff $expected_output $tmp_file");
-   `rm -f $tmp_file`;
+
+   # Remove our tmp files.
+   `rm -f $tmp_file $tmp_file_orig`
+      unless $ENV{KEEP_OUTPUT} || $args{keep_output};
+
+   # diff returns 0 if there were no differences,
+   # so !0 = 1 = no diff in our testing parlance.
    $retval = $retval >> 8; 
    return !$retval;
 }
