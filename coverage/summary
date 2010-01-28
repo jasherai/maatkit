@@ -1,7 +1,9 @@
 File                           stmt   bran   cond    sub    pod   time  total
 .../mk-duplicate-key-checker   14.2    2.2    3.3   36.4    n/a  100.0   11.5
+...mk-error-log/mk-error-log   55.4   38.0   41.7   66.2    n/a  100.0   50.3
 ...logger/mk-fk-error-logger   43.9   28.4   32.1   56.2    n/a  100.0   39.0
 ...v/maatkit/mk-kill/mk-kill   50.0   33.5   31.5   62.5    n/a  100.0   44.1
 ...kit/mk-loadavg/mk-loadavg   44.0   27.5   31.7   58.1    n/a  100.0   39.3
+...lel-dump/mk-parallel-dump   58.2   39.3   36.7   66.2    n/a  100.0   51.0
 ...kit/mk-upgrade/mk-upgrade   43.6   26.7   24.8   58.3    n/a  100.0   38.4
 ...explain/mk-visual-explain   41.8   32.7   28.0   54.0    n/a  100.0   38.6

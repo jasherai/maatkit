@@ -35,7 +35,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...kit/common/QueryParser.pm   93.9   73.8   69.2   91.7    n/a  100.0   88.3
 ...n/QueryReportFormatter.pm   97.3   80.0   66.7  100.0    n/a  100.0   89.8
 ...kit/common/QueryReview.pm   91.0   68.2   66.7   91.7    n/a  100.0   84.7
-...t/common/QueryRewriter.pm   92.2   84.5   53.3   93.8    n/a  100.0   87.8
+...t/common/QueryRewriter.pm   96.0   88.2   70.0   94.7    n/a   53.8   92.1
 .../maatkit/common/Quoter.pm  100.0  100.0  100.0  100.0    n/a  100.0  100.0
 ...maatkit/common/RowDiff.pm   91.4   87.0   80.4   88.9    n/a  100.0   87.7
 .../common/SchemaDiscover.pm   89.5   42.9  100.0   87.5    n/a  100.0   84.2
