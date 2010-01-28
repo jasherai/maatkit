@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 141;
+use Test::More tests => 142;
 
 use OptionParser;
 use DSNParser;
@@ -1916,6 +1916,28 @@ is(
    $o->get('run-time'),
    '+60',
    '+N time value with suffix'
+);
+
+
+# #############################################################################
+# Issue 829: maatkit: mk-query-digest.1p : provokes warnings from man
+# #############################################################################
+# This happens because --ignore-attributes has a really long default
+# value like val,val,val.  man can't break this line unless that list
+# has spaces like val, val, val.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dp           => $dp,
+);
+$o->_parse_specs(
+   { spec  => 'foo=a',   desc => 'foo (default arg, cmd, ip, port)' },
+);
+@ARGV = ();
+$o->get_opts();
+is_deeply(
+   $o->get('foo'),
+   [qw(arg cmd ip port)],
+   'List vals separated by spaces'
 );
 
 # #############################################################################

@@ -639,7 +639,7 @@ sub _validate_type {
       $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
-      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
+      $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
    }
    else {
       MKDEBUG && _d('Nothing to validate for option',
