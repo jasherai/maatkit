@@ -151,9 +151,8 @@ DBD::mysql, I<not maatkit itself>) should read.  The maatkit tools all read the
 [client] section within the defaults file.  If you omit this, the standard
 defaults files will be read in the usual order.  "Standard" varies from system
 to system, because the filenames to read are compiled into the client library.
-On Debian systems, for example, it's usually /etc/mysql/my.cnf, ~/.my.cnf, and
-then /usr/etc/my.cnf.  If you place the following into ~/.my.cnf, maatkit will
-Do The Right Thing:
+On Debian systems, for example, it's usually /etc/mysql/my.cnf then ~/.my.cnf.
+If you place the following into ~/.my.cnf, maatkit will Do The Right Thing:
 
  [client]
  user=your_user_name
