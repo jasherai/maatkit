@@ -59,22 +59,30 @@ our @EXPORT      = qw(
    test_protocol_parser
    test_packet_parser
    no_diff
+   no_diff_c
    $trunk
 );
 our @EXPORT_OK   = qw();
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+# Runs code and captures its STDOUT output to either a file (optional)
+# or a var (default).  Dies if code dies.
 sub output {
-   my ( $code ) = @_;
+   my ( $code, $file ) = @_;
    die "I need a code argument" unless $code;
    my $output = '';
-   open my $output_fh, '>', \$output
-      or die "Cannot capture output to variable: $OS_ERROR";
-   select $output_fh;
+   if ( $file ) { 
+      open *output_fh, '>', $file
+         or die "Cannot open file $file: $OS_ERROR";
+   }
+   else {
+      open *output_fh, '>', \$output
+         or die "Cannot capture output to variable: $OS_ERROR";
+   }
+   local *STDOUT = *output_fh;
    eval { $code->() };
-   close $output_fh;
-   select STDOUT;
+   close *output_fh;
    die $EVAL_ERROR if $EVAL_ERROR;
    return $output;
 }
@@ -331,6 +339,7 @@ sub no_diff {
    die "I need a cmd argument" unless $cmd;
    die "I need an expected_output argument" unless $expected_output;
    $expected_output = "$trunk/$expected_output";
+   die "$expected_output does not exist" unless -f $expected_output;
    MKDEBUG && diag($cmd);
    `$cmd > /tmp/maatkit_test`;
    if ( $ENV{UPDATE_SAMPLES} || $update_sample ) {
@@ -339,6 +348,26 @@ sub no_diff {
    }
    my $retval = system("diff /tmp/maatkit_test $expected_output");
    `rm -f /tmp/maatkit_test`;
+   $retval = $retval >> 8; 
+   return !$retval;
+}
+
+# Like no_diff() above but runs the tool as a module
+# so the test creates coverage (hence, _c).
+sub no_diff_c {
+   my ( $code, $expected_output, $update_sample ) = @_;
+   die "I need a code argument" unless $code;
+   die "I need an expected_output argument" unless $expected_output;
+   $expected_output = "$trunk/$expected_output";
+   die "$expected_output does not exist" unless -f $expected_output;
+   my $tmp_file     = '/tmp/maatkit-test.txt';
+   output($code, $tmp_file);
+   if ( $ENV{UPDATE_SAMPLES} || $update_sample ) {
+      `cat $tmp_file > $expected_output`;
+      print STDERR "Updated $expected_output\n";
+   }
+   my $retval = system("diff $expected_output $tmp_file");
+   `rm -f $tmp_file`;
    $retval = $retval >> 8; 
    return !$retval;
 }
