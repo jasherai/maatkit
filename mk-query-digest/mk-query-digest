@@ -10556,7 +10556,7 @@ The MySQL time expression is warpped inside a query like
 valid inside this query.  For example, do not use UNIX_TIMESTAMP() because
 UNIX_TIMESTAMP(UNIX_TIMESTAMP()) returns 0.
 
-Events are assumed to be in chronological--older events at the begining of
+Events are assumed to be in chronological--older events at the beginning of
 the log and newer events at the end of the log.  L<"--since"> is strict: it
 ignores all queries until one is found that is new enough.  Therefore, if
 the query events are not consistently timestamped, some may be ignored which
