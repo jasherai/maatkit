@@ -9174,7 +9174,7 @@ sub main {
    map { $dp->disconnect($_) } grep { $_ }
       ($qv_dbh, $qv_dbh2, $ex_dbh, $ps_dbh, $ep_dbh);
 
-   exit;
+   return 0;
 } # End main().
 
 # ############################################################################
