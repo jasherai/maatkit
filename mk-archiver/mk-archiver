@@ -4137,7 +4137,11 @@ table every query.
 
 You can disable the seek-then-scan optimizations partially or wholly with
 L<"--no-ascend"> and L<"--ascend-first">.  Sometimes this may be more efficient
-for multi-column keys.
+for multi-column keys.  Be aware that mk-archiver is built to start at the
+beginning of the index it chooses and scan it forward-only.  This might result
+in long table scans if you're trying to nibble from the end of the table by an
+index other than the one it prefers.  See L<"--source"> and read the
+documentation on the C<i> part if this applies to you.
 
 =head1 OUTPUT
 
