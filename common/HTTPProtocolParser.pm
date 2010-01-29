@@ -18,7 +18,9 @@
 # HTTPProtocolParser package $Revision$
 # ###########################################################################
 package HTTPProtocolParser;
-use base 'ProtocolParser';
+BEGIN {
+   push @ISA, 'ProtocolParser';
+}
 
 use strict;
 use warnings FATAL => 'all';
