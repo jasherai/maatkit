@@ -13,11 +13,20 @@ use Test::More tests => 3;
 
 use MaatkitTest;
 
-my $run_with = "$trunk/mk-query-digest/mk-query-digest --type tcpdump  $trunk/common/t/samples/";
+# See 101_slowlog_analyses.t or http://code.google.com/p/maatkit/wiki/Testing
+shift @INC;  # our unshift (above)
+shift @INC;  # MaatkitTest's unshift
+
+require "$trunk/mk-query-digest/mk-query-digest";
+
+my @args   = qw(--type tcpdump --report-format=query_report --limit 10);
+my $sample = "$trunk/common/t/samples/";
 
 ok(
-   no_diff($run_with . 'tcpdump003.txt --report-format=query_report --limit 10',
-      "mk-query-digest/t/samples/tcpdump003.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'tcpdump003.txt') },
+      "mk-query-digest/t/samples/tcpdump003.txt"
+   ),
    'Analysis for tcpdump003 with numeric Error_no'
 );
 
@@ -25,8 +34,10 @@ ok(
 # Issue 228: parse tcpdump.
 # #############################################################################
 ok(
-   no_diff("$run_with/tcpdump002.txt --report-format=query_report --limit 10",
-      "mk-query-digest/t/samples/tcpdump002_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'tcpdump002.txt') },
+      "mk-query-digest/t/samples/tcpdump002_report.txt"
+   ),
    'Analysis for tcpdump002',
 );
 
@@ -34,8 +45,11 @@ ok(
 # Issue 398: Fix mk-query-digest to handle timestamps that have microseconds
 # #############################################################################
 ok(
-   no_diff("$run_with/tcpdump017.txt --report-format header,query_report,profile",
-      "mk-query-digest/t/samples/tcpdump017_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'tcpdump017.txt',
+         '--report-format', 'header,query_report,profile') },
+      "mk-query-digest/t/samples/tcpdump017_report.txt"
+   ),
    'Analysis for tcpdump017 with microsecond timestamps (issue 398)'
 );
 

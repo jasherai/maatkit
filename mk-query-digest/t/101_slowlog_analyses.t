@@ -13,209 +13,314 @@ use Test::More tests => 35;
 
 use MaatkitTest;
 
+# Normally we want $trunk/common in @INC so we can "use MaakitTest" and
+# other modules path-independently.  However, mk-query-digest uses
+# HTMLProtocolParser which is a subclass of ProtocolParser, so the former
+# must "use base 'ProtocolParser'" which causes Perl to load ProtocolParser
+# from @INC.  This causes errors about ProtocolParser::new() being redefined:
+# once in mk-query-digest's copy of the module and again from the actual
+# module in $trunk/common.  We remove $trunk/common from @INC so Perl won't
+# find/load it again.  See http://code.google.com/p/maatkit/wiki/Testing
+shift @INC;  # our unshift (above)
+shift @INC;  # MaatkitTest's unshift
+
+require "$trunk/mk-query-digest/mk-query-digest";
+
 # #############################################################################
 # First, some basic input-output diffs to make sure that
 # the analysis reports are correct.
 # #############################################################################
 
-my $run_with = "$trunk/mk-query-digest/mk-query-digest --report-format=query_report --limit 10 $trunk/common/t/samples/";
-my $run_notop ="$trunk/mk-query-digest/mk-query-digest --report-format=query_report $trunk/common/t/samples/";
+my @args   = qw(--report-format=query_report --limit 10);
+my $sample = "$trunk/common/t/samples/";
 
 ok(
-   no_diff($run_with.'empty', "mk-query-digest/t/samples/empty_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'empty') },
+      "mk-query-digest/t/samples/empty_report.txt",
+   ),
    'Analysis for empty log'
 );
 
 ok(
-   no_diff($run_with.'slow001.txt --expected-range 2,10', "mk-query-digest/t/samples/slow001_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow001.txt', '--expected-range', '2,10') },
+      "mk-query-digest/t/samples/slow001_report.txt"
+   ),
    'Analysis for slow001 with --expected-range'
 );
 
 ok(
-   no_diff($run_with.'slow001.txt --group-by tables',
-      "mk-query-digest/t/samples/slow001_tablesreport.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow001.txt', qw(--group-by tables)) },
+      "mk-query-digest/t/samples/slow001_tablesreport.txt"
+   ),
    'Analysis for slow001 with --group-by tables'
 );
 
 ok(
-   no_diff($run_with.'slow001.txt --group-by distill',
-      "mk-query-digest/t/samples/slow001_distillreport.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow001.txt', qw(--group-by distill)) },
+      "mk-query-digest/t/samples/slow001_distillreport.txt"
+   ),
    'Analysis for slow001 with distill'
 );
 
 ok(
-   no_diff($run_with.'slow002.txt --group-by distill --timeline --no-report',
-      "mk-query-digest/t/samples/slow002_distilltimeline.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow002.txt',
+            qw(--group-by distill --timeline --no-report)) },
+      "mk-query-digest/t/samples/slow002_distilltimeline.txt"
+   ),
    'Timeline for slow002 with distill'
 );
 
 ok(
-   no_diff($run_with.'slow001.txt --select Query_time',
-      "mk-query-digest/t/samples/slow001_select_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow001.txt', qw(--select Query_time)) },
+      "mk-query-digest/t/samples/slow001_select_report.txt"
+   ),
    'Analysis for slow001 --select'
 );
 
 ok(
-   no_diff($run_with.'slow002.txt', "mk-query-digest/t/samples/slow002_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow002.txt') },
+      "mk-query-digest/t/samples/slow002_report.txt"
+   ),
    'Analysis for slow002'
 );
 
 ok(
-   no_diff($run_with.'slow002.txt --filter \'$event->{arg} =~ m/fill/\'',
-   "mk-query-digest/t/samples/slow002_report_filtered.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow002.txt',
+               '--filter', '$event->{arg} =~ m/fill/') },
+      "mk-query-digest/t/samples/slow002_report_filtered.txt"
+   ),
    'Analysis for slow002 with --filter'
 );
 
 ok(
-   no_diff($run_with.'slow002.txt --order-by Query_time:cnt --limit 2',
-      "mk-query-digest/t/samples/slow002_orderbyreport.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow002.txt',
+               qw(--order-by Query_time:cnt --limit 2)) },
+      "mk-query-digest/t/samples/slow002_orderbyreport.txt"
+   ),
    'Analysis for slow002 --order-by --limit'
 );
 
 ok(
-   no_diff($run_with.'slow003.txt', "mk-query-digest/t/samples/slow003_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow003.txt') },
+      "mk-query-digest/t/samples/slow003_report.txt"
+   ),
    'Analysis for slow003'
 );
 
 ok(
-   no_diff($run_with.'slow004.txt', "mk-query-digest/t/samples/slow004_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow004.txt') },
+      "mk-query-digest/t/samples/slow004_report.txt"
+   ),
    'Analysis for slow004'
 );
 
 ok(
-   no_diff($run_with.'slow006.txt', "mk-query-digest/t/samples/slow006_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow006.txt') },
+      "mk-query-digest/t/samples/slow006_report.txt"
+   ),
    'Analysis for slow006'
 );
 
 ok(
-   no_diff($run_with.'slow008.txt', "mk-query-digest/t/samples/slow008_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow008.txt') },
+      "mk-query-digest/t/samples/slow008_report.txt"
+   ),
    'Analysis for slow008'
 );
 
 ok(
    no_diff(
-      $run_with
-         . 'slow010.txt --embedded-attributes \' -- .*\',\'(\w+): ([^\,]+)\' '
-         . '--group-by file',
-      "mk-query-digest/t/samples/slow010_reportbyfile.txt"),
+      sub { mk_query_digest::main(@args, $sample.'slow010.txt',
+            '--embedded-attributes', ' -- .*,(\w+): ([^\,]+)',
+            qw(--group-by file)) },
+      "mk-query-digest/t/samples/slow010_reportbyfile.txt"
+   ),
    'Analysis for slow010 --group-by some --embedded-attributes'
 );
 
 ok(
-   no_diff($run_with.'slow011.txt', "mk-query-digest/t/samples/slow011_report.txt"),
+   no_diff(
+       sub { mk_query_digest::main(@args, $sample.'slow011.txt') },
+       "mk-query-digest/t/samples/slow011_report.txt"
+   ),
    'Analysis for slow011'
 );
 
 ok(
-   no_diff($run_with.'slow013.txt', "mk-query-digest/t/samples/slow013_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow013.txt') },
+      "mk-query-digest/t/samples/slow013_report.txt"
+   ),
    'Analysis for slow013'
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --group-by user',
-      "mk-query-digest/t/samples/slow013_report_user.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow013.txt', qw(--group-by user)) },
+      "mk-query-digest/t/samples/slow013_report_user.txt"
+   ),
    'Analysis for slow013 with --group-by user'
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --limit 1 --report-format header,query_report  --group-by fingerprint,user',
-      "mk-query-digest/t/samples/slow013_report_fingerprint_user.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow013.txt',
+            qw(--limit 1 --report-format), 'header,query_report', '--group-by', 'fingerprint,user') },
+      "mk-query-digest/t/samples/slow013_report_fingerprint_user.txt"
+   ),
    'Analysis for slow013 with --group-by fingerprint,user'
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --report-format profile --limit 3',
-      "mk-query-digest/t/samples/slow013_report_profile.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow013.txt', qw(--report-format profile --limit 3)) },
+      "mk-query-digest/t/samples/slow013_report_profile.txt"
+   ),
    'Analysis for slow013 with profile',
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --group-by user --outliers Query_time:.0000001:1',
-      "mk-query-digest/t/samples/slow013_report_outliers.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow013.txt',
+            qw(--group-by user --outliers Query_time:.0000001:1)) },
+      "mk-query-digest/t/samples/slow013_report_outliers.txt"
+   ),
    'Analysis for slow013 with --outliers'
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --limit 100%:1',
-      "mk-query-digest/t/samples/slow013_report_limit.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow013.txt', qw(--limit 100%:1)) },
+      "mk-query-digest/t/samples/slow013_report_limit.txt"
+   ),
    'Analysis for slow013 with --limit'
 );
 
 ok(
-   no_diff($run_with.'slow014.txt', "mk-query-digest/t/samples/slow014_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow014.txt') },
+      "mk-query-digest/t/samples/slow014_report.txt"
+   ),
    'Analysis for slow014'
 );
 
 ok(
-   no_diff($run_with.'slow018.txt', "mk-query-digest/t/samples/slow018_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow018.txt') },
+      "mk-query-digest/t/samples/slow018_report.txt"
+   ),
    'Analysis for slow018'
 );
 
 ok(
-   no_diff($run_with.'slow019.txt', "mk-query-digest/t/samples/slow019_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow019.txt') },
+      "mk-query-digest/t/samples/slow019_report.txt"
+   ),
    '--zero-admin works'
 );
 
 ok(
-   no_diff($run_with.'slow019.txt --nozero-admin', "mk-query-digest/t/samples/slow019_report_noza.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow019.txt', qw(--nozero-admin)) },
+      "mk-query-digest/t/samples/slow019_report_noza.txt"
+   ),
    '--nozero-admin works'
 );
 
 # This was fixed at some point by checking the fingerprint to see if the
 # query needed to be converted to a SELECT.
 ok(
-   no_diff($run_with.'slow023.txt', "mk-query-digest/t/samples/slow023.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow023.txt') },
+      "mk-query-digest/t/samples/slow023.txt"
+   ),
    'Queries that start with a comment are not converted for EXPLAIN',
 );
 
 ok(
-   no_diff($run_with.'slow024.txt', "mk-query-digest/t/samples/slow024.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow024.txt') },
+      "mk-query-digest/t/samples/slow024.txt"
+   ),
    'Long inserts/replaces are truncated (issue 216)',
 );
 
 # Issue 244, no output when --order-by doesn't exist
 ok(
-   no_diff($run_with . 'slow002.txt --order-by Rows_read:sum',
-      "mk-query-digest/t/samples/slow002-orderbynonexistent.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow002.txt', qw(--order-by Rows_read:sum)) },
+      "mk-query-digest/t/samples/slow002-orderbynonexistent.txt"
+   ),
    'Order by non-existent falls back to default',
 );
 
 # Issue 337, duplicate table names
 ok(
-   no_diff($run_with . 'slow028.txt',
-      "mk-query-digest/t/samples/slow028.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow028.txt') },
+      "mk-query-digest/t/samples/slow028.txt"
+   ),
    'No duplicate table names',
 );
 
 # Issue 458, Use of uninitialized value in division (/) 
 ok(
-   no_diff($run_with . 'slow035.txt --report-format header,query_report,profile', "mk-query-digest/t/samples/slow035.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow035.txt',
+            '--report-format', 'header,query_report,profile') },
+      "mk-query-digest/t/samples/slow035.txt"
+   ),
    'Pathological all attribs, minimal attribs, all zero values (slow035)',
 );
 
 # Issue 563, Lock tables is not distilled
 ok(
-   no_diff($run_with . 'slow037.txt --group-by distill --report-format=query_report,profile',
-      "mk-query-digest/t/samples/slow037_report.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow037.txt', qw(--group-by distill),
+            '--report-format', 'query_report,profile') },
+      "mk-query-digest/t/samples/slow037_report.txt"
+   ),
    'Distill UNLOCK and LOCK TABLES'
 );
 
 # Test --table-access.
 ok(
-   no_diff($run_with . 'slow020.txt --no-report --table-access',
-      "mk-query-digest/t/samples/slow020_table_access.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow020.txt', qw(--no-report --table-access)) },
+      "mk-query-digest/t/samples/slow020_table_access.txt"
+   ),
    'Analysis for slow020 with --table-access'
 );
 
 # This one tests that the list of tables is unique.
 ok(
-   no_diff($run_with . 'slow030.txt --no-report --table-access',
-      "mk-query-digest/t/samples/slow030_table_access.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow030.txt', qw(--no-report --table-access)) },
+      "mk-query-digest/t/samples/slow030_table_access.txt"
+   ),
    'Analysis for slow030 with --table-access'
 );
 
 ok(
-   no_diff($run_with.'slow034.txt --order-by Lock_time:sum --report-format=query_report,profile', "mk-query-digest/t/samples/slow034-order-by-Locktime-sum.txt"),
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow034.txt', qw(--order-by Lock_time:sum),
+            '--report-format', 'query_report,profile') },
+      "mk-query-digest/t/samples/slow034-order-by-Locktime-sum.txt"
+   ),
    'Analysis for slow034 --order-by Lock_time:sum'
 );
 
