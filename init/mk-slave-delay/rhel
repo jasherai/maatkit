@@ -1,0 +1,86 @@
+#
+#
+# Author:          Fernando Ipar
+# 
+# chkconfig:   2345  65 35
+# description: mk-slave-delay startup script
+
+### BEGIN INIT INFO
+# Provides: mk-slave-delay
+# Required-Start: $local_fs $network $remote_fs mysql
+# Required-Stop: $local_fs $network $remote_fs mysql
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: start and stop mk-slave-delay
+# Description: mk-slave-delay delays a MySQL slave by starting and stopping the SQL replication thread. 
+### END INIT INFO
+
+# source function library
+lsb_functions="/lib/lsb/init-functions"
+
+if test -f $lsb_functions ; then
+  . $lsb_functions
+else
+  log_success_msg()
+  {
+    echo " SUCCESS! $@"
+  }
+  log_failure_msg()
+  {
+    echo " ERROR! $@"
+  }
+fi
+
+[ $(type mk-slave-delay 2>&1| grep -c 'mk-slave-delay is') -gt 0 ] || {
+	echo "I can't find mk-slave-delay on the path. ">&2
+	exit 1
+}
+
+CONF=/etc/mk-slave-delay.conf
+pid=/var/run/mk-slave-delay.pid
+[ -f $CONF ] && {
+	pid=$(grep pid $CONF|awk -F'=' '{print $2}')
+}
+op="$1"
+shift
+
+start()
+{
+	echo -n "Starting mk-slave-delay ... "
+	[ -f $CONF ] && {
+		mk-slave-delay --config $CONF 
+	} || {	
+		mk-slave-delay $* 
+	}
+	[ $? -eq 0 ] && log_success_msg || log_failure_msg 
+}
+
+stop()
+{
+	[ -f $pid ] && [ -d /proc/$(cat $pid) ] && {
+		echo -n "Stopping mk-slave-delay ... "
+		kill $(cat $pid)
+		log_success_msg 
+	}|| {
+		echo "mk-slave-delay is not running">&2
+	}
+}
+
+case "$op" in 
+	start)	start
+		;;		
+	stop)	stop
+		;;
+        restart)
+		stop
+		start
+		;;
+	status)
+		[ -f $pid ] && [ -d /proc/$(cat $pid) ] && echo "mk-slave-digest is running" || echo "mk-slave-digest is not running">&2
+		;;
+	*)
+		echo "Usage: mk-slave-delay start|stop|restart|status">&2
+		exit 1
+esac
+
+exit 0
