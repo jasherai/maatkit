@@ -2696,7 +2696,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ProcesslistAggregator package 5266
+# ProcesslistAggregator package 5669
 # ###########################################################################
 package ProcesslistAggregator;
 
@@ -2729,7 +2729,7 @@ sub aggregate {
             $val  =~ s/:.*// if $field eq 'Host';
 
          my $time = $proc->{Time};
-            $time = 0 if $time eq 'NULL';
+            $time = 0 if !$time || $time eq 'NULL';
 
          $field = lc $field;
 
