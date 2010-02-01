@@ -93,7 +93,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5266
+# OptionParser package 5568
 # ###########################################################################
 package OptionParser;
 
@@ -638,7 +638,7 @@ sub _validate_type {
       $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
-      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
+      $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
    }
    else {
       MKDEBUG && _d('Nothing to validate for option',
@@ -700,7 +700,8 @@ sub descr {
               . "  For more details, please use the --help option, "
               . "or try 'perldoc $PROGRAM_NAME' "
               . "for complete documentation.";
-   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g)
+      unless $ENV{DONT_BREAK_LINES};
    $descr =~ s/ +$//mg;
    return $descr;
 }

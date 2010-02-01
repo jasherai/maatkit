@@ -1141,7 +1141,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5266
+# OptionParser package 5568
 # ###########################################################################
 package OptionParser;
 
@@ -1686,7 +1686,7 @@ sub _validate_type {
       $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
    }
    elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
-      $opt->{value} = [ split(/(?<!\\),/, ($val || '')) ];
+      $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
    }
    else {
       MKDEBUG && _d('Nothing to validate for option',
@@ -1748,7 +1748,8 @@ sub descr {
               . "  For more details, please use the --help option, "
               . "or try 'perldoc $PROGRAM_NAME' "
               . "for complete documentation.";
-   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g)
+      unless $ENV{DONT_BREAK_LINES};
    $descr =~ s/ +$//mg;
    return $descr;
 }
@@ -2942,7 +2943,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 5266
+# QueryParser package 5444
 # ###########################################################################
 package QueryParser;
 
@@ -2955,6 +2956,7 @@ our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 our $tbl_regex = qr{
          \b(?:FROM|JOIN|(?<!KEY\s)UPDATE|INTO) # Words that precede table names
          \b\s*
+         \(?                                   # Optional paren around tables
          ($tbl_ident
             (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
          )
@@ -2978,7 +2980,7 @@ sub get_tables {
    return unless $query;
    MKDEBUG && _d('Getting tables for', $query);
 
-   my ( $ddl_stmt ) = $query =~ /^\s*($data_def_stmts)\b/i;
+   my ( $ddl_stmt ) = $query =~ m/^\s*($data_def_stmts)\b/i;
    if ( $ddl_stmt ) {
       MKDEBUG && _d('Special table type:', $ddl_stmt);
       $query =~ s/IF NOT EXISTS//i;
@@ -3013,6 +3015,9 @@ sub get_tables {
    my @tables;
    foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
       MKDEBUG && _d('Match tables:', $tbls);
+
+      next if $tbls =~ m/\ASELECT\b/i;
+
       foreach my $tbl ( split(',', $tbls) ) {
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
 
@@ -3193,7 +3198,7 @@ sub split_subquery {
 
 sub query_type {
    my ( $self, $query, $qr ) = @_;
-   my ($type, undef) = $qr->_distill_verbs($query);
+   my ($type, undef) = $qr->distill_verbs($query);
    my $rw;
    if ( $type =~ m/^SELECT\b/ ) {
       $rw = 'read';
@@ -3224,7 +3229,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5356
+# QueryRewriter package 5563
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3251,8 +3256,9 @@ $bal         = qr/
 
 my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
-my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;                  # But for replacing SHOW + /*!version */
-my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;    		# ^^ if its starts with SHOW followed by version
+my $vlc_re = qr#/\*.*?[0-9+].*?\*/#sm;             # For SHOW + /*!version */
+my $vlc_rf = qr#^(SHOW).*?/\*![0-9+].*?\*/#sm;     # Variation for SHOW
+
 
 sub new {
    my ( $class, %args ) = @_;
@@ -3266,7 +3272,7 @@ sub strip_comments {
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    if ( $query =~ m/$vlc_rf/i ) { # contains show + version
-   			$query =~ s/$vlc_re//go;
+      $query =~ s/$vlc_re//go;
    }
    return $query;
 }
@@ -3359,46 +3365,41 @@ sub fingerprint {
    return $query;
 }
 
-sub _distill_verbs {
+sub distill_verbs {
    my ( $self, $query ) = @_;
 
-   $query =~ m/\A\s*call\s+(\S+)\(/i
-      && return "CALL $1"; # Warning! $1 used, be careful.
+   $query =~ m/\A\s*call\s+(\S+)\(/i && return "CALL $1";
+   $query =~ m/\A\s*use\s+/          && return "USE";
+   $query =~ m/\A\s*UNLOCK TABLES/i  && return "UNLOCK";
+   $query =~ m/\A\s*xa\s+(\S+)/i     && return "XA_$1";
+
    if ( $query =~ m/\A# administrator command:/ ) {
-		$query =~ s/# administrator command:/ADMIN/go;
-		$query = uc $query;
-       	return "$query";
+      $query =~ s/# administrator command:/ADMIN/go;
+      $query = uc $query;
+      return $query;
    }
-   $query =~ m/\A\s*use\s+/
-      && return "USE";
-   $query =~ m/\A\s*UNLOCK TABLES/i
-      && return "UNLOCK";
-   $query =~ m/\A\s*xa\s+(\S+)/i
-      && return "XA_$1";
 
    $query = $self->strip_comments($query);
 
    if ( $query =~ m/\A\s*SHOW\s+/i ) {
-      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/i;
-      MKDEBUG && _d('SHOW', @what);
-      return unless scalar @what;
-      @what = map { uc $_ } grep { defined $_ } @what; 
+      MKDEBUG && _d($query);
 
-      if ( $what[0] =~ m/CREATE/
-           || ($what[1] && $what[1] =~ m/STATUS/)
-           || $what[0] =~ m/MASTER/ ) {
-         return "SHOW $what[0] $what[1]";
-      }
-      else {
-         $what[0] =~ m/GLOBAL/ ? return "SHOW $what[1]"
-                  :              return "SHOW $what[0]";
-      }
+      $query = uc $query;
+      $query =~ s/\s+(?:GLOBAL|SESSION|FULL|STORAGE|ENGINE)\b/ /g;
+      $query =~ s/\s+COUNT[^)]+\)//g;
+
+      $query =~ s/\s+(?:FOR|FROM|LIKE|WHERE|LIMIT|IN)\b.+//ms;
+
+      $query =~ s/\A(SHOW(?:\s+\S+){1,2}).*\Z/$1/s;
+      $query =~ s/\s+/ /g;
+      MKDEBUG && _d($query);
+      return $query;
    }
 
    eval $QueryParser::data_def_stmts;
    eval $QueryParser::tbl_ident;
    my ( $dds ) = $query =~ /^\s*($QueryParser::data_def_stmts)\b/i;
-   if ( $dds ) {
+   if ( $dds) {
       my ( $obj ) = $query =~ m/$dds.+(DATABASE|TABLE)\b/i;
       $obj = uc $obj if $obj;
       MKDEBUG && _d('Data def statment:', $dds, 'obj:', $obj);
@@ -3419,7 +3420,7 @@ sub _distill_verbs {
    return $verbs;
 }
 
-sub _distill_tables {
+sub __distill_tables {
    my ( $self, $query, $table, %args ) = @_;
    my $qp = $args{QueryParser} || $self->{QueryParser};
    die "I need a QueryParser argument" unless $qp;
@@ -3449,11 +3450,23 @@ sub distill {
       $query = (uc $cmd) . ($arg ? " $arg" : '');
    }
    else {
-      my ($verbs, $table)  = $self->_distill_verbs($query, %args);
-      my @tables           = $self->_distill_tables($query, $table, %args);
-      $query               = join(q{ }, $verbs, @tables);
+      my ($verbs, $table)  = $self->distill_verbs($query, %args);
+
+      if ( $verbs && $verbs =~ m/^SHOW/ ) {
+         my %alias_for = qw(
+            SCHEMA   DATABASE
+            KEYS     INDEX
+            INDEXES  INDEX
+         );
+         map { $verbs =~ s/$_/$alias_for{$_}/ } keys %alias_for;
+         $query = $verbs;
+      }
+      else {
+         my @tables = $self->__distill_tables($query, $table, %args);
+         $query     = join(q{ }, $verbs, @tables); 
+      } 
    }
-   
+
    if ( $args{trf} ) {
       $query = $args{trf}->($query, %args);
    }
