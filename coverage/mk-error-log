@@ -9,20 +9,20 @@ Total                          56.7   39.3   36.1   68.0    n/a  100.0   50.8
 Run:          -e
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Thu Jan 28 20:32:40 2010
-Finish:       Thu Jan 28 20:32:40 2010
+Start:        Fri Jan 29 19:06:20 2010
+Finish:       Fri Jan 29 19:06:20 2010
 
 Run:          ./101_analyses.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Thu Jan 28 20:32:42 2010
-Finish:       Thu Jan 28 20:32:42 2010
+Start:        Fri Jan 29 19:06:21 2010
+Finish:       Fri Jan 29 19:06:22 2010
 
 Run:          ./102_since_until.t
 Perl version: 118.53.46.49.48.46.48
 OS:           linux
-Start:        Thu Jan 28 20:32:45 2010
-Finish:       Thu Jan 28 20:32:45 2010
+Start:        Fri Jan 29 19:06:24 2010
+Finish:       Fri Jan 29 19:06:25 2010
 
 /home/daniel/dev/maatkit/mk-error-log/mk-error-log
 
@@ -46,12 +46,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 17                                                    # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 18                                                    # Place, Suite 330, Boston, MA  02111-1307  USA.
 19                                                    
-20             2                    2            17   use strict;
-               2                                  8   
-               2                                 13   
-21             2                    2            16   use warnings FATAL => 'all';
-               2                                  5   
-               2                                 13   
+20             2                    2            18   use strict;
+               2                                  6   
+               2                                 17   
+21             2                    2            13   use warnings FATAL => 'all';
+               2                                  4   
+               2                                 12   
 22                                                    
 23                                                    our $VERSION = '@VERSION@';
 24                                                    our $DISTRIB = '@DISTRIB@';
@@ -62,26 +62,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 29                                                    # ###########################################################################
 30                                                    package OptionParser;
 31                                                    
-32             2                    2            12   use strict;
-               2                                  6   
-               2                                  8   
-33             2                    2            13   use warnings FATAL => 'all';
+32             2                    2            13   use strict;
+               2                                 10   
+               2                                 10   
+33             2                    2            12   use warnings FATAL => 'all';
                2                                  5   
-               2                                 16   
+               2                                  8   
 34                                                    
-35             2                    2            22   use Getopt::Long;
+35             2                    2            18   use Getopt::Long;
+               2                                  7   
+               2                                 14   
+36             2                    2            14   use List::Util qw(max);
+               2                                  4   
+               2                                 22   
+37             2                    2            12   use English qw(-no_match_vars);
                2                                  6   
                2                                 13   
-36             2                    2            13   use List::Util qw(max);
-               2                                  5   
-               2                                 21   
-37             2                    2            12   use English qw(-no_match_vars);
-               2                                  4   
-               2                                 14   
 38                                                    
-39    ***      2            50      2            18   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+39    ***      2            50      2            15   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
                2                                  4   
-               2                                 43   
+               2                                 46   
 40                                                    
 41                                                    my $POD_link_re = '[LC]<"?([^">]+)"?>';
 42                                                    
@@ -95,17 +95,17 @@ line  err   stmt   bran   cond    sub    pod   time   code
 50                                                    );
 51                                                    
 52                                                    sub new {
-53            14                   14           311      my ( $class, %args ) = @_;
-54            14                                133      foreach my $arg ( qw(description) ) {
-55    ***     14     50                         183         die "I need a $arg argument" unless $args{$arg};
+53            14                   14           406      my ( $class, %args ) = @_;
+54            14                                183      foreach my $arg ( qw(description) ) {
+55    ***     14     50                         224         die "I need a $arg argument" unless $args{$arg};
 56                                                       }
-57            14                                256      my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
-58    ***     14            50                  134      $program_name ||= $PROGRAM_NAME;
-59    ***     14            33                  249      my $home = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '.';
+57            14                                350      my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+58    ***     14            50                  190      $program_name ||= $PROGRAM_NAME;
+59    ***     14            33                  333      my $home = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '.';
       ***                   33                        
       ***                   50                        
 60                                                    
-61    ***     14     50     50                 1154      my $self = {
+61    ***     14     50     50                 1649      my $self = {
       ***                   50                        
 62                                                          description    => $args{description},
 63                                                          prompt         => $args{prompt} || '<options>',
@@ -131,28 +131,28 @@ line  err   stmt   bran   cond    sub    pod   time   code
 83                                                             "$home/.$program_name.conf",
 84                                                          ],
 85                                                       };
-86            14                                160      return bless $self, $class;
+86            14                                182      return bless $self, $class;
 87                                                    }
 88                                                    
 89                                                    sub get_specs {
-90            14                   14            76      my ( $self, $file ) = @_;
-91            14                                126      my @specs = $self->_pod_to_specs($file);
-92            14                                265      $self->_parse_specs(@specs);
-93            14                                 53      return;
+90            14                   14            83      my ( $self, $file ) = @_;
+91            14                                176      my @specs = $self->_pod_to_specs($file);
+92            14                                425      $self->_parse_specs(@specs);
+93            14                                 69      return;
 94                                                    }
 95                                                    
 96                                                    sub get_defaults_files {
-97            14                   14            53      my ( $self ) = @_;
-98            14                                 36      return @{$self->{default_files}};
-              14                                137   
+97            14                   14            64      my ( $self ) = @_;
+98            14                                 60      return @{$self->{default_files}};
+              14                                196   
 99                                                    }
 100                                                   
 101                                                   sub _pod_to_specs {
-102           14                   14            72      my ( $self, $file ) = @_;
-103   ***     14            50                   88      $file ||= __FILE__;
-104   ***     14     50                         457      open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+102           14                   14            76      my ( $self, $file ) = @_;
+103   ***     14            50                  120      $file ||= __FILE__;
+104   ***     14     50                         678      open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 105                                                   
-106           14                                369      my %types = (
+106           14                                546      my %types = (
 107                                                         string => 's', # standard Getopt type
 108                                                         'int'  => 'i', # standard Getopt type
 109                                                         float  => 'f', # standard Getopt type
@@ -164,18 +164,18 @@ line  err   stmt   bran   cond    sub    pod   time   code
 115                                                         size   => 'z', # size with kMG suffix (powers of 2^10)
 116                                                         'time' => 'm', # time, with an optional suffix of s/h/m/d
 117                                                      );
-118           14                                 61      my @specs = ();
-119           14                                 43      my @rules = ();
-120           14                                 36      my $para;
+118           14                                 62      my @specs = ();
+119           14                                 78      my @rules = ();
+120           14                                 48      my $para;
 121                                                   
-122           14                                114      local $INPUT_RECORD_SEPARATOR = '';
-123           14                                284      while ( $para = <$fh> ) {
-124         3654    100                       23093         next unless $para =~ m/^=head1 OPTIONS/;
-125           14                                 54         last;
+122           14                                176      local $INPUT_RECORD_SEPARATOR = '';
+123           14                                392      while ( $para = <$fh> ) {
+124         3654    100                       33970         next unless $para =~ m/^=head1 OPTIONS/;
+125           14                                 61         last;
 126                                                      }
 127                                                   
-128           14                                 81      while ( $para = <$fh> ) {
-129   ***     14     50                         104         last if $para =~ m/^=over/;
+128           14                                107      while ( $para = <$fh> ) {
+129   ***     14     50                         174         last if $para =~ m/^=over/;
 130   ***      0                                  0         chomp $para;
 131   ***      0                                  0         $para =~ s/\s+/ /g;
 132   ***      0                                  0         $para =~ s/$POD_link_re/$1/go;
@@ -183,48 +183,48 @@ line  err   stmt   bran   cond    sub    pod   time   code
 134   ***      0                                  0         push @rules, $para;
 135                                                      }
 136                                                   
-137   ***     14     50                          60      die 'POD has no OPTIONS section' unless $para;
+137   ***     14     50                          80      die 'POD has no OPTIONS section' unless $para;
 138                                                   
-139           14                                 43      do {
-140          280    100                        1779         if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
-141          266                                693            chomp $para;
-142          266                                558            MKDEBUG && _d($para);
-143          266                                604            my %attribs;
+139           14                                 56      do {
+140          280    100                        2674         if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+141          266                                947            chomp $para;
+142          266                                709            MKDEBUG && _d($para);
+143          266                                784            my %attribs;
 144                                                   
-145          266                               1003            $para = <$fh>; # read next paragraph, possibly attributes
+145          266                               1239            $para = <$fh>; # read next paragraph, possibly attributes
 146                                                   
-147          266    100                         993            if ( $para =~ m/: / ) { # attributes
-148          224                                991               $para =~ s/\s+\Z//g;
-149          336                               1731               %attribs = map {
-150          224                               1013                     my ( $attrib, $val) = split(/: /, $_);
-151   ***    336     50                        1428                     die "Unrecognized attribute for --$option: $attrib"
+147          266    100                        1436            if ( $para =~ m/: / ) { # attributes
+148          224                               1415               $para =~ s/\s+\Z//g;
+149          336                               2466               %attribs = map {
+150          224                               1485                     my ( $attrib, $val) = split(/: /, $_);
+151   ***    336     50                        2022                     die "Unrecognized attribute for --$option: $attrib"
 152                                                                        unless $attributes{$attrib};
-153          336                               1830                     ($attrib, $val);
+153          336                               2680                     ($attrib, $val);
 154                                                                  } split(/; /, $para);
-155          224    100                        1006               if ( $attribs{'short form'} ) {
-156           98                                459                  $attribs{'short form'} =~ s/-//;
+155          224    100                        1428               if ( $attribs{'short form'} ) {
+156           98                                646                  $attribs{'short form'} =~ s/-//;
 157                                                               }
-158          224                                851               $para = <$fh>; # read next paragraph, probably short help desc
+158          224                               1660               $para = <$fh>; # read next paragraph, probably short help desc
 159                                                            }
 160                                                            else {
-161           42                                103               MKDEBUG && _d('Option has no attributes');
+161           42                                146               MKDEBUG && _d('Option has no attributes');
 162                                                            }
 163                                                   
-164          266                               1715            $para =~ s/\s+\Z//g;
-165          266                               1722            $para =~ s/\s+/ /g;
-166          266                                925            $para =~ s/$POD_link_re/$1/go;
+164          266                               3443            $para =~ s/\s+\Z//g;
+165          266                               2580            $para =~ s/\s+/ /g;
+166          266                               1270            $para =~ s/$POD_link_re/$1/go;
 167                                                   
-168          266                                983            $para =~ s/\.(?:\n.*| [A-Z].*|\Z)//s;
-169          266                                632            MKDEBUG && _d('Short help:', $para);
+168          266                               1381            $para =~ s/\.(?:\n.*| [A-Z].*|\Z)//s;
+169          266                                765            MKDEBUG && _d('Short help:', $para);
 170                                                   
-171   ***    266     50                        1039            die "No description after option spec $option" if $para =~ m/^=item/;
+171   ***    266     50                        1486            die "No description after option spec $option" if $para =~ m/^=item/;
 172                                                   
-173          266    100                        1223            if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
-174           28                                148               $option = $base_option;
-175           28                                133               $attribs{'negatable'} = 1;
+173          266    100                        1783            if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+174           28                                101               $option = $base_option;
+175           28                                137               $attribs{'negatable'} = 1;
 176                                                            }
 177                                                   
-178          266    100                        4594            push @specs, {
+178          266    100                        6889            push @specs, {
                     100                               
       ***            50                               
                     100                               
@@ -240,94 +240,94 @@ line  err   stmt   bran   cond    sub    pod   time   code
 186                                                               group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
 187                                                            };
 188                                                         }
-189          280                               1604         while ( $para = <$fh> ) {
-190   ***    518     50                        1705            last unless $para;
+189          280                               2388         while ( $para = <$fh> ) {
+190   ***    518     50                        2339            last unless $para;
 191                                                   
 192                                                   
-193          518    100                        1891            if ( $para =~ m/^=head1/ ) {
-194           14                                 48               $para = undef; # Can't 'last' out of a do {} block.
-195           14                                 72               last;
+193          518    100                        2713            if ( $para =~ m/^=head1/ ) {
+194           14                                 63               $para = undef; # Can't 'last' out of a do {} block.
+195           14                                 96               last;
 196                                                            }
-197          504    100                        3074            last if $para =~ m/^=item --/;
+197          504    100                        4452            last if $para =~ m/^=item --/;
 198                                                         }
 199                                                      } while ( $para );
 200                                                   
-201   ***     14     50                          62      die 'No valid specs in POD OPTIONS' unless @specs;
+201   ***     14     50                          75      die 'No valid specs in POD OPTIONS' unless @specs;
 202                                                   
-203           14                                146      close $fh;
-204           14                                 48      return @specs, @rules;
+203           14                                192      close $fh;
+204           14                                 60      return @specs, @rules;
 205                                                   }
 206                                                   
 207                                                   sub _parse_specs {
-208           14                   14           108      my ( $self, @specs ) = @_;
-209           14                                 45      my %disables; # special rule that requires deferred checking
+208           14                   14           133      my ( $self, @specs ) = @_;
+209           14                                 62      my %disables; # special rule that requires deferred checking
 210                                                   
-211           14                                 77      foreach my $opt ( @specs ) {
-212   ***    266     50                         981         if ( ref $opt ) { # It's an option spec, not a rule.
+211           14                                117      foreach my $opt ( @specs ) {
+212   ***    266     50                        1323         if ( ref $opt ) { # It's an option spec, not a rule.
 213                                                            MKDEBUG && _d('Parsing opt spec:',
-214          266                                557               map { ($_, '=>', $opt->{$_}) } keys %$opt);
+214          266                                769               map { ($_, '=>', $opt->{$_}) } keys %$opt);
 215                                                   
-216          266                               2196            my ( $long, $short ) = $opt->{spec} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-217   ***    266     50                        1071            if ( !$long ) {
+216          266                               2789            my ( $long, $short ) = $opt->{spec} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+217   ***    266     50                        1562            if ( !$long ) {
 218   ***      0                                  0               die "Cannot parse long option from spec $opt->{spec}";
 219                                                            }
-220          266                                926            $opt->{long} = $long;
+220          266                               1276            $opt->{long} = $long;
 221                                                   
-222   ***    266     50                        1204            die "Duplicate long option --$long" if exists $self->{opts}->{$long};
-223          266                               1188            $self->{opts}->{$long} = $opt;
+222   ***    266     50                        1798            die "Duplicate long option --$long" if exists $self->{opts}->{$long};
+223          266                               1742            $self->{opts}->{$long} = $opt;
 224                                                   
-225   ***    266     50                        1002            if ( length $long == 1 ) {
+225   ***    266     50                        1399            if ( length $long == 1 ) {
 226   ***      0                                  0               MKDEBUG && _d('Long opt', $long, 'looks like short opt');
 227   ***      0                                  0               $self->{short_opts}->{$long} = $long;
 228                                                            }
 229                                                   
-230          266    100                         835            if ( $short ) {
-231   ***     98     50                         427               die "Duplicate short option -$short"
+230          266    100                        1133            if ( $short ) {
+231   ***     98     50                         627               die "Duplicate short option -$short"
 232                                                                  if exists $self->{short_opts}->{$short};
-233           98                                434               $self->{short_opts}->{$short} = $long;
-234           98                                330               $opt->{short} = $short;
+233           98                                603               $self->{short_opts}->{$short} = $long;
+234           98                                473               $opt->{short} = $short;
 235                                                            }
 236                                                            else {
-237          168                                574               $opt->{short} = undef;
+237          168                                816               $opt->{short} = undef;
 238                                                            }
 239                                                   
-240          266    100                        1340            $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
-241   ***    266     50                        1391            $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
-242   ***    266     50                        1453            $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
+240          266    100                        1984            $opt->{is_negatable}  = $opt->{spec} =~ m/!/        ? 1 : 0;
+241   ***    266     50                        1847            $opt->{is_cumulative} = $opt->{spec} =~ m/\+/       ? 1 : 0;
+242   ***    266     50                        2085            $opt->{is_required}   = $opt->{desc} =~ m/required/ ? 1 : 0;
 243                                                   
-244   ***    266            50                 1008            $opt->{group} ||= 'default';
-245          266                               1283            $self->{groups}->{ $opt->{group} }->{$long} = 1;
+244   ***    266            50                 1486            $opt->{group} ||= 'default';
+245          266                               1854            $self->{groups}->{ $opt->{group} }->{$long} = 1;
 246                                                   
-247          266                                855            $opt->{value} = undef;
-248          266                                868            $opt->{got}   = 0;
+247          266                               1159            $opt->{value} = undef;
+248          266                               1220            $opt->{got}   = 0;
 249                                                   
-250          266                               1382            my ( $type ) = $opt->{spec} =~ m/=(.)/;
-251          266                                942            $opt->{type} = $type;
-252          266                                571            MKDEBUG && _d($long, 'type:', $type);
+250          266                               2026            my ( $type ) = $opt->{spec} =~ m/=(.)/;
+251          266                               1336            $opt->{type} = $type;
+252          266                                745            MKDEBUG && _d($long, 'type:', $type);
 253                                                   
-254   ***    266     50     66                 2241            if ( $type && $type eq 'd' && !$self->{dp} ) {
+254   ***    266     50     66                 3188            if ( $type && $type eq 'd' && !$self->{dp} ) {
       ***                   33                        
 255   ***      0                                  0               die "$opt->{long} is type DSN (d) but no dp argument "
 256                                                                  . "was given when this OptionParser object was created";
 257                                                            }
 258                                                   
-259          266    100    100                 1872            $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
+259          266    100    100                 2872            $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 260                                                   
-261          266    100                        1564            if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
-262   ***     42     50                         227               $self->{defaults}->{$long} = defined $def ? $def : 1;
-263           42                                 95               MKDEBUG && _d($long, 'default:', $def);
+261          266    100                        2252            if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+262   ***     42     50                         339               $self->{defaults}->{$long} = defined $def ? $def : 1;
+263           42                                125               MKDEBUG && _d($long, 'default:', $def);
 264                                                            }
 265                                                   
-266          266    100                         989            if ( $long eq 'config' ) {
-267           14                                 76               $self->{defaults}->{$long} = join(',', $self->get_defaults_files());
+266          266    100                        1378            if ( $long eq 'config' ) {
+267           14                                102               $self->{defaults}->{$long} = join(',', $self->get_defaults_files());
 268                                                            }
 269                                                   
-270   ***    266     50                        1277            if ( (my ($dis) = $opt->{desc} =~ m/(disables .*)/) ) {
+270   ***    266     50                        1927            if ( (my ($dis) = $opt->{desc} =~ m/(disables .*)/) ) {
 271   ***      0                                  0               $disables{$long} = $dis;
 272   ***      0                                  0               MKDEBUG && _d('Deferring check of disables rule for', $opt, $dis);
 273                                                            }
 274                                                   
-275          266                               1217            $self->{opts}->{$long} = $opt;
+275          266                               1773            $self->{opts}->{$long} = $opt;
 276                                                         }
 277                                                         else { # It's an option rule, not a spec.
 278   ***      0                                  0            MKDEBUG && _d('Parsing rule:', $opt); 
@@ -368,13 +368,13 @@ line  err   stmt   bran   cond    sub    pod   time   code
 309                                                         }
 310                                                      }
 311                                                   
-312           14                                 76      foreach my $long ( keys %disables ) {
+312           14                                113      foreach my $long ( keys %disables ) {
 313   ***      0                                  0         my @participants = $self->_get_participants($disables{$long});
 314   ***      0                                  0         $self->{disables}->{$long} = \@participants;
 315   ***      0                                  0         MKDEBUG && _d('Option', $long, 'disables', @participants);
 316                                                      }
 317                                                   
-318           14                                 64      return; 
+318           14                                 88      return; 
 319                                                   }
 320                                                   
 321                                                   sub _get_participants {
@@ -426,14 +426,14 @@ line  err   stmt   bran   cond    sub    pod   time   code
 365                                                   }
 366                                                   
 367                                                   sub _set_option {
-368            5                    5            27      my ( $self, $opt, $val ) = @_;
-369   ***      5      0                          12      my $long = exists $self->{opts}->{$opt}       ? $opt
+368            5                    5            23      my ( $self, $opt, $val ) = @_;
+369   ***      5      0                          13      my $long = exists $self->{opts}->{$opt}       ? $opt
       ***            50                               
 370                                                               : exists $self->{short_opts}->{$opt} ? $self->{short_opts}->{$opt}
 371                                                               : die "Getopt::Long gave a nonexistent option: $opt";
 372                                                   
-373            5                                 10      $opt = $self->{opts}->{$long};
-374   ***      5     50                          34      if ( $opt->{is_cumulative} ) {
+373            5                                  9      $opt = $self->{opts}->{$long};
+374   ***      5     50                          30      if ( $opt->{is_cumulative} ) {
 375   ***      0                                  0         $opt->{value}++;
 376                                                      }
 377                                                      else {
@@ -444,33 +444,33 @@ line  err   stmt   bran   cond    sub    pod   time   code
 382                                                   }
 383                                                   
 384                                                   sub get_opts {
-385           14                   14            65      my ( $self ) = @_; 
+385           14                   14            84      my ( $self ) = @_; 
 386                                                   
-387           14                                 47      foreach my $long ( keys %{$self->{opts}} ) {
-              14                                139   
-388          266                               1009         $self->{opts}->{$long}->{got} = 0;
-389   ***    266     50                        2021         $self->{opts}->{$long}->{value}
+387           14                                 55      foreach my $long ( keys %{$self->{opts}} ) {
+              14                                208   
+388          266                               1487         $self->{opts}->{$long}->{got} = 0;
+389   ***    266     50                        3083         $self->{opts}->{$long}->{value}
                     100                               
 390                                                            = exists $self->{defaults}->{$long}       ? $self->{defaults}->{$long}
 391                                                            : $self->{opts}->{$long}->{is_cumulative} ? 0
 392                                                            : undef;
 393                                                      }
-394           14                                 65      $self->{got_opts} = 0;
+394           14                                 92      $self->{got_opts} = 0;
 395                                                   
-396           14                                 58      $self->{errors} = [];
+396           14                                 91      $self->{errors} = [];
 397                                                   
-398   ***     14     50     33                  191      if ( @ARGV && $ARGV[0] eq "--config" ) {
+398   ***     14     50     33                  256      if ( @ARGV && $ARGV[0] eq "--config" ) {
 399   ***      0                                  0         shift @ARGV;
 400   ***      0                                  0         $self->_set_option('config', shift @ARGV);
 401                                                      }
-402   ***     14     50                         123      if ( $self->has('config') ) {
-403           14                                 40         my @extra_args;
-404           14                                126         foreach my $filename ( split(',', $self->get('config')) ) {
-405           56                                146            eval {
-406           56                                345               push @extra_args, $self->_read_config_file($filename);
+402   ***     14     50                         155      if ( $self->has('config') ) {
+403           14                                 47         my @extra_args;
+404           14                                156         foreach my $filename ( split(',', $self->get('config')) ) {
+405           56                                185            eval {
+406           56                                358               push @extra_args, $self->_read_config_file($filename);
 407                                                            };
-408   ***     56     50                         271            if ( $EVAL_ERROR ) {
-409   ***     56     50                         245               if ( $self->got('config') ) {
+408   ***     56     50                         409            if ( $EVAL_ERROR ) {
+409   ***     56     50                         348               if ( $self->got('config') ) {
 410   ***      0                                  0                  die $EVAL_ERROR;
 411                                                               }
 412                                                               elsif ( MKDEBUG ) {
@@ -478,31 +478,31 @@ line  err   stmt   bran   cond    sub    pod   time   code
 414                                                               }
 415                                                            }
 416                                                         }
-417           14                                 68         unshift @ARGV, @extra_args;
+417           14                                 91         unshift @ARGV, @extra_args;
 418                                                      }
 419                                                   
-420           14                                165      Getopt::Long::Configure('no_ignore_case', 'bundling');
+420           14                                242      Getopt::Long::Configure('no_ignore_case', 'bundling');
 421                                                      GetOptions(
-422          252                    5          1821         map    { $_->{spec} => sub { $self->_set_option(@_); } }
-               5                                 39   
-             266                                979   
-423           14                                 87         grep   { $_->{long} ne 'config' } # --config is handled specially above.
-424   ***     14     50                          46         values %{$self->{opts}}
+422          252                    5          2632         map    { $_->{spec} => sub { $self->_set_option(@_); } }
+               5                                 42   
+             266                               1404   
+423           14                                125         grep   { $_->{long} ne 'config' } # --config is handled specially above.
+424   ***     14     50                          70         values %{$self->{opts}}
 425                                                      ) or $self->save_error('Error parsing options');
 426                                                   
-427   ***     14     50     33                  508      if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
+427   ***     14     50     33                  756      if ( exists $self->{opts}->{version} && $self->{opts}->{version}->{got} ) {
 428   ***      0      0                           0         printf("%s  Ver %s Distrib %s Changeset %s\n",
 429                                                            $self->{program_name}, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
 430                                                               or die "Cannot print: $OS_ERROR";
 431   ***      0                                  0         exit 0;
 432                                                      }
 433                                                   
-434   ***     14     50     33                  142      if ( @ARGV && $self->{strict} ) {
+434   ***     14     50     33                  182      if ( @ARGV && $self->{strict} ) {
 435   ***      0                                  0         $self->save_error("Unrecognized command-line options @ARGV");
 436                                                      }
 437                                                   
-438           14                                 40      foreach my $mutex ( @{$self->{mutex}} ) {
-              14                                 89   
+438           14                                 48      foreach my $mutex ( @{$self->{mutex}} ) {
+              14                                115   
 439   ***      0                                  0         my @set = grep { $self->{opts}->{$_}->{got} } @$mutex;
       ***      0                                  0   
 440   ***      0      0                           0         if ( @set > 1 ) {
@@ -515,8 +515,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 446                                                         }
 447                                                      }
 448                                                   
-449           14                                 44      foreach my $required ( @{$self->{atleast1}} ) {
-              14                                 65   
+449           14                                 48      foreach my $required ( @{$self->{atleast1}} ) {
+              14                                130   
 450   ***      0                                  0         my @set = grep { $self->{opts}->{$_}->{got} } @$required;
       ***      0                                  0   
 451   ***      0      0                           0         if ( @set == 0 ) {
@@ -528,12 +528,12 @@ line  err   stmt   bran   cond    sub    pod   time   code
 456                                                         }
 457                                                      }
 458                                                   
-459           14                                 42      foreach my $long ( keys %{$self->{opts}} ) {
-              14                                137   
-460          266                                940         my $opt = $self->{opts}->{$long};
-461          266    100                        1356         if ( $opt->{got} ) {
+459           14                                 52      foreach my $long ( keys %{$self->{opts}} ) {
+              14                                183   
+460          266                               1333         my $opt = $self->{opts}->{$long};
+461          266    100                        1953         if ( $opt->{got} ) {
       ***            50                               
-462   ***      5     50                          24            if ( exists $self->{disables}->{$long} ) {
+462   ***      5     50                          22            if ( exists $self->{disables}->{$long} ) {
 463   ***      0                                  0               my @disable_opts = @{$self->{disables}->{$long}};
       ***      0                                  0   
 464   ***      0                                  0               map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
@@ -542,7 +542,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 466                                                                  'because', $long,'disables them');
 467                                                            }
 468                                                   
-469   ***      5     50                          24            if ( exists $self->{allowed_groups}->{$long} ) {
+469   ***      5     50                          25            if ( exists $self->{allowed_groups}->{$long} ) {
 470                                                   
 471   ***      0                                  0               my @restricted_groups = grep {
 472   ***      0                                  0                  !exists $self->{allowed_groups}->{$long}->{$_}
@@ -582,19 +582,19 @@ line  err   stmt   bran   cond    sub    pod   time   code
 506   ***      0                                  0            $self->save_error("Required option --$long must be specified");
 507                                                         }
 508                                                   
-509          266                                957         $self->_validate_type($opt);
+509          266                               1301         $self->_validate_type($opt);
 510                                                      }
 511                                                   
-512           14                                 74      $self->{got_opts} = 1;
-513           14                                 39      return;
+512           14                                 97      $self->{got_opts} = 1;
+513           14                                 54      return;
 514                                                   }
 515                                                   
 516                                                   sub _validate_type {
-517          266                  266           911      my ( $self, $opt ) = @_;
-518   ***    266    100     66                 2150      return unless $opt && $opt->{type};
-519          196                                602      my $val = $opt->{value};
+517          266                  266          1241      my ( $self, $opt ) = @_;
+518   ***    266    100     66                 3303      return unless $opt && $opt->{type};
+519          196                                809      my $val = $opt->{value};
 520                                                   
-521   ***    196     50     66                 4401      if ( $val && $opt->{type} eq 'm' ) {  # type time
+521   ***    196     50     66                 6690      if ( $val && $opt->{type} eq 'm' ) {  # type time
       ***            50     66                        
       ***            50     66                        
       ***            50     66                        
@@ -655,36 +655,36 @@ line  err   stmt   bran   cond    sub    pod   time   code
       ***      0                                  0   
 571                                                      }
 572                                                      elsif ( $opt->{type} eq 'A' || (defined $val && $opt->{type} eq 'a') ) {
-573   ***     14            50                  225         $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
+573   ***     14            50                  326         $opt->{value} = [ split(/(?<!\\),\s*/, ($val || '')) ];
 574                                                      }
 575                                                      else {
-576          182                                431         MKDEBUG && _d('Nothing to validate for option',
+576          182                                563         MKDEBUG && _d('Nothing to validate for option',
 577                                                            $opt->{long}, 'type', $opt->{type}, 'value', $val);
 578                                                      }
 579                                                   
-580          196                                636      return;
+580          196                                965      return;
 581                                                   }
 582                                                   
 583                                                   sub get {
-584           89                   89           382      my ( $self, $opt ) = @_;
-585   ***     89     50                         385      my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
-586   ***     89     50     33                  848      die "Option $opt does not exist"
+584           89                   89           535      my ( $self, $opt ) = @_;
+585   ***     89     50                         536      my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+586   ***     89     50     33                 1238      die "Option $opt does not exist"
 587                                                         unless $long && exists $self->{opts}->{$long};
-588           89                                670      return $self->{opts}->{$long}->{value};
+588           89                                939      return $self->{opts}->{$long}->{value};
 589                                                   }
 590                                                   
 591                                                   sub got {
-592           56                   56           233      my ( $self, $opt ) = @_;
-593   ***     56     50                         234      my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
-594   ***     56     50     33                  516      die "Option $opt does not exist"
+592           56                   56           371      my ( $self, $opt ) = @_;
+593   ***     56     50                         350      my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+594   ***     56     50     33                  764      die "Option $opt does not exist"
 595                                                         unless $long && exists $self->{opts}->{$long};
-596           56                                340      return $self->{opts}->{$long}->{got};
+596           56                                509      return $self->{opts}->{$long}->{got};
 597                                                   }
 598                                                   
 599                                                   sub has {
-600           14                   14            64      my ( $self, $opt ) = @_;
-601   ***     14     50                          73      my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
-602   ***     14     50                         110      return defined $long ? exists $self->{opts}->{$long} : 0;
+600           14                   14            91      my ( $self, $opt ) = @_;
+601   ***     14     50                          94      my $long = (length $opt == 1 ? $self->{short_opts}->{$opt} : $opt);
+602   ***     14     50                         171      return defined $long ? exists $self->{opts}->{$long} : 0;
 603                                                   }
 604                                                   
 605                                                   sub set {
@@ -725,9 +725,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 639                                                   }
 640                                                   
 641                                                   sub usage_or_errors {
-642           14                   14            59      my ( $self ) = @_;
-643   ***     14     50                          78      if ( $self->{opts}->{help}->{got} ) {
-      ***     14     50                          68   
+642           14                   14            75      my ( $self ) = @_;
+643   ***     14     50                         110      if ( $self->{opts}->{help}->{got} ) {
+      ***     14     50                          98   
 644   ***      0      0                           0         print $self->print_usage() or die "Cannot print usage: $OS_ERROR";
 645   ***      0                                  0         exit 0;
 646                                                      }
@@ -735,7 +735,7 @@ line  err   stmt   bran   cond    sub    pod   time   code
 648   ***      0      0                           0         print $self->print_errors() or die "Cannot print errors: $OS_ERROR";
 649   ***      0                                  0         exit 0;
 650                                                      }
-651           14                                 39      return;
+651           14                                 46      return;
 652                                                   }
 653                                                   
 654                                                   sub print_errors {
@@ -873,8 +873,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 772                                                   }
 773                                                   
 774                                                   sub _read_config_file {
-775           56                   56           235      my ( $self, $filename ) = @_;
-776   ***     56     50                         142      open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
+775           56                   56           315      my ( $self, $filename ) = @_;
+776   ***     56     50                         210      open my $fh, "<", $filename or die "Cannot open $filename: $OS_ERROR\n";
 777   ***      0                                  0      my @args;
 778   ***      0                                  0      my $prefix = '--';
 779   ***      0                                  0      my $parse  = 1;
@@ -973,44 +973,44 @@ line  err   stmt   bran   cond    sub    pod   time   code
 866                                                   # ###########################################################################
 867                                                   package ReportFormatter;
 868                                                   
-869            2                    2            20   use strict;
+869            2                    2            18   use strict;
                2                                  5   
-               2                                 15   
+               2                                 16   
 870            2                    2            13   use warnings FATAL => 'all';
                2                                  5   
-               2                                 15   
-871            2                    2            14   use English qw(-no_match_vars);
-               2                                  5   
-               2                                 12   
+               2                                 14   
+871            2                    2            12   use English qw(-no_match_vars);
+               2                                  9   
+               2                                 13   
 872            2                    2            14   use List::Util qw(min max);
                2                                  5   
                2                                 11   
 873                                                   
-874   ***      2            50      2            14   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-               2                                  4   
-               2                                 40   
+874   ***      2            50      2            18   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+               2                                  6   
+               2                                 28   
 875                                                   
-876            2                    2            13   use Data::Dumper;
-               2                                  5   
+876            2                    2            12   use Data::Dumper;
+               2                                  4   
                2                                 17   
 877                                                   $Data::Dumper::Indent    = 1;
 878                                                   $Data::Dumper::Sortkeys  = 1;
 879                                                   $Data::Dumper::Quotekeys = 0;
 880                                                   
 881                                                   sub new {
-882           14                   14            91      my ( $class, %args ) = @_;
-883           14                                 51      my @required_args = qw();
-884           14                                 79      foreach my $arg ( @required_args ) {
+882           14                   14           125      my ( $class, %args ) = @_;
+883           14                                 69      my @required_args = qw();
+884           14                                121      foreach my $arg ( @required_args ) {
 885   ***      0      0                           0         die "I need a $arg argument" unless $args{$arg};
 886                                                      }
-887           14                                121      my $self = {
+887           14                                169      my $self = {
 888                                                         underline_header  => 1,
 889                                                         line_prefix        => '# ',
 890                                                         line_width         => 78,
 891                                                         truncate_underline => 1,
 892                                                         %args,
 893                                                      };
-894           14                                124      return bless $self, $class;
+894           14                                175      return bless $self, $class;
 895                                                   }
 896                                                   
 897                                                   sub set_title {
@@ -1020,36 +1020,36 @@ line  err   stmt   bran   cond    sub    pod   time   code
 901                                                   }
 902                                                   
 903                                                   sub set_columns {
-904           14                   14            74      my ( $self, @cols ) = @_;
-905           14                                 80      push @{$self->{cols}}, map {
-              42                                112   
-906           14                                 43         my $col = $_;
-907   ***     42     50                         175         die "Column does not have a name" unless defined $col->{name};
-908   ***     42     50     33                  208         if ( $col->{fixed_wdith} && $col->{fixed_width} < length $col->{name} ) { 
+904           14                   14            95      my ( $self, @cols ) = @_;
+905           14                                109      push @{$self->{cols}}, map {
+              42                                149   
+906           14                                 55         my $col = $_;
+907   ***     42     50                         253         die "Column does not have a name" unless defined $col->{name};
+908   ***     42     50     33                  293         if ( $col->{fixed_wdith} && $col->{fixed_width} < length $col->{name} ) { 
 909   ***      0                                  0            die "Fixed width is less than the column name";
 910                                                         }
-911           42                                161         $col->{min_val_width} = length $col->{name};
-912           42                                155         $col->{max_val_width} = length $col->{name};
-913           42                                135         $col;
+911           42                                232         $col->{min_val_width} = length $col->{name};
+912           42                                223         $col->{max_val_width} = length $col->{name};
+913           42                                196         $col;
 914                                                      } @cols;
-915           14                                 42      return;
+915           14                                 64      return;
 916                                                   }
 917                                                   
 918                                                   sub add_line {
-919          108                  108           498      my ( $self, @vals ) = @_;
+919          108                  108           594      my ( $self, @vals ) = @_;
 920                                                   
-921          108                                307      my $n_cols = scalar @{$self->{cols}};
+921          108                                350      my $n_cols = scalar @{$self->{cols}};
              108                                439   
-922          108                                288      my $n_vals = scalar @vals;
-923   ***    108     50                         410      die "Number of columns ($n_cols) and values ($n_vals) do not match"
+922          108                                333      my $n_vals = scalar @vals;
+923   ***    108     50                         466      die "Number of columns ($n_cols) and values ($n_vals) do not match"
 924                                                         unless $n_cols == $n_vals;
 925                                                   
-926          108                                252      my @line;
-927          108                                520      for my $i ( 0..$#vals ) {
-928          324                               1130         my $col = $self->{cols}->[$i];
-929          324                                907         my $val = $vals[$i];
-930          324                                864         my $width = length $val;
-931   ***    324     50     66                 1993         if ( $col->{fixed_width} && $width > $col->{fixed_width} ) {
+926          108                                279      my @line;
+927          108                                645      for my $i ( 0..$#vals ) {
+928          324                               1283         my $col = $self->{cols}->[$i];
+929          324                               1142         my $val = $vals[$i];
+930          324                                962         my $width = length $val;
+931   ***    324     50     66                 2357         if ( $col->{fixed_width} && $width > $col->{fixed_width} ) {
 932   ***      0      0                           0            if ( $col->{truncate} ) {
 933   ***      0                                  0               $val  = substr($val, 0, $col->{fixed_width} - 3);
 934   ***      0                                  0               $val .= '...';
@@ -1059,70 +1059,70 @@ line  err   stmt   bran   cond    sub    pod   time   code
 938   ***      0                                  0               die "Value '$val' is too wide for column $col->{name}";
 939                                                            }
 940                                                         }
-941          324                               1554         $col->{max_val_width} = max($width, $col->{max_val_width});
-942          324                               1211         push @line, $val;
+941          324                               1814         $col->{max_val_width} = max($width, $col->{max_val_width});
+942          324                               1402         push @line, $val;
 943                                                      }
-944          108                                299      push @{$self->{lines}}, \@line;
-             108                                428   
+944          108                                344      push @{$self->{lines}}, \@line;
+             108                                516   
 945                                                   
-946          108                                376      return;
+946          108                                432      return;
 947                                                   }
 948                                                   
 949                                                   sub get_report {
-950           14                   14            47      my ( $self ) = @_;
-951           14                                 37      my @lines;
-952   ***     14            50                  122      my $p = $self->{line_prefix} || '';
+950           14                   14            72      my ( $self ) = @_;
+951           14                                 43      my @lines;
+952   ***     14            50                  204      my $p = $self->{line_prefix} || '';
 953                                                   
-954   ***     14     50                          41      my $n_cols = scalar @{$self->{cols}}
-              14                                 90   
+954   ***     14     50                          50      my $n_cols = scalar @{$self->{cols}}
+              14                                121   
 955                                                                 - ($self->{long_last_column} ? 2 : 1);
 956                                                   
-957           14                                 39      my $fmt = $p;
-958           14                                 37      my @col_fmts;
-959           14                                 77      for my $i ( 0..$n_cols ) {
-960           42                                145         my $col = $self->{cols}->[$i];
-961           42    100                         260         my $col_fmt = '%'
+957           14                                 54      my $fmt = $p;
+958           14                                 45      my @col_fmts;
+959           14                                108      for my $i ( 0..$n_cols ) {
+960           42                                202         my $col = $self->{cols}->[$i];
+961           42    100                         374         my $col_fmt = '%'
 962                                                                     . ($col->{right_justify} ? '' : '-')
 963                                                                     . "$col->{max_val_width}"
 964                                                                     . 's';
-965           42                                150         push @col_fmts, $col_fmt;
+965           42                                214         push @col_fmts, $col_fmt;
 966                                                      }
-967   ***     14     50                          70      if ( $self->{long_last_column} ) {
+967   ***     14     50                          97      if ( $self->{long_last_column} ) {
 968   ***      0                                  0         push @col_fmts, '%s';
 969                                                      }
-970           14                                 59      $fmt .= join(' ', @col_fmts);
-971           14                                 35      MKDEBUG && _d('Format:', $fmt);
+970           14                                 78      $fmt .= join(' ', @col_fmts);
+971           14                                 40      MKDEBUG && _d('Format:', $fmt);
 972                                                   
-973   ***     14     50                          63      push @lines, sprintf "${p}$self->{title}" if $self->{title};
+973   ***     14     50                          88      push @lines, sprintf "${p}$self->{title}" if $self->{title};
 974                                                   
-975           14                                197      (my $hdr_fmt = $fmt) =~ s/%([^-])/%-$1/g;
-976           14                                 49      push @lines, sprintf $hdr_fmt, map { $_->{name} } @{$self->{cols}};
-              42                                232   
-              14                                 63   
+975           14                                298      (my $hdr_fmt = $fmt) =~ s/%([^-])/%-$1/g;
+976           14                                 69      push @lines, sprintf $hdr_fmt, map { $_->{name} } @{$self->{cols}};
+              42                                286   
+              14                                 85   
 977                                                   
-978   ***     14     50                          83      if ( $self->{underline_header} ) {
-979           14                                 40         my $underline_len = 0;
-980           42                                167         my @underlines = map {
-981           14                                 60            my $underline = '=' x $_->{max_val_width};
-982           42                                120            $underline_len += length $underline;
-983           42                                155            $underline;
-984           14                                 40         } @{$self->{cols}};
-985           14                                 53         $underline_len += (scalar @underlines) - 1;
-986   ***     14     50     33                  162         if ( $self->{truncate_underline}
+978   ***     14     50                         104      if ( $self->{underline_header} ) {
+979           14                                 49         my $underline_len = 0;
+980           42                                230         my @underlines = map {
+981           14                                 77            my $underline = '=' x $_->{max_val_width};
+982           42                                150            $underline_len += length $underline;
+983           42                                215            $underline;
+984           14                                 52         } @{$self->{cols}};
+985           14                                 74         $underline_len += (scalar @underlines) - 1;
+986   ***     14     50     33                  255         if ( $self->{truncate_underline}
 987                                                              && (2 + $underline_len) > $self->{line_width} ) {
 988   ***      0                                  0            my $over = $self->{line_width} - (2 + $underline_len);
 989   ***      0                                  0            $underlines[-1] = substr($underlines[-1], 0, $over);
 990                                                         }
 991                                                   
-992           14                                 90         push @lines, sprintf $fmt, @underlines;
+992           14                                114         push @lines, sprintf $fmt, @underlines;
 993                                                      }
 994                                                   
-995           14                                 38      foreach my $line ( @{$self->{lines}} ) {
-              14                                 64   
-996          108                                474         push @lines, sprintf $fmt, @$line;
+995           14                                 70      foreach my $line ( @{$self->{lines}} ) {
+              14                                 91   
+996          108                                558         push @lines, sprintf $fmt, @$line;
 997                                                      }
 998                                                   
-999           14                                245      return join("\n", @lines) . "\n";
+999           14                                364      return join("\n", @lines) . "\n";
 1000                                                  }
 1001                                                  
 1002                                                  sub _d {
@@ -1146,26 +1146,26 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1018                                                  # ###########################################################################
 1019                                                  package ErrorLogParser;
 1020                                                  
-1021           2                    2            18   use strict;
-               2                                  5   
-               2                                 10   
-1022           2                    2            16   use warnings FATAL => 'all';
+1021           2                    2            12   use strict;
+               2                                  7   
+               2                                 11   
+1022           2                    2            12   use warnings FATAL => 'all';
                2                                  4   
-               2                                 12   
-1023           2                    2            13   use English qw(-no_match_vars);
+               2                                 11   
+1023           2                    2            11   use English qw(-no_match_vars);
                2                                  6   
-               2                                  9   
-1024                                                  
-1025           2                    2            14   use Data::Dumper;
-               2                                  5   
                2                                 10   
+1024                                                  
+1025           2                    2            13   use Data::Dumper;
+               2                                  4   
+               2                                 11   
 1026                                                  $Data::Dumper::Indent    = 1;
 1027                                                  $Data::Dumper::Sortkeys  = 1;
 1028                                                  $Data::Dumper::Quotekeys = 0;
 1029                                                  
 1030  ***      2            50      2            13   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
                2                                  5   
-               2                                 34   
+               2                                 25   
 1031                                                  
 1032                                                  my $ts = qr/(\d{6}\s{1,2}[\d:]+)\s*/;
 1033                                                  my $ml = qr{\A(?:
@@ -1176,101 +1176,101 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1038                                                  )}x;
 1039                                                  
 1040                                                  sub new {
-1041          14                   14            74      my ( $class, %args ) = @_;
-1042          14                                 80      my $self = {
+1041          14                   14            97      my ( $class, %args ) = @_;
+1042          14                                123      my $self = {
 1043                                                        %args,
 1044                                                        pending => [],
 1045                                                     };
-1046          14                                113      return bless $self, $class;
+1046          14                                161      return bless $self, $class;
 1047                                                  }
 1048                                                  
 1049                                                  sub parse_event {
-1050         269                  269          1124      my ( $self, %args ) = @_;
-1051         269                               1003      my @required_args = qw(fh);
-1052         269                                827      foreach my $arg ( @required_args ) {
-1053  ***    269     50                        1325         die "I need a $arg argument" unless $args{$arg};
+1050         269                  269          1284      my ( $self, %args ) = @_;
+1051         269                               1098      my @required_args = qw(fh);
+1052         269                                890      foreach my $arg ( @required_args ) {
+1053  ***    269     50                        1478         die "I need a $arg argument" unless $args{$arg};
 1054                                                     }
-1055         269                               1015      my ($fh) = @args{@required_args};
+1055         269                               1065      my ($fh) = @args{@required_args};
 1056                                                  
-1057         269                                833      my $pending = $self->{pending};
+1057         269                                950      my $pending = $self->{pending};
 1058                                                  
-1059         269                                862      my $pos_in_log = tell($fh);
-1060         269                                614      my $line;
+1059         269                                912      my $pos_in_log = tell($fh);
+1060         269                                630      my $line;
 1061                                                     EVENT:
-1062         269           100                 2833      while ( defined($line = shift @$pending) or defined($line = <$fh>) ) {
-1063         299    100                        1812         next if $line =~ m/^\s*$/;  # lots of blank lines in error logs
-1064         255                                684         chomp $line;
-1065         255                                947         my @properties = ('pos_in_log', $pos_in_log);
-1066         255                                762         $pos_in_log = tell($fh);
+1062         269           100                75572      while ( defined($line = shift @$pending) or defined($line = <$fh>) ) {
+1063         299    100                        2052         next if $line =~ m/^\s*$/;  # lots of blank lines in error logs
+1064         255                                728         chomp $line;
+1065         255                               1041         my @properties = ('pos_in_log', $pos_in_log);
+1066         255                                825         $pos_in_log = tell($fh);
 1067                                                  
-1068         255    100                        1927         if ( my ($ts) = $line =~ /^$ts/o ) {
-1069         221                                470            MKDEBUG && _d('Got ts:', $ts);
-1070         221                                706            push @properties, 'ts', $ts;
-1071         221                               2261            $line =~ s/^$ts//;
+1068         255    100                        2329         if ( my ($ts) = $line =~ /^$ts/o ) {
+1069         221                                500            MKDEBUG && _d('Got ts:', $ts);
+1070         221                                770            push @properties, 'ts', $ts;
+1071         221                               2537            $line =~ s/^$ts//;
 1072                                                        }
 1073                                                  
-1074         255                                675         my $level;
-1075         255    100                        1436         if ( ($level) = $line =~ /\[((?:ERROR|Warning|Note))\]/ ) {
-1076         114    100                         576            $level = $level =~ m/error/i   ? 'error'
+1074         255                                715         my $level;
+1075         255    100                        1660         if ( ($level) = $line =~ /\[((?:ERROR|Warning|Note))\]/ ) {
+1076         114    100                         656            $level = $level =~ m/error/i   ? 'error'
                     100                               
 1077                                                                  : $level =~ m/warning/i ? 'warning'
 1078                                                                  :                         'info';
 1079                                                        }
 1080                                                        else {
-1081         141                                400            $level = 'unknown';
+1081         141                                440            $level = 'unknown';
 1082                                                        }
-1083         255                                575         MKDEBUG && _d('Level:', $level);
-1084         255                                821         push @properties, 'Level', $level;
+1083         255                                599         MKDEBUG && _d('Level:', $level);
+1084         255                                896         push @properties, 'Level', $level;
 1085                                                  
-1086         255    100                        1187         if ( my ($level) = $line =~ /InnoDB: Error/ ) {
-1087           6                                 15            MKDEBUG && _d('Got serious InnoDB error');
-1088           6                                 21            push @properties, 'Level', 'error';
+1086         255    100                        1297         if ( my ($level) = $line =~ /InnoDB: Error/ ) {
+1087           6                                 14            MKDEBUG && _d('Got serious InnoDB error');
+1088           6                                 22            push @properties, 'Level', 'error';
 1089                                                        }
 1090                                                  
-1091         255                                847         $line =~ s/^\s+//;
-1092         255                               1044         $line =~ s/\s{2,}/ /;
-1093         255                               1128         $line =~ s/\s+$//;
+1091         255                                927         $line =~ s/^\s+//;
+1092         255                               1148         $line =~ s/\s{2,}/ /;
+1093         255                               1235         $line =~ s/\s+$//;
 1094                                                  
 1095                                                  
-1096         255    100                        1379         if ( $line =~ m/$ml/o ) {
+1096         255    100                        1530         if ( $line =~ m/$ml/o ) {
                     100                               
-1097          60                                130            MKDEBUG && _d('Multi-line message:', $line);
-1098          60                                184            $line =~ s/- //; # Trim "- msyqld got signal" special case.
-1099          60                                145            my $next_line;
-1100          60           100                  813            while ( defined($next_line = <$fh>)
+1097          60                                155            MKDEBUG && _d('Multi-line message:', $line);
+1098          60                                192            $line =~ s/- //; # Trim "- msyqld got signal" special case.
+1099          60                                161            my $next_line;
+1100          60           100                  947            while ( defined($next_line = <$fh>)
 1101                                                                   && $next_line !~ m/^$ts/o ) {
-1102        3398                               8530               chomp $next_line;
-1103        3398    100                       14893               next if $next_line eq '';
-1104        3065                               8341               $next_line =~ s/^InnoDB: //; # InnoDB special-case.
-1105        3065                              31141               $line     .= " " . $next_line;
+1102        3398                              13272               chomp $next_line;
+1103        3398    100                       24910               next if $next_line eq '';
+1104        3065                              13179               $next_line =~ s/^InnoDB: //; # InnoDB special-case.
+1105        3065                              57689               $line     .= " " . $next_line;
 1106                                                           }
-1107          60                                127            MKDEBUG && _d('Pending next line:', $next_line);
-1108          60                                246            push @$pending, $next_line;
+1107          60                                144            MKDEBUG && _d('Pending next line:', $next_line);
+1108          60                                300            push @$pending, $next_line;
 1109                                                        }
 1110                                                        elsif ( $line =~ m/\bQuery: '/ ) {
-1111           1                                  8            MKDEBUG && _d('Error query:', $line);
-1112           1                                  6            my $next_line;
+1111           1                                 22            MKDEBUG && _d('Error query:', $line);
+1112           1                                 12            my $next_line;
 1113           1                                  5            my $last_line = 0;
-1114  ***      1            66                   17            while ( !$last_line && defined($next_line = <$fh>) ) {
-1115           3                                 10               chomp $next_line;
-1116           3                                  6               MKDEBUG && _d('Error query:', $next_line);
-1117           3                                  8               $line     .= $next_line;
-1118           3    100                          30               $last_line = 1 if $next_line =~ m/, Error_code:/;
+1114  ***      1            66                   36            while ( !$last_line && defined($next_line = <$fh>) ) {
+1115           3                                 13               chomp $next_line;
+1116           3                                 17               MKDEBUG && _d('Error query:', $next_line);
+1117           3                                 16               $line     .= $next_line;
+1118           3    100                          57               $last_line = 1 if $next_line =~ m/, Error_code:/;
 1119                                                           }
 1120                                                        }
 1121                                                  
-1122         255                                704         chomp $line;
-1123         255                               1025         push @properties, 'arg', $line;
+1122         255                                771         chomp $line;
+1123         255                               1183         push @properties, 'arg', $line;
 1124                                                  
-1125         255                                525         MKDEBUG && _d('Properties of event:', Dumper(\@properties));
-1126         255                               1457         my $event = { @properties };
-1127         255                               1590         return $event;
+1125         255                                577         MKDEBUG && _d('Properties of event:', Dumper(\@properties));
+1126         255                               1758         my $event = { @properties };
+1127         255                               1821         return $event;
 1128                                                  
 1129                                                     } # EVENT
 1130                                                  
-1131          14                                 49      @$pending = ();
-1132  ***     14     50                          86      $args{oktorun}->(0) if $args{oktorun};
-1133          14                                 66      return;
+1131          14                                 70      @$pending = ();
+1132  ***     14     50                         124      $args{oktorun}->(0) if $args{oktorun};
+1133          14                                 97      return;
 1134                                                  }
 1135                                                  
 1136                                                  sub _d {
@@ -1296,53 +1296,53 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1154                                                  
 1155           2                    2            15   use strict;
                2                                  4   
-               2                                 11   
-1156           2                    2            12   use warnings FATAL => 'all';
-               2                                  4   
                2                                 14   
-1157           2                    2            12   use English qw(-no_match_vars);
-               2                                  6   
-               2                                 13   
-1158           2                    2            12   use Data::Dumper;
+1156           2                    2            13   use warnings FATAL => 'all';
                2                                  5   
                2                                 10   
+1157           2                    2            11   use English qw(-no_match_vars);
+               2                                  6   
+               2                                 10   
+1158           2                    2            14   use Data::Dumper;
+               2                                  5   
+               2                                  9   
 1159                                                  $Data::Dumper::Indent    = 1;
 1160                                                  $Data::Dumper::Sortkeys  = 1;
 1161                                                  $Data::Dumper::Quotekeys = 0;
 1162                                                  
-1163  ***      2            50      2            17   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-               2                                  4   
+1163  ***      2            50      2            12   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+               2                                  6   
                2                                 25   
 1164                                                  
 1165                                                  sub new {
-1166          14                   14            75      my ( $class, %args ) = @_;
-1167          14                                132      my $self = {
+1166          14                   14            92      my ( $class, %args ) = @_;
+1167          14                                194      my $self = {
 1168                                                        %args,
 1169                                                        patterns => [],
 1170                                                        compiled => [],
 1171                                                        level    => [],
 1172                                                        name     => [],
 1173                                                     };
-1174          14                                102      return bless $self, $class;
+1174          14                                118      return bless $self, $class;
 1175                                                  }
 1176                                                  
 1177                                                  sub add_patterns {
-1178          82                   82           303      my ( $self, $patterns ) = @_;
-1179          82                                293      foreach my $p ( @$patterns ) {
-1180  ***    348     50     50                 2660         next unless $p && scalar @$p;
-1181         348                               1539         my ($name, $level, $regex) = @$p;
-1182         348                                956         push @{$self->{names}},    $name;
-             348                               1338   
-1183         348                                849         push @{$self->{levels}},   $level;
-             348                               1230   
-1184         348                                851         push @{$self->{patterns}}, $regex;
-             348                               1231   
-1185         348                                834         push @{$self->{compiled}}, qr/$regex/;
-             348                               5114   
-1186         348                               1073         MKDEBUG && _d('Added new pattern:', $name, $level, $regex,
+1178          82                   82           346      my ( $self, $patterns ) = @_;
+1179          82                                350      foreach my $p ( @$patterns ) {
+1180  ***    348     50     50                 3885         next unless $p && scalar @$p;
+1181         348                               2118         my ($name, $level, $regex) = @$p;
+1182         348                               1236         push @{$self->{names}},    $name;
+             348                               1950   
+1183         348                               1115         push @{$self->{levels}},   $level;
+             348                               1725   
+1184         348                               1066         push @{$self->{patterns}}, $regex;
+             348                               1682   
+1185         348                               1068         push @{$self->{compiled}}, qr/$regex/;
+             348                               7024   
+1186         348                               1433         MKDEBUG && _d('Added new pattern:', $name, $level, $regex,
 1187                                                           $self->{compiled}->[-1]);
 1188                                                     }
-1189          82                                247      return;
+1189          82                                296      return;
 1190                                                  }
 1191                                                  
 1192                                                  sub load_patterns_file {
@@ -1383,77 +1383,77 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1225                                                  }
 1226                                                  
 1227                                                  sub names {
-1228          14                   14            55      my ( $self ) = @_;
-1229          14                                 41      return @{$self->{names}};
-              14                                304   
+1228          14                   14            69      my ( $self ) = @_;
+1229          14                                 53      return @{$self->{names}};
+              14                                478   
 1230                                                  }
 1231                                                  
 1232                                                  sub levels {
-1233          14                   14            52      my ( $self ) = @_;
-1234          14                                 35      return @{$self->{levels}};
-              14                                245   
+1233          14                   14            72      my ( $self ) = @_;
+1234          14                                 50      return @{$self->{levels}};
+              14                                377   
 1235                                                  }
 1236                                                  
 1237                                                  sub match {
-1238         146                  146           618      my ( $self, %args ) = @_;
-1239         146                                565      my @required_args = qw(event);
-1240         146                                472      foreach my $arg ( @required_args ) {
-1241  ***    146     50                         712         die "I need a $arg argument" unless $args{$arg};
+1238         146                  146           723      my ( $self, %args ) = @_;
+1239         146                                664      my @required_args = qw(event);
+1240         146                               2724      foreach my $arg ( @required_args ) {
+1241  ***    146     50                         823         die "I need a $arg argument" unless $args{$arg};
 1242                                                     }
-1243         146                                500      my $event = @args{@required_args};
-1244         146                                569      my $err   = $event->{arg};
-1245  ***    146     50                         489      return unless $err;
+1243         146                                672      my $event = @args{@required_args};
+1244         146                                724      my $err   = $event->{arg};
+1245  ***    146     50                         562      return unless $err;
 1246                                                  
-1247  ***    146     50     33                  740      if ( $self->{QueryRewriter}
+1247  ***    146     50     33                  861      if ( $self->{QueryRewriter}
 1248                                                          && (my ($query) = $err =~ m/Statement: (.+)$/) ) {
 1249  ***      0                                  0         $query = $self->{QueryRewriter}->fingerprint($query);
 1250  ***      0                                  0         $err =~ s/Statement: .+$/Statement: $query/;
 1251                                                     }
 1252                                                  
-1253         146                                443      my $compiled = $self->{compiled};
-1254         146                                471      my $n        = (scalar @$compiled) - 1;
-1255         146                                320      my $pno;
+1253         146                                509      my $compiled = $self->{compiled};
+1254         146                                529      my $n        = (scalar @$compiled) - 1;
+1255         146                                354      my $pno;
 1256                                                     PATTERN:
-1257         146                                515      for my $i ( 0..$n ) {
-1258        2431    100                       13098         if ( $err =~ m/$compiled->[$i]/ ) {
-1259          78                                188            $pno = $i;
-1260          78                                222            last PATTERN;
+1257         146                                586      for my $i ( 0..$n ) {
+1258        2431    100                       16253         if ( $err =~ m/$compiled->[$i]/ ) {
+1259          78                                222            $pno = $i;
+1260          78                                245            last PATTERN;
 1261                                                        } 
 1262                                                     }
 1263                                                  
-1264         146    100                         503      if ( defined $pno ) {
-1265          78                                167         MKDEBUG && _d($err, 'matches', $self->{patterns}->[$pno]);
-1266          78                                297         $event->{New_pattern} = 'No';
-1267          78                                263         $event->{Pattern_no}  = $pno;
+1264         146    100                         596      if ( defined $pno ) {
+1265          78                                180         MKDEBUG && _d($err, 'matches', $self->{patterns}->[$pno]);
+1266          78                                343         $event->{New_pattern} = 'No';
+1267          78                                295         $event->{Pattern_no}  = $pno;
 1268                                                  
-1269  ***     78     50     33                  424         if ( !$event->{Level} && $self->{levels}->[$pno] ) {
+1269  ***     78     50     33                  472         if ( !$event->{Level} && $self->{levels}->[$pno] ) {
 1270  ***      0                                  0            $event->{Level} = $self->{levels}->[$pno];
 1271                                                        }
 1272                                                     }
 1273                                                     else {
-1274          68                                142         MKDEBUG && _d('New pattern');
-1275          68                                281         my $regex = $self->fingerprint($err);
-1276          68                                233         my $name  = substr($err, 0, 50);
-1277          68                                437         $self->add_patterns( [ [$name, $event->{Level}, $regex] ] );
-1278          68                                309         $event->{New_pattern} = 'Yes';
-1279          68                                176         $event->{Pattern_no}  = (scalar @{$self->{patterns}}) - 1;
-              68                                355   
+1274          68                                159         MKDEBUG && _d('New pattern');
+1275          68                                346         my $regex = $self->fingerprint($err);
+1276          68                                295         my $name  = substr($err, 0, 50);
+1277          68                                530         $self->add_patterns( [ [$name, $event->{Level}, $regex] ] );
+1278          68                                360         $event->{New_pattern} = 'Yes';
+1279          68                                181         $event->{Pattern_no}  = (scalar @{$self->{patterns}}) - 1;
+              68                                414   
 1280                                                     }
 1281                                                  
-1282         146                                770      $event->{Pattern} = $self->{patterns}->[ $event->{Pattern_no} ];
+1282         146                                869      $event->{Pattern} = $self->{patterns}->[ $event->{Pattern_no} ];
 1283                                                  
-1284         146                                640      return $event;
+1284         146                                725      return $event;
 1285                                                  }
 1286                                                  
 1287                                                  sub fingerprint {
-1288          68                   68           315      my ( $self, $err ) = @_;
+1288          68                   68           362      my ( $self, $err ) = @_;
 1289                                                  
-1290          68                                870      $err =~ s/([\(\)\[\].+?*\{\}])/\\$1/g;
+1290          68                               1112      $err =~ s/([\(\)\[\].+?*\{\}])/\\$1/g;
 1291                                                  
-1292          68                                809      $err =~ s/\b\d+\b/\\d+/g;              # numbers
-1293          68                                223      $err =~ s/\b0x[0-9a-zA-Z]+\b/0x\\S+/g; # hex values
+1292          68                               1043      $err =~ s/\b\d+\b/\\d+/g;              # numbers
+1293          68                                248      $err =~ s/\b0x[0-9a-zA-Z]+\b/0x\\S+/g; # hex values
 1294                                                  
-1295          68                                305      return $err;
+1295          68                                348      return $err;
 1296                                                  }
 1297                                                  
 1298                                                  sub _d {
@@ -1479,24 +1479,24 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1316                                                  # Transformers - Common transformation and beautification subroutines
 1317                                                  package Transformers;
 1318                                                  
-1319           2                    2            15   use strict;
-               2                                  5   
+1319           2                    2            14   use strict;
+               2                                  4   
                2                                 11   
-1320           2                    2            12   use warnings FATAL => 'all';
+1320           2                    2            19   use warnings FATAL => 'all';
+               2                                  6   
+               2                                 13   
+1321           2                    2            13   use English qw(-no_match_vars);
+               2                                  6   
+               2                                473   
+1322           2                    2            26   use Time::Local qw(timegm timelocal);
+               2                                  6   
+               2                                 20   
+1323           2                    2            14   use Digest::MD5 qw(md5_hex);
                2                                  4   
-               2                                 12   
-1321           2                    2            12   use English qw(-no_match_vars);
-               2                                  4   
-               2                                234   
-1322           2                    2           122   use Time::Local qw(timegm timelocal);
-               2                                  7   
-               2                                 19   
-1323           2                    2            18   use Digest::MD5 qw(md5_hex);
-               2                                  5   
-               2                                 14   
+               2                                 13   
 1324                                                  
-1325  ***      2            50      2            12   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-               2                                  4   
+1325  ***      2            50      2            13   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+               2                                  5   
                2                                 25   
 1326                                                  
 1327                                                  require Exporter;
@@ -1632,11 +1632,11 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1453                                                  # Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.  Also
 1454                                                  # handles a timestamp with fractions after it.
 1455                                                  sub parse_timestamp {
-1456         164                  164           530      my ( $val ) = @_;
-1457  ***    164     50                        1949      if ( my($y, $m, $d, $h, $i, $s, $f)
+1456         164                  164           546      my ( $val ) = @_;
+1457  ***    164     50                        1872      if ( my($y, $m, $d, $h, $i, $s, $f)
 1458                                                           = $val =~ m/^$mysql_ts$/ )
 1459                                                     {
-1460  ***    164     50                        1729         return sprintf "%d-%02d-%02d %02d:%02d:"
+1460  ***    164     50                        1803         return sprintf "%d-%02d-%02d %02d:%02d:"
       ***            50                               
 1461                                                                       . (defined $f ? '%02.6f' : '%02d'),
 1462                                                                       $y + 2000, $m, $d, $h, $i, (defined $f ? $s + $f : $s);
@@ -1648,18 +1648,18 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1468                                                  # into an int (seconds since epoch).  Optional microseconds are printed.  $gmt
 1469                                                  # makes it use GMT time instead of local time (to make tests deterministic).
 1470                                                  sub unix_timestamp {
-1471         165                  165           583      my ( $val, $gmt ) = @_;
-1472  ***    165     50                        1941      if ( my($y, $m, $d, $h, $i, $s, $us) = $val =~ m/^$proper_ts$/ ) {
-1473  ***    165     50                        1033         $val = $gmt
+1471         165                  165           578      my ( $val, $gmt ) = @_;
+1472  ***    165     50                        1921      if ( my($y, $m, $d, $h, $i, $s, $us) = $val =~ m/^$proper_ts$/ ) {
+1473  ***    165     50                        1025         $val = $gmt
 1474                                                           ? timegm($s, $i, $h, $d, $m - 1, $y)
 1475                                                           : timelocal($s, $i, $h, $d, $m - 1, $y);
-1476  ***    165     50                         620         if ( defined $us ) {
+1476  ***    165     50                         612         if ( defined $us ) {
 1477  ***      0                                  0            $us = sprintf('%.6f', $us);
 1478  ***      0                                  0            $us =~ s/^0\././;
 1479  ***      0                                  0            $val .= $us;
 1480                                                        }
 1481                                                     }
-1482         165                                791      return $val;
+1482         165                                793      return $val;
 1483                                                  }
 1484                                                  
 1485                                                  # Turns several different types of timestamps into a unix timestamp.
@@ -1672,9 +1672,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1492                                                  # given value/expression and is expected to return a single value
 1493                                                  # (the result of the expression).
 1494                                                  sub any_unix_timestamp {
-1495         165                  165           599      my ( $val, $callback ) = @_;
+1495         165                  165           598      my ( $val, $callback ) = @_;
 1496                                                  
-1497  ***    165     50                        2137      if ( my ($n, $suffix) = $val =~ m/^$n_ts$/ ) {
+1497  ***    165     50                        2125      if ( my ($n, $suffix) = $val =~ m/^$n_ts$/ ) {
                     100                               
       ***            50                               
 1498  ***      0      0                           0         $n = $suffix eq 's' ? $n            # Seconds
@@ -1689,14 +1689,14 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1504  ***      0                                  0         return time - $n;
 1505                                                     }
 1506                                                     elsif ( my ($ymd, $hms) = $val =~ m/^(\d{6})(?:\s+(\d+:\d+:\d+))?/ ) {
-1507         164                                342         MKDEBUG && _d('ts is MySQL slow log timestamp');
-1508         164    100                         579         $val .= ' 00:00:00' unless $hms;
-1509         164                                576         return unix_timestamp(parse_timestamp($val));
+1507         164                                353         MKDEBUG && _d('ts is MySQL slow log timestamp');
+1508         164    100                         559         $val .= ' 00:00:00' unless $hms;
+1509         164                                561         return unix_timestamp(parse_timestamp($val));
 1510                                                     }
 1511                                                     elsif ( ($ymd, $hms) = $val =~ m/^(\d{4}-\d\d-\d\d)(?:[T ](\d+:\d+:\d+))?/) {
-1512           1                                  3         MKDEBUG && _d('ts is properly formatted timestamp');
-1513  ***      1     50                           9         $val .= ' 00:00:00' unless $hms;
-1514           1                                  8         return unix_timestamp($val);
+1512           1                                  6         MKDEBUG && _d('ts is properly formatted timestamp');
+1513  ***      1     50                           6         $val .= ' 00:00:00' unless $hms;
+1514           1                                 11         return unix_timestamp($val);
 1515                                                     }
 1516                                                     else {
 1517  ***      0                                  0         MKDEBUG && _d('ts is MySQL expression');
@@ -1741,199 +1741,199 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1554                                                  # ###########################################################################
 1555                                                  package mk_error_log;
 1556                                                  
-1557           2                    2            13   use English qw(-no_match_vars);
+1557           2                    2            14   use English qw(-no_match_vars);
                2                                  5   
-               2                                 12   
-1558           2                    2            14   use Data::Dumper;
-               2                                  4   
-               2                                 15   
+               2                                 11   
+1558           2                    2            12   use Data::Dumper;
+               2                                  5   
+               2                                 11   
 1559                                                  $Data::Dumper::Indent    = 1;
 1560                                                  $Data::Dumper::Sortkeys  = 1;
 1561                                                  $Data::Dumper::Quotekeys = 0;
 1562                                                  
 1563                                                  Transformers->import qw(any_unix_timestamp);
 1564                                                  
-1565  ***      2            50      2            12   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+1565  ***      2            50      2            14   use constant MKDEBUG => $ENV{MKDEBUG} || 0;
                2                                  4   
                2                                 26   
 1566                                                  
-1567           2                    2            22   use sigtrap 'handler', \&sig_int, 'normal-signals';
+1567           2                    2            23   use sigtrap 'handler', \&sig_int, 'normal-signals';
                2                                  5   
-               2                                 27   
+               2                                 28   
 1568                                                  
 1569                                                  my $oktorun = 1;
 1570                                                  
 1571                                                  sub main {
-1572          14                   14          2649      @ARGV = @_;  # set global ARGV for this package
+1572          14                   14          4048      @ARGV = @_;  # set global ARGV for this package
 1573                                                  
 1574                                                     # ########################################################################
 1575                                                     # Get configuration information.
 1576                                                     # ########################################################################
-1577          14                                342      my $o  = new OptionParser(
+1577          14                                464      my $o  = new OptionParser(
 1578                                                        strict      => 0,
 1579                                                        prompt      => '[OPTION...] FILE [FILE...]',
 1580                                                        description => q{parses and aggregates MySQL error log statements.},
 1581                                                     );
-1582          14                                111      $o->get_specs();
-1583          14                                120      $o->get_opts();
+1582          14                                205      $o->get_specs();
+1583          14                                214      $o->get_opts();
 1584                                                  
-1585          14                                112      $o->usage_or_errors();
+1585          14                                151      $o->usage_or_errors();
 1586                                                  
 1587                                                     # ##########################################################################
 1588                                                     # Get ready to do the main work.
 1589                                                     # ##########################################################################
-1590          14                                178      my $parser  = new ErrorLogParser();
-1591          14                                164      my $matcher = new ErrorLogPatternMatcher();
+1590          14                                243      my $parser  = new ErrorLogParser();
+1591          14                                219      my $matcher = new ErrorLogPatternMatcher();
 1592                                                  
 1593                                                     # ##########################################################################
 1594                                                     # Load saved (user) and known (internal) patterns.
 1595                                                     # ##########################################################################
-1596  ***     14     50                          62      if ( my $file = $o->get('load-patterns') ) {
+1596  ***     14     50                          83      if ( my $file = $o->get('load-patterns') ) {
 1597  ***      0                                  0         MKDEBUG && _d('Loading saved patterns from', $file);
 1598  ***      0      0                           0         open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 1599  ***      0                                  0         $matcher->load_patterns_file($fh);
 1600                                                     }
-1601  ***     14     50                          64      load_known_patterns($matcher) if $o->get('known-patterns');
+1601  ***     14     50                          79      load_known_patterns($matcher) if $o->get('known-patterns');
 1602                                                  
 1603                                                     # ##########################################################################
 1604                                                     # Create the pipeline.  These processes do the main work.
 1605                                                     # ##########################################################################
-1606          14                                 37      my @pipeline;
-1607          14                                 34      my %cnt;       # frequency of patterns
+1606          14                                 51      my @pipeline;
+1607          14                                 44      my %cnt;       # frequency of patterns
 1608                                                  
 1609                                                     # Parses the error logs, makes events.
 1610                                                     push @pipeline, sub {
-1611         269                  269          1452         my ( %args ) = @_;
-1612         269                               1400         return $parser->parse_event(%args);
-1613          14                                142      };
+1611         269                  269          1568         my ( %args ) = @_;
+1612         269                               1573         return $parser->parse_event(%args);
+1613          14                                206      };
 1614                                                  
 1615                                                     # --since and --until filtering.  Do this before pattern matching.
-1616          14                                 40      my $past_since;
-1617          14                                 34      my $at_until;
-1618          14    100                          60      if ( $o->get('since') ) {
-1619           3                                 13         my $since = any_unix_timestamp($o->get('since'));
+1616          14                                 53      my $past_since;
+1617          14                                 41      my $at_until;
+1618          14    100                          93      if ( $o->get('since') ) {
+1619           3                                 12         my $since = any_unix_timestamp($o->get('since'));
 1620  ***      3     50                          16         die "Invalid --since value" unless $since;
 1621                                                        push @pipeline, sub {
-1622         114                  114           558            my ( %args ) = @_;
-1623         114                                395            my $event = $args{event};
-1624         114                                234            MKDEBUG && _d('pipeline: --since');
-1625         114    100                         376            if ( $past_since ) {
-1626           4                                  8               MKDEBUG && _d('Already past --since');
-1627           4                                 17               return $event;
+1622         114                  114           555            my ( %args ) = @_;
+1623         114                                380            my $event = $args{event};
+1624         114                                246            MKDEBUG && _d('pipeline: --since');
+1625         114    100                         390            if ( $past_since ) {
+1626           4                                  9               MKDEBUG && _d('Already past --since');
+1627           4                                 16               return $event;
 1628                                                           }
-1629         110    100                         447            if ( $event->{ts} ) {
-1630          95                                359               my $ts = any_unix_timestamp($event->{ts});
-1631  ***     95    100     50                 2048               if ( ($ts || 0) >= $since ) {
-1632           3                                  7                  MKDEBUG && _d('Event is at or past --since');
-1633           3                                  9                  $past_since = 1;
+1629         110    100                         434            if ( $event->{ts} ) {
+1630          95                                354               my $ts = any_unix_timestamp($event->{ts});
+1631  ***     95    100     50                  534               if ( ($ts || 0) >= $since ) {
+1632           3                                  8                  MKDEBUG && _d('Event is at or past --since');
+1633           3                                 13                  $past_since = 1;
 1634           3                                 19                  return $event;
 1635                                                              }
 1636                                                              else {
-1637          92                                222                  MKDEBUG && _d('Event is before --since');
+1637          92                                225                  MKDEBUG && _d('Event is before --since');
 1638                                                              }
 1639                                                           }
-1640         107                                425            return;
-1641           3                                 33         };
+1640         107                                435            return;
+1641           3                                 39         };
 1642                                                     }
-1643          14    100                          59      if ( $o->get('until') ) {
-1644           2                                 18         my $until = any_unix_timestamp($o->get('until'));
-1645  ***      2     50                          15         die "Invalid --until value" unless $until;
+1643          14    100                          82      if ( $o->get('until') ) {
+1644           2                                 16         my $until = any_unix_timestamp($o->get('until'));
+1645  ***      2     50                          12         die "Invalid --until value" unless $until;
 1646                                                        push @pipeline, sub {
-1647          76                   76           399            my ( %args ) = @_;
-1648          76                                263            my $event = $args{event};
-1649          76                                161            MKDEBUG && _d('pipeline: --until');
-1650          76    100                         262            if ( $at_until ) {
-1651           1                                  6               MKDEBUG && _d('Already past --until');
+1647          76                   76           372            my ( %args ) = @_;
+1648          76                                266            my $event = $args{event};
+1649          76                                173            MKDEBUG && _d('pipeline: --until');
+1650          76    100                         266            if ( $at_until ) {
+1651           1                                  7               MKDEBUG && _d('Already past --until');
 1652           1                                  4               return;
 1653                                                           }
-1654          75    100                         299            if ( $event->{ts} ) {
-1655          65                                244               my $ts = any_unix_timestamp($event->{ts});
-1656  ***     65    100     50                  392               if ( ($ts || 0) >= $until ) {
-1657           1                                  8                  MKDEBUG && _d('Event at or after --until');
-1658           1                                  6                  $at_until = 1;
+1654          75    100                         301            if ( $event->{ts} ) {
+1655          65                                242               my $ts = any_unix_timestamp($event->{ts});
+1656  ***     65    100     50                  367               if ( ($ts || 0) >= $until ) {
+1657           1                                  9                  MKDEBUG && _d('Event at or after --until');
+1658           1                                  5                  $at_until = 1;
 1659           1                                  8                  return;
 1660                                                              }
 1661                                                              else {
-1662          64                                154                  MKDEBUG && _d('Event is before --until');
+1662          64                                161                  MKDEBUG && _d('Event is before --until');
 1663                                                              }
 1664                                                           }
-1665          74                                302            return $event;
-1666           2                                 28         };
+1665          74                                338            return $event;
+1666           2                                 25         };
 1667                                                     }
 1668                                                  
 1669                                                     # Matches events to known patterns or makes new patterns.
 1670                                                     push @pipeline, sub {
-1671         146                  146           739         my ( %args ) = @_;
-1672         146                                375         MKDEBUG && _d('pipeline: match pattern');
-1673  ***    146     50                         565         return unless $args{event};
-1674         146                                717         my $event = $matcher->match(%args);
-1675         146                                674         $cnt{ $event->{Pattern_no} }++;
-1676         146                                554         return $event;
-1677          14                                131      };
+1671         146                  146           885         my ( %args ) = @_;
+1672         146                                435         MKDEBUG && _d('pipeline: match pattern');
+1673  ***    146     50                         681         return unless $args{event};
+1674         146                                849         my $event = $matcher->match(%args);
+1675         146                                789         $cnt{ $event->{Pattern_no} }++;
+1676         146                                623         return $event;
+1677          14                                184      };
 1678                                                  
 1679                                                     # Any other pipeline processes?
 1680                                                  
 1681                                                     # ##########################################################################
 1682                                                     # Here's the main work.
 1683                                                     # ##########################################################################
-1684          14                                 42      my $fh;
-1685  ***     14     50                          58      if ( @ARGV == 0 ) {
+1684          14                                 50      my $fh;
+1685  ***     14     50                          87      if ( @ARGV == 0 ) {
 1686  ***      0                                  0         push @ARGV, '-'; # Magical STDIN filename.
 1687                                                     }
 1688                                                  
 1689                                                     FILE:
-1690          14                                 65      while ( $oktorun ) {
-1691         283    100                        1064         if ( !$fh ) {
-1692          28                                 93            my $file = shift @ARGV;
-1693          28    100                         104            if ( !$file ) {
-1694          14                                 34               MKDEBUG && _d('No more files to parse');
-1695          14                                 44               last FILE;
+1690          14                                 79      while ( $oktorun ) {
+1691         283    100                        1230         if ( !$fh ) {
+1692          28                                132            my $file = shift @ARGV;
+1693          28    100                         149            if ( !$file ) {
+1694          14                                 43               MKDEBUG && _d('No more files to parse');
+1695          14                                 58               last FILE;
 1696                                                           }
 1697                                                  
-1698  ***     14     50                          58            if ( $file eq '-' ) {
+1698  ***     14     50                          75            if ( $file eq '-' ) {
 1699  ***      0                                  0               $fh = *STDIN;
 1700  ***      0                                  0               MKDEBUG && _d('Reading STDIN');
 1701                                                           }
 1702                                                           else {
-1703  ***     14     50                         541               if ( !open $fh, "<", $file ) {
+1703  ***     14     50                         743               if ( !open $fh, "<", $file ) {
 1704  ***      0                                  0                  $fh = undef;
 1705  ***      0                                  0                  warn "Cannot open $file: $OS_ERROR\n";
 1706  ***      0                                  0                  next FILE;
 1707                                                              }
-1708          14                                 35               MKDEBUG && _d('Reading', $file);
+1708          14                                 40               MKDEBUG && _d('Reading', $file);
 1709                                                  
 1710                                                              # Reset these var in case we read two logs out of order by time.
-1711          14                                 41               $past_since = 0;
-1712          14                                 49               $at_until   = 0;
+1711          14                                 53               $past_since = 0;
+1712          14                                 67               $at_until   = 0;
 1713                                                           }
 1714                                                        }
 1715                                                  
-1716         269                                690         eval {
+1716         269                                755         eval {
 1717                                                           # Run events through the pipeline.  The first pipeline process
 1718                                                           # is usually responsible for getting the next event.  The pipeline
 1719                                                           # stops if a process does not return the event.  This main loop
 1720                                                           # stops if a process sets oktorun to false; it usually does this
 1721                                                           # when there are no more events, but it may do it for other reasons.
-1722         269                                791            my $event       = {};
-1723         269                                713            my $more_events = 1;
-1724         269                   14          1317            my $oktorun_sub = sub { $more_events = $_[0]; };
-              14                                 46   
-1725         269                                917            foreach my $process ( @pipeline ) {
-1726  ***    605     50                        2060               last unless $oktorun;  # the global oktorun var
-1727         605                               2434               $event = $process->(
+1722         269                                855            my $event       = {};
+1723         269                                875            my $more_events = 1;
+1724         269                   14          1486            my $oktorun_sub = sub { $more_events = $_[0]; };
+              14                                 63   
+1725         269                               1012            foreach my $process ( @pipeline ) {
+1726  ***    605     50                        2146               last unless $oktorun;  # the global oktorun var
+1727         605                               2649               $event = $process->(
 1728                                                                 event   => $event,
 1729                                                                 oktorun => $oktorun_sub,
 1730                                                                 fh      => $fh,
 1731                                                              );
-1732         605    100                        2849               last unless $event;
+1732         605    100                        3057               last unless $event;
 1733                                                           }
-1734         269    100                        1665            if ( !$more_events ) {
-1735          14                                 33               MKDEBUG && _d('No more events');
-1736  ***     14     50                         137               close $fh if $fh;
-1737          14                                 67               $fh = undef;
+1734         269    100                        1928            if ( !$more_events ) {
+1735          14                                 42               MKDEBUG && _d('No more events');
+1736  ***     14     50                         200               close $fh if $fh;
+1737          14                                 97               $fh = undef;
 1738                                                           }
 1739                                                        };
-1740  ***    269     50                        1232         if ( $EVAL_ERROR ) {
+1740  ***    269     50                        1377         if ( $EVAL_ERROR ) {
 1741  ***      0                                  0            _d($EVAL_ERROR);
 1742                                                  
 1743                                                           # Don't ignore failure to open a file, else we'll get
@@ -1948,41 +1948,41 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1752                                                     # ##########################################################################
 1753                                                     # Do the report.
 1754                                                     # ##########################################################################
-1755          14                                166      my $reporter = new ReportFormatter(
+1755          14                                195      my $reporter = new ReportFormatter(
 1756                                                        line_prefix => '',
 1757                                                     );
-1758          14                                220      $reporter->set_columns(
+1758          14                                359      $reporter->set_columns(
 1759                                                        { name => 'Count',   right_justify => 1,              },
 1760                                                        { name => 'Level',                                    },
 1761                                                        { name => 'Message', fixed_width => 60, truncate => 1 },
 1762                                                     );
 1763                                                  
 1764                                                     # Save patterns while doing the report.  Re-uses $fh.
-1765          14                                 35      my @patterns;
-1766  ***     14     50                         102      if ( my $file = $o->get('save-patterns') ) {
+1765          14                                 49      my @patterns;
+1766  ***     14     50                         103      if ( my $file = $o->get('save-patterns') ) {
 1767  ***      0      0                           0         open $fh, '>', $file or die "Cannot write to $file: $OS_ERROR";
 1768  ***      0                                  0         @patterns = $matcher->patterns;
 1769                                                     }
 1770                                                  
-1771          14                                 70      my @names  = $matcher->names;
-1772          14                                103      my @levels = $matcher->levels;
+1771          14                                 96      my @names  = $matcher->names;
+1772          14                                177      my @levels = $matcher->levels;
 1773                                                  
-1774          14                                 49      foreach my $pno ( sort { $cnt{$b} <=> $cnt{$a} } keys %cnt ) {
-             244                                719   
-1775  ***    108            50                  985         $reporter->add_line($cnt{$pno}, $levels[$pno] || '', $names[$pno] || '');
+1774          14                                 55      foreach my $pno ( sort { $cnt{$b} <=> $cnt{$a} } keys %cnt ) {
+             244                                782   
+1775  ***    108            50                 1105         $reporter->add_line($cnt{$pno}, $levels[$pno] || '', $names[$pno] || '');
       ***                   50                        
 1776                                                  
 1777                                                        # Print the pattern to the --save-patterns file.
-1778  ***    108     50                         429         if ( $fh ) {
+1778  ***    108     50                         501         if ( $fh ) {
 1779  ***      0                                  0            print $fh "$names[$pno]\n$levels[$pno]\n$patterns[$pno]\n\n";
 1780                                                        }
 1781                                                     }
 1782                                                  
-1783          14                                 73      print $reporter->get_report();
+1783          14                                141      print $reporter->get_report();
 1784                                                  
-1785  ***     14     50                          64      close $fh if $fh;
+1785  ***     14     50                          87      close $fh if $fh;
 1786                                                  
-1787          14                               1555      return 0;
+1787          14                               2230      return 0;
 1788                                                  }
 1789                                                  
 1790                                                  # ##########################################################################
@@ -1996,9 +1996,9 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1798                                                  # the log event.
 1799                                                  # ##########################################################################
 1800                                                  sub load_known_patterns {
-1801          14                   14            70      my ( $matcher ) = @_;
-1802          14                                 36      MKDEBUG && _d('Loading known patterns');
-1803          14                                433      my @known_patterns = (
+1801          14                   14            75      my ( $matcher ) = @_;
+1802          14                                 45      MKDEBUG && _d('Loading known patterns');
+1803          14                                675      my @known_patterns = (
 1804                                                        [ 'mysqld started',
 1805                                                          'info',
 1806                                                          'mysqld started'
@@ -2080,8 +2080,8 @@ line  err   stmt   bran   cond    sub    pod   time   code
 1882                                                           'mysqld restarted',
 1883                                                        ],
 1884                                                     );
-1885          14                                162      $matcher->add_patterns(\@known_patterns);
-1886          14                                125      return;
+1885          14                                152      $matcher->add_patterns(\@known_patterns);
+1886          14                                186      return;
 1887                                                  }
 1888                                                  
 1889                                                  # Catches signals so we can exit gracefully.
