@@ -4257,8 +4257,8 @@ mk-parallel-dump is not a backup program!  It is only designed for fast data
 exports, for purposes such as quickly loading data into test systems.  Do not
 use mk-parallel-dump for backups.
 
-At the time of this release, we know of no bugs that could cause serious harm to
-users.
+At the time of this release there is a bug that prevents L<"--lock-tables"> from
+working correctly.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
