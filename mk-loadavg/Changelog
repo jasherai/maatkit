@@ -1,6 +1,6 @@
 Changelog for mk-loadavg:
 
-2010-02-01: version 0.9.3
+2010-02-01: version 0.9.4
 
    * Using non-integer --wait value caused a crash (issue 803).
    * Undefined Time value from processlist caused a crash (issue 777).

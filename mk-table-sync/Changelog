@@ -1,6 +1,6 @@
 Changelog for mk-table-sync:
 
-2010-02-01: version 1.0.23
+2010-02-01: version 1.0.24
 
    * Nibble did not case-insensitively check its index (issue 804).
 
