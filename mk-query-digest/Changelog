@@ -2,6 +2,7 @@ Changelog for mk-query-digest:
 
    * memcached replace commands were not handled (issue 818).
    * Not all SHOW statements were distilled correctly (issue 735).
+   * Tcpdump parsing crashed on certain fragmented queries (issue 832).
 
 2010-01-06: version 0.9.13
 
