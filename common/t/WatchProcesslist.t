@@ -27,7 +27,7 @@ my $dbh = $sb->get_dbh_for('master');
 my $proc;
 sub show_processlist { return $proc };
 
-$proc = $r->parse( load_file('common/t/samples/recset004.txt') );
+$proc = $r->parse( load_file('common/t/samples/pl/recset004.txt') );
 
 my $w = new WatchProcesslist(
    params => 'state:Locked:count:<:1000',

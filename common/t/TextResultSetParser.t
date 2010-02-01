@@ -18,7 +18,7 @@ my $r = new TextResultSetParser();
 isa_ok($r, 'TextResultSetParser');
 
 is_deeply(
-   $r->parse( load_file('common/t/samples/recset001.txt') ),
+   $r->parse( load_file('common/t/samples/pl/recset001.txt') ),
    [
       {
          Time     => '0',
@@ -35,7 +35,7 @@ is_deeply(
 );
 
 is_deeply(
-   $r->parse( load_file('common/t/samples/recset002.txt') ),
+   $r->parse( load_file('common/t/samples/pl/recset002.txt') ),
    [
       {
          Time     => '4',
@@ -61,7 +61,7 @@ is_deeply(
    '2 row vertical processlist'
 );
 
-my $recset = $r->parse ( load_file('common/t/samples/recset003.txt') );
+my $recset = $r->parse ( load_file('common/t/samples/pl/recset003.txt') );
 cmp_ok(
    scalar @$recset,
    '==',
@@ -69,7 +69,7 @@ cmp_ok(
    '113 row vertical processlist'
 );
 
-$recset = $r->parse( load_file('common/t/samples/recset004.txt') );
+$recset = $r->parse( load_file('common/t/samples/pl/recset004.txt') );
 cmp_ok(
    scalar @$recset,
    '==',
@@ -78,7 +78,7 @@ cmp_ok(
 );
 
 is_deeply(
-   $r->parse( load_file('common/t/samples/recset005.txt') ),
+   $r->parse( load_file('common/t/samples/pl/recset005.txt') ),
    [
       {
          Id    => '29392005',

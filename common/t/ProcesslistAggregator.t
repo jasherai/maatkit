@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 7;
 
 use ProcesslistAggregator;
 use TextResultSetParser;
@@ -36,7 +36,7 @@ sub test_aggregate {
 }
 
 test_aggregate(
-   'common/t/samples/recset001.txt',
+   'common/t/samples/pl/recset001.txt',
    {
       command => { query     => { time => 0, count => 1 } },
       db      => { ''        => { time => 0, count => 1 } },
@@ -48,7 +48,7 @@ test_aggregate(
 );
 
 test_aggregate(
-   'common/t/samples/recset004.txt',
+   'common/t/samples/pl/recset004.txt',
    {
       db => {
          NULL   => { count => 1,  time => 0 },
@@ -74,7 +74,7 @@ test_aggregate(
    'Sample with 51 processes',
 );
 
-my $aggregate = $apl->aggregate($r->parse(load_file('common/t/samples/recset003.txt')));
+my $aggregate = $apl->aggregate($r->parse(load_file('common/t/samples/pl/recset003.txt')));
 cmp_ok(
    $aggregate->{db}->{NULL}->{count},
    '==',
@@ -86,6 +86,71 @@ cmp_ok(
    '==',
    110,
    '113 proc sample: 110 happy db'
+);
+
+# #############################################################################
+# Issue 777: ProcesslistAggregator undef bug
+# #############################################################################
+$r = new TextResultSetParser(
+   value_for => {
+      '' => undef,
+   }
+);
+
+my $row = $r->parse(load_file('common/t/samples/pl/recset007.txt'));
+
+is_deeply(
+   $row,
+   [
+      {
+         Command => undef,
+         Host => undef,
+         Id => '9',
+         Info => undef,
+         State => undef,
+         Time => undef,
+         User => undef,
+         db => undef
+      }
+   ],
+   'Pathological undef row'
+);
+
+is_deeply(
+   $apl->aggregate($row),
+   {
+      command => {
+       null => {
+         count => 1,
+         time => 0
+       }
+      },
+      db => {
+       NULL => {
+         count => 1,
+         time => 0
+       }
+      },
+      host => {
+       NULL => {
+         count => 1,
+         time => 0
+       }
+      },
+      state => {
+       null => {
+         count => 1,
+         time => 0
+       }
+      },
+      user => {
+       NULL => {
+         count => 1,
+         time => 0
+       }
+      },
+   },
+   'Pathological undef row aggregate'
 );
 
 exit;

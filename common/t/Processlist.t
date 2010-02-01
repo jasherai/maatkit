@@ -444,7 +444,7 @@ is(scalar(@queries), 0, 'Did not find any query');
 is_deeply(
    [
       $pl->find(
-         $rsp->parse(load_file('common/t/samples/recset003.txt')),
+         $rsp->parse(load_file('common/t/samples/pl/recset003.txt')),
          %find_spec,
       )
    ],

@@ -1,4 +1,4 @@
-# This program is copyright 2008-2009 Percona Inc.
+# This program is copyright 2008-2010 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -55,7 +55,7 @@ sub aggregate {
             $val  =~ s/:.*// if $field eq 'Host';
 
          my $time = $proc->{Time};
-            $time = 0 if $time eq 'NULL';
+            $time = 0 if !$time || $time eq 'NULL';
 
          # Do this last or else $proc->{$field} won't match.
          $field = lc $field;
