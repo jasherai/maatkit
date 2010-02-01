@@ -1,7 +1,7 @@
 mk-archiver
-mk-audit
 mk-deadlock-logger
 mk-duplicate-key-checker
+mk-error-log
 mk-fifo-split
 mk-find
 mk-heartbeat
