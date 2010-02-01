@@ -15,19 +15,15 @@ use MaatkitTest;
 use Sandbox;
 require "$trunk/mk-slave-prefetch/mk-slave-prefetch";
 
-my $dp = new DSNParser();
-my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $master_dbh = $sb->get_dbh_for('master');
-my $slave_dbh  = $sb->get_dbh_for('slave1');
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
 
-if ( !$master_dbh ) {
+if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
-elsif ( !$slave_dbh ) {
-   plan skip_all => 'Cannot connect to sandbox slave';
-}
 else {
-   plan tests => 11;
+   plan tests => 3;
 }
 
 my $q  = new Quoter();
@@ -41,16 +37,13 @@ my %common_modules = (
    Quoter      => $q,
 );
 
-my $output = `$trunk/mk-slave-prefetch/mk-slave-prefetch --help`;
-like($output, qr/Prompt for a password/, 'It compiles');
-
 # ###########################################################################
 # Test making queries for secondary indexes.
 # ###########################################################################
-$sb->load_file('slave1', 'mk-slave-prefetch/t/samples/secondary_indexes.sql');
+$sb->load_file('master', 'mk-slave-prefetch/t/samples/secondary_indexes.sql');
 
 my @queries = mk_slave_prefetch::get_secondary_index_queries(
-   dbh         => $slave_dbh,
+   dbh         => $dbh,
    db          => 'test2',
    query       => 'select 1 from test2.t order by a',
    %common_modules,
@@ -79,7 +72,7 @@ UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AN
 );
 
 @queries = mk_slave_prefetch::get_secondary_index_queries(
-   dbh         => $slave_dbh,
+   dbh         => $dbh,
    db          => 'test2',
    query       => 'select 1 from test2.t where a=1 and b=2',
    %common_modules,
@@ -95,7 +88,7 @@ is_deeply(
 );
 
 @queries = mk_slave_prefetch::get_secondary_index_queries(
-   dbh         => $slave_dbh,
+   dbh         => $dbh,
    db          => 'test2',
    query       => 'select 1 from `test2`.`t` where a>5',
    %common_modules,
@@ -113,48 +106,8 @@ UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AN
    'Secondary index queries with NULL row values'
 );
 
-# ###########################################################################
-# Check daemonization.
-# ###########################################################################
-my $cmd = "$trunk/mk-slave-prefetch/mk-slave-prefetch -F /tmp/12346/my.sandbox.cnf --daemonize --pid /tmp/mk-slave-prefetch.pid --print";
-diag(`$cmd 1>/dev/null 2>/dev/null`);
-$output = `ps -eaf | grep 'mk-slave-prefetch \-F' | grep -v grep`;
-like($output, qr/$cmd/, 'It lives daemonized');
-ok(-f '/tmp/mk-slave-prefetch.pid', 'PID file created');
-
-my ($pid) = $output =~ /\s+(\d+)\s+/;
-$output = `cat /tmp/mk-slave-prefetch.pid`;
-is($output, $pid, 'PID file has correct PID');
-
-# Kill it by testing --stop.
-$output = `$trunk/mk-slave-prefetch/mk-slave-prefetch --stop`;
-like(
-   $output,
-   qr{created file /tmp/mk-slave-prefetch-sentinel},
-   'Create sentinel file'
-);
-
-sleep 1;
-$output = `ps -eaf | grep 'mk-slave-prefetch \-F' | grep -v grep`;
-is($output, '', 'Stops for sentinel');
-ok(! -f '/tmp/mk-slave-prefetch.pid', 'PID file removed');
-
-`rm -f /tmp/mk-slave-prefetch-sentinel`;
-
-# #########################################################################
-# Issue 391: Add --pid option to all scripts
-# #########################################################################
-`touch /tmp/mk-script.pid`;
-$output = `$trunk/mk-slave-prefetch/mk-slave-prefetch -F /tmp/12346/my.sandbox.cnf --print --pid /tmp/mk-script.pid 2>&1`;
-like(
-   $output,
-   qr{PID file /tmp/mk-script.pid already exists},
-   'Dies if PID file already exists (--pid without --daemonize) (issue 391)'
-);
-`rm -rf /tmp/mk-script.pid`;
-
-
 # #############################################################################
 # Done.
 # #############################################################################
+$sb->wipe_clean($dbh);
 exit;

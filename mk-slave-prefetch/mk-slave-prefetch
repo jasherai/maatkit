@@ -3771,9 +3771,11 @@ sub main {
    my @dbhs = ($dbh);
 
    if ( $o->get('secondary-indexes') ) {
+      MKDEBUG && _d('Creating', $n_threads, 'threads for --secondary-indexes');
       for ( 0..$n_threads-1 ) {
          # Create a connection for this thread.
-         my $thr_dbh = $dp->get_dbh($dp->get_cxn_params($dsn),{ AutoCommit => 1 });
+         my $thr_dbh = $dp->get_dbh($dp->get_cxn_params($dsn),
+               { AutoCommit => 1 });
          $thr_dbh->{FetchHashKeyName} = 'NAME_lc';
          $thr_dbh->{InactiveDestroy}  = 1;
          $thr_dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
@@ -3781,14 +3783,21 @@ sub main {
 
          my $thr = threads::async {
             my $query;
-            my $tid = threads::tid();
+            my $curdb = '';
+            my $tid = threads->self()->tid();
+            # This doesn't actually print.
             MKDEBUG && _d('Thread', $tid, 'is alive');
             while( $query = $query_queue->dequeue() ) {
-               if ( $query ) {
-                  eval { $dbhs[$tid]->do($query); };
-                  MKDEBUG && $EVAL_ERROR && _d('Error executing', $query, ':',
+               my ($db, $sql) = ($query->[0], $query->[1]);
+               if ( $sql) {
+                  if ( $db && (!$curdb || $curdb ne $db) ) {
+                     $dbhs[$tid]->do("USE `$db`");
+                     $curdb = $db;
+                  }
+                  eval { $dbhs[$tid]->do($sql); };
+                  MKDEBUG && $EVAL_ERROR && _d('Error executing', $sql, ':',
                      $EVAL_ERROR);
-               };
+               }
             }
             MKDEBUG && _d('Thread', $tid, 'is done');
          };
@@ -3814,41 +3823,51 @@ sub main {
    # callback to itself that's passed in @callbacks to $spf->new().
    my $spf;
    my @callbacks;
-   if ( $o->get('execute') ) {
-      push @callbacks, sub {
-         MKDEBUG && _d('callback: execute');
-         return $spf->exec(@_);
-      };
-   }
-   if ( $o->get('secondary-indexes') ) {
-      my $q   = new Quoter();
-      my $tp  = new TableParser(Quoter => $q);
-      my $du  = new MySQLDump(cache => 0);
-      my $qp  = new QueryParser();
-
-      push @callbacks, sub {
-         my ( %args ) = @_;
-         MKDEBUG && _d('callback: secondary indexes');
-         my @secondary_index_queries = get_secondary_index_queries(
-            %args,
-            dbh         => $dbh,  # script dbh for SHOW CREATE TABLE, etc.
-            MySQLDump   => $du,
-            TableParser => $tp,
-            Quoter      => $q,
-            QueryParser => $qp,
-         );
-         $query_queue->enqueue(@secondary_index_queries);
-         return;
-      };   
-   }
    if ( $o->get('print') ) {
       push @callbacks, sub {
          my ( %args ) = @_;
          MKDEBUG && _d('callback: print');
+         print "-- primary query\n" if $o->get('secondary-indexes');
+         print "use `$args{last_db}`\n" if $args{last_db};
          print $args{query}, ";\n";
          return;
       };
    }
+   
+   if ( $o->get('execute') ) {
+      push @callbacks, sub {
+         MKDEBUG && _d('callback: execute');
+         return $spf->exec(@_);  # execute primary query
+      };
+
+      if ( $o->get('secondary-indexes') ) {
+         my $q   = new Quoter();
+         my $tp  = new TableParser(Quoter => $q);
+         my $du  = new MySQLDump(cache => 0);
+         my $qp  = new QueryParser();
+
+         push @callbacks, sub {
+            my ( %args ) = @_;
+            MKDEBUG && _d('callback: secondary indexes');
+            my @secondary_index_queries = get_secondary_index_queries(
+               %args,
+               dbh         => $dbh,  # script dbh for SHOW CREATE TABLE, etc.
+               MySQLDump   => $du,
+               TableParser => $tp,
+               Quoter      => $q,
+               QueryParser => $qp,
+            );
+            my $db = $args{last_db};
+            if ( $o->get('print') ) {
+               print "-- secondary index queries\n";
+               print join("\n", @secondary_index_queries), "\n";   
+            }
+            $query_queue->enqueue(map { [$db, $_] } @secondary_index_queries);
+            return;
+         };
+      }
+   }
+
    my %spf_options = map { $_ => $o->get($_) } qw(
       offset
       window
