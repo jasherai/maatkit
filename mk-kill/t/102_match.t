@@ -20,7 +20,7 @@ my $output;
 # Test match commands.
 # #############################################################################
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/recset001.txt", qw(--match-info show --print)); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset001.txt", qw(--match-info show --print)); }
 );
 like(
    $output,
@@ -29,7 +29,7 @@ like(
 );
 
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/recset002.txt", qw(--match-command Query --print)); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset002.txt", qw(--match-command Query --print)); }
 );
 is(
    $output,
@@ -38,7 +38,7 @@ is(
 );
 
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/recset002.txt", qw(--match-command Query --ignore-state), "''", "--print"); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset002.txt", qw(--match-command Query --ignore-state), "''", "--print"); }
 );
 like(
    $output,
@@ -47,7 +47,7 @@ like(
 );
 
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/recset003.txt", "--match-state", "Sorting result", "--print"); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset003.txt", "--match-state", "Sorting result", "--print"); }
 );
 like(
    $output,
@@ -56,7 +56,7 @@ like(
 );
 
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/recset003.txt", qw(--match-state Updating --print --no-only-oldest)); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset003.txt", qw(--match-state Updating --print --no-only-oldest)); }
 );
 like(
    $output,
@@ -65,7 +65,7 @@ like(
 );
 
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/recset003.txt", qw(--ignore-user remote --match-command Query --print)); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset003.txt", qw(--ignore-user remote --match-command Query --print)); }
 );
 like(
    $output,
@@ -74,7 +74,7 @@ like(
 );
 
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/recset004.txt", qw(--busy-time 25 --print)); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset004.txt", qw(--busy-time 25 --print)); }
 );
 like(
    $output,
@@ -83,7 +83,7 @@ like(
 );
 
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/recset004.txt", qw(--busy-time 30 --print)); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset004.txt", qw(--busy-time 30 --print)); }
 );
 is(
    $output,
@@ -92,7 +92,7 @@ is(
 );
 
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/recset005.txt", qw(--idle-time 15 --print)); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset005.txt", qw(--idle-time 15 --print)); }
 );
 like(
    $output,
@@ -101,7 +101,7 @@ like(
 );
 
 $output = output(
-   sub { mk_kill::main("$trunk/common/t/samples/recset006.txt", qw(--match-state Locked --ignore-state), "''", qw(--busy-time 5 --print)); }
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset006.txt", qw(--match-state Locked --ignore-state), "''", qw(--busy-time 5 --print)); }
 );
 like(
    $output,

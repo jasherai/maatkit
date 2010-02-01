@@ -2150,7 +2150,8 @@ sub main {
    if ( !@ARGV ) {
       $dsn      = $dp->parse_options($o);
       $dbh      = get_cxn($dsn, 1); 
-      $kill_sth = $dbh->prepare('KILL ?');
+      $kill_sth = $o->get('kill-query') ? $dbh->prepare('KILL QUERY ?')
+                :                         $dbh->prepare('KILL ?');
    }
 
    # ########################################################################
@@ -2267,19 +2268,20 @@ sub main {
          MATCHING_QUERY:
          foreach my $query ( @queries ) {
             if ( $o->get('print') ) {
-               printf "# %s KILL %d (%s %d sec) %s\n",
-                  ts(time), $query->{Id}, ($query->{Command} || 'NULL'),
-                  $query->{Time}, ($query->{Info} || 'NULL');
+               printf "# %s %s %d (%s %d sec) %s\n",
+                  ts(time), $o->get('kill-query') ? 'KILL QUERY' : 'KILL',
+                  $query->{Id}, ($query->{Command} || 'NULL'), $query->{Time},
+                  ($query->{Info} || 'NULL');
             }
             if ( $o->get('execute-command') ) {
                exec_cmd($o->get('execute-command'));
                heartbeat('Executed ' . $o->get('execute-command'));
             }
-            if ( $o->get('kill') ) {
+            if ( $o->get('kill') || $o->get('kill-query') ) {
                sleep $o->get('wait-before-kill') if $o->get('wait-before-kill');
                $kill_sth->execute($query->{Id});
                heartbeat("Killed $query->{Id}");
-
+               MKDEBUG && _d('Killed', $query->{Id});
             }
          }
       }
@@ -2467,7 +2469,7 @@ with the command.
 
 =head1 OPTIONS
 
-Specify at least one of L<"--kill">, L<"--print"> or L<"--execute-command">.
+Specify at least one of L<"--kill">, L<"--kill-query">, L<"--print"> or L<"--execute-command">.
 
 =over
 
@@ -2810,13 +2812,28 @@ See also L<"--wait-before-kill">.
 
 group: Actions
 
-Actually kill matching queries.
+Kill the connection for matching queries.
 
-This option makes mk-kill kill matching queries in MySQL.  Unless L<"--print">
-is also given, no other information is printed that shows that mk-kill
-matched and killed a query.
+This option makes mk-kill kill the connections (a.k.a. processes, threads) that
+have matching queries.  Use L<"--kill-query"> if you only want to kill
+individual queries and not their connections.  If both L<"--kill"> and
+L<"--kill-query"> are specified, only L<"--kill-query"> is used.
+
+Unless L<"--print"> is also given, no other information is printed that shows
+that mk-kill matched and killed a query.
 
 See also L<"--wait-before-kill"> and L<"--wait-after-kill">.
+
+=item --kill-query
+
+group: Actions
+
+Kill matching queries.
+
+This option makes mk-kill kill matching queries.  This requires MySQL 5.0 or
+newer.  Unlike L<"--kill"> which kills the connection for matching queries,
+this option only kills the query, not its connection.  If both L<"--kill"> and
+L<"--kill-query"> are specified, only L<"--kill-query"> is used.
 
 =item --print
 

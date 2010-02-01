@@ -61,7 +61,7 @@ SKIP: {
 # Issue 391: Add --pid option to all scripts
 # #########################################################################
 `touch /tmp/mk-script.pid`;
-$output = `$cmd $trunk/common/t/samples/recset006.txt --match-state Locked  --print --pid /tmp/mk-script.pid 2>&1`;
+$output = `$cmd $trunk/common/t/samples/pl/recset006.txt --match-state Locked  --print --pid /tmp/mk-script.pid 2>&1`;
 like(
    $output,
    qr{PID file /tmp/mk-script.pid already exists},

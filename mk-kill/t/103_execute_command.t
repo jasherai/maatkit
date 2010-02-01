@@ -29,7 +29,7 @@ my $cmd = "$trunk/mk-kill/mk-kill -F $cnf -h 127.1";
 # #############################################################################
 diag(`rm -rf /tmp/mk-kill-test.txt`);
 
-$output = `$cmd $trunk/common/t/samples/recset001.txt --match-command Query --execute-command 'echo hello > /tmp/mk-kill-test.txt'`;
+$output = `$cmd $trunk/common/t/samples/pl/recset001.txt --match-command Query --execute-command 'echo hello > /tmp/mk-kill-test.txt'`;
 is(
    $output, 
    '',
