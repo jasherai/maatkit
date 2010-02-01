@@ -12,7 +12,7 @@ err() {
 }
 
 usage() {
-   err "Usage: mk-test-coverage script|module"
+   err "Usage: mk-test-coverage script|module|update-summaries"
 }
 
 reset_cover_db() {
@@ -47,9 +47,9 @@ test_coverage() {
    fi
 
    if [ -n "$test_file" ]; then
-      prove --perl "perl -MDevel::Cover=-db,$cover_db,-ignore,.+,-select,$file" $test_file
+      prove --perl "perl -MDevel::Cover=-silent,1,-db,$cover_db,-ignore,.+,-select,$file" $test_file
    else
-      prove --perl "perl -MDevel::Cover=-db,$cover_db,-ignore,.+,-select,$file"
+      prove --perl "perl -MDevel::Cover=-silent,1,-db,$cover_db,-ignore,.+,-select,$file"
    fi
 
    cover -report text -silent $cover_db > $coverage_file
@@ -76,8 +76,21 @@ cover_db="$cover_dir/cover_db"
 
 if [ -f "$MAATKIT_TRUNK/common/$file.pm" ]; then
    type='module'
-else
+elif [ -f "$MAATKIT_TRUNK/$file/$file" ]; then
    type='script'
+elif [ "$file" = "update-summaries" ]; then
+   type='module'
+   summary_dir="$cover_dir/common"
+   update_summary
+
+   type='script'
+   summary_dir="$cover_dir"
+   update_summary
+
+   exit 0
+else
+   usage
+   exit 1
 fi
 
 reset_cover_db
