@@ -2009,12 +2009,6 @@ mk-error-log has a built-in list of known patterns.  This are normally loaded
 by default, but if you don't want them to be used you can disable them from
 being loaded by specifying C<--no-known-patterns>.
 
-=item --password
-
-short form: -p; type: string
-
-Password to use when connecting.
-
 =item --load-patterns
 
 type: string
@@ -2048,6 +2042,12 @@ Here is a simple example:
   InnoDB: Rolling back of trx id .*?complete
 
 See also L<"--save-patterns">.
+
+=item --password
+
+short form: -p; type: string
+
+Password to use when connecting.
 
 =item --pid
 
