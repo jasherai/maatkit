@@ -4616,7 +4616,7 @@ rotate its error log, potentially overwriting error messages.
 
 default: yes
 
-Compress (gzip) SQL dump files; does not work with L<"--format"> tab.
+Compress (gzip) SQL dump files; does not work with L<"--tab">.
 
 The IO::Compress::Gzip Perl module is used to compress SQL dump files
 as they are written to disk.  The resulting dump files have a C<.gz>
@@ -4624,7 +4624,7 @@ extension, like C<table.000000.sql.gz>.  They can be uncompressed with
 L<gzip>.  L<mk-parallel-restore> will automatically uncompress them, too,
 when restoring.
 
-This option does not work with L<"--format"> tab because the MySQL server
+This option does not work with L<"--tab"> because the MySQL server
 writes the tab dump files directly using C<SELECT INTO OUTFILE>.
 
 =item --help
