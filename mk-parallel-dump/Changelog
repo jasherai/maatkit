@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+2010-02-01: version 1.0.20
+
    * Database-qualified --tables filters did not work (issue 806).
    * Added --[no]gzip (issue 814).
    * Removed shell calls to mysqldump.

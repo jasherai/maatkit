@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+2010-02-01: version 1.0.14
+
    * --secondary-indexes queries did not use current database (issue 844).
    * Thread failed to start (issue 680).
 

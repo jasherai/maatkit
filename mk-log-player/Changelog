@@ -1,5 +1,7 @@
 Changelog for mk-log-player:
 
+2010-02-01: version 1.0.4
+
    * Added --split-random (issue 798).
    * Added --[no]results.
 
