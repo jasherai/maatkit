@@ -1,5 +1,8 @@
 Changelog for mk-slave-prefetch:
 
+   * --secondary-indexes queries did not use current database (issue 844).
+   * Thread failed to start (issue 680).
+
 2010-01-06: version 1.0.14
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).
