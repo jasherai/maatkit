@@ -1139,5 +1139,18 @@ is(
 	'distills UPDATE (`tbl`)'
 );
 
+# #############################################################################
+# Issue 599: mk-slave-prefetch doesn't parse INSERT IGNORE
+# #############################################################################
+
+is(
+   $qr->convert_to_select(
+      'INSERT IGNORE INTO Foo (clm1, clm2) VALUE (1,2)',
+   ),
+   'select * from  Foo  where clm1=1 and  clm2=2',
+   'convert_to_select insert ignore into',
+);
+
+
 exit;
  
