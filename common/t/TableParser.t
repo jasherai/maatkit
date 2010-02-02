@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 49;
+use Test::More tests => 51;
 
 use TableParser;
 use Quoter;
@@ -685,6 +685,27 @@ test_rsi(
 ) ENGINE=InnoDB AUTO_INCREMENT=15417 DEFAULT CHARSET=latin1;
 ",
   'ADD KEY `other_id` (`other_id`)',
+);
+
+test_rsi(
+   'mk-parallel-restore/t/samples/issue_833/00_geodb_coordinates.sql',
+   'issue 833',
+"CREATE TABLE `geodb_coordinates` (
+  `loc_id` int(11) NOT NULL default '0',
+  `lon` double default NULL,
+  `lat` double default NULL,
+  `sin_lon` double default NULL,
+  `sin_lat` double default NULL,
+  `cos_lon` double default NULL,
+  `cos_lat` double default NULL,
+  `coord_type` int(11) NOT NULL default '0',
+  `coord_subtype` int(11) default NULL,
+  `valid_since` date default NULL,
+  `date_type_since` int(11) default NULL,
+  `valid_until` date NOT NULL default '0000-00-00',
+  `date_type_until` int(11) NOT NULL default '0'
+) ENGINE=InnoDB DEFAULT CHARSET=latin1",
+   'ADD KEY `coord_lon_idx` (`lon`), ADD KEY `coord_loc_id_idx` (`loc_id`), ADD KEY `coord_stype_idx` (`coord_subtype`), ADD KEY `coord_until_idx` (`valid_until`), ADD KEY `coord_lat_idx` (`lat`), ADD KEY `coord_slon_idx` (`sin_lon`), ADD KEY `coord_clon_idx` (`cos_lon`), ADD KEY `coord_slat_idx` (`sin_lat`), ADD KEY `coord_clat_idx` (`cos_lat`), ADD KEY `coord_type_idx` (`coord_type`), ADD KEY `coord_since_idx` (`valid_since`)',
 );
 
 # #############################################################################

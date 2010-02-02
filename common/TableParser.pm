@@ -446,11 +446,19 @@ sub remove_secondary_indexes {
       $clustered_key  ||= '';
 
       my @sec_indexes   = map {
+         # Remove key from CREATE TABLE ddl.
          my $key_def = $_->{ddl};
          # Escape ( ) in the key def so Perl treats them literally.
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         "ADD $_->{ddl}";
+
+         my $key_ddl = "ADD $_->{ddl}";
+         # Last key in table won't have trailing comma, but since
+         # we're iterating through a hash the last key may not be
+         # the last in the list we're creating.
+         # http://code.google.com/p/maatkit/issues/detail?id=833
+         $key_ddl   .= ',' unless $key_ddl =~ m/,$/;
+         $key_ddl;
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
