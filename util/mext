@@ -7,6 +7,8 @@ usage() {
    echo "          to the program whose output mext will columnize."
    echo "mext columnizes repeated output from a program like mysqladmin extended."
    echo "Example: 'mext -r -- mysqladmin ext -i10 -c3'"
+   echo "You can also work with data from a file:"
+   echo "Example: 'mext -r -- cat mysqladmin-output.txt'"
    exit 1
 }
 
