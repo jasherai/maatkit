@@ -1742,7 +1742,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5266
+# TableParser package 5693
 # ###########################################################################
 package TableParser;
 
@@ -2091,7 +2091,10 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         "ADD $_->{ddl}";
+
+         my $key_ddl = "ADD $_->{ddl}";
+         $key_ddl   .= ',' unless $key_ddl =~ m/,$/;
+         $key_ddl;
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
@@ -2785,7 +2788,7 @@ sub do_table {
          push @sql, "ALTER TABLE `$db`.`$tbl` $indexes_ddl";
       }
 
-      _do($dbh, $dry_run, @sql);
+      $exit_status |= _do($dbh, $dry_run, @sql);
    }
 
    unlink $fifo if $fifo && !$dry_run;
@@ -3037,6 +3040,7 @@ sub system_call {
 # DBI, but this is the quick and easy solution.
 sub _do {
    my ( $dbh, $dry_run, @statements ) = @_;
+   my $retval = 0;
    eval {
       foreach my $sql ( @statements ) {
          next unless $sql;
@@ -3049,8 +3053,12 @@ sub _do {
          }
       }
    };
-   warn $EVAL_ERROR if $EVAL_ERROR;
-   return;
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d($EVAL_ERROR);
+      warn $EVAL_ERROR;
+      $retval |= 1;
+   }
+   return $retval;
 }
 
 sub _d {

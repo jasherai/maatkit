@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 use MaatkitTest;
 use Sandbox;
@@ -72,13 +72,14 @@ INSERT INTO `film_text` VALUES (1,'ACADEMY DINOSAUR','A Epic Drama of a Feminist
    '--fast-index on non-InnoDB table'
 );
 
-
 SKIP: {
-   skip 'Cannot connect to sandbox master', 3 unless $dbh;
+   skip 'Cannot connect to sandbox master', 4 unless $dbh;
+   $dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
 
-   # #############################################################################
-   # Issue 729: mk-parallel-restore --fast-index does not restore secondary indexes
-   # #############################################################################
+   # ##########################################################################
+   # Issue 729: mk-parallel-restore --fast-index does not restore secondary
+   # indexes
+   # ##########################################################################
    $output = `$cmd --create-databases $trunk/mk-parallel-restore/t/samples/issue_729 --fast-index 2>&1`;
    unlike(
       $output,
@@ -104,6 +105,19 @@ SKIP: {
 ) ENGINE=InnoDB AUTO_INCREMENT=15418 DEFAULT CHARSET=latin1",
       '--fast-index: secondary index was created'
    );
+
+   # ##########################################################################
+   # Issue 833: parallel-restore create index problem.
+   # ##########################################################################
+   my $retval = mk_parallel_restore::main('-F', $cnf,
+      qw(--fast-index --tab --create-databases --quiet),
+      "$trunk/mk-parallel-restore/t/samples/issue_833");
+   is(
+      $retval,
+      0,
+      'All key defs comma terminated (issue 833)'
+   );
+
    $sb->wipe_clean($dbh);
 }
 

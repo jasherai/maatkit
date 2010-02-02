@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * --fast-index failed to restore some keys (issue 833).
+
 2010-01-06: version 1.0.19
 
    * DELETE statements replicated despite --no-bin-log (issue 726).
