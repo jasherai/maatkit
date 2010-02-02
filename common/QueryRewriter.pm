@@ -360,8 +360,7 @@ sub convert_to_select {
               {__update_to_select($1, $2, $3, $4)}exsi
       || $query =~ s{
                     \A.*?
-                    (?:insert|replace)\s+
-                    (?:\bignore\s+)*
+                    (?:insert(?:\s+ignore)?|replace)\s+
                     .*?\binto\b(.*?)\(([^\)]+)\)\s*
                     values?\s*(\(.*?\))\s*
                     (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
