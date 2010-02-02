@@ -59,7 +59,7 @@ our @EXPORT      = qw(
    test_protocol_parser
    test_packet_parser
    no_diff
-   no_diff_c
+   throws_ok
    $trunk
 );
 our @EXPORT_OK   = qw();
@@ -385,6 +385,12 @@ sub no_diff {
    # so !0 = 1 = no diff in our testing parlance.
    $retval = $retval >> 8; 
    return !$retval;
+}
+
+sub throws_ok {
+   my ( $code, $pat, $msg ) = @_;
+   eval { $code->(); };
+   like ( $EVAL_ERROR, $pat, $msg );
 }
 
 1;
