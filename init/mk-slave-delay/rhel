@@ -1,4 +1,4 @@
-#
+#!/bin/bash
 #
 # Author:          Fernando Ipar
 # 
@@ -31,27 +31,41 @@ else
   }
 fi
 
+# test for mk-slave-delay 
 [ $(type mk-slave-delay 2>&1| grep -c 'mk-slave-delay is') -gt 0 ] || {
-	echo "I can't find mk-slave-delay on the path. ">&2
+	echo "I can't find mk-slave-delay on the path">&2
 	exit 1
 }
 
-CONF=/etc/mk-slave-delay.conf
-pid=/var/run/mk-slave-delay.pid
-[ -f $CONF ] && {
-	pid=$(grep pid $CONF|awk -F'=' '{print $2}')
+CONF=/etc/maatkit/mk-slave-delay.conf
+
+# test for conf file
+[ -r $CONF ] || {
+   echo "I can't find or read $CONF">&2
+   exit 1
 }
+
+# test for pid option
+pid=$(grep pid $CONF|awk -F'=' '{print $2}')
+piderr=0
+[ -z "$pid" ] && piderr=1 #if unset, error
+[ -f $pid ] || {
+   touch $pid || piderr=1 #if I can't touch, error
+   rm -f $pid
+}
+[ $piderr -eq 1 ] && {
+   echo "I can't find the pid option in $CONF, or it's value is invalid" >&2
+   exit 1
+}
+
 op="$1"
-shift
+
+# functions implementing options
 
 start()
 {
 	echo -n "Starting mk-slave-delay ... "
-	[ -f $CONF ] && {
-		mk-slave-delay --config $CONF 
-	} || {	
-		mk-slave-delay $* 
-	}
+	mk-slave-delay --config $CONF --daemonize 
 	[ $? -eq 0 ] && log_success_msg || log_failure_msg 
 }
 
@@ -66,17 +80,24 @@ stop()
 	}
 }
 
+status()
+{
+		[ -f $pid ] && [ -d /proc/$(cat $pid) ] && echo "mk-slave-digest is running" || echo "mk-slave-digest is not running">&2
+}
+
 case "$op" in 
-	start)	start
+	start)
+      start
 		;;		
-	stop)	stop
+	stop)	
+      stop
 		;;
-        restart)
+   restart)
 		stop
 		start
 		;;
-	status)
-		[ -f $pid ] && [ -d /proc/$(cat $pid) ] && echo "mk-slave-digest is running" || echo "mk-slave-digest is not running">&2
+	status) 
+      status
 		;;
 	*)
 		echo "Usage: mk-slave-delay start|stop|restart|status">&2
