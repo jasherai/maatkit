@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,11 +17,10 @@
 # ###########################################################################
 # ChangeHandler package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package ChangeHandler;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 my $DUPE_KEY  = qr/Duplicate entry/;
@@ -31,10 +30,10 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Arguments:
 # * Quoter     Quoter object
-# * src_db     Source database
-# * src_tbl    Source table
-# * dst_db     Destination database
-# * dst_tbl    Destination table
+# * left_db    Left database (src by default)
+# * left_tbl   Left table (src by default)
+# * right_db   Right database (dst by default)
+# * right_tbl  Right table (dst by default)
 # * actions    arrayref of subroutines to call when handling a change.
 # * replace    Do UPDATE/INSERT as REPLACE.
 # * queue      Queue changes until process_rows is called with a greater
@@ -42,13 +41,27 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 # * tbl_struct (optional) Used to sort columns
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(Quoter dst_db dst_tbl src_db src_tbl replace queue) ) {
+   foreach my $arg ( qw(Quoter left_db left_tbl right_db right_tbl
+                        replace queue) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my $self = { %args, map { $_ => [] } @ACTIONS };
-   $self->{dst_db_tbl} = $self->{Quoter}->quote(@args{qw(dst_db dst_tbl)});
-   $self->{src_db_tbl} = $self->{Quoter}->quote(@args{qw(src_db src_tbl)});
+   my $q = $args{Quoter};
+
+   my $self = {
+      %args,
+      left_db_tbl  => $q->quote(@args{qw(left_db left_tbl)}),
+      right_db_tbl => $q->quote(@args{qw(right_db right_tbl)}),
+   };
+
+   # By default left is source and right is dest.  With bidirectional
+   # syncing this can change.  See set_src().
+   $self->{src_db_tbl} = $self->{left_db_tbl};
+   $self->{dst_db_tbl} = $self->{right_db_tbl};
+
+   # Init and zero changes for all actions.
+   map { $self->{$_} = [] } @ACTIONS;
    $self->{changes} = { map { $_ => 0 } @ACTIONS };
+
    return bless $self, $class;
 }
 
@@ -61,51 +74,105 @@ sub new {
 sub fetch_back {
    my ( $self, $dbh ) = @_;
    $self->{fetch_back} = $dbh;
-   MKDEBUG && _d('Will fetch rows from source when updating destination');
+   MKDEBUG && _d('Set fetch back dbh', $dbh);
+   return;
 }
 
-sub take_action {
-   my ( $self, @sql ) = @_;
-   MKDEBUG && _d('Calling subroutines on', @sql);
-   foreach my $action ( @{$self->{actions}} ) {
-      $action->(@sql);
+# For bidirectional syncing both tables are src and dst.  Internally,
+# we refer to the tables generically as the left and right.  Either
+# one can be src or dst, as set by this sub when called by the caller.
+# Other subs don't know to which table src or dst point.  They just
+# fetchback from src and change dst.  If the optional $dbh arg is
+# given, fetch_back() is set with it, too.
+sub set_src {
+   my ( $self, $src, $dbh ) = @_;
+   die "I need a src argument" unless $src;
+   if ( lc $src eq 'left' ) {
+      $self->{src_db_tbl} = $self->{left_db_tbl};
+      $self->{dst_db_tbl} = $self->{right_db_tbl};
    }
+   elsif ( lc $src eq 'right' ) {
+      $self->{src_db_tbl} = $self->{right_db_tbl};
+      $self->{dst_db_tbl} = $self->{left_db_tbl}; 
+   }
+   else {
+      die "src argument must be either 'left' or 'right'"
+   }
+   MKDEBUG && _d('Set src to', $src);
+   $self->fetch_back($dbh) if $dbh;
+   return;
 }
 
-# Arguments: string, hashref, arrayref
+# Return current source db.tbl (could be left or right table).
+sub src {
+   my ( $self ) = @_;
+   return $self->{src_db_tbl};
+}
+
+# Return current destination db.tbl (could be left or right table).
+sub dst {
+   my ( $self ) = @_;
+   return $self->{dst_db_tbl};
+}
+
+# Arguments:
+#   * sql   scalar: a SQL statement
+#   * dbh   obj: (optional) dbh
+# This sub calls the user-provided actions, passing them an
+# action statement and an option dbh.  This sub is not called
+# directly, it's called by change() or process_rows().
+sub _take_action {
+   my ( $self, $sql, $dbh ) = @_;
+   MKDEBUG && _d('Calling subroutines on', $dbh, $sql);
+   foreach my $action ( @{$self->{actions}} ) {
+      $action->($sql, $dbh);
+   }
+   return;
+}
+
+# Arguments:
+#   * action   scalar: string, one of @ACTIONS
+#   * row      hashref: row data
+#   * cols     arrayref: column names
+#   * dbh      obj: (optional) dbh, passed to _take_action()
+# If not queueing, this sub makes an action SQL statment for the given
+# action, row and columns.  It calls _take_action(), passing the action
+# statement and the optional dbh.  If queueing, the args are saved and
+# the same work is done in process_rows().
 sub change {
-   my ( $self, $action, $row, $cols ) = @_;
-   MKDEBUG && _d($action, 'where', $self->make_where_clause($row, $cols));
+   my ( $self, $action, $row, $cols, $dbh ) = @_;
+   MKDEBUG && _d($dbh, $action, 'where', $self->make_where_clause($row, $cols));
    $self->{changes}->{
       $self->{replace} && $action ne 'DELETE' ? 'REPLACE' : $action
    }++;
    if ( $self->{queue} ) {
-      $self->__queue($action, $row, $cols);
+      $self->__queue($action, $row, $cols, $dbh);
    }
    else {
       eval {
          my $func = "make_$action";
-         $self->take_action($self->$func($row, $cols));
+         $self->_take_action($self->$func($row, $cols), $dbh);
       };
       if ( $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
          MKDEBUG && _d('Duplicate key violation; will queue and rewrite');
          $self->{queue}++;
          $self->{replace} = 1;
-         $self->__queue($action, $row, $cols);
+         $self->__queue($action, $row, $cols, $dbh);
       }
       elsif ( $EVAL_ERROR ) {
          die $EVAL_ERROR;
       }
    }
+   return;
 }
 
 sub __queue {
-   my ( $self, $action, $row, $cols ) = @_;
+   my ( $self, $action, $row, $cols, $dbh ) = @_;
    MKDEBUG && _d('Queueing change for later');
    if ( $self->{replace} ) {
       $action = $action eq 'DELETE' ? $action : 'REPLACE';
    }
-   push @{$self->{$action}}, [ $row, $cols ];
+   push @{$self->{$action}}, [ $row, $cols, $dbh ];
 }
 
 # If called with 1, will process rows that have been deferred from instant
@@ -127,8 +194,9 @@ sub process_rows {
             MKDEBUG && _d(scalar(@$rows), 'to', $action);
             $cur_act = $action;
             while ( @$rows ) {
-               $row = shift @$rows;
-               $self->take_action($self->$func(@$row));
+               $row    = shift @$rows;
+               my $dbh = $row->[2] if $row->[2];  # dbh is optional
+               $self->_take_action($self->$func(@$row), $dbh);
             }
          }
          $error_count = 0;
@@ -167,7 +235,7 @@ sub make_UPDATE {
    my @cols;
    if ( my $dbh = $self->{fetch_back} ) {
       my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
-      MKDEBUG && _d('Fetching data for UPDATE:', $sql);
+      MKDEBUG && _d('Fetching data on dbh', $dbh, 'for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       @cols = $self->sort_cols($res);
@@ -204,7 +272,7 @@ sub make_row {
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
       my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
-      MKDEBUG && _d('Fetching data for UPDATE:', $sql);
+      MKDEBUG && _d('Fetching data on dbh', $dbh, 'for', $verb, ':', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       @cols = $self->sort_cols($res);

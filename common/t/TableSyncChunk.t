@@ -40,12 +40,6 @@ use VersionParser;
 use TableSyncer;
 use MasterSlave;
 
-sub throws_ok {
-   my ( $code, $pat, $msg ) = @_;
-   eval { $code->(); };
-   like( $EVAL_ERROR, $pat, $msg );
-};
-
 my $mysql = $sb->_use_for('master');
 
 diag(`$mysql < $trunk/common/t/samples/before-TableSyncChunk.sql`);
@@ -80,14 +74,14 @@ my $dst = {
 };
 
 my $ch = new ChangeHandler(
-   Quoter  => new Quoter(),
-   dst_db  => 'test',
-   dst_tbl => 'test1',
-   src_db  => 'test',
-   src_tbl => 'test1',
-   replace => 0,
-   actions => [ sub { push @rows, @_ }, ],
-   queue   => 0,
+   Quoter    => new Quoter(),
+   right_db  => 'test',
+   right_tbl => 'test1',
+   left_db   => 'test',
+   left_tbl  => 'test1',
+   replace   => 0,
+   actions   => [ sub { push @rows, $_[0] }, ],
+   queue     => 0,
 );
 
 my $t = new TableSyncChunk(
@@ -228,8 +222,8 @@ throws_ok(
 
 # "find a bad row"
 $t->same_row(
-   { chunk_num => 0, cnt => 0, crc => 'abc' },
-   { chunk_num => 0, cnt => 1, crc => 'abc' },
+   lr => { chunk_num => 0, cnt => 0, crc => 'abc' },
+   rr => { chunk_num => 0, cnt => 1, crc => 'abc' },
 );
 ok($t->pending_changes(), 'Pending changes found');
 is($t->{state}, 1, 'Working inside chunk');
@@ -249,7 +243,7 @@ is(
 ok($t->{state}, 'Still working inside chunk');
 is(scalar(@rows), 0, 'No bad row triggered');
 
-$t->not_in_left({a => 1});
+$t->not_in_left(rr => {a => 1});
 
 is_deeply(\@rows,
    ['DELETE FROM `test`.`test1` WHERE `a`=1 LIMIT 1'],
@@ -257,7 +251,7 @@ is_deeply(\@rows,
 );
 
 # Should cause it to fetch back from the DB to figure out the right thing to do
-$t->not_in_right({a => 1});
+$t->not_in_right(lr => {a => 1});
 is_deeply(\@rows,
    [
    'DELETE FROM `test`.`test1` WHERE `a`=1 LIMIT 1',
@@ -267,7 +261,7 @@ is_deeply(\@rows,
 );
 
 # Shouldn't cause anything to happen
-$t->same_row( {a => 1, __crc => 'foo'}, {a => 1, __crc => 'foo'} );
+$t->same_row( lr => {a => 1, __crc => 'foo'}, rr => {a => 1, __crc => 'foo'} );
 
 is_deeply(\@rows,
    [
@@ -277,7 +271,7 @@ is_deeply(\@rows,
    'No more rows added',
 );
 
-$t->same_row( {a => 1, __crc => 'foo'}, {a => 1, __crc => 'bar'} );
+$t->same_row( lr => {a => 1, __crc => 'foo'}, rr => {a => 1, __crc => 'bar'} );
 
 is_deeply(\@rows,
    [

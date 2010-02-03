@@ -14,12 +14,6 @@ use Test::More tests => 6;
 use MockSth;
 use MaatkitTest;
 
-sub throws_ok {
-   my ( $code, $pat, $msg ) = @_;
-   eval { $code->(); };
-   like ( $EVAL_ERROR, $pat, $msg );
-}
-
 my $m;
 
 $m = new MockSth();

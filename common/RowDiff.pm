@@ -17,15 +17,16 @@
 # ###########################################################################
 # RowDiff package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package RowDiff;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+# Required args:
+#   * dbh           obj: dbh used for collation-specific string comparisons
 # Optional args:
 #   * same_row      Callback when rows are identical
 #   * not_in_left   Callback when right row is not in the left
@@ -36,21 +37,31 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 sub new {
    my ( $class, %args ) = @_;
    die "I need a dbh" unless $args{dbh};
-   my $self = \%args;
+   my $self = { %args };
    return bless $self, $class;
 }
 
+# Arguments:
+#   * left_sth    obj: sth
+#   * right_sth   obj: sth
+#   * syncer      obj: TableSync* module
+#   * tbl_struct  hashref: table struct from TableParser::parser()
 # Iterates through two sets of rows and finds differences.  Calls various
-# methods on the $syncer object when it finds differences.  $left and $right
-# should be DBI $sth, or should at least behave like them.  $tbl
-# is a struct from TableParser.
+# methods on the $syncer object when it finds differences, passing these
+# args and hashrefs to the differing rows ($lr and $rr).
 sub compare_sets {
    my ( $self, %args ) = @_;
-   my ( $left, $right, $syncer, $tbl )
-      = @args{qw(left right syncer tbl)};
+   my @required_args = qw(left_sth right_sth syncer tbl_struct);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $left_sth   = $args{left_sth};
+   my $right_sth  = $args{right_sth};
+   my $syncer     = $args{syncer};
+   my $tbl_struct = $args{tbl_struct};
 
-   my ($lr, $rr);  # Current row from the left/right sources.
-   my $done = $self->{done};
+   my ($lr, $rr);    # Current row from the left/right sths.
+   $args{key_cols} = $syncer->key_cols();  # for key_cmp()
 
    # We have to manually track if the left or right sth is done
    # fetching rows because sth->{Active} is always true with
@@ -69,12 +80,14 @@ sub compare_sets {
    # If you make changes here, be sure to test both RowDiff.t
    # and RowDiff-custom.t. Look inside the later to see what
    # is custom about it.
-   my ($left_done, $right_done) = (0, 0);
+   my $left_done  = 0;
+   my $right_done = 0;
+   my $done       = $self->{done};
 
    do {
       if ( !$lr && !$left_done ) {
          MKDEBUG && _d('Fetching row from left');
-         eval { $lr = $left->fetchrow_hashref(); };
+         eval { $lr = $left_sth->fetchrow_hashref(); };
          MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
          $left_done = !$lr || $EVAL_ERROR ? 1 : 0;
       }
@@ -84,7 +97,7 @@ sub compare_sets {
 
       if ( !$rr && !$right_done ) {
          MKDEBUG && _d('Fetching row from right');
-         eval { $rr = $right->fetchrow_hashref(); };
+         eval { $rr = $right_sth->fetchrow_hashref(); };
          MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
          $right_done = !$rr || $EVAL_ERROR ? 1 : 0;
       }
@@ -94,7 +107,7 @@ sub compare_sets {
 
       my $cmp;
       if ( $lr && $rr ) {
-         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
+         $cmp = $self->key_cmp(%args, lr => $lr, rr => $rr);
          MKDEBUG && _d('Key comparison on left and right:', $cmp);
       }
       if ( $lr || $rr ) {
@@ -103,26 +116,29 @@ sub compare_sets {
          # they're the same.
          if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
             MKDEBUG && _d('Left and right have the same key');
-            $syncer->same_row($lr, $rr);
-            $self->{same_row}->($lr, $rr) if $self->{same_row};
+            $syncer->same_row(%args, lr => $lr, rr => $rr);
+            $self->{same_row}->(%args, lr => $lr, rr => $rr)
+               if $self->{same_row};
             $lr = $rr = undef; # Fetch another row from each side.
          }
          # The row in the left doesn't exist in the right.
          elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
             MKDEBUG && _d('Left is not in right');
-            $syncer->not_in_right($lr);
-            $self->{not_in_right}->($lr) if $self->{not_in_right};
+            $syncer->not_in_right(%args, lr => $lr, rr => $rr);
+            $self->{not_in_right}->(%args, lr => $lr, rr => $rr)
+               if $self->{not_in_right};
             $lr = undef;
          }
          # Symmetric to the above.
          else {
             MKDEBUG && _d('Right is not in left');
-            $syncer->not_in_left($rr);
-            $self->{not_in_left}->($rr) if $self->{not_in_left};
+            $syncer->not_in_left(%args, lr => $lr, rr => $rr);
+            $self->{not_in_left}->(%args, lr => $lr, rr => $rr)
+               if $self->{not_in_left};
             $rr = undef;
          }
       }
-      $left_done = $right_done = 1 if $done && $done->($left, $right);
+      $left_done = $right_done = 1 if $done && $done->(%args);
    } while ( !($left_done && $right_done) );
    MKDEBUG && _d('No more rows');
    $syncer->done_with_rows();
@@ -144,10 +160,18 @@ sub compare_sets {
 # TODO: must generate the comparator function dynamically for speed, so we don't
 # have to check the type of columns constantly
 sub key_cmp {
-   my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(lr rr key_cols tbl_struct);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless exists $args{$arg};
+   }
+   my ($lr, $rr, $key_cols, $tbl_struct) = @args{@required_args};
    MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
+
+   # Optional callbacks.
    my $callback = $self->{key_cmp};
    my $trf      = $self->{trf};
+
    foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
       my $r = $rr->{$col};
@@ -156,9 +180,9 @@ sub key_cmp {
          return defined $l ? 1 : defined $r ? -1 : 0;
       }
       else {
-         if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
+         if ( $tbl_struct->{is_numeric}->{$col} ) {   # Numeric column
             MKDEBUG && _d($col, 'is numeric');
-            ($l, $r) = $trf->($l, $r, $tbl, $col) if $trf;
+            ($l, $r) = $trf->($l, $r, $tbl_struct, $col) if $trf;
             my $cmp = $l <=> $r;
             if ( $cmp ) {
                MKDEBUG && _d('Column', $col, 'differs:', $l, '!=', $r);
@@ -170,9 +194,10 @@ sub key_cmp {
          # a case-insensitive cmp if possible; otherwise ask MySQL how to sort.
          elsif ( $l ne $r ) {
             my $cmp;
-            my $coll = $tbl->{collation_for}->{$col};
+            my $coll = $tbl_struct->{collation_for}->{$col};
             if ( $coll && ( $coll ne 'latin1_swedish_ci'
-                           || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) ) {
+                           || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) )
+            {
                MKDEBUG && _d('Comparing', $col, 'via MySQL');
                $cmp = $self->db_cmp($coll, $l, $r);
             }

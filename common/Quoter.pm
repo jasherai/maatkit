@@ -17,18 +17,17 @@
 # ###########################################################################
 # Quoter package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package Quoter;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   return bless {}, $class;
 }
 
 sub quote {

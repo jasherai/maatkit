@@ -406,10 +406,10 @@ sub _compare_rows {
 
       MKDEBUG && _d('Comparing result sets with MockSyncStream');
       $rd->compare_sets(
-         left   => $left,
-         right  => $right,
-         syncer => $mocksync,
-         tbl    => $res_struct,
+         left_sth   => $left,
+         right_sth  => $right,
+         syncer     => $mocksync,
+         tbl_struct => $res_struct,
       );
 
       # Add number of rows written to outfile to this event's row_count.
@@ -558,7 +558,8 @@ sub diff_rows {
       return;
    };
    my $same_row = sub {
-      my ( $lr, $rr ) = @_;
+      my ( %args ) = @_;
+      my ($lr, $rr) = @args{qw(lr rr)};
       if ( $l_r[LEFT] && $l_r[RIGHT] ) {
          MKDEBUG && _d('Saving different row');
          push @different_rows, $last_diff_col[$last_diff];
@@ -583,21 +584,24 @@ sub diff_rows {
       return;
    };
    my $not_in_left  = sub {
-      my ( $rr ) = @_;
+      my ( %args ) = @_;
+      my ($lr, $rr) = @args{qw(lr rr)};
       $same_row->() if $l_r[RIGHT];  # last missing row
       $l_r[RIGHT] = $rr;
       $same_row->(@l_r) if $l_r[LEFT] && $l_r[RIGHT];
       return;
    };
    my $not_in_right = sub {
-      my ( $lr ) = @_;
+      my ( %args ) = @_;
+      my ($lr, $rr) = @args{qw(lr rr)};
       $same_row->() if $l_r[LEFT];  # last missing row
       $l_r[LEFT] = $lr;
       $same_row->(@l_r) if $l_r[LEFT] && $l_r[RIGHT];
       return;
    };
    my $done = sub {
-      my ( $left, $right ) = @_;
+      my ( %args ) = @_;
+      my ($left, $right) = @args{qw(left_sth right_sth)};
       MKDEBUG && _d('Found', $n_diff, 'of', $max_diff, 'max differences');
       if ( $n_diff >= $max_diff ) {
          MKDEBUG && _d('Done comparing rows, got --max-differences', $max_diff);
@@ -631,10 +635,10 @@ sub diff_rows {
       trf          => $trf,
    );
    my $ch = new ChangeHandler(
-      src_db     => $db,
-      src_tbl    => 'mk_upgrade_left',
-      dst_db     => $db,
-      dst_tbl    => 'mk_upgrade_right',
+      left_db    => $db,
+      left_tbl   => 'mk_upgrade_left',
+      right_db   => $db,
+      right_tbl  => 'mk_upgrade_right',
       tbl_struct => $res_struct,
       queue      => 0,
       replace    => 0,

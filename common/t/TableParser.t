@@ -24,12 +24,6 @@ my $q   = new Quoter();
 my $tp  = new TableParser(Quoter=>$q);
 my $tbl;
 
-sub throws_ok {
-   my ( $code, $pat, $msg ) = @_;
-   eval { $code->(); };
-   like( $EVAL_ERROR, $pat, $msg );
-}
-
 eval {
    $tp->parse( load_file('common/t/samples/noquotes.sql') );
 };

@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 43;
+use Test::More;
 
 # TableSyncer and its required modules:
 use TableSyncer;
@@ -35,30 +35,32 @@ use DSNParser;
 use Sandbox;
 use MaatkitTest;
 
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $src_dbh  = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
-my $dst_dbh  = $sb->get_dbh_for('slave1')
-   or BAIL_OUT('Cannot connect to sandbox slave');
-my $dbh      = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
+my $dbh      = $sb->get_dbh_for('master');
+my $src_dbh  = $sb->get_dbh_for('master');
+my $dst_dbh  = $sb->get_dbh_for('slave1');
+
+if ( !$src_dbh || !$dbh ) {
+   plan skip_all => 'Cannot connect to sandbox master';
+}
+elsif ( !$dst_dbh ) {
+   plan skip_all => 'Cannot connect to sandbox slave';
+}
+else {
+   plan tests => 45;
+}
 
 $sb->create_dbs($dbh, ['test']);
 my $mysql = $sb->_use_for('master');
 $sb->load_file('master', 'common/t/samples/before-TableSyncChunk.sql');
 
-sub throws_ok {
-   my ( $code, $pat, $msg ) = @_;
-   eval { $code->(); };
-   like( $EVAL_ERROR, $pat, $msg );
-}
-
 my $q  = new Quoter();
 my $tp = new TableParser(Quoter=>$q);
 my $du = new MySQLDump( cache => 0 );
 my ($rows, $cnt);
-
 
 # ###########################################################################
 # Make a TableSyncer object.
@@ -216,13 +218,31 @@ my %args = (
 
 my @rows;
 sub new_ch {
+   my ( $dbh ) = @_;
    return new ChangeHandler(
-      Quoter  => $q,
-      src_db  => $src->{db},
-      src_tbl => $src->{tbl},
-      dst_db  => $dst->{db},
-      dst_tbl => $dst->{tbl},
-      actions => [ sub { push @rows, @_; $dst_dbh->do(@_); } ],
+      Quoter    => $q,
+      left_db   => $src->{db},
+      left_tbl  => $src->{tbl},
+      right_db  => $dst->{db},
+      right_tbl => $dst->{tbl},
+      actions => [
+         sub {
+            my ( $sql, $change_dbh ) = @_;
+            push @rows, $sql;
+            if ( $change_dbh ) {
+               # dbh passed through change() or process_rows()
+               $change_dbh->do($sql);
+            }
+            elsif ( $dbh ) {
+               # dbh passed to this sub
+               $dbh->do($sql);
+            }
+            else {
+               # default dst dbh for this test script
+               $dst_dbh->do($sql);
+            }
+         }
+      ],
       replace => 0,
       queue   => 1,
    );
@@ -652,7 +672,134 @@ is_deeply(
 );
 
 # #############################################################################
+# Issue 464: Make mk-table-sync do two-way sync
+# #############################################################################
+my $dbh2 = $sb->get_dbh_for('slave2');
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $dbh;
+   skip 'Cannot connect to second sandbox master', 1 unless $dbh2;
+
+   # Load "master" data.
+   $sb->load_file('master', 'mk-table-sync/t/samples/bidirectional/table.sql');
+   $sb->load_file('master', 'mk-table-sync/t/samples/bidirectional/master-data.sql');
+
+   # Load remote data.
+   $sb->load_file('slave2', 'mk-table-sync/t/samples/bidirectional/table.sql');
+   $sb->load_file('slave2', 'mk-table-sync/t/samples/bidirectional/remote-1.sql');
+
+   make_plugins();
+
+   # Normally same_row is an arg to TableSyncChunk::new().
+   $sync_chunk->{same_row} = sub {
+      my ( %args ) = @_;
+      my ($lr, $rr, $syncer) = @args{qw(lr rr syncer)};
+      my $ch = $syncer->{ChangeHandler};
+      my $change_dbh;
+      my $auth_row;
+
+      my $where = $ch->make_where_clause($lr, $syncer->key_cols());
+      my $sql   = "SELECT `ts` AS `auth_col` FROM " . $ch->src . "WHERE $where";
+
+      my $left_ts  = $args{left_dbh}->selectrow_hashref($sql)->{auth_col};
+      my $right_ts = $args{right_dbh}->selectrow_hashref($sql)->{auth_col};
+      MKDEBUG && _d("left ts: $left_ts");
+      MKDEBUG && _d("right ts: $right_ts");
+
+      my $cmp = ($left_ts || '') cmp ($right_ts || '');
+      if ( $cmp == -1 ) {
+         MKDEBUG && _d("right dbh $dbh2 is newer; update left dbh $src_dbh");
+         $ch->set_src('right', $dbh2);
+         $auth_row   = $args{rr};
+         $change_dbh = $src_dbh;
+      }
+      elsif ( $cmp == 1 ) {
+         MKDEBUG && _d("left dbh $src_dbh is newer; update right dbh $dbh2");
+         $ch->set_src('left', $src_dbh);
+         $auth_row  = $args{lr};
+         $change_dbh = $dbh2;
+      }
+      return ('UPDATE', $auth_row, $change_dbh);
+   };
+   $sync_chunk->{not_in_right} = sub {
+      my ( %args ) = @_;
+      $args{syncer}->{ChangeHandler}->set_src('left', $src_dbh);
+      return 'INSERT', $args{lr}, $dbh2;
+   };
+   $sync_chunk->{not_in_left} = sub {
+      my ( %args ) = @_;
+      $args{syncer}->{ChangeHandler}->set_src('right', $dbh2);
+      return 'INSERT', $args{rr}, $src_dbh;
+   };
+
+   $tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q, 'bidi','t'));
+   $args{tbl_struct}    = $tbl_struct;
+   $args{cols}          = [qw(ts)],  # Compare only ts col when chunks differ.
+   $src->{db}           = 'bidi';
+   $src->{tbl}          = 't';
+   $dst->{db}           = 'bidi';
+   $dst->{tbl}          = 't';
+   $dst->{dbh}          = $dbh2;         # Must set $dbh2 here and
+   $args{ChangeHandler} = new_ch($dbh2); # here to override $dst_dbh.
+   @rows                = ();
+
+   $syncer->sync_table(%args, plugins => [$sync_chunk]);
+
+   my $res = $src_dbh->selectall_arrayref('select * from bidi.t order by id');
+   is_deeply(
+      $res,
+      [
+         [1,   'abc',   1,  '2010-02-01 05:45:30'],
+         [2,   'def',   2,  '2010-01-31 06:11:11'],
+         [3,   'ghi',   5,  '2010-02-01 09:17:52'],
+         [4,   'jkl',   6,  '2010-02-01 10:11:33'],
+         [5,   undef,   0,  '2010-02-02 05:10:00'],
+         [6,   'p',     4,  '2010-01-31 10:17:00'],
+         [7,   'qrs',   5,  '2010-02-01 10:11:11'],
+         [8,   'tuv',   6,  '2010-01-31 10:17:20'],
+         [9,   'wxy',   7,  '2010-02-01 10:17:00'],
+         [10,  'z',     8,  '2010-01-31 10:17:08'],
+         [11,  '?',     0,  '2010-01-29 11:17:12'],
+         [12,  '',      0,  '2010-02-01 11:17:00'],
+         [13,  'hmm',   1,  '2010-02-02 12:17:31'],
+         [14,  undef,   0,  '2010-01-31 10:17:00'],
+         [15,  'gtg',   7,  '2010-02-02 06:01:08'],
+         [17,  'good',  1,  '2010-02-02 21:38:03'],
+         [20,  'new', 100,  '2010-02-01 04:15:36'],
+      ],
+      'Bidirectional sync "master"'
+   );
+
+   $res = $dbh2->selectall_arrayref('select * from bidi.t order by id');
+   is_deeply(
+      $res,
+      [
+         [1,   'abc',   1,  '2010-02-01 05:45:30'],
+         [2,   'def',   2,  '2010-01-31 06:11:11'],
+         [3,   'ghi',   5,  '2010-02-01 09:17:52'],
+         [4,   'jkl',   6,  '2010-02-01 10:11:33'],
+         [5,   undef,   0,  '2010-02-02 05:10:00'],
+         [6,   'p',     4,  '2010-01-31 10:17:00'],
+         [7,   'qrs',   5,  '2010-02-01 10:11:11'],
+         [8,   'tuv',   6,  '2010-01-31 10:17:20'],
+         [9,   'wxy',   7,  '2010-02-01 10:17:00'],
+         [10,  'z',     8,  '2010-01-31 10:17:08'],
+         [11,  '?',     0,  '2010-01-29 11:17:12'],
+         [12,  '',      0,  '2010-02-01 11:17:00'],
+         [13,  'hmm',   1,  '2010-02-02 12:17:31'],
+         [14,  undef,   0,  '2010-01-31 10:17:00'],
+         [15,  'gtg',   7,  '2010-02-02 06:01:08'],
+         [17,  'good',  1,  '2010-02-02 21:38:03'],
+         [20,  'new', 100,  '2010-02-01 04:15:36'],
+      ],
+      'Bidirectional sync remote-1'
+   );
+
+#   $sb->wipe_clean($dbh2);
+}
+
+# #############################################################################
 # Done.
 # #############################################################################
-$sb->wipe_clean($dbh);
+#$sb->wipe_clean($src_dbh);
+#$sb->wipe_clean($dst_dbh);
 exit;

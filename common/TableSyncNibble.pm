@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -368,7 +368,8 @@ sub __get_explain_index {
 }
 
 sub same_row {
-   my ( $self, $lr, $rr ) = @_;
+   my ( $self, %args ) = @_;
+   my ($lr, $rr) = @args{qw(lr rr)};
    if ( $self->{state} ) {
       if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
          $self->{ChangeHandler}->change('UPDATE', $lr, $self->key_cols());
@@ -386,15 +387,15 @@ sub same_row {
 # missing rows in state 0 in one of the tables, the CRC will be all 0's and the
 # cnt will be 0, but the result set should still come back.
 sub not_in_right {
-   my ( $self, $lr ) = @_;
+   my ( $self, %args ) = @_;
    die "Called not_in_right in state 0" unless $self->{state};
-   $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
+   $self->{ChangeHandler}->change('INSERT', $args{lr}, $self->key_cols());
 }
 
 sub not_in_left {
-   my ( $self, $rr ) = @_;
+   my ( $self, %args ) = @_;
    die "Called not_in_left in state 0" unless $self->{state};
-   $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
+   $self->{ChangeHandler}->change('DELETE', $args{rr}, $self->key_cols());
 }
 
 sub done_with_rows {

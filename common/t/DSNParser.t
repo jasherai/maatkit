@@ -15,12 +15,6 @@ use DSNParser;
 use OptionParser;
 use MaatkitTest;
 
-sub throws_ok {
-   my ( $code, $pat, $msg ) = @_;
-   eval { $code->(); };
-   like ( $EVAL_ERROR, $pat, $msg );
-}
-
 my $dp = new DSNParser;
 
 is_deeply(

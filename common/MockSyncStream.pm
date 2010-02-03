@@ -47,18 +47,18 @@ sub get_sql {
 }
 
 sub same_row {
-   my ( $self, $lr, $rr ) = @_;
-   return $self->{same_row}->($lr, $rr);
+   my ( $self, %args ) = @_;
+   return $self->{same_row}->($args{lr}, $args{rr});
 }
 
 sub not_in_right {
-   my ( $self, $lr ) = @_;
-   return $self->{not_in_right}->($lr);
+   my ( $self, %args ) = @_;
+   return $self->{not_in_right}->($args{lr});
 }
 
 sub not_in_left {
-   my ( $self, $rr ) = @_;
-   return $self->{not_in_left}->($rr);
+   my ( $self, %args ) = @_;
+   return $self->{not_in_left}->($args{rr});
 }
 
 sub done_with_rows {

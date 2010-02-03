@@ -37,12 +37,6 @@ my $t;
 my %args = map { $_ => undef }
    qw(db tbl tbl_struct algorithm function crc_wid crc_type opt_slice);
 
-sub throws_ok {
-   my ( $code, $re, $msg ) = @_;
-   eval { $code->(); };
-   like ( $EVAL_ERROR, $re, $msg );
-}
-
 throws_ok (
    sub { $c->best_algorithm( %args, algorithm => 'foo', ) },
    qr/Invalid checksum algorithm/,

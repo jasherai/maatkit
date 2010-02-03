@@ -26,18 +26,19 @@ sub new {
 }
 
 sub same_row {
-   my ( $self, $lr, $rr ) = @_;
+   my ( $self, %args ) = @_;
+   my ($lr, $rr) = @args{qw(lr rr)};
    push @$self, 'same';
 }
 
 sub not_in_right {
-   my ( $self, $lr ) = @_;
-   push @$self, [ 'not in right', $lr];
+   my ( $self, %args ) = @_;
+   push @$self, [ 'not in right', $args{lr} ];
 }
 
 sub not_in_left {
-   my ( $self, $rr ) = @_;
-   push @$self, [ 'not in left', $rr];
+   my ( $self, %args ) = @_;
+   push @$self, [ 'not in left', $args{rr} ];
 }
 
 sub done_with_rows {

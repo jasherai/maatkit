@@ -25,12 +25,6 @@ my $n  = new TableNibbler(
 
 my $t;
 
-sub throws_ok {
-   my ( $code, $pat, $msg ) = @_;
-   eval { $code->(); };
-   like ( $EVAL_ERROR, $pat, $msg );
-}
-
 $t = $tp->parse( load_file('common/t/samples/sakila.film.sql') );
 
 is_deeply(

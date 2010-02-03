@@ -31,12 +31,6 @@ my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 
-sub throws_ok {
-   my ( $code, $pat, $msg ) = @_;
-   eval { $code->(); };
-   like( $EVAL_ERROR, $pat, $msg );
-}
-
 my $mysql = $sb->_use_for('master');
 
 my $q  = new Quoter();
@@ -67,14 +61,14 @@ my $t = new TableSyncNibble(
 
 my @rows;
 my $ch = new ChangeHandler(
-   Quoter   => $q,
-   dst_db   => 'test',
-   dst_tbl  => 'test1',
-   src_db   => 'test',
-   src_tbl  => 'test1',
-   replace  => 0,
-   actions  => [ sub { push @rows, @_ }, ],
-   queue    => 0,
+   Quoter    => $q,
+   right_db  => 'test',
+   right_tbl => 'test1',
+   left_db   => 'test',
+   left_tbl  => 'test1',
+   replace   => 0,
+   actions   => [ sub { push @rows, $_[0] }, ],
+   queue     => 0,
 );
 
 my $syncer = new TableSyncer(
@@ -259,8 +253,8 @@ throws_ok(
 
 # "find a bad row"
 $t->same_row(
-   { chunk_num => 0, cnt => 0, crc => 'abc' },
-   { chunk_num => 0, cnt => 1, crc => 'abc' },
+   lr => { chunk_num => 0, cnt => 0, crc => 'abc' },
+   rr => { chunk_num => 0, cnt => 1, crc => 'abc' },
 );
 ok($t->pending_changes(), 'Pending changes found');
 is($t->{state}, 1, 'Working inside nibble');
@@ -277,7 +271,7 @@ is($t->get_sql(database => 'test', table => 'test1'),
 ok($t->{state}, 'Still working inside nibble');
 is(scalar(@rows), 0, 'No bad row triggered');
 
-$t->not_in_left({a => 1, b => 'en'});
+$t->not_in_left(rr => {a => 1, b => 'en'});
 
 is_deeply(\@rows,
    ["DELETE FROM `test`.`test1` WHERE `a`=1 AND `b`='en' LIMIT 1"],
@@ -286,8 +280,8 @@ is_deeply(\@rows,
 
 # Shouldn't cause anything to happen
 $t->same_row(
-   {a => 1, b => 'en', __crc => 'foo'},
-   {a => 1, b => 'en', __crc => 'foo'} );
+   lr => {a => 1, b => 'en', __crc => 'foo'},
+   rr => {a => 1, b => 'en', __crc => 'foo'} );
 
 is_deeply(\@rows,
    ["DELETE FROM `test`.`test1` WHERE `a`=1 AND `b`='en' LIMIT 1"],
@@ -295,8 +289,8 @@ is_deeply(\@rows,
 );
 
 $t->same_row(
-   {a => 1, b => 'en', __crc => 'foo'},
-   {a => 1, b => 'en', __crc => 'bar'} );
+   lr => {a => 1, b => 'en', __crc => 'foo'},
+   rr => {a => 1, b => 'en', __crc => 'bar'} );
 
 is_deeply(\@rows,
    [
@@ -326,8 +320,8 @@ like(
 
 # "find a bad row"
 $t->same_row(
-   { chunk_num => 0, cnt => 0, __crc => 'abc' },
-   { chunk_num => 0, cnt => 1, __crc => 'abc' },
+   lr => { chunk_num => 0, cnt => 0, __crc => 'abc' },
+   rr => { chunk_num => 0, cnt => 1, __crc => 'abc' },
 );
 
 like(

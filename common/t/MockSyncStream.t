@@ -48,20 +48,20 @@ is( $mss->done(), undef, 'Not done yet' );
 
 @rows = ();
 $rd->compare_sets(
-   left => new MockSth(
+   left_sth => new MockSth(
       { a => 1, b => 2, c => 3 },
       { a => 2, b => 2, c => 3 },
       { a => 3, b => 2, c => 3 },
       # { a => 4, b => 2, c => 3 },
    ),
-   right => new MockSth(
+   right_sth => new MockSth(
       # { a => 1, b => 2, c => 3 },
       { a => 2, b => 2, c => 3 },
       { a => 3, b => 2, c => 3 },
       { a => 4, b => 2, c => 3 },
    ),
-   syncer => $mss,
-   tbl    => {},
+   syncer     => $mss,
+   tbl_struct => {},
 );
 is_deeply(
    \@rows,

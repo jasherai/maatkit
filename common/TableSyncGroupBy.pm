@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -97,10 +97,11 @@ sub get_sql {
 # same columns in both tables; but there are different numbers of rows.  So we
 # must either delete or insert the required number of rows to the table.
 sub same_row {
-   my ( $self, $lr, $rr ) = @_;
-   my $cc = $self->{count_col};
-   my $lc = $lr->{$cc};
-   my $rc = $rr->{$cc};
+   my ( $self, %args ) = @_;
+   my ($lr, $rr) = @args{qw(lr rr)};
+   my $cc   = $self->{count_col};
+   my $lc   = $lr->{$cc};
+   my $rc   = $rr->{$cc};
    my $diff = abs($lc - $rc);
    return unless $diff;
    $lr = { %$lr };
@@ -119,7 +120,8 @@ sub same_row {
 
 # Insert into the table the specified number of times.
 sub not_in_right {
-   my ( $self, $lr ) = @_;
+   my ( $self, %args ) = @_;
+   my $lr = $args{lr};
    $lr = { %$lr };
    my $cnt = delete $lr->{$self->{count_col}};
    foreach my $i ( 1 .. $cnt ) {
@@ -129,7 +131,8 @@ sub not_in_right {
 
 # Delete from the table the specified number of times.
 sub not_in_left {
-   my ( $self, $rr ) = @_;
+   my ( $self, %args ) = @_;
+   my $rr = $args{rr};
    $rr = { %$rr };
    my $cnt = delete $rr->{$self->{count_col}};
    foreach my $i ( 1 .. $cnt ) {

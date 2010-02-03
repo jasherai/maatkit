@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -83,18 +83,18 @@ sub get_sql {
 }
 
 sub same_row {
-   my ( $self, $lr, $rr ) = @_;
+   my ( $self, %args ) = @_;
    return;
 }
 
 sub not_in_right {
-   my ( $self, $lr ) = @_;
-   $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
+   my ( $self, %args ) = @_;
+   $self->{ChangeHandler}->change('INSERT', $args{lr}, $self->key_cols());
 }
 
 sub not_in_left {
-   my ( $self, $rr ) = @_;
-   $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
+   my ( $self, %args ) = @_;
+   $self->{ChangeHandler}->change('DELETE', $args{rr}, $self->key_cols());
 }
 
 sub done_with_rows {

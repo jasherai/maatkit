@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -57,10 +57,10 @@ sub get_best_plugin {
    }
    MKDEBUG && _d('Getting best plugin');
    foreach my $plugin ( @{$args{plugins}} ) {
-      MKDEBUG && _d('Trying plugin', $plugin->name());
+      MKDEBUG && _d('Trying plugin', $plugin->name);
       my ($can_sync, %plugin_args) = $plugin->can_sync(%args);
       if ( $can_sync ) {
-        MKDEBUG && _d('Can sync with', $plugin->name(), Dumper(\%plugin_args));
+        MKDEBUG && _d('Can sync with', $plugin->name, Dumper(\%plugin_args));
         return $plugin, %plugin_args;
       }
    }
@@ -70,8 +70,8 @@ sub get_best_plugin {
 
 # Required arguments:
 #   * plugins         Arrayref of TableSync* modules, in order of preference
-#   * src             Hashref with source dbh, db, tbl
-#   * dst             Hashref with destination dbh, db, tbl
+#   * src             Hashref with source (aka left) dbh, db, tbl
+#   * dst             Hashref with destination (aka right) dbh, db, tbl
 #   * tbl_struct      Return val from TableParser::parser() for src and dst tbl
 #   * cols            Arrayref of column names to checksum/compare
 #   * chunk_size      Size/number of rows to select in each chunk
@@ -79,6 +79,7 @@ sub get_best_plugin {
 #   * ChangeHandler   A ChangeHandler module
 # Optional arguments:
 #   * where           WHERE clause to restrict synced rows (default none)
+#   * bidirectional   If doing bidirectional sync (default no)
 #   * changing_src    If making changes on src (default no)
 #   * replicate       Checksum table if syncing via replication (default no)
 #   * function        Crypto hash func for checksumming chunks (default CRC32)
@@ -152,16 +153,16 @@ sub sync_table {
       $plugin->prepare_to_sync(
          %args,
          %plugin_args,
-         dbh         => $src->{dbh},
-         db          => $src->{db},
-         tbl         => $src->{tbl},
-         crc_col     => $crc_col,
-         index_hint  => $index_hint,
+         dbh        => $src->{dbh},
+         db         => $src->{db},
+         tbl        => $src->{tbl},
+         crc_col    => $crc_col,
+         index_hint => $index_hint,
       );
    };
    if ( $EVAL_ERROR ) {
       # At present, no plugin should fail to prepare, but just in case...
-      die 'Failed to prepare TableSync', $plugin->name(), ' plugin: ',
+      die 'Failed to prepare TableSync', $plugin->name, ' plugin: ',
          $EVAL_ERROR;
    }
 
@@ -184,7 +185,7 @@ sub sync_table {
    # Plugin is ready, return now if this is a dry run.
    # ########################################################################
    if ( $args{dry_run} ) {
-      return $ch->get_changes(), ALGORITHM => $plugin->name();
+      return $ch->get_changes(), ALGORITHM => $plugin->name;
    }
 
    # ########################################################################
@@ -202,6 +203,13 @@ sub sync_table {
       die "Failed to USE database on source or destination: $EVAL_ERROR";
    }
 
+   # For bidirectional syncing it's important to know on which dbh
+   # changes are made or rows are fetched.  This identifies the dbhs,
+   # then you can search for each one by its address like
+   # "dbh DBI::db=HASH(0x1028b38)".
+   MKDEBUG && _d('left dbh', $src->{dbh});
+   MKDEBUG && _d('right dbh', $dst->{dbh});
+
    $self->lock_and_wait(%args, lock_level => 2);  # per-table lock
    
    my $callback = $args{callback};
@@ -212,33 +220,48 @@ sub sync_table {
       # locking the tables.
       MKDEBUG && _d('Beginning sync cycle', $cycle);
       my $src_sql = $plugin->get_sql(
-         database   => $src->{db},
-         table      => $src->{tbl},
-         where      => $args{where},
+         database => $src->{db},
+         table    => $src->{tbl},
+         where    => $args{where},
       );
       my $dst_sql = $plugin->get_sql(
-         database   => $dst->{db},
-         table      => $dst->{tbl},
-         where      => $args{where},
+         database => $dst->{db},
+         table    => $dst->{tbl},
+         where    => $args{where},
       );
+      MKDEBUG && _d('src:', $src_sql);
+      MKDEBUG && _d('dst:', $dst_sql);
+
       if ( $args{transaction} ) {
-         # TODO: update this for 2-way sync.
-         if ( $args{changing_src} ) {
-            # Making changes on master which will replicate to the slave.
+         if ( $args{bidirectional} ) {
+            # Making changes on src and dst.
+            $src_sql .= ' FOR UPDATE';
+            $dst_sql .= ' FOR UPDATE';
+         }
+         elsif ( $args{changing_src} ) {
+            # Making changes on master (src) which replicate to slave (dst).
             $src_sql .= ' FOR UPDATE';
             $dst_sql .= ' LOCK IN SHARE MODE';
          }
          else {
-            # Making changes on the slave.
+            # Making changes on slave (dst).
             $src_sql .= ' LOCK IN SHARE MODE';
             $dst_sql .= ' FOR UPDATE';
          }
       }
+
+      # Give callback a chance to do something with the SQL statements.
+      $callback->($src_sql, $dst_sql) if $callback;
+
+      # Prepare each host for next sync cycle. This does stuff
+      # like reset/init MySQL accumulator vars, etc.
       $plugin->prepare_sync_cycle($src);
       $plugin->prepare_sync_cycle($dst);
-      MKDEBUG && _d('src:', $src_sql);
-      MKDEBUG && _d('dst:', $dst_sql);
-      $callback->($src_sql, $dst_sql) if $callback;
+
+      # Prepare SQL statements on host.  These aren't real prepared
+      # statements (i.e. no ? placeholders); we just need sths to
+      # pass to compare_sets().  Also, we can control buffering
+      # (mysql_use_result) on the sths.
       my $src_sth = $src->{dbh}->prepare($src_sql);
       my $dst_sth = $dst->{dbh}->prepare($dst_sql);
       if ( $args{buffer_to_client} ) {
@@ -260,15 +283,21 @@ sub sync_table {
       $src_sth->execute() unless $executed_src;
       $dst_sth->execute();
 
+      # Compare rows in the two sths.  If any differences are found
+      # (same_row, not_in_left, not_in_right), the appropriate $syncer
+      # methods are called to handle them.  Changes may be immediate, or...
       $rd->compare_sets(
-         left   => $src_sth,
-         right  => $dst_sth,
-         syncer => $plugin,
-         tbl    => $tbl_struct,
+         left_sth   => $src_sth,
+         right_sth  => $dst_sth,
+         left_dbh   => $src->{dbh},
+         right_dbh  => $dst->{dbh},
+         syncer     => $plugin,
+         tbl_struct => $tbl_struct,
       );
-      MKDEBUG && _d('Finished sync cycle', $cycle);
+      # ...changes may be queued and executed now.
       $ch->process_rows(1);
 
+      MKDEBUG && _d('Finished sync cycle', $cycle);
       $cycle++;
    }
 
@@ -276,7 +305,7 @@ sub sync_table {
 
    $self->unlock(%args, lock_level => 2);
 
-   return $ch->get_changes(), ALGORITHM => $plugin->name();
+   return $ch->get_changes(), ALGORITHM => $plugin->name;
 }
 
 sub make_checksum_queries {

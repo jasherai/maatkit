@@ -18,12 +18,6 @@ use RowDiff;
 use ChangeHandler;
 use MaatkitTest;
 
-sub throws_ok {
-   my ( $code, $pat, $msg ) = @_;
-   eval { $code->(); };
-   like( $EVAL_ERROR, $pat, $msg );
-}
-
 my $q = new Quoter();
 my $tbl_struct = { is_col => {} };  # fake tbl_struct
 my @rows;
@@ -39,12 +33,12 @@ my $t = new TableSyncGroupBy(
 
 my $ch = new ChangeHandler(
    Quoter    => $q,
-   dst_db    => 'test',
-   dst_tbl   => 'foo',
-   src_db    => 'test',
-   src_tbl   => 'foo',
+   right_db  => 'test',
+   right_tbl => 'foo',
+   left_db   => 'test',
+   left_tbl  => 'foo',
    replace   => 0,
-   actions   => [ sub { push @rows, @_ }, ],
+   actions   => [ sub { push @rows, $_[0] }, ],
    queue     => 0,
 );
 
@@ -86,20 +80,20 @@ is( $t->done, 0, 'Not done yet' );
 
 my $d = new RowDiff( dbh => 1 );
 $d->compare_sets(
-   left => new MockSth(
+   left_sth => new MockSth(
       { a => 1, b => 2, c => 3, __maatkit_count => 4 },
       { a => 2, b => 2, c => 3, __maatkit_count => 4 },
       { a => 3, b => 2, c => 3, __maatkit_count => 2 },
       # { a => 4, b => 2, c => 3, __maatkit_count => 2 },
    ),
-   right => new MockSth(
+   right_sth => new MockSth(
       { a => 1, b => 2, c => 3, __maatkit_count => 3 },
       { a => 2, b => 2, c => 3, __maatkit_count => 6 },
       # { a => 3, b => 2, c => 3, __maatkit_count => 2 },
       { a => 4, b => 2, c => 3, __maatkit_count => 1 },
    ),
-   syncer => $t,
-   tbl    => {},
+   syncer     => $t,
+   tbl_struct => {},
 );
 
 is_deeply(

@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -38,6 +38,13 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+# Required args:
+#   * TableChunker   obj: common module
+#   * Quoter         obj: common module
+# Optional args:
+#   * same_row       coderef: These three callbacks allow the caller to
+#   * not_in_left    coderef: override the default behavior of the respective
+#   * not_in_right   coderef: subs.  Used for bidirectional syncs.
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(TableChunker Quoter) ) {
@@ -165,7 +172,7 @@ sub set_checksum_queries {
    die "I need a chunk_sql argument" unless $chunk_sql;
    die "I need a row_sql argument" unless $row_sql;
    $self->{chunk_sql} = $chunk_sql;
-   $self->{row_sql} = $row_sql;
+   $self->{row_sql}   = $row_sql;
    return;
 }
 
@@ -182,7 +189,7 @@ sub prepare_sync_cycle {
 # table before moving on to the next part.
 sub get_sql {
    my ( $self, %args ) = @_;
-   if ( $self->{state} ) {  # checksum a chunk of rows
+   if ( $self->{state} ) {  # select rows in a chunk
       my $q = $self->{Quoter};
       return 'SELECT /*rows in chunk*/ '
          . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
@@ -194,7 +201,7 @@ sub get_sql {
          . ($args{where} ? " AND ($args{where})" : '')
          . ' ORDER BY ' . join(', ', map {$q->quote($_) } @{$self->key_cols()});
    }
-   else {  # checksum the rows
+   else {  # select a chunk of rows
       return $self->{TableChunker}->inject_chunks(
          database   => $args{database},
          table      => $args{table},
@@ -208,10 +215,26 @@ sub get_sql {
 }
 
 sub same_row {
-   my ( $self, $lr, $rr ) = @_;
+   my ( $self, %args ) = @_;
+   my ($lr, $rr) = @args{qw(lr rr)};
+
    if ( $self->{state} ) {  # checksumming rows
       if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
-         $self->{ChangeHandler}->change('UPDATE', $lr, $self->key_cols());
+         my $action   = 'UPDATE';
+         my $auth_row = $lr;
+         my $change_dbh;
+
+         # Give callback a chance to determine how to handle this difference.
+         if ( $self->{same_row} ) {
+            ($action, $auth_row, $change_dbh) = $self->{same_row}->(%args);
+         }
+
+         $self->{ChangeHandler}->change(
+            $action,            # Execute an UPDATE
+            $auth_row,          # with these row values
+            $self->key_cols(),  # identified by these key cols
+            $change_dbh,        # on this dbh
+         );
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
@@ -226,16 +249,46 @@ sub same_row {
 # missing rows in state 0 in one of the tables, the CRC will be all 0's and the
 # cnt will be 0, but the result set should still come back.
 sub not_in_right {
-   my ( $self, $lr ) = @_;
+   my ( $self, %args ) = @_;
    die "Called not_in_right in state 0" unless $self->{state};
-   $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
+
+   my $action   = 'INSERT';
+   my $auth_row = $args{lr};
+   my $change_dbh;
+
+   # Give callback a chance to determine how to handle this difference.
+   if ( $self->{not_in_right} ) {
+      ($action, $auth_row, $change_dbh) = $self->{not_in_right}->(%args);
+   }
+
+   $self->{ChangeHandler}->change(
+      $action,            # Execute the action
+      $auth_row,          # with these row values
+      $self->key_cols(),  # identified by these key cols
+      $change_dbh,        # on this dbh
+   );
    return;
 }
 
 sub not_in_left {
-   my ( $self, $rr ) = @_;
+   my ( $self, %args ) = @_;
    die "Called not_in_left in state 0" unless $self->{state};
-   $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
+
+   my $action   = 'DELETE';
+   my $auth_row = $args{rr};
+   my $change_dbh;
+
+   # Give callback a chance to determine how to handle this difference.
+   if ( $self->{not_in_left} ) {
+      ($action, $auth_row, $change_dbh) = $self->{not_in_left}->(%args);
+   }
+
+   $self->{ChangeHandler}->change(
+      $action,            # Execute the action
+      $auth_row,          # with these row values
+      $self->key_cols(),  # identified by these key cols
+      $change_dbh,        # on this dbh
+   );
    return;
 }
 
