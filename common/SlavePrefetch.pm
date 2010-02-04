@@ -334,9 +334,14 @@ sub reset_pipeline_pos {
    return;
 }
 
-sub pipeline_event {
-   my ( $self, $event, @callbacks ) = @_;
-   $self->{stats}->{events}++;
+# Check if we're in the "window".  If yes, returns the event; if no,
+# returns nothing.  This is the public interface; _in_window() should
+# not be called directly.
+sub in_window {
+   my ( $self, $event ) = @_;
+
+   # The caller must incr stats->events!  We use this to determine
+   # if it's time to check the slave's status again.
 
    if ( !$event->{offset} ) {
       # This will happen for start/end of log stuff like:
@@ -344,7 +349,7 @@ sub pipeline_event {
       #   ROLLBACK /* added by mysqlbinlog */;
       #   /*!50003 SET COMPLETION_TYPE=@OLD_COMPLETION_TYPE*/;
       MKDEBUG && _d('Event has no offset, skipping');
-      $self->{stats}->{event_without_offset}++;
+      $self->{stats}->{no_offset}++;
       return;
    }
 
@@ -370,46 +375,43 @@ sub pipeline_event {
 
    # We're in the window if we're not behind the slave or too far
    # ahead of it.  We can only execute queries while in the window.
-   return unless $self->_in_window();
+   return $event if $self->_in_window();
+}
 
-   if ( $event->{arg} ) {
-      # If it's a LOAD DATA INFILE, rm the temp file.
-      # TODO: maybe this should still be before _in_window()?
-      if ( my ($file) = $event->{arg} =~ m/INFILE ('[^']+')/i ) {
-         $self->{stats}->{load_data_infile}++;
-         if ( !unlink($file) ) {
-            MKDEBUG && _d('Could not unlink', $file);
-            $self->{stats}->{could_not_unlink}++;
-         }
-         return;
-      }
+# Checks, prepares and rewrites the event's arg to a SELECT.
+# If successful, returns the event with the original arg replaced
+# with the SELECT query (and the original arg saved as "arg_original");
+# else returns nothing.
+sub rewrite_query { 
+   my ( $self, $event ) = @_;
 
-      my ($query, $fingerprint) = $self->prepare_query($event->{arg});
-      if ( !$query ) {
-         MKDEBUG && _d('Failed to prepare query, skipping');
-         return;
-      }
-
-      my $db = $event->{db};
-      if ( $db && (!$self->{last_db} || $self->{last_db} ne $db) ) {
-         MKDEBUG && _d('Change db, last:', $self->{last_db}, 'current:', $db);
-         $self->{callbacks}->{use_db}->($self->{dbh}, $db);
-         $self->{last_db} = $db;
-      }
-      $self->{stats}->{no_database}++ unless $self->{last_db};
-
-      # Do it!
-      $self->{stats}->{do_query}++;
-      foreach my $callback ( @callbacks ) {
-         $callback->(
-            query       => $query,
-            fingerprint => $fingerprint,
-            db          => $self->{last_db},
-         );
-      }
+   if ( !$event->{arg} ) {
+      # The caller shouldn't give us an arg-less event, but just in case...
+      $self->{stats}->{no_arg}++;
+      return;
    }
 
-   return;
+   # If it's a LOAD DATA INFILE, rm the temp file.
+   # TODO: maybe this should still be before _in_window()?
+   if ( my ($file) = $event->{arg} =~ m/INFILE ('[^']+')/i ) {
+      $self->{stats}->{load_data_infile}++;
+      if ( !unlink($file) ) {
+         MKDEBUG && _d('Could not unlink', $file);
+         $self->{stats}->{could_not_unlink}++;
+      }
+      return;
+   }
+
+   my ($query, $fingerprint) = $self->prepare_query($event->{arg});
+   if ( !$query ) {
+      MKDEBUG && _d('Failed to prepare query, skipping');
+      return;
+   }
+   $event->{arg_original} = $event->{arg};
+   $event->{arg}          = $query;  # SELECT query
+   $event->{fingerprint}  = $fingerprint;
+
+   return $event;
 }
 
 sub get_window {
@@ -427,9 +429,9 @@ sub set_window {
    return;
 }
 
-# Returns false if the current pos is out of the window,
-# else returns true.  This "throttles" pipeline_event()
-# so that it only executes queries when we're in the window.
+# Returns false if the current pos is out of the window, else returns true.
+# The window is a throttle (if the caller chooses to use it).  This is a
+# private method called by in_window(); it should not be called directly.
 sub _in_window {
    my ( $self ) = @_;
    MKDEBUG && _d('Checking window, pos:', $self->{pos},
@@ -555,9 +557,8 @@ sub next_window {
 }
 
 # Does everything necessary to make the given DMS query ready for
-# pipelined execution in pipeline_event() if the query can/should
-# be executed.  If yes, then the prepared query and its fingerprint
-# are returned; else nothing is returned.
+# execution as a SELECT.  If successful, the prepared query and its
+# fingerprint are returned; else nothing is returned.
 sub prepare_query {
    my ( $self, $query ) = @_;
    my $qr = $self->{QueryRewriter};
@@ -584,7 +585,7 @@ sub prepare_query {
    if ( $select !~ m/\A\s*(?:set|select|use)/i ) {
       MKDEBUG && _d('Cannot rewrite query as SELECT:',
          (length $query > 240 ? substr($query, 0, 237) . '...' : $query));
-      _d($query) if $self->{'print-nonrewritten'};
+      _d("Not rewritten: $query") if $self->{'print-nonrewritten'};
       $self->{stats}->{query_not_rewritten}++;
       return;
    }

@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 68;
+use Test::More tests => 66;
 
 use SlavePrefetch;
 use QueryRewriter;
@@ -672,13 +672,6 @@ is_deeply(
 my $parser = new BinaryLogParser();
 my @events;
 my @queries;
-my @callbacks;
-
-sub save_query {
-   my ( %args ) = @_;
-   push @queries, [ $args{query}, $args{fingerprint} ];
-}
-push @callbacks, \&save_query;
 
 sub parse_binlog {
    my ( $file ) = @_;
@@ -697,6 +690,17 @@ sub parse_binlog {
    return;
 }
 
+my $event;
+sub ple {
+   $spf->{stats}->{events}++;
+   my $e = $spf->in_window($event);
+   return unless $e;
+   $e = $spf->rewrite_query($e);
+   if ( $e ) {
+      push @queries, [ $e->{arg}, $e->{fingerprint} ];
+   }
+}
+
 parse_binlog("$trunk/common/t/samples/binlog003.txt");
 # print Dumper(\@events);  # uncomment if you want to see what's going on
 
@@ -710,8 +714,8 @@ $spf->_get_slave_status();
 # so we are *not* in the window because we're not far enough ahead.
 # Given the 100 offset, we need to be at least pos 363, which is
 # event 3 at pos/offset 434.
-my $event = shift @events;
-$spf->pipeline_event($event, @callbacks),
+$event = shift @events;
+ple();
 is_deeply(
    \@queries,
    [],
@@ -719,7 +723,7 @@ is_deeply(
 );
    
 $event = shift @events;
-   $spf->pipeline_event($event, @callbacks),
+ple();
 is_deeply(
    \@queries,
    [],
@@ -728,7 +732,7 @@ is_deeply(
 
 
 $event = shift @events;  # event 3, first past offset
-$spf->pipeline_event($event, @callbacks),
+ple();
 is_deeply(
    \@queries,
    [ [
@@ -755,7 +759,7 @@ $slave_status->{relay_log_pos}       = 434;
 @queries = ();  # clear event 3
 
 $event = shift @events;  # event 4, triggers interval check
-$spf->pipeline_event($event, @callbacks),
+ple();
 is_deeply(
    \@queries,
    [],
@@ -769,7 +773,7 @@ is(
 );
 
 $event = shift @events;  # event 5
-$spf->pipeline_event($event, @callbacks),
+ple();
 is_deeply(
    \@queries,
    [ [
@@ -785,9 +789,9 @@ is_deeply(
 @queries = ();  # clear event 5
 
 $event = shift @events;  # event 6
-$spf->pipeline_event($event, @callbacks),
+ple();
 $event = shift @events;  # event 7
-$spf->pipeline_event($event, @callbacks),
+ple();
 is_deeply(
    \@queries,
    [
@@ -810,7 +814,7 @@ is_deeply(
 # set this, we'll just terminate the loop early.
 $oktorun = 0;
 $event = shift @events;  # event 8
-$spf->pipeline_event($event, @callbacks),
+ple();
 is_deeply(
    \@queries,
    [],
@@ -914,33 +918,8 @@ sub use_db {
    push @dbs, "USE $db";
 };
 
-parse_binlog("$trunk/common/t/samples/binlog003.txt");
-
-$oktorun = 1;
-$spf->set_window(100, 9000);
-$spf->reset_pipeline_pos();
-$slave_status->{exec_master_log_pos} = 163;
-$slave_status->{relay_log_pos}       = 163;
-$spf->_get_slave_status();
-
-$spf->reset_stats(all => 1);
-$spf->set_callbacks( use_db => \&use_db );
-
-for ( 1..6 ) {
-   $spf->pipeline_event(shift @events, \&save_dbs);
-}
-is_deeply(
-   \@dbs,
-   [ undef, 'USE test1', qw(test1 test1), 'USE test2', qw(test2 test2 test2) ],
-   'Carries last db forward'
-);
-
-my ($stats, $query_stats, $query_errors) = $spf->get_stats();
-is(
-   $stats->{no_database},
-   1,
-   'Records 1 no database'
-);
+# Tests for carrying the db forward were removed because
+# this is now handled by an earlier processes in mk-slave-prefetch.
 
 # #############################################################################
 # Done.
