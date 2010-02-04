@@ -2328,7 +2328,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 5697
+# ChangeHandler package 5700
 # ###########################################################################
 package ChangeHandler;
 
@@ -2470,8 +2470,7 @@ sub process_rows {
          $error_count = 0;
       };
       if ( !$error_count++ && $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
-         MKDEBUG
-            && _d('Duplicate key violation; re-queueing and rewriting');
+         MKDEBUG && _d('Duplicate key violation; re-queueing and rewriting');
          $self->{queue}++; # Defer rows to the very end
          $self->{replace} = 1;
          $self->__queue($cur_act, @$row);
@@ -4185,7 +4184,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 5697
+# TableSyncer package 5700
 # ###########################################################################
 package TableSyncer;
 
@@ -4238,6 +4237,10 @@ sub sync_table {
    MKDEBUG && _d('Syncing table with args', Dumper(\%args));
    my ($plugins, $src, $dst, $tbl_struct, $cols, $chunk_size, $rd, $ch)
       = @args{@required_args};
+
+   if ( $args{bidirectional} && $args{ChangeHandler}->{queue} ) {
+      die "Queueing does not work with bidirectional syncing";
+   }
 
    $args{index_hint}    = 1 unless defined $args{index_hint};
    $args{lock}        ||= 0;
