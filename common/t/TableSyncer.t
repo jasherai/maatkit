@@ -50,7 +50,7 @@ elsif ( !$dst_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 45;
+   plan tests => 50;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -218,7 +218,7 @@ my %args = (
 
 my @rows;
 sub new_ch {
-   my ( $dbh ) = @_;
+   my ( $dbh, $queue ) = @_;
    return new ChangeHandler(
       Quoter    => $q,
       left_db   => $src->{db},
@@ -244,7 +244,7 @@ sub new_ch {
          }
       ],
       replace => 0,
-      queue   => 1,
+      queue   => defined $queue ? $queue : 1,
    );
 }
 
@@ -674,63 +674,89 @@ is_deeply(
 # #############################################################################
 # Issue 464: Make mk-table-sync do two-way sync
 # #############################################################################
+diag(`$trunk/sandbox/start-sandbox master 12347 >/dev/null`);
 my $dbh2 = $sb->get_dbh_for('slave2');
 SKIP: {
    skip 'Cannot connect to sandbox master', 1 unless $dbh;
    skip 'Cannot connect to second sandbox master', 1 unless $dbh2;
 
+   sub set_bidi_callbacks {
+      # Normally these callbacks are args to TableSyncChunk::new().
+      $sync_chunk->{same_row} = sub {
+         my ( %args ) = @_;
+         my ($lr, $rr, $syncer) = @args{qw(lr rr syncer)};
+         my $ch = $syncer->{ChangeHandler};
+         my $change_dbh;
+         my $auth_row;
+
+         my $where = $ch->make_where_clause($lr, $syncer->key_cols());
+         my $sql   = "SELECT `ts` AS `auth_col` FROM " . $ch->src . "WHERE $where";
+
+         my $left_ts  = $args{left_dbh}->selectrow_hashref($sql)->{auth_col};
+         my $right_ts = $args{right_dbh}->selectrow_hashref($sql)->{auth_col};
+         MKDEBUG && TableSyncer::_d("left ts: $left_ts");
+         MKDEBUG && TableSyncer::_d("right ts: $right_ts");
+
+         my $cmp = ($left_ts || '') cmp ($right_ts || '');
+         if ( $cmp == -1 ) {
+            MKDEBUG && TableSyncer::_d("right dbh $dbh2 is newer; update left dbh $src_dbh");
+            $ch->set_src('right', $dbh2);
+            $auth_row   = $args{rr};
+            $change_dbh = $src_dbh;
+         }
+         elsif ( $cmp == 1 ) {
+            MKDEBUG && TableSyncer::_d("left dbh $src_dbh is newer; update right dbh $dbh2");
+            $ch->set_src('left', $src_dbh);
+            $auth_row  = $args{lr};
+            $change_dbh = $dbh2;
+         }
+         return ('UPDATE', $auth_row, $change_dbh);
+      };
+      $sync_chunk->{not_in_right} = sub {
+         my ( %args ) = @_;
+         $args{syncer}->{ChangeHandler}->set_src('left', $src_dbh);
+         return 'INSERT', $args{lr}, $dbh2;
+      };
+      $sync_chunk->{not_in_left} = sub {
+         my ( %args ) = @_;
+         $args{syncer}->{ChangeHandler}->set_src('right', $dbh2);
+         return 'INSERT', $args{rr}, $src_dbh;
+      };
+   };
+
+   # Proper data on both tables after bidirectional sync.
+   my $bidi_data = 
+      [
+         [1,   'abc',   1,  '2010-02-01 05:45:30'],
+         [2,   'def',   2,  '2010-01-31 06:11:11'],
+         [3,   'ghi',   5,  '2010-02-01 09:17:52'],
+         [4,   'jkl',   6,  '2010-02-01 10:11:33'],
+         [5,   undef,   0,  '2010-02-02 05:10:00'],
+         [6,   'p',     4,  '2010-01-31 10:17:00'],
+         [7,   'qrs',   5,  '2010-02-01 10:11:11'],
+         [8,   'tuv',   6,  '2010-01-31 10:17:20'],
+         [9,   'wxy',   7,  '2010-02-01 10:17:00'],
+         [10,  'z',     8,  '2010-01-31 10:17:08'],
+         [11,  '?',     0,  '2010-01-29 11:17:12'],
+         [12,  '',      0,  '2010-02-01 11:17:00'],
+         [13,  'hmm',   1,  '2010-02-02 12:17:31'],
+         [14,  undef,   0,  '2010-01-31 10:17:00'],
+         [15,  'gtg',   7,  '2010-02-02 06:01:08'],
+         [17,  'good',  1,  '2010-02-02 21:38:03'],
+         [20,  'new', 100,  '2010-02-01 04:15:36'],
+      ];
+
+   # ########################################################################
+   # First bidi test with chunk size=2, roughly 9 chunks.
+   # ########################################################################
    # Load "master" data.
    $sb->load_file('master', 'mk-table-sync/t/samples/bidirectional/table.sql');
    $sb->load_file('master', 'mk-table-sync/t/samples/bidirectional/master-data.sql');
-
    # Load remote data.
    $sb->load_file('slave2', 'mk-table-sync/t/samples/bidirectional/table.sql');
    $sb->load_file('slave2', 'mk-table-sync/t/samples/bidirectional/remote-1.sql');
-
    make_plugins();
-
-   # Normally same_row is an arg to TableSyncChunk::new().
-   $sync_chunk->{same_row} = sub {
-      my ( %args ) = @_;
-      my ($lr, $rr, $syncer) = @args{qw(lr rr syncer)};
-      my $ch = $syncer->{ChangeHandler};
-      my $change_dbh;
-      my $auth_row;
-
-      my $where = $ch->make_where_clause($lr, $syncer->key_cols());
-      my $sql   = "SELECT `ts` AS `auth_col` FROM " . $ch->src . "WHERE $where";
-
-      my $left_ts  = $args{left_dbh}->selectrow_hashref($sql)->{auth_col};
-      my $right_ts = $args{right_dbh}->selectrow_hashref($sql)->{auth_col};
-      MKDEBUG && _d("left ts: $left_ts");
-      MKDEBUG && _d("right ts: $right_ts");
-
-      my $cmp = ($left_ts || '') cmp ($right_ts || '');
-      if ( $cmp == -1 ) {
-         MKDEBUG && _d("right dbh $dbh2 is newer; update left dbh $src_dbh");
-         $ch->set_src('right', $dbh2);
-         $auth_row   = $args{rr};
-         $change_dbh = $src_dbh;
-      }
-      elsif ( $cmp == 1 ) {
-         MKDEBUG && _d("left dbh $src_dbh is newer; update right dbh $dbh2");
-         $ch->set_src('left', $src_dbh);
-         $auth_row  = $args{lr};
-         $change_dbh = $dbh2;
-      }
-      return ('UPDATE', $auth_row, $change_dbh);
-   };
-   $sync_chunk->{not_in_right} = sub {
-      my ( %args ) = @_;
-      $args{syncer}->{ChangeHandler}->set_src('left', $src_dbh);
-      return 'INSERT', $args{lr}, $dbh2;
-   };
-   $sync_chunk->{not_in_left} = sub {
-      my ( %args ) = @_;
-      $args{syncer}->{ChangeHandler}->set_src('right', $dbh2);
-      return 'INSERT', $args{rr}, $src_dbh;
-   };
-
+   set_bidi_callbacks();
    $tbl_struct = $tp->parse($du->get_create_table($src_dbh, $q, 'bidi','t'));
    $args{tbl_struct}    = $tbl_struct;
    $args{cols}          = [qw(ts)],  # Compare only ts col when chunks differ.
@@ -738,8 +764,8 @@ SKIP: {
    $src->{tbl}          = 't';
    $dst->{db}           = 'bidi';
    $dst->{tbl}          = 't';
-   $dst->{dbh}          = $dbh2;         # Must set $dbh2 here and
-   $args{ChangeHandler} = new_ch($dbh2); # here to override $dst_dbh.
+   $dst->{dbh}          = $dbh2;            # Must set $dbh2 here and
+   $args{ChangeHandler} = new_ch($dbh2, 0); # here to override $dst_dbh.
    @rows                = ();
 
    $syncer->sync_table(%args, plugins => [$sync_chunk]);
@@ -747,59 +773,90 @@ SKIP: {
    my $res = $src_dbh->selectall_arrayref('select * from bidi.t order by id');
    is_deeply(
       $res,
-      [
-         [1,   'abc',   1,  '2010-02-01 05:45:30'],
-         [2,   'def',   2,  '2010-01-31 06:11:11'],
-         [3,   'ghi',   5,  '2010-02-01 09:17:52'],
-         [4,   'jkl',   6,  '2010-02-01 10:11:33'],
-         [5,   undef,   0,  '2010-02-02 05:10:00'],
-         [6,   'p',     4,  '2010-01-31 10:17:00'],
-         [7,   'qrs',   5,  '2010-02-01 10:11:11'],
-         [8,   'tuv',   6,  '2010-01-31 10:17:20'],
-         [9,   'wxy',   7,  '2010-02-01 10:17:00'],
-         [10,  'z',     8,  '2010-01-31 10:17:08'],
-         [11,  '?',     0,  '2010-01-29 11:17:12'],
-         [12,  '',      0,  '2010-02-01 11:17:00'],
-         [13,  'hmm',   1,  '2010-02-02 12:17:31'],
-         [14,  undef,   0,  '2010-01-31 10:17:00'],
-         [15,  'gtg',   7,  '2010-02-02 06:01:08'],
-         [17,  'good',  1,  '2010-02-02 21:38:03'],
-         [20,  'new', 100,  '2010-02-01 04:15:36'],
-      ],
-      'Bidirectional sync "master"'
+      $bidi_data,
+      'Bidirectional sync "master" (chunk size 2)'
    );
 
    $res = $dbh2->selectall_arrayref('select * from bidi.t order by id');
    is_deeply(
       $res,
-      [
-         [1,   'abc',   1,  '2010-02-01 05:45:30'],
-         [2,   'def',   2,  '2010-01-31 06:11:11'],
-         [3,   'ghi',   5,  '2010-02-01 09:17:52'],
-         [4,   'jkl',   6,  '2010-02-01 10:11:33'],
-         [5,   undef,   0,  '2010-02-02 05:10:00'],
-         [6,   'p',     4,  '2010-01-31 10:17:00'],
-         [7,   'qrs',   5,  '2010-02-01 10:11:11'],
-         [8,   'tuv',   6,  '2010-01-31 10:17:20'],
-         [9,   'wxy',   7,  '2010-02-01 10:17:00'],
-         [10,  'z',     8,  '2010-01-31 10:17:08'],
-         [11,  '?',     0,  '2010-01-29 11:17:12'],
-         [12,  '',      0,  '2010-02-01 11:17:00'],
-         [13,  'hmm',   1,  '2010-02-02 12:17:31'],
-         [14,  undef,   0,  '2010-01-31 10:17:00'],
-         [15,  'gtg',   7,  '2010-02-02 06:01:08'],
-         [17,  'good',  1,  '2010-02-02 21:38:03'],
-         [20,  'new', 100,  '2010-02-01 04:15:36'],
-      ],
-      'Bidirectional sync remote-1'
+      $bidi_data,
+      'Bidirectional sync remote-1 (chunk size 2)'
    );
 
-#   $sb->wipe_clean($dbh2);
+   # ########################################################################
+   # Test it again with a larger chunk size, roughly half the table.
+   # ########################################################################
+   $sb->load_file('master', 'mk-table-sync/t/samples/bidirectional/table.sql');
+   $sb->load_file('master', 'mk-table-sync/t/samples/bidirectional/master-data.sql');
+   $sb->load_file('slave2', 'mk-table-sync/t/samples/bidirectional/table.sql');
+   $sb->load_file('slave2', 'mk-table-sync/t/samples/bidirectional/remote-1.sql');
+   make_plugins();
+   set_bidi_callbacks();
+   $args{ChangeHandler} = new_ch($dbh2, 0);
+   @rows = ();
+
+   $syncer->sync_table(%args, plugins => [$sync_chunk], chunk_size => 10);
+
+   $res = $src_dbh->selectall_arrayref('select * from bidi.t order by id');
+   is_deeply(
+      $res,
+      $bidi_data,
+      'Bidirectional sync "master" (chunk size 10)'
+   );
+
+   $res = $dbh2->selectall_arrayref('select * from bidi.t order by id');
+   is_deeply(
+      $res,
+      $bidi_data,
+      'Bidirectional sync remote-1 (chunk size 10)'
+   );
+
+   # ########################################################################
+   # Chunk whole table.
+   # ########################################################################
+   $sb->load_file('master', 'mk-table-sync/t/samples/bidirectional/table.sql');
+   $sb->load_file('master', 'mk-table-sync/t/samples/bidirectional/master-data.sql');
+   $sb->load_file('slave2', 'mk-table-sync/t/samples/bidirectional/table.sql');
+   $sb->load_file('slave2', 'mk-table-sync/t/samples/bidirectional/remote-1.sql');
+   make_plugins();
+   set_bidi_callbacks();
+   $args{ChangeHandler} = new_ch($dbh2, 0);
+   @rows = ();
+
+   $syncer->sync_table(%args, plugins => [$sync_chunk], chunk_size => 100000);
+
+   $res = $src_dbh->selectall_arrayref('select * from bidi.t order by id');
+   is_deeply(
+      $res,
+      $bidi_data,
+      'Bidirectional sync "master" (whole table chunk)'
+   );
+
+   $res = $dbh2->selectall_arrayref('select * from bidi.t order by id');
+   is_deeply(
+      $res,
+      $bidi_data,
+      'Bidirectional sync remote-1 (whole table chunk)'
+   );
+
+   # ########################################################################
+   # See TableSyncer.pm for why this is so.
+   # ######################################################################## 
+   $args{ChangeHandler} = new_ch($dbh2, 1);
+   throws_ok(
+      sub { $syncer->sync_table(%args, bidirectional => 1, plugins => [$sync_chunk]) },
+      qr/Queueing does not work with bidirectional syncing/,
+      'Queueing does not work with bidirectional syncing'
+   );
+
+   $sb->wipe_clean($dbh2);
+   diag(`$trunk/sandbox/stop-sandbox remove 12347 >/dev/null &`);
 }
 
 # #############################################################################
 # Done.
 # #############################################################################
-#$sb->wipe_clean($src_dbh);
-#$sb->wipe_clean($dst_dbh);
+$sb->wipe_clean($src_dbh);
+$sb->wipe_clean($dst_dbh);
 exit;

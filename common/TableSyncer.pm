@@ -106,6 +106,11 @@ sub sync_table {
    my ($plugins, $src, $dst, $tbl_struct, $cols, $chunk_size, $rd, $ch)
       = @args{@required_args};
 
+   if ( $args{bidirectional} && $args{ChangeHandler}->{queue} ) {
+      # This should be checked by the caller but just in case...
+      die "Queueing does not work with bidirectional syncing";
+   }
+
    $args{index_hint}    = 1 unless defined $args{index_hint};
    $args{lock}        ||= 0;
    $args{wait}        ||= 0;

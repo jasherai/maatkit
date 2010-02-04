@@ -138,7 +138,8 @@ sub _take_action {
 # If not queueing, this sub makes an action SQL statment for the given
 # action, row and columns.  It calls _take_action(), passing the action
 # statement and the optional dbh.  If queueing, the args are saved and
-# the same work is done in process_rows().
+# the same work is done in process_rows().  Queueing does not work with
+# bidirectional syncs.
 sub change {
    my ( $self, $action, $row, $cols, $dbh ) = @_;
    MKDEBUG && _d($dbh, $action, 'where', $self->make_where_clause($row, $cols));
@@ -202,8 +203,7 @@ sub process_rows {
          $error_count = 0;
       };
       if ( !$error_count++ && $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
-         MKDEBUG
-            && _d('Duplicate key violation; re-queueing and rewriting');
+         MKDEBUG && _d('Duplicate key violation; re-queueing and rewriting');
          $self->{queue}++; # Defer rows to the very end
          $self->{replace} = 1;
          $self->__queue($cur_act, @$row);
