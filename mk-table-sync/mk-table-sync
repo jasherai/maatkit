@@ -865,20 +865,19 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5266
+# Quoter package 5697
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package Quoter;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   return bless {}, $class;
 }
 
 sub quote {
@@ -1338,7 +1337,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 5266
+# TableSyncStream package 5697
 # ###########################################################################
 package TableSyncStream;
 
@@ -1404,18 +1403,18 @@ sub get_sql {
 }
 
 sub same_row {
-   my ( $self, $lr, $rr ) = @_;
+   my ( $self, %args ) = @_;
    return;
 }
 
 sub not_in_right {
-   my ( $self, $lr ) = @_;
-   $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
+   my ( $self, %args ) = @_;
+   $self->{ChangeHandler}->change('INSERT', $args{lr}, $self->key_cols());
 }
 
 sub not_in_left {
-   my ( $self, $rr ) = @_;
-   $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
+   my ( $self, %args ) = @_;
+   $self->{ChangeHandler}->change('DELETE', $args{rr}, $self->key_cols());
 }
 
 sub done_with_rows {
@@ -1453,7 +1452,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5266
+# TableParser package 5693
 # ###########################################################################
 package TableParser;
 
@@ -1802,7 +1801,10 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         "ADD $_->{ddl}";
+
+         my $key_ddl = "ADD $_->{ddl}";
+         $key_ddl   .= ',' unless $key_ddl =~ m/,$/;
+         $key_ddl;
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
@@ -1838,13 +1840,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 5266
+# RowDiff package 5697
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package RowDiff;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
@@ -1852,24 +1853,32 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 sub new {
    my ( $class, %args ) = @_;
    die "I need a dbh" unless $args{dbh};
-   my $self = \%args;
+   my $self = { %args };
    return bless $self, $class;
 }
 
 sub compare_sets {
    my ( $self, %args ) = @_;
-   my ( $left, $right, $syncer, $tbl )
-      = @args{qw(left right syncer tbl)};
+   my @required_args = qw(left_sth right_sth syncer tbl_struct);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $left_sth   = $args{left_sth};
+   my $right_sth  = $args{right_sth};
+   my $syncer     = $args{syncer};
+   my $tbl_struct = $args{tbl_struct};
 
-   my ($lr, $rr);  # Current row from the left/right sources.
-   my $done = $self->{done};
+   my ($lr, $rr);    # Current row from the left/right sths.
+   $args{key_cols} = $syncer->key_cols();  # for key_cmp()
 
-   my ($left_done, $right_done) = (0, 0);
+   my $left_done  = 0;
+   my $right_done = 0;
+   my $done       = $self->{done};
 
    do {
       if ( !$lr && !$left_done ) {
          MKDEBUG && _d('Fetching row from left');
-         eval { $lr = $left->fetchrow_hashref(); };
+         eval { $lr = $left_sth->fetchrow_hashref(); };
          MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
          $left_done = !$lr || $EVAL_ERROR ? 1 : 0;
       }
@@ -1879,7 +1888,7 @@ sub compare_sets {
 
       if ( !$rr && !$right_done ) {
          MKDEBUG && _d('Fetching row from right');
-         eval { $rr = $right->fetchrow_hashref(); };
+         eval { $rr = $right_sth->fetchrow_hashref(); };
          MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
          $right_done = !$rr || $EVAL_ERROR ? 1 : 0;
       }
@@ -1889,40 +1898,50 @@ sub compare_sets {
 
       my $cmp;
       if ( $lr && $rr ) {
-         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
+         $cmp = $self->key_cmp(%args, lr => $lr, rr => $rr);
          MKDEBUG && _d('Key comparison on left and right:', $cmp);
       }
       if ( $lr || $rr ) {
          if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
             MKDEBUG && _d('Left and right have the same key');
-            $syncer->same_row($lr, $rr);
-            $self->{same_row}->($lr, $rr) if $self->{same_row};
+            $syncer->same_row(%args, lr => $lr, rr => $rr);
+            $self->{same_row}->(%args, lr => $lr, rr => $rr)
+               if $self->{same_row};
             $lr = $rr = undef; # Fetch another row from each side.
          }
          elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
             MKDEBUG && _d('Left is not in right');
-            $syncer->not_in_right($lr);
-            $self->{not_in_right}->($lr) if $self->{not_in_right};
+            $syncer->not_in_right(%args, lr => $lr, rr => $rr);
+            $self->{not_in_right}->(%args, lr => $lr, rr => $rr)
+               if $self->{not_in_right};
             $lr = undef;
          }
          else {
             MKDEBUG && _d('Right is not in left');
-            $syncer->not_in_left($rr);
-            $self->{not_in_left}->($rr) if $self->{not_in_left};
+            $syncer->not_in_left(%args, lr => $lr, rr => $rr);
+            $self->{not_in_left}->(%args, lr => $lr, rr => $rr)
+               if $self->{not_in_left};
             $rr = undef;
          }
       }
-      $left_done = $right_done = 1 if $done && $done->($left, $right);
+      $left_done = $right_done = 1 if $done && $done->(%args);
    } while ( !($left_done && $right_done) );
    MKDEBUG && _d('No more rows');
    $syncer->done_with_rows();
 }
 
 sub key_cmp {
-   my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(lr rr key_cols tbl_struct);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless exists $args{$arg};
+   }
+   my ($lr, $rr, $key_cols, $tbl_struct) = @args{@required_args};
    MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
+
    my $callback = $self->{key_cmp};
    my $trf      = $self->{trf};
+
    foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
       my $r = $rr->{$col};
@@ -1931,9 +1950,9 @@ sub key_cmp {
          return defined $l ? 1 : defined $r ? -1 : 0;
       }
       else {
-         if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
+         if ( $tbl_struct->{is_numeric}->{$col} ) {   # Numeric column
             MKDEBUG && _d($col, 'is numeric');
-            ($l, $r) = $trf->($l, $r, $tbl, $col) if $trf;
+            ($l, $r) = $trf->($l, $r, $tbl_struct, $col) if $trf;
             my $cmp = $l <=> $r;
             if ( $cmp ) {
                MKDEBUG && _d('Column', $col, 'differs:', $l, '!=', $r);
@@ -1943,9 +1962,10 @@ sub key_cmp {
          }
          elsif ( $l ne $r ) {
             my $cmp;
-            my $coll = $tbl->{collation_for}->{$col};
+            my $coll = $tbl_struct->{collation_for}->{$col};
             if ( $coll && ( $coll ne 'latin1_swedish_ci'
-                           || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) ) {
+                           || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) )
+            {
                MKDEBUG && _d('Comparing', $col, 'via MySQL');
                $cmp = $self->db_cmp($coll, $l, $r);
             }
@@ -2308,13 +2328,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 5266
+# ChangeHandler package 5697
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package ChangeHandler;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 my $DUPE_KEY  = qr/Duplicate entry/;
@@ -2324,63 +2343,106 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(Quoter dst_db dst_tbl src_db src_tbl replace queue) ) {
+   foreach my $arg ( qw(Quoter left_db left_tbl right_db right_tbl
+                        replace queue) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my $self = { %args, map { $_ => [] } @ACTIONS };
-   $self->{dst_db_tbl} = $self->{Quoter}->quote(@args{qw(dst_db dst_tbl)});
-   $self->{src_db_tbl} = $self->{Quoter}->quote(@args{qw(src_db src_tbl)});
+   my $q = $args{Quoter};
+
+   my $self = {
+      %args,
+      left_db_tbl  => $q->quote(@args{qw(left_db left_tbl)}),
+      right_db_tbl => $q->quote(@args{qw(right_db right_tbl)}),
+   };
+
+   $self->{src_db_tbl} = $self->{left_db_tbl};
+   $self->{dst_db_tbl} = $self->{right_db_tbl};
+
+   map { $self->{$_} = [] } @ACTIONS;
    $self->{changes} = { map { $_ => 0 } @ACTIONS };
+
    return bless $self, $class;
 }
 
 sub fetch_back {
    my ( $self, $dbh ) = @_;
    $self->{fetch_back} = $dbh;
-   MKDEBUG && _d('Will fetch rows from source when updating destination');
+   MKDEBUG && _d('Set fetch back dbh', $dbh);
+   return;
 }
 
-sub take_action {
-   my ( $self, @sql ) = @_;
-   MKDEBUG && _d('Calling subroutines on', @sql);
-   foreach my $action ( @{$self->{actions}} ) {
-      $action->(@sql);
+sub set_src {
+   my ( $self, $src, $dbh ) = @_;
+   die "I need a src argument" unless $src;
+   if ( lc $src eq 'left' ) {
+      $self->{src_db_tbl} = $self->{left_db_tbl};
+      $self->{dst_db_tbl} = $self->{right_db_tbl};
    }
+   elsif ( lc $src eq 'right' ) {
+      $self->{src_db_tbl} = $self->{right_db_tbl};
+      $self->{dst_db_tbl} = $self->{left_db_tbl}; 
+   }
+   else {
+      die "src argument must be either 'left' or 'right'"
+   }
+   MKDEBUG && _d('Set src to', $src);
+   $self->fetch_back($dbh) if $dbh;
+   return;
+}
+
+sub src {
+   my ( $self ) = @_;
+   return $self->{src_db_tbl};
+}
+
+sub dst {
+   my ( $self ) = @_;
+   return $self->{dst_db_tbl};
+}
+
+sub _take_action {
+   my ( $self, $sql, $dbh ) = @_;
+   MKDEBUG && _d('Calling subroutines on', $dbh, $sql);
+   foreach my $action ( @{$self->{actions}} ) {
+      $action->($sql, $dbh);
+   }
+   return;
 }
 
 sub change {
-   my ( $self, $action, $row, $cols ) = @_;
-   MKDEBUG && _d($action, 'where', $self->make_where_clause($row, $cols));
+   my ( $self, $action, $row, $cols, $dbh ) = @_;
+   MKDEBUG && _d($dbh, $action, 'where', $self->make_where_clause($row, $cols));
    $self->{changes}->{
       $self->{replace} && $action ne 'DELETE' ? 'REPLACE' : $action
    }++;
    if ( $self->{queue} ) {
-      $self->__queue($action, $row, $cols);
+      $self->__queue($action, $row, $cols, $dbh);
    }
    else {
       eval {
          my $func = "make_$action";
-         $self->take_action($self->$func($row, $cols));
+         $self->_take_action($self->$func($row, $cols), $dbh);
       };
       if ( $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
          MKDEBUG && _d('Duplicate key violation; will queue and rewrite');
          $self->{queue}++;
          $self->{replace} = 1;
-         $self->__queue($action, $row, $cols);
+         $self->__queue($action, $row, $cols, $dbh);
       }
       elsif ( $EVAL_ERROR ) {
          die $EVAL_ERROR;
       }
    }
+   return;
 }
 
 sub __queue {
-   my ( $self, $action, $row, $cols ) = @_;
+   my ( $self, $action, $row, $cols, $dbh ) = @_;
    MKDEBUG && _d('Queueing change for later');
    if ( $self->{replace} ) {
       $action = $action eq 'DELETE' ? $action : 'REPLACE';
    }
-   push @{$self->{$action}}, [ $row, $cols ];
+   push @{$self->{$action}}, [ $row, $cols, $dbh ];
 }
 
 sub process_rows {
@@ -2400,8 +2462,9 @@ sub process_rows {
             MKDEBUG && _d(scalar(@$rows), 'to', $action);
             $cur_act = $action;
             while ( @$rows ) {
-               $row = shift @$rows;
-               $self->take_action($self->$func(@$row));
+               $row    = shift @$rows;
+               my $dbh = $row->[2] if $row->[2];  # dbh is optional
+               $self->_take_action($self->$func(@$row), $dbh);
             }
          }
          $error_count = 0;
@@ -2439,7 +2502,7 @@ sub make_UPDATE {
    my @cols;
    if ( my $dbh = $self->{fetch_back} ) {
       my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
-      MKDEBUG && _d('Fetching data for UPDATE:', $sql);
+      MKDEBUG && _d('Fetching data on dbh', $dbh, 'for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       @cols = $self->sort_cols($res);
@@ -2476,7 +2539,7 @@ sub make_row {
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
       my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
-      MKDEBUG && _d('Fetching data for UPDATE:', $sql);
+      MKDEBUG && _d('Fetching data on dbh', $dbh, 'for', $verb, ':', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       @cols = $self->sort_cols($res);
@@ -3307,7 +3370,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 5266
+# TableSyncChunk package 5697
 # ###########################################################################
 package TableSyncChunk;
 
@@ -3432,7 +3495,7 @@ sub set_checksum_queries {
    die "I need a chunk_sql argument" unless $chunk_sql;
    die "I need a row_sql argument" unless $row_sql;
    $self->{chunk_sql} = $chunk_sql;
-   $self->{row_sql} = $row_sql;
+   $self->{row_sql}   = $row_sql;
    return;
 }
 
@@ -3446,7 +3509,7 @@ sub prepare_sync_cycle {
 
 sub get_sql {
    my ( $self, %args ) = @_;
-   if ( $self->{state} ) {  # checksum a chunk of rows
+   if ( $self->{state} ) {  # select rows in a chunk
       my $q = $self->{Quoter};
       return 'SELECT /*rows in chunk*/ '
          . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
@@ -3458,7 +3521,7 @@ sub get_sql {
          . ($args{where} ? " AND ($args{where})" : '')
          . ' ORDER BY ' . join(', ', map {$q->quote($_) } @{$self->key_cols()});
    }
-   else {  # checksum the rows
+   else {  # select a chunk of rows
       return $self->{TableChunker}->inject_chunks(
          database   => $args{database},
          table      => $args{table},
@@ -3472,10 +3535,25 @@ sub get_sql {
 }
 
 sub same_row {
-   my ( $self, $lr, $rr ) = @_;
+   my ( $self, %args ) = @_;
+   my ($lr, $rr) = @args{qw(lr rr)};
+
    if ( $self->{state} ) {  # checksumming rows
       if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
-         $self->{ChangeHandler}->change('UPDATE', $lr, $self->key_cols());
+         my $action   = 'UPDATE';
+         my $auth_row = $lr;
+         my $change_dbh;
+
+         if ( $self->{same_row} ) {
+            ($action, $auth_row, $change_dbh) = $self->{same_row}->(%args);
+         }
+
+         $self->{ChangeHandler}->change(
+            $action,            # Execute an UPDATE
+            $auth_row,          # with these row values
+            $self->key_cols(),  # identified by these key cols
+            $change_dbh,        # on this dbh
+         );
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
@@ -3486,16 +3564,44 @@ sub same_row {
 }
 
 sub not_in_right {
-   my ( $self, $lr ) = @_;
+   my ( $self, %args ) = @_;
    die "Called not_in_right in state 0" unless $self->{state};
-   $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
+
+   my $action   = 'INSERT';
+   my $auth_row = $args{lr};
+   my $change_dbh;
+
+   if ( $self->{not_in_right} ) {
+      ($action, $auth_row, $change_dbh) = $self->{not_in_right}->(%args);
+   }
+
+   $self->{ChangeHandler}->change(
+      $action,            # Execute the action
+      $auth_row,          # with these row values
+      $self->key_cols(),  # identified by these key cols
+      $change_dbh,        # on this dbh
+   );
    return;
 }
 
 sub not_in_left {
-   my ( $self, $rr ) = @_;
+   my ( $self, %args ) = @_;
    die "Called not_in_left in state 0" unless $self->{state};
-   $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
+
+   my $action   = 'DELETE';
+   my $auth_row = $args{rr};
+   my $change_dbh;
+
+   if ( $self->{not_in_left} ) {
+      ($action, $auth_row, $change_dbh) = $self->{not_in_left}->(%args);
+   }
+
+   $self->{ChangeHandler}->change(
+      $action,            # Execute the action
+      $auth_row,          # with these row values
+      $self->key_cols(),  # identified by these key cols
+      $change_dbh,        # on this dbh
+   );
    return;
 }
 
@@ -3563,7 +3669,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 5477
+# TableSyncNibble package 5697
 # ###########################################################################
 package TableSyncNibble;
 
@@ -3839,7 +3945,8 @@ sub __get_explain_index {
 }
 
 sub same_row {
-   my ( $self, $lr, $rr ) = @_;
+   my ( $self, %args ) = @_;
+   my ($lr, $rr) = @args{qw(lr rr)};
    if ( $self->{state} ) {
       if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
          $self->{ChangeHandler}->change('UPDATE', $lr, $self->key_cols());
@@ -3854,15 +3961,15 @@ sub same_row {
 }
 
 sub not_in_right {
-   my ( $self, $lr ) = @_;
+   my ( $self, %args ) = @_;
    die "Called not_in_right in state 0" unless $self->{state};
-   $self->{ChangeHandler}->change('INSERT', $lr, $self->key_cols());
+   $self->{ChangeHandler}->change('INSERT', $args{lr}, $self->key_cols());
 }
 
 sub not_in_left {
-   my ( $self, $rr ) = @_;
+   my ( $self, %args ) = @_;
    die "Called not_in_left in state 0" unless $self->{state};
-   $self->{ChangeHandler}->change('DELETE', $rr, $self->key_cols());
+   $self->{ChangeHandler}->change('DELETE', $args{rr}, $self->key_cols());
 }
 
 sub done_with_rows {
@@ -3927,7 +4034,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncGroupBy package 5266
+# TableSyncGroupBy package 5697
 # ###########################################################################
 package TableSyncGroupBy;
 
@@ -4002,10 +4109,11 @@ sub get_sql {
 }
 
 sub same_row {
-   my ( $self, $lr, $rr ) = @_;
-   my $cc = $self->{count_col};
-   my $lc = $lr->{$cc};
-   my $rc = $rr->{$cc};
+   my ( $self, %args ) = @_;
+   my ($lr, $rr) = @args{qw(lr rr)};
+   my $cc   = $self->{count_col};
+   my $lc   = $lr->{$cc};
+   my $rc   = $rr->{$cc};
    my $diff = abs($lc - $rc);
    return unless $diff;
    $lr = { %$lr };
@@ -4023,7 +4131,8 @@ sub same_row {
 }
 
 sub not_in_right {
-   my ( $self, $lr ) = @_;
+   my ( $self, %args ) = @_;
+   my $lr = $args{lr};
    $lr = { %$lr };
    my $cnt = delete $lr->{$self->{count_col}};
    foreach my $i ( 1 .. $cnt ) {
@@ -4032,7 +4141,8 @@ sub not_in_right {
 }
 
 sub not_in_left {
-   my ( $self, $rr ) = @_;
+   my ( $self, %args ) = @_;
+   my $rr = $args{rr};
    $rr = { %$rr };
    my $cnt = delete $rr->{$self->{count_col}};
    foreach my $i ( 1 .. $cnt ) {
@@ -4075,7 +4185,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 5266
+# TableSyncer package 5697
 # ###########################################################################
 package TableSyncer;
 
@@ -4107,10 +4217,10 @@ sub get_best_plugin {
    }
    MKDEBUG && _d('Getting best plugin');
    foreach my $plugin ( @{$args{plugins}} ) {
-      MKDEBUG && _d('Trying plugin', $plugin->name());
+      MKDEBUG && _d('Trying plugin', $plugin->name);
       my ($can_sync, %plugin_args) = $plugin->can_sync(%args);
       if ( $can_sync ) {
-        MKDEBUG && _d('Can sync with', $plugin->name(), Dumper(\%plugin_args));
+        MKDEBUG && _d('Can sync with', $plugin->name, Dumper(\%plugin_args));
         return $plugin, %plugin_args;
       }
    }
@@ -4170,15 +4280,15 @@ sub sync_table {
       $plugin->prepare_to_sync(
          %args,
          %plugin_args,
-         dbh         => $src->{dbh},
-         db          => $src->{db},
-         tbl         => $src->{tbl},
-         crc_col     => $crc_col,
-         index_hint  => $index_hint,
+         dbh        => $src->{dbh},
+         db         => $src->{db},
+         tbl        => $src->{tbl},
+         crc_col    => $crc_col,
+         index_hint => $index_hint,
       );
    };
    if ( $EVAL_ERROR ) {
-      die 'Failed to prepare TableSync', $plugin->name(), ' plugin: ',
+      die 'Failed to prepare TableSync', $plugin->name, ' plugin: ',
          $EVAL_ERROR;
    }
 
@@ -4193,7 +4303,7 @@ sub sync_table {
    } 
 
    if ( $args{dry_run} ) {
-      return $ch->get_changes(), ALGORITHM => $plugin->name();
+      return $ch->get_changes(), ALGORITHM => $plugin->name;
    }
 
 
@@ -4205,6 +4315,9 @@ sub sync_table {
       die "Failed to USE database on source or destination: $EVAL_ERROR";
    }
 
+   MKDEBUG && _d('left dbh', $src->{dbh});
+   MKDEBUG && _d('right dbh', $dst->{dbh});
+
    $self->lock_and_wait(%args, lock_level => 2);  # per-table lock
    
    my $callback = $args{callback};
@@ -4213,17 +4326,24 @@ sub sync_table {
 
       MKDEBUG && _d('Beginning sync cycle', $cycle);
       my $src_sql = $plugin->get_sql(
-         database   => $src->{db},
-         table      => $src->{tbl},
-         where      => $args{where},
+         database => $src->{db},
+         table    => $src->{tbl},
+         where    => $args{where},
       );
       my $dst_sql = $plugin->get_sql(
-         database   => $dst->{db},
-         table      => $dst->{tbl},
-         where      => $args{where},
+         database => $dst->{db},
+         table    => $dst->{tbl},
+         where    => $args{where},
       );
+      MKDEBUG && _d('src:', $src_sql);
+      MKDEBUG && _d('dst:', $dst_sql);
+
       if ( $args{transaction} ) {
-         if ( $args{changing_src} ) {
+         if ( $args{bidirectional} ) {
+            $src_sql .= ' FOR UPDATE';
+            $dst_sql .= ' FOR UPDATE';
+         }
+         elsif ( $args{changing_src} ) {
             $src_sql .= ' FOR UPDATE';
             $dst_sql .= ' LOCK IN SHARE MODE';
          }
@@ -4232,11 +4352,12 @@ sub sync_table {
             $dst_sql .= ' FOR UPDATE';
          }
       }
+
+      $callback->($src_sql, $dst_sql) if $callback;
+
       $plugin->prepare_sync_cycle($src);
       $plugin->prepare_sync_cycle($dst);
-      MKDEBUG && _d('src:', $src_sql);
-      MKDEBUG && _d('dst:', $dst_sql);
-      $callback->($src_sql, $dst_sql) if $callback;
+
       my $src_sth = $src->{dbh}->prepare($src_sql);
       my $dst_sth = $dst->{dbh}->prepare($dst_sql);
       if ( $args{buffer_to_client} ) {
@@ -4254,14 +4375,16 @@ sub sync_table {
       $dst_sth->execute();
 
       $rd->compare_sets(
-         left   => $src_sth,
-         right  => $dst_sth,
-         syncer => $plugin,
-         tbl    => $tbl_struct,
+         left_sth   => $src_sth,
+         right_sth  => $dst_sth,
+         left_dbh   => $src->{dbh},
+         right_dbh  => $dst->{dbh},
+         syncer     => $plugin,
+         tbl_struct => $tbl_struct,
       );
-      MKDEBUG && _d('Finished sync cycle', $cycle);
       $ch->process_rows(1);
 
+      MKDEBUG && _d('Finished sync cycle', $cycle);
       $cycle++;
    }
 
@@ -4269,7 +4392,7 @@ sub sync_table {
 
    $self->unlock(%args, lock_level => 2);
 
-   return $ch->get_changes(), ALGORITHM => $plugin->name();
+   return $ch->get_changes(), ALGORITHM => $plugin->name;
 }
 
 sub make_checksum_queries {
@@ -6529,10 +6652,10 @@ sub sync_a_table {
 
       my $rd = new RowDiff(dbh => $src->{misc_dbh});
       my $ch = new ChangeHandler(
-         src_db     => $src->{db},
-         src_tbl    => $src->{tbl},
-         dst_db     => $dst->{db},
-         dst_tbl    => $dst->{tbl}, 
+         left_db    => $src->{db},
+         left_tbl   => $src->{tbl},
+         right_db   => $dst->{db},
+         right_tbl  => $dst->{tbl}, 
          tbl_struct => $tbl_struct,
          queue      => $o->get('buffer-to-client') ? 1 : 0,
          replace    => $o->get('replace') || $o->get('replicate')
@@ -6646,17 +6769,17 @@ sub make_action_subs {
    my @actions;
    if ( $o->get('execute') ) {
       push @actions, sub {
-         map {
-            MKDEBUG && _d('About to execute:', $_);
-            $change_dbh->do($_);
-         } @_;
+         my ($sql, $dbh) = @_;
+         MKDEBUG && _d('About to execute:', $sql);
+         $change_dbh->do($sql);
       };
    }
    if ( $o->get('print') ) {
       # Print AFTER executing, so the print isn't misleading in case of an
       # index violation etc that doesn't actually get executed.
       push @actions, sub { 
-         print(@_, ";\n") or die "Cannot print: $OS_ERROR"
+         my ($sql, $dbh) = @_;
+         print($sql, ";\n") or die "Cannot print: $OS_ERROR";
       };
    }
 
