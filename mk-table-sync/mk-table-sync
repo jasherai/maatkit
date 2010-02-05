@@ -6065,18 +6065,18 @@ sub main {
       if ( @dsns < 2 ) {
          $o->save_error('--bidirectional requires at least two DSNs');
       }
-      if ( !$o->get('contest-column') || !$o->get('contest-comparison') ) {
-         $o->save_error('--bidirectional requires --contest-column '
-            . 'and --contest-comparison');
+      if ( !$o->get('conflict-column') || !$o->get('conflict-comparison') ) {
+         $o->save_error('--bidirectional requires --conflict-column '
+            . 'and --conflict-comparison');
       }
-      my $cc  = $o->get('contest-comparison');
+      my $cc  = $o->get('conflict-comparison');
       my $cmp = $o->read_para_after(__FILE__, qr/MAGIC_comparisons/);
       $cmp    =~ s/ //g;
       if ( $cc && $cc !~ m/$cmp/ ) {
-         $o->save_error("--contest-comparison must be one of $cmp");
+         $o->save_error("--conflict-comparison must be one of $cmp");
       }
-      if ( $cc && $cc =~ m/equals|matches/ && !$o->get('contest-value') ) {
-         $o->save_error("--contest-comparison $cc requires --contest-value")
+      if ( $cc && $cc =~ m/equals|matches/ && !$o->get('conflict-value') ) {
+         $o->save_error("--conflict-comparison $cc requires --conflict-value")
       }
 
       # Override --algorithms becuase only TableSyncChunk works with
@@ -7012,7 +7012,7 @@ sub print_sql {
    print "# $dst_sql\n" if $dst_sql;
    return;
 }
-sub cmp_contest_col {
+sub cmp_conflict_col {
    my ( $left_val, $right_val, $cmp, $val, $thr ) = @_;
    MKDEBUG && _d('Compare', @_);
    my $res;  # 1 = update right, -1 = update left
@@ -7051,10 +7051,10 @@ sub set_bidirectional_callbacks {
    my $o      = $args{OptionParser};
    my $plugin = $args{plugin};
 
-   my $col = $o->get('contest-column');
-   my $cmp = $o->get('contest-comparison');
-   my $val = $o->get('contest-value');
-   my $thr = $o->get('contest-threshold');
+   my $col = $o->get('conflict-column');
+   my $cmp = $o->get('conflict-comparison');
+   my $val = $o->get('conflict-value');
+   my $thr = $o->get('conflict-threshold');
 
    # plugin and syncer are actually the same module.  For clarity we
    # name them differently.
@@ -7067,7 +7067,7 @@ sub set_bidirectional_callbacks {
       my $auth_row;
 
       # lr and rr have the checksummed row --columns.  We need to
-      # to get the contest column to decide which of lr or rr is
+      # to get the conflict column to decide which of lr or rr is
       # authoritative.
       my $where = $ch->make_where_clause($lr, $syncer->key_cols());
       my $sql   = "SELECT `$col` FROM " . $ch->src . "WHERE $where";
@@ -7077,7 +7077,7 @@ sub set_bidirectional_callbacks {
       MKDEBUG && _d('left',  $col, 'value:', $left_val);
       MKDEBUG && _d('right', $col, 'value:', $right_val);
 
-      my $res = cmp_contest_col($left_val, $right_val, $cmp, $val, $thr);
+      my $res = cmp_conflict_col($left_val, $right_val, $cmp, $val, $thr);
       if ( $res == -1 ) {
          MKDEBUG && _d("right dbh $args{right_dbh} $cmp; "
             . "update left dbh $args{left_dbh}");
@@ -7093,11 +7093,11 @@ sub set_bidirectional_callbacks {
          $change_dbh = $args{right_dbh};
       }
       elsif ( $res == 0 ) {
-         # contest error
+         # conflict error
       }
       else {
          # Shouldn't happen.
-         die "cmp_contest_col() returned an invalid result: $res"
+         die "cmp_conflict_col() returned an invalid result: $res"
       }
 
       return ('UPDATE', $auth_row, $change_dbh);
@@ -7425,24 +7425,24 @@ determined by the ts column, take precedence when a same but differing row
 is found during the bidirectional sync.  "Same but differing" means that
 two rows have the same primary key (id) value but different values for some
 other column, like the name column in this example.  Same but differing
-conflicts are resolved by a "contest".  A contest compares some column of
+conflicts are resolved by a "conflict".  A conflict compares some column of
 the competing rows to determine a "winner".  The winnning row becomes the
 source and its values are used to update the other row.
 
 There are subtle differences between three columns used to achieve
 bidirectional syncing that you should be familiar with: chunk column
-(L<"--chunk-column">), conflict column(s) (L<"--columns">), and contest column
-(L<"--contest-column">).  The chunk column is only used to chunk the
+(L<"--chunk-column">), comparison column(s) (L<"--columns">), and conflict
+column (L<"--conflict-column">).  The chunk column is only used to chunk the
 table; e.g. "WHERE id >= 5 AND id < 10".  Chunks are checksummed and when
 chunk checksums reveal a difference, the tool selects the rows in that
 chunk and checksums the L<"--columns"> for each row.  If a column checksum
 differs, the rows have one or more conflicting column values.  In a
 traditional unidirectional sync, the conflict is a moot point because it can
 be resolved simply by updating the entire destination row with the source
-row's values.  In a bidirectional sync, however, the L<"--contest-column">
-(in accordance with other C<--contest-*> options list below) is compared
-to determine which row is "correct" or "authoritative" (i.e. which row
-wins the contest); this row becomes the "source".
+row's values.  In a bidirectional sync, however, the L<"--conflict-column">
+(in accordance with other C<--conflict-*> options list below) is compared
+to determine which row is "correct" or "authoritative"; this row becomes
+the "source".
 
 To sync all three servers completely, two runs of mk-table-sync are required.
 The first run syncs c1 and r1, then syncs c1 and r2 including any changes
@@ -7459,14 +7459,14 @@ this example would be ran twice like:
 
 The L<"--bidirectional"> option enables this feature and causes various
 sanity checks to be performed.  You must specify other options that tell
-mk-table-sync how to conduct contests to resolve same but differing rows.
+mk-table-sync how to resolve conflicts for same but differing rows.
 These options are:
 
-  * L<"--contest-column">
-  * L<"--contest-comparison">
-  * L<"--contest-value">
-  * L<"--contest-threshold">
-  * L<"--contest-error">  (optional)
+  * L<"--conflict-column">
+  * L<"--conflict-comparison">
+  * L<"--conflict-value">
+  * L<"--conflict-threshold">
+  * L<"--conflict-error">  (optional)
 
 Use L<"--print"> to test this option before L<"--execute">.  The printed
 SQL statements will have comments saying on which host the statment
@@ -7636,54 +7636,54 @@ type: Array
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
 
-=item --contest-column
+=item --conflict-column
 
 type: string
 
 Compare this column when rows conflict during a L<"--bidirectional"> sync.
 
 When a same but differing row is found the value of this column from each
-row is compared according to L<"--contest-comparison">, L<"--contest-value">
-and L<"--contest-threshold"> to determine which row has the correct data and
+row is compared according to L<"--conflict-comparison">, L<"--conflict-value">
+and L<"--conflict-threshold"> to determine which row has the correct data and
 becomes the source.  The column can be any type for which there is an
-appropriate L<"--contest-comparison"> (this is almost all types except, for
+appropriate L<"--conflict-comparison"> (this is almost all types except, for
 example, blobs).
 
 This option only works with L<"--bidirectional">.
 See L<"BIDIRECTIONAL SYNCING"> for more information.
 
-=item --contest-comparison
+=item --conflict-comparison
 
 type: string
 
-Choose the L<"--contest-column"> with this property as the winner.
+Choose the L<"--conflict-column"> with this property as the source.
 
-The option affects how the L<"--contest-column"> values from the conflicting
+The option affects how the L<"--conflict-column"> values from the conflicting
 rows are compared.  Possible comparisons are one of these MAGIC_comparisons:
 
   newest|oldest|greatest|least|equals|matches
 
   COMPARISON  CHOOSES ROW WITH
   ==========  =========================================================
-  newest      Newest temporal L<"--contest-column"> value
-  oldest      Oldest temporal L<"--contest-column"> value
-  greatest    Greatest numerical L<"--contest-column"> value
-  least       Least numerical L<"--contest-column"> value
-  equals      L<"--contest-column"> value equal to L<"--contest-value">
-  matches     L<"--contest-column"> value matching Perl regex pattern
-              L<"--contest-value">
+  newest      Newest temporal L<"--conflict-column"> value
+  oldest      Oldest temporal L<"--conflict-column"> value
+  greatest    Greatest numerical L<"--conflict-column"> value
+  least       Least numerical L<"--conflict-column"> value
+  equals      L<"--conflict-column"> value equal to L<"--conflict-value">
+  matches     L<"--conflict-column"> value matching Perl regex pattern
+              L<"--conflict-value">
 
 This option only works with L<"--bidirectional">.
 See L<"BIDIRECTIONAL SYNCING"> for more information.
 
-=item --contest-error
+=item --conflict-error
 
 type: string; default: warn
 
-How to report contest errors.
+How to report unresolvable conflicts and conflict errors
 
-This option changes how the user is notified when a contest cannot resolve
-a row conflict this option.  Possible values are:
+This option changes how the user is notified when a conflict cannot be
+resolved or causes some kind of error.  Possible values are:
 
   * warn: Print a warning to STDERR about the unresolvable conflict
   * die:  Die, stop syncing, and print a warning to STDERR
@@ -7691,23 +7691,23 @@ a row conflict this option.  Possible values are:
 This option only works with L<"--bidirectional">.
 See L<"BIDIRECTIONAL SYNCING"> for more information.
 
-=item --contest-threshold
+=item --conflict-threshold
 
 type: string
 
-Amount by which one L<"--contest-column"> must exceed the other to win.
+Amount by which one L<"--conflict-column"> must exceed the other.
 
 This option only works with L<"--bidirectional">.
 See L<"BIDIRECTIONAL SYNCING"> for more information.
 
-=item --contest-value
+=item --conflict-value
 
 type: string
 
-Use this value for certain L<"--contest-comparison">.
+Use this value for certain L<"--conflict-comparison">.
 
 This option gives the value for C<equals> and C<matches>
-L<"--contest-comparison">.
+L<"--conflict-comparison">.
 
 This option only works with L<"--bidirectional">.
 See L<"BIDIRECTIONAL SYNCING"> for more information.
