@@ -6059,12 +6059,28 @@ sub main {
 
    if ( $o->get('bidirectional') ) {
       if ( $o->get('replicate') || $o->get('sync-to-master') ) {
-         $o->save_error('--bidirectional does not work with --replicate or --sync-to-master');
+         $o->save_error('--bidirectional does not work with '
+            . '--replicate or --sync-to-master');
       }
       if ( @dsns < 2 ) {
          $o->save_error('--bidirectional requires at least two DSNs');
       }
+      if ( !$o->get('contest-column') || !$o->get('contest-comparison') ) {
+         $o->save_error('--bidirectional requires --contest-column '
+            . 'and --contest-comparison');
+      }
+      my $cc  = $o->get('contest-comparison');
+      my $cmp = $o->read_para_after(__FILE__, qr/MAGIC_comparisons/);
+      $cmp    =~ s/ //g;
+      if ( $cc && $cc !~ m/$cmp/ ) {
+         $o->save_error("--contest-comparison must be one of $cmp");
+      }
+      if ( $cc && $cc =~ m/equals|matches/ && !$o->get('contest-value') ) {
+         $o->save_error("--contest-comparison $cc requires --contest-value")
+      }
 
+      # Override --algorithms becuase only TableSyncChunk works with
+      # bidirectional syncing.
       $o->set('algorithms', 'Chunk');
       $o->set('buffer-to-client', 0);
    }
@@ -6133,6 +6149,16 @@ sub main {
       die "Cannot load $plugin_name for --algorithm: $EVAL_ERROR"
          if $EVAL_ERROR;
       push @$plugins, $plugin;
+   }
+
+   # Create callbacks for bidirectional syncing.  Currently, this only
+   # works with TableSyncChunk, so that should be the only plugin because
+   # --algorithms was overriden earlier.
+   if ( $o->get('bidirectional') ) {
+      set_bidirectional_callbacks(
+         plugin => $plugins->[0],
+         %modules,
+      );
    }
 
    my $hdr         = "# %6s %7s %6s %6s %-9s %-4s %s.%s\n";
@@ -6681,8 +6707,10 @@ sub sync_a_table {
          right_tbl  => $dst->{tbl}, 
          tbl_struct => $tbl_struct,
          queue      => $o->get('buffer-to-client') ? 1 : 0,
-         replace    => $o->get('replace') || $o->get('replicate')
-                       || $o->get('sync-to-master') || 0,
+         replace    => $o->get('replace')
+                       || $o->get('replicate')
+                       || $o->get('sync-to-master')
+                       || 0,
          actions    => $actions,
          Quoter     => $args{Quoter},
       );
@@ -6700,7 +6728,10 @@ sub sync_a_table {
          bidirectional     => $o->get('bidirectional'),
          buffer_in_mysql   => $o->get('buffer-in-mysql'),
          buffer_to_client  => $o->get('buffer-to-client'),
-         changing_src      => $o->get('replicate') || $o->get('sync-to-master'),
+         changing_src      => $o->get('replicate')
+                              || $o->get('sync-to-master')
+                              || $o->get('bidirectional')
+                              || 0,
          float_precision   => $o->get('float-precision'),
          index_hint        => $o->get('index-hint'),
          chunk_index       => $o->get('chunk-index'),
@@ -6793,21 +6824,25 @@ sub make_action_subs {
    my @actions;
    if ( $o->get('execute') ) {
       push @actions, sub {
-         my ($sql, $dbh) = @_;
-         MKDEBUG && _d('About to execute:', $sql);
-         $change_dbh->do($sql);
+         my ( $sql, $dbh ) = @_;
+         # Use $dbh if given.  It's from a bidirectional callback.
+         $dbh ||= $change_dbh;
+         MKDEBUG && _d('Execute on dbh', $dbh, $sql);
+         $dbh->do($sql);
       };
    }
    if ( $o->get('print') ) {
       # Print AFTER executing, so the print isn't misleading in case of an
       # index violation etc that doesn't actually get executed.
       push @actions, sub { 
-         my ($sql, $dbh) = @_;
+         my ( $sql, $dbh ) = @_;
+         # Append /*host:port*/ to the sql, if possible, so the user
+         # can see on which host it was/would be ran.
          my $dsn = $dsn_for{$dbh} if $dbh;
          if ( $dsn ) {
             my $h = $dsn->{h} || $dsn->{S} || '';
             my $p = $dsn->{P} || '';
-            $sql .= "$h" . ($p ? ":$p" : '') . $sql;
+            $sql  = "/*$h" . ($p ? ":$p" : '') . "*/ $sql";
          }
          print($sql, ";\n") or die "Cannot print: $OS_ERROR";
       };
@@ -6975,6 +7010,111 @@ sub print_sql {
    my ( $src_sql, $dst_sql ) = @_;
    print "# $src_sql\n" if $src_sql;
    print "# $dst_sql\n" if $dst_sql;
+   return;
+}
+sub cmp_contest_col {
+   my ( $left_val, $right_val, $cmp, $val, $thr ) = @_;
+   MKDEBUG && _d('Compare', @_);
+   my $res;  # 1 = update right, -1 = update left
+   if ( $cmp eq 'newest' || $cmp eq 'oldest' ) {
+      $res = $cmp eq 'newest' ? ($left_val  || '') cmp ($right_val || '')
+           :                    ($right_val || '') cmp ($left_val  || '');
+   }
+   elsif ( $cmp eq 'greatest' ) {
+      $res = ($left_val || 0) > ($right_val || 0) ? 1 : -1;
+   }
+   elsif ( $cmp eq 'least' ) {
+      $res = ($left_val || 0) < ($right_val || 0) ? 1 : -1;
+   }
+   elsif ( $cmp eq 'equals' ) {
+      $res = ($left_val  || '') eq $val ?  1
+           : ($right_val || '') eq $val ? -1
+           :                               0;
+   }
+   elsif ( $cmp eq 'matches' ) {
+      $res = ($left_val  || '') =~ m/$val/ ?  1
+           : ($right_val || '') =~ m/$val/ ? -1
+           :                                  0;
+   }
+   else {
+      # Should happen; caller should have verified this.
+      die "Invalid comparison: $cmp";
+   }
+   return $res;
+}
+
+sub set_bidirectional_callbacks {
+   my ( %args ) = @_;
+   foreach my $arg ( qw(plugin OptionParser) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o      = $args{OptionParser};
+   my $plugin = $args{plugin};
+
+   my $col = $o->get('contest-column');
+   my $cmp = $o->get('contest-comparison');
+   my $val = $o->get('contest-value');
+   my $thr = $o->get('contest-threshold');
+
+   # plugin and syncer are actually the same module.  For clarity we
+   # name them differently.
+
+   $plugin->set_callback('same_row', sub {
+      my ( %args ) = @_;
+      my ($lr, $rr, $syncer) = @args{qw(lr rr syncer)};
+      my $ch = $syncer->{ChangeHandler};
+      my $change_dbh;
+      my $auth_row;
+
+      # lr and rr have the checksummed row --columns.  We need to
+      # to get the contest column to decide which of lr or rr is
+      # authoritative.
+      my $where = $ch->make_where_clause($lr, $syncer->key_cols());
+      my $sql   = "SELECT `$col` FROM " . $ch->src . "WHERE $where";
+
+      my $left_val  = $args{left_dbh}->selectrow_hashref($sql)->{$col};
+      my $right_val = $args{right_dbh}->selectrow_hashref($sql)->{$col};
+      MKDEBUG && _d('left',  $col, 'value:', $left_val);
+      MKDEBUG && _d('right', $col, 'value:', $right_val);
+
+      my $res = cmp_contest_col($left_val, $right_val, $cmp, $val, $thr);
+      if ( $res == -1 ) {
+         MKDEBUG && _d("right dbh $args{right_dbh} $cmp; "
+            . "update left dbh $args{left_dbh}");
+         $ch->set_src('right', $args{right_dbh});
+         $auth_row   = $args{rr};
+         $change_dbh = $args{left_dbh};
+      }
+      elsif ( $res == 1 ) {
+         MKDEBUG && _d("left dbh $args{left_dbh} $cmp; "
+            . "update right dbh $args{right_dbh}");
+         $ch->set_src('left', $args{left_dbh});
+         $auth_row   = $args{lr};
+         $change_dbh = $args{right_dbh};
+      }
+      elsif ( $res == 0 ) {
+         # contest error
+      }
+      else {
+         # Shouldn't happen.
+         die "cmp_contest_col() returned an invalid result: $res"
+      }
+
+      return ('UPDATE', $auth_row, $change_dbh);
+   });
+
+   $plugin->set_callback('not_in_right', sub {
+      my ( %args ) = @_;
+      $args{syncer}->{ChangeHandler}->set_src('left', $args{left_dbh});
+      return 'INSERT', $args{lr}, $args{right_dbh};
+   });
+
+   $plugin->set_callback('not_in_left', sub {
+      my ( %args ) = @_;
+      $args{syncer}->{ChangeHandler}->set_src('right', $args{right_dbh});
+      return 'INSERT', $args{rr}, $args{left_dbh};
+   });
+
    return;
 }
 
@@ -7498,6 +7638,8 @@ first option on the command line.
 
 =item --contest-column
 
+type: string
+
 Compare this column when rows conflict during a L<"--bidirectional"> sync.
 
 When a same but differing row is found the value of this column from each
@@ -7512,10 +7654,14 @@ See L<"BIDIRECTIONAL SYNCING"> for more information.
 
 =item --contest-comparison
 
+type: string
+
 Choose the L<"--contest-column"> with this property as the winner.
 
 The option affects how the L<"--contest-column"> values from the conflicting
-rows are compared.  Possible comparisons are:
+rows are compared.  Possible comparisons are one of these MAGIC_comparisons:
+
+  newest|oldest|greatest|least|equals|matches
 
   COMPARISON  CHOOSES ROW WITH
   ==========  =========================================================
@@ -7547,12 +7693,16 @@ See L<"BIDIRECTIONAL SYNCING"> for more information.
 
 =item --contest-threshold
 
+type: string
+
 Amount by which one L<"--contest-column"> must exceed the other to win.
 
 This option only works with L<"--bidirectional">.
 See L<"BIDIRECTIONAL SYNCING"> for more information.
 
 =item --contest-value
+
+type: string
 
 Use this value for certain L<"--contest-comparison">.
 

@@ -24,9 +24,9 @@ my $vp = new VersionParser();
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $c1_dbh = $sb->get_dbh_for('master');
-my $r1_dbh = $sb->get_dbh_for('slave2');
 
-# Second master 12347 needs to be started manually!
+diag(`$trunk/sandbox/start-sandbox master 12347 >/dev/null`);
+my $r1_dbh = $sb->get_dbh_for('slave2');
 
 if ( !$c1_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
@@ -36,7 +36,7 @@ elsif ( !$r1_dbh ) {
 
 }
 else {
-   plan tests => 3;
+   plan tests => 5;
 }
 
 my $output;
@@ -126,25 +126,40 @@ is_deeply(
 );
 
 $output = output(
-   sub { mk_table_sync::main(@args, '--print') }
+   sub { mk_table_sync::main(@args, qw(--print --execute),
+      qw(--contest-column ts --contest-comparison newest)) }
 );
 
 is(
    $output,
-"UPDATE `bidi`.`t` SET `c`='ghi', `d`=5, `ts`='2010-02-01 09:17:52' WHERE `id`=3 LIMIT 1
-UPDATE `bidi`.`t` SET `c`=NULL, `d`='0', `ts`='2010-02-02 05:10:00' WHERE `id`=5 LIMIT 1
-INSERT INTO `bidi`.`t`(`c`, `d`, `id`, `ts`) VALUES ('?', '0', 11, '2010-01-29 11:17:12')
-UPDATE `bidi`.`t` SET `c`='hmm', `d`=1, `ts`='2010-02-02 12:17:31' WHERE `id`=13 LIMIT 1
-UPDATE `bidi`.`t` SET `c`='gtg', `d`=7, `ts`='2010-02-02 06:01:08' WHERE `id`=15 LIMIT 1
-INSERT INTO `bidi`.`t`(`c`, `d`, `id`, `ts`) VALUES ('good', 1, 17, '2010-02-02 21:38:03')
-INSERT INTO `bidi`.`t`(`c`, `d`, `id`, `ts`) VALUES ('new', 100, 20, '2010-02-01 04:15:36')
+"/*127.1:12347*/ UPDATE `bidi`.`t` SET `c`='ghi', `d`=5, `ts`='2010-02-01 09:17:52' WHERE `id`=3 LIMIT 1;
+/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`=NULL, `d`='0', `ts`='2010-02-02 05:10:00' WHERE `id`=5 LIMIT 1;
+/*127.1:12345*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES (11, '?', '0', '2010-01-29 11:17:12');
+/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`='hmm', `d`=1, `ts`='2010-02-02 12:17:31' WHERE `id`=13 LIMIT 1;
+/*127.1:12345*/ UPDATE `bidi`.`t` SET `c`='gtg', `d`=7, `ts`='2010-02-02 06:01:08' WHERE `id`=15 LIMIT 1;
+/*127.1:12345*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES (17, 'good', 1, '2010-02-02 21:38:03');
+/*127.1:12347*/ INSERT INTO `bidi`.`t`(`id`, `c`, `d`, `ts`) VALUES (20, 'new', 100, '2010-02-01 04:15:36');
 ",
    '--print correct SQL for c1<->r1 bidirectional sync'
+);
+
+$res = $c1_dbh->selectall_arrayref('select * from bidi.t order by id');
+is_deeply(
+   $res,
+   $r1_data_synced,
+   'Synced c1'
+);
+
+$res = $r1_dbh->selectall_arrayref('select * from bidi.t order by id');
+is_deeply(
+   $res,
+   $r1_data_synced,
+   'Synced r1'
 );
 
 # #############################################################################
 # Done.
 # #############################################################################
-#$sb->wipe_clean($c1_dbh);
-#$sb->wipe_clean($r1_dbh);
+diag(`$trunk/sandbox/stop-sandbox remove 12347 >/dev/null &`);
+$sb->wipe_clean($c1_dbh);
 exit;
