@@ -58,6 +58,12 @@ sub name {
    return 'Chunk';
 }
 
+sub set_callback {
+   my ( $self, $callback, $code ) = @_;
+   $self->{$callback} = $code;
+   return;
+}
+
 # Returns a hash (true) with a chunk_col and chunk_index that can be used
 # to sync the given tbl_struct.  Else, returns nothing (false) if the table
 # cannot be synced.  Arguments:

@@ -681,8 +681,7 @@ SKIP: {
    skip 'Cannot connect to second sandbox master', 1 unless $dbh2;
 
    sub set_bidi_callbacks {
-      # Normally these callbacks are args to TableSyncChunk::new().
-      $sync_chunk->{same_row} = sub {
+      $sync_chunk->set_callback('same_row', sub {
          my ( %args ) = @_;
          my ($lr, $rr, $syncer) = @args{qw(lr rr syncer)};
          my $ch = $syncer->{ChangeHandler};
@@ -711,17 +710,17 @@ SKIP: {
             $change_dbh = $dbh2;
          }
          return ('UPDATE', $auth_row, $change_dbh);
-      };
-      $sync_chunk->{not_in_right} = sub {
+      });
+      $sync_chunk->set_callback('not_in_right', sub {
          my ( %args ) = @_;
          $args{syncer}->{ChangeHandler}->set_src('left', $src_dbh);
          return 'INSERT', $args{lr}, $dbh2;
-      };
-      $sync_chunk->{not_in_left} = sub {
+      });
+      $sync_chunk->set_callback('not_in_left', sub {
          my ( %args ) = @_;
          $args{syncer}->{ChangeHandler}->set_src('right', $dbh2);
          return 'INSERT', $args{rr}, $src_dbh;
-      };
+      });
    };
 
    # Proper data on both tables after bidirectional sync.
