@@ -143,6 +143,11 @@ sub _take_action {
 sub change {
    my ( $self, $action, $row, $cols, $dbh ) = @_;
    MKDEBUG && _d($dbh, $action, 'where', $self->make_where_clause($row, $cols));
+
+   # Undef action means don't do anything.  This allows deeply
+   # nested callers to avoid/skip a change without dying.
+   return unless $action;
+
    $self->{changes}->{
       $self->{replace} && $action ne 'DELETE' ? 'REPLACE' : $action
    }++;

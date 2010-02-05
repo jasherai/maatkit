@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 25;
+use Test::More tests => 27;
 
 use ChangeHandler;
 use Quoter;
@@ -43,6 +43,20 @@ my $ch = new ChangeHandler(
 );
 
 $ch->change('INSERT', { a => 1, b => 2 }, [qw(a)] );
+
+is_deeply(\@rows,
+   ['INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',],
+   'First row',
+);
+
+$ch->change(undef, { a => 1, b => 2 }, [qw(a)] );
+
+is_deeply(
+   \@rows,
+   ['INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',],
+   'Skips undef action'
+);
+
 
 is_deeply(\@rows,
    ['INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',],
