@@ -12,13 +12,14 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 39;
+use Test::More tests => 44;
 
 use Transformers;
 use MaatkitTest;
 
 Transformers->import( qw(parse_timestamp micro_t shorten secs_to_time
-   percentage_of unix_timestamp make_checksum any_unix_timestamp ts) );
+   time_to_secs percentage_of unix_timestamp make_checksum any_unix_timestamp
+   ts) );
 
 # #############################################################################
 # micro_t() tests.
@@ -51,6 +52,15 @@ is(secs_to_time(0), '00:00', 'secs_to_time 0 s = 00:00');
 is(secs_to_time(60), '01:00', 'secs_to_time 60 s = 1 minute');
 is(secs_to_time(3600), '01:00:00', 'secs_to_time 3600 s = 1 hour');
 is(secs_to_time(86400), '1+00:00:00', 'secd_to_time 86400 = 1 day');
+
+# #############################################################################
+# time_to_secs() tests.
+# #############################################################################
+is(time_to_secs(0), 0, 'time_to_secs 0 = 0');
+is(time_to_secs(-42), -42, 'time_to_secs -42 = -42');
+is(time_to_secs('1m'), 60, 'time_to_secs 1m = 60');
+is(time_to_secs('1h'), 3600, 'time_to_secs 1h = 3600');
+is(time_to_secs('1d'), 86400, 'time_to_secs 1d = 86400');
 
 # #############################################################################
 # percentage_of() tests.

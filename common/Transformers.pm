@@ -37,6 +37,7 @@ our @EXPORT_OK   = qw(
    micro_t
    percentage_of
    secs_to_time
+   time_to_secs
    shorten
    ts
    parse_timestamp
@@ -118,6 +119,28 @@ sub secs_to_time {
          "%02d:%02d",
          int(($secs % 3_600) / 60),
          $secs % 60);
+}
+
+# Convert time values to number of seconds:
+# 1s = 1, 1m = 60, 1h = 3600, 1d = 86400.
+sub time_to_secs {
+   my ( $val, $default_suffix ) = @_;
+   die "I need a val argument" unless defined $val;
+   my $t = 0;
+   my ( $prefix, $num, $suffix ) = $val =~ m/([+-]?)(\d+)([a-z])?$/;
+   $suffix = $suffix || $default_suffix || 's';
+   if ( $suffix =~ m/[smhd]/ ) {
+      $t = $suffix eq 's' ? $num * 1        # Seconds
+         : $suffix eq 'm' ? $num * 60       # Minutes
+         : $suffix eq 'h' ? $num * 3600     # Hours
+         :                  $num * 86400;   # Days
+
+      $t *= -1 if $prefix && $prefix eq '-';
+   }
+   else {
+      die "Invalid suffix for $val: $suffix";
+   }
+   return $t;
 }
 
 sub shorten {
