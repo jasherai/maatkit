@@ -233,7 +233,8 @@ is (
       function  => 'SHA1',
       tbl_struct => $t,
    ),
-   q{SHA1(CONCAT_WS('#', }
+     q{`film_id`, `title`, `description`, `release_year`, `language_id`, `original_language_id`, `rental_duration`, `rental_rate`, `length`, `replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
+   . q{SHA1(CONCAT_WS('#', }
    . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
    . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
    . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
@@ -248,7 +249,8 @@ is (
       function      => 'FNV_64',
       tbl_struct => $t,
    ),
-   q{FNV_64(}
+     q{`film_id`, `title`, `description`, `release_year`, `language_id`, `original_language_id`, `rental_duration`, `rental_rate`, `length`, `replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
+   . q{FNV_64(}
    . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
    . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
    . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0)},
@@ -261,7 +263,7 @@ is (
       tbl_struct => $t,
       cols      => [qw(film_id)],
    ),
-   q{SHA1(`film_id`)},
+   q{`film_id`, SHA1(`film_id`)},
    'SHA1 query for sakila.film with only one column',
 );
 
@@ -271,7 +273,7 @@ is (
       tbl_struct => $t,
       cols      => [qw(FILM_ID)],
    ),
-   q{SHA1(`film_id`)},
+   q{`film_id`, SHA1(`film_id`)},
    'Column names are case-insensitive',
 );
 
@@ -282,7 +284,7 @@ is (
       cols      => [qw(film_id title)],
       sep       => '%',
    ),
-   q{SHA1(CONCAT_WS('%', `film_id`, `title`))},
+   q{`film_id`, `title`, SHA1(CONCAT_WS('%', `film_id`, `title`))},
    'Separator',
 );
 
@@ -293,7 +295,7 @@ is (
       cols      => [qw(film_id title)],
       sep       => "'%'",
    ),
-   q{SHA1(CONCAT_WS('%', `film_id`, `title`))},
+   q{`film_id`, `title`, SHA1(CONCAT_WS('%', `film_id`, `title`))},
    'Bad separator',
 );
 
@@ -304,7 +306,7 @@ is (
       cols      => [qw(film_id title)],
       sep       => "'''",
    ),
-   q{SHA1(CONCAT_WS('#', `film_id`, `title`))},
+   q{`film_id`, `title`, SHA1(CONCAT_WS('#', `film_id`, `title`))},
    'Really bad separator',
 );
 
@@ -314,7 +316,7 @@ is (
       function      => 'SHA1',
       tbl_struct => $t,
    ),
-   q{SHA1(CONCAT_WS('#', `rental_id`, `foo`))},
+   q{`rental_id`, `foo`, SHA1(CONCAT_WS('#', `rental_id`, `foo`))},
    'FLOAT column is like any other',
 );
 
@@ -324,7 +326,7 @@ is (
       tbl_struct => $t,
       float_precision => 5,
    ),
-   q{SHA1(CONCAT_WS('#', `rental_id`, ROUND(`foo`, 5)))},
+   q{`rental_id`, ROUND(`foo`, 5), SHA1(CONCAT_WS('#', `rental_id`, ROUND(`foo`, 5)))},
    'FLOAT column is rounded to 5 places',
 );
 

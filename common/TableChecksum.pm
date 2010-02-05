@@ -315,7 +315,12 @@ sub make_row_checksum {
       }
       @{$tbl_struct->{cols}};
 
-   my $query;
+   # Prepend columns to query, resulting in "col1, col2, FUNC(..col1, col2...)",
+   # unless caller says not to.  The only caller that says not to is
+   # make_checksum_query() which uses this row checksum as part of a larger
+   # checksum.  Other callers, like TableSyncer::make_checksum_queries() call
+   # this sub directly and want the actual columns.
+   my $query = $args{no_cols} ? '' : join(', ', @cols) . ', ';
    if ( uc $func ne 'FNV_64' && uc $func ne 'FNV1A_64' ) {
       # Add a bitmap of which nullable columns are NULL.
       my @nulls = grep { $cols{$_} } @{$tbl_struct->{null_cols}};
@@ -326,15 +331,15 @@ sub make_row_checksum {
          push @cols, $bitmap;
       }
 
-      $query = @cols > 1
-             ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
-             : "$func($cols[0])";
+      $query .= @cols > 1
+              ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
+              : "$func($cols[0])";
    }
    else {
       # As a special case, FNV1A_64/FNV_64 doesn't need its arguments
       # concatenated, and doesn't need a bitmap of NULLs.
       my $fnv_func = uc $func;
-      $query = "$fnv_func(" . join(', ', @cols) . ')';
+      $query .= "$fnv_func(" . join(', ', @cols) . ')';
    }
 
    return $query;
@@ -373,7 +378,7 @@ sub make_checksum_query {
       return "CHECKSUM TABLE " . $q->quote($db, $tbl);
    }
 
-   my $expr = $self->make_row_checksum(%args);
+   my $expr = $self->make_row_checksum(%args, no_cols=>1);
 
    if ( $algorithm eq 'BIT_XOR' ) {
       # This checksum algorithm concatenates the columns in each row and
