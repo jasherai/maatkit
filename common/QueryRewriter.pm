@@ -369,6 +369,15 @@ sub convert_to_select {
                  {__insert_to_select($1, $2, $3)}exsi
       || $query =~ s{
                     \A.*?
+                    (?:insert(?:\s+ignore)?|replace)\s+
+                    (?:.*?\binto)\b(.*?)\s*
+                    set?\s*\b(.*?)\s*
+                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select_with_set($1, $2)}exsi
+      || $query =~ s{
+                    \A.*?
                     delete\s+(.*?)
                     \bfrom\b(.*)
                     \Z
@@ -411,6 +420,12 @@ sub __insert_to_select {
    else {
       return "select * from $tbl limit 1";
    }
+}
+
+sub __insert_to_select_with_set {
+   my ( $from, $set ) = @_;
+   $set =~ s/,/ and /g;
+   return "select * from $from where $set ";
 }
 
 sub __update_to_select {

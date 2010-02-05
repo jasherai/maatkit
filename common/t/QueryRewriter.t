@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 243;
+use Test::More tests => 244;
 
 use QueryRewriter;
 use QueryParser;
@@ -1151,6 +1151,13 @@ is(
    'convert_to_select insert ignore into',
 );
 
+is(
+   $qr->convert_to_select(
+      'INSERT INTO Table SET c1 = v1, c2 = v2, c3 = v3',
+   ),
+   'select * from  Table where c1 = v1 and  c2 = v2 and  c3 = v3 ',
+   'convert_to_select insert into with set',
+);
 
 exit;
  
