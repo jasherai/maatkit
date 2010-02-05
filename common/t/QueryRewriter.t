@@ -1151,11 +1151,15 @@ is(
    'convert_to_select insert ignore into',
 );
 
+# #####################################################################################
+# Issue 600: mk-slave-prefetch doesn't parse INSERT INTO Table SET c1 = v1, c2 = v2 ...
+# #####################################################################################
+
 is(
    $qr->convert_to_select(
-      'INSERT INTO Table SET c1 = v1, c2 = v2, c3 = v3',
+      "INSERT INTO Table SET c1 = 'v1', c2 = 'v2', c3 = 'v3'",
    ),
-   'select * from  Table where c1 = v1 and  c2 = v2 and  c3 = v3 ',
+   "select * from  Table where c1 = 'v1' and  c2 = 'v2' and  c3 = 'v3' ",
    'convert_to_select insert into with set',
 );
 
