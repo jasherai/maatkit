@@ -12,7 +12,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 44;
+use Test::More tests => 45;
 
 use Transformers;
 use MaatkitTest;
@@ -129,6 +129,11 @@ is(
    any_unix_timestamp('2007-10-15'),     # Same as above minus
    1192427032 - (1*3600) - (43*60) - 52, # 1:43:52
    'any_unix_timestamp proper timestamp without hh:mm:ss'
+);
+is(
+   any_unix_timestamp('315550800'),
+   unix_timestamp('1980-01-01 00:00:00'),
+   'any_unix_timestamp already unix timestamp'
 );
 
 use DSNParser;

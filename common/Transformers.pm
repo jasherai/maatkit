@@ -231,6 +231,13 @@ sub any_unix_timestamp {
       MKDEBUG && _d('ts is now - N[shmd]:', $n);
       return time - $n;
    }
+   elsif ( $val =~ m/^\d{9,}/ ) {
+      # unix timestamp 100000000 is roughly March, 1973, so older
+      # dates won't be caught here; they'll probably be mistaken
+      # for a MySQL slow log timestamp.
+      MKDEBUG && _d('ts is already a unix timestamp');
+      return $val;
+   }
    elsif ( my ($ymd, $hms) = $val =~ m/^(\d{6})(?:\s+(\d+:\d+:\d+))?/ ) {
       MKDEBUG && _d('ts is MySQL slow log timestamp');
       $val .= ' 00:00:00' unless $hms;
