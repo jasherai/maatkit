@@ -3369,7 +3369,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 5697
+# TableSyncChunk package 5703
 # ###########################################################################
 package TableSyncChunk;
 
@@ -3396,6 +3396,12 @@ sub new {
 
 sub name {
    return 'Chunk';
+}
+
+sub set_callback {
+   my ( $self, $callback, $code ) = @_;
+   $self->{$callback} = $code;
+   return;
 }
 
 sub can_sync {
@@ -5967,6 +5973,8 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 $OUTPUT_AUTOFLUSH = 1;
 
+my %dsn_for;
+
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
@@ -6047,6 +6055,18 @@ sub main {
          $o->save_error("--lock-and-rename requires exactly two DSNs and they "
             . "must each specify a table.");
       }
+   }
+
+   if ( $o->get('bidirectional') ) {
+      if ( $o->get('replicate') || $o->get('sync-to-master') ) {
+         $o->save_error('--bidirectional does not work with --replicate or --sync-to-master');
+      }
+      if ( @dsns < 2 ) {
+         $o->save_error('--bidirectional requires at least two DSNs');
+      }
+
+      $o->set('algorithms', 'Chunk');
+      $o->set('buffer-to-client', 0);
    }
 
    if ( $o->get('explain-hosts') ) {
@@ -6677,6 +6697,7 @@ sub sync_a_table {
          transaction       => $use_txn,
          callback          => $callback,
          where             => $args{where} || $o->get('where'),
+         bidirectional     => $o->get('bidirectional'),
          buffer_in_mysql   => $o->get('buffer-in-mysql'),
          buffer_to_client  => $o->get('buffer-to-client'),
          changing_src      => $o->get('replicate') || $o->get('sync-to-master'),
@@ -6782,6 +6803,12 @@ sub make_action_subs {
       # index violation etc that doesn't actually get executed.
       push @actions, sub { 
          my ($sql, $dbh) = @_;
+         my $dsn = $dsn_for{$dbh} if $dbh;
+         if ( $dsn ) {
+            my $h = $dsn->{h} || $dsn->{S} || '';
+            my $p = $dsn->{P} || '';
+            $sql .= "$h" . ($p ? ":$p" : '') . $sql;
+         }
          print($sql, ";\n") or die "Cannot print: $OS_ERROR";
       };
    }
@@ -6840,6 +6867,8 @@ sub get_cxn {
         . '",NO_AUTO_VALUE_ON_ZERO")*/';
    MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
+
+   $dsn_for{$dbh} = $dsn;
 
    MKDEBUG && _d('Opened dbh', $dbh);
    return $dbh;
@@ -6931,6 +6960,7 @@ sub disconnect {
       foreach my $thing ( qw(dbh misc_dbh) ) {
          my $dbh = $host->{$thing};
          next unless $dbh;
+         delete $dsn_for{$dbh};
          $dbh->commit() unless $dbh->{AutoCommit};
          $dbh->disconnect();
          MKDEBUG && _d('Disconnected dbh', $dbh);
@@ -7052,10 +7082,10 @@ is the default choice and it may not perform very well.  Please run with
 L<"--dry-run"> before subjecting your servers to this tool, and make backups of
 your data!
 
-This tool is designed to do one-way synchronization of data (two-way sync is
-planned for the future).  It finds differences efficiently with one of several
-algorithms (see L<"ALGORITHMS">).  It makes changes on the destination table(s)
-so it matches the source.
+This tool is designed to do one-way and bidirectional synchronization of data.
+It finds differences efficiently with one of several algorithms
+(see L<"ALGORITHMS">).  It makes changes on the destination table(s) so it
+matches the source.
 
 It does B<not> synchronize table structures, indexes, or any other schema
 changes.  It synchronizes only data.
@@ -7228,6 +7258,87 @@ simple interface that makes it pretty easy to write your own.
 
 =back
 
+=head1 BIDIRECTIONAL SYNCING
+
+Bidirectional syncing is a new, experimental feature.  To make it work
+reliably there are a number of strict limitations:
+
+  * only works when syncing one server to other independent servers
+  * does not work in any way with replication
+  * requires that the table(s) are chunkable with the Chunk algorithm
+  * is not N-way, only bidirectional between two servers at a time
+  * does not handle DELETE changes
+
+For example, suppose we have three servers: c1, r1, r2.  c1 is the central
+server, a pseudo-master to the other servers (viz. r1 and r2 are not slaves
+to c1).  r1 and r2 are remote servers.  Rows in table foo are updated and
+inserted on all three servers and we want to synchronize all the changes
+between all the servers.  Table foo has columns:
+
+  id    int PRIMARY KEY
+  ts    timestamp auto updated
+  name  varchar
+
+Auto-increment offsets are used so that new rows from any server do not
+create conflicting primary key (id) values.  In general, newer rows, as
+determined by the ts column, take precedence when a same but differing row
+is found during the bidirectional sync.  "Same but differing" means that
+two rows have the same primary key (id) value but different values for some
+other column, like the name column in this example.  Same but differing
+conflicts are resolved by a "contest".  A contest compares some column of
+the competing rows to determine a "winner".  The winnning row becomes the
+source and its values are used to update the other row.
+
+There are subtle differences between three columns used to achieve
+bidirectional syncing that you should be familiar with: chunk column
+(L<"--chunk-column">), conflict column(s) (L<"--columns">), and contest column
+(L<"--contest-column">).  The chunk column is only used to chunk the
+table; e.g. "WHERE id >= 5 AND id < 10".  Chunks are checksummed and when
+chunk checksums reveal a difference, the tool selects the rows in that
+chunk and checksums the L<"--columns"> for each row.  If a column checksum
+differs, the rows have one or more conflicting column values.  In a
+traditional unidirectional sync, the conflict is a moot point because it can
+be resolved simply by updating the entire destination row with the source
+row's values.  In a bidirectional sync, however, the L<"--contest-column">
+(in accordance with other C<--contest-*> options list below) is compared
+to determine which row is "correct" or "authoritative" (i.e. which row
+wins the contest); this row becomes the "source".
+
+To sync all three servers completely, two runs of mk-table-sync are required.
+The first run syncs c1 and r1, then syncs c1 and r2 including any changes
+from r1.  At this point c1 and r2 are completely in sync, but r1 is missing
+any changes from r2 because c1 didn't have these changes when it and r1
+were synced.  So a second run is needed which syncs the servers in the same
+order, but this time when c1 and r1 are synced r1 gets r2's changes.
+
+The tool does not sync N-ways, only bidirectionally between the first DSN
+given on the command line and each subsequent DSN in turn.  So the tool in
+this example would be ran twice like:
+
+  mk-table-sync --bidirectional h=c1 h=r1 h=r2
+
+The L<"--bidirectional"> option enables this feature and causes various
+sanity checks to be performed.  You must specify other options that tell
+mk-table-sync how to conduct contests to resolve same but differing rows.
+These options are:
+
+  * L<"--contest-column">
+  * L<"--contest-comparison">
+  * L<"--contest-value">
+  * L<"--contest-threshold">
+  * L<"--contest-error">  (optional)
+
+Use L<"--print"> to test this option before L<"--execute">.  The printed
+SQL statements will have comments saying on which host the statment
+would be executed if you used L<"--execute">.
+
+Technical side note: the first DSN is always the "left" server and the other
+DSNs are always the "right" server.  Since either server can become the source
+or destination it's confusing to think of them as "src" and "dst".  Therefore,
+they're generically referred to as left and right.  It's easy to remember
+this because the first DSN is always to the left of the other server DSNs on
+the command line.
+
 =head1 EXIT STATUS
 
 Exit status is as follows:
@@ -7260,6 +7371,12 @@ that can sync the table is used.  See L<"ALGORITHMS">.
 =item --ask-pass
 
 Prompt for a password when connecting to MySQL.
+
+=item --bidirectional
+
+Enable bidirectional sync between first and subsequent hosts.
+
+See L<"BIDIRECTIONAL SYNCING"> for more information.
 
 =item --[no]bin-log
 
@@ -7378,6 +7495,72 @@ type: Array
 
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
+
+=item --contest-column
+
+Compare this column when rows conflict during a L<"--bidirectional"> sync.
+
+When a same but differing row is found the value of this column from each
+row is compared according to L<"--contest-comparison">, L<"--contest-value">
+and L<"--contest-threshold"> to determine which row has the correct data and
+becomes the source.  The column can be any type for which there is an
+appropriate L<"--contest-comparison"> (this is almost all types except, for
+example, blobs).
+
+This option only works with L<"--bidirectional">.
+See L<"BIDIRECTIONAL SYNCING"> for more information.
+
+=item --contest-comparison
+
+Choose the L<"--contest-column"> with this property as the winner.
+
+The option affects how the L<"--contest-column"> values from the conflicting
+rows are compared.  Possible comparisons are:
+
+  COMPARISON  CHOOSES ROW WITH
+  ==========  =========================================================
+  newest      Newest temporal L<"--contest-column"> value
+  oldest      Oldest temporal L<"--contest-column"> value
+  greatest    Greatest numerical L<"--contest-column"> value
+  least       Least numerical L<"--contest-column"> value
+  equals      L<"--contest-column"> value equal to L<"--contest-value">
+  matches     L<"--contest-column"> value matching Perl regex pattern
+              L<"--contest-value">
+
+This option only works with L<"--bidirectional">.
+See L<"BIDIRECTIONAL SYNCING"> for more information.
+
+=item --contest-error
+
+type: string; default: warn
+
+How to report contest errors.
+
+This option changes how the user is notified when a contest cannot resolve
+a row conflict this option.  Possible values are:
+
+  * warn: Print a warning to STDERR about the unresolvable conflict
+  * die:  Die, stop syncing, and print a warning to STDERR
+
+This option only works with L<"--bidirectional">.
+See L<"BIDIRECTIONAL SYNCING"> for more information.
+
+=item --contest-threshold
+
+Amount by which one L<"--contest-column"> must exceed the other to win.
+
+This option only works with L<"--bidirectional">.
+See L<"BIDIRECTIONAL SYNCING"> for more information.
+
+=item --contest-value
+
+Use this value for certain L<"--contest-comparison">.
+
+This option gives the value for C<equals> and C<matches>
+L<"--contest-comparison">.
+
+This option only works with L<"--bidirectional">.
+See L<"BIDIRECTIONAL SYNCING"> for more information.
 
 =item --databases
 
