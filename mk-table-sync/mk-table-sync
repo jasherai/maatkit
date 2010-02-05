@@ -3010,7 +3010,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 5266
+# TableChecksum package 5712
 # ###########################################################################
 package TableChecksum;
 
@@ -3234,6 +3234,7 @@ sub make_row_checksum {
    my %cols = map { lc($_) => 1 }
               grep { !exists $ignorecols{$_} }
               ($args{cols} ? @{$args{cols}} : @{$tbl_struct->{cols}});
+   my %seen;
    my @cols =
       map {
          my $type = $tbl_struct->{type_for}->{$_};
@@ -3250,11 +3251,24 @@ sub make_row_checksum {
          $result;
       }
       grep {
-         $cols{$_}
+         $cols{$_} && !$seen{$_}++
       }
       @{$tbl_struct->{cols}};
 
    my $query;
+   if ( !$args{no_cols} ) {
+      $query = join(', ',
+                  map { 
+                     my $col = $_;
+                     if ( $col =~ m/\+ 0/ ) {
+                        my ($real_col) = /^(\S+)/;
+                        $col .= " AS $real_col";
+                     }
+                     $col;
+                  } @cols)
+             . ', ';
+   }
+
    if ( uc $func ne 'FNV_64' && uc $func ne 'FNV1A_64' ) {
       my @nulls = grep { $cols{$_} } @{$tbl_struct->{null_cols}};
       if ( @nulls ) {
@@ -3264,13 +3278,13 @@ sub make_row_checksum {
          push @cols, $bitmap;
       }
 
-      $query = @cols > 1
-             ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
-             : "$func($cols[0])";
+      $query .= @cols > 1
+              ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
+              : "$func($cols[0])";
    }
    else {
       my $fnv_func = uc $func;
-      $query = "$fnv_func(" . join(', ', @cols) . ')';
+      $query .= "$fnv_func(" . join(', ', @cols) . ')';
    }
 
    return $query;
@@ -3295,7 +3309,7 @@ sub make_checksum_query {
       return "CHECKSUM TABLE " . $q->quote($db, $tbl);
    }
 
-   my $expr = $self->make_row_checksum(%args);
+   my $expr = $self->make_row_checksum(%args, no_cols=>1);
 
    if ( $algorithm eq 'BIT_XOR' ) {
       if ( $crc_type =~ m/int$/ ) {
@@ -3369,7 +3383,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 5703
+# TableSyncChunk package 5712
 # ###########################################################################
 package TableSyncChunk;
 
@@ -3467,6 +3481,8 @@ sub prepare_to_sync {
 
    $self->{ChangeHandler}->fetch_back($args{dbh});
 
+   push @{$args{cols}}, $args{chunk_col};
+
    my @chunks;
    if ( !$args{replicate} ) {
       my %range_params = $chunker->get_range_statistics(%args);
@@ -3518,8 +3534,7 @@ sub get_sql {
       my $q = $self->{Quoter};
       return 'SELECT /*rows in chunk*/ '
          . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
-         . join(', ', map { $q->quote($_) } @{$self->key_cols()})
-         . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
+         . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{Quoter}->quote(@args{qw(database table)})
          . ' '. ($self->{index_hint} || '')
          . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
@@ -3554,7 +3569,7 @@ sub same_row {
          }
 
          $self->{ChangeHandler}->change(
-            $action,            # Execute an UPDATE
+            $action,            # Execute the action
             $auth_row,          # with these row values
             $self->key_cols(),  # identified by these key cols
             $change_dbh,        # on this dbh
@@ -3674,7 +3689,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 5697
+# TableSyncNibble package 5712
 # ###########################################################################
 package TableSyncNibble;
 
@@ -3778,6 +3793,10 @@ sub prepare_to_sync {
 
    $self->{ChangeHandler}->fetch_back($args{dbh});
 
+   my %seen;
+   my @ucols = grep { !$seen{$_}++ } @{$args{cols}}, @{$args{key_cols}};
+   $args{cols} = \@ucols;
+
    if ( !$args{replicate} ) {
       $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
          %args,
@@ -3826,8 +3845,7 @@ sub get_sql {
       my $q = $self->{Quoter};
       return 'SELECT /*rows in nibble*/ '
          . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
-         . join(', ', map { $q->quote($_) } @{$self->key_cols()})
-         . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
+         . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $q->quote(@args{qw(database table)})
          . ' ' . ($self->{index_hint} ? $self->{index_hint} : '')
          . ' WHERE (' . $self->__get_boundaries(%args) . ')'
@@ -6920,6 +6938,13 @@ sub sync_a_table {
          !$ignore_columns->{lc $_};
       } @{$o->get('columns') || $tbl_struct->{cols}};
 
+      # Make sure conflict col is in compare cols else conflicting
+      # rows won't have the col for --conflict-comparison.
+      if ( my $conflict_col = $o->get('conflict-column') ) {
+         push @compare_columns, $conflict_col
+            unless grep { $_ eq $conflict_col } @compare_columns;
+      }
+
       # --print --verbose --verbose is the magic formula for having
       # all src/dst sql printed so we can see the chunk/row sql.
       my $callback;
@@ -7331,33 +7356,30 @@ sub set_bidirectional_callbacks {
       my $change_dbh;
       my $auth_row;
 
-      # lr and rr have the checksummed row --columns.  We need to
-      # to get the conflict column to decide which of lr or rr is
-      # authoritative.
-      my $where = $ch->make_where_clause($lr, $syncer->key_cols());
-      my $sql   = "SELECT `$col` FROM " . $ch->src . "WHERE $where";
-
-      my $left_val  = $args{left_dbh}->selectrow_hashref($sql)->{$col};
-      my $right_val = $args{right_dbh}->selectrow_hashref($sql)->{$col};
+      my $left_val  = $lr->{$col} || '';
+      my $right_val = $rr->{$col} || '';
       MKDEBUG && _d('left',  $col, 'value:', $left_val);
       MKDEBUG && _d('right', $col, 'value:', $right_val);
 
       my $res = cmp_conflict_col($left_val, $right_val, $cmp, $val, $thr);
-      if ( $res == -1 ) {
+      if ( $res == UPDATE_LEFT ) {
          MKDEBUG && _d("right dbh $args{right_dbh} $cmp; "
             . "update left dbh $args{left_dbh}");
          $ch->set_src('right', $args{right_dbh});
          $auth_row   = $args{rr};
          $change_dbh = $args{left_dbh};
       }
-      elsif ( $res == 1 ) {
+      elsif ( $res == UPDATE_RIGHT ) {
          MKDEBUG && _d("left dbh $args{left_dbh} $cmp; "
             . "update right dbh $args{right_dbh}");
          $ch->set_src('left', $args{left_dbh});
          $auth_row   = $args{lr};
          $change_dbh = $args{right_dbh};
       }
-      elsif ( $res == 0 ) {
+      elsif ( $res == UPDATE_NEITHER ) {
+         # conflict error
+      }
+      elsif ( $res == FAILED_THRESHOLD ) {
          # conflict error
       }
       else {
