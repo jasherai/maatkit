@@ -2328,7 +2328,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 5700
+# ChangeHandler package 5714
 # ###########################################################################
 package ChangeHandler;
 
@@ -2412,6 +2412,9 @@ sub _take_action {
 sub change {
    my ( $self, $action, $row, $cols, $dbh ) = @_;
    MKDEBUG && _d($dbh, $action, 'where', $self->make_where_clause($row, $cols));
+
+   return unless $action;
+
    $self->{changes}->{
       $self->{replace} && $action ne 'DELETE' ? 'REPLACE' : $action
    }++;
@@ -5974,7 +5977,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 5709
+# Transformers package 5715
 # ###########################################################################
 
 package Transformers;
@@ -6163,6 +6166,10 @@ sub any_unix_timestamp {
          :                  $n;           # default: Seconds
       MKDEBUG && _d('ts is now - N[shmd]:', $n);
       return time - $n;
+   }
+   elsif ( $val =~ m/^\d{9,}/ ) {
+      MKDEBUG && _d('ts is already a unix timestamp');
+      return $val;
    }
    elsif ( my ($ymd, $hms) = $val =~ m/^(\d{6})(?:\s+(\d+:\d+:\d+))?/ ) {
       MKDEBUG && _d('ts is MySQL slow log timestamp');
@@ -7353,8 +7360,10 @@ sub set_bidirectional_callbacks {
       my ( %args ) = @_;
       my ($lr, $rr, $syncer) = @args{qw(lr rr syncer)};
       my $ch = $syncer->{ChangeHandler};
+      my $action = 'UPDATE';
       my $change_dbh;
       my $auth_row;
+      my $err;
 
       my $left_val  = $lr->{$col} || '';
       my $right_val = $rr->{$col} || '';
@@ -7377,17 +7386,32 @@ sub set_bidirectional_callbacks {
          $change_dbh = $args{right_dbh};
       }
       elsif ( $res == UPDATE_NEITHER ) {
-         # conflict error
+         if ( $cmp eq 'equals' || $cmp eq 'matches' ) {
+            $err = "neither `$col` value $cmp $val";
+         }
+         else {
+            $err = "`$col` values are the same"
+         }
       }
       elsif ( $res == FAILED_THRESHOLD ) {
-         # conflict error
+         $err = "`$col` values do not differ by the threhold, $thr."
       }
       else {
          # Shouldn't happen.
-         die "cmp_conflict_col() returned an invalid result: $res"
+         die "cmp_conflict_col() returned an invalid result: $res."
       }
 
-      return ('UPDATE', $auth_row, $change_dbh);
+      if ( $err ) {
+         $action   = undef;  # skip change in case we just warn
+         my $where = $ch->make_where_clause($lr, $syncer->key_cols());
+         $err      = "# Cannot resolve conflict WHERE $where: $err\n";
+
+         # die here is caught in sync_a_table().  We're deeply nested:
+         # sync_a_table > sync_table > compare_sets > syncer > here
+         $o->get('conflict-error') eq 'warn' ? warn $err : die $err;
+      }
+
+      return $action, $auth_row, $change_dbh;
    });
 
    $plugin->set_callback('not_in_right', sub {
