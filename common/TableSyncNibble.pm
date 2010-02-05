@@ -151,6 +151,14 @@ sub prepare_to_sync {
 
    $self->{ChangeHandler}->fetch_back($args{dbh});
 
+   # Make sure our chunk col is in the list of comparison columns
+   # used by TableChecksum::make_row_checksum() to create $row_sql.
+   # Normally that sub removes dupes, but the code to make boundary
+   # sql does not, so we do it here.
+   my %seen;
+   my @ucols = grep { !$seen{$_}++ } @{$args{cols}}, @{$args{key_cols}};
+   $args{cols} = \@ucols;
+
    if ( !$args{replicate} ) {
       $self->{sel_stmt} = $self->{TableNibbler}->generate_asc_stmt(
          %args,
@@ -206,8 +214,7 @@ sub get_sql {
       my $q = $self->{Quoter};
       return 'SELECT /*rows in nibble*/ '
          . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
-         . join(', ', map { $q->quote($_) } @{$self->key_cols()})
-         . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
+         . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $q->quote(@args{qw(database table)})
          . ' ' . ($self->{index_hint} ? $self->{index_hint} : '')
          . ' WHERE (' . $self->__get_boundaries(%args) . ')'

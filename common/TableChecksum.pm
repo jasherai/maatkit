@@ -295,6 +295,7 @@ sub make_row_checksum {
    my %cols = map { lc($_) => 1 }
               grep { !exists $ignorecols{$_} }
               ($args{cols} ? @{$args{cols}} : @{$tbl_struct->{cols}});
+   my %seen;
    my @cols =
       map {
          my $type = $tbl_struct->{type_for}->{$_};
@@ -311,7 +312,7 @@ sub make_row_checksum {
          $result;
       }
       grep {
-         $cols{$_}
+         $cols{$_} && !$seen{$_}++
       }
       @{$tbl_struct->{cols}};
 
@@ -320,7 +321,22 @@ sub make_row_checksum {
    # make_checksum_query() which uses this row checksum as part of a larger
    # checksum.  Other callers, like TableSyncer::make_checksum_queries() call
    # this sub directly and want the actual columns.
-   my $query = $args{no_cols} ? '' : join(', ', @cols) . ', ';
+   my $query;
+   if ( !$args{no_cols} ) {
+      $query = join(', ',
+                  map { 
+                     my $col = $_;
+                     if ( $col =~ m/\+ 0/ ) {
+                        # Alias col name back to itself else its name becomes
+                        # "col + 0" instead of just "col".
+                        my ($real_col) = /^(\S+)/;
+                        $col .= " AS $real_col";
+                     }
+                     $col;
+                  } @cols)
+             . ', ';
+   }
+
    if ( uc $func ne 'FNV_64' && uc $func ne 'FNV1A_64' ) {
       # Add a bitmap of which nullable columns are NULL.
       my @nulls = grep { $cols{$_} } @{$tbl_struct->{null_cols}};

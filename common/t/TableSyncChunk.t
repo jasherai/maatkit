@@ -235,7 +235,7 @@ is(
       database => 'test',
       table    => 'test1',
    ),
-   "SELECT /*rows in chunk*/ `a`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM "
+   "SELECT /*rows in chunk*/ `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM "
       . "`test`.`test1` USE INDEX (`PRIMARY`) WHERE (`a` < 3)"
       . " ORDER BY `a`",
    'SQL now working inside chunk'
@@ -373,7 +373,7 @@ is(
       database => 'test',
       table    => 'test1', 
    ),
-   "SELECT /*rows in chunk*/ `a`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM `test`.`test1`  WHERE (1=1) AND (x > 1 AND x <= 9) ORDER BY `a`",
+   "SELECT /*rows in chunk*/ `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM `test`.`test1`  WHERE (1=1) AND (x > 1 AND x <= 9) ORDER BY `a`",
    'Use only --replicate chunk boundary (row sql)'
 );
 

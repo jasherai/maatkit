@@ -666,7 +666,7 @@ is_deeply(
    \@foo,
    [
       'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, \'0\'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS(\'#\', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`)))), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, \'0\'))) AS crc FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/',
-      'SHA1(CONCAT_WS(\'#\', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`))))',
+      '`package_id`, `location`, `from_city`, SHA1(CONCAT_WS(\'#\', `package_id`, `location`, `from_city`, CONCAT(ISNULL(`package_id`), ISNULL(`location`), ISNULL(`from_city`))))',
    ],
    'make_checksum_queries() does not pass replicate arg'
 );
@@ -688,11 +688,8 @@ SKIP: {
          my $change_dbh;
          my $auth_row;
 
-         my $where = $ch->make_where_clause($lr, $syncer->key_cols());
-         my $sql   = "SELECT `ts` AS `auth_col` FROM " . $ch->src . "WHERE $where";
-
-         my $left_ts  = $args{left_dbh}->selectrow_hashref($sql)->{auth_col};
-         my $right_ts = $args{right_dbh}->selectrow_hashref($sql)->{auth_col};
+         my $left_ts  = $lr->{ts};
+         my $right_ts = $rr->{ts};
          MKDEBUG && TableSyncer::_d("left ts: $left_ts");
          MKDEBUG && TableSyncer::_d("right ts: $right_ts");
 

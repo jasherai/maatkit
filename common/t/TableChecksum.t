@@ -233,7 +233,7 @@ is (
       function  => 'SHA1',
       tbl_struct => $t,
    ),
-     q{`film_id`, `title`, `description`, `release_year`, `language_id`, `original_language_id`, `rental_duration`, `rental_rate`, `length`, `replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
+     q{`film_id`, `title`, `description`, `release_year`, `language_id`, `original_language_id`, `rental_duration`, `rental_rate`, `length`, `replacement_cost`, `rating`, `special_features`, `last_update` + 0 AS `last_update`, }
    . q{SHA1(CONCAT_WS('#', }
    . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
    . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
@@ -249,7 +249,7 @@ is (
       function      => 'FNV_64',
       tbl_struct => $t,
    ),
-     q{`film_id`, `title`, `description`, `release_year`, `language_id`, `original_language_id`, `rental_duration`, `rental_rate`, `length`, `replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
+     q{`film_id`, `title`, `description`, `release_year`, `language_id`, `original_language_id`, `rental_duration`, `rental_rate`, `length`, `replacement_cost`, `rating`, `special_features`, `last_update` + 0 AS `last_update`, }
    . q{FNV_64(}
    . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
    . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }

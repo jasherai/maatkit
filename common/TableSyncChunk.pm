@@ -144,6 +144,10 @@ sub prepare_to_sync {
 
    $self->{ChangeHandler}->fetch_back($args{dbh});
 
+   # Make sure our chunk col is in the list of comparison columns
+   # used by TableChecksum::make_row_checksum() to create $row_sql.
+   push @{$args{cols}}, $args{chunk_col};
+
    my @chunks;
    if ( !$args{replicate} ) {
       my %range_params = $chunker->get_range_statistics(%args);
@@ -199,8 +203,7 @@ sub get_sql {
       my $q = $self->{Quoter};
       return 'SELECT /*rows in chunk*/ '
          . ($self->{buffer_in_mysql} ? 'SQL_BUFFER_RESULT ' : '')
-         . join(', ', map { $q->quote($_) } @{$self->key_cols()})
-         . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
+         . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{Quoter}->quote(@args{qw(database table)})
          . ' '. ($self->{index_hint} || '')
          . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
@@ -236,7 +239,7 @@ sub same_row {
          }
 
          $self->{ChangeHandler}->change(
-            $action,            # Execute an UPDATE
+            $action,            # Execute the action
             $auth_row,          # with these row values
             $self->key_cols(),  # identified by these key cols
             $change_dbh,        # on this dbh

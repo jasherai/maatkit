@@ -262,7 +262,7 @@ $t->done_with_rows();
 is($t->{state}, 2, 'Now in state to fetch individual rows');
 ok($t->pending_changes(), 'Pending changes not done yet');
 is($t->get_sql(database => 'test', table => 'test1'),
-   q{SELECT /*rows in nibble*/ `a`, `b`, SHA1(CONCAT_WS('#', `a`, `b`, `c`)) AS __crc FROM }
+   q{SELECT /*rows in nibble*/ `a`, `b`, `c`, SHA1(CONCAT_WS('#', `a`, `b`, `c`)) AS __crc FROM }
    . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) }
    . q{AND ((`a` < 2) OR (`a` = 2 AND `b` <= 'ca'))))}
    . q{ ORDER BY `a`, `b`},
@@ -440,13 +440,22 @@ $t->prepare_to_sync(
    replicate      => 'issue_560.checksum',
 );
 
+# Must call this else $row_sql will have values from previous test.
+$t->set_checksum_queries(
+   $syncer->make_checksum_queries(
+      src        => $src,
+      dst        => $dst,
+      tbl_struct => $tbl_struct,
+   )
+);
+
 is(
    $t->get_sql(
       where    => 'player_id > 1 AND player_id <= 9',
       database => 'issue_560',
       table    => 'buddy_list', 
    ),
-   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((player_id > 1 AND player_id <= 9))",
+   "SELECT /*issue_560.buddy_list:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_560`.`buddy_list`  WHERE (1=1) AND ((player_id > 1 AND player_id <= 9))",
    'Use only --replicate chunk boundary (chunk sql)'
 );
 
@@ -457,7 +466,7 @@ is(
       database => 'issue_560',
       table    => 'buddy_list', 
    ),
-   "SELECT /*rows in nibble*/ `player_id`, `buddy_id`, SHA1(CONCAT_WS('#', `a`, `b`, `c`)) AS __crc_col FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (player_id > 1 AND player_id <= 9) ORDER BY `player_id`, `buddy_id`",
+   "SELECT /*rows in nibble*/ `player_id`, `buddy_id`, CRC32(CONCAT_WS('#', `player_id`, `buddy_id`)) AS __crc_col FROM `issue_560`.`buddy_list`  WHERE (1=1) AND (player_id > 1 AND player_id <= 9) ORDER BY `player_id`, `buddy_id`",
    'Use only --replicate chunk boundary (row sql)'
 );
 
@@ -498,6 +507,15 @@ $t->prepare_to_sync(
    key_cols       => $tbl_struct->{keys}->{$plugin_args{chunk_index}}->{cols},
 );
 
+# Must call this else $row_sql will have values from previous test.
+$t->set_checksum_queries(
+   $syncer->make_checksum_queries(
+      src        => $src,
+      dst        => $dst,
+      tbl_struct => $tbl_struct,
+   )
+);
+
 # Before fixing issue 804, the code would die during this call, saying:
 # Cannot nibble table `issue_804`.`t` because MySQL chose the
 # `purchases_accountId_purchaseId` index instead of the
@@ -505,7 +523,7 @@ $t->prepare_to_sync(
 $sql = $t->get_sql(database=>'issue_804', table=>'t');
 is(
    $sql,
-   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := SHA1(CONCAT_WS('#', `a`, `b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < 49) OR (`accountid` = 49 AND `purchaseid` <= 50)))",
+   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `accountid`, `purchaseid`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < 49) OR (`accountid` = 49 AND `purchaseid` <= 50)))",
    'SQL nibble for issue_804 table'
 );
 
