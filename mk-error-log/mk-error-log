@@ -1713,6 +1713,7 @@ sub main {
          }
       };
       if ( $EVAL_ERROR ) {
+         warn $EVAL_ERROR;
          _d($EVAL_ERROR);
 
          # Don't ignore failure to open a file, else we'll get
