@@ -2296,7 +2296,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5266
+# TableParser package 5693
 # ###########################################################################
 package TableParser;
 
@@ -2645,7 +2645,10 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         "ADD $_->{ddl}";
+
+         my $key_ddl = "ADD $_->{ddl}";
+         $key_ddl   .= ',' unless $key_ddl =~ m/,$/;
+         $key_ddl;
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
@@ -2967,20 +2970,19 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5266
+# Quoter package 5697
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package Quoter;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   return bless {}, $class;
 }
 
 sub quote {
@@ -3032,7 +3034,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# SlavePrefetch package 5526
+# SlavePrefetch package 5722
 # ###########################################################################
 package SlavePrefetch;
 
@@ -3069,9 +3071,6 @@ sub new {
       last_ts      => 0,
       slave        => undef,
       last_chk     => 0,
-      stats        => {
-         events => 0
-      },
       query_stats  => {},
       query_errors => {},
       callbacks    => {
@@ -3131,12 +3130,6 @@ sub init_stats {
       }
    }
    close $fh or die $OS_ERROR;
-   return;
-}
-
-sub incr_stat {
-   my ( $self, $stat ) = @_;
-   $self->{stats}->{$stat}++;
    return;
 }
 
@@ -3222,6 +3215,7 @@ sub close_relay_log {
 
 sub _check_slave_status {
    my ( $self ) = @_;
+   return 1 unless defined $self->{slave};
    return
       $self->{pos} > $self->{slave}->{pos}
       && ($self->{stats}->{events} - $self->{last_chk}) >= $self->{chk_int}
@@ -3239,7 +3233,7 @@ sub _get_next_chk_int {
 }
 
 sub _get_slave_status {
-   my ( $self, $callback ) = @_;
+   my ( $self ) = @_;
    $self->{stats}->{show_slave_status}++;
 
 
@@ -3249,7 +3243,7 @@ sub _get_slave_status {
       die "No output from SHOW SLAVE STATUS";
    }
    my %status = (
-      running => ($status->{slave_sql_running} || '') eq 'Yes',
+      running => ($status->{slave_sql_running} || '') eq 'Yes' ? 1 : 0,
       file    => $status->{relay_log_file},
       pos     => $status->{relay_log_pos},
       lag   => $status->{master_log_file} eq $status->{relay_master_log_file}
@@ -3267,11 +3261,13 @@ sub _get_slave_status {
 
 sub get_slave_status {
    my ( $self ) = @_;
+   $self->_get_slave_status();
    return $self->{slave};
 }
 
 sub slave_is_running {
-   my ( $self ) = @_;
+   my ( $self, $dbh ) = @_;
+   $self->_get_slave_status() unless defined $self->{slave};
    return $self->{slave}->{running};
 }
 
@@ -3305,13 +3301,13 @@ sub reset_pipeline_pos {
    return;
 }
 
-sub pipeline_event {
-   my ( $self, $event, @callbacks ) = @_;
-   $self->{stats}->{events}++;
+sub in_window {
+   my ( $self, $event ) = @_;
+
 
    if ( !$event->{offset} ) {
       MKDEBUG && _d('Event has no offset, skipping');
-      $self->{stats}->{event_without_offset}++;
+      $self->{stats}->{no_offset}++;
       return;
    }
 
@@ -3333,43 +3329,36 @@ sub pipeline_event {
       MKDEBUG && _d('Next check interval:', $self->{chk_int});
    }
 
-   return unless $self->_in_window();
+   return $event if $self->_in_window();
+}
 
-   if ( $event->{arg} ) {
-      if ( my ($file) = $event->{arg} =~ m/INFILE ('[^']+')/i ) {
-         $self->{stats}->{load_data_infile}++;
-         if ( !unlink($file) ) {
-            MKDEBUG && _d('Could not unlink', $file);
-            $self->{stats}->{could_not_unlink}++;
-         }
-         return;
-      }
+sub rewrite_query { 
+   my ( $self, $event ) = @_;
 
-      my ($query, $fingerprint) = $self->prepare_query($event->{arg});
-      if ( !$query ) {
-         MKDEBUG && _d('Failed to prepare query, skipping');
-         return;
-      }
-
-      my $db = $event->{db};
-      if ( $db && (!$self->{last_db} || $self->{last_db} ne $db) ) {
-         MKDEBUG && _d('Change db, last:', $self->{last_db}, 'current:', $db);
-         $self->{callbacks}->{use_db}->($self->{dbh}, $db);
-         $self->{last_db} = $db;
-      }
-      $self->{stats}->{no_database}++ unless $self->{last_db};
-
-      $self->{stats}->{do_query}++;
-      foreach my $callback ( @callbacks ) {
-         $callback->(
-            query       => $query,
-            fingerprint => $fingerprint,
-            db          => $self->{last_db},
-         );
-      }
+   if ( !$event->{arg} ) {
+      $self->{stats}->{no_arg}++;
+      return;
    }
 
-   return;
+   if ( my ($file) = $event->{arg} =~ m/INFILE ('[^']+')/i ) {
+      $self->{stats}->{load_data_infile}++;
+      if ( !unlink($file) ) {
+         MKDEBUG && _d('Could not unlink', $file);
+         $self->{stats}->{could_not_unlink}++;
+      }
+      return;
+   }
+
+   my ($query, $fingerprint) = $self->prepare_query($event->{arg});
+   if ( !$query ) {
+      MKDEBUG && _d('Failed to prepare query, skipping');
+      return;
+   }
+   $event->{arg_original} = $event->{arg};
+   $event->{arg}          = $query;  # SELECT query
+   $event->{fingerprint}  = $fingerprint;
+
+   return $event;
 }
 
 sub get_window {
@@ -3402,11 +3391,11 @@ sub _in_window {
       mfile     => $self->{slave}->{mfile},
       until_pos => $self->next_window(),
    );
-   my $oktorun = 1;
-   while ( ($oktorun = $self->{oktorun}->(only_if_slave_is_running => 1,
-                              slave_is_running => $self->slave_is_running()))
-           && ($self->_too_far_ahead() || $self->_too_close_to_io()) )
-   {
+
+   my $oktorun = $self->{oktorun};
+   while ( $oktorun->()
+           && $self->{slave}->{running}
+           && ($self->_too_far_ahead() || $self->_too_close_to_io()) ) {
       $self->{stats}->{master_pos_wait}++;
       if ( $wait_for_master->(%wait_args) > 0 ) {
          if ( $self->_too_far_ahead() ) {
@@ -3422,14 +3411,17 @@ sub _in_window {
       $self->_get_slave_status();
    }
 
-   if ( !$oktorun ) {
-      MKDEBUG && _d('Not oktorun while waiting for event',
-         $self->{stats}->{events});
-      return 0;
+   if (     $self->{slave}->{running}
+        &&  $self->_far_enough_ahead()
+        && !$self->_too_far_ahead()
+        && !$self->_too_close_to_io() )
+   {
+      MKDEBUG && _d('Event', $self->{stats}->{events}, 'is in the window');
+      return 1;
    }
 
-   MKDEBUG && _d('Event', $self->{stats}->{events}, 'is in the window');
-   return 1;
+   MKDEBUG && _d('Event', $self->{stats}->{events}, 'is not in the window');
+   return 0;
 }
 
 sub _far_enough_ahead {
@@ -3516,7 +3508,7 @@ sub prepare_query {
    if ( $select !~ m/\A\s*(?:set|select|use)/i ) {
       MKDEBUG && _d('Cannot rewrite query as SELECT:',
          (length $query > 240 ? substr($query, 0, 237) . '...' : $query));
-      _d($query) if $self->{'print-nonrewritten'};
+      _d("Not rewritten: $query") if $self->{'print-nonrewritten'};
       $self->{stats}->{query_not_rewritten}++;
       return;
    }
@@ -3552,8 +3544,7 @@ sub _wait_skip_query {
       timeout   => $wait,
    );
    my $start = gettimeofday();
-   while ( $self->{oktorun}->(only_if_slave_is_running => 1,
-                              slave_is_running => $self->slave_is_running())
+   while ( $self->{slave}->{running}
            && ($self->{slave}->{pos} <= $self->{pos}) ) {
       $self->{stats}->{master_pos_wait}++;
       $wait_for_master->(%wait_args);
@@ -3666,7 +3657,10 @@ $Data::Dumper::Quotekeys = 0;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # $oktorun must be global so finish() can access it if we catch a signal.
-my $oktorun = 1;
+my $oktorun  = 1;
+my $sentinel = '';
+my $run_time;
+my $end;
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
@@ -3706,7 +3700,7 @@ sub main {
    # First things first: if --stop was given, create the sentinel file.
    # ########################################################################
    if ( $o->get('stop') ) {
-      my $sentinel = $o->get('sentinel');
+      $sentinel = $o->get('sentinel');
       open my $file, ">", $sentinel
          or die "Cannot open $sentinel: $OS_ERROR\n";
       print $file "Remove this file to permit mk-slave-prefetch to run\n"
@@ -3727,8 +3721,8 @@ sub main {
    }
    my $dsn = $dp->parse_options($o);
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
-   $dbh->{FetchHashKeyName} = 'NAME_lc';
    $dbh->{InactiveDestroy}  = 1;
+   $dbh->{FetchHashKeyName} = 'NAME_lc';
    $dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
 
    # ########################################################################
@@ -3747,209 +3741,278 @@ sub main {
    }
 
    # ########################################################################
-   # Ready to work now.
+   # Make common modules.
    # ########################################################################
+   my $stats   = {
+      events       => 0,
+      query_stats  => {},
+      query_errors => {},
+   };
+   my $datadir = $dbh->selectrow_arrayref('SHOW VARIABLES LIKE "datadir"')->[1];
+   MKDEBUG && _d('Data directory', $datadir);
+
    my $lp  = new BinaryLogParser();
    my $qr  = new QueryRewriter();
    my $vp  = new VersionParser();
+   my $spf = new SlavePrefetch(
+      dbh                  => $dbh,
+      oktorun              => \&oktorun,
+      chk_int              => $chk_int,
+      chk_min              => $chk_min,
+      chk_max              => $chk_max,
+      datadir              => $datadir,
+      QueryRewriter        => $qr,
+      have_subqueries      => $vp->version_ge($dbh,'4.1.0'),
+      stats                => $stats,
+      stats_file           => shift @ARGV,
+      offset               => $o->get('offset'),
+      window               => $o->get('window'),
+      'io-lag'             => $o->get('io-lag'),
+      'query-sample-size'  => $o->get('query-sample-size'),
+      errors               => $o->get('errors'),
+      'num-prefix'         => $o->get('num-prefix'),
+      'max-query-time'     => $o->get('max-query-time'),
+      'print-nonrewritten' => $o->get('print-nonrewritten'),
+      'reject-regexp'      => $o->get('reject-regexp'),
+      'permit-regexp'      => $o->get('permit-regexp'),
+      progress             => $o->get('progress'),
+   );
 
-   my ($datadir) = ($dbh->selectrow_array('SHOW VARIABLES LIKE "datadir"'))[1];
-   MKDEBUG && _d('Data directory', $datadir);
-
-   # Create the prefetching threads.
-   my $query_queue = new Thread::Queue;
-   my $n_threads   = $o->get('threads') || 1;
-
-   # To avoid having threads close/re-open MySQL connections, we pre-create a
-   # connection for each thread.  $dbhs[0] is our connection (the script),
-   # and $dbhs[1..n_threads-1] are for the threads.  Thread IDs start at 1
-   # and are unique so they shouldn't overlap. -- Originally I wanted to
-   # enqueue the dbh with the query but dequeue(COUNT) only works with
-   # Thread::Queue v2.01+ but Perl v5.10.0 has v2.00; Perl 5.10.1 is needed
-   # which has v2.11.  So this is the more backwards-compatible solution
-   # (i.e. it should work in Perl 5.8, too).
-   my @dbhs = ($dbh);
-
+   my ($q, $tp, $du, $qp); 
    if ( $o->get('secondary-indexes') ) {
-      MKDEBUG && _d('Creating', $n_threads, 'threads for --secondary-indexes');
-      for ( 0..$n_threads-1 ) {
-         # Create a connection for this thread.
-         my $thr_dbh = $dp->get_dbh($dp->get_cxn_params($dsn),
-               { AutoCommit => 1 });
-         $thr_dbh->{FetchHashKeyName} = 'NAME_lc';
-         $thr_dbh->{InactiveDestroy}  = 1;
-         $thr_dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
-         push @dbhs, $thr_dbh;
+      $q   = new Quoter();
+      $tp  = new TableParser(Quoter => $q);
+      $du  = new MySQLDump(cache => 0);
+      $qp  = new QueryParser();
+   }
 
-         my $thr = threads::async {
-            my $query;
-            my $curdb = '';
-            my $tid = threads->self()->tid();
-            # This doesn't actually print.
-            MKDEBUG && _d('Thread', $tid, 'is alive');
-            while( $query = $query_queue->dequeue() ) {
-               my ($db, $sql) = ($query->[0], $query->[1]);
-               if ( $sql) {
-                  if ( $db && (!$curdb || $curdb ne $db) ) {
-                     $dbhs[$tid]->do("USE `$db`");
-                     $curdb = $db;
-                  }
-                  eval { $dbhs[$tid]->do($sql); };
-                  MKDEBUG && $EVAL_ERROR && _d('Error executing', $sql, ':',
-                     $EVAL_ERROR);
-               }
+   # ########################################################################
+   # Create threads to execute and/or print primary and secondary queries.
+   # ########################################################################
+   # A pipeline process will enqueue rewritten queries which these threads
+   # then either execute or print.  They're also responsible for doing
+   # secondary index queries for --secondary-indexes.
+   my $query_queue  = new Thread::Queue;
+   my $n_threads    = $o->get('threads') || 1;
+   MKDEBUG && _d('Creating', $n_threads, 'threads');
+   for ( 1..$n_threads ) {
+      my $thr = threads::async {
+         my $tdbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit => 1});
+         $tdbh->{InactiveDestroy}  = 1;
+         $tdbh->{FetchHashKeyName} = 'NAME_lc';
+         $tdbh->do('/*!40001 set @@session.query_cache_type=OFF */');
+
+         my $curdb = '';
+         my $tid    = threads->self()->tid();
+         MKDEBUG && _d('Thread', $tid, 'is alive');
+
+         # Originally I wanted to enqueue the dbh with the query but
+         # dequeue(COUNT) only works with Thread::Queue v2.01+ but
+         # Perl v5.10.0 has v2.00; Perl 5.10.1 is needed which has v2.11.
+         # So this is the more backwards-compatible solution (it should
+         # work in Perl 5.8+). I also wanted to enqueue a hashref
+         # (i.e. the event) but this isn't possible until v2.08/v5.10.1.
+         while( my $event = $query_queue->dequeue() ) {
+            my ($db, $query) = @$event;
+            my @sql;
+            if ( $db && (!$curdb || $curdb ne $db) ) {
+               push @sql, "USE `$db`";
+               $curdb = $db;
             }
-            MKDEBUG && _d('Thread', $tid, 'is done');
-         };
-         $thr->detach();
-         MKDEBUG && _d('Thread', $thr->tid(), 'created and detached');
-      }
-   }
-
-   # Declare these before new SlavePrefetch so they're available to the
-   # oktorun callback arg but don't define them yet because spf->new()
-   # could be slow if it has a huge stats_file to initialize. 
-   my $time;
-   my $now;
-   my $end;
-   my %oktorun_args = (
-      sentinel => $o->get('sentinel'),
-      time     => $time,
-      end      => $end,
-      now      => \$now,
-   );
-
-   # Declare but don't define $spf yet so we can reference it in a
-   # callback to itself that's passed in @callbacks to $spf->new().
-   my $spf;
-   my @callbacks;
-   if ( $o->get('print') ) {
-      push @callbacks, sub {
-         my ( %args ) = @_;
-         MKDEBUG && _d('callback: print');
-         print "-- primary query\n" if $o->get('secondary-indexes');
-         print "use `$args{last_db}`\n" if $args{last_db};
-         print $args{query}, ";\n";
-         return;
-      };
-   }
-   
-   if ( $o->get('execute') ) {
-      push @callbacks, sub {
-         MKDEBUG && _d('callback: execute');
-         return $spf->exec(@_);  # execute primary query
-      };
-
-      if ( $o->get('secondary-indexes') ) {
-         my $q   = new Quoter();
-         my $tp  = new TableParser(Quoter => $q);
-         my $du  = new MySQLDump(cache => 0);
-         my $qp  = new QueryParser();
-
-         push @callbacks, sub {
-            my ( %args ) = @_;
-            MKDEBUG && _d('callback: secondary indexes');
-            my @secondary_index_queries = get_secondary_index_queries(
-               %args,
-               dbh         => $dbh,  # script dbh for SHOW CREATE TABLE, etc.
-               MySQLDump   => $du,
-               TableParser => $tp,
-               Quoter      => $q,
-               QueryParser => $qp,
-            );
-            my $db = $args{last_db};
-            if ( $o->get('print') ) {
-               print "-- secondary index queries\n";
-               print join("\n", @secondary_index_queries), "\n";   
-            }
-            $query_queue->enqueue(map { [$db, $_] } @secondary_index_queries);
-            return;
-         };
-      }
-   }
-
-   my %spf_options = map { $_ => $o->get($_) } qw(
-      offset
-      window
-      io-lag
-      query-sample-size
-      errors
-      num-prefix
-      max-query-time
-      print-nonrewritten
-      reject-regexp
-      permit-regexp
-      progress
-   );
-   $spf = new SlavePrefetch(
-      dbh             => $dbh,
-      oktorun         => sub {
-         my ( %args_from_spf ) = @_;
-         return oktorun(
-            %args_from_spf,
-            %oktorun_args,
-         );
-      },
-      chk_int         => $chk_int,
-      chk_min         => $chk_min,
-      chk_max         => $chk_max,
-      datadir         => $datadir,
-      QueryRewriter   => $qr,
-      have_subqueries => $vp->version_ge($dbh,'4.1.0'),
-      stats_file      => shift @ARGV,
-      %spf_options,
-   );
-
-   $time = $o->get('run-time');
-   $now  = time();
-   $end  = $now + ( $time || 0 );  # When we should exit
-
-   eval {
-      while ( oktorun(%oktorun_args) ) {
-         $spf->_get_slave_status();
-         if ( $spf->slave_is_running() ) {
-            my $fh          = $spf->open_relay_log(tmpdir => $o->get('tmpdir'));
-            my $next_event  = sub { return <$fh>;    };
-            my $tell        = sub { return tell $fh; };
-            my $more_events     = 1;
-            my $more_events_sub = sub { $more_events = $_[0]; };
-            EVENT:
-            while (
-               oktorun(
-                  only_if_slave_is_running => 1,
-                  slave_is_running         => $spf->slave_is_running(),
-                  %oktorun_args) )
-            {
-               my $event = $lp->parse_event(
-                  next_event => $next_event,
-                  tell       => $tell,
-                  oktorun    => $more_events_sub,
+            push @sql, $query;  # primary query
+            if ( $o->get('secondary-indexes') ) {
+               push @sql, get_secondary_index_queries(
+                  dbh         => $tdbh,
+                  MySQLDump   => $du,
+                  TableParser => $tp,
+                  Quoter      => $q,
+                  QueryParser => $qp,
                );
-               if ( $event ) {
-                  $spf->pipeline_event($event, @callbacks);
+            }
+            foreach my $sql ( @sql ) {
+               if ( $o->get('execute') ) {
+                  eval {
+                     $tdbh->do($sql);
+                  };
+                   warn "Thread $tid failed to executed query: $EVAL_ERROR"
+                     if $EVAL_ERROR;
                }
-               last EVENT unless $more_events;
+               print "$sql /*tid$tid*/\n" if $o->get('print');
+            }
+         }  # dequeue
+         $tdbh->disconnect();
+         MKDEBUG && _d('Thread', $tid, 'is done');
+      };  # thread code
+
+      $thr->detach();
+      MKDEBUG && _d('Thread', $thr->tid(), 'created and detached');
+   }
+
+   # ########################################################################
+   # Create the pipeline of processes.
+   # ########################################################################
+   my @pipeline;
+
+   if ( !$o->get('dry-run') ) {
+      push @pipeline, sub {
+         my ( %args ) = @_;
+         # TODO: is this effective?
+         if ( !$spf->slave_is_running() ) {
+            MKDEBUG && _d('Slave is not running');
+            sleep 1;
+            $spf->get_slave_status();
+            return;
+         }
+         return $args{event};
+      };
+   }
+
+   # Parse events from relay log.
+   push @pipeline, sub {
+      my ( %args ) = @_;
+      my $event = $lp->parse_event(%args);
+      # SlavePrefetch requires $stats->{events} so we must keep it accurate.
+      $stats->{events}++ if $event;
+      return $event;
+   };
+
+   # Carry forward last known database.
+   my $last_db;
+   push @pipeline, sub {
+      my ( %args ) = @_;
+      my $event    = $args{event};
+      $event->{db} = $last_db unless $event->{db};
+      $last_db     = $event->{db} if ($last_db || '') ne ($event->{db} || '');
+      return $event;
+   };
+
+   # Check that we're in the window for execution.
+   if ( !$o->get('dry-run') ) {
+      push @pipeline, sub {
+         my ( %args ) = @_;
+         return $spf->in_window($args{event});
+      }
+   }
+
+   # Enqueue the rewritten query, processed by the threads.
+   push @pipeline, sub {
+      my ( %args ) = @_;
+      my $event = $spf->rewrite_query($args{event});
+      if ( $event ) {
+         # See comments above dequeue() regarding why we cannot
+         # enqueue a hashref.
+         my @event :shared = (
+            $event->{db},
+            $event->{arg},
+         );
+         $query_queue->enqueue(\@event);
+         MKDEBUG && _d('Enqueued query');
+         return $event;
+      }
+      return;
+   };
+
+   # ########################################################################
+   # The main work.
+   # ########################################################################
+   my $fh;
+   my $next_event;
+   my $tell;
+   my $relay_logs = [ $o->get('relay-log') ];  # only reads 1 file for now
+   my $more_events;
+   my $oktorun_sub = sub { $more_events = $_[0]; };
+
+   my $slave_is_running;
+   if ( $o->get('dry-run') ) {
+      $slave_is_running = sub { return 1; };
+   }
+   else {
+      $slave_is_running = sub {
+         return $spf->slave_is_running();
+      };
+   }
+
+   # Checked in oktorun()
+   $run_time = $o->get('run-time');
+   $end      = time + ($run_time || 0);  # When we should exit
+
+   EVENT:
+   while ( oktorun() && $slave_is_running->() ) {
+      if ( !$fh ) {
+         if ( $o->got('relay-log') ) {
+            my $file = shift @$relay_logs;
+            if ( !$file ) {
+               MKDEBUG && _d('No more relay logs to parse');
+               last EVENT;
+            }
+            if ( $file eq '-' ) {
+               $fh = *STDIN;
+               MKDEBUG && _d('Reading STDIN');
+            }
+            else {
+               MKDEBUG && _d('Opening', $file);
+               if ( !open $fh, '<', $file ) {
+                  warn "Cannot open $file: $OS_ERROR";
+                  $fh = undef;
+                  next EVENT;
+               }
             }
          }
          else {
-            MKDEBUG && _d('Slave is not running');
+            $fh = $spf->open_relay_log(tmpdir => $o->get('tmpdir'));
+            if ( !$fh ) {
+               warn "Failed to open slave relay log";
+               last EVENT;
+            }
          }
-
-         if ( oktorun(%oktorun_args) ) {
-            $spf->incr_stat('sleep');
-            MKDEBUG && _d('Sleeping', time);
-            sleep 1;
-         }
+         $next_event  = sub { return <$fh>;    };
+         $tell        = sub { return tell $fh; };
+         $more_events = 1;
       }
-      # Reset pos, next, etc. before next run.
-      $spf->reset_pipeline_pos();
-   };
-   if ( $EVAL_ERROR ) {
-      print $EVAL_ERROR;
-   }
+
+      eval {
+         my $event = {};
+         foreach my $process ( @pipeline ) {
+            last unless oktorun();
+            $event = $process->(
+               event      => $event,
+               next_event => $next_event,
+               tell       => $tell,
+               oktorun    => $oktorun_sub,
+               fh         => $fh,
+               dbh        => $dbh,
+            );
+            last unless $event;
+         }
+         if ( !$more_events ) {
+            MKDEBUG && _d('No more events');
+            close $fh if $fh;
+            $fh = undef;
+
+            # If running live, no more events means we've parsed the
+            # entire relay log and there's nothing left for us or the
+            # slave to do.  So wait a second to see if the slave receives
+            # more replicated statements.
+            if ( !$o->get('dry-run') ) {
+               MKDEBUG && _d('Waiting 1s for more relay log events');
+               sleep 1;
+            }
+         }
+      };
+      if ( $EVAL_ERROR ) {
+         warn $EVAL_ERROR;
+         _d($EVAL_ERROR);
+         next EVENT if $o->get('continue-on-error');
+         close $fh if $fh;
+         last EVENT;
+      }
+   }  # EVENT
 
    # Print statistics
-   my ($stats, $query_stats, $query_errors) = $spf->get_stats();
+   my $query_stats  = $stats->{query_stats};
+   my $query_errors = $stats->{query_errors};
+   delete $stats->{query_stats};
+   delete $stats->{query_errors};
    if ( $o->get('statistics') ) {
       # Print operations in order of descending count, with percentage.
       my $maxlen = max(0, map { length($_) } keys %$stats);
@@ -4003,32 +4066,24 @@ sub finish {
    return;
 }
 
-# It's ok to run if we haven't been told to stop, we haven't exceeded the
-# time.  The parameter adds the further restriction that the slave must be
-# running.
+# Return true if it's still ok to run, else return false.
 sub oktorun {
    my ( %args ) = @_;
 
    # These default vals make it oktorun.
-   my $only_if_slave_running = $args{only_if_slave_is_running} || 0;
-   my $slave_is_running      = $args{slave_is_running} || 0;
-   my $sentinel              = $args{sentinel} || '';
-   my $time                  = $args{time} || 0;
-   my $end                   = $args{end} || 0;
-   my $now                   = $args{now} || 0;
+   # my $only_if_slave_running = $args{only_if_slave_is_running} || 0;
+   # my $slave_is_running      = $args{slave_is_running} || 0;
+   #  (!$only_if_slave_running || $slave_is_running)
 
-   # Notice the dereference: we're modifying the arg!
-   $$now = time() if $now && ref $now;
-
-   return (!$only_if_slave_running || $slave_is_running)
-      && !-f $sentinel
-      && ((!$time || $now < $end) && $oktorun);
+   return                             # oktorun if
+      !-f $sentinel                   # no sentinel file and
+      && (!$run_time || time < $end)  # no runtime or before end time and
+      && $oktorun;                    # oktorun
 }
 
 sub get_secondary_index_queries {
    my ( %args ) = @_;
-   my @required_args = qw(dbh query
-                          MySQLDump TableParser Quoter QueryParser);
+   my @required_args = qw(dbh query MySQLDump TableParser Quoter QueryParser);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -4247,7 +4302,7 @@ User-contributed benchmarks are welcome.
 
 =head1 OPTIONS
 
-Specify at least one of L<"--print">, L<"--[no]execute"> or L<"--stop">.
+Specify at least one of L<"--print">, L<"--execute"> or L<"--stop">.
 
 =over
 
@@ -4284,6 +4339,12 @@ type: Array
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
 
+=item --[no]continue-on-error
+
+default: yes
+
+Continue parsing even if there is an error.
+
 =item --daemonize
 
 Fork to the background and detach from the shell.  POSIX
@@ -4304,6 +4365,15 @@ short form: -F; type: string
 Only read mysql options from the given file.  You must give an absolute
 pathname.
 
+=item --dry-run
+
+Ignore replication checks and just read and rewrite the relay log events.
+
+This option make mk-slave-prefetch ignore all relay log related checks
+for position, slave lag, etc. and simply causes the tool to read and rewrite
+all the events in the relay log.  A connection to the slave server is still
+required.
+
 =item --errors
 
 cumulative: yes
@@ -4316,9 +4386,7 @@ execution, showing the normalized queries and the number of times they were
 seen.  If you specify this option twice, you will see the errors printed out as
 they occur, but no normalized report at the end of execution.
 
-=item --[no]execute
-
-default: yes
+=item --execute
 
 Execute the transformed queries to warm the caches.
 
@@ -4464,6 +4532,21 @@ type: string
 
 Reject queries matching this Perl regexp.  Similar to L<"--permit-regexp">, but
 has the opposite effect: log events must B<not> match the regular expression.
+
+=item --relay-log
+
+type: string
+
+Read only the specified relay log file; - to read from STDIN.
+
+By default the slave's current C<Relay_Log_File> reported by
+C<SHOW SLAVE STATUS>) is read.  This option allows you to specify a relay
+log file that has already be converted to text by C<mysqlbinlog>.
+The tool will exit after reading and parsing this file.
+
+This option is useful with L<"--dry-run"> and L<"--print"> if you want to
+see how the tool would rewrite the relay log's events without executing
+them or having to wait for a lagged slave.
 
 =item --run-time
 

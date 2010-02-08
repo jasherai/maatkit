@@ -1,0 +1,56 @@
+/*!40019 SET @@session.max_insert_delayed_threads=0*/;
+/*!50003 SET @OLD_COMPLETION_TYPE=@@COMPLETION_TYPE,COMPLETION_TYPE=0*/;
+DELIMITER /*!*/;
+# at 4
+#100208  9:06:50 server id 12346  end_log_pos 98 	Start: binlog v 4, server v 5.0.82-log created 100208  9:06:50
+BINLOG '
+mjZwSw86MAAAXgAAAGIAAAAAAAQANS4wLjgyLWxvZwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAEzgNAAgAEgAEBAQEEgAASwAEGg==
+'/*!*/;
+# at 98
+#691231 17:00:00 server id 12345  end_log_pos 0 	Rotate to mysql-bin.000001  pos: 4
+# at 141
+#100208  9:06:50 server id 12345  end_log_pos 98 	Start: binlog v 4, server v 5.0.82-log created 100208  9:06:50 at startup
+ROLLBACK/*!*/;
+BINLOG '
+mjZwSw85MAAAXgAAAGIAAAAAAAQANS4wLjgyLWxvZwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAACaNnBLEzgNAAgAEgAEBAQEEgAASwAEGg==
+'/*!*/;
+# at 235
+#100208  9:07:01 server id 12345  end_log_pos 179 	Query	thread_id=485	exec_time=0	error_code=0
+SET TIMESTAMP=1265645221/*!*/;
+SET @@session.pseudo_thread_id=485/*!*/;
+SET @@session.foreign_key_checks=1, @@session.sql_auto_is_null=1, @@session.unique_checks=1/*!*/;
+SET @@session.sql_mode=0/*!*/;
+SET @@session.auto_increment_increment=1, @@session.auto_increment_offset=1/*!*/;
+/*!\C latin1 *//*!*/;
+SET @@session.character_set_client=8,@@session.collation_connection=8,@@session.collation_server=8/*!*/;
+SET @@session.lc_time_names=0/*!*/;
+SET @@session.collation_database=DEFAULT/*!*/;
+create database foo
+/*!*/;
+# at 316
+#100208  9:07:07 server id 12345  end_log_pos 265 	Query	thread_id=485	exec_time=0	error_code=0
+use foo/*!*/;
+SET TIMESTAMP=1265645227/*!*/;
+create table bar (i int)
+/*!*/;
+# at 402
+#100208  9:07:18 server id 12345  end_log_pos 365 	Query	thread_id=485	exec_time=0	error_code=0
+SET TIMESTAMP=1265645238/*!*/;
+insert into foo.bar values (1),(2),(3)
+/*!*/;
+# at 502
+#100208  9:07:24 server id 12345  end_log_pos 452 	Query	thread_id=485	exec_time=0	error_code=0
+SET TIMESTAMP=1265645244/*!*/;
+delete from bar where i=2
+/*!*/;
+# at 589
+#100208  9:07:34 server id 12345  end_log_pos 542 	Query	thread_id=485	exec_time=0	error_code=0
+SET TIMESTAMP=1265645254/*!*/;
+update bar set i=6 where i=3
+/*!*/;
+DELIMITER ;
+# End of log file
+ROLLBACK /* added by mysqlbinlog */;
+/*!50003 SET COMPLETION_TYPE=@OLD_COMPLETION_TYPE*/;
