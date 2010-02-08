@@ -5119,7 +5119,7 @@ sub do_tbl_replicate {
    MKDEBUG && _d($sql);
    my $warnings = $dbh->selectall_arrayref($sql, { Slice => {} } );
    foreach my $warning ( @$warnings ) {
-      if ( $warning->{Message} =~ m/Data truncated for column 'boundaries'/ ) {
+      if ( $warning->{message} =~ m/Data truncated for column 'boundaries'/ ) {
          _d("Warning: WHERE clause too large for boundaries column; ",
             "mk-table-sync may fail; value:", $where);
       }
@@ -5285,7 +5285,8 @@ sub get_cxn {
    my $ac  = $o->get('lock') ? 0 : 1;
    my $dbh = $dp->get_dbh(
       $dp->get_cxn_params($dsn), { AutoCommit => $ac });
-   $dbh->{InactiveDestroy} = 1; # Prevent destroying on fork.
+   $dbh->{InactiveDestroy}  = 1; # Prevent destroying on fork.
+   $dbh->{FetchHashKeyName} = 'NAME_lc';
    return $dbh;
 }
 
