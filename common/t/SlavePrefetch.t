@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 66;
+use Test::More tests => 65;
 
 use SlavePrefetch;
 use QueryRewriter;
@@ -40,6 +40,7 @@ my $spf = new SlavePrefetch(
    datadir         => '/tmp/12346/data',
    QueryRewriter   => $qr,
    have_subqueries => 1,
+   stats           => { events => 0 },
 );
 isa_ok($spf, 'SlavePrefetch');
 
@@ -171,14 +172,6 @@ is(
    'No error setting show_slave_status callback'
 );
 
-# We don't have slave stats yet, so this should be undefined.
-is(
-   $spf->slave_is_running(),
-   undef,
-   'Slave is not running'
-);
-
-$spf->_get_slave_status(\&show_slave_status);
 is_deeply(
    $spf->get_slave_status(),
    {
@@ -840,6 +833,7 @@ SKIP: {
       datadir         => '/tmp/12346/data',
       QueryRewriter   => $qr,
       have_subqueries => 1,
+      stats           => { events => 0 },
    );
 
    # Test that exec() actually executes the query.

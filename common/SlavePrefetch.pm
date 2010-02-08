@@ -22,6 +22,8 @@ package SlavePrefetch;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Carp;
+$SIG{__DIE__} = sub { confess ''; };
 
 use List::Util qw(min max sum);
 use Time::HiRes qw(gettimeofday);
@@ -39,6 +41,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 #   * chk_min            Minimum check interval
 #   * chk_max            Maximum check interval 
 #   * datadir            datadir system var
+#   * stats              hashref for stat counters
 #   * QueryRewriter      Common module
 #   * stats_file         (optional) Filename with saved stats
 #   * have_subqueries    (optional) bool: Yes if MySQL >= 4.1.0
@@ -73,9 +76,6 @@ sub new {
       last_ts      => 0,
       slave        => undef,
       last_chk     => 0,
-      stats        => {
-         events => 0
-      },
       query_stats  => {},
       query_errors => {},
       callbacks    => {
@@ -136,12 +136,6 @@ sub init_stats {
       }
    }
    close $fh or die $OS_ERROR;
-   return;
-}
-
-sub incr_stat {
-   my ( $self, $stat ) = @_;
-   $self->{stats}->{$stat}++;
    return;
 }
 
@@ -262,7 +256,7 @@ sub _get_next_chk_int {
 # $self->{slave}.  The public interface to return $self->{slave}
 # is get_slave_status().
 sub _get_slave_status {
-   my ( $self, $callback ) = @_;
+   my ( $self ) = @_;
    $self->{stats}->{show_slave_status}++;
 
    # Remember to $dbh->{FetchHashKeyName} = 'NAME_lc'.
@@ -273,7 +267,7 @@ sub _get_slave_status {
       die "No output from SHOW SLAVE STATUS";
    }
    my %status = (
-      running => ($status->{slave_sql_running} || '') eq 'Yes',
+      running => ($status->{slave_sql_running} || '') eq 'Yes' ? 1 : 0,
       file    => $status->{relay_log_file},
       pos     => $status->{relay_log_pos},
                  # If the slave SQL thread is executing from the same log the
@@ -296,11 +290,13 @@ sub _get_slave_status {
 # Public interface for returning the current/last slave status.
 sub get_slave_status {
    my ( $self ) = @_;
+   $self->_get_slave_status();
    return $self->{slave};
 }
 
 sub slave_is_running {
-   my ( $self ) = @_;
+   my ( $self, $dbh ) = @_;
+   $self->_get_slave_status() unless defined $self->{slave};
    return $self->{slave}->{running};
 }
 
@@ -455,11 +451,11 @@ sub _in_window {
       mfile     => $self->{slave}->{mfile},
       until_pos => $self->next_window(),
    );
-   my $oktorun = 1;
-   while ( ($oktorun = $self->{oktorun}->(only_if_slave_is_running => 1,
-                              slave_is_running => $self->slave_is_running()))
-           && ($self->_too_far_ahead() || $self->_too_close_to_io()) )
-   {
+
+   my $oktorun = $self->{oktorun};
+   while ( $oktorun->()
+           && $self->{slave}->{running}
+           && ($self->_too_far_ahead() || $self->_too_close_to_io()) ) {
       # Don't increment stats if the slave didn't catch up while we
       # slept.
       $self->{stats}->{master_pos_wait}++;
@@ -477,14 +473,17 @@ sub _in_window {
       $self->_get_slave_status();
    }
 
-   if ( !$oktorun ) {
-      MKDEBUG && _d('Not oktorun while waiting for event',
-         $self->{stats}->{events});
-      return 0;
+   if (     $self->{slave}->{running}
+        &&  $self->_far_enough_ahead()
+        && !$self->_too_far_ahead()
+        && !$self->_too_close_to_io() )
+   {
+      MKDEBUG && _d('Event', $self->{stats}->{events}, 'is in the window');
+      return 1;
    }
 
-   MKDEBUG && _d('Event', $self->{stats}->{events}, 'is in the window');
-   return 1;
+   MKDEBUG && _d('Event', $self->{stats}->{events}, 'is not in the window');
+   return 0;
 }
 
 # Whether we are slave pos+offset ahead of the slave.
@@ -650,8 +649,7 @@ sub _wait_skip_query {
       timeout   => $wait,
    );
    my $start = gettimeofday();
-   while ( $self->{oktorun}->(only_if_slave_is_running => 1,
-                              slave_is_running => $self->slave_is_running())
+   while ( $self->{slave}->{running}
            && ($self->{slave}->{pos} <= $self->{pos}) ) {
       $self->{stats}->{master_pos_wait}++;
       $wait_for_master->(%wait_args);
