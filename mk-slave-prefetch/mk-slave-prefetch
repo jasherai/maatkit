@@ -3647,6 +3647,7 @@ use English qw(-no_match_vars);
 use threads;
 use Thread::Queue;
 use List::Util qw(max sum);
+use Time::HiRes qw(sleep);
 use sigtrap qw(handler finish untrapped normal-signals);
 
 use Data::Dumper;
@@ -3658,7 +3659,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # $oktorun must be global so finish() can access it if we catch a signal.
 my $oktorun  = 1;
-my $sentinel = '';
+my $sentinel;
 my $run_time;
 my $end;
 
@@ -3699,8 +3700,8 @@ sub main {
    # ########################################################################
    # First things first: if --stop was given, create the sentinel file.
    # ########################################################################
+   $sentinel = $o->get('sentinel');
    if ( $o->get('stop') ) {
-      $sentinel = $o->get('sentinel');
       open my $file, ">", $sentinel
          or die "Cannot open $sentinel: $OS_ERROR\n";
       print $file "Remove this file to permit mk-slave-prefetch to run\n"
@@ -3794,6 +3795,7 @@ sub main {
    # secondary index queries for --secondary-indexes.
    my $query_queue  = new Thread::Queue;
    my $n_threads    = $o->get('threads') || 1;
+   my @thrs;
    MKDEBUG && _d('Creating', $n_threads, 'threads');
    for ( 1..$n_threads ) {
       my $thr = threads::async {
@@ -3814,6 +3816,7 @@ sub main {
          # (i.e. the event) but this isn't possible until v2.08/v5.10.1.
          while( my $event = $query_queue->dequeue() ) {
             my ($db, $query) = @$event;
+            last if !$db && !$query;
             my @sql;
             if ( $db && (!$curdb || $curdb ne $db) ) {
                push @sql, "USE `$db`";
@@ -3844,8 +3847,8 @@ sub main {
          MKDEBUG && _d('Thread', $tid, 'is done');
       };  # thread code
 
-      $thr->detach();
-      MKDEBUG && _d('Thread', $thr->tid(), 'created and detached');
+      push @thrs, $thr;
+      MKDEBUG && _d('Thread', $thr->tid(), 'created');
    }
 
    # ########################################################################
@@ -4051,6 +4054,18 @@ sub main {
       }
    }
 
+   # The threads are blocking on dequeue().  They should stop when
+   # they receive (undef, undef).  Then we can join them and exit.
+   # kill -9 is required to terminate a blocked join(); we avoid that.
+   for ( 1..$n_threads ) {
+      my @done :shared = (undef, undef);
+      $query_queue->enqueue(\@done);
+   }
+   while ( defined(my $thr = shift @thrs) ) {
+      MKDEBUG && _d('Joining thread', $thr->tid());
+      $thr->join();
+   }
+
    return 0;
 }
 
@@ -4069,12 +4084,6 @@ sub finish {
 # Return true if it's still ok to run, else return false.
 sub oktorun {
    my ( %args ) = @_;
-
-   # These default vals make it oktorun.
-   # my $only_if_slave_running = $args{only_if_slave_is_running} || 0;
-   # my $slave_is_running      = $args{slave_is_running} || 0;
-   #  (!$only_if_slave_running || $slave_is_running)
-
    return                             # oktorun if
       !-f $sentinel                   # no sentinel file and
       && (!$run_time || time < $end)  # no runtime or before end time and

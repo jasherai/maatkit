@@ -32,6 +32,8 @@ else {
 
 my $output;
 
+diag(`rm -f /tmp/mk-slave-prefetch-sentinel`);
+
 # ###########################################################################
 # Check daemonization.
 # ###########################################################################
@@ -58,7 +60,7 @@ $output = `ps -eaf | grep 'mk-slave-prefetch \-F' | grep -v grep`;
 is($output, '', 'Stops for sentinel');
 ok(! -f '/tmp/mk-slave-prefetch.pid', 'PID file removed');
 
-`rm -f /tmp/mk-slave-prefetch-sentinel`;
+diag(`rm -f /tmp/mk-slave-prefetch-sentinel`);
 
 # #########################################################################
 # Issue 391: Add --pid option to all scripts
