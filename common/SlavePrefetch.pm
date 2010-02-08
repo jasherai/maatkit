@@ -22,8 +22,6 @@ package SlavePrefetch;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Carp;
-$SIG{__DIE__} = sub { confess ''; };
 
 use List::Util qw(min max sum);
 use Time::HiRes qw(gettimeofday);
@@ -233,6 +231,7 @@ sub close_relay_log {
 # Returns true if it's time to _get_slave_status() again.
 sub _check_slave_status {
    my ( $self ) = @_;
+   return 1 unless defined $self->{slave};
    return
       $self->{pos} > $self->{slave}->{pos}
       && ($self->{stats}->{events} - $self->{last_chk}) >= $self->{chk_int}
