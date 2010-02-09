@@ -8444,6 +8444,8 @@ sub main {
             1, 'for --execute');
       my $cur_time = time();
       my $curdb;
+      my $default_db = $o->get('execute')->{D};
+      MKDEBUG && _d('Default db:', $default_db);
       push @callbacks, sub {
          my ( $event ) = @_;
          MKDEBUG && _d('callback: execute');
@@ -8457,7 +8459,7 @@ sub main {
             return $event;
          }
          $stats{execute_executed}++;
-         my $db = $event->{db};
+         my $db = $event->{db} || $default_db;
          eval {
             if ( $db && (!$curdb || $db ne $curdb) ) {
                $ex_dbh->do("USE $db");

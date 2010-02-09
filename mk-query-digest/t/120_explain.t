@@ -69,7 +69,8 @@ ok(
    no_diff(
       sub { mk_query_digest::main(@args,
          "$trunk/common/t/samples/slow007.txt") },
-      "mk-query-digest/t/samples/slow007_explain_3.txt"
+      "mk-query-digest/t/samples/slow007_explain_3.txt",
+      trf => "sed 's/line [0-9]\\+/line 0/'",
    ),
    'Analysis for slow007 with --explain, failed',
 );
