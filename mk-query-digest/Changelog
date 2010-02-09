@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * --explain did not report failures.
+
 2010-02-01: version 0.9.14
 
    * memcached replace commands were not handled (issue 818).

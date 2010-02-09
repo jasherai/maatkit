@@ -11,37 +11,67 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More;
 
-use MaatkitTest;
-use DSNParser;
-use VersionParser;
 use Sandbox;
+use MaatkitTest;
+use VersionParser;
+# See 101_slowlog_analyses.t for why we shift.
+shift @INC;  # our unshift (above)
+shift @INC;  # MaatkitTest's unshift
+shift @INC;  # Sandbox
+require "$trunk/mk-query-digest/mk-query-digest";
 
-my $dp = new DSNParser();
-my $vp = new VersionParser();
-my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dp  = new DSNParser();
+my $vp  = new VersionParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 
 if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
-elsif ( @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')} ) {
-   plan skip_all => 'Sakila database is loaded which breaks this test';
-}
 else {
-   plan tests => 1;
+   plan tests => 3;
 }
 
-my $run_with = "$trunk/mk-query-digest/mk-query-digest --report-format=query_report --limit 10 ../../common/t/samples/";
+$dbh->do('drop database if exists food');
+$dbh->do('create database food');
+$dbh->do('use food');
+$dbh->do('create table trees (fruit varchar(24), unique index (fruit))');
 
-# Test --explain.  Because the file says 'use sakila' only the first one will
-# succeed.
+my $output = '';
+my @args   = ('--explain', 'h=127.1,P=12345,u=msandbox,p=msandbox', qw(--report-format=query_report --limit 10));
 
-# TODO: change slow001.sql or do something else to make this work
-# with or without the sakila db loaded.
+# The table has no rows so EXPLAIN will return NULL for most values.
 ok(
-   no_diff($run_with.'slow001.txt --explain h=127.1,P=12345,u=msandbox,p=msandbox',
-      "mk-query-digest/t/samples/slow001_explainreport.txt"),
-   'Analysis for slow001 with --explain',
+   no_diff(
+      sub { mk_query_digest::main(@args,
+         "$trunk/common/t/samples/slow007.txt") },
+      "mk-query-digest/t/samples/slow007_explain_1.txt"
+   ),
+   'Analysis for slow007 with --explain, no rows',
+);
+
+# Normalish output from EXPLAIN.
+$dbh->do('insert into trees values ("apple"),("orange"),("banana")');
+
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args,
+         "$trunk/common/t/samples/slow007.txt") },
+      "mk-query-digest/t/samples/slow007_explain_2.txt"
+   ),
+   'Analysis for slow007 with --explain',
+);
+
+# Failed EXPLAIN.
+$dbh->do('drop table trees');
+
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args,
+         "$trunk/common/t/samples/slow007.txt") },
+      "mk-query-digest/t/samples/slow007_explain_3.txt"
+   ),
+   'Analysis for slow007 with --explain, failed',
 );
 
 # #############################################################################

@@ -9230,8 +9230,9 @@ sub print_explain {
          }
       }
    };
-   if ( MKDEBUG && $EVAL_ERROR ) {
-      _d("Problem explaining", $query, $EVAL_ERROR);
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d("Problem explaining", $query, $EVAL_ERROR);
+      print "# EXPLAIN failed: $EVAL_ERROR";
    }
 }
 
