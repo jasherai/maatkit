@@ -2424,7 +2424,7 @@ sub main {
 
    # If not --split then the remaining arg should be a DSN for --play.
    my $dsn;
-   if ( !$o->get('split') && !$o->get('print') ) {
+   if ( !$o->get('split') && !$o->get('print') && !$o->get('dry-run') ) {
       my $dsn_defaults = $dp->parse_options($o);
       $dsn = @ARGV ? $dp->parse(shift @ARGV, $dsn_defaults) : $dsn_defaults;
       if ( !$dsn ) {
@@ -2575,6 +2575,16 @@ sub main {
 
    # Shouldn't happen...
    warn "There are unassigned session files" if @session_files > 0;
+
+   if ( $o->get('dry-run') ) {
+      for my $i ( 0..($threads-1) ) {
+         print "Process $i plays $_\n" for @{$child_tasks[$i]};
+      }
+      # Shouldn't happen...
+      print "Unassigned session files: " . join(', ', @session_files), "\n"
+         if @session_files;
+      return 0;
+   }
 
    # #########################################################################
    # Connect parent to MySQL.
@@ -2950,6 +2960,10 @@ first option on the command line.
 short form: -F; type: string
 
 Only read mysql options from the given file.
+
+=item --dry-run
+
+Print which processes play which session files then exit.
 
 =item --filter
 

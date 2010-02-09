@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 3;
+   plan tests => 19;
 }
 
 my $output;
@@ -31,6 +31,21 @@ my $tmpdir = '/tmp/mk-log-player';
 my $cmd = "$trunk/mk-log-player/mk-log-player --play $tmpdir -F /tmp/12345/my.sandbox.cnf h=127.1 --no-results";
 
 diag(`rm -rf $tmpdir 2>/dev/null; mkdir $tmpdir`);
+
+
+# #############################################################################
+# Test that all session files gets assigned.
+# #############################################################################
+my @args = (qw(--dry-run --play), "$trunk/mk-log-player/t/samples/16sessions");
+for my $n ( 1..16 ) {
+   ok(
+      no_diff(
+         sub { mk_log_player::main(@args, '--threads', $n) },
+         "mk-log-player/t/samples/assigned16-$n.txt",
+      ),
+      "Assigned 16 sessions to $n threads"
+   );
+}
 
 # #############################################################################
 # Test session playing.
