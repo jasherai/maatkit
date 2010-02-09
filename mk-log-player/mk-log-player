@@ -2440,6 +2440,8 @@ sub main {
    $o->set('threads', max(2, MaatkitCommon::get_number_of_cpus()))
       unless $o->got('threads');
 
+   $o->set('verbose', 0) if $o->get('quiet');
+
    $o->usage_or_errors();
 
    # ########################################################################
@@ -2556,34 +2558,23 @@ sub main {
    }
    my $threads = $o->get('threads');
 
-   my $files_per_child  = int( $n_session_files / $threads );
-   print "Each process will play $files_per_child multi-session files.\n"
-      unless $o->get('quiet');
-
    my @child_tasks;
-   my $n = 0;
-   for my $childno ( 0..($threads-1) ) {
-      my $i = 0;
-      while ( $i++ < $files_per_child
-              && (my $session_file = pop @session_files) ) {
-         push @{$child_tasks[$childno]}, $session_file;
-         $n++;
-         print "Process ", $childno+1, " assigned $session_file ($n)\n"
-            if $o->get('verbose') && !$o->get('quiet');
-      }
+   my $childno = LogSplitter::make_rr_iter(0, $threads-1);
+   while ( defined (my $session_file = pop @session_files) ) {
+      push @{$child_tasks[$childno->()]}, $session_file;
    }
 
    # Shouldn't happen...
    warn "There are unassigned session files" if @session_files > 0;
 
-   if ( $o->get('dry-run') ) {
+   if ( $o->get('dry-run') || $o->get('verbose') ) {
       for my $i ( 0..($threads-1) ) {
          print "Process $i plays $_\n" for @{$child_tasks[$i]};
       }
       # Shouldn't happen...
       print "Unassigned session files: " . join(', ', @session_files), "\n"
          if @session_files;
-      return 0;
+      return 0 if $o->get('dry-run');
    }
 
    # #########################################################################
@@ -3098,7 +3089,7 @@ read.
 
 =item --quiet
 
-Do not print anything.
+Do not print anything; disables L<"--verbose">.
 
 =item --[no]results
 
@@ -3207,6 +3198,8 @@ User for login if not current user.
 short form: -v; cumulative: yes; default: 0
 
 Increase verbosity; can specifiy multiple times.
+
+This option is disabled by L<"--quiet">.
 
 =item --version
 

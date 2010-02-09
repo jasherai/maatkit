@@ -42,6 +42,7 @@ for my $n ( 1..16 ) {
       no_diff(
          sub { mk_log_player::main(@args, '--threads', $n) },
          "mk-log-player/t/samples/assigned16-$n.txt",
+         trf => "sed 's!$trunk/mk-log-player/t/samples/16sessions/!!g'",
       ),
       "Assigned 16 sessions to $n threads"
    );
@@ -74,11 +75,12 @@ is_deeply(
 # #############################################################################
 diag(`rm -rf $tmpdir 2>/dev/null; mkdir $tmpdir`);
 `$trunk/mk-log-player/mk-log-player --split Thread_id --base-dir $tmpdir $trunk/common/t/samples/slow020.txt`;
-$output = `$cmd --threads 1 --print | diff $trunk/mk-log-player/t/samples/play_slow020.txt -`;
 
-is(
-   $output,
-   '',
+ok(
+   no_diff(
+      "$cmd --threads 1 --print",
+      "mk-log-player/t/samples/play_slow020.txt",
+   ),
    'Play session from log with blank lines in queries (issue 418)' 
 );
 
