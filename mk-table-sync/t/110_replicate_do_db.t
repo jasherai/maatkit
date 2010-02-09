@@ -25,11 +25,11 @@ my $master_dbh = $sb->get_dbh_for('master');
 # starts faster (i.e. so it doesn't have to replay the
 # masters logs which is stuff from previous tests that we
 # don't care about).
-eval { `$trunk/sandbox/mk-test-env reset >/dev/null 2>&1`; };
+diag(`$trunk/sandbox/mk-test-env reset >/dev/null`);
 
 # It's not really master1, we just use its port 12348.
-diag(`/tmp/12348/stop >/dev/null 2>&1`);
-diag(`rm -rf /tmp/12348/ >/dev/null 2>&1`);
+# diag(`/tmp/12348/stop >/dev/null 2>&1`);
+# diag(`rm -rf /tmp/12348/ >/dev/null 2>&1`);
 diag(`$trunk/sandbox/start-sandbox slave 12348 12345 >/dev/null`);
 my $dbh3 = $sb->get_dbh_for('master1');
 
@@ -121,8 +121,7 @@ is_deeply(
 );
 
 $dbh3->disconnect();
-diag(`/tmp/12348/stop >/dev/null`);
-diag(`rm -rf /tmp/12348/ >/dev/null`);
+diag(`$trunk/sandbox/stop-sandbox remove 12348 >/dev/null`);
 
 # #############################################################################
 # Done.
