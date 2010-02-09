@@ -1,0 +1,18 @@
+# Exec orig    100      2s      2s      2s      2s      2s       0      2s
+# Query_time distribution
+#   1us
+#  10us
+# 100us  ################################################################
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
+# Tables
+#    SHOW TABLE STATUS LIKE 'foo'\G
+#    SHOW CREATE TABLE `foo`\G
+INSERT INTO `foo` VALUES (1, 2, 3) /*... omitted ...*/\G
+
+# Statistic        Value
+# ================ =====
+# execute_executed     1
