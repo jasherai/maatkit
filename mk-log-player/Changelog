@@ -1,5 +1,9 @@
 Changelog for mk-log-player:
 
+   * Not all sessions were assigned/played in some cases.
+   * Added --dry-run.
+   * Made --quiet disable --verbose.
+
 2010-02-01: version 1.0.5
 
    * Added --split-random (issue 798).
