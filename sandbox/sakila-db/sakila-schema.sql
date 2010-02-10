@@ -175,9 +175,7 @@ CREATE TABLE film_text (
   FULLTEXT KEY idx_title_description (title,description)
 )ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
---
 -- Triggers for loading film_text from film
---
 
 DELIMITER ;;
 CREATE TRIGGER `ins_film` AFTER INSERT ON `film` FOR EACH ROW BEGIN
@@ -437,9 +435,7 @@ LEFT JOIN sakila.category c
   ON fc.category_id = c.category_id
 GROUP BY a.actor_id, a.first_name, a.last_name;
 
---
 -- Procedure structure for procedure `rewards_report`
---
 
 DELIMITER //
 
