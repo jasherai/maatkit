@@ -91,7 +91,7 @@ SKIP: {
    # ##########################################################################
    SKIP: {
       skip 'No /proc', 2 unless -d '/proc';
-      skip 'No fd in /proc', 2 unless -d "/proc/$PID" || -d "/proc/PID/0";
+      skip 'No fd in /proc', 2 unless -l "/proc/$PID/0" || -l "/proc/$PID/fd/0";
 
       system("$cmd 1 --daemonize --pid $pid_file --log $log_file");
       chomp($pid = `cat $pid_file`);
