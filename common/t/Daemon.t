@@ -31,7 +31,7 @@ SKIP: {
    skip 'Cannot test Daemon.pm because t/daemonizes.pl is not working',
       18 unless $ret_val == 0;
 
-   my $output = `ps x | grep '$cmd 2' | grep -v grep`;
+   my $output = `ps wx | grep '$cmd 2' | grep -v grep`;
    like($output, qr/$cmd/, 'Daemonizes');
    ok(-f $pid_file, 'Creates PID file');
 
@@ -77,7 +77,7 @@ SKIP: {
       'Dies if PID file already exists'
    );
 
-    $output = `ps x | grep '$cmd 0' | grep -v grep`;
+    $output = `ps wx | grep '$cmd 0' | grep -v grep`;
     unlike(
       $output,
       qr/$cmd/,
@@ -127,7 +127,7 @@ SKIP: {
    $output = `$cmd 5 --daemonize --pid $pid_file 2>&1`;
    chomp($pid = `cat $pid_file`);
    kill 9, $pid;
-   $output = `ps ax | grep $pid | grep -v grep`;
+   $output = `ps wax | grep $pid | grep -v grep`;
    unlike(
       $output,
       qr/daemonize/,
@@ -140,7 +140,7 @@ SKIP: {
 
    diag(`rm -rf $log_file`);
    system("$cmd 1 --daemonize --log $log_file --pid $pid_file 2>/tmp/pre-daemonizes");
-   $output = `ps x | grep '$cmd 1' | grep -v grep`;
+   $output = `ps wx | grep '$cmd 1' | grep -v grep`;
    chomp(my $new_pid = `cat $pid_file`);
    sleep 1;
    like(
