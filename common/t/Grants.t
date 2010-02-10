@@ -25,13 +25,13 @@ my $dbh = $sb->get_dbh_for('master')
 my $gr = new Grants;
 isa_ok($gr, 'Grants');
 
-diag(`/tmp/12345/use -u root -e "GRANT USAGE ON *.* TO ''\@'localhost'"`);
+diag(`/tmp/12345/use -u root -e "GRANT USAGE ON *.* TO ''\@'%'"`);
 my $anon_dbh = DBI->connect(
    "DBI:mysql:;host=127.0.0.1;port=12345", undef, undef,
    { PrintError => 0, RaiseError => 1 });
 ok(!$gr->have_priv($anon_dbh, 'process'), 'Anonymous user does not have PROCESS priv');
 
-diag(`/tmp/12345/use -u root -e "DROP USER ''\@'localhost'"`);
+diag(`/tmp/12345/use -uroot -umsandbox -e "DROP USER ''\@'%'"`);
 
 ok($gr->have_priv($dbh, 'PROCESS'), 'Normal user does have PROCESS priv');
 
