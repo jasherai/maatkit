@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 18;
+use Test::More tests => 22;
 
 use PgLogParser;
 use MaatkitTest;
@@ -236,6 +236,58 @@ test_log_parser(
          pos_in_log    => 333,
          bytes         => 92,
          cmd           => 'Query',
+      },
+   ],
+);
+
+# A log with an error.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-log-006.txt',
+   result => [
+      {  ts            => '2004-05-07 12:01:06',
+         arg           => 'SELECT plugin_id, plugin_name FROM plugins',
+         pos_in_log    => 0,
+         bytes         => 42,
+         cmd           => 'Query',
+         Query_time    => '0.002161',
+      },
+      {  ts            => '2004-05-07 12:01:06',
+         arg           => "SELECT \n\t\t\t\tgroups.type,\n"
+                           . "\t\t\t\tnews_bytes.details \n"
+                           . "\t\t\tFROM \n"
+                           . "\t\t\t\tnews_bytes,\n"
+                           . "\t\t\t\tgroups \n"
+                           . "\t\t\tWHERE \n"
+                           . "\t\t\t\tnews_bytes.group_id=groups.group_id \n"
+                           . "\t\t\tORDER BY \n"
+                           . "\t\t\t\tdate \n"
+                           . "\t\t\tDESC LIMIT 30 OFFSET 0",
+         pos_in_log    => 125,
+         bytes         => 185,
+         cmd           => 'Query',
+         Error_msg     => 'No such attribute groups.type',
+      },
+      {  ts            => '2004-05-07 12:01:06',
+         arg           => 'SELECT plugin_id, plugin_name FROM plugins',
+         pos_in_log    => 412,
+         bytes         => 42,
+         cmd           => 'Query',
+         Query_time    => '0.002161',
+      },
+   ],
+);
+
+# A log with informational messages.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-log-007.txt',
+   result => [
+      {  arg           => 'SELECT plugin_id, plugin_name FROM plugins',
+         pos_in_log    => 20,
+         bytes         => 42,
+         cmd           => 'Query',
+         Query_time    => '0.002991',
       },
    ],
 );

@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -25,6 +25,18 @@ use English qw(-no_match_vars);
 use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+# This regex is partially inspired by one from pgfouine.  But there is no
+# documentation on the last capture in that regex, so I omit that:
+#     (?:[0-9XPFDBLA]{2}[0-9A-Z]{3}:[\s]+)?
+# Here I constrain to match at least two spaces after the severity level,
+# because the source code tells me to.  I believe this is controlled in elog.c:
+# appendStringInfo(&buf, "%s:  ", error_severity(edata->elevel));
+my $log_line_regex = qr{
+   (LOG|DEBUG|CONTEXT|WARNING|ERROR|FATAL|PANIC|HINT
+    |DETAIL|NOTICE|STATEMENT|INFO|LOCATION)
+   :\s\s+
+   }x;
 
 # This class's data structure is a hashref with only a little bit of
 # statefulness: the deferred line.  This is necessary because we sometimes
@@ -119,12 +131,10 @@ sub parse_event {
 
    # Before we start, we read and discard lines until we get one with a header.
    # The only thing we can really count on is that a header line should have
-   # LOG: in it.  I believe this is controlled in elog.c:
-   # appendStringInfo(&buf, "%s:  ", error_severity(edata->elevel));
-   # But, we only do this if we aren't in the middle of an ongoing event, whose
-   # first line was deferred. TODO: LOG isn't the only header
+   # the header in it.  But, we only do this if we aren't in the middle of an
+   # ongoing event, whose first line was deferred.
    if ( !defined $line ) {
-      while ( (defined($line = $next_event->())) && $line !~ m/LOG:  / ) {
+      while ( (defined($line = $next_event->())) && $line !~ m/$log_line_regex/o ) {
          $pos_in_log = $tell->();
          MKDEBUG && _d('Read line', $line);
       }
@@ -141,9 +151,52 @@ sub parse_event {
    # We need to keep the line that begins the event we're parsing.
    my $first_line;
 
+   # This is for holding the type of the log line, which is important for
+   # choosing the right code to run.
+   my $line_type;
+
    # Parse each line.
    LINE:
    while ( !$done && defined $line ) {
+
+      # This while loop works with LOG lines.  Other lines, such as ERROR and
+      # so forth, need to be handled outside this loop.
+      if ( (($line_type) = $line =~ m/$log_line_regex/o) && $line_type ne 'LOG' ) {
+         MKDEBUG && _d('Found a non-LOG line, exiting loop');
+         $done = 1;
+         last LINE;
+      }
+
+      # The log isn't just queries.  It also has status and informational lines
+      # in it.  We ignore these, but if we see one that's not recognized, we
+      # warn.  These types of things are better off in mk-error-log.
+      if (
+         $line =~ m{
+            Address\sfamily\snot\ssupported\sby\sprotocol
+            |archived\stransaction\slog\sfile
+            |autovacuum:\sprocessing\sdatabase
+            |checkpoint\srecord\sis\sat
+            |checkpoints\sare\soccurring\stoo\sfrequently\s\(
+            |could\snot\sreceive\sdata\sfrom\sclient
+            |database\ssystem\sis\sready
+            |database\ssystem\swas\sshut\sdown
+            |incomplete\sstartup\spacket
+            |invalid\slength\sof\sstartup\spacket
+            |next\sMultiXactId:
+            |next\stransaction\sID:
+            |recycled\stransaction\slog\sfile
+            |redo\srecord\sis\sat
+            |removing\sfile\s"
+            |removing\stransaction\slog\sfile\s"
+            |transaction\sID\swrap\slimit\sis
+         }x
+      ) {
+         # We get the next line to process and skip the rest of the loop.
+         $line = $next_event->();
+         $did_get_next = 1;
+         MKDEBUG && _d('Got next line from $next_event->()');
+         next LINE;
+      }
 
       # Throw away the newline ending.
       chomp $line;
@@ -153,9 +206,9 @@ sub parse_event {
       # junk and unset.
       $first_line ||= $line;
 
-      # Case 2: Lines without 'LOG:  ', optionally starting with a TAB, are a
+      # Case 2: non-header lines, optionally starting with a TAB, are a
       # continuation of the previous line.
-      if ( $line !~ m/LOG:  / && @arg_lines ) {
+      if ( $line !~ m/$log_line_regex/o && @arg_lines ) {
          # The TAB seems to be optional.
          $line =~ s/\A\t//;
          push @arg_lines, $line;
@@ -163,13 +216,16 @@ sub parse_event {
       }
 
       # Cases 1 and 3: These lines start with some optional meta-data, and then
-      # the string LOG: followed by the line's log message.  The message can be
+      # the $log_line_regex followed by the line's log message.  The message can be
       # of the form "label: text....".  Examples:
       # LOG:  duration: 1.565 ms
       # LOG:  statement: SELECT ....
       # LOG:  duration: 1.565 ms  statement: SELECT ....
       # In the above examples, the $label is duration, statement, and duration.
-      elsif ( my ( $label, $rest ) = $line =~ m/LOG:  \s*(.+?):\s+(.*)\Z/ ) {
+      elsif (
+         my ( $sev, $label, $rest )
+            = $line =~ m/$log_line_regex(.+?):\s+(.*)\Z/o
+      ) {
          MKDEBUG && _d('Line is case 1 or case 3');
 
          # This is either a case 1 or case 3.  If there's previously gathered
@@ -308,6 +364,18 @@ sub parse_event {
    # If we're at the end of the file, there's no point in continuing.
    if ( !defined $line ) {
       $self->cleanup(%args);
+   }
+
+   # If we got kicked out of the while loop because of a non-LOG line, we handle
+   # that line here.
+   if ( $line_type && $line_type ne 'LOG' ) {
+      if ( $line_type eq 'ERROR' ) {
+         # Add the error message to the event.
+         push @properties, 'Error_msg', $line =~ m/ERROR:\s*(\S.*)/;
+      }
+      else {
+         MKDEBUG && _d("Unknown line", $line);
+      }
    }
 
    # If $done is true, then some of the above code decided that the full
