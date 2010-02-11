@@ -3305,6 +3305,81 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# SchemaFindText package $Revision$
+# ###########################################################################
+package SchemaFindText;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+# Arguments:
+# * fh => filehandle
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+      %args,
+      last_tbl_ddl => undef,
+      queued_db    => undef,
+   };
+   return bless $self, $class;
+}
+
+sub next_db {
+   my ( $self ) = @_;
+   if ( $self->{queued_db} ) {
+      my $db = $self->{queued_db};
+      $self->{queued_db} = undef;
+      return $db;
+   }
+   local $RS = "";
+   my $fh = $self->{fh};
+   while ( defined (my $text = <$fh>) ) {
+      my ($db) = $text =~ m/^USE `([^`]+)`/;
+      return $db if $db;
+   }
+}
+
+sub next_tbl {
+   my ( $self ) = @_;
+   local $RS = "";
+   my $fh = $self->{fh};
+   while ( defined (my $text = <$fh>) ) {
+      if ( my ($db) = $text =~ m/^USE `([^`]+)`/ ) {
+         $self->{queued_db} = $db;
+         return undef;
+      }
+      my ($ddl) = $text =~ m/^(CREATE TABLE.*?^\)[^\n]*);\n/sm;
+      if ( $ddl ) {
+         $self->{last_tbl_ddl} = $ddl;
+         my ( $tbl ) = $ddl =~ m/CREATE TABLE `([^`]+)`/;
+         return $tbl;
+      }
+   }
+}
+
+sub last_tbl_ddl {
+   my ( $self ) = @_;
+   return $self->{last_tbl_ddl};
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SchemaFindText package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -3314,6 +3389,8 @@ sub _d {
 # ###########################################################################
 package mk_schema_advisor;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;

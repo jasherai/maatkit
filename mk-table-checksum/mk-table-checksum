@@ -3896,6 +3896,16 @@ my %tables_to_checksum;
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
+   # Reset global vars else tests which run this tool as a module
+   # will have strange, overlapping results.
+   $exit_status                                = 0;
+   $checksum_table_data                        = undef;
+   ( $fetch_sth, $update_sth, $savesince_sth ) = (undef, undef, undef);
+   ( $crc_wid, $md5sum_fmt )                   = (undef, undef);
+   $already_checksummed                        = undef;
+   %tables_to_checksum                         = ();
+
+
    # ########################################################################
    # Get configuration information.
    # ########################################################################
@@ -4320,8 +4330,7 @@ sub checksum_tables {
    # NOTE: remember to use the final_o embedded within each $table, not $o
    foreach my $table ( @$tbls ) {
       eval {
-         my $final_o = $table->{final_o};
-         delete $table->{final_o};  # so we can Dumper($table) tersely
+         my $final_o  = $table->{final_o};
          my $do_table = 1;
          MKDEBUG && _d("Doing", $db, '.', $table->{table});
          MKDEBUG && _d("Table:", Dumper($table));

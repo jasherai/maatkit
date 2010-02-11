@@ -28,14 +28,14 @@ else {
 }
 
 my ($output, $output2);
-my $cnf='/tmp/12345/my.sandbox.cnf';
-my $cmd = "$trunk/mk-table-checksum/mk-table-checksum -F $cnf -d test -t checksum_test 127.0.0.1";
+my $cnf  ='/tmp/12345/my.sandbox.cnf';
+my @args = ('-F', $cnf, qw(-d test -t checksum_test 127.0.0.1));
 
 $sb->create_dbs($master_dbh, [qw(test)]);
 $sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
 
 # Test basic functionality with defaults
-$output = `$cmd 2>&1`;
+$output = output(sub { mk_table_checksum::main(@args) } );
 like($output, qr/^DATABASE/m, 'The header row is there');
 like($output, qr/checksum_test/, 'The results row is there');
 
@@ -54,37 +54,58 @@ else {
 }
 
 # Test that it works with locking
-$output = `$cmd --lock --slave-lag --function sha1 --checksum --algorithm ACCUM 2>&1`;
+$output = output(
+   sub { mk_table_checksum::main(@args, qw(--lock --slave-lag),
+         qw(--function sha1 --checksum --algorithm ACCUM)) }
+);
 like($output, qr/9c1c01dc3ac1445a500251fc34a15d3e75a849df/, 'Locks' );
 
 SKIP: {
    skip 'MySQL version < 4.1', 5
       unless $vp->version_ge($master_dbh, '4.1.0');
 
-   $output = `$cmd --function CRC32 --checksum --algorithm ACCUM 2>&1`;
+   $output = output(
+      sub { mk_table_checksum::main(@args,
+         qw(--function CRC32 --checksum --algorithm ACCUM)) }
+   );
    like($output, qr/00000001E9F5DC8E/, 'CRC32 ACCUM' );
 
-   $output = `$cmd --function sha1 --checksum --algorithm ACCUM 2>&1`;
+   $output = output(
+      sub { mk_table_checksum::main(@args,
+         qw(--function sha1 --checksum --algorithm ACCUM)) }
+   );
    like($output, qr/9c1c01dc3ac1445a500251fc34a15d3e75a849df/, 'SHA1 ACCUM' );
 
    # same as sha1(1)
-   $output = `$cmd --function sha1 --checksum --algorithm BIT_XOR 2>&1`;
+   $output = output(
+      sub { mk_table_checksum::main(@args,
+         qw(--function sha1 --checksum --algorithm BIT_XOR)) }
+   );
    like($output, qr/356a192b7913b04c54574d18c28d46e6395428ab/, 'SHA1 BIT_XOR' );
 
    # test that I get the same result with --no-optxor
-   $output2 = `$cmd --function sha1 --no-optimize-xor --checksum --algorithm BIT_XOR 2>&1`;
+   $output2 = output(
+      sub { mk_table_checksum::main(@args,
+         qw(--function sha1 --no-optimize-xor --checksum --algorithm BIT_XOR)) }
+   );
    is($output, $output2, 'Same result with --no-optxor');
 
    # same as sha1(1)
-   $output = `$cmd --checksum --function MD5 --algorithm BIT_XOR 2>&1`;
+   $output = output(
+      sub { mk_table_checksum::main(@args,
+         qw(--checksum --function MD5 --algorithm BIT_XOR)) }
+   );
    like($output, qr/c4ca4238a0b923820dcc509a6f75849b/, 'MD5 BIT_XOR' );
 };
 
-$output = `$cmd --checksum --function MD5 --algorithm ACCUM 2>&1`;
+$output = output(
+   sub { mk_table_checksum::main(@args, 
+      qw(--checksum --function MD5 --algorithm ACCUM)) }
+);
 like($output, qr/28c8edde3d61a0411511d3b1866f0636/, 'MD5 ACCUM' );
 
 # #############################################################################
 # Done.
 # #############################################################################
-$sb->wipe_clean($master_dbh);
+# $sb->wipe_clean($master_dbh);
 exit;
