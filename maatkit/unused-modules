@@ -1,0 +1,11 @@
+#!/bin/sh
+
+cd $MAATKIT_TRUNK/common
+
+for m in *.pm; do
+   M=`echo $m | sed 's/.pm//'`
+   grep "# $M package " $MAATKIT_TRUNK/mk-*/mk-* >/dev/null
+   if [ $? -ne 0 ]; then
+      echo $M
+   fi
+done
