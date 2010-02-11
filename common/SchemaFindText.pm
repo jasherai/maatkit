@@ -1,4 +1,4 @@
-# This program is copyright 2008-2009 Baron Schwartz.
+# This program is copyright 2009-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,11 +17,10 @@
 # ###########################################################################
 # SchemaFindText package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package SchemaFindText;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
@@ -30,11 +29,12 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 # * fh => filehandle
 sub new {
    my ( $class, %args ) = @_;
-   bless {
+   my $self = {
       %args,
       last_tbl_ddl => undef,
       queued_db    => undef,
-   }, $class;
+   };
+   return bless $self, $class;
 }
 
 sub next_db {
