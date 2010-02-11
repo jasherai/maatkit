@@ -50,6 +50,7 @@ sub new {
 
    my $label_width = $args{label_width} || 9;
    if ( lc($label_width) eq 'auto' ) {
+      $label_width = 9;  # Start with default, try to increase it.
       eval {
          # With default label width 9 we have a 74 char wide report line
          # for a default 80 char wide terminal.  We can increase the label
