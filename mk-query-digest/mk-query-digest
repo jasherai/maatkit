@@ -4393,7 +4393,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 5266
+# ReportFormatter package 5763
 # ###########################################################################
 package ReportFormatter;
 
@@ -4582,7 +4582,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 5761
+# QueryReportFormatter package 5764
 # ###########################################################################
 
 
@@ -4616,6 +4616,7 @@ sub new {
 
    my $label_width = $args{label_width} || 9;
    if ( lc($label_width) eq 'auto' ) {
+      $label_width = 9;  # Start with default, try to increase it.
       eval {
          require Term::ReadKey;
          Term::ReadKey->import(qw(GetTerminalSize));
@@ -4684,7 +4685,7 @@ sub global_report {
       shorten(scalar keys %{$stats->{classes}}, d=>1_000),
       shorten($qps  || 0, d=>1_000),
       shorten($conc || 0, d=>1_000));
-   $line .= ('_' x (LINE_LENGTH - length($line)));
+   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
    push @result, $line;
 
    my ($format, @headers) = $self->make_header('global');
@@ -4769,7 +4770,7 @@ sub event_report {
       shorten($conc || 0, d=>1_000),
       make_checksum($opts{where}),
       $sample->{pos_in_log} || 0);
-   $line .= ('_' x (LINE_LENGTH - length($line)));
+   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
    push @result, $line;
 
    if ( $opts{reason} ) {
@@ -8800,8 +8801,9 @@ sub main {
       # results for each class (i.e. each groupby), probably --report them,
       # or maybe just save them for --review.
       # ######################################################################
-      my $qrf    = new QueryReportFormatter();
-      my @select = ( $ea[0]->get_attributes() );
+      my $label_width = $ENV{LABEL_WIDTH} || 'auto';
+      my $qrf         = new QueryReportFormatter(label_width => $label_width);
+      my @select      = ( $ea[0]->get_attributes() );
       MKDEBUG && _d('attribs for reports:', @select);
 
       # First, and only once, print the global report analysis header.

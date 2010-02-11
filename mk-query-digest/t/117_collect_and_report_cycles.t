@@ -15,6 +15,8 @@ use MaatkitTest;
 use Sandbox;
 use DSNParser;
 
+$ENV{LABEL_WIDTH} = 9;  
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
