@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 25;
 
 use PgLogParser;
 use MaatkitTest;
@@ -43,6 +43,28 @@ is($p->deferred('foo'), 'foo', 'Store foo in deferred');
 is($p->deferred, 'foo', 'Get foo from deferred');
 is($p->deferred, undef, 'Nothing in deferred');
 
+# Tests of 'get_meta'
+my @meta = (
+   ['c=4b7074b4.985,u=fred,D=jim', {
+      Session_id => '4b7074b4.985',
+      user       => 'fred',
+      db         => 'jim',
+   }],
+   ['c=4b7074b4.985, user=fred, db=jim', {
+      Session_id => '4b7074b4.985',
+      user       => 'fred',
+      db         => 'jim',
+   }],
+   ['c=4b7074b4.985 user=fred db=jim', {
+      Session_id => '4b7074b4.985',
+      user       => 'fred',
+      db         => 'jim',
+   }],
+);
+foreach my $meta ( @meta ) {
+   is_deeply({$p->get_meta($meta->[0])}, $meta->[1], "Meta for $meta->[0]");
+}
+
 # A simple log of a session.
 test_log_parser(
    parser => $p,
@@ -63,7 +85,7 @@ test_log_parser(
          db            => 'fred',
          arg           => 'connection authorized',
          Session_id    => '4b7074b4.985',
-         pos_in_log    => 109,
+         pos_in_log    => 107,
          bytes         => 21,
          cmd           => 'Admin',
       },
@@ -73,7 +95,7 @@ test_log_parser(
          arg           => 'select 1;',
          Query_time    => '0.01087',
          Session_id    => '4b7074b4.985',
-         pos_in_log    => 221,
+         pos_in_log    => 217,
          bytes         => length('select 1;'),
          cmd           => 'Query',
       },
@@ -83,7 +105,7 @@ test_log_parser(
          arg           => "select\n1;",
          Query_time    => '0.013918',
          Session_id    => '4b7074b4.985',
-         pos_in_log    => 392,
+         pos_in_log    => 384,
          bytes         => length("select\n1;"),
          cmd           => 'Query',
       },
@@ -92,7 +114,7 @@ test_log_parser(
          user          => 'fred',
          arg           => 'disconnection',
          Session_id    => '4b7074b4.985',
-         pos_in_log    => 564,
+         pos_in_log    => 552,
          bytes         => length('disconnection'),
          cmd           => 'Admin',
       },
@@ -183,7 +205,7 @@ test_log_parser(
          db            => 'fred',
          arg           => 'connection authorized',
          Session_id    => '4b72b72c.b44',
-         pos_in_log    => 109,
+         pos_in_log    => 107,
          bytes         => 21,
          cmd           => 'Admin',
       },
@@ -193,7 +215,7 @@ test_log_parser(
          arg           => 'select 1;',
          Query_time    => '0.001308',
          Session_id    => '4b72b72c.b44',
-         pos_in_log    => 221,
+         pos_in_log    => 217,
          bytes         => length('select 1;'),
          cmd           => 'Query',
       },
@@ -202,7 +224,7 @@ test_log_parser(
          user          => 'fred',
          arg           => 'disconnection',
          Session_id    => '4b72b72c.b44',
-         pos_in_log    => 328,
+         pos_in_log    => 322,
          bytes         => length('disconnection'),
          cmd           => 'Admin',
       },

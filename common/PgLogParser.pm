@@ -38,6 +38,25 @@ my $log_line_regex = qr{
    :\s\s+
    }x;
 
+
+# The following are taken right from the comments in postgresql.conf for
+# log_line_prefix.
+my %llp_for = (
+   u => 'user',
+   d => 'db',
+   r => 'host', # With port
+   h => 'host',
+   p => 'Process_id',
+   t => 'ts',
+   m => 'ts',   # With milliseconds
+   i => 'Query_type',
+   c => 'Session_id',
+   l => 'Line_no',
+   s => 'Session_ts',
+   v => 'Vrt_trx_id',
+   x => 'Trx_id',
+);
+
 # This class's data structure is a hashref with only a little bit of
 # statefulness: the deferred line.  This is necessary because we sometimes
 # don't know whether the event is complete until we read the next line, so we
@@ -62,8 +81,19 @@ sub new {
 #  };
 #
 # The log format is ideally prefixed with the following:
+#
 #  * timestamp with microseconds
 #  * session ID, user, database
+#
+# The format I'd like to see is something like this:
+#
+# 2010-02-08 15:31:48.685 EST sid=4b7074b4.985,u=user,D=database LOG:
+#
+# However, pgfouine supports user=user, db=database format.  And I think
+# it should be reasonable to grab pretty much any name=value properties out, and
+# handle them based on the lower-cased first character of $name, to match the
+# special values that are possible to give for log_line_prefix. For example, %u
+# = user, so anything starting with a 'u' should be interpreted as a user.
 #
 # In general the log format is rather flexible, and we don't know by looking at
 # any given line whether it's the last line in the event.  So we often have to
@@ -404,14 +434,10 @@ sub parse_event {
          push @properties, 'ts', $ts;
       }
 
-      # More meta-data: the session, user, and database.  This is the
-      # ideal format, but it's not guaranteed... TODO: pgfoiine seems to support
-      # db/user format, too.
-      if ( my ($sid, $u, $D)
-            = $first_line =~ m/sid=([^,]+),u=([^,]+),D=([^,]+)\s+LOG:  /
-      ) {
-         MKDEBUG && _d('Getting meta-data from $first_line');
-         push @properties, 'user', $u, 'db', $D, 'Session_id', $sid;
+      # Find meta-data embedded in the log line prefix, in name=value format.
+      if ( my ($meta) = $first_line =~ m/(.*?)[A-Z]{3,}:  / ) {
+         MKDEBUG && _d('Found a meta-data chunk:', $meta);
+         push @properties, $self->get_meta($meta);
       }
 
       # Dump info about what we've found, but don't dump $event; want to see
@@ -423,6 +449,30 @@ sub parse_event {
       return $event;
    }
 
+}
+
+# Parses key=value meta-data from the $meta string, and returns a list of event
+# attribute names and values.
+sub get_meta {
+   my ( $self, $meta ) = @_;
+   my @properties;
+   foreach my $set ( $meta =~ m/(\w+=[^, ]+)/g ) {
+      my ($key, $val) = split(/=/, $set);
+      if ( $key && $val ) {
+         if ( my $prop = $llp_for{lc substr($key, 0, 1)} ) {
+            # The first letter of the name, lowercased, determines the
+            # meaning of the item.
+            push @properties, $prop, $val;
+         }
+         else {
+            MKDEBUG && _d('Bad meta key', $set);
+         }
+      }
+      else {
+         MKDEBUG && _d("Can't figure out meta from", $set);
+      }
+   }
+   return @properties;
 }
 
 # This subroutine defers and retrieves a line of text.  If you give it an
