@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 25;
+use Test::More tests => 27;
 
 use PgLogParser;
 use MaatkitTest;
@@ -112,6 +112,7 @@ test_log_parser(
       {  ts            => '2010-02-08 15:32:06.988',
          db            => 'fred',
          user          => 'fred',
+         host          => '[local]',
          arg           => 'disconnection',
          Session_id    => '4b7074b4.985',
          pos_in_log    => 552,
@@ -222,6 +223,7 @@ test_log_parser(
       {  ts            => '2010-02-10 08:44:31.368',
          db            => 'fred',
          user          => 'fred',
+         host          => '[local]',
          arg           => 'disconnection',
          Session_id    => '4b72b72c.b44',
          pos_in_log    => 322,
@@ -310,6 +312,38 @@ test_log_parser(
          bytes         => 42,
          cmd           => 'Query',
          Query_time    => '0.002991',
+      },
+   ],
+);
+
+# Test that meta-data in connection/disconnnection lines is captured.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-log-008.txt',
+   result => [
+      {  ts            => '2010-02-08 15:31:48',
+         host          => '[local]',
+         arg           => 'connection received',
+         pos_in_log    => 0,
+         bytes         => 19,
+         cmd           => 'Admin',
+      },
+      {  ts            => '2010-02-08 15:31:48',
+         user          => 'fred',
+         db            => 'fred',
+         arg           => 'connection authorized',
+         pos_in_log    => 64,
+         bytes         => 21,
+         cmd           => 'Admin',
+      },
+      {  ts            => '2010-02-08 15:32:06',
+         db            => 'fred',
+         user          => 'fred',
+         host          => '[local]',
+         arg           => 'disconnection',
+         pos_in_log    => 141,
+         bytes         => length('disconnection'),
+         cmd           => 'Admin',
       },
    ],
 );

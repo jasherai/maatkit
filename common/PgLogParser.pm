@@ -354,28 +354,17 @@ sub parse_event {
                MKDEBUG && _d('No need to defer, process event from this line now');
                push @properties, 'cmd', 'Admin', 'arg', $label;
 
-               # A connection-received line probably looks like this:
+               # For some kinds of log lines, we can grab extra meta-data out of
+               # the end of the line.
                # LOG:  connection received: host=[local]
-               # TODO: group all these Admin things together.
-               if ( $label eq 'connection received' ) {
-                  push @properties, split(/=/, $rest);
+               if ( $label =~ m/\A(?:dis)?connection(?: received| authorized)?\Z/ ) {
+                  push @properties, $self->get_meta($rest);
                }
 
-               # A connection-authorized line probably looks like this:
-               # LOG:  connection authorized: user=fred database=fred
-               # TODO: make a test-case for this when there is no sid= stuff
-               elsif ( $label eq 'connection authorized' ) {
-                  if ( my($user, $db) = $rest =~ m/user=(.*?) database=(.*)/ ) {
-                     push @properties, 'user', $user, 'db', $db;
-                  }
-               }
-
-               # A disconnection line:
-               # LOG:  disconnection: session time: 0:00:18.304 user=fred database=fred host=[local]
-               # TODO parse/test: session time: 0:00:18.304 user=fred database=fred host=[local]
-               elsif ( $label ne 'disconnection' ) {
+               else {
                   die "I don't understand line $line";
                }
+
             }
          }
 
