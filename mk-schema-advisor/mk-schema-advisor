@@ -1,8 +1,5 @@
 #!/usr/bin/env perl
 
-# This is mk-schema-audit, a program that analyzes tables and data to find
-# inefficiencies.
-# 
 # This program is copyright 2009-@CURRENTYEAR@ Percona Inc.
 # Feedback and improvements are welcome.
 #
@@ -3315,7 +3312,7 @@ sub _d {
 # Check at the end of this package for the call to main() which actually runs
 # the program.
 # ###########################################################################
-package mk_schema_audit;
+package mk_schema_advisor;
 
 use English qw(-no_match_vars);
 use Data::Dumper;
@@ -3651,11 +3648,11 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-schema-audit - Analyze schema and find inefficiencies.
+mk-schema-advisor - Analyze schema and find inefficiencies.
 
 =head1 SYNOPSIS
 
-   mk-schema-audit
+   mk-schema-advisor
 
 =head1 RISKS
 
@@ -3664,7 +3661,7 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-schema-audit merely reads schema information and should be very low-risk.
+mk-schema-advisor merely reads schema information and should be very low-risk.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.
@@ -3672,7 +3669,7 @@ users.
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
 see a list of such issues at the following URL:
-L<http://www.maatkit.org/bugs/mk-schema-audit>.
+L<http://www.maatkit.org/bugs/mk-schema-advisor>.
 
 See also L<"BUGS"> for more information on filing bugs and getting help.
 
@@ -3701,7 +3698,7 @@ type: hash
 
 Specify which built-in or audit modules to run.
 
-By default mk-schema-audit runs all of its built-in audits.  You can override
+By default mk-schema-advisor runs all of its built-in audits.  You can override
 these audits or specify your own, external audit modules to use.  The built-in
 audits are:
 
@@ -3957,7 +3954,7 @@ You need the following Perl modules: DBI and DBD::mysql.
 
 =head1 BUGS
 
-For list of known bugs see L<http://www.maatkit.org/bugs/mk-schema-audit>.
+For list of known bugs see L<http://www.maatkit.org/bugs/mk-schema-advisor>.
 
 Please use Google Code Issues and Groups to report bugs or request support:
 L<http://code.google.com/p/maatkit/>.  You can also join #maatkit on Freenode to
