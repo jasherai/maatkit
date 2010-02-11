@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 18;
 
 use PgLogParser;
 use MaatkitTest;
@@ -36,6 +36,12 @@ throws_ok (
    qr/Unknown suffix/,
    'duration_to_secs does not like crap at the end',
 );
+
+# Tests of 'deferred'.
+is($p->deferred, undef, 'Nothing in deferred');
+is($p->deferred('foo'), 'foo', 'Store foo in deferred');
+is($p->deferred, 'foo', 'Get foo from deferred');
+is($p->deferred, undef, 'Nothing in deferred');
 
 # A simple log of a session.
 test_log_parser(
@@ -199,6 +205,37 @@ test_log_parser(
          pos_in_log    => 328,
          bytes         => length('disconnection'),
          cmd           => 'Admin',
+      },
+   ],
+);
+
+# A log that shows that continuation lines don't have to start with a TAB, and
+# not all queries must be followed by a duration.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-log-005.txt',
+   result => [
+      {  ts            => '2004-05-07 12:00:01',
+         arg           => 'begin; select getdatabaseencoding(); commit',
+         pos_in_log    => 0,
+         bytes         => 43,
+         cmd           => 'Query',
+         Query_time    => '0.000801',
+      },
+      {  ts            => '2004-05-07 12:00:01',
+         arg           => "update users set unix_status = 'A' where user_id in (select\n"
+                         . "distinct u.user_id from users u, user_group ug WHERE\n"
+                         . "u.user_id=ug.user_id and ug.cvs_flags='1' and u.status='A')",
+         pos_in_log    => 126,
+         bytes         => 172,
+         cmd           => 'Query',
+      },
+      {  ts            => '2004-05-07 12:00:01',
+         arg           => 'SELECT 1 FROM ONLY "public"."supported_languages" x '
+                           . 'WHERE "language_id" = $1 FOR UPDATE OF x',
+         pos_in_log    => 333,
+         bytes         => 92,
+         cmd           => 'Query',
       },
    ],
 );

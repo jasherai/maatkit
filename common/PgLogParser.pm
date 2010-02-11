@@ -27,12 +27,13 @@ use Data::Dumper;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # This class's data structure is a hashref with only a little bit of
-# statefulness: the @pending array.  This is necessary because we sometimes
-# don't know whether the event is complete until we read the next line.
+# statefulness: the deferred line.  This is necessary because we sometimes
+# don't know whether the event is complete until we read the next line, so we
+# have to defer a line.
 sub new {
    my ( $class ) = @_;
    my $self = {
-      pending => [],
+      deferred => undef,
    };
    return bless $self, $class;
 }
@@ -55,9 +56,22 @@ sub new {
 # In general the log format is rather flexible, and we don't know by looking at
 # any given line whether it's the last line in the event.  So we often have to
 # read a line and then decide what to do with the previous line we saw.  Thus we
-# use @pending heavily.
+# use 'deferred' when necessary but we try to do it as little as possible,
+# because it's double work to defer and re-parse lines; and we try to defer as
+# soon as possible so we don't have to do as much work.
 #
-# TODO: add MKDEBUG stuff.
+# There are 3 categories of lines in a log file:
+#
+# - Those that start a possibly multi-line event
+# - Those that can continue one
+# - Those that are neither the start nor the continuation, and thus must be the
+#   end.
+#
+# In cases 1 and 3, we have to check whether information from previous lines has
+# been accumulated.  If it has, we defer the current line and create the event.
+# Otherwise we keep going, looking for more lines for the event that begins with
+# the current line.  Processing the lines is easiest if we arrange the cases in
+# this order: 2, 1, 3.
 sub parse_event {
    my ( $self, %args ) = @_;
    my @required_args = qw(next_event tell);
@@ -72,23 +86,28 @@ sub parse_event {
    # create an event hash ref.
    my @properties = ();
 
-   # This is a local refeence to the variable used to hold state in this
-   # instance of PgLogParser.  Putting something into @$pending and then reading
-   # it back again is really double work, so we try not to do that when
-   # possible.
-   my $pending = $self->{pending};
+   # Holds the current line being processed.
+   my $line;
 
    # The position in the log is the byte offset from the beginning.  We have to
    # get this before we start reading lines.  In some cases we'll have to reset this
-   # later.  If there's something in @$pending, this will be wrong, so we
-   # correct for that.
+   # later.
    my $pos_in_log = $tell->();
-   if ( @$pending ) {
-      $pos_in_log -= length($pending->[0]);
+   MKDEBUG && _d('Position in log:', $pos_in_log);
+
+   # If there's something deferred then pos_in_log will be wrong, so we correct
+   # for that.  Also, to prevent infinite loops, we set a variable that shows
+   # whether we got anything from deferred.  If we later put something back
+   # without first doing $next_event->(), then there's a problem.
+   my $got_deferred;
+   if ( defined($line = $self->deferred) ) {
+      $pos_in_log -= length($line);
+      $got_deferred = 1;
+      MKDEBUG && _d('Got deferred line', $line);
    }
 
-   # Holds the current line being processed.
-   my $line = shift @$pending;
+   # For infinite loop detection (see above).
+   my $did_get_next;
 
    # Sometimes we need to accumulate some lines and then join them together.
    # This is used for that.
@@ -103,44 +122,44 @@ sub parse_event {
    # LOG: in it.  I believe this is controlled in elog.c:
    # appendStringInfo(&buf, "%s:  ", error_severity(edata->elevel));
    # But, we only do this if we aren't in the middle of an ongoing event, whose
-   # first line was stored in @$pending.
+   # first line was deferred. TODO: LOG isn't the only header
    if ( !defined $line ) {
       while ( (defined($line = $next_event->())) && $line !~ m/LOG:  / ) {
          $pos_in_log = $tell->();
+         MKDEBUG && _d('Read line', $line);
       }
+      MKDEBUG && _d('Found a header line, now at', $pos_in_log);
+      # Here we do not need to set $did_get_next, because we'll never be here if
+      # $got_deferred is 1.
    }
 
-   # If we're at the end of the file, there's no point in continuing.
-   return unless defined $line;
+   # If we're at the end of the file, we finish and tell the caller we're done.
+   if ( !defined $line ) {
+      return $self->cleanup(%args);
+   }
 
    # We need to keep the line that begins the event we're parsing.
    my $first_line;
 
-   # There are 3 kinds of lines in a log file:
-   # - Those that start a possibly multi-line event
-   # - Those that can continue one
-   # - Those that are neither the start nor the continuation, and thus must be
-   #   the end.
-   # In cases 1 and 3, we have to check whether information from previous lines
-   # has been accumulated.  If it has, we put the current line onto @pending and
-   # create the event.  Otherwise we keep going, looking for more lines for the
-   # event that begins with the current line.  Processing the lines is easiest
-   # if we arrange the cases in this order: 2, 1, 3.
-
-   EVENT:
+   # Parse each line.
+   LINE:
    while ( !$done && defined $line ) {
 
       # Throw away the newline ending.
       chomp $line;
+      MKDEBUG && _d('Line:', $line);
 
       # Possibly reset $first_line, depending on whether it was determined to be
       # junk and unset.
       $first_line ||= $line;
 
-      # Case 2: Lines without 'LOG:  ', starting with a TAB, are a continuation
-      # of the previous line.  This is an intentional s///, not a m//.
-      if ( $line !~ m/LOG:  / && $line =~ s/\A\t// ) {
+      # Case 2: Lines without 'LOG:  ', optionally starting with a TAB, are a
+      # continuation of the previous line.
+      if ( $line !~ m/LOG:  / && @arg_lines ) {
+         # The TAB seems to be optional.
+         $line =~ s/\A\t//;
          push @arg_lines, $line;
+         MKDEBUG && _d('This was a continuation line');
       }
 
       # Cases 1 and 3: These lines start with some optional meta-data, and then
@@ -151,12 +170,14 @@ sub parse_event {
       # LOG:  duration: 1.565 ms  statement: SELECT ....
       # In the above examples, the $label is duration, statement, and duration.
       elsif ( my ( $label, $rest ) = $line =~ m/LOG:  \s*(.+?):\s+(.*)\Z/ ) {
+         MKDEBUG && _d('Line is case 1 or case 3');
 
          # This is either a case 1 or case 3.  If there's previously gathered
          # data in @arg_lines, it doesn't matter which -- we have to create an
          # event (a Query event), and we're $done.  This is case 0xdeadbeef.
          if ( @arg_lines ) {
             $done = 1;
+            MKDEBUG && _d('There are saved @arg_lines, we are done');
 
             # We shouldn't modify @properties based on $line, because $line
             # doesn't have anything to do with the stuff in @properties, which
@@ -164,19 +185,27 @@ sub parse_event {
             # case in which the line could be part of the event: when it's a
             # plain 'duration' line.  This happens when the statement is logged
             # on one line, and then the duration is logged afterwards.  If this
-            # is true, then we alter @properties, and we do NOT save the current
-            # line in @$pending.
+            # is true, then we alter @properties, and we do NOT defer the current
+            # line.
             if ( $label eq 'duration' && $rest =~ m/[0-9.]+\s+\S+\Z/ ) {
                push @properties, 'Query_time', $self->duration_to_secs($rest);
+               MKDEBUG && _d("This line's duration applies to the event:", $rest);
             }
             else {
+               # Do infinite loop detection.
+               if ( $got_deferred && !$did_get_next ) {
+                  die "Infinite loop detected on line $line";
+               }
+
                # We'll come back to this line later.
-               push @$pending, $line;
+               $self->deferred($line);
+               MKDEBUG && _d('Deferred line', $line);
             }
          }
 
          # Here we test for case 1, lines that can start a multi-line event.
          elsif ( $label =~ m/\A(?:duration|statement|query)\Z/ ) {
+            MKDEBUG && _d('Case 1: start a multi-line event');
 
             # If it's a duration, then there might be a statement later on the
             # same line and the duration applies to that.
@@ -191,6 +220,7 @@ sub parse_event {
                   # (case 0xdeadbeef).
                   push @properties, 'Query_time', $self->duration_to_secs($dur);
                   push @arg_lines, $stmt;
+                  MKDEBUG && _d('Duration + statement');
                }
 
                else {
@@ -200,29 +230,39 @@ sub parse_event {
                   # pos_in_log.
                   $pos_in_log = $tell->();
                   $first_line = undef;
+                  MKDEBUG && _d('Line applies to event we never saw, discarding');
                }
             }
             else {
                # This isn't a duration line, it's a statement or query.  Put it
                # onto @arg_lines for later and keep going.
                push @arg_lines, $rest;
+               MKDEBUG && _d('Putting onto @arg_lines');
             }
          }
 
          # Here is case 3, lines that can't be in case 1 or 2.  These surely
          # terminate any event that's been accumulated, and if there isn't any
-         # such, then we just create an event without the overhead of @$pending.
+         # such, then we just create an event without the overhead of deferring.
          else {
             $done = 1;
+            MKDEBUG && _d('Line is case 3, event is done');
 
             # Again, if there's previously gathered data in @arg_lines, we have
             # to defer the current line (not touching @properties) and revisit it.
             if ( @arg_lines ) {
-               push @$pending, $line;
+               # Do infinite loop detection.
+               if ( $got_deferred && !$did_get_next ) {
+                  die "Infinite loop detected on line $line";
+               }
+
+               $self->deferred($line);
+               MKDEBUG && _d('There was @arg_lines, deferred line');
             }
 
             # Otherwise we can parse the line and put it into @properties.
             else {
+               MKDEBUG && _d('No need to defer, process event from this line now');
                push @properties, 'cmd', 'Admin', 'arg', $label;
 
                # A connection-received line probably looks like this:
@@ -258,16 +298,16 @@ sub parse_event {
       }
 
       # We get the next line to process.
-      $line = $next_event->() unless $done;
-   } # EVENT
+      if ( !$done ) {
+         $line = $next_event->();
+         $did_get_next = 1;
+         MKDEBUG && _d('Got next line from $next_event->()');
+      }
+   } # LINE
 
-   # If we can't read any more lines, tell the calling scope to quit running.
-   # Also discard any state in @$pending, because this instance of the class
-   # might be used to parse another log file next, and we don't want things
-   # hanging around from this log file when we do that.
+   # If we're at the end of the file, there's no point in continuing.
    if ( !defined $line ) {
-      @$pending = ();
-      $args{oktorun}->(0) if $args{oktorun};
+      $self->cleanup(%args);
    }
 
    # If $done is true, then some of the above code decided that the full
@@ -276,24 +316,30 @@ sub parse_event {
    # that signals the event was done.  In either case we return an event.  This
    # should be the only 'return' statement in this block of code.
    if ( $done || @arg_lines ) {
+      MKDEBUG && _d('Making event');
+
       # Finish building the event.
       push @properties, 'pos_in_log', $pos_in_log;
 
       # Statement/query lines will be in @arg_lines.
       if ( @arg_lines ) {
+         MKDEBUG && _d('Assembling @arg_lines: ', scalar @arg_lines);
          push @properties, 'arg', join("\n", @arg_lines), 'cmd', 'Query';
       }
 
       # Handle some meta-data: a timestamp, with optional milliseconds.
       if ( my ($ts) = $first_line =~ m/([0-9-]{10} [0-9:.]{8,12})/ ) {
+         MKDEBUG && _d('Getting timestamp', $ts);
          push @properties, 'ts', $ts;
       }
 
       # More meta-data: the session, user, and database.  This is the
-      # ideal format, but it's not guaranteed...
+      # ideal format, but it's not guaranteed... TODO: pgfoiine seems to support
+      # db/user format, too.
       if ( my ($sid, $u, $D)
             = $first_line =~ m/sid=([^,]+),u=([^,]+),D=([^,]+)\s+LOG:  /
       ) {
+         MKDEBUG && _d('Getting meta-data from $first_line');
          push @properties, 'user', $u, 'db', $D, 'Session_id', $sid;
       }
 
@@ -308,6 +354,20 @@ sub parse_event {
 
 }
 
+# This subroutine defers and retrieves a line of text.  If you give it an
+# argument it'll set the stored line.  If not, it'll return it and delete it.
+sub deferred {
+   my ( $self, $val ) = @_;
+   if ( $val ) {
+      $self->{deferred} = $val;
+   }
+   else {
+      $val = $self->{deferred};
+      $self->{deferred} = undef;
+   }
+   return $val;
+}
+
 # This subroutine converts various formats to seconds.  Examples:
 # 10.870 ms
 sub duration_to_secs {
@@ -318,6 +378,17 @@ sub duration_to_secs {
               : $suf eq 'sec' ? 1
               :                 die("Unknown suffix '$suf'");
    return $num / $factor;
+}
+
+# If we can't read any more lines, tell the calling scope to quit running.
+# Also discard any deferred line, because this instance of the class
+# might be used to parse another log file next, and we don't want things
+# hanging around from this log file when we do that.
+sub cleanup {
+   my ($self, %args) = @_;
+   MKDEBUG && _d('All done with file, resetting stored state');
+   $self->deferred;
+   $args{oktorun}->(0) if $args{oktorun};
 }
 
 sub _d {
