@@ -130,7 +130,7 @@ sub global_report {
       shorten(scalar keys %{$stats->{classes}}, d=>1_000),
       shorten($qps  || 0, d=>1_000),
       shorten($conc || 0, d=>1_000));
-   $line .= ('_' x (LINE_LENGTH - length($line)));
+   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
    push @result, $line;
 
    # Column header line
@@ -230,7 +230,7 @@ sub event_report {
       shorten($conc || 0, d=>1_000),
       make_checksum($opts{where}),
       $sample->{pos_in_log} || 0);
-   $line .= ('_' x (LINE_LENGTH - length($line)));
+   $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
    push @result, $line;
 
    if ( $opts{reason} ) {

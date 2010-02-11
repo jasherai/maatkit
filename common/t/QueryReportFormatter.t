@@ -185,7 +185,7 @@ is($result, $expected, 'Query_time distro');
 
 $qrf = new QueryReportFormatter(label_width => 15);
 $expected = <<EOF;
-# Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 _____
+# Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 ___________
 # This item is included in the report because it matches --limit.
 #                    pct   total     min     max     avg     95%  stddev  median
 # Count               66       2
