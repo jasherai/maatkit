@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 BEGIN {
    die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
@@ -14,7 +14,8 @@ use Test::More tests => 23;
 use SchemaFindText;
 use MaatkitTest;
 
-open my $fh, "<", "$trunk/common/t/samples/schema-dump.sql" or die $OS_ERROR;
+open my $fh, "<", "$trunk/common/t/samples/schemas/schema-dump.sql"
+   or die $OS_ERROR;
 
 my $sft = new SchemaFindText(fh => $fh);
 
@@ -36,3 +37,9 @@ is($sft->next_db(), 'sakila', 'got sakila DB');
 $sft->next_tbl();
 is($sft->next_tbl(), 'address', 'got address table');
 like($sft->last_tbl_ddl(), qr/CREATE TABLE `address`/, 'got address ddl');
+
+
+# #############################################################################
+# Done.
+# #############################################################################
+exit;
