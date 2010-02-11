@@ -8,3 +8,6 @@ LOG:  next MultiXactId: 1; next MultiXactOffset: 0
 LOG:  database system is ready
 LOG:  transaction ID wrap limit is 1075718294, limited by database "gforge"
 LOG:  duration: 2.991 ms  statement: SELECT plugin_id, plugin_name FROM plugins
+LOG:  received smart shutdown request
+LOG:  shutting down
+LOG:  database system is shut down

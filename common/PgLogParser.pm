@@ -179,15 +179,18 @@ sub parse_event {
             |checkpoints\sare\soccurring\stoo\sfrequently\s\(
             |could\snot\sreceive\sdata\sfrom\sclient
             |database\ssystem\sis\sready
+            |database\ssystem\sis\sshut\sdown
             |database\ssystem\swas\sshut\sdown
             |incomplete\sstartup\spacket
             |invalid\slength\sof\sstartup\spacket
             |next\sMultiXactId:
             |next\stransaction\sID:
+            |received\ssmart\sshutdown\srequest
             |recycled\stransaction\slog\sfile
             |redo\srecord\sis\sat
             |removing\sfile\s"
             |removing\stransaction\slog\sfile\s"
+            |shutting\sdown
             |transaction\sID\swrap\slimit\sis
          }x
       ) {
