@@ -24,6 +24,7 @@ package QueryReportFormatter;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
 Transformers->import(
    qw(shorten micro_t parse_timestamp unix_timestamp
       make_checksum percentage_of));
@@ -46,7 +47,29 @@ my $bool_format = '# %3s%% %-6s %s';
 
 sub new {
    my ( $class, %args ) = @_;
-   return bless { }, $class;
+
+   my $label_width = $args{label_width} || 9;
+   if ( lc($label_width) eq 'auto' ) {
+      eval {
+         # With default label width 9 we have a 74 char wide report line
+         # for a default 80 char wide terminal.  We can increase the label
+         # width by 1 char for every 1 char over 80 we have, up to a max
+         # label width of 15.
+         require Term::ReadKey;
+         Term::ReadKey->import(qw(GetTerminalSize));
+         (my $w) = GetTerminalSize();
+         if ( $w > 80 ) {
+            do $label_width++ while $label_width < 15 && --$w >= 80;
+         }
+      };
+   }
+   MKDEBUG && _d('Label width:', $label_width);
+
+   my $self = {
+      %args,
+      label_width => $label_width,
+   };
+   return bless $self, $class;
 }
 
 sub header {
@@ -110,7 +133,7 @@ sub global_report {
    push @result, $line;
 
    # Column header line
-   my ($format, @headers) = make_header('global');
+   my ($format, @headers) = $self->make_header('global');
    push @result, sprintf($format, '', @headers);
 
    # Each additional line
@@ -119,7 +142,7 @@ sub global_report {
       next unless $attrib_type; 
       next unless exists $stats->{globals}->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
-         push @result, sprintf $format, make_label($attrib),
+         push @result, sprintf $format, $self->make_label($attrib),
             $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
             (map { '' } 0..9); # just for good measure
       }
@@ -151,7 +174,7 @@ sub global_report {
             @values = ('', $store->{min}, $store->{max}, '', '', '', '');
          }
 
-         push @result, sprintf $format, make_label($attrib), @values
+         push @result, sprintf $format, $self->make_label($attrib), @values
             unless $attrib_type eq 'bool';  # bool does its own thing.
       }
    }
@@ -215,7 +238,7 @@ sub event_report {
    }
 
    # Column header line
-   my ($format, @headers) = make_header();
+   my ($format, @headers) = $self->make_header();
    push @result, sprintf($format, '', @headers);
 
    # Count line
@@ -231,7 +254,7 @@ sub event_report {
       my $vals = $store->{$attrib};
       next unless scalar %$vals;
       if ( $formatting_function{$attrib} ) { # Handle special cases
-         push @result, sprintf $format, make_label($attrib),
+         push @result, sprintf $format, $self->make_label($attrib),
             $formatting_function{$attrib}->($vals),
             (map { '' } 0..9); # just for good measure
       }
@@ -267,7 +290,7 @@ sub event_report {
             $pct = 0;
          }
 
-         push @result, sprintf $format, make_label($attrib), $pct, @values
+         push @result, sprintf $format, $self->make_label($attrib), $pct, @values
             unless $attrib_type eq 'bool';  # bool does its own thing.
       }
    }
@@ -321,8 +344,8 @@ sub chart_distro {
 # Makes a header format and returns the format and the column header names.  The
 # argument is either 'global' or anything else.
 sub make_header {
-   my ( $global ) = @_;
-   my $format = "# %-9s %6s %7s %7s %7s %7s %7s %7s %7s";
+   my ( $self, $global ) = @_;
+   my $format = "# %-$self->{label_width}s %6s %7s %7s %7s %7s %7s %7s %7s";
    my @headers = qw(pct total min max avg 95% stddev median);
    if ( $global ) {
       $format =~ s/%(\d+)s/' ' x $1/e;
@@ -333,7 +356,7 @@ sub make_header {
 
 # Convert attribute names into labels
 sub make_label {
-   my ( $val ) = @_;
+   my ( $self, $val ) = @_;
 
    if ( $val =~ m/^InnoDB/ ) {
       # Shorten InnoDB attributes otherwise their short labels
@@ -348,7 +371,7 @@ sub make_label {
          : $val eq 'Query_time' ? 'Exec time'
          : $val eq 'host'       ? 'Hosts'
          : $val eq 'Error_no'   ? 'Errors'
-         : do { $val =~ s/_/ /g; $val = substr($val, 0, 9); $val };
+         : do { $val =~ s/_/ /g; $val = substr($val, 0, $self->{label_width}); $val };
 }
 
 # Does pretty-printing for bool (Yes/No) attributes like QC_Hit.

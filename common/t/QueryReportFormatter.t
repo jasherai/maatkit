@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 17;
+use Test::More tests => 18;
 
 use Transformers;
 use QueryReportFormatter;
@@ -182,6 +182,35 @@ $result = $qrf->chart_distro(
 );
 
 is($result, $expected, 'Query_time distro');
+
+$qrf = new QueryReportFormatter(label_width => 15);
+$expected = <<EOF;
+# Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 _____
+# This item is included in the report because it matches --limit.
+#                    pct   total     min     max     avg     95%  stddev  median
+# Count               66       2
+# Exec time           89      9s      1s      8s      5s      8s      5s      5s
+# Lock time           68   310us   109us   201us   155us   201us    65us   155us
+# Rows sent          100       2       1       1       1       1       0       1
+# Rows examined      100       3       1       2    1.50       2    0.71    1.50
+# Users                        2 bob (1), root (1)
+# Databases                    2 test1 (1), test3 (1)
+# Time range      2007-10-15 21:43:52 to 2007-10-15 21:43:53
+EOF
+
+$result = $qrf->event_report(
+   $ea,
+   # "users" is here to try to cause a failure
+   select => [ qw(Query_time Lock_time Rows_sent Rows_examined ts db user users) ],
+   where   => 'select id from users where name=?',
+   rank    => 1,
+   worst   => 'Query_time',
+   reason  => 'top',
+);
+
+is($result, $expected, 'Event report with wider label');
+
+$qrf = new QueryReportFormatter;
 
 # ########################################################################
 # This one is all about an event that's all zeroes.
