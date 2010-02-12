@@ -452,6 +452,56 @@ test_log_parser(
    ],
 );
 
+# This is basically the same as common/t/samples/pg-log-001.txt but it's in
+# syslog format.  It's interesting and complicated because the disconnect
+# message is broken across two lines in the file by syslog, although this would
+# not be done in PostgreSQL's own logging format.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-syslog-005.txt',
+   result => [
+      {  ts            => '2010-02-10 09:03:26.918',
+         host          => '[local]',
+         db            => '[unknown]',
+         user          => '[unknown]',
+         arg           => 'connection received',
+         Session_id    => '4b72bcae.d01',
+         pos_in_log    => 0,
+         bytes         => 19,
+         cmd           => 'Admin',
+      },
+      {  ts            => '2010-02-10 09:03:26.922',
+         user          => 'fred',
+         db            => 'fred',
+         arg           => 'connection authorized',
+         Session_id    => '4b72bcae.d01',
+         pos_in_log    => 152,
+         bytes         => 21,
+         cmd           => 'Admin',
+      },
+      {  ts            => '2010-02-10 09:03:36.645',
+         db            => 'fred',
+         user          => 'fred',
+         arg           => 'select 1;',
+         Query_time    => '0.000627',
+         Session_id    => '4b72bcae.d01',
+         pos_in_log    => 307,
+         bytes         => length('select 1;'),
+         cmd           => 'Query',
+      },
+      {  ts            => '2010-02-10 09:03:39.075',
+         db            => 'fred',
+         user          => 'fred',
+         host          => '[local]',
+         arg           => 'disconnection',
+         Session_id    => '4b72bcae.d01',
+         pos_in_log    => 457,
+         bytes         => length('disconnection'),
+         cmd           => 'Admin',
+      },
+   ],
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
