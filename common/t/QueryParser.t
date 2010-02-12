@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 129;
+use Test::More tests => 130;
 use English qw(-no_match_vars);
 
 use QueryRewriter;
@@ -848,6 +848,23 @@ is_deeply(
    [$qp->get_tables('select * from (select * from mytable) t')],
    [qw(mytable)],
    'Does not consider subquery SELECT as a table (issue 781)',
+);
+
+
+# #############################################################################
+# Test full SQL parsing.
+# #############################################################################
+
+is_deeply(
+   $qp->parse('SELECT * FROM tbl WHERE id=1'),
+   {
+      query => 'SELECT * FROM tbl WHERE id=1',
+      dms   => 'select',
+      tbls  => {
+         tbl => 'tbl',
+      },
+   },
+   'parse basic SELECT'
 );
 
 # #############################################################################

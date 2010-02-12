@@ -372,6 +372,34 @@ sub query_type {
    }
 }
 
+sub parse {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   my $parsed = {};
+
+   # Flatten and clean query.
+   $query =~ s/\n/ /g;
+   $query = $self->clean_query($query);
+
+   $parsed->{query} = $query;
+   $parsed->{tbls}  = $self->get_aliases($query);
+
+   my ($dms) = $query =~ m/^(\w+)/;
+   $parsed->{dms} = lc $dms;
+
+   # my @words = $query =~ m/
+   #   [A-Za-z_.]+\(.*?\)+   # Match FUNCTION(...)
+   #   |\(.*?\)+             # Match grouped items
+   #   |"(?:[^"]|\"|"")*"+   # Match double quotes
+   #   |'[^'](?:|\'|'')*'+   #   and single quotes
+   #   |`(?:[^`]|``)*`+      #   and backticks
+   #   |[^ ,]+
+   #   |,
+   #/gx;
+   
+   return $parsed;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
