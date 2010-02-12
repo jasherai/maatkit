@@ -39,7 +39,7 @@ $ENV{DONT_BREAK_LINES} = 1;
 # #############################################################################
 
 # Quick test of standard interface.
-$o->get_specs("$trunk/common/t/samples/pod_sample_01.txt");
+$o->get_specs("$trunk/common/t/samples/pod/pod_sample_01.txt");
 %opts = $o->opts();
 ok(
    exists $opts{help},
@@ -52,7 +52,7 @@ $o  = new OptionParser(
    dp           => $dp,
 );
 ok(!$o->has('time'), 'There is no --time yet');
-@opt_specs = $o->_pod_to_specs("$trunk/common/t/samples/pod_sample_01.txt");
+@opt_specs = $o->_pod_to_specs("$trunk/common/t/samples/pod/pod_sample_01.txt");
 is_deeply(
    \@opt_specs,
    [
@@ -368,21 +368,21 @@ ok(
 # #############################################################################
 # Test hostile, broken usage.
 # #############################################################################
-eval { $o->_pod_to_specs("$trunk/common/t/samples/pod_sample_02.txt"); };
+eval { $o->_pod_to_specs("$trunk/common/t/samples/pod/pod_sample_02.txt"); };
 like(
    $EVAL_ERROR,
    qr/POD has no OPTIONS section/,
    'Dies on POD without an OPTIONS section'
 );
 
-eval { $o->_pod_to_specs("$trunk/common/t/samples/pod_sample_03.txt"); };
+eval { $o->_pod_to_specs("$trunk/common/t/samples/pod/pod_sample_03.txt"); };
 like(
    $EVAL_ERROR,
    qr/No valid specs in POD OPTIONS/,
    'Dies on POD with an OPTIONS section but no option items'
 );
 
-eval { $o->_pod_to_specs("$trunk/common/t/samples/pod_sample_04.txt"); };
+eval { $o->_pod_to_specs("$trunk/common/t/samples/pod/pod_sample_04.txt"); };
 like(
    $EVAL_ERROR,
    qr/No description after option spec foo/,
@@ -1427,7 +1427,7 @@ EOF
 $o = new OptionParser(
    description  => 'parses command line options.',
 );
-$o->get_specs("$trunk/common/t/samples/pod_sample_05.txt");
+$o->get_specs("$trunk/common/t/samples/pod/pod_sample_05.txt");
 
 is_deeply(
    $o->get_groups(),
@@ -1553,7 +1553,7 @@ is(
 #    =item --foo
 #    negatable: yes
 # #############################################################################
-@opt_specs = $o->_pod_to_specs("$trunk/common/t/samples/pod_sample_issue_140.txt");
+@opt_specs = $o->_pod_to_specs("$trunk/common/t/samples/pod/pod_sample_issue_140.txt");
 is_deeply(
    \@opt_specs,
    [
@@ -1567,7 +1567,7 @@ is_deeply(
 # Issue 92: extract a paragraph from POD.
 # #############################################################################
 is(
-   $o->read_para_after("$trunk/common/t/samples/pod_sample_issue_92.txt", qr/magic/),
+   $o->read_para_after("$trunk/common/t/samples/pod/pod_sample_issue_92.txt", qr/magic/),
    'This is the paragraph, hooray',
    'read_para_after'
 );
@@ -1576,7 +1576,7 @@ is(
 # always get the same thing on each subsequent call no matter what regex you
 # pass in.  This is to test and make sure I don't do that again.
 is(
-   $o->read_para_after("$trunk/common/t/samples/pod_sample_issue_92.txt", qr/abracadabra/),
+   $o->read_para_after("$trunk/common/t/samples/pod/pod_sample_issue_92.txt", qr/abracadabra/),
    'This is the next paragraph, hooray',
    'read_para_after again'
 );
@@ -1761,7 +1761,7 @@ is_deeply(
 $o = new OptionParser(
    description  => 'parses command line options.',
 );
-eval { $o->get_specs("$trunk/common/t/samples/pod_sample_06.txt"); };
+eval { $o->get_specs("$trunk/common/t/samples/pod/pod_sample_06.txt"); };
 like(
    $EVAL_ERROR,
    qr/Unrecognized attribute for --verbose: culumative/,
