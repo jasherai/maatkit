@@ -27,7 +27,8 @@ use Data::Dumper;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # This regex is partially inspired by one from pgfouine.  But there is no
-# documentation on the last capture in that regex, so I omit that:
+# documentation on the last capture in that regex, so I omit that.  (TODO: that
+# actually seems to be for CSV logging.)
 #     (?:[0-9XPFDBLA]{2}[0-9A-Z]{3}:[\s]+)?
 # Here I constrain to match at least two spaces after the severity level,
 # because the source code tells me to.  I believe this is controlled in elog.c:
@@ -159,6 +160,10 @@ sub parse_event {
    # the while loop.
    my $done;
 
+   # This is used to signal that an event's duration has already been found.
+   # See the sample file pg-syslog-001.txt and the test for it.
+   my $got_duration;
+
    # Before we start, we read and discard lines until we get one with a header.
    # The only thing we can really count on is that a header line should have
    # the header in it.  But, we only do this if we aren't in the middle of an
@@ -193,7 +198,6 @@ sub parse_event {
       # so forth, need to be handled outside this loop.
       if ( (($line_type) = $line =~ m/$log_line_regex/o) && $line_type ne 'LOG' ) {
          MKDEBUG && _d('Found a non-LOG line, exiting loop');
-         $done = 1;
          last LINE;
       }
 
@@ -242,8 +246,30 @@ sub parse_event {
       # Case 2: non-header lines, optionally starting with a TAB, are a
       # continuation of the previous line.
       if ( $line !~ m/$log_line_regex/o && @arg_lines ) {
-         # The TAB seems to be optional.
-         $line =~ s/\A\t//;
+
+         # If this is a line from syslog, it might look like this:
+         # 2008 Jan  9 16:16:34 hostname postgres[30059]: [13-2] ...sql query...
+         # We have to delete that prefix.
+         if ( $line =~ s/\A.*\w+\[\d+\]: \[\d+-\d+\] // ) {
+            # We also have to translate characters that syslog has munged.  Some
+            # translate TAB into the literal characters '^I' and some, rsyslog
+            # on Debian anyway, seem to translate all whitespace control
+            # characters into an octal string representing the character code.
+            # Example: "#011FROM pg_catalog.pg_class c"
+            $line =~ s/#(\d{3})/chr(oct($1))/ge;
+            $line =~ s/\^I/\t/g;
+         }
+         else {
+            # Weirdly, some logs (see samples/pg-log-005.txt) have newlines
+            # without a leading tab.  Maybe it's an older log format.
+            $line =~ s/\A(\S)/\t$1/;
+         }
+
+         # The TAB at the beginning of the line indicates that there's a newline
+         # at the end of the previous line.
+         $line =~ s/\A\t/\n/;
+
+         # Save the remainder.
          push @arg_lines, $line;
          MKDEBUG && _d('This was a continuation line');
       }
@@ -277,8 +303,14 @@ sub parse_event {
             # is true, then we alter @properties, and we do NOT defer the current
             # line.
             if ( $label eq 'duration' && $rest =~ m/[0-9.]+\s+\S+\Z/ ) {
-               push @properties, 'Query_time', $self->duration_to_secs($rest);
-               MKDEBUG && _d("This line's duration applies to the event:", $rest);
+               if ( $got_duration ) {
+                  # Just discard the line.
+                  MKDEBUG && _d('Discarding line, duration already found');
+               }
+               else {
+                  push @properties, 'Query_time', $self->duration_to_secs($rest);
+                  MKDEBUG && _d("This line's duration applies to the event:", $rest);
+               }
             }
             else {
                # Do infinite loop detection.
@@ -302,12 +334,13 @@ sub parse_event {
 
                if (
                   (my ($dur, $stmt)
-                     = $rest =~ m/([0-9.]+ \S+)\s+(?:statement|query):\s+(.*)/)
+                     = $rest =~ m/([0-9.]+ \S+)\s+(?:statement|query):\s*(.*)/)
                ) {
                   # It does, so we'll pull out the Query_time etc now, rather
                   # than doing it later, when we might end up in the case above
                   # (case 0xdeadbeef).
                   push @properties, 'Query_time', $self->duration_to_secs($dur);
+                  $got_duration = 1;
                   push @arg_lines, $stmt;
                   MKDEBUG && _d('Duration + statement');
                }
@@ -414,19 +447,21 @@ sub parse_event {
       # Statement/query lines will be in @arg_lines.
       if ( @arg_lines ) {
          MKDEBUG && _d('Assembling @arg_lines: ', scalar @arg_lines);
-         push @properties, 'arg', join("\n", @arg_lines), 'cmd', 'Query';
+         push @properties, 'arg', join('', @arg_lines), 'cmd', 'Query';
       }
 
-      # Handle some meta-data: a timestamp, with optional milliseconds.
-      if ( my ($ts) = $first_line =~ m/([0-9-]{10} [0-9:.]{8,12})/ ) {
-         MKDEBUG && _d('Getting timestamp', $ts);
-         push @properties, 'ts', $ts;
-      }
+      if ( $first_line ) {
+         # Handle some meta-data: a timestamp, with optional milliseconds.
+         if ( my ($ts) = $first_line =~ m/([0-9-]{10} [0-9:.]{8,12})/ ) {
+            MKDEBUG && _d('Getting timestamp', $ts);
+            push @properties, 'ts', $ts;
+         }
 
-      # Find meta-data embedded in the log line prefix, in name=value format.
-      if ( my ($meta) = $first_line =~ m/(.*?)[A-Z]{3,}:  / ) {
-         MKDEBUG && _d('Found a meta-data chunk:', $meta);
-         push @properties, $self->get_meta($meta);
+         # Find meta-data embedded in the log line prefix, in name=value format.
+         if ( my ($meta) = $first_line =~ m/(.*?)[A-Z]{3,}:  / ) {
+            MKDEBUG && _d('Found a meta-data chunk:', $meta);
+            push @properties, $self->get_meta($meta);
+         }
       }
 
       # Dump info about what we've found, but don't dump $event; want to see

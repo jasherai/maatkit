@@ -348,6 +348,110 @@ test_log_parser(
    ],
 );
 
+# Simple sample of syslog output.  It has a complexity: there is a trailing
+# orphaned duration line, which can appear to be for the statement -- but isn't.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-syslog-001.txt',
+   result => [
+      {  pos_in_log    => 0,
+         bytes         => 1193,
+         cmd           => 'Query',
+         Query_time    => '3.617465',
+         arg           => "select t.tid,t.title,m.name,gn.name,to_char( t.retail_reldate, 'mm-dd-yy' ) as retail_reldate,coalesce(s0c100r0.units,0) as"
+                           ." w0c100r0units,'NA' as w0c100r0dollars,'NA' as w0c100r0arp,coalesce(s0c1r0.units,0) as w0c1r0units,'NA' as w0c1r0dollars,'NA' as"
+                           ." w0c1r0arp,coalesce(s0c2r0.units,0) as w0c2r0units,coalesce(s0c2r0.dollars,0) as w0c2r0dollars,arp(s0c2r0.dollars, s0c2r0.units)"
+                           ." as w0c2r0arp from title t left outer join sublabel sl on t.sublabel_rel = sl.key left outer join label s on sl.lid = s.id left"
+                           ." outer join label d on s.did = d.id left outer join sale_200601 s0c100r0 on t.tid = s0c100r0.tid and s0c100r0.week = 200601 and"
+                           ." s0c100r0.channel = 100 and s0c100r0.region = 0 left outer join sale_200601 s0c1r0 on t.tid = s0c1r0.tid and s0c1r0.week ="
+                           ." 200601 and s0c1r0.channel = 1 and s0c1r0.region = 0 left outer join sale_200601 s0c2r0 on t.tid = s0c2r0.tid and s0c2r0.week ="
+                           ." 200601 and s0c2r0.channel = 2 and s0c2r0.region = 0 left outer join media m on t.media = m.key left outer join genre_n gn on"
+                           ." t.genre_n = gn.key where ((((upper(t.title) like '%MATRIX%' or upper(t.artist) like '%MATRIX%') ))) and t.blob in ('L', 'M',"
+                           ." 'R') and t.source_dvd != 'IN' order by t.title asc limit 100",
+      },
+   ],
+);
+
+# Syslog output with a query that has an error.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-syslog-002.txt',
+   result => [
+      {  ts            => '2010-02-08 09:52:41.526',
+         pos_in_log    => 0,
+         bytes         => 31,
+         cmd           => 'Query',
+         Query_time    => '0.008309',
+         arg           => "select * from pg_stat_bgwriter;",
+         db            => 'fred',
+         user          => 'fred',
+         Session_id    => '4b701056.1dc6',
+      },
+      {  ts            => '2010-02-08 09:52:57.807',
+         pos_in_log    => 282,
+         bytes         => 29,
+         cmd           => 'Query',
+         arg           => "create index ix_a on foo (a);",
+         Error_msg     => 'relation "ix_a" already exists',
+         db            => 'fred',
+         user          => 'fred',
+         Session_id    => '4b701056.1dc6',
+      },
+   ],
+);
+
+# Syslog output with a query that has newlines *and* a query line that's too
+# long and is broken across 2 lines in the log.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-syslog-003.txt',
+   result => [
+      {  ts            => '2010-02-08 09:53:51.724',
+         pos_in_log    => 0,
+         bytes         => 526,
+         cmd           => 'Query',
+         Query_time    => '0.150472',
+         arg           => "SELECT n.nspname as \"Schema\","
+                         . "\n  c.relname as \"Name\","
+                         . "\n  CASE c.relkind WHEN 'r' THEN 'table' WHEN 'v' THEN 'view' WHEN 'i' THEN 'index' WHEN 'S' THEN 'sequence' WHEN 's' THEN"
+                         . " 'special' END as \"Type\","
+                         . "\n  r.rolname as \"Owner\""
+                         . "\nFROM pg_catalog.pg_class c"
+                         . "\n     JOIN pg_catalog.pg_roles r ON r.oid = c.relowner"
+                         . "\n     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"
+                         . "\nWHERE c.relkind IN ('r','v','S','')"
+                         . "\n  AND n.nspname <> 'pg_catalog'"
+                         . "\n  AND n.nspname !~ '^pg_toast'"
+                         . "\n  AND pg_catalog.pg_table_is_visible(c.oid)"
+                         . "\nORDER BY 1,2;",
+         db            => 'fred',
+         user          => 'fred',
+         Session_id    => '4b701056.1dc6',
+      },
+   ],
+);
+
+# Syslog output with a query that has newlines with tabs translated to ^I
+# characters.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-syslog-004.txt',
+   result => [
+      {  pos_in_log    => 0,
+         bytes         => 357,
+         cmd           => 'Query',
+         arg           => "SELECT groups.group_name,groups.unix_group_name,"
+                        . "\n\tgroups.type,users.user_name,users.realname,"
+                        . "\n\tnews_bytes.forum_id,news_bytes.summary,news_bytes.date,news_bytes.details "
+                        . "\n\tFROM users,news_bytes,groups "
+                        . "\n\tWHERE news_bytes.is_approved=1 "
+                        . "\n\tAND users.user_id=news_bytes.submitted_by "
+                        . "\n\tAND news_bytes.group_id=groups.group_id "
+                        . "\n\tORDER BY date DESC LIMIT 10 OFFSET 0",
+      },
+   ],
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
