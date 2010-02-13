@@ -868,7 +868,7 @@ is_deeply(
    {
       query => 'SELECT * FROM tbl WHERE id=1',
       dms   => 'select',
-      tbls  => [qw(tbl)],
+      table => [qw(tbl)],
    },
    'parse basic SELECT'
 );
@@ -878,7 +878,7 @@ is_deeply(
    {
       query => 'INSERT INTO tbl VALUES (1, "abc")',
       dms   => 'insert',
-      tbls  => [qw(tbl)],
+      table => [qw(tbl)],
    },
    'parse basic INSERT'
 );
@@ -888,7 +888,7 @@ is_deeply(
    {
       query => 'DELETE FROM foo WHERE bar=1',
       dms   => 'delete',
-      tbls  => [qw(foo)],
+      table => [qw(foo)],
    },
    'parse basic DELETE'
 );

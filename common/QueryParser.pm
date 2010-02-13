@@ -390,7 +390,7 @@ sub parse {
    $query = $self->clean_query($query);
 
    $parsed->{query} = $query;
-   $parsed->{tbls}  = $self->get_aliases($query, 1);
+   $parsed->{table} = $self->get_aliases($query, 1);
 
    my ($dms) = $query =~ m/^(\w+)/;
    $parsed->{dms} = lc $dms;
