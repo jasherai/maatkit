@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 130;
+use Test::More tests => 134;
 use English qw(-no_match_vars);
 
 use QueryRewriter;
@@ -22,9 +22,9 @@ my $qr = new QueryRewriter(QueryParser => $qp);
 isa_ok($qp, 'QueryParser');
 
 sub test_query {
-   my ( $query, $aliases, $tables, $msg ) = @_;
+   my ( $query, $aliases, $tables, $msg, %args ) = @_;
    is_deeply(
-      $qp->get_aliases($query),
+      $qp->get_aliases($query, $args{list}),
       $aliases,
       "get_aliases: $msg",
    );
@@ -128,6 +128,14 @@ test_query(
    },
    [qw(t1 t2)],
    'two tables implicit alias and AS alias'
+);
+
+test_query(
+   'SELECT * FROM t1 a, t2 AS b WHERE id = 1',
+   [ 't1 a', 't2 AS b', ],
+   [ qw(t1 t2) ],
+   'two tables implicit alias and AS alias, with alias',
+   list => 1,
 );
 
 # ANSI JOINs
@@ -860,11 +868,29 @@ is_deeply(
    {
       query => 'SELECT * FROM tbl WHERE id=1',
       dms   => 'select',
-      tbls  => {
-         tbl => 'tbl',
-      },
+      tbls  => [qw(tbl)],
    },
    'parse basic SELECT'
+);
+
+is_deeply(
+   $qp->parse('INSERT INTO tbl VALUES (1, "abc")'),
+   {
+      query => 'INSERT INTO tbl VALUES (1, "abc")',
+      dms   => 'insert',
+      tbls  => [qw(tbl)],
+   },
+   'parse basic INSERT'
+);
+
+is_deeply(
+   $qp->parse('DELETE FROM foo WHERE bar=1'),
+   {
+      query => 'DELETE FROM foo WHERE bar=1',
+      dms   => 'delete',
+      tbls  => [qw(foo)],
+   },
+   'parse basic DELETE'
 );
 
 # #############################################################################

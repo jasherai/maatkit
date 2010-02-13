@@ -152,7 +152,7 @@ sub has_derived_table {
 
 # Return a list of tables/databases and the name they're aliased to.
 sub get_aliases {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, $list ) = @_;
    return unless $query;
    my $aliases;
 
@@ -221,13 +221,21 @@ sub get_aliases {
          # So if the tbl ref begins with 'AS', then we probably have a
          # subquery.
          MKDEBUG && _d('Subquery', $tbl_ref);
-         $aliases->{$alias} = undef;
+         $aliases->{$alias} = undef unless $list;
          next;
       }
 
-      my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
-      $aliases->{$alias || $tbl} = $tbl;
-      $aliases->{DATABASE}->{$tbl} = $db if $db;
+      if ( $list ) {
+         # Return tbls and their aliases as list instead of hashref.
+         $tbl_ref =~ s/^\s+//g;
+         $tbl_ref =~ s/\s+$//g;
+         push @$aliases, $tbl_ref;
+      }
+      else {
+         my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
+         $aliases->{$alias || $tbl} = $tbl;
+         $aliases->{DATABASE}->{$tbl} = $db if $db;
+      }
    }
    return $aliases;
 }
@@ -382,7 +390,7 @@ sub parse {
    $query = $self->clean_query($query);
 
    $parsed->{query} = $query;
-   $parsed->{tbls}  = $self->get_aliases($query);
+   $parsed->{tbls}  = $self->get_aliases($query, 1);
 
    my ($dms) = $query =~ m/^(\w+)/;
    $parsed->{dms} = lc $dms;
@@ -396,7 +404,7 @@ sub parse {
    #   |[^ ,]+
    #   |,
    #/gx;
-   
+
    return $parsed;
 }
 
