@@ -224,18 +224,6 @@ sub make_closures {
    }
 }
 
-# This subroutine converts various formats to seconds.  Examples:
-# 10.870 ms
-sub duration_to_secs {
-   my ( $self, $str ) = @_;
-   MKDEBUG && _d('Duration:', $str);
-   my ( $num, $suf ) = split(/\s+/, $str);
-   my $factor = $suf eq 'ms'  ? 1000
-              : $suf eq 'sec' ? 1
-              :                 die("Unknown suffix '$suf'");
-   return $num / $factor;
-}
-
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
