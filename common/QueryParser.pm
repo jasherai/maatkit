@@ -406,8 +406,8 @@ sub get_columns {
               |SQL_NO_CACHE
               |SQL_CALC_FOUND_ROWS
            )\s+
-      /SELECT /xg;
-      ($cols_def) = $query =~ m/^SELECT\s+(.+?)\s+FROM/cg;
+      /SELECT /xgi;
+      ($cols_def) = $query =~ m/^SELECT\s+(.+?)\s+FROM/i;
    }
    elsif ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
       ($cols_def) = $query =~ m/\(([^\)]+)\)\s*VALUE/i;
