@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 134;
+use Test::More tests => 136;
 use English qw(-no_match_vars);
 
 use QueryRewriter;
@@ -866,29 +866,54 @@ is_deeply(
 is_deeply(
    $qp->parse('SELECT * FROM tbl WHERE id=1'),
    {
-      query => [ 'SELECT * FROM tbl WHERE id=1' ],
-      dms   => [ 'select' ],
-      table => [ qw(tbl) ],
+      query   => [ 'SELECT * FROM tbl WHERE id=1' ],
+      dms     => [ 'select' ],
+      tables  => [ qw(tbl) ],
+      columns => [ qw(*) ],
    },
    'parse basic SELECT'
 );
 
 is_deeply(
+   $qp->parse('SELECT col1, col2 FROM tbl t, foo AS bar WHERE id=1'),
+   {
+      query   => [ 'SELECT col1, col2 FROM tbl t, foo AS bar WHERE id=1' ],
+      dms     => [ 'select' ],
+      tables  => [ 'tbl t', 'foo AS bar', ],
+      columns => [ qw(col1 col2) ],
+   },
+   'parse SELECT with columns and tables'
+);
+
+is_deeply(
    $qp->parse('INSERT INTO tbl VALUES (1, "abc")'),
    {
-      query => [ 'INSERT INTO tbl VALUES (1, "abc")' ],
-      dms   => [ 'insert' ],
-      table => [ qw(tbl) ],
+      query   => [ 'INSERT INTO tbl VALUES (1, "abc")' ],
+      dms     => [ 'insert' ],
+      tables  => [ qw(tbl) ],
+      columns => [],
    },
    'parse basic INSERT'
 );
 
 is_deeply(
+   $qp->parse('INSERT INTO tbl (`a`,`b`) VALUES (1, "abc")'),
+   {
+      query   => [ 'INSERT INTO tbl (`a`,`b`) VALUES (1, "abc")' ],
+      dms     => [ 'insert' ],
+      tables  => [ qw(tbl) ],
+      columns => [ qw(`a` `b`) ],
+   },
+   'parse INSERT with columns'
+);
+
+is_deeply(
    $qp->parse('DELETE FROM foo WHERE bar=1'),
    {
-      query => [ 'DELETE FROM foo WHERE bar=1' ],
-      dms   => [ 'delete' ],
-      table => [ qw(foo) ],
+      query   => [ 'DELETE FROM foo WHERE bar=1' ],
+      dms     => [ 'delete' ],
+      tables  => [ qw(foo) ],
+      columns => [],
    },
    'parse basic DELETE'
 );

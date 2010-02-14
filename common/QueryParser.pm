@@ -182,6 +182,11 @@ sub get_aliases {
    die "Failed to parse table references from $query"
       unless $tbl_refs && $from;
 
+   if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+      # Remove optional columns def from INSERT/REPLACE.
+      $tbl_refs =~ s/\([^\)]+\)\s*//;
+   }
+
    MKDEBUG && _d('tbl refs:', $tbl_refs);
 
    # These keywords precede a table ref. They signal the start of a table
@@ -380,6 +385,48 @@ sub query_type {
    }
 }
 
+sub get_columns {
+   my ( $self, $query ) = @_;
+   my $cols = [];
+   return $cols unless $query;
+   my $cols_def;
+
+   if ( $query =~ m/^SELECT/i ) {
+      $query =~ s/
+         ^SELECT\s+
+           (?:ALL
+              |DISTINCT
+              |DISTINCTROW
+              |HIGH_PRIORITY
+              |STRAIGHT_JOIN
+              |SQL_SMALL_RESULT
+              |SQL_BIG_RESULT
+              |SQL_BUFFER_RESULT
+              |SQL_CACHE
+              |SQL_NO_CACHE
+              |SQL_CALC_FOUND_ROWS
+           )\s+
+      /SELECT /xg;
+      ($cols_def) = $query =~ m/^SELECT\s+(.+?)\s+FROM/cg;
+   }
+   elsif ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+      ($cols_def) = $query =~ m/\(([^\)]+)\)\s*VALUE/i;
+   }
+
+   MKDEBUG && _d('Columns:', $cols_def);
+   if ( $cols_def ) {
+      @$cols = split(',', $cols_def);
+      map {
+         my $col = $_;
+         $col = s/^\s+//g;
+         $col = s/\s+$//g;
+         $col;
+      } @$cols;
+   }
+
+   return $cols;
+}
+
 sub parse {
    my ( $self, $query ) = @_;
    return unless $query;
@@ -389,8 +436,9 @@ sub parse {
    $query =~ s/\n/ /g;
    $query = $self->clean_query($query);
 
-   $parsed->{query} = [ $query ];
-   $parsed->{table} = $self->get_aliases($query, 1);
+   $parsed->{query}   = [ $query ];
+   $parsed->{tables}  = $self->get_aliases($query, 1);
+   $parsed->{columns} = $self->get_columns($query);
 
    my ($dms) = $query =~ m/^(\w+)/;
    $parsed->{dms} = [ lc $dms ],
