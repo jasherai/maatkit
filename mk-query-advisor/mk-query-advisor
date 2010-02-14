@@ -1273,7 +1273,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 5775
+# QueryParser package 5779
 # ###########################################################################
 package QueryParser;
 
@@ -1389,6 +1389,10 @@ sub get_aliases {
 
    die "Failed to parse table references from $query"
       unless $tbl_refs && $from;
+
+   if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+      $tbl_refs =~ s/\([^\)]+\)\s*//;
+   }
 
    MKDEBUG && _d('tbl refs:', $tbl_refs);
 
@@ -1551,6 +1555,48 @@ sub query_type {
    }
 }
 
+sub get_columns {
+   my ( $self, $query ) = @_;
+   my $cols = [];
+   return $cols unless $query;
+   my $cols_def;
+
+   if ( $query =~ m/^SELECT/i ) {
+      $query =~ s/
+         ^SELECT\s+
+           (?:ALL
+              |DISTINCT
+              |DISTINCTROW
+              |HIGH_PRIORITY
+              |STRAIGHT_JOIN
+              |SQL_SMALL_RESULT
+              |SQL_BIG_RESULT
+              |SQL_BUFFER_RESULT
+              |SQL_CACHE
+              |SQL_NO_CACHE
+              |SQL_CALC_FOUND_ROWS
+           )\s+
+      /SELECT /xgi;
+      ($cols_def) = $query =~ m/^SELECT\s+(.+?)\s+FROM/i;
+   }
+   elsif ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+      ($cols_def) = $query =~ m/\(([^\)]+)\)\s*VALUE/i;
+   }
+
+   MKDEBUG && _d('Columns:', $cols_def);
+   if ( $cols_def ) {
+      @$cols = split(',', $cols_def);
+      map {
+         my $col = $_;
+         $col = s/^\s+//g;
+         $col = s/\s+$//g;
+         $col;
+      } @$cols;
+   }
+
+   return $cols;
+}
+
 sub parse {
    my ( $self, $query ) = @_;
    return unless $query;
@@ -1559,11 +1605,12 @@ sub parse {
    $query =~ s/\n/ /g;
    $query = $self->clean_query($query);
 
-   $parsed->{query} = $query;
-   $parsed->{table} = $self->get_aliases($query, 1);
+   $parsed->{query}   = [ $query ];
+   $parsed->{tables}  = $self->get_aliases($query, 1);
+   $parsed->{columns} = $self->get_columns($query);
 
    my ($dms) = $query =~ m/^(\w+)/;
-   $parsed->{dms} = lc $dms;
+   $parsed->{dms} = [ lc $dms ],
 
 
    return $parsed;
@@ -1596,6 +1643,10 @@ package mk_query_advisor;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -1619,7 +1670,6 @@ sub main {
 
    $o->usage_or_errors();
 
-   
    # #########################################################################
    # Parse checks from POD.
    # #########################################################################
@@ -1708,7 +1758,8 @@ sub main {
    # of checks.
    push @pipeline, sub {
       my ( %args ) = @_;
-      my $event = $args{event};
+      MKDEBUG && _d('callback: parse query');
+      my $event        = $args{event};
       my $query_struct = $qp->parse($event->{arg});
       return unless $query_struct;
       $event->{query_struct} = $query_struct;
@@ -1718,6 +1769,7 @@ sub main {
    # Check the query and get a list of checks that failed (flags).
    push @pipeline, sub {
       my ( %args ) = @_;
+      MKDEBUG && _d('callback: check query');
       my $event = $args{event};
       my $flags = check_query(
          checks       => \@checks,
@@ -1729,17 +1781,19 @@ sub main {
 
    push @pipeline, sub {
       my ( %args ) = @_;
+      MKDEBUG && _d('callback: print flags');
       my $event = $args{event};
-      my $flags = $event->{flags};
-      foreach my $flag ( @$flags ) {
-         print "$flag->{desc}\n";
-      }
+      print_flags(
+         %args,
+         verbose => $o->get('verbose'),
+      );
       return $event;
    };
 
    # ##########################################################################
    # Get ready to do the main work.
    # ##########################################################################
+   my $fh;
    if ( @ARGV == 0 ) {
       push @ARGV, '-'; # Magical STDIN filename.
    }
@@ -1747,6 +1801,56 @@ sub main {
    # #########################################################################
    # Do it!
    # #########################################################################
+   EVENT:
+   while ( $oktorun ) {
+      if ( !$fh ) {
+         my $file = shift @ARGV;
+         if ( !$file ) {
+            MKDEBUG && _d('No more files to parse');
+            last EVENT;
+         }
+         if ( $file eq '-' ) {
+            $fh = *STDIN;
+            MKDEBUG && _d('Reading STDIN');
+         }
+         else {
+            if ( !open $fh, "<", $file ) {
+               $fh = undef;
+               warn "Cannot open $file: $OS_ERROR\n";
+               next EVENT;
+            }
+            MKDEBUG && _d('Reading', $file);
+         }
+      }
+
+      my $event       = {};
+      my $next_event  = sub { return <$fh>; };
+      my $tell        = sub { return tell $fh; };
+      my $more_events = 1;
+      my $oktorun_sub = sub { $more_events = $_[0]; };
+      eval {
+         foreach my $proc ( @pipeline ) {
+            last unless $oktorun;  # the global oktorun var
+            $event = $proc->(
+               event      => $event,
+               fh         => $fh,
+               next_event => $next_event,
+               tell       => $tell,
+               oktorun    => $oktorun_sub,
+            );
+            last unless $event;
+         }
+      };
+      if ( $EVAL_ERROR ) {
+         _d($EVAL_ERROR);
+         last EVENT unless $o->get('continue-on-error');
+      }
+      if ( !$more_events ) {
+         MKDEBUG && _d('No more events');
+         close $fh if $fh;
+         $fh = undef;
+      }
+   }  # EVENT
 
    return 0;
 }
@@ -1766,8 +1870,9 @@ sub parse_check {
    my @lines = split("\n", $para);
 
    # First 2 lines should be id and level.
-   for ( 0..2 ) {
+   for ( 1..2 ) {
       my $line = shift @lines;
+      MKDEBUG && _d($line);
       $line =~ m/(\w+):\s*(.+)/;
       $check->{$1} = $2;
    }
@@ -1778,6 +1883,7 @@ sub parse_check {
    my @rules;
    push @rules, $rule;
 
+   # Second and subsequent rules
    my $line = shift @lines;
    while ( $line !~ /^desc/ ) {
       push @rules, $line;
@@ -1785,11 +1891,12 @@ sub parse_check {
    }
 
    # Skip this check and return unless its rule is valid.      
-   my $rules = parse_check_rules(\@rules);
+   my $rules = parse_check_rules(@rules);
    return unless $rules;
    $check->{rules} = $rules;
 
    # First line of desc.
+   MKDEBUG && _d($line);
    $line =~ m/(\w+):\s*(.+)/;
    my $desc = $1;
    $check->{$1} = $2;
@@ -1799,6 +1906,7 @@ sub parse_check {
    }
    $check->{$desc} =~ s/\s+/ /g;
 
+   MKDEBUG && _d('Parsed check:', Dumper($check));
    return $check;
 }
 
@@ -1806,11 +1914,12 @@ sub parse_check {
 # the compiled check rules that check_query() can use.
 sub parse_check_rules {
    my ( @rules ) = @_;
-
    my @compiled;
    foreach my $rule ( @rules ) {
-      my ($obj, $m, $pat) = $rule =~ m/(\S+)\s+(matches|does not match)\s+(.+)/;
-      MKDEBUG && _d('Rule:', $obj, $m, $pat);
+      MKDEBUG && _d('Rule:', $rule);
+      my ($obj, $m, $pat)
+         = $rule =~ m/^\s*(\S+)\s+((?:does not )?(?:match|matches))\s+(.+)/;
+      MKDEBUG && _d('Rule parsed:', $obj, $m, $pat);
       if ( !$obj || !$m || !$pat ) {
          warn "Invalid rule: $rule";
          next;
@@ -1835,13 +1944,10 @@ sub parse_check_rules {
 sub check_query {
    my ( %args ) = @_;
    my $checks        = $args{checks};
-   my $ignore_checks = $args{ignore_checks};
    my $query_struct  = $args{query_struct};
    my @flags;
 
    foreach my $check ( @$checks ) {
-      next if $ignore_checks->{ $check->{id} };
-
       my $rules   = $check->{rules};
       my $matches = 0;
 
@@ -1863,10 +1969,28 @@ sub check_query {
          last RULE unless $matches;
       }
 
-      push @flags, $check if $matches;
+      if ( $matches ) {
+         MKDEBUG && _d('Flag', $check->{id});
+         push @flags, $check;
+      }
    }
 
    return \@flags;
+}
+
+sub print_flags {
+   my ( %args ) = @_;
+   my $event = $args{event};
+
+   my $flags   = $event->{flags};
+   my $n_flags = scalar @$flags;
+   foreach my $i ( 1..$n_flags ) {
+      my $c    = $flags->[$i - 1];
+      my $flag = "# $i. $c->{id} $c->{desc}\n";
+      print $flag;
+   }
+   print "$event->{arg}\n" if $n_flags;
+   return;
 }
 
 # Catches signals so we can exit gracefully.
@@ -1945,14 +2069,14 @@ the structure of these checks.
 
 id:    LIT.001
 level: note
-rules: column matches ['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\.
+rules: query matches ['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\.
 desc:  IP address used as string.  The string literal looks like an IP address
        but is not used inside INET_ATON().  WHERE ip='127.0.0.1' is better as
        ip=INET_ATON('127.0.0.1') if the column is numeric.
 
 id:    LIT.002
 level: warn
-rules: column matches [^'"](?:\d{2,4}-\d{1,2}-\d{1,2}|\d{4,6})
+rules: query matches [^'"](?:\d{2,4}-\d{1,2}-\d{1,2}|\d{4,6})
 desc:  Date literal is not quoted.  WHERE col<2010-02-12 is valid but wrong;
        the date should be quoted.
 
@@ -1960,7 +2084,7 @@ desc:  Date literal is not quoted.  WHERE col<2010-02-12 is valid but wrong;
 
 id:    TBL.001
 level: note
-rules: table matches *
+rules: columns match \*
 desc:  SELECT *.  Selecting specific columns is preferable to SELECT *.
 
 =head2 Clauses
@@ -2014,10 +2138,10 @@ Each rule, one per line, is a simple sentence of the form:
 PATTERN is any Perl regular expression.  OBJECT is one of:
 
   OBJECT     REFERS TO
-  =======    ====================================================
+  ========   =======================================================
   query      The entire SQL text of the query
-  table      Any table and its optional alias (e.g. pine AS tree)
-  column     Any column and its value (e.g. col='foo')
+  tables     Any table and its optional alias (e.g. pine AS tree)
+  columns    Columns from SELECT and, optionally, INSERT and REPLACE
 
 The description (desc) should have at least two period-terminate sentences.
 The first sentece should be the terse definition of the check.  The second
@@ -2048,6 +2172,10 @@ type: Array
 
 Read this comma-separated list of config files; if specified, this must be the
 first option on the command line.
+
+=item --continue-on-error
+
+Continue working even if there is an error.
 
 =item --defaults-file
 
@@ -2122,6 +2250,12 @@ Socket file to use for connection.
 short form: -u; type: string
 
 User for login if not current user.
+
+=item --verbose
+
+cumulative; default: 1
+
+Increase verbosity of output.
 
 =item --version
 
