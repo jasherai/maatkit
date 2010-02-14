@@ -866,9 +866,9 @@ is_deeply(
 is_deeply(
    $qp->parse('SELECT * FROM tbl WHERE id=1'),
    {
-      query => 'SELECT * FROM tbl WHERE id=1',
-      dms   => 'select',
-      table => [qw(tbl)],
+      query => [ 'SELECT * FROM tbl WHERE id=1' ],
+      dms   => [ 'select' ],
+      table => [ qw(tbl) ],
    },
    'parse basic SELECT'
 );
@@ -876,9 +876,9 @@ is_deeply(
 is_deeply(
    $qp->parse('INSERT INTO tbl VALUES (1, "abc")'),
    {
-      query => 'INSERT INTO tbl VALUES (1, "abc")',
-      dms   => 'insert',
-      table => [qw(tbl)],
+      query => [ 'INSERT INTO tbl VALUES (1, "abc")' ],
+      dms   => [ 'insert' ],
+      table => [ qw(tbl) ],
    },
    'parse basic INSERT'
 );
@@ -886,9 +886,9 @@ is_deeply(
 is_deeply(
    $qp->parse('DELETE FROM foo WHERE bar=1'),
    {
-      query => 'DELETE FROM foo WHERE bar=1',
-      dms   => 'delete',
-      table => [qw(foo)],
+      query => [ 'DELETE FROM foo WHERE bar=1' ],
+      dms   => [ 'delete' ],
+      table => [ qw(foo) ],
    },
    'parse basic DELETE'
 );

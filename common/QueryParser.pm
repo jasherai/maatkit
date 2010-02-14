@@ -389,11 +389,11 @@ sub parse {
    $query =~ s/\n/ /g;
    $query = $self->clean_query($query);
 
-   $parsed->{query} = $query;
+   $parsed->{query} = [ $query ];
    $parsed->{table} = $self->get_aliases($query, 1);
 
    my ($dms) = $query =~ m/^(\w+)/;
-   $parsed->{dms} = lc $dms;
+   $parsed->{dms} = [ lc $dms ],
 
    # my @words = $query =~ m/
    #   [A-Za-z_.]+\(.*?\)+   # Match FUNCTION(...)
