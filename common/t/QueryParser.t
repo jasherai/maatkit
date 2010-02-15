@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 136;
+use Test::More tests => 139;
 use English qw(-no_match_vars);
 
 use QueryRewriter;
@@ -343,6 +343,16 @@ test_query(
    },
    [qw(foo)],
    'insert / on duplicate key update',
+);
+
+# #############################################################################
+# Non-DMS queries.
+# #############################################################################
+test_query(
+   'BEGIN',
+   {},
+   [],
+   'BEGIN'
 );
 
 # #############################################################################
@@ -916,6 +926,17 @@ is_deeply(
       columns => [],
    },
    'parse basic DELETE'
+);
+
+is_deeply(
+   $qp->parse('BEGIN'),
+   {
+      query   => [ 'BEGIN' ],
+      dms     => [ 'begin' ],
+      tables  => [ ],
+      columns => [ ],
+   },
+   'parse BEGIN'
 );
 
 # #############################################################################

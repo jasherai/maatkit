@@ -178,9 +178,10 @@ sub get_aliases {
       (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
    }ix;
 
-   # This shouldn't happen, often at least.
-   die "Failed to parse table references from $query"
-      unless $tbl_refs && $from;
+   if ( !$tbl_refs ) {
+      MKDEBUG && _d("No tables ref in", $query);
+      return $list ? [] : {};
+   }
 
    if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
       # Remove optional columns def from INSERT/REPLACE.
