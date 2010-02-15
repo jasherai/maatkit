@@ -1273,7 +1273,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 5779
+# QueryParser package 5783
 # ###########################################################################
 package QueryParser;
 
@@ -1387,8 +1387,10 @@ sub get_aliases {
       (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
    }ix;
 
-   die "Failed to parse table references from $query"
-      unless $tbl_refs && $from;
+   if ( !$tbl_refs ) {
+      MKDEBUG && _d("No tables ref in", $query);
+      return $list ? [] : {};
+   }
 
    if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
       $tbl_refs =~ s/\([^\)]+\)\s*//;
@@ -2208,6 +2210,185 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Daemon package 5266
+# ###########################################################################
+
+package Daemon;
+
+use strict;
+use warnings FATAL => 'all';
+
+use POSIX qw(setsid);
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(o) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $o = $args{o};
+   my $self = {
+      o        => $o,
+      log_file => $o->has('log') ? $o->get('log') : undef,
+      PID_file => $o->has('pid') ? $o->get('pid') : undef,
+   };
+
+   check_PID_file(undef, $self->{PID_file});
+
+   MKDEBUG && _d('Daemonized child will log to', $self->{log_file});
+   return bless $self, $class;
+}
+
+sub daemonize {
+   my ( $self ) = @_;
+
+   MKDEBUG && _d('About to fork and daemonize');
+   defined (my $pid = fork()) or die "Cannot fork: $OS_ERROR";
+   if ( $pid ) {
+      MKDEBUG && _d('I am the parent and now I die');
+      exit;
+   }
+
+   $self->{child} = 1;
+
+   POSIX::setsid() or die "Cannot start a new session: $OS_ERROR";
+   chdir '/'       or die "Cannot chdir to /: $OS_ERROR";
+
+   $self->_make_PID_file();
+
+   $OUTPUT_AUTOFLUSH = 1;
+
+   if ( -t STDIN ) {
+      close STDIN;
+      open  STDIN, '/dev/null'
+         or die "Cannot reopen STDIN to /dev/null: $OS_ERROR";
+   }
+
+   if ( $self->{log_file} ) {
+      close STDOUT;
+      open  STDOUT, '>>', $self->{log_file}
+         or die "Cannot open log file $self->{log_file}: $OS_ERROR";
+
+      close STDERR;
+      open  STDERR, ">&STDOUT"
+         or die "Cannot dupe STDERR to STDOUT: $OS_ERROR"; 
+   }
+   else {
+      if ( -t STDOUT ) {
+         close STDOUT;
+         open  STDOUT, '>', '/dev/null'
+            or die "Cannot reopen STDOUT to /dev/null: $OS_ERROR";
+      }
+      if ( -t STDERR ) {
+         close STDERR;
+         open  STDERR, '>', '/dev/null'
+            or die "Cannot reopen STDERR to /dev/null: $OS_ERROR";
+      }
+   }
+
+   MKDEBUG && _d('I am the child and now I live daemonized');
+   return;
+}
+
+sub check_PID_file {
+   my ( $self, $file ) = @_;
+   my $PID_file = $self ? $self->{PID_file} : $file;
+   MKDEBUG && _d('Checking PID file', $PID_file);
+   if ( $PID_file && -f $PID_file ) {
+      my $pid;
+      eval { chomp($pid = `cat $PID_file`); };
+      die "Cannot cat $PID_file: $OS_ERROR" if $EVAL_ERROR;
+      MKDEBUG && _d('PID file exists; it contains PID', $pid);
+      if ( $pid ) {
+         my $pid_is_alive = kill 0, $pid;
+         if ( $pid_is_alive ) {
+            die "The PID file $PID_file already exists "
+               . " and the PID that it contains, $pid, is running";
+         }
+         else {
+            warn "Overwriting PID file $PID_file because the PID that it "
+               . "contains, $pid, is not running";
+         }
+      }
+      else {
+         die "The PID file $PID_file already exists but it does not "
+            . "contain a PID";
+      }
+   }
+   else {
+      MKDEBUG && _d('No PID file');
+   }
+   return;
+}
+
+sub make_PID_file {
+   my ( $self ) = @_;
+   if ( exists $self->{child} ) {
+      die "Do not call Daemon::make_PID_file() for daemonized scripts";
+   }
+   $self->_make_PID_file();
+   $self->{rm_PID_file} = 1;
+   return;
+}
+
+sub _make_PID_file {
+   my ( $self ) = @_;
+
+   my $PID_file = $self->{PID_file};
+   if ( !$PID_file ) {
+      MKDEBUG && _d('No PID file to create');
+      return;
+   }
+
+   $self->check_PID_file();
+
+   open my $PID_FH, '>', $PID_file
+      or die "Cannot open PID file $PID_file: $OS_ERROR";
+   print $PID_FH $PID
+      or die "Cannot print to PID file $PID_file: $OS_ERROR";
+   close $PID_FH
+      or die "Cannot close PID file $PID_file: $OS_ERROR";
+
+   MKDEBUG && _d('Created PID file:', $self->{PID_file});
+   return;
+}
+
+sub _remove_PID_file {
+   my ( $self ) = @_;
+   if ( $self->{PID_file} && -f $self->{PID_file} ) {
+      unlink $self->{PID_file}
+         or warn "Cannot remove PID file $self->{PID_file}: $OS_ERROR";
+      MKDEBUG && _d('Removed PID file');
+   }
+   else {
+      MKDEBUG && _d('No PID to remove');
+   }
+   return;
+}
+
+sub DESTROY {
+   my ( $self ) = @_;
+   $self->_remove_PID_file() if $self->{child} || $self->{rm_PID_file};
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Daemon package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -2253,10 +2434,13 @@ sub main {
    # #########################################################################
    # Parse checks from POD.
    # #########################################################################
-   my @checks = $o->parse_section(
+   my $ignore_checks = $o->get('ignore-checks');
+   my @checks        = $o->parse_section(
       file        => __FILE__,
       section     => 'CHECKS',
-      trf         => \&parse_check,
+      trf         => sub {
+         return filter_checks( parse_check(@_), $ignore_checks );
+      },
    );
 
    # #########################################################################
@@ -2336,13 +2520,20 @@ sub main {
       return $event;
    };
 
-   push @pipeline, sub {
-      my ( %args ) = @_;
-      MKDEBUG && _d('callback: fingerprint');
-      my $event = $args{event};
-      $event->{fingerprint} = $qr->fingerprint($event->{arg});
-      return $event;
-   };
+   if ( $o->get('fingerprint') ) {
+      my %seen_fingerprint;
+      push @pipeline, sub {
+         my ( %args ) = @_;
+         MKDEBUG && _d('callback: fingerprint');
+         my $event = $args{event};
+         $event->{fingerprint} = $qr->fingerprint($event->{arg});
+         if ( $seen_fingerprint{ $event->{fingerprint} }++ ) {
+            MKDEBUG && _d('Skipping already seen fingerprint');
+            return;
+         }
+         return $event;
+      };
+   }
 
    # Parser the query.  The query struct is a hashref with keys
    # to various parts of the query.  These keys are the subjects
@@ -2376,8 +2567,9 @@ sub main {
       my $event = $args{event};
       print_flags(
          %args,
-         verbose   => $o->get('verbose'),
-         print_all => $o->get('print-all'),
+         verbose       => $o->get('verbose'),
+         print_all     => $o->get('print-all'),
+         report_format => $o->get('report-format'),
       );
       return $event;
    };
@@ -2388,6 +2580,21 @@ sub main {
    my $fh;
    if ( @ARGV == 0 ) {
       push @ARGV, '-'; # Magical STDIN filename.
+   }
+
+   # ########################################################################
+   # Daemonize now that everything is setup and ready to work.
+   # ########################################################################
+   my $daemon;
+   if ( $o->get('daemonize') ) {
+      $daemon = new Daemon(o=>$o);
+      $daemon->daemonize();
+      MKDEBUG && _d('I am a daemon now');
+   }
+   elsif ( $o->get('pid') ) {
+      # We're not daemoninzing, it just handles PID stuff.
+      $daemon = new Daemon(o=>$o);
+      $daemon->make_PID_file();
    }
 
    # #########################################################################
@@ -2439,7 +2646,7 @@ sub main {
       }
       if ( !$more_events ) {
          MKDEBUG && _d('No more events');
-         close $fh if $fh;
+         close $fh if $fh and $fh ne *STDIN;
          $fh = undef;
       }
    }  # EVENT
@@ -2525,6 +2732,14 @@ sub parse_check_rules {
    return \@compiled;
 }
 
+sub filter_checks {
+   my ( $check, $ignore_checks ) = @_;
+   return $check unless $ignore_checks;
+   return if $ignore_checks->{ $check->{id} };
+   return if $ignore_checks->{ $check->{level} };
+   return $check;
+}
+
 # Run each check against the query.  Each check has 1 or more rules,
 # all of which must match the query to flag the check.  An arrayref
 # of flagged checks are returned.  The rules' objects are parts of
@@ -2573,7 +2788,9 @@ sub check_query {
 sub print_flags {
    my ( %args ) = @_;
    my $event   = $args{event};
-   my $verbose = $args{verbose} || 0,
+   my $verbose = $args{verbose} || 0;
+   my $format  = $args{report_format};
+
    my $flags   = $event->{flags};
    my $n_flags = scalar @$flags;
    my @seen_ids;
@@ -2581,13 +2798,13 @@ sub print_flags {
    return unless $n_flags || $args{print_all};
 
    # Header
-   my $id = make_checksum($event->{fingerprint});
+   my $id = make_checksum($event->{fingerprint} || $event->{arg});
    print "\n# Query ID 0x$id at byte " . ($event->{pos_in_log} || 0) . "\n";
 
    # New check IDs and their descriptions
    foreach my $i ( 1..$n_flags ) {
       my $c = $flags->[$i - 1];
-      if ( $seen_id{ $c->{id} }++ ) {
+      if ( $format eq 'compact' && $seen_id{ $c->{id} }++ ) {
          push @seen_ids, $c->{id};
       }
       else {
@@ -2605,7 +2822,7 @@ sub print_flags {
    }
 
    # Already seen check IDs
-   print "# @seen_ids\n" if scalar @seen_ids;
+   print "# Also: @seen_ids\n" if scalar @seen_ids;
 
    # The query
    print "$event->{arg}\n";
@@ -2689,7 +2906,7 @@ the structure of these checks.
 
 id:    LIT.001
 level: note
-rules: query matches ['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\.
+rules: query matches ['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}
 desc:  IP address used as string.  The string literal looks like an IP address
        but is not used inside INET_ATON().  WHERE ip='127.0.0.1' is better as
        ip=INET_ATON('127.0.0.1') if the column is numeric.
@@ -2705,14 +2922,13 @@ desc:  Date literal is not quoted.  WHERE col<2010-02-12 is valid but wrong;
 id:    TBL.001
 level: note
 rules: columns match \*
-desc:  SELECT *.  Selecting specific columns is preferable to SELECT *.
+desc:  All columns.  Selecting specific columns is preferable to SELECT *.
 
-=head2 Clauses
-
-id:    CLA.001
+id:    TBL.002
 level: note
-rules: query matches ORDER BY RAND
-desc:  ORDER BY RAND().  ORDER BY RAND() is not preferred.
+rules: columns match [\w`-]+\.\*\s+(?:AS\s+)?[[\w`-]+
+desc:  Alaised all columns.  Aliasing an all columns reference like "tbl.* foo"
+       is confusing.
 
 =head2 Query
 
@@ -2720,8 +2936,9 @@ id:    QRY.001
 level: note
 rules: query matches ^INSERT|REPLACE
        query does not match INTO\s+\S+\s+\([^\)]\)
-desc:  Blind INSERT.  The INSERT does not specify columns.  INSERT INTO tbl
-       (col1,col2) VALUES (1,2) is preferred to INSERT INTO tbl VALUES (1,2).
+desc:  Blind INSERT/REPLACE.  The INSERT/REPLACE does not specify columns. 
+       "INSERT INTO tbl (col1,col2) VALUES" is preferred to "INSERT INTO tbl
+       VALUES".
 
 id:    QRY.002
 level: note
@@ -2732,8 +2949,13 @@ desc:  SQL_CALC_FOUND_ROWS does not scale.  SQL_CALC_FOUND_ROWS can cause
 id:    QRY.003
 level: note
 rules: query matches ^SELECT
-       query does not match \bWHERE\B
+       query does not match \bWHERE\b
 desc:  SELECT without WHERE.  The SELECT statement has no WHERE clause.
+
+id:    QRY.004;
+level: note
+rules: query matches ORDER BY RAND
+desc:  ORDER BY RAND().  ORDER BY RAND() is not preferred.
 
 =head1 CHECK SYNTAX
 
@@ -2797,12 +3019,21 @@ first option on the command line.
 
 Continue working even if there is an error.
 
+=item --daemonize
+
+Fork to the background and detach from the shell.  POSIX
+operating systems only.
+
 =item --defaults-file
 
 short form: -F; type: string
 
 Only read mysql options from the given file.  You must give an absolute
 pathname.
+
+=item --fingerprint
+
+Fingerprint and analyze only one sample of each unique query.
 
 =item --help
 
@@ -2813,6 +3044,15 @@ Show help and exit.
 short form: -h; type: string
 
 Connect to host.
+
+=item --ignore-checks
+
+type: hash
+
+Ignore these check IDs or levels.
+
+Specify a comma-separated list of check IDs (e.g. LIT.001) or levels
+(e.g. warn) to ignore.
 
 =item --password
 
@@ -2838,7 +3078,7 @@ Port number to use for connection.
 
 =item --print-all
 
-Print all queries, even those with no failed checks.
+Print all queries, even those with no flagged checks.
 
 =item --query
 
@@ -2848,6 +3088,16 @@ Analyze this single query; ignores files on command line.
 
 This option allows you to supply a single query on the command line.  Any
 logs also specified on the command line are ignored.
+
+=item --report-format
+
+type: string; default: compact
+
+Type of report format: full or compact;
+
+A full report lists the check description for every query even if the check
+has been seen before in another query.  A compact report only lists the
+description for new checks and lists the check IDs for already seen checks.
 
 =item --type
 
