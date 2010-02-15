@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Duplicate clustered index names were not preserved (issue 901).
+
 2010-01-06: version 1.2.10
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).

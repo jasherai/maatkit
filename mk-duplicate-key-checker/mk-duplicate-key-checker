@@ -3398,7 +3398,7 @@ sub print_duplicate_key {
          # removing them (issue 295).
          print "# To shorten this duplicate clustered index, execute:\n"
             . 'ALTER TABLE '.$q->quote($db, $tbl)." DROP INDEX `$dupe->{key}`, "
-            . "ADD INDEX ($dupe->{short_key});\n";
+            . "ADD INDEX `$dupe->{key}` ($dupe->{short_key});\n";
       }
    }
    print "\n";

@@ -10,7 +10,7 @@
 #	  `b` int(11) NOT NULL
 #	  `a` int(11) NOT NULL
 # To shorten this duplicate clustered index, execute:
-ALTER TABLE `issue_295`.`t` DROP INDEX `b_a`, ADD INDEX (`b`);
+ALTER TABLE `issue_295`.`t` DROP INDEX `b_a`, ADD INDEX `b_a` (`b`);
 
 # ########################################################################
 # Summary of indexes                                                      
