@@ -1,5 +1,6 @@
 Changelog for mk-log-player:
 
+   * --only-select did not handle leading /* comments */ (issue 903).
    * Not all sessions were assigned/played in some cases.
    * Added --dry-run.
    * Made --quiet disable --verbose.

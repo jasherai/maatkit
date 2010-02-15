@@ -2715,9 +2715,13 @@ sub play_session {
                next QUERY;
             }
 
-            if ( $only_select && $query !~ m/^(?:SELECT|USE) /i ) {
-               MKDEBUG && _d('Skipping query for --only-select:', $query);
-               next QUERY;
+            if ( $only_select ) {
+               # Remove leading /* comments */ (issue 903)
+               $query =~ s!^/\*.*?\*/\s*!!;
+               if ( $query !~ m/^(?:SELECT|USE) /i ) {
+                  MKDEBUG && _d('Skipping query for --only-select:', $query);
+                  next QUERY;
+               }
             }
 
             if ( $query =~ m/^use (\S+)/ ) {
@@ -2781,6 +2785,10 @@ sub get_cxn {
 
 sub warn_error {
    my ( $childno, $session_n, $query, $warning ) = @_;
+   $childno     = -1 unless defined $childno;
+   $session_n   = -1 unless defined $session_n;
+   $query     ||= "";
+   $warning   ||= "";
    warn "Query '$query' in proc $childno session $session_n caused an error: "
       . "$warning\n";
    return;
