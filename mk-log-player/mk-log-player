@@ -2960,7 +2960,9 @@ Print which processes play which session files then exit.
 
 type: string; group: Split
 
-Discard events for which this Perl code doesn't return true.
+Discard L<"--split"> events for which this Perl code doesn't return true.
+
+This option only works with L<"--split">.
 
 This option is a string of Perl code or a file containing Perl code that gets
 compiled into a subroutine with one argument: $event.  This is a hashref.
