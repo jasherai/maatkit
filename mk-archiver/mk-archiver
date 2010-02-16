@@ -3290,9 +3290,11 @@ sub main {
 
          trace('plugin_start', sub {
             $table->{plugin} = $table->{m}->new(
-               dbh => $table->{dbh},
-               db  => $table->{D},
-               tbl => $table->{t},
+               dbh          => $table->{dbh},
+               db           => $table->{D},
+               tbl          => $table->{t},
+               OptionParser => $o,
+               DSNParser    => $dp,
             );
          });
       }
@@ -3382,11 +3384,12 @@ sub main {
          cols       => $del_stmt->{cols},
          index      => $del_stmt->{index},
          asc_first  => $o->get('ascend-first'),
-         # plugin might prevent rows in the source from being deleted,
-         # unless we're bulk deleting then it cannot.
-         asc_only   => ($src->{m} && !$o->get('bulk-delete'))
-                       || $o->get('no-delete'),
-      );
+         # A plugin might prevent rows in the source from being deleted
+         # when doing single delete, but it cannot prevent rows from
+         # being deleted when doing a bulk delete.
+         asc_only   => $src->{m} ? ($o->get('bulk-delete') ? 0 : 1)
+                    :              $o->get('no-delete'),
+      )
    }
    else {
       $sel_stmt = {
@@ -3571,7 +3574,7 @@ sub main {
       $statistics{SELECT} += $get_sth->rows;
    });
    my $row = $get_sth->fetchrow_arrayref();
-   MKDEBUG && _d("First row: ", Dumper($row));
+   MKDEBUG && _d("First row: ", Dumper($row), 'rows:', $get_sth->rows);
    if ( !$row ) {
       $get_sth->finish;
       $src->{dbh}->disconnect();
@@ -3652,6 +3655,7 @@ sub main {
             $ins_sth ||= $ins_row; # Default to the sth decided before.
             my $success = do_with_retries($o, 'inserting', sub {
                $ins_sth->execute(@{$row}[@ins_slice]);
+               MKDEBUG && _d('Inserted', $del_row->rows, 'rows');
                $statistics{INSERT} += $ins_sth->rows;
             });
             if ( $success == $OUT_OF_RETRIES ) {
@@ -3674,6 +3678,7 @@ sub main {
             if ( !$o->get('no-delete') ) {
                my $success = do_with_retries($o, 'deleting', sub {
                   $del_row->execute(@{$row}[@del_slice]);
+                  MKDEBUG && _d('Deleted', $del_row->rows, 'rows');
                   $statistics{DELETE} += $del_row->rows;
                });
                if ( $success == $OUT_OF_RETRIES ) {
@@ -3712,11 +3717,20 @@ sub main {
          printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
       }
 
-      # Get the next row.
+      # Get the next row in this chunk.
+      # First time through this loop $get_sth is set to $get_first.
+      # For non-bulk operations this means that rows ($row) are archived
+      # one-by-one in in the code block above ("row is archivable").  For
+      # bulk operations, the 2nd to 2nd-to-last rows are ignored and
+      # only the first row ($first_row) and the last row ($last_row) of
+      # this chunk are used to do bulk INSERT or DELETE on the range of
+      # rows between first and last.  After the bulk ops, $first_row and
+      # $last_row are reset to the next chunk.
       if ( $get_sth->{Active} ) { # Fetch until exhausted
          $row = $get_sth->fetchrow_arrayref();
       }
       if ( !$row ) {
+         MKDEBUG && _d('No more rows in this chunk; doing bulk operations');
 
          # ###################################################################
          # This code is for the bulk archiving functionality.
@@ -3743,6 +3757,7 @@ sub main {
             $ins_sth ||= $ins_row; # Default to the sth decided before.
             my $success = do_with_retries($o, 'bulk_inserting', sub {
                $ins_sth->execute($bulkins_file->filename());
+               MKDEBUG && _d('Bulk inserted', $del_row->rows, 'rows');
                $statistics{INSERT} += $ins_sth->rows;
             });
             if ( $success != $ALL_IS_WELL ) {
@@ -3766,6 +3781,7 @@ sub main {
                      @{$first_row}[@bulkdel_slice],
                      @{$lastrow}[@bulkdel_slice],
                   );
+                  MKDEBUG && _d('Bulk deleted', $del_row->rows, 'rows');
                   $statistics{DELETE} += $del_row->rows;
                });
                if ( $success != $ALL_IS_WELL ) {
@@ -3781,13 +3797,16 @@ sub main {
          commit($o, 1) if $commit_each;
          $get_sth = $get_next;
 
+         MKDEBUG && _d('Fetching rows in next chunk');
          trace('select', sub {
             my $select_start = time;
-            $get_next->execute(@{$lastrow}[@asc_slice]);
+            $get_sth->execute(@{$lastrow}[@asc_slice]);
             $last_select_time = time - $select_start;
-            $statistics{SELECT} += $get_next->rows;
+            MKDEBUG && _d('Fetched', $get_sth->rows, 'rows');
+            $statistics{SELECT} += $get_sth->rows;
          });
 
+         # Reset $first_row to the first row of this new chunk.
          @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
          $row              = $get_sth->fetchrow_arrayref();
          $first_row        = $row ? [ @$row ] : undef;
@@ -3796,7 +3815,11 @@ sub main {
             $bulkins_file = File::Temp->new( SUFFIX => 'mk-archiver' )
                or die "Cannot open temp file: $OS_ERROR\n";
          }
+      }  # no next row (do bulk operations)
+      else {
+         MKDEBUG && _d('Got another row in this chunk');
       }
+
       # Check slave lag and wait if slave is too far behind.
       if ( $lag_dbh ) {
          my $lag = $ms->get_slave_lag($lag_dbh);
@@ -3816,7 +3839,8 @@ sub main {
             sleep($sleep_time);
          });
       }
-   }  # ROW
+   }  # ROW 
+   MKDEBUG && _d('Done fetching rows');
 
    # Transactions might still be open, etc
    commit($o, $txnsize || $commit_each);
@@ -3852,7 +3876,7 @@ sub main {
             $dst->{dbh}->do("$maint TABLE $dst->{db_tbl}");
          });
       }
-   }
+   } 
 
    # ########################################################################
    # Print statistics
