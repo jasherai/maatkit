@@ -3366,7 +3366,7 @@ sub main {
    my @sel_cols = $o->get('columns')          ? @{$o->get('columns')}    # Explicit
                 : $o->get('primary-key-only') ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} 
                 :                               @{$src->{info}->{cols}}; # All
-   MKDEBUG && _d("sel cols: " . @sel_cols);
+   MKDEBUG && _d("sel cols: ", @sel_cols);
 
    $del_stmt = $nibbler->generate_del_stmt(
       tbl_struct => $src->{info},
@@ -3382,8 +3382,10 @@ sub main {
          cols       => $del_stmt->{cols},
          index      => $del_stmt->{index},
          asc_first  => $o->get('ascend-first'),
-         # Might prevent rows in the source from being deleted.
-         asc_only   => $src->{m} || $o->get('no-delete'),
+         # plugin might prevent rows in the source from being deleted,
+         # unless we're bulk deleting then it cannot.
+         asc_only   => ($src->{m} && !$o->get('bulk-delete'))
+                       || $o->get('no-delete'),
       );
    }
    else {
@@ -3502,6 +3504,13 @@ sub main {
       $ins_sql = '';
    }
 
+   if ( MKDEBUG ) {
+      _d("get first sql:", $first_sql);
+      _d("get next sql:", $next_sql);
+      _d("del row sql:", $del_sql);
+      _d("ins row sql:", $ins_sql);
+   }
+   
    if ( $o->get('dry-run') ) {
       if ( !$quiet ) {
          print join("\n", grep { $_ } ($archive_file || ''),
@@ -3510,13 +3519,6 @@ sub main {
             , "\n";
       }
       return 0;
-   }
-
-   if ( MKDEBUG ) {
-      _d("get first sql:", $first_sql);
-      _d("get next sql:", $next_sql);
-      _d("del row sql:", $del_sql);
-      _d("ins row sql:", $ins_sql);
    }
 
    my $get_first = $dbh->prepare($first_sql);
@@ -3618,9 +3620,9 @@ sub main {
          })
       ) {
 
-         # Do the archiving.  Write to the file first, since like the file, MyISAM
-         # and other tables cannot be rolled back etc.  If there is a problem,
-         # hopefully the data has at least made it to the file.
+         # Do the archiving.  Write to the file first since, like the file,
+         # MyISAM and other tables cannot be rolled back etc.  If there is a
+         # problem, hopefully the data has at least made it to the file.
          my $escaped_row;
          if ( $archive_fh || $bulkins_file ) {
             $escaped_row = escape([@{$row}[@sel_slice]]);
@@ -3637,7 +3639,7 @@ sub main {
          # ###################################################################
          # INSERT must come first, to be as safe as possible.
          if ( $dst && !$bulkins_file ) {
-            my $ins_sth; # Let the plugin change which sth is used for the INSERT.
+            my $ins_sth; # Let plugin change which sth is used for the INSERT.
             if ( $dst->{plugin} ) {
                trace('before_insert', sub {
                   $dst->{plugin}->before_insert(row => $row);
@@ -3695,7 +3697,7 @@ sub main {
             });
          }
 
-      }
+      }  # row is archivable
 
       $now = time();
       ++$cnt;
@@ -3722,7 +3724,7 @@ sub main {
          if ( $bulkins_file ) {
             $bulkins_file->close()
                or die "Cannot close bulk insert file: $OS_ERROR\n";
-            my $ins_sth; # Let the plugin change which sth is used for the INSERT.
+            my $ins_sth; # Let plugin change which sth is used for the INSERT.
             if ( $dst->{plugin} ) {
                trace('before_bulk_insert', sub {
                   $dst->{plugin}->before_bulk_insert(
@@ -4254,7 +4256,7 @@ will not be called.  Instead, its C<before_bulk_delete> method is called later.
 B<WARNING>: if you have a plugin on the source that sometimes doesn't return
 true from C<is_archivable()>, you should use this option only if you understand
 what it does.  If the plugin instructs C<mk-archiver> not to archive a row,
-it'll still be deleted by the bulk delete!
+it will still be deleted by the bulk delete!
 
 =item --bulk-insert
 
