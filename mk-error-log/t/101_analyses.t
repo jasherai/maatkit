@@ -18,7 +18,7 @@ require "$trunk/mk-error-log/mk-error-log";
 # Basic input-output diffs to make sure that the analyses are correct.
 # #############################################################################
 
-my $sample = "$trunk/common/t/samples/";
+my $sample = "$trunk/common/t/samples/errlogs/";
 
 # trf => 'sort' because mk-error-log sorts its output by the
 # events' count and the events come from a hash so events with
