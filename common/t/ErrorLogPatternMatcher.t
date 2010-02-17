@@ -44,7 +44,7 @@ sub parse {
 }
 
 is_deeply(
-   parse('common/t/samples/errlog001.txt', $p),
+   parse('common/t/samples/errlogs/errlog001.txt', $p),
    [
       {
         Level        => 'unknown',
@@ -389,7 +389,7 @@ is_deeply(
 
 $m = new ErrorLogPatternMatcher(QueryRewriter => $qr);
 is_deeply(
-   parse('common/t/samples/errlog002.txt', $p),
+   parse('common/t/samples/errlogs/errlog002.txt', $p),
    [
       {
          New_pattern => 'Yes',
@@ -442,8 +442,8 @@ is_deeply(
    'Does not load known patterns by default'
 );
 
-open my $fh, '<', "$trunk/common/t/samples/patterns.txt"
-   or die "Cannot open $trunk/common/t/samples/patterns.txt: $OS_ERROR";
+open my $fh, '<', "$trunk/common/t/samples/errlogs/patterns.txt"
+   or die "Cannot open $trunk/common/t/samples/errlogs/patterns.txt: $OS_ERROR";
 $m->load_patterns_file($fh);
 @patterns = $m->patterns;
 is_deeply(

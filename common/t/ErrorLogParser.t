@@ -20,7 +20,7 @@ my $oktorun = 1;
 
 test_log_parser(
    parser  => $p,
-   file    => 'common/t/samples/errlog001.txt',
+   file    => 'common/t/samples/errlogs/errlog001.txt',
    oktorun => sub { $oktorun = $_[0]; },
    result  => [
       {
@@ -251,7 +251,7 @@ test_log_parser(
 
 test_log_parser(
    parser => $p,
-   file   => 'common/t/samples/errlog003.txt',
+   file   => 'common/t/samples/errlogs/errlog003.txt',
    result => [
       {
          Level       => 'error',
@@ -342,7 +342,7 @@ $big_arg =~ s/\n+/ /g;
 
 test_log_parser(
    parser => $p,
-   file   => 'common/t/samples/errlog004.txt',
+   file   => 'common/t/samples/errlogs/errlog004.txt',
    result => [
       {
          Level       => 'error',
@@ -516,7 +516,7 @@ $big_arg =~ s/\n+/ /g;
 
 test_log_parser(
    parser => $p,
-   file   => 'common/t/samples/errlog005.txt',
+   file   => 'common/t/samples/errlogs/errlog005.txt',
    result => [
       {
          pos_in_log  => 0,
@@ -842,7 +842,7 @@ $big_arg =~ s/\n+/ /g;
 
 test_log_parser(
    parser => $p,
-   file   => 'common/t/samples/errlog009.txt',
+   file   => 'common/t/samples/errlogs/errlog009.txt',
    result => [
       {
          Level       => 'warning',
@@ -866,7 +866,7 @@ test_log_parser(
 
 test_log_parser(
    parser => $p,
-   file   => 'common/t/samples/errlog006.txt',
+   file   => 'common/t/samples/errlogs/errlog006.txt',
    result => [
          {  Level => 'unknown',
             ts    => '091119 22:27:11',
@@ -3328,7 +3328,7 @@ $big_arg =~ s/\n+/ /g;
 
 test_log_parser(
    parser => $p,
-   file   => 'common/t/samples/errlog007.txt',
+   file   => 'common/t/samples/errlogs/errlog007.txt',
    result => [
          {  Level => 'unknown',
             ts    => '091121 13:17:58',
@@ -3386,7 +3386,7 @@ $big_arg =~ s/\n+/ /g;
 
 test_log_parser(
    parser => $p,
-   file   => 'common/t/samples/errlog008.txt',
+   file   => 'common/t/samples/errlogs/errlog008.txt',
    result => [
          {  Level => 'unknown',
             arg =>
