@@ -643,6 +643,26 @@ is_deeply(
 );
 
 # #############################################################################
+# Issue 902: mk-duplicate-key-checker doesn't detect all duplicate indexes
+# #############################################################################
+#$ddl   = load_file('common/t/samples/issue_902.sql');
+#$dupes = [];
+#($keys, $ck) = $tp->get_keys($ddl, $opt);
+#$dk->get_duplicate_keys(
+#   $keys,
+#   clustered_key => $ck,
+#   clustered     => 1,
+#   tbl_info      => { engine => 'InnoDB', ddl => $ddl },
+#   callback      => $callback
+#);
+#
+#is_deeply(
+#   $dupes,
+#   [],
+#   'issue 902'
+#);
+
+# #############################################################################
 # Done.
 # #############################################################################
 my $output = '';
