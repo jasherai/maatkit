@@ -1529,7 +1529,10 @@ sub _d {
 # ###########################################################################
 package mk_error_log;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use IO::File;
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
@@ -1557,6 +1560,15 @@ sub main {
    $o->get_specs();
    $o->get_opts();
 
+   if ( $o->get('resume') ) {
+      if ( @ARGV == 0 ) {
+         $o->save_error("Cannot use --resume when reading from STDIN");
+      }
+      if ( @ARGV > 1 ) {
+         $o->save_error("Cannot use --resume with more than one error log");
+      }
+   }
+
    $o->usage_or_errors();
 
    # ##########################################################################
@@ -1575,6 +1587,66 @@ sub main {
    }
    load_known_patterns($matcher) if $o->get('known-patterns');
 
+   # #########################################################################
+   # Load resume file and check if we can use it.
+   # #########################################################################
+   my $resume;
+   if ( my $resume_file = $o->get('resume') ) {
+      $resume = {
+         resume_file => $resume_file,
+         file        => '',
+         inode       => undef,
+         pos         => undef,
+         size        => undef,
+      };
+
+      # Parse resume file.
+      MKDEBUG && _d('Reading resume file', $resume_file);
+      if ( !-f $resume_file ) {
+         `touch $resume_file`;
+         MKDEBUG && _d('Created resume file');
+      }
+      open my $resume_fh, '<', $resume_file
+         or die "Cannot open resume file $resume_file: $OS_ERROR";
+      local $INPUT_RECORD_SEPARATOR = '';
+      my $resume_info = <$resume_fh>;
+      close $resume_fh;
+      if ( $resume_info ) {
+         map {
+            my $line = $_;
+            my ($k, $v) = $_ =~ m/\s*(\w+):(.+?)\s*$/;
+            $resume->{$k} = $v;
+         }
+         grep { $_ !~ m/^$/ }
+         split("\n", $resume_info);
+      }
+      else {
+         MKDEBUG && _d('New resume file');
+         $resume->{file}  = $ARGV[0];
+         $resume->{inode} = (stat($ARGV[0]))[1];
+         $resume->{pos}   = 0;
+         $resume->{size}  = -s $ARGV[0];
+      }
+
+      # Sanity check resume file.
+      die "Resume file $resume_file does not specify a file"
+         unless $resume->{file};
+      die "Resume file $resume_file does not specify a inode"
+         unless defined $resume->{inode};
+      die "Resume file $resume_file does not specify a pos"
+         unless defined $resume->{pos};
+
+      # We should have checked earlier that --resume is being used with
+      # only 1 error log and not STDIN.  So $ARGV[0] should be that log.
+      # check_resume() checks that the current log matches this resume
+      # info.  If it does then nothing is done.  If it doesn't, then this
+      # resume info is saved and a new resume file is started and the new
+      # resume info is returned.
+      $resume = check_resume($resume, $ARGV[0]);
+
+      MKDEBUG && _d('Resume info:', Dumper($resume));
+   }
+
    # ##########################################################################
    # Create the pipeline.  These processes do the main work.
    # ##########################################################################
@@ -1584,7 +1656,9 @@ sub main {
    # Parses the error logs, makes events.
    push @pipeline, sub {
       my ( %args ) = @_;
-      return $parser->parse_event(%args);
+      my $event = $parser->parse_event(%args);
+      $resume->{pos} = $event->{pos_in_log} if $resume && $event;
+      return $event;
    };
 
    # --since and --until filtering.  Do this before pattern matching.
@@ -1675,12 +1749,18 @@ sub main {
             MKDEBUG && _d('Reading STDIN');
          }
          else {
-            if ( !open $fh, "<", $file ) {
-               $fh = undef;
+            $fh = new IO::File "< $file";
+            if ( !$fh ) {
                warn "Cannot open $file: $OS_ERROR\n";
                next FILE;
             }
-            MKDEBUG && _d('Reading', $file);
+            my $pos = 0;
+            if ( $resume ) {
+               $pos = $resume->{pos};
+               print "Resuming $file at position $pos\n";
+            }
+            $fh->seek($pos, SEEK_SET) if $pos;
+            MKDEBUG && _d('Reading', $file, 'at pos', $pos);
 
             # Reset these var in case we read two logs out of order by time.
             $past_since = 0;
@@ -1708,8 +1788,11 @@ sub main {
          }
          if ( !$more_events ) {
             MKDEBUG && _d('No more events');
-            close $fh if $fh;
-            $fh = undef;
+            if ( $fh ) {
+               $resume->{pos} = tell $fh if $resume;
+               close $fh;
+               $fh = undef;
+            }
          }
       };
       if ( $EVAL_ERROR ) {
@@ -1724,6 +1807,8 @@ sub main {
          last FILE unless $o->get('continue-on-error');
       }
    }  # FILE
+
+   save_resume($resume, $resume->{resume_file}) if $resume;
 
    # ##########################################################################
    # Do the report.
@@ -1859,6 +1944,62 @@ sub load_known_patterns {
       ],
    );
    $matcher->add_patterns(\@known_patterns);
+   return;
+}
+
+sub check_resume {
+   my ( $resume, $file ) = @_;
+   die "I need a resume argument" unless $resume && ref $resume eq 'HASH';
+   die "I need a file argument" unless $file;
+
+   if ( !-f $file ) {
+      # Caller should catch this eventually so we dont' need to do anything.
+      MKDEBUG && _d('File', $file, 'does not exist');
+      return $resume;
+   }
+
+   my $file_inode = (stat($file))[1];
+   my $file_size  = -s $file;
+   MKDEBUG && _d('Current file size:', $file_size, 'inode:', $file_inode);
+
+   if ( $resume->{file} ne $file || $resume->{inode} != $file_inode ) {
+      MKDEBUG && _d('Resume file', $resume->{file}, $resume->{inode},
+         'is not the same as file', $file, $file_inode);
+
+      # Save old resume info.
+      save_resume($resume, $resume->{resume_file} . '-' . $resume->{inode});
+
+      # Update and save current resume info.
+      $resume->{file}  = $file;
+      $resume->{inode} = $file_inode;
+      $resume->{pos}   = 0;
+      $resume->{size}  = $file_size;
+      save_resume($resume, $resume->{resume_file});
+   }
+
+   if ( ($resume->{size} || 0) > ($file_size || 0) ) {
+      # This could happen if the file is truncated.
+      warn "Resume file size $resume->{size} is less than "
+         . "current file size $file_size; will parse the entire file";
+      $resume->{pos}  = 0;
+   }
+   $resume->{size} = $file_size;
+
+   return $resume;
+}
+
+sub save_resume {
+   my ( $resume, $file ) = @_;
+   die "I need a resume argument" unless $resume && ref $resume eq 'HASH';
+   die "I need a file argument" unless $file;
+
+   open my $fh, '>', $file or die "Cannot open resume file $file: $OS_ERROR";
+   foreach my $prop ( qw(file inode pos size) ) {
+      next unless defined $resume->{$prop};
+      print $fh "$prop:$resume->{$prop}\n"
+         or die "Cannot print to $file: $OS_ERROR";
+   }
+   close $fh;
    return;
 }
 
@@ -2065,6 +2206,36 @@ exists, the program exits.
 short form: -P; type: int
 
 Port number to use for connection.
+
+=item --resume
+
+type: string
+
+Read and write resume position to this file; resume parsing from last position.
+
+By default mk-error-log parses an error logs from start (pos 0) to finish.
+This option allows the tool to start parsing an error log from where it
+last ended as long as the file has the same name and inode (e.g. it hasn't
+been rotated) and its size is larger.  If the log file's name or inode is
+different, then a new resume file is started and the old resume file is
+saved with the old error log's inode appended to its file name.  If the log
+file's size is smaller (e.g. the log was truncated), then parsing begins
+from the start.
+
+A resume file is a simple, four line text file like:
+
+  file:/path/to/err.log
+  inode:12345
+  pos:67890
+  size:987100
+
+The resume file is read at startup and updated when mk-error-log finishes
+parsing the log.  Note that CTRL-C prevents the resume file from being updated.
+
+If the resume file doesn't exist it is created.
+
+A line is printed before the main report which tells when and at what position
+parsing began for the error log if it was resumed.
 
 =item --save-patterns
 

@@ -1,5 +1,7 @@
 Changelog for mk-error-log:
 
+   * Added --resume (issue 841).
+
 2010-02-01: version 1.0.0
 
    * Initial release.
