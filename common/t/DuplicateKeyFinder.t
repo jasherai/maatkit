@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 33;
+use Test::More tests => 35;
 
 use DuplicateKeyFinder;
 use Quoter;
@@ -20,6 +20,7 @@ my $dk = new DuplicateKeyFinder();
 my $q  = new Quoter();
 my $tp = new TableParser(Quoter => $q);
 
+my $sample = "common/t/samples/dupekeys/";
 my $dupes;
 my $callback = sub {
    push @$dupes, $_[0];
@@ -643,24 +644,41 @@ is_deeply(
 );
 
 # #############################################################################
-# Issue 902: mk-duplicate-key-checker doesn't detect all duplicate indexes
+# Issue 904: Tables that confuse mk-duplicate-key-checker
 # #############################################################################
-#$ddl   = load_file('common/t/samples/issue_902.sql');
-#$dupes = [];
-#($keys, $ck) = $tp->get_keys($ddl, $opt);
-#$dk->get_duplicate_keys(
-#   $keys,
-#   clustered_key => $ck,
-#   clustered     => 1,
-#   tbl_info      => { engine => 'InnoDB', ddl => $ddl },
-#   callback      => $callback
-#);
-#
-#is_deeply(
-#   $dupes,
-#   [],
-#   'issue 902'
-#);
+$ddl   = load_file("$sample/issue-904-1.txt");
+$dupes = [];
+($keys, $ck) = $tp->get_keys($ddl, $opt);
+$dk->get_duplicate_keys(
+   $keys,
+   clustered_key => $ck,
+   clustered     => 1,
+   tbl_info      => { engine => 'InnoDB', ddl => $ddl },
+   callback      => $callback
+);
+
+is_deeply(
+   $dupes,
+   [],
+   'Clustered key with multiple columns (issue 904 1)'
+);
+
+$ddl   = load_file("$sample/issue-904-2.txt");
+$dupes = [];
+($keys, $ck) = $tp->get_keys($ddl, $opt);
+$dk->get_duplicate_keys(
+   $keys,
+   clustered_key => $ck,
+   clustered     => 1,
+   tbl_info      => { engine => 'InnoDB', ddl => $ddl },
+   callback      => $callback
+);
+
+is_deeply(
+   $dupes,
+   [],
+   'Clustered key with multiple columns (issue 904 2)'
+);
 
 # #############################################################################
 # Done.

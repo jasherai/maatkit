@@ -148,7 +148,8 @@ sub get_duplicate_keys {
    # Remove clustered duplicates.
    my $clustered_key = $args{clustered_key} ? $keys{$args{clustered_key}}
                      : undef;
-   MKDEBUG && _d('clustered key:', $clustered_key->{name});
+   MKDEBUG && _d('clustered key:', $clustered_key->{name},
+      $clustered_key->{colnames});
    if ( $clustered_key
         && $args{clustered}
         && $args{tbl_info}->{engine}
@@ -388,36 +389,33 @@ sub remove_clustered_duplicates {
    die "I need a ck argument"   unless $ck;
    die "I need a keys argument" unless $keys;
    my $ck_cols = $ck->{colnames};
-   my @dupes;
 
+   my @dupes;
    KEY:
    for my $i ( 0 .. @$keys - 1 ) {
-      my $suffix = $keys->[$i]->{colnames};
-      SUFFIX:
-      while ( $suffix =~ s/`[^`]+`,// ) {
-         my $len = min(length($ck_cols), length($suffix));
-         if ( substr($suffix, 0, $len) eq substr($ck_cols, 0, $len) ) {
-            my $dupe = {
-               key               => $keys->[$i]->{name},
-               cols              => $keys->[$i]->{real_cols},
-               ddl               => $keys->[$i]->{ddl},
-               duplicate_of      => $ck->{name},
-               duplicate_of_cols => $ck->{real_cols},
-               duplicate_of_ddl  => $ck->{ddl},
-               reason            => "Key $keys->[$i]->{name} ends with a "
-                                  . "prefix of the clustered index",
-               dupe_type         => 'clustered',
-               short_key         => $self->shorten_clustered_duplicate(
-                                       $ck_cols,
-                                       join(',', map { "`$_`" }
-                                          @{$keys->[$i]->{real_cols}})
-                                    ),
-            };
-            push @dupes, $dupe;
-            delete $keys->[$i];
-            $args{callback}->($dupe, %args) if $args{callback};
-            last SUFFIX;
-         }
+      my $key = $keys->[$i]->{colnames};
+      if ( $key =~ m/$ck_cols$/ ) {
+         MKDEBUG && _d("clustered key dupe:", $keys->[$i]->{name},
+            $keys->[$i]->{colnames});
+         my $dupe = {
+            key               => $keys->[$i]->{name},
+            cols              => $keys->[$i]->{real_cols},
+            ddl               => $keys->[$i]->{ddl},
+            duplicate_of      => $ck->{name},
+            duplicate_of_cols => $ck->{real_cols},
+            duplicate_of_ddl  => $ck->{ddl},
+            reason            => "Key $keys->[$i]->{name} ends with a "
+                               . "prefix of the clustered index",
+            dupe_type         => 'clustered',
+            short_key         => $self->shorten_clustered_duplicate(
+                                    $ck_cols,
+                                    join(',', map { "`$_`" }
+                                       @{$keys->[$i]->{real_cols}})
+                                 ),
+         };
+         push @dupes, $dupe;
+         delete $keys->[$i];
+         $args{callback}->($dupe, %args) if $args{callback};
       }
    }
    MKDEBUG && _d('No more keys');
