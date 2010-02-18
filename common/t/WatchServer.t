@@ -124,7 +124,7 @@ sub get_vmstat { return $vmstat_output};
 $w = new WatchServer(
    params => 'vmstat:free:>:0',
 );
-$w->set_callbacks( uptime => \&get_vmstat );
+$w->set_callbacks( vmstat => \&get_vmstat );
 
 is(
    $w->check(),
@@ -135,7 +135,7 @@ is(
 $w = new WatchServer(
    params => 'vmstat:swpd:=:0',
 );
-$w->set_callbacks( uptime => \&get_vmstat );
+$w->set_callbacks( vmstat => \&get_vmstat );
 
 is(
    $w->check(),
