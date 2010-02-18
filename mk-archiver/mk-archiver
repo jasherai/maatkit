@@ -3388,8 +3388,9 @@ sub main {
          # A plugin might prevent rows in the source from being deleted
          # when doing single delete, but it cannot prevent rows from
          # being deleted when doing a bulk delete.
-         asc_only   => $src->{m} ? ($o->get('bulk-delete') ? 0 : 1)
-                    :              $o->get('no-delete'),
+         asc_only   => $o->get('no-delete') ?  1
+                    : $src->{m}             ? ($o->get('bulk-delete') ? 0 : 1)
+                    :                          0,
       )
    }
    else {
