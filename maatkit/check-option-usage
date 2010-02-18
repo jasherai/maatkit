@@ -1,0 +1,67 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+require "$ENV{MAATKIT_TRUNK}/common/MaatkitTest.pm";
+MaatkitTest->import(qw(load_file));
+
+# If you specify one program, it has to be given like ../mk-find/mk-find
+my @progs = @ARGV;
+if ( !@progs ) {
+   @progs = <../mk-*/mk-*>;
+}
+
+# help and version are special opts, intrinsic to OptionParser.
+# The other opts are usually processed all at once by calling
+# DSNParser::parse_options().
+my %ignore = qw(
+   version        1
+   help           1
+   charset        1
+   defaults-file  1
+   host           1
+   password       1
+   port           1
+   socket         1
+   user           1
+);
+
+foreach my $prog ( @progs ) {
+   my ($base, $program) = $prog =~ m{([a-z-]+)/([a-z-]+)$};
+   next unless $program;
+
+   # Arg to load_file is relative to MAATKIT_TRUNK.
+   my $contents;
+   eval {
+      $contents = load_file("$program/$program");
+   };
+   if ( $EVAL_ERROR ) {
+      warn $EVAL_ERROR;
+      next;
+   }
+
+   my @options = grep { !$ignore{$_} } map { s/^\[no\]//; $_; } $contents =~ m/^=item --(.+)$/gm;
+   my @unused  = grep {
+      chomp(my $get = `grep -c "get('$_')" $prog`);
+      chomp(my $got = `grep -c "got('$_')" $prog`);
+      $get ||= 0;
+      $got ||= 0;
+      my $used = $get + $got;
+      !$used;
+   } @options;
+
+   if ( @unused ) {
+      print "$program has unused options:\n"
+         . join('', map { "\t$_\n" } @unused);
+   }
+
+   (my $pkg = $program) =~ s/-/_/g;
+   my $main = `grep -A 200 $pkg $prog`;
+   if ( $main !~ m/->parse_options\(/ ) {
+      print "$program does not call DSNParser::parse_options()\n";
+   }
+}
+
+exit;
