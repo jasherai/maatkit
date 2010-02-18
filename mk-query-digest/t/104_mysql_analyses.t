@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 3;
+use Test::More tests => 6;
 
 use MaatkitTest;
 
@@ -30,6 +30,33 @@ ok(
       "mk-query-digest/t/samples/tcpdump003.txt"
    ),
    'Analysis for tcpdump003 with numeric Error_no'
+);
+
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'tcpdump001.txt',
+         qw(--watch-server 127.0.0.1)) },
+      "mk-query-digest/t/samples/tcpdump001.txt",
+   ),
+   'Analysis for tcpdump001 with --watch-server ip'
+);
+
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'tcpdump012.txt',
+         qw(--watch-server 192.168.1.1:3307)) },
+      "mk-query-digest/t/samples/tcpdump012.txt",
+   ),
+   'Analysis for tcpdump012 with --watch-server ip:port'
+);
+
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'tcpdump012.txt',
+         qw(--watch-server 192.168.1.1.3307)) },
+      "mk-query-digest/t/samples/tcpdump012.txt",
+   ),
+   'Analysis for tcpdump012 with --watch-server ip.port'
 );
 
 # #############################################################################

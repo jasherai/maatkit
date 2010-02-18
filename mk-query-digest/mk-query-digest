@@ -448,7 +448,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5568
+# OptionParser package 5770
 # ###########################################################################
 package OptionParser;
 
@@ -1270,6 +1270,45 @@ sub clone {
    return bless \%clone;     
 }
 
+sub parse_section {
+   my ( $self, %args ) = @_;
+   my ($file, $section, $subsection, $trf)
+      = @args{qw(file section subsection trf)};
+
+   $file ||= __FILE__;
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+   
+   local $INPUT_RECORD_SEPARATOR = '';
+
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 $section/o;
+      last;
+   }
+
+   if ( $subsection ) {
+      while ( $para = <$fh> ) {
+         next unless $para =~ m/^=head2 $subsection/o;
+         last
+      }
+   }
+
+   my @chunks;
+   while ( $para = <$fh> ) {
+      last if ($subsection ? $para =~ m/^=head[12]/ : $para =~ m/^=head1/);
+      next if $para =~ m/=head/;
+      chomp $para;
+      $para =~ s/$POD_link_re/$1/go;
+      if ( $trf ) {
+         $para = $trf->($para);
+         next unless $para;
+      }
+      push @chunks, $para;
+   }
+
+   return @chunks;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1520,7 +1559,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5563
+# QueryRewriter package 5706
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1628,7 +1667,7 @@ sub fingerprint {
    if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)?\s+INTO.+?VALUES\s*\(.*?\))\s*,\s*\(/is ) {
       $query = $beginning; # Shorten multi-value INSERT statements ASAP
    }
-
+  
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
@@ -1779,13 +1818,22 @@ sub convert_to_select {
               {__update_to_select($1, $2, $3, $4)}exsi
       || $query =~ s{
                     \A.*?
-                    (?:insert|replace)\s+
+                    (?:insert(?:\s+ignore)?|replace)\s+
                     .*?\binto\b(.*?)\(([^\)]+)\)\s*
                     values?\s*(\(.*?\))\s*
                     (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
                     \Z
                  }
                  {__insert_to_select($1, $2, $3)}exsi
+      || $query =~ s{
+                    \A.*?
+                    (?:insert(?:\s+ignore)?|replace)\s+
+                    (?:.*?\binto)\b(.*?)\s*
+                    set?\s*\b(.*?)\s*
+                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select_with_set($1, $2)}exsi
       || $query =~ s{
                     \A.*?
                     delete\s+(.*?)
@@ -1830,6 +1878,12 @@ sub __insert_to_select {
    else {
       return "select * from $tbl limit 1";
    }
+}
+
+sub __insert_to_select_with_set {
+   my ( $from, $set ) = @_;
+   $set =~ s/,/ and /g;
+   return "select * from $from where $set ";
 }
 
 sub __update_to_select {
@@ -2278,7 +2332,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 5570
+# MySQLProtocolParser package 5809
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2474,13 +2528,9 @@ my %unpack_type = (
 sub new {
    my ( $class, %args ) = @_;
 
-   my ( $server_port )
-      = $args{server} ? $args{server} =~ m/:(\w+)/ : ('3306|mysql');
-   $server_port ||= '3306|mysql';  # In case $args{server} doesn't have a port.
-
    my $self = {
       server         => $args{server},
-      server_port    => $server_port,
+      port           => $args{port} || '3306',
       version        => '41',    # MySQL proto version; not used yet
       sessions       => {},
       o              => $args{o},
@@ -2502,6 +2552,7 @@ sub parse_event {
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
 
    if ( my $server = $self->{server} ) {  # Watch only the given server.
+      $server .= ":$self->{port}";
       if ( $src_host ne $server && $dst_host ne $server ) {
          MKDEBUG && _d('Packet is not to or from', $server);
          return;
@@ -2510,11 +2561,11 @@ sub parse_event {
 
    my $packet_from;
    my $client;
-   if ( $src_host =~ m/:$self->{server_port}$/ ) {
+   if ( $src_host =~ m/:$self->{port}$/ ) {
       $packet_from = 'server';
       $client      = $dst_host;
    }
-   elsif ( $dst_host =~ m/:$self->{server_port}$/ ) {
+   elsif ( $dst_host =~ m/:$self->{port}$/ ) {
       $packet_from = 'client';
       $client      = $src_host;
    }
@@ -5163,7 +5214,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 5444
+# QueryParser package 5783
 # ###########################################################################
 package QueryParser;
 
@@ -5260,7 +5311,7 @@ sub has_derived_table {
 }
 
 sub get_aliases {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, $list ) = @_;
    return unless $query;
    my $aliases;
 
@@ -5277,8 +5328,14 @@ sub get_aliases {
       (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
    }ix;
 
-   die "Failed to parse table references from $query"
-      unless $tbl_refs && $from;
+   if ( !$tbl_refs ) {
+      MKDEBUG && _d("No tables ref in", $query);
+      return $list ? [] : {};
+   }
+
+   if ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+      $tbl_refs =~ s/\([^\)]+\)\s*//;
+   }
 
    MKDEBUG && _d('tbl refs:', $tbl_refs);
 
@@ -5300,13 +5357,20 @@ sub get_aliases {
 
       if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
          MKDEBUG && _d('Subquery', $tbl_ref);
-         $aliases->{$alias} = undef;
+         $aliases->{$alias} = undef unless $list;
          next;
       }
 
-      my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
-      $aliases->{$alias || $tbl} = $tbl;
-      $aliases->{DATABASE}->{$tbl} = $db if $db;
+      if ( $list ) {
+         $tbl_ref =~ s/^\s+//g;
+         $tbl_ref =~ s/\s+$//g;
+         push @$aliases, $tbl_ref;
+      }
+      else {
+         my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
+         $aliases->{$alias || $tbl} = $tbl;
+         $aliases->{DATABASE}->{$tbl} = $db if $db;
+      }
    }
    return $aliases;
 }
@@ -5432,6 +5496,67 @@ sub query_type {
       type => $type,
       rw   => $rw,
    }
+}
+
+sub get_columns {
+   my ( $self, $query ) = @_;
+   my $cols = [];
+   return $cols unless $query;
+   my $cols_def;
+
+   if ( $query =~ m/^SELECT/i ) {
+      $query =~ s/
+         ^SELECT\s+
+           (?:ALL
+              |DISTINCT
+              |DISTINCTROW
+              |HIGH_PRIORITY
+              |STRAIGHT_JOIN
+              |SQL_SMALL_RESULT
+              |SQL_BIG_RESULT
+              |SQL_BUFFER_RESULT
+              |SQL_CACHE
+              |SQL_NO_CACHE
+              |SQL_CALC_FOUND_ROWS
+           )\s+
+      /SELECT /xgi;
+      ($cols_def) = $query =~ m/^SELECT\s+(.+?)\s+FROM/i;
+   }
+   elsif ( $query =~ m/^(?:INSERT|REPLACE)/i ) {
+      ($cols_def) = $query =~ m/\(([^\)]+)\)\s*VALUE/i;
+   }
+
+   MKDEBUG && _d('Columns:', $cols_def);
+   if ( $cols_def ) {
+      @$cols = split(',', $cols_def);
+      map {
+         my $col = $_;
+         $col = s/^\s+//g;
+         $col = s/\s+$//g;
+         $col;
+      } @$cols;
+   }
+
+   return $cols;
+}
+
+sub parse {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   my $parsed = {};
+
+   $query =~ s/\n/ /g;
+   $query = $self->clean_query($query);
+
+   $parsed->{query}   = [ $query ];
+   $parsed->{tables}  = $self->get_aliases($query, 1);
+   $parsed->{columns} = $self->get_columns($query);
+
+   my ($dms) = $query =~ m/^(\w+)/;
+   $parsed->{dms} = [ lc $dms ],
+
+
+   return $parsed;
 }
 
 sub _d {
@@ -6475,7 +6600,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedProtocolParser package 5535
+# MemcachedProtocolParser package 5810
 # ###########################################################################
 package MemcachedProtocolParser;
 
@@ -6493,13 +6618,9 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 sub new {
    my ( $class, %args ) = @_;
 
-   my ( $server_port )
-      = $args{server} ? $args{server} =~ m/:(\w+)/ : ('11211');
-   $server_port ||= '11211';  # In case $args{server} doesn't have a port.
-
    my $self = {
       server      => $args{server},
-      server_port => $server_port,
+      port        => $args{port} || '11211',
       sessions    => {},
       o           => $args{o},
    };
@@ -6518,6 +6639,7 @@ sub parse_event {
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
 
    if ( my $server = $self->{server} ) {  # Watch only the given server.
+      $server .= ":$self->{port}";
       if ( $src_host ne $server && $dst_host ne $server ) {
          MKDEBUG && _d('Packet is not to or from', $server);
          return;
@@ -6526,11 +6648,11 @@ sub parse_event {
 
    my $packet_from;
    my $client;
-   if ( $src_host =~ m/:$self->{server_port}$/ ) {
+   if ( $src_host =~ m/:$self->{port}$/ ) {
       $packet_from = 'server';
       $client      = $dst_host;
    }
-   elsif ( $dst_host =~ m/:$self->{server_port}$/ ) {
+   elsif ( $dst_host =~ m/:$self->{port}$/ ) {
       $packet_from = 'client';
       $client      = $src_host;
    }
@@ -7326,7 +7448,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ProtocolParser package 5266
+# ProtocolParser package 5811
 # ###########################################################################
 package ProtocolParser;
 
@@ -7349,12 +7471,9 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 sub new {
    my ( $class, %args ) = @_;
 
-   my ($server_port) = $args{server} =~ m/:(\w+)/ if $args{server};
-   $server_port      = $args{server_port} if !$server_port && $args{server_port};
-
    my $self = {
       server      => $args{server},
-      server_port => $server_port,
+      port        => $args{port},
       sessions    => {},
       o           => $args{o},
    };
@@ -7473,6 +7592,7 @@ sub _get_session {
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
 
    if ( my $server = $self->{server} ) {  # Watch only the given server.
+      $server .= ":$self->{port}";
       if ( $src_host ne $server && $dst_host ne $server ) {
          MKDEBUG && _d('Packet is not to or from', $server);
          return;
@@ -7481,11 +7601,11 @@ sub _get_session {
 
    my $packet_from;
    my $client;
-   if ( $src_host =~ m/:$self->{server_port}$/ ) {
+   if ( $src_host =~ m/:$self->{port}$/ ) {
       $packet_from = 'server';
       $client      = $dst_host;
    }
-   elsif ( $dst_host =~ m/:$self->{server_port}$/ ) {
+   elsif ( $dst_host =~ m/:$self->{port}$/ ) {
       $packet_from = 'client';
       $client      = $src_host;
    }
@@ -7624,7 +7744,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# HTTPProtocolParser package 5591
+# HTTPProtocolParser package 5811
 # ###########################################################################
 package HTTPProtocolParser;
 use base 'ProtocolParser';
@@ -7644,7 +7764,7 @@ sub new {
    my ( $class, %args ) = @_;
    my $self = $class->SUPER::new(
       %args,
-      server_port => 80,
+      port => 80,
    );
    return $self;
 }
@@ -8262,11 +8382,24 @@ sub main {
       my $type = $o->get('type');
       $type    = $alias_for{$type->[0]} if $alias_for{$type->[0]};
 
+      my ($server, $port);
+      if ( my $watch_server = $o->get('watch-server') ) {
+         # This should match all combinations of HOST and PORT except
+         # "host-name.port" because "host.mysql" could be either
+         # host "host" and port "mysql" or just host "host.mysql"
+         # (e.g. if someone added "127.1 host.mysql" to etc/hosts).
+         # So host-name* requires a colon between it and a port.
+         ($server, $port) = $watch_server
+               =~ m/^((?:\d+\.\d+\.\d+\.\d+|[\w\.\-]+\w))(?:[\:\.](\S+))?/;
+         MKDEBUG && _d('Watch server', $server, 'port', $port);
+      }
+
       foreach my $module ( @$type ) {
          my $parser;
          eval {
             $parser = $module->new(
-               server => $o->get('watch-server'),
+               server => $server,
+               port   => $port,
                o      => $o,
             );
          };
