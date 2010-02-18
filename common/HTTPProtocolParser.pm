@@ -37,7 +37,7 @@ sub new {
    my ( $class, %args ) = @_;
    my $self = $class->SUPER::new(
       %args,
-      server_port => 80,
+      port => 80,
    );
    return $self;
 }

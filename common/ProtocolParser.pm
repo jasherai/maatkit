@@ -35,17 +35,12 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-# server is the "host:port" of the sever being watched.  It's auto-guessed if
-# not specified.
 sub new {
    my ( $class, %args ) = @_;
 
-   my ($server_port) = $args{server} =~ m/:(\w+)/ if $args{server};
-   $server_port      = $args{server_port} if !$server_port && $args{server_port};
-
    my $self = {
       server      => $args{server},
-      server_port => $server_port,
+      port        => $args{port},
       sessions    => {},
       o           => $args{o},
    };
@@ -177,6 +172,7 @@ sub _get_session {
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
 
    if ( my $server = $self->{server} ) {  # Watch only the given server.
+      $server .= ":$self->{port}";
       if ( $src_host ne $server && $dst_host ne $server ) {
          MKDEBUG && _d('Packet is not to or from', $server);
          return;
@@ -186,11 +182,11 @@ sub _get_session {
    # Auto-detect the server by looking for its port.
    my $packet_from;
    my $client;
-   if ( $src_host =~ m/:$self->{server_port}$/ ) {
+   if ( $src_host =~ m/:$self->{port}$/ ) {
       $packet_from = 'server';
       $client      = $dst_host;
    }
-   elsif ( $dst_host =~ m/:$self->{server_port}$/ ) {
+   elsif ( $dst_host =~ m/:$self->{port}$/ ) {
       $packet_from = 'client';
       $client      = $src_host;
    }
