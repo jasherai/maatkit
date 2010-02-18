@@ -22,13 +22,18 @@ package delete_more;
 # The picture is:
 #
 #   main_table-123:  other_table-123:
-#     pk 1             opk 1
-#     pk 2             opk 2
+#     col-m 1           col-o 1
+#     col-m 2           col-o 1
+#                       col-o 2
 #
 # When rows on main table are deleted, corresponding rows on the other
-# tables are deleted where main table pk = other table opk.  This works
-# for both single and --bulk-delete.  The other table's name is derived
-# from the main table's name according to the settings below.
+# tables are deleted where main table col-m = other table col-o.  This
+# works for both single and --bulk-delete.  The tables are *not* 1-to-1
+# so a single delete for main col-m = 1 will result in two deletes fro
+# other col-o = 1.  This means --limit does *not* apply on other table.
+# 
+# The other table's name is derived from the main table's name according
+# to the settings below.
 #
 # Limitations:
 #   * all tables must be on the same server
@@ -125,7 +130,7 @@ sub before_delete {
    my $dbh = $self->{dbh};
 
    my $sql = "DELETE FROM $self->{other_tbl} "
-           . "WHERE $other_table_col=$val LIMIT 1";
+           . "WHERE $other_table_col=$val";
    MKDEBUG && _d($sql);
    eval {
       $dbh->do($sql);

@@ -26,6 +26,8 @@ insert into `main_table-123` values
 insert into `other_table-123` values
    (1, 'a'),
    (2, 'b'),
+   (2, 'b2'),
+   (2, 'b3'),
    (3, 'c'),
    (4, 'd'),
    (5, 'e'),
