@@ -3295,6 +3295,7 @@ sub main {
                tbl          => $table->{t},
                OptionParser => $o,
                DSNParser    => $dp,
+               Quoter       => $q,
             );
          });
       }
