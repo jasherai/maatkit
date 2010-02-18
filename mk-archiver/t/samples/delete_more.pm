@@ -152,8 +152,8 @@ sub before_bulk_delete {
 
 
    my $sql = "DELETE FROM $self->{other_tbl} "
-           . "WHERE $other_table_col IN ($delete_rows) "
-           . "LIMIT $self->{limit}";
+           . "WHERE $other_table_col IN ($delete_rows) ";
+#           . "LIMIT $self->{limit}";
    MKDEBUG && _d($sql);
    eval {
       $dbh->do($sql);
