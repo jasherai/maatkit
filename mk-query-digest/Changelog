@@ -1,6 +1,7 @@
 Changelog for mk-query-digest:
 
    * --explain did not report failures.
+   * --ask-pass did not work (issue 795).
    * Made D part of --execute DSN as default database (issue 727).
 
 2010-02-01: version 0.9.14

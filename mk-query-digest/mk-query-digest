@@ -8188,9 +8188,14 @@ sub main {
    # ########################################################################
    # Set up for --explain
    # ########################################################################
-   if ( $o->get('explain') ) {
-      $ep_dbh = $dp->get_dbh(
-         $dp->get_cxn_params($o->get('explain')), {AutoCommit => 1});
+   if ( my $ep_dsn = $o->get('explain') ) {
+      $ep_dbh = get_cxn(
+         for          => '--explain',
+         dsn          => $ep_dsn,
+         OptionParser => $o,
+         DSNParser    => $dp,
+         opts         => { AutoCommit => 1 },
+      );
       $ep_dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
    }
 
@@ -8203,8 +8208,13 @@ sub main {
    if ( $review_dsn ) {
       my $tp  = new TableParser(Quoter => $q);
       my $du  = new MySQLDump();
-      $qv_dbh = $dp->get_dbh(
-         $dp->get_cxn_params($review_dsn), {AutoCommit => 1});
+      $qv_dbh = get_cxn(
+         for          => '--review',
+         dsn          => $review_dsn,
+         OptionParser => $o,
+         DSNParser    => $dp,
+         opts         => { AutoCommit => 1 },
+      );
       $qv_dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
       my @db_tbl = @{$review_dsn}{qw(D t)};
       my $db_tbl = $q->quote(@db_tbl);
@@ -8240,9 +8250,14 @@ sub main {
       );
 
       # Set up the review-history table
-      if ( $o->get('review-history') ) {
-         $qv_dbh2 = $dp->get_dbh(
-            $dp->get_cxn_params($o->get('review-history')), {AutoCommit => 1});
+      if ( my $review_history_dsn = $o->get('review-history') ) {
+         $qv_dbh2 = get_cxn(
+            for          => '--review-history',
+            dsn          => $review_history_dsn,
+            OptionParser => $o,
+            DSNParser    => $dp,
+            opts         => { AutoCommit => 1 },
+         );
          $qv_dbh2->{InactiveDestroy}  = 1;  # Don't die on fork().
          my @hdb_tbl = @{$o->get('review-history')}{qw(D t)};
          my $hdb_tbl = $q->quote(@hdb_tbl);
@@ -8319,11 +8334,17 @@ sub main {
    my %prof;  # pipeline profile
    my %stats; # general stats
    my $misc = {};
-   if ( $o->get('processlist') ) {
+   if ( my $ps_dsn = $o->get('processlist') ) {
       my $pl = new Processlist();
       my ( $sth, $cxn );
       my $cur_server = 'processlist';
       my $cur_time   = 0;
+
+      if ( $o->get('ask-pass') ) {
+         $ps_dsn->{p} = OptionParser::prompt_noecho("Enter password for "
+            . "--processlist: ");
+         $o->get('processlist', $ps_dsn);
+      }
 
       $misc = {
          time  => 0,
@@ -8338,7 +8359,13 @@ sub main {
                   @{$misc}{qw(time etime)} = (0, 0);
                   eval {
                      ($cur_server, $ps_dbh) = find_role(
-                        $o, $ps_dbh, $cur_server, 0, 'for --processlist');
+                        OptionParser => $o,
+                        DSNParser    => $dp,
+                        dbh          => $ps_dbh,
+                        current      => $cur_server,
+                        read_only    => 0,
+                        comment      => 'for --processlist'
+                     );
                      $cur_time = time();
                      $sth      = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
                      $cxn      = $ps_dbh->{mysql_thread_id};
@@ -8353,8 +8380,14 @@ sub main {
             } until ( $sth && !$err );
             if ( $o->get('mirror')
                  && time() - $cur_time > $o->get('mirror')) {
-               ($cur_server, $ps_dbh) = find_role($o, $ps_dbh, $cur_server,
-                  0, 'for --processlist');
+               ($cur_server, $ps_dbh) = find_role(
+                  OptionParser => $o,
+                  DSNParser    => $dp,
+                  dbh          => $ps_dbh,
+                  current      => $cur_server,
+                  read_only    => 0,
+                  comment      => 'for --processlist'
+               );
                $cur_time = time();
             }
             $misc->{etime} = time() - $time;
@@ -8421,12 +8454,20 @@ sub main {
    # If --since or --until is a MySQL expression, then any_unix_timestamp()
    # will need this callback to execute the expression.  We don't know what
    # type of time value the user gave, so we'll create the callback in any case.
-   if ( my $aux_dsn = $o->get('aux-dsn') ) {
-      $aux_dbh = $dp->get_dbh($dp->get_cxn_params($aux_dsn), {AutoCommit => 1});
-      $aux_dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
+   if ( $o->get('since') || $o->get('until') ) {
+      if ( my $aux_dsn = $o->get('aux-dsn') ) {
+         $aux_dbh = get_cxn(
+            for          => '--aux',
+            dsn          => $aux_dsn,
+            OptionParser => $o,
+            DSNParser    => $dp,
+            opts         => { AutoCommit => 1 }
+         );
+         $aux_dbh->{InactiveDestroy}  = 1;  # Don't die on fork().
+      }
+      $aux_dbh ||= $qv_dbh || $qv_dbh2 || $ex_dbh || $ps_dbh || $ep_dbh;
+      MKDEBUG && _d('aux dbh:', $aux_dbh);
    }
-   $aux_dbh ||= $qv_dbh || $qv_dbh2 || $ex_dbh || $ps_dbh || $ep_dbh;
-   MKDEBUG && _d('aux dbh:', $aux_dbh);
    my $time_callback = sub {
       my ( $exp ) = @_;
       return unless $aux_dbh;
@@ -8655,10 +8696,22 @@ sub main {
       $callback_names{$callbacks[-1]} = 'execute throttle';
    }
 
-   if ( $o->get('execute') ) {
+   if ( my $ex_dsn = $o->get('execute') ) {
+      if ( $o->get('ask-pass') ) {
+         $ex_dsn->{p} = OptionParser::prompt_noecho("Enter password for "
+            . "--execute: ");
+         $o->set('execute', $ex_dsn);
+      }
+
       my $cur_server = 'execute';
-      ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
-            1, 'for --execute');
+      ($cur_server, $ex_dbh) = find_role(
+         OptionParser => $o,
+         DSNParser    => $dp,
+         dbh          => $ex_dbh,
+         current      => $cur_server,
+         read_only    => 1,
+         comment      => 'for --execute'
+      );
       my $cur_time = time();
       my $curdb;
       my $default_db = $o->get('execute')->{D};
@@ -8689,8 +8742,14 @@ sub main {
             $event->{Exec_diff_time}
                = $event->{Query_time} - $event->{Exec_orig_time};
             if ( $o->get('mirror') && $end - $cur_time > $o->get('mirror') ) {
-               ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
-                     1, 'for --execute');
+               ($cur_server, $ex_dbh) = find_role(
+                  OptionParser => $o,
+                  DSNParser    => $dp,
+                  dbh          => $ex_dbh,
+                  current      => $cur_server,
+                  read_only    => 1,
+                  comment      => 'for --execute'
+               );
                $cur_time = $end;
             }
          };
@@ -8701,8 +8760,14 @@ sub main {
             if ( $EVAL_ERROR =~ m/server has gone away/ ) {
                print STDERR $EVAL_ERROR;
                eval {
-                  ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
-                     1, 'for --execute');
+                  ($cur_server, $ex_dbh) = find_role(
+                     OptionParser => $o,
+                     DSNParser    => $dp,
+                     dbh          => $ex_dbh,
+                     current      => $cur_server,
+                     read_only    => 1,
+                     comment      => 'for --execute'
+                  );
                   $cur_time = time();
                };
                if ( $EVAL_ERROR ) {
@@ -9391,8 +9456,12 @@ sub main {
    } # ITERATION
 
    # Disconnect all open $dbh's
-   map { $dp->disconnect($_) } grep { $_ }
-      ($qv_dbh, $qv_dbh2, $ex_dbh, $ps_dbh, $ep_dbh);
+   map {
+      $dp->disconnect($_);
+      MKDEBUG && _d('Disconnected dbh', $_);
+   }
+   grep { $_ }
+   ($qv_dbh, $qv_dbh2, $ex_dbh, $ps_dbh, $ep_dbh, $aux_dbh);
 
    return 0;
 } # End main().
@@ -9465,8 +9534,15 @@ sub print_explain {
 # The magic switching functionality only works if --mirror is given!  Otherwise
 # it just returns the correct $dbh.  $comment is some descriptive text for
 # debuggin, like 'for --execute'.
-sub find_role {
-   my ( $o, $dbh, $current, $read_only, $comment ) = @_;
+sub find_role { 
+   my ( %args ) = @_;
+   my $o         = $args{OptionParser};
+   my $dp        = $args{DSNParser};
+   my $dbh       = $args{dbh};
+   my $current   = $args{current};
+   my $read_only = $args{read_only};
+   my $comment   = $args{comment};
+
    if ( !$dbh || !$dbh->ping ) {
       MKDEBUG && _d('Getting a dbh from', $current, $comment);
       $dbh = $dp->get_dbh(
@@ -9596,6 +9672,24 @@ sub read_timeout {
       $res     = undef;  # res is a blank string after a timeout
    }
    return $res;
+}
+
+sub get_cxn {
+   my ( %args ) = @_;
+   my @required_args = qw(dsn OptionParser DSNParser);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($dsn, $o, $dp) = @args{@required_args};
+
+   if ( $o->get('ask-pass') ) {
+      $dsn->{p} = OptionParser::prompt_noecho("Enter password "
+         . ($args{for} ? "for $args{for}: " : ": "));
+   }
+
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), $args{opts});
+   MKDEBUG && _d('Connected dbh', $dbh);
+   return $dbh;
 }
 
 sub _d {
