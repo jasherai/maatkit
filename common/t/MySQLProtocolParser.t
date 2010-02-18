@@ -389,7 +389,8 @@ is_deeply(
 
 # Test that we can parse with a non-standard port etc.
 $protocol = new MySQLProtocolParser(
-   server => '192.168.1.1:3307',
+   server => '192.168.1.1',
+   port   => '3307',
 );
 test_protocol_parser(
    parser   => $tcpdump,
@@ -422,7 +423,7 @@ test_protocol_parser(
 # compressed packets  
 # #############################################################################
 $protocol = new MySQLProtocolParser(
-   server => '10.55.200.15:3306',
+   server => '10.55.200.15',
 );
 test_protocol_parser(
    parser   => $tcpdump,
@@ -453,7 +454,7 @@ test_protocol_parser(
 
 # Check in-stream compression detection.
 $protocol = new MySQLProtocolParser(
-   server => '10.55.200.15:3306',
+   server => '10.55.200.15',
 );
 test_protocol_parser(
    parser   => $tcpdump,
@@ -485,7 +486,8 @@ test_protocol_parser(
 
 # Check data decompression.
 $protocol = new MySQLProtocolParser(
-   server => '127.0.0.1:12345',
+   server => '127.0.0.1',
+   port   => '12345',
 );
 test_protocol_parser(
    parser   => $tcpdump,
@@ -556,7 +558,7 @@ test_protocol_parser(
 # TCP retransmission.
 # Check data decompression.
 $protocol = new MySQLProtocolParser(
-   server => '10.55.200.15:3306',
+   server => '10.55.200.15',
 );
 test_protocol_parser(
    parser   => $tcpdump,
@@ -639,7 +641,7 @@ test_protocol_parser(
 );
 
 # Test that --watch-server causes just the given server to be watched.
-$protocol = new MySQLProtocolParser(server=>'10.0.0.1:3306');
+$protocol = new MySQLProtocolParser(server=>'10.0.0.1',port=>'3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -672,7 +674,7 @@ test_protocol_parser(
 # #############################################################################
 # Issue 558: Make mk-query-digest handle big/fragmented packets
 # #############################################################################
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'12345');
 my $e = test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -696,7 +698,7 @@ is(
 # #############################################################################
 # Issue 740: Handle prepared statements
 # #############################################################################
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -765,7 +767,7 @@ test_protocol_parser(
    ],
 );
 
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -815,7 +817,7 @@ test_protocol_parser(
    ],
 );
 
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -865,7 +867,7 @@ test_protocol_parser(
    ],
 );
 
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -915,7 +917,7 @@ test_protocol_parser(
    ],
 );
 
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -965,7 +967,7 @@ test_protocol_parser(
    ],
 );
 
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -994,7 +996,7 @@ test_protocol_parser(
    ],
 );
 
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -1024,7 +1026,7 @@ test_protocol_parser(
    ],
 );
 
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -1114,7 +1116,7 @@ test_protocol_parser(
    ],
 );
 
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:12345');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'12345');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -1202,7 +1204,7 @@ test_protocol_parser(
    ]
 );
 
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -1252,7 +1254,7 @@ test_protocol_parser(
    ],
 );
 
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -1305,7 +1307,7 @@ test_protocol_parser(
 # #############################################################################
 # Issue 761: mk-query-digest --tcpdump does not handle incomplete packets
 # #############################################################################
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -1337,7 +1339,7 @@ test_protocol_parser(
 # #############################################################################
 # Issue 760: mk-query-digest --tcpdump might not get the whole query
 # #############################################################################
-$protocol = new MySQLProtocolParser(server=>'127.0.0.1:3306');
+$protocol = new MySQLProtocolParser(server=>'127.0.0.1',port=>'3306');
 test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,
@@ -1621,7 +1623,7 @@ test_protocol_parser(
 # Issue 832: mk-query-digest tcpdump crashes on successive, fragmented
 # client query
 # #############################################################################
-$protocol = new MySQLProtocolParser(server => '127.0.0.1:12345');
+$protocol = new MySQLProtocolParser(server => '127.0.0.1',port=>'12345');
 $e = test_protocol_parser(
    parser   => $tcpdump,
    protocol => $protocol,

@@ -229,13 +229,9 @@ my %unpack_type = (
 sub new {
    my ( $class, %args ) = @_;
 
-   my ( $server_port )
-      = $args{server} ? $args{server} =~ m/:(\w+)/ : ('3306|mysql');
-   $server_port ||= '3306|mysql';  # In case $args{server} doesn't have a port.
-
    my $self = {
       server         => $args{server},
-      server_port    => $server_port,
+      port           => $args{port} || '3306',
       version        => '41',    # MySQL proto version; not used yet
       sessions       => {},
       o              => $args{o},
@@ -259,6 +255,7 @@ sub parse_event {
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
 
    if ( my $server = $self->{server} ) {  # Watch only the given server.
+      $server .= ":$self->{port}";
       if ( $src_host ne $server && $dst_host ne $server ) {
          MKDEBUG && _d('Packet is not to or from', $server);
          return;
@@ -269,11 +266,11 @@ sub parse_event {
    # tcpdump will substitute the port by a lookup in /etc/protocols).
    my $packet_from;
    my $client;
-   if ( $src_host =~ m/:$self->{server_port}$/ ) {
+   if ( $src_host =~ m/:$self->{port}$/ ) {
       $packet_from = 'server';
       $client      = $dst_host;
    }
-   elsif ( $dst_host =~ m/:$self->{server_port}$/ ) {
+   elsif ( $dst_host =~ m/:$self->{port}$/ ) {
       $packet_from = 'client';
       $client      = $src_host;
    }
