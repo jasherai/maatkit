@@ -2,6 +2,12 @@
 
 set -e
 
+trunk=$MAATKIT_TRUNK
+if [ -z "$trunk" ]; then
+   echo "MAATKIT_TRUNK environment variable is not set."
+   exit 1
+fi
+
 # The first argument is the package to update.  The optional second argument
 # is the package within that module (you can only specify one; if you omit it,
 # all are updated).
@@ -28,12 +34,12 @@ if [ ! -d ../$PACK ]; then
    exit 1
 fi
 
-for FILE in `ls ../$PACK/mk-*`
+for FILE in `ls $trunk/$PACK/mk-*`
 do
    for MOD in `grep 'End .* package' $FILE | awk '{print $3}'`
    do
       if [ -z "$MODULE" -o "$MOD" = "$MODULE" ]; then
-         if [ -f "../common/$MOD.pm" ]; then
+         if [ -f "$trunk/common/$MOD.pm" ]; then
             if grep -q '^# [A-Z].* package.*Revision' $FILE; then
                echo "\nERROR: $FILE has a malformed module header:"
                grep '^# [A-Z].* package.*Revision' $FILE
@@ -41,7 +47,7 @@ do
                exit 1
             fi
 
-            cat $FILE | ./insert_module $MOD > $MOD.tmp
+            cat $FILE | $trunk/maatkit/insert_module $MOD > $MOD.tmp
             if diff -q $FILE $MOD.tmp | grep differ > /dev/null ; then
                echo "Updating $MOD in $FILE";
                cat $MOD.tmp > $FILE;
