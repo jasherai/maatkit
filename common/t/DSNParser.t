@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 27;
 
 use DSNParser;
 use OptionParser;
@@ -229,13 +229,19 @@ eval {
    $dbh = $dp->get_dbh($dp->get_cxn_params($d), {});
 };
 SKIP: {
-   skip 'Cannot connect to sandbox master', 4 if $EVAL_ERROR;
+   skip 'Cannot connect to sandbox master', 5 if $EVAL_ERROR;
 
    $dp->fill_in_dsn($dbh, $d);
    is($d->{P}, 12345, 'Left port alone');
    is($d->{u}, 'msandbox', 'Filled in username');
    is($d->{S}, '/tmp/12345/mysql_sandbox12345.sock', 'Filled in socket');
    is($d->{h}, '127.0.0.1', 'Left hostname alone');
+
+   is_deeply(
+      $dbh->selectrow_arrayref('select @@character_set_client, @@character_set_connection, @@character_set_results'),
+      [qw(utf8 utf8 utf8)],
+      'Set charset'
+   );
 };
 
 $dp->prop('dbidriver', 'Pg');
