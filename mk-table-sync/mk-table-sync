@@ -7162,9 +7162,16 @@ sub get_cxn {
       MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
    }
+
    # Disable auto-increment on zero (bug #1919897).
    $sql = '/*!40101 SET @@SQL_MODE := CONCAT(@@SQL_MODE, '
         . '",NO_AUTO_VALUE_ON_ZERO")*/';
+   MKDEBUG && _d($dbh, $sql);
+   $dbh->do($sql);
+   
+   # Insure statement-based replication.
+   # http://code.google.com/p/maatkit/issues/detail?id=95
+   $sql = '/*!50105 SET @@binlog_format="STATEMENT"*/';
    MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
 
