@@ -87,6 +87,11 @@ sub parse_event {
       $raw_packet =~ s/\n20\Z//;
       $raw_packet = "20$raw_packet" unless $raw_packet =~ m/\A20/;
 
+      # Remove special headers (e.g. vlan) before the IPv4 header.
+      # The vast majority of IPv4 headers begin with 4508 (or 4500).  
+      # http://code.google.com/p/maatkit/issues/detail?id=906
+      $raw_packet =~ s/0x0000:.+?(450.) /0x0000:  $1 /;
+
       my $packet = $self->_parse_packet($raw_packet);
       $packet->{pos_in_log} = $pos_in_log;
       $packet->{raw_packet} = $raw_packet;
@@ -103,7 +108,7 @@ sub _parse_packet {
    my ( $self, $packet ) = @_;
    die "I need a packet" unless $packet;
 
-   my ( $ts, $source, $dest )  = $packet =~ m/\A(\S+ \S+) IP .*?(\S+) > (\S+):/;
+   my ( $ts, $source, $dest )  = $packet =~ m/\A(\S+ \S+).*? IP .*?(\S+) > (\S+):/;
    my ( $src_host, $src_port ) = $source =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
    my ( $dst_host, $dst_port ) = $dest   =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
 

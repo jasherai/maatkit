@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 7;
 
 use TcpdumpParser;
 use MaatkitTest;
@@ -192,6 +192,38 @@ test_packet_parser(
    desc   => 'Empty input (issue 564)',
    result =>
    [
+   ],
+);
+
+# #############################################################################
+# Issue 906: mk-query-digest --tcpdump doesn't work if dumped packet header
+# has extra info
+# #############################################################################
+test_packet_parser(
+   parser => $p,
+   file   => "$sample/tcpdump039.txt",
+   desc   => 'Extra packet header info (issue 906)',
+   result =>
+   [
+      {
+         ack         => 3203084012,
+         complete    => 1,
+         data_len    => 154,
+         dgram_len   => 206,
+         dst_host    => '192.168.1.220',
+         dst_port    => '3310',
+         fin         => 0,
+         ip_hlen     => 5,
+         pos_in_log  => 0,
+         rst         => 0,
+         seq         => 3474524,
+         src_host    => '192.168.1.81',
+         src_port    => '36762',
+         syn         => 0,
+         tcp_hlen    => 8,
+         ts          => '2009-11-10 09:49:31.864481',
+         data        => '960000000353454c45435420636f757273655f73656374696f6e5f69642c20636f757273655f69642c20636f64652c206465736372697074696f6e2c206578745f69642c20626f6172645f69642c207374617475732c206c6f636174696f6e0a46524f4d202020636f757273655f73656374696f6e0a57484552452020636f757273655f73656374696f6e5f6964203d2027313435383133270a',
+      },
    ],
 );
 
