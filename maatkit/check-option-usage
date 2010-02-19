@@ -58,7 +58,7 @@ foreach my $prog ( @progs ) {
    }
 
    (my $pkg = $program) =~ s/-/_/g;
-   my $main = `grep -A 200 $pkg $prog`;
+   my $main = `grep -A 1000 $pkg $prog`;
    if ( $main !~ m/->parse_options\(/ ) {
       print "$program does not call DSNParser::parse_options()\n";
    }
