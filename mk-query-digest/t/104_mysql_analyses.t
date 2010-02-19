@@ -22,7 +22,7 @@ $ENV{LABEL_WIDTH} = 9;
 require "$trunk/mk-query-digest/mk-query-digest";
 
 my @args   = qw(--type tcpdump --report-format=query_report --limit 10);
-my $sample = "$trunk/common/t/samples/";
+my $sample = "$trunk/common/t/samples/tcpdump/";
 
 ok(
    no_diff(
