@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# TableParser package 5266
+# TableParser package 5826
 # ###########################################################################
 package TableParser;
 
@@ -81,7 +81,7 @@ sub parse {
 
    my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
-   MKDEBUG && _d('Columns:', join(', ', @cols));
+   MKDEBUG && _d('Table cols:', join(', ', map { "`$_`" } @cols));
 
    my %def_for;
    @def_for{@cols} = @defs;
@@ -292,14 +292,14 @@ sub get_keys {
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
       my @cols;
       my @col_prefixes;
-      foreach my $col_def ( split(',', $cols) ) {
+      foreach my $col_def ( $cols =~ m/`[^`]+`(?:\(\d+\))?/g ) {
          my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
       }
       $name =~ s/`//g;
 
-      MKDEBUG && _d('Key', $name, 'cols:', join(', ', @cols));
+      MKDEBUG && _d( $name, 'key cols:', join(', ', map { "`$_`" } @cols));
 
       $keys->{$name} = {
          name         => $name,
@@ -376,7 +376,10 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         "ADD $_->{ddl}";
+
+         my $key_ddl = "ADD $_->{ddl}";
+         $key_ddl   .= ',' unless $key_ddl =~ m/,$/;
+         $key_ddl;
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
@@ -412,7 +415,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 5266
+# TableChecksum package 5712
 # ###########################################################################
 package TableChecksum;
 
@@ -636,6 +639,7 @@ sub make_row_checksum {
    my %cols = map { lc($_) => 1 }
               grep { !exists $ignorecols{$_} }
               ($args{cols} ? @{$args{cols}} : @{$tbl_struct->{cols}});
+   my %seen;
    my @cols =
       map {
          my $type = $tbl_struct->{type_for}->{$_};
@@ -652,11 +656,24 @@ sub make_row_checksum {
          $result;
       }
       grep {
-         $cols{$_}
+         $cols{$_} && !$seen{$_}++
       }
       @{$tbl_struct->{cols}};
 
    my $query;
+   if ( !$args{no_cols} ) {
+      $query = join(', ',
+                  map { 
+                     my $col = $_;
+                     if ( $col =~ m/\+ 0/ ) {
+                        my ($real_col) = /^(\S+)/;
+                        $col .= " AS $real_col";
+                     }
+                     $col;
+                  } @cols)
+             . ', ';
+   }
+
    if ( uc $func ne 'FNV_64' && uc $func ne 'FNV1A_64' ) {
       my @nulls = grep { $cols{$_} } @{$tbl_struct->{null_cols}};
       if ( @nulls ) {
@@ -666,13 +683,13 @@ sub make_row_checksum {
          push @cols, $bitmap;
       }
 
-      $query = @cols > 1
-             ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
-             : "$func($cols[0])";
+      $query .= @cols > 1
+              ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
+              : "$func($cols[0])";
    }
    else {
       my $fnv_func = uc $func;
-      $query = "$fnv_func(" . join(', ', @cols) . ')';
+      $query .= "$fnv_func(" . join(', ', @cols) . ')';
    }
 
    return $query;
@@ -697,7 +714,7 @@ sub make_checksum_query {
       return "CHECKSUM TABLE " . $q->quote($db, $tbl);
    }
 
-   my $expr = $self->make_row_checksum(%args);
+   my $expr = $self->make_row_checksum(%args, no_cols=>1);
 
    if ( $algorithm eq 'BIT_XOR' ) {
       if ( $crc_type =~ m/int$/ ) {
@@ -771,7 +788,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5568
+# OptionParser package 5770
 # ###########################################################################
 package OptionParser;
 
@@ -1591,6 +1608,45 @@ sub clone {
    }
 
    return bless \%clone;     
+}
+
+sub parse_section {
+   my ( $self, %args ) = @_;
+   my ($file, $section, $subsection, $trf)
+      = @args{qw(file section subsection trf)};
+
+   $file ||= __FILE__;
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+   
+   local $INPUT_RECORD_SEPARATOR = '';
+
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 $section/o;
+      last;
+   }
+
+   if ( $subsection ) {
+      while ( $para = <$fh> ) {
+         next unless $para =~ m/^=head2 $subsection/o;
+         last
+      }
+   }
+
+   my @chunks;
+   while ( $para = <$fh> ) {
+      last if ($subsection ? $para =~ m/^=head[12]/ : $para =~ m/^=head1/);
+      next if $para =~ m/=head/;
+      chomp $para;
+      $para =~ s/$POD_link_re/$1/go;
+      if ( $trf ) {
+         $para = $trf->($para);
+         next unless $para;
+      }
+      push @chunks, $para;
+   }
+
+   return @chunks;
 }
 
 sub _d {
@@ -2722,20 +2778,19 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5266
+# Quoter package 5697
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package Quoter;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   return bless {}, $class;
 }
 
 sub quote {
