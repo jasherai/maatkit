@@ -3118,6 +3118,19 @@ my $q  = new Quoter;
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
+   # Reset global vars else tests, which run this tool as a module,
+   # may encounter weird results.
+   $oktorun          = 1;
+   $txn_cnt          = 0;
+   $cnt              = 0;
+   $can_retry        = 1;
+   $archive_fh       = undef;
+   $get_sth          = undef;
+   ($src, $dst)      = (undef, undef);
+   @beginning_of_txn = ();
+   undef *trace;
+   ($OUT_OF_RETRIES, $ROLLED_BACK, $ALL_IS_WELL ) = (0, -1, 1);
+
    # ########################################################################
    # Get configuration information.
    # ########################################################################
@@ -3306,6 +3319,8 @@ sub main {
 
    if ( $o->get('primary-key-only')
         && !exists $src->{info}->{keys}->{PRIMARY} ) {
+      $src->{dbh}->disconnect();
+      $dst->{dbh}->disconnect() if $dst && $dst->{dbh};
       die "--primary-key-only was specified by the --source table "
          . "$src->{db_tbl} does not have a PRIMARY KEY";
    }
@@ -3315,6 +3330,8 @@ sub main {
          !$src->{info}->{is_col}->{$_}
       } @{$dst->{info}->{cols}};
       if ( @not_in_src ) {
+         $src->{dbh}->disconnect();
+         $dst->{dbh}->disconnect() if $dst && $dst->{dbh};
          die "The following columns exist in --dest but not --source: "
             . join(', ', @not_in_src)
             . "\n";
@@ -3323,6 +3340,8 @@ sub main {
          !$dst->{info}->{is_col}->{$_}
       } @{$src->{info}->{cols}};
       if ( @not_in_dst ) {
+         $src->{dbh}->disconnect();
+         $dst->{dbh}->disconnect() if $dst && $dst->{dbh};
          die "The following columns exist in --source but not --dest: "
             . join(', ', @not_in_dst)
             . "\n";
@@ -3523,6 +3542,8 @@ sub main {
                   ($o->get('no-delete') ? '' : $del_sql), $ins_sql)
             , "\n";
       }
+      $src->{dbh}->disconnect();
+      $dst->{dbh}->disconnect() if $dst && $dst->{dbh};
       return 0;
    }
 
@@ -3580,7 +3601,7 @@ sub main {
    if ( !$row ) {
       $get_sth->finish;
       $src->{dbh}->disconnect();
-      $dst->{dbh}->disconnect() if $dst;
+      $dst->{dbh}->disconnect() if $dst && $dst->{dbh};
       return 0;
    }
 
@@ -3942,6 +3963,9 @@ sub main {
       }
    }
 
+   $src->{dbh}->disconnect();
+   $dst->{dbh}->disconnect() if $dst && $dst->{dbh};
+
    return 0;
 }
 
@@ -4017,7 +4041,7 @@ sub do_with_retries {
             }
          }
          else {
-            die;
+            die $EVAL_ERROR;
          }
       }
    }

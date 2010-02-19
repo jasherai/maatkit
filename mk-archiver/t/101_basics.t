@@ -39,64 +39,68 @@ else {
    plan tests => 23;
 }
 
+my @args = qw(--dry-run --where 1=1);
+
 # ###########################################################################
 # These are dry-run tests of various options to test that the correct
 # SQL statements are generated.
 # ###########################################################################
 
 # Test --for-update
-$output = `$cmd --where 1=1 --dry-run --source D=test,t=table_1,F=$cnf --for-update --purge 2>&1`;
-like($output, qr/SELECT .*? FOR UPDATE/, 'forupdate works');
+$output = output(sub {mk_archiver::main(@args, '--source', "D=test,t=table_1,F=$cnf", qw(--for-update --purge)) });
+like($output, qr/SELECT .*? FOR UPDATE/, '--for-update');
 
 # Test --share-lock
-$output = `$cmd --where 1=1 --dry-run --source D=test,t=table_1,F=$cnf --share-lock --purge 2>&1`;
-like($output, qr/SELECT .*? LOCK IN SHARE MODE/, 'sharelock works');
+$output = output(sub {mk_archiver::main(@args, '--source', "D=test,t=table_1,F=$cnf", qw(--share-lock --purge)) });
+like($output, qr/SELECT .*? LOCK IN SHARE MODE/, '--share-lock');
 
 # Test --quick-delete
-$output = `$cmd --where 1=1 --dry-run --source D=test,t=table_1,F=$cnf --quick-delete --purge 2>&1`;
-like($output, qr/DELETE QUICK/, 'quickdel works');
+$output = output(sub {mk_archiver::main(@args, '--source', "D=test,t=table_1,F=$cnf", qw(--quick-delete --purge)) });
+like($output, qr/DELETE QUICK/, '--quick-delete');
 
 # Test --low-priority-delete
-$output = `$cmd --where 1=1 --dry-run --source D=test,t=table_1,F=$cnf --low-priority-delete --purge 2>&1`;
-like($output, qr/DELETE LOW_PRIORITY/, 'lpdel works');
+$output = output(sub {mk_archiver::main(@args, '--source', "D=test,t=table_1,F=$cnf", qw(--low-priority-delete --purge)) });
+like($output, qr/DELETE LOW_PRIORITY/, '--low-priority-delete');
 
 # Test --low-priority-insert
-$output = `$cmd --where 1=1 --dry-run --dest t=table_2 --source D=test,t=table_1,F=$cnf --low-priority-insert 2>&1`;
-like($output, qr/INSERT LOW_PRIORITY/, 'lpins works');
+$output = output(sub {mk_archiver::main(@args, qw(--dest t=table_2), '--source', "D=test,t=table_1,F=$cnf", qw(--low-priority-insert)) });
+like($output, qr/INSERT LOW_PRIORITY/, '--low-priority-insert');
 
 # Test --delayed-insert
-$output = `$cmd --where 1=1 --dry-run --dest t=table_2 --source D=test,t=table_1,F=$cnf --delayed-insert 2>&1`;
-like($output, qr/INSERT DELAYED/, 'delayedins works');
+$output = output(sub {mk_archiver::main(@args, qw(--dest t=table_2), '--source', "D=test,t=table_1,F=$cnf", qw(--delayed-insert)) });
+like($output, qr/INSERT DELAYED/, '--delay-insert');
 
 # Test --replace
-$output = `$cmd --where 1=1 --dry-run --dest t=table_2 --source D=test,t=table_1,F=$cnf --replace 2>&1`;
-like($output, qr/REPLACE/, 'replace works');
+$output = output(sub {mk_archiver::main(@args, qw(--dest t=table_2), '--source', "D=test,t=table_1,F=$cnf", qw(--replace)) });
+like($output, qr/REPLACE/, '--replace');
 
 # Test --high-priority-select
-$output = `$cmd --where 1=1 --high-priority-select --dry-run --dest t=table_2 --source D=test,t=table_1,F=$cnf --replace 2>&1`;
-like($output, qr/SELECT HIGH_PRIORITY/, 'hpselect works');
+$output = output(sub {mk_archiver::main(@args, qw(--high-priority-select --dest t=table_2 --source), "D=test,t=table_1,F=$cnf", qw(--replace)) });
+like($output, qr/SELECT HIGH_PRIORITY/, '--high-priority-select');
 
 # Test --columns
-$output = `$cmd --where 1=1 --dry-run --source D=test,t=table_1,F=$cnf --columns=a,b --purge 2>&1`;
+$output = output(sub {mk_archiver::main(@args, '--source', "D=test,t=table_1,F=$cnf", '--columns', 'a,b', qw(--purge)) });
 like($output, qr{SELECT /\*!40001 SQL_NO_CACHE \*/ `a`,`b` FROM}, 'Only got specified columns');
 
 # Test --primary-key-only
-$output = `$cmd --where 1=1 --dry-run --source D=test,t=table_1,F=$cnf --primary-key-only --purge 2>&1`;
+$output = output(sub {mk_archiver::main(@args, '--source', "D=test,t=table_1,F=$cnf", qw(--primary-key-only --purge)) });
 like($output, qr{SELECT /\*!40001 SQL_NO_CACHE \*/ `a` FROM}, '--primary-key-only works');
 
 # Test that tables must have same columns
-$output = `$cmd --where 1=1 --dry-run --dest t=table_4 --source D=test,t=table_1,F=$cnf --purge 2>&1`;
+$output = output(sub {mk_archiver::main(@args, qw(--dest t=table_4 --source), "D=test,t=table_1,F=$cnf", qw(--purge)) }, undef, stderr=>1, dont_die=>1);
 like($output, qr/The following columns exist in --source /, 'Column check throws error');
-$output = `$cmd --where 1=1 --dry-run --no-check-columns --dest t=table_4 --source D=test,t=table_1,F=$cnf --purge 2>&1`;
+$output = output(sub {mk_archiver::main(@args, qw(--no-check-columns --dest t=table_4 --source), "D=test,t=table_1,F=$cnf", qw(--purge)) });
 like($output, qr/SELECT/, 'I can disable the check OK');
 
 # ###########################################################################
 # These are online tests that check various options.
 # ###########################################################################
 
+shift @args;  # remove --dry-run
+
 # Test --why-quit and --statistics output
 $sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
-$output = `$cmd --where 1=1 --source D=test,t=table_1,F=$cnf --purge --why-quit --statistics 2>&1`;
+$output = output(sub {mk_archiver::main(@args, '--source', "D=test,t=table_1,F=$cnf", qw(--purge --why-quit --statistics)) });
 like($output, qr/Started at \d/, 'Start timestamp');
 like($output, qr/Source:/, 'source');
 like($output, qr/SELECT 4\nINSERT 0\nDELETE 4\n/, 'row counts');
@@ -104,18 +108,18 @@ like($output, qr/Exiting because there are no more rows/, 'Exit reason');
 
 # Test basic functionality with OPTIMIZE
 $sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
-$output = `$cmd --where 1=1 --optimize ds --source D=test,t=table_1,F=$cnf --purge 2>&1`;
+$output = output(sub {mk_archiver::main(@args, qw(--optimize ds --source), "D=test,t=table_1,F=$cnf", qw(--purge)) });
 is($output, '', 'OPTIMIZE did not fail');
 
 # Test an empty table
 $sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
 $output = `mysql --defaults-file=$cnf -N -e "delete from test.table_1"`;
-$output = `$cmd --where 1=1 --source D=test,t=table_1,F=$cnf --purge 2>&1`;
+$output = output(sub {mk_archiver::main(@args, '--source', "D=test,t=table_1,F=$cnf", qw(--purge)) });
 is($output, "", 'Empty table OK');
 
 # Test the output
 $sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
-$output = `$cmd --where 1=1 --source D=test,t=table_1,F=$cnf --purge --progress 2 2>&1 | awk '{print \$3}'`;
+$output = `$trunk/mk-archiver/mk-archiver --where 1=1 --source D=test,t=table_1,F=$cnf --purge --progress 2 2>&1 | awk '{print \$3}'`;
 is($output, <<EOF
 COUNT
 0
@@ -127,15 +131,15 @@ EOF
 
 # Statistics
 $sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
-$output = `$cmd --statistics --where 1=1 --source D=test,t=table_1,F=$cnf --dest t=table_2 2>&1`;
+$output = output(sub {mk_archiver::main(@args, qw(--statistics --source), "D=test,t=table_1,F=$cnf", qw(--dest t=table_2)) });
 like($output, qr/commit *10/, 'Stats print OK');
 
 # Test --no-delete.
 $sb->load_file('master', 'mk-archiver/t/samples/tables1-4.sql');
-$output = `$cmd --no-delete --purge --where 1=1 --source D=test,t=table_1,F=$cnf --dry-run 2>&1`;
+$output = output(sub {mk_archiver::main(@args, qw(--no-delete --purge --source), "D=test,t=table_1,F=$cnf", qw(--dry-run)) });
 like($output, qr/> /, '--no-delete implies strict ascending');
 unlike($output, qr/>=/, '--no-delete implies strict ascending');
-$output = `$cmd --no-delete --purge --where 1=1 --source D=test,t=table_1,F=$cnf 2>&1`;
+$output = output(sub {mk_archiver::main(@args, qw(--no-delete --purge --source), "D=test,t=table_1,F=$cnf") });
 $output = `mysql --defaults-file=$cnf -N -e "select count(*) from test.table_1"`;
 is($output + 0, 4, 'All 4 rows are still there');
 
