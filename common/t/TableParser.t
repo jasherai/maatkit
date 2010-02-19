@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 51;
+use Test::More tests => 52;
 
 use TableParser;
 use Quoter;
@@ -23,6 +23,7 @@ my $dbh = $sb->get_dbh_for('master');
 my $q   = new Quoter();
 my $tp  = new TableParser(Quoter=>$q);
 my $tbl;
+my $sample = "common/t/samples/tables/";
 
 eval {
    $tp->parse( load_file('common/t/samples/noquotes.sql') );
@@ -927,6 +928,62 @@ is(
    $ck,
    'i_idx',
    'Get first unique, non-nullable index as clustered key'
+);
+
+
+# #############################################################################
+# Issue 388: mk-table-checksum crashes when column with comma in the
+# name is used in a key
+# #############################################################################
+$tbl = $tp->parse( load_file("$sample/issue-388.sql") );
+is_deeply(
+   $tbl,
+   {
+      clustered_key  => undef,
+      col_posn       => { 'first, last' => 1, id => 0  },
+      cols           => [ 'id', 'first, last' ],
+      defs           => {
+         'first, last' => '  `first, last` varchar(32) default NULL',
+         id            => '  `id` int(11) NOT NULL auto_increment',
+      },
+      engine         => 'MyISAM',
+      is_autoinc     => { 'first, last' => 0, id => 1 },
+      is_col         => { 'first, last' => 1, id => 1 },
+      is_nullable    => { 'first, last' => 1          },
+      is_numeric     => {                     id => 1 },
+      name           => 'foo',
+      null_cols      => [ 'first, last' ],
+      numeric_cols   => [ 'id' ],
+      type_for       => {
+         'first, last' => 'varchar',
+         id            => 'int',
+      },
+      keys           => {
+         PRIMARY => {
+            col_prefixes => [ undef ],
+            colnames     => '`id`',
+            cols         => [ 'id' ],
+            ddl          => 'PRIMARY KEY  (`id`),',
+            is_col       => { id => 1 },
+            is_nullable  => 0,
+            is_unique    => 1,
+            name         => 'PRIMARY',
+            type         => 'BTREE',
+         },
+         nameindex => {
+            col_prefixes => [ undef ],
+            colnames     => '`first, last`',
+            cols         => [ 'first, last' ],
+            ddl          => 'KEY `nameindex` (`first, last`)',
+            is_col       => { 'first, last' => 1 },
+            is_nullable  => 1,
+            is_unique    => 0,
+            name         => 'nameindex',
+            type         => 'BTREE',
+         },
+      },
+   },
+   'Index with comma in its name (issue 388)'
 );
 
 # #############################################################################
