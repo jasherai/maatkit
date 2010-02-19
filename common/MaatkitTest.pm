@@ -67,9 +67,10 @@ our @EXPORT_OK   = qw();
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Runs code and captures its STDOUT output to either a file (optional)
-# or a var (default).  Dies if code dies.
+# or a var (default).  Dies if code dies, unless $args{dont_die} is
+# true.  Captures STDERR, too, if $args{stderr} is true.
 sub output {
-   my ( $code, $file ) = @_;
+   my ( $code, $file, %args ) = @_;
    die "I need a code argument" unless $code;
    my $output = '';
    if ( $file ) { 
@@ -81,9 +82,16 @@ sub output {
          or die "Cannot capture output to variable: $OS_ERROR";
    }
    local *STDOUT = *output_fh;
+   local *STDERR if $args{stderr};  # do in outer scope of this sub
+   if ( $args{stderr} ) {
+      open  STDERR, ">&STDOUT"
+         or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
+   }
    eval { $code->() };
    close *output_fh;
-   die $EVAL_ERROR if $EVAL_ERROR;
+   if ( $EVAL_ERROR ) {
+      $args{dont_die} ? return $EVAL_ERROR : die $EVAL_ERROR;
+   }
    return $output;
 }
 
