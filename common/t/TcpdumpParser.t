@@ -14,6 +14,7 @@ use Test::More tests => 6;
 use TcpdumpParser;
 use MaatkitTest;
 
+my $sample = "common/t/samples/tcpdump/";
 my $p = new TcpdumpParser();
 
 # First, parse the TCP and IP packet...
@@ -91,7 +92,7 @@ my $oktorun = 1;
 test_packet_parser(
    parser  => $p,
    oktorun => sub { $oktorun = $_[0]; },
-   file    => 'common/t/samples/tcpdump001.txt',
+   file    => "$sample/tcpdump001.txt",
    desc    => 'basic packets',
    result  => 
    [
@@ -155,7 +156,7 @@ is(
 # This issue is caused by having extra info in the tcpdump output.
 test_packet_parser(
    parser => $p,
-   file   => 'common/t/samples/memc_tcpdump013.txt',
+   file   => "common/t/samples/memc_tcpdump013.txt",
    desc   => 'verbose tcpdump output with ascii dump',
    result =>
    [
@@ -187,7 +188,7 @@ test_packet_parser(
 # #############################################################################
 test_packet_parser(
    parser => $p,
-   file   => 'common/t/samples/tcpdump020.txt',
+   file   => "$sample/tcpdump020.txt",
    desc   => 'Empty input (issue 564)',
    result =>
    [
