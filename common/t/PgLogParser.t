@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 37;
+use Test::More tests => 41;
 
 use PgLogParser;
 use SysLogParser;
@@ -38,11 +38,11 @@ throws_ok (
    'duration_to_secs does not like crap at the end',
 );
 
-# Tests of 'deferred'.
-is($p->deferred, undef, 'Nothing in deferred');
-is_deeply([$p->deferred('foo', 1)], ['foo', 1], 'Store foo in deferred');
-is_deeply([$p->deferred], ['foo', 1], 'Get foo from deferred');
-is($p->deferred, undef, 'Nothing in deferred');
+# Tests of 'pending'.
+is($p->pending, undef, 'Nothing in pending');
+is_deeply([$p->pending('foo', 1)], ['foo', 1, undef], 'Store foo in pending');
+is_deeply([$p->pending], ['foo', 1, 1], 'Get foo from pending');
+is($p->pending, undef, 'Nothing in pending');
 
 # Tests of 'get_meta'
 my @meta = (
@@ -499,6 +499,90 @@ test_log_parser(
          pos_in_log    => 456,
          bytes         => length('disconnection'),
          cmd           => 'Admin',
+      },
+   ],
+);
+
+# This is interesting because it has a mix of lines that are genuinely broken
+# with a newline, and thus start with ^I; and lines that are broken by syslog
+# for being too long.  It has a line that's just too long and is broken in a
+# place there's no space, which is unusual.  It also starts and ends with a
+# newline, so it's a good test of whether chomping/trimming is done right.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-syslog-006.txt',
+   result => [
+      {  pos_in_log    => 0,
+         bytes         => 657,
+         cmd           => 'Query',
+         Query_time    => '0.117042',
+         arg           => "\ninsert into weblog"
+                        . " (username,remoteid,generalsitearea,refererhost,refererfull,searchterms,cookie,useragent,query,requesteduri,bot,elapsedtime)"
+                        . "\nvalues"
+                        . " (upper('asdfg'),upper('127.0.0.1'),upper(NULL),upper('localhost'),upper('<a href=\"http://localhost/nosymbol-Ameriprise-Financial-Inc-Fun\" target=\"_new\">http://localhost/nosymbol-Ameriprise-Financial-Inc-Fun</a>"
+                        . "d-Buy-Sell-Own-zz-zi125340.html'),upper(NULL),upper('temp-id=s2ByrI6TKLEoDJXG3g3NEBoRWF6Z3t'),upper('Mozilla/4.0 (compatible;"
+                        . " MSIE 7.0; Windows NT 5.2; .NET CLR 1.1.4322; .NET CLR 2.0.50727; .NET CLR"
+                        . " 3.0.04506.30)'),upper(''),upper('/AAON-Aaon-Inc-Stock-Buy-Sell-Own-zz-zs2331501.html'),'f','1')"
+                        . "\n"
+      },
+   ],
+);
+
+# This file has a few different things in it: embedded newline in a string, long
+# non-broken strings, ERROR line that doesn't describe the previous line but
+# rather is followed by a STATEMENT line.
+test_log_parser(
+   parser => $p,
+   file   => 'common/t/samples/pg-syslog-007.txt',
+   result => [
+      {  Query_time => '0.039219',
+         Session_id => '12345',
+         arg =>
+            "select 'a very long sentence a very long sentence a very long "
+            . "sentence a very long sentence a very long sentence a very "
+            . "long sentence a very long sentence ;\n';",
+         bytes      => 159,
+         cmd        => 'Query',
+         db         => 'fred',
+         pos_in_log => 0,
+         ts         => '2010-02-12 06:00:54.566',
+         user       => 'fred'
+      },
+      {  Query_time => '0.000589',
+         Session_id => '12345',
+         arg =>
+            "select 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            . "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            . "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            . "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            . "aaaaaaaaaaaaaaaaaaaaaaaa';",
+         bytes      => 280,
+         cmd        => 'Query',
+         db         => 'fred',
+         pos_in_log => '388',
+         ts         => '2010-02-12 06:01:09.854',
+         user       => 'fred',
+      },
+      {
+         Query_time => '0.000556',
+         Session_id => '12345',
+         arg        => "select '\nhello';",
+         bytes      => 16,
+         cmd        => 'Query',
+         db         => 'fred',
+         pos_in_log => '939',
+         ts         => '2010-02-12 06:01:22.860',
+         user       => 'fred'
+      },
+      {  Error_msg  => 'unrecognized configuration parameter "foobar"',
+         Session_id => '12345',
+         arg        => "show foobar;",
+         bytes      => length('show foobar;'),
+         cmd        => 'Query',
+         db         => 'fred',
+         pos_in_log => '1139',
+         ts         => '2010-02-12 06:03:14.307',
+         user       => 'fred',
       },
    ],
 );
