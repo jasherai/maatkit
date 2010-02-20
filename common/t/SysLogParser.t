@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 14;
+use Test::More tests => 17;
 
 use SysLogParser;
 use MaatkitTest;
@@ -54,43 +54,43 @@ test_log_parser(
 
       is ($tell->(),
          0,
-         '$tell 0 ok');
+         'pg-syslog-002.txt $tell 0 ok');
       is ($next_event->(),
          '2010-02-08 09:52:41.526 EST c=4b701056.1dc6,u=fred,D=fred LOG: '
          . ' statement: select * from pg_stat_bgwriter;',
-         '$next_event 0 ok');
+         'pg-syslog-002.txt $next_event 0 ok');
 
       is ($tell->(),
          153,
-         '$tell 1 ok');
+         'pg-syslog-002.txt $tell 1 ok');
       is ($next_event->(),
          '2010-02-08 09:52:41.533 EST c=4b701056.1dc6,u=fred,D=fred LOG:  '
          . 'duration: 8.309 ms',
-         '$next_event 1 ok');
+         'pg-syslog-002.txt $next_event 1 ok');
 
       is ($tell->(),
          282,
-         '$tell 2 ok');
+         'pg-syslog-002.txt $tell 2 ok');
       is ($next_event->(),
          '2010-02-08 09:52:57.807 EST c=4b701056.1dc6,u=fred,D=fred LOG:  '
          . 'statement: create index ix_a on foo (a);',
-         '$next_event 2 ok');
+         'pg-syslog-002.txt $next_event 2 ok');
 
       is ($tell->(),
          433,
-         '$tell 3 ok');
+         'pg-syslog-002.txt $tell 3 ok');
       is ($next_event->(),
          '2010-02-08 09:52:57.864 EST c=4b701056.1dc6,u=fred,D=fred ERROR:  '
          . 'relation "ix_a" already exists',
-         '$next_event 3 ok');
+         'pg-syslog-002.txt $next_event 3 ok');
 
       is ($tell->(),
          576,
-         '$tell 4 ok');
+         'pg-syslog-002.txt $tell 4 ok');
       is ($next_event->(),
          '2010-02-08 09:52:57.864 EST c=4b701056.1dc6,u=fred,D=fred STATEMENT:  '
          . 'create index ix_a on foo (a);',
-         '$next_event 4 ok');
+         'pg-syslog-002.txt $next_event 4 ok');
 
       close $fh;
    };
@@ -98,6 +98,56 @@ test_log_parser(
       $EVAL_ERROR,
       '',
       "No error on samples/pg-syslog-002.txt",
+   );
+
+}
+
+# This test case checks a $line_filter, and sees whether lines get proper
+# newline-munging.
+{
+   my $file = "$ENV{MAATKIT_TRUNK}/common/t/samples/pg-syslog-003.txt";
+   eval {
+      open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+      my %parser_args = (
+         next_event => sub { return <$fh>; },
+         tell       => sub { return tell($fh);  },
+         fh         => $fh,
+         misc       => {
+            line_filter => sub {
+               # A simplified PgLogParser::$log_line_regex
+               defined $_[0] && $_[0] =~ s/\A\t/\n/; $_[0];
+            },
+         }
+      );
+      my ( $next_event, $tell, $is_syslog )
+         = $p->generate_wrappers(%parser_args);
+
+      is ($tell->(),
+         0,
+         'pg-syslog-005.txt $tell 0 ok');
+      is ($next_event->(),
+         "2010-02-08 09:53:51.724 EST c=4b701056.1dc6,u=fred,D=fred LOG:  "
+          . "statement: SELECT n.nspname as \"Schema\","
+          . "\n  c.relname as \"Name\","
+          . "\n  CASE c.relkind WHEN 'r' THEN 'table' WHEN 'v' THEN 'view' WHEN 'i' THEN 'index' WHEN 'S' THEN 'sequence' WHEN 's' THEN"
+          . " 'special' END as \"Type\","
+          . "\n  r.rolname as \"Owner\""
+          . "\nFROM pg_catalog.pg_class c"
+          . "\n     JOIN pg_catalog.pg_roles r ON r.oid = c.relowner"
+          . "\n     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"
+          . "\nWHERE c.relkind IN ('r','v','S','')"
+          . "\n  AND n.nspname <> 'pg_catalog'"
+          . "\n  AND n.nspname !~ '^pg_toast'"
+          . "\n  AND pg_catalog.pg_table_is_visible(c.oid)"
+          . "\nORDER BY 1,2;",
+         'pg-syslog-005.txt $next_event 0 ok');
+
+      close $fh;
+   };
+   is(
+      $EVAL_ERROR,
+      '',
+      "No error on samples/pg-syslog-003.txt",
    );
 
 }

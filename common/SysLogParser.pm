@@ -85,7 +85,9 @@ sub generate_wrappers {
 # subroutine reference, which tells the wrapper when to consider a line part of
 # a new event, in syslog format, even when it's technically the same syslog
 # event.  See the test for samples/pg-syslog-002.txt for an example.  This
-# argument should be passed in via the call to parse_event().
+# argument should be passed in via the call to parse_event().  Ditto for
+# 'line_filter', which is some processing code to run on every line of content
+# in an event.
 sub make_closures {
    my ( $self, %args ) = @_;
 
@@ -94,6 +96,7 @@ sub make_closures {
    my $next_event     = $args{'next_event'};
    my $tell           = $args{'tell'};
    my $new_event_test = $args{'misc'}->{'new_event_test'};
+   my $line_filter    = $args{'misc'}->{'line_filter'};
 
    # The first thing to do is get a line from the log and see if it's from
    # syslog.
@@ -175,7 +178,11 @@ sub make_closures {
             # Example: #011FROM pg_catalog.pg_class c
             $content =~ s/#(\d{3})/chr(oct($1))/ge;
             $content =~ s/\^I/\t/g;
-            # TODO $content =~ s/\A\t/\n/; belongs in PgLogParser
+            if ( $line_filter ) {
+               MKDEBUG && _d('LLSP: applying $line_filter');
+               $content = $line_filter->($content);
+            }
+
             push @arg_lines, $content;
          }
          MKDEBUG && _d('LLSP: Exited while-loop after finding a complete entry');
