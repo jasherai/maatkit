@@ -58,9 +58,8 @@ my %attrib_name_for = (
 );
 
 # This class's data structure is a hashref with some statefulness: pending
-# lines.  line.  This is necessary because we sometimes don't know whether the
-# event is complete until we read the next line or even several lines, so we
-# store these.
+# lines.  This is necessary because we sometimes don't know whether the event is
+# complete until we read the next line or even several lines, so we store these.
 #
 # Another bit of data that's stored in $self is some code to automatically
 # translate syslog into plain log format.
@@ -93,7 +92,7 @@ sub new {
 #
 # The format I'd like to see is something like this:
 #
-# 2010-02-08 15:31:48.685 EST sid=4b7074b4.985,u=user,D=database LOG:
+# 2010-02-08 15:31:48.685 EST c=4b7074b4.985,u=user,D=database LOG:
 #
 # However, pgfouine supports user=user, db=database format.  And I think
 # it should be reasonable to grab pretty much any name=value properties out, and
@@ -609,7 +608,7 @@ sub generate_wrappers {
    # on the memory address of the closure!
    if ( ($self->{sanity} || '') ne "$args{next_event}" ){
       MKDEBUG && _d("Clearing and recreating internal state");
-      eval { require SysLogParser; };
+      eval { require SysLogParser; }; # Required for tests to work.
       my $sl = new SysLogParser();
 
       # We need a special item in %args for syslog parsing.  (This might not be
