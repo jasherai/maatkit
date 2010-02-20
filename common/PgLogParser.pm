@@ -15,7 +15,7 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# PgLogParser package $Revision: 5357 $
+# PgLogParser package $Revision$
 # ###########################################################################
 package PgLogParser;
 
@@ -23,6 +23,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Data::Dumper;
+use SysLogParser;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -39,10 +40,9 @@ my $log_line_regex = qr{
    :\s\s+
    }x;
 
-
 # The following are taken right from the comments in postgresql.conf for
 # log_line_prefix.
-my %llp_for = (
+my %attrib_name_for = (
    u => 'user',
    d => 'db',
    r => 'host', # With port
@@ -58,14 +58,19 @@ my %llp_for = (
    x => 'Trx_id',
 );
 
-# This class's data structure is a hashref with only a little bit of
-# statefulness: the deferred line.  This is necessary because we sometimes
-# don't know whether the event is complete until we read the next line, so we
-# have to defer a line.
+# This class's data structure is a hashref with some statefulness: the deferred
+# line.  This is necessary because we sometimes don't know whether the event is
+# complete until we read the next line, so we have to defer a line.
+#
+# Another bit of data that's stored in $self is some code to automatically
+# translate syslog into plain log format.
 sub new {
    my ( $class ) = @_;
    my $self = {
-      deferred => undef,
+      deferred   => undef,
+      is_syslog  => undef,
+      next_event => undef,
+      tell       => undef,
    };
    return bless $self, $class;
 }
@@ -103,7 +108,8 @@ sub new {
 # because it's double work to defer and re-parse lines; and we try to defer as
 # soon as possible so we don't have to do as much work.
 #
-# There are 3 categories of lines in a log file:
+# There are 3 categories of lines in a log file, referred to in the code as case
+# 1/2/3:
 #
 # - Those that start a possibly multi-line event
 # - Those that can continue one
@@ -115,6 +121,12 @@ sub new {
 # Otherwise we keep going, looking for more lines for the event that begins with
 # the current line.  Processing the lines is easiest if we arrange the cases in
 # this order: 2, 1, 3.
+#
+# The term "line" is to be interpreted loosely here.  Logs that are in syslog
+# format might have multi-line "lines" that are handled by the generated
+# $next_event closure and given back to the main while-loop with newlines in
+# them.  Therefore, regexes that match "the rest of the line" generally need the
+# /s flag.
 sub parse_event {
    my ( $self, %args ) = @_;
    my @required_args = qw(next_event tell);
@@ -123,7 +135,7 @@ sub parse_event {
    }
 
    # The subroutine references that wrap the filehandle operations.
-   my ($next_event, $tell) = @args{@required_args};
+   my ( $next_event, $tell, $is_syslog ) = $self->generate_wrappers(%args);
 
    # These are the properties for the log event, which will later be used to
    # create an event hash ref.
@@ -135,19 +147,21 @@ sub parse_event {
    # The position in the log is the byte offset from the beginning.  We have to
    # get this before we start reading lines.  In some cases we'll have to reset this
    # later.
-   my $pos_in_log = $tell->();
-   MKDEBUG && _d('Position in log:', $pos_in_log);
+   my $pos_in_log;
 
-   # If there's something deferred then pos_in_log will be wrong, so we correct
-   # for that.  Also, to prevent infinite loops, we set a variable that shows
-   # whether we got anything from deferred.  If we later put something back
-   # without first doing $next_event->(), then there's a problem.
+   # To prevent infinite loops, we set a variable that shows whether we got
+   # anything from deferred.  If we later put something back without first doing
+   # $next_event->(), then there's a problem.
    my $got_deferred;
-   if ( defined($line = $self->deferred) ) {
-      $pos_in_log -= length($line);
+   ($line, $pos_in_log) = $self->deferred;
+   if ( defined($line) ) {
       $got_deferred = 1;
       MKDEBUG && _d('Got deferred line', $line);
    }
+   else {
+      $pos_in_log = $tell->();
+   }
+   MKDEBUG && _d('Position in log:', $pos_in_log);
 
    # For infinite loop detection (see above).
    my $did_get_next;
@@ -168,19 +182,31 @@ sub parse_event {
    # The only thing we can really count on is that a header line should have
    # the header in it.  But, we only do this if we aren't in the middle of an
    # ongoing event, whose first line was deferred.
+   my $new_pos;
    if ( !defined $line ) {
-      while ( (defined($line = $next_event->())) && $line !~ m/$log_line_regex/o ) {
-         $pos_in_log = $tell->();
-         MKDEBUG && _d('Read line', $line);
+      MKDEBUG && _d('Skipping lines until I find a header');
+      my $found_header;
+      LINE:
+      while (
+         eval {
+            $new_pos = $tell->();
+            defined($line = $next_event->());
+         }
+      ) {
+         MKDEBUG && _d('Got a line from $next_event->()');
+         MKDEBUG && _d('Pos:', $new_pos);
+         MKDEBUG && _d('Line:', $line);
+         if ( $line =~ m/$log_line_regex/o ) {
+            $pos_in_log = $new_pos;
+            last LINE;
+         }
+         else {
+            MKDEBUG && _d('Line was not a header, will fetch another');
+         }
       }
-      MKDEBUG && _d('Found a header line, now at', $pos_in_log);
+      MKDEBUG && _d('Found a header line, now at pos_in_line', $pos_in_log);
       # Here we do not need to set $did_get_next, because we'll never be here if
       # $got_deferred is 1.
-   }
-
-   # If we're at the end of the file, we finish and tell the caller we're done.
-   if ( !defined $line ) {
-      return $self->cleanup(%args);
    }
 
    # We need to keep the line that begins the event we're parsing.
@@ -193,6 +219,9 @@ sub parse_event {
    # Parse each line.
    LINE:
    while ( !$done && defined $line ) {
+
+      # Throw away the newline ending.
+      chomp $line;
 
       # This while loop works with LOG lines.  Other lines, such as ERROR and
       # so forth, need to be handled outside this loop.
@@ -229,15 +258,13 @@ sub parse_event {
          }x
       ) {
          # We get the next line to process and skip the rest of the loop.
+         MKDEBUG && _d('Skipping this line because it matches skip-pattern');
          $line = $next_event->();
          $did_get_next = 1;
          MKDEBUG && _d('Got next line from $next_event->()');
+         MKDEBUG && _d('Line:', $line);
          next LINE;
       }
-
-      # Throw away the newline ending.
-      chomp $line;
-      MKDEBUG && _d('Line:', $line);
 
       # Possibly reset $first_line, depending on whether it was determined to be
       # junk and unset.
@@ -247,27 +274,12 @@ sub parse_event {
       # continuation of the previous line.
       if ( $line !~ m/$log_line_regex/o && @arg_lines ) {
 
-         # If this is a line from syslog, it might look like this:
-         # 2008 Jan  9 16:16:34 hostname postgres[30059]: [13-2] ...sql query...
-         # We have to delete that prefix.
-         if ( $line =~ s/\A.*\w+\[\d+\]: \[\d+-\d+\] // ) {
-            # We also have to translate characters that syslog has munged.  Some
-            # translate TAB into the literal characters '^I' and some, rsyslog
-            # on Debian anyway, seem to translate all whitespace control
-            # characters into an octal string representing the character code.
-            # Example: "#011FROM pg_catalog.pg_class c"
-            $line =~ s/#(\d{3})/chr(oct($1))/ge;
-            $line =~ s/\^I/\t/g;
+         if ( !$is_syslog ) {
+            # We need to translate tabs to newlines.  Weirdly, some logs (see
+            # samples/pg-log-005.txt) have newlines without a leading tab.
+            # Maybe it's an older log format.
+            $line =~ s/\A\t?/\n/;
          }
-         else {
-            # Weirdly, some logs (see samples/pg-log-005.txt) have newlines
-            # without a leading tab.  Maybe it's an older log format.
-            $line =~ s/\A(\S)/\t$1/;
-         }
-
-         # The TAB at the beginning of the line indicates that there's a newline
-         # at the end of the previous line.
-         $line =~ s/\A\t/\n/;
 
          # Save the remainder.
          push @arg_lines, $line;
@@ -283,7 +295,7 @@ sub parse_event {
       # In the above examples, the $label is duration, statement, and duration.
       elsif (
          my ( $sev, $label, $rest )
-            = $line =~ m/$log_line_regex(.+?):\s+(.*)\Z/o
+            = $line =~ m/$log_line_regex(.+?):\s+(.*)\Z/so
       ) {
          MKDEBUG && _d('Line is case 1 or case 3');
 
@@ -309,7 +321,7 @@ sub parse_event {
                }
                else {
                   push @properties, 'Query_time', $self->duration_to_secs($rest);
-                  MKDEBUG && _d("This line's duration applies to the event:", $rest);
+                  MKDEBUG && _d("Line's duration is for previous event:", $rest);
                }
             }
             else {
@@ -319,7 +331,7 @@ sub parse_event {
                }
 
                # We'll come back to this line later.
-               $self->deferred($line);
+               $self->deferred($line, $new_pos);
                MKDEBUG && _d('Deferred line', $line);
             }
          }
@@ -334,7 +346,7 @@ sub parse_event {
 
                if (
                   (my ($dur, $stmt)
-                     = $rest =~ m/([0-9.]+ \S+)\s+(?:statement|query):\s*(.*)/)
+                     = $rest =~ m/([0-9.]+ \S+)\s+(?:statement|query):\s*(.*)\Z/s)
                ) {
                   # It does, so we'll pull out the Query_time etc now, rather
                   # than doing it later, when we might end up in the case above
@@ -378,7 +390,7 @@ sub parse_event {
                   die "Infinite loop detected on line $line";
                }
 
-               $self->deferred($line);
+               $self->deferred($line, $new_pos);
                MKDEBUG && _d('There was @arg_lines, deferred line');
             }
 
@@ -410,23 +422,32 @@ sub parse_event {
 
       # We get the next line to process.
       if ( !$done ) {
-         $line = $next_event->();
+         $new_pos = $tell->();
+         $line    = $next_event->();
          $did_get_next = 1;
          MKDEBUG && _d('Got next line from $next_event->()');
+         MKDEBUG && _d('Line:', $line);
+         MKDEBUG && _d('Pos:', $new_pos);
       }
    } # LINE
 
-   # If we're at the end of the file, there's no point in continuing.
+   # If we're at the end of the file, we finish and tell the caller we're done.
    if ( !defined $line ) {
-      $self->cleanup(%args);
+      MKDEBUG && _d('Line not defined, at EOF; calling oktorun(0) if exists');
+      $args{oktorun}->(0) if $args{oktorun};
+      if ( !@arg_lines ) {
+         MKDEBUG && _d('No saved @arg_lines either, we are all done');
+         return undef;
+      }
    }
 
    # If we got kicked out of the while loop because of a non-LOG line, we handle
    # that line here.
    if ( $line_type && $line_type ne 'LOG' ) {
+      MKDEBUG && _d('Line is not a LOG line');
       if ( $line_type eq 'ERROR' ) {
          # Add the error message to the event.
-         push @properties, 'Error_msg', $line =~ m/ERROR:\s*(\S.*)/;
+         push @properties, 'Error_msg', $line =~ m/ERROR:\s*(\S.*)\Z/s;
       }
       else {
          MKDEBUG && _d("Unknown line", $line);
@@ -483,9 +504,9 @@ sub get_meta {
    foreach my $set ( $meta =~ m/(\w+=[^, ]+)/g ) {
       my ($key, $val) = split(/=/, $set);
       if ( $key && $val ) {
-         if ( my $prop = $llp_for{lc substr($key, 0, 1)} ) {
-            # The first letter of the name, lowercased, determines the
-            # meaning of the item.
+         # The first letter of the name, lowercased, determines the
+         # meaning of the item.
+         if ( my $prop = $attrib_name_for{lc substr($key, 0, 1)} ) {
             push @properties, $prop, $val;
          }
          else {
@@ -502,15 +523,57 @@ sub get_meta {
 # This subroutine defers and retrieves a line of text.  If you give it an
 # argument it'll set the stored line.  If not, it'll return it and delete it.
 sub deferred {
-   my ( $self, $val ) = @_;
+   my ( $self, $val, $pos_in_log ) = @_;
+   MKDEBUG && _d('In sub deferred, val:', $val);
    if ( $val ) {
-      $self->{deferred} = $val;
+      $self->{deferred} = [$val, $pos_in_log];
    }
    else {
-      $val = $self->{deferred};
+      ($val, $pos_in_log) = $self->{deferred} ? @{$self->{deferred}} : undef;
       $self->{deferred} = undef;
    }
-   return $val;
+   MKDEBUG && _d('Return from deferred:', $val, $pos_in_log);
+   return ($val, $pos_in_log);
+}
+
+# This subroutine manufactures subroutines to automatically translate incoming
+# syslog format into standard log format, to keep the main parse_event free from
+# having to think about that.  For documentation on how this works, see
+# SysLogParser.pm.
+sub generate_wrappers {
+   my ( $self, %args ) = @_;
+
+   # Reset everything, just in case some cruft was left over from a previous use
+   # of this object.  The object has stateful closures.  If this isn't done,
+   # then they'll keep reading from old filehandles.  The sanity check is based
+   # on the memory address of the closure!
+   if ( ($self->{sanity} || '') ne "$args{next_event}" ){
+      MKDEBUG && _d("Clearing and recreating internal state");
+      my $sl = new SysLogParser();
+
+      # We need a special item in %args for syslog parsing.  (This might not be
+      # a syslog log file...)  See the test for t/samples/pg-syslog-002.txt for
+      # an example of when this is needed.
+      $args{misc}->{new_event_test} = sub {
+         my ( $content ) = @_;
+         return unless defined $content;
+         return $content =~ m/$log_line_regex/o;
+      };
+
+      # The TAB at the beginning of the line indicates that there's a newline
+      # at the end of the previous line.
+      $args{misc}->{line_filter} = sub {
+         my ( $content ) = @_;
+         $content =~ s/\A\t/\n/;
+         return $content;
+      };
+
+      @{$self}{qw(next_event tell is_syslog)} = $sl->make_closures(%args);
+      $self->{sanity} = "$args{next_event}";
+   }
+
+   # Return the wrapper functions!
+   return @{$self}{qw(next_event tell is_syslog)};
 }
 
 # This subroutine converts various formats to seconds.  Examples:
@@ -523,17 +586,6 @@ sub duration_to_secs {
               : $suf eq 'sec' ? 1
               :                 die("Unknown suffix '$suf'");
    return $num / $factor;
-}
-
-# If we can't read any more lines, tell the calling scope to quit running.
-# Also discard any deferred line, because this instance of the class
-# might be used to parse another log file next, and we don't want things
-# hanging around from this log file when we do that.
-sub cleanup {
-   my ($self, %args) = @_;
-   MKDEBUG && _d('All done with file, resetting stored state');
-   $self->deferred;
-   $args{oktorun}->(0) if $args{oktorun};
 }
 
 sub _d {

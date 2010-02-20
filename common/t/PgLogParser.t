@@ -12,6 +12,7 @@ use English qw(-no_match_vars);
 use Test::More tests => 37;
 
 use PgLogParser;
+use SysLogParser;
 use MaatkitTest;
 
 my $p = new PgLogParser;
@@ -39,8 +40,8 @@ throws_ok (
 
 # Tests of 'deferred'.
 is($p->deferred, undef, 'Nothing in deferred');
-is($p->deferred('foo'), 'foo', 'Store foo in deferred');
-is($p->deferred, 'foo', 'Get foo from deferred');
+is_deeply([$p->deferred('foo', 1)], ['foo', 1], 'Store foo in deferred');
+is_deeply([$p->deferred], ['foo', 1], 'Get foo from deferred');
 is($p->deferred, undef, 'Nothing in deferred');
 
 # Tests of 'get_meta'
@@ -173,12 +174,12 @@ test_log_parser(
                           . "\t\tAND news_bytes.group_id=groups.group_id \n"
                           . "\t\tORDER BY post_date DESC LIMIT 5 OFFSET 0",
          cmd           => 'Query',
-         pos_in_log    => 78,
+         pos_in_log    => 77,
          bytes         => 376,
          Query_time    => '0.00164',
       },
       {  arg           => "SELECT total FROM forum_group_list_vw WHERE group_forum_id='4606'",
-         pos_in_log    => 499,
+         pos_in_log    => 498,
          bytes         => 65,
          cmd           => 'Query',
          Query_time    => '0.000529',
@@ -226,7 +227,7 @@ test_log_parser(
          host          => '[local]',
          arg           => 'disconnection',
          Session_id    => '4b72b72c.b44',
-         pos_in_log    => 322,
+         pos_in_log    => 321,
          bytes         => length('disconnection'),
          cmd           => 'Admin',
       },
@@ -257,7 +258,7 @@ test_log_parser(
       {  ts            => '2004-05-07 12:00:01',
          arg           => 'SELECT 1 FROM ONLY "public"."supported_languages" x '
                            . 'WHERE "language_id" = $1 FOR UPDATE OF x',
-         pos_in_log    => 333,
+         pos_in_log    => 332,
          bytes         => 92,
          cmd           => 'Query',
       },
@@ -495,7 +496,7 @@ test_log_parser(
          host          => '[local]',
          arg           => 'disconnection',
          Session_id    => '4b72bcae.d01',
-         pos_in_log    => 457,
+         pos_in_log    => 456,
          bytes         => length('disconnection'),
          cmd           => 'Admin',
       },
