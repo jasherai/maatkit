@@ -81,14 +81,19 @@ sub generate_wrappers {
    return @{$self}{qw(next_event tell is_syslog)};
 }
 
-# Make the closures!
+# Make the closures!  The $args{misc}->{new_event_test} is an optional
+# subroutine reference, which tells the wrapper when to consider a line part of
+# a new event, in syslog format, even when it's technically the same syslog
+# event.  See the test for samples/pg-syslog-002.txt for an example.  This
+# argument should be passed in via the call to parse_event().
 sub make_closures {
    my ( $self, %args ) = @_;
 
    # The following variables will be referred to in the manufactured
    # subroutines, making them proper closures.
-   my $next_event = $args{'next_event'};
-   my $tell       = $args{'tell'};
+   my $next_event     = $args{'next_event'};
+   my $tell           = $args{'tell'};
+   my $new_event_test = $args{'misc'}->{'new_event_test'};
 
    # The first thing to do is get a line from the log and see if it's from
    # syslog.
@@ -108,7 +113,6 @@ sub make_closures {
       my @pending = ($test_line);
       my $last_msg_nr = $msg_nr;
       my $pos_in_log  = 0;
-      my $new_pos     = 0;
 
       # Generate the subroutine for getting a full log message without syslog
       # breaking it across multiple lines.
@@ -117,14 +121,12 @@ sub make_closures {
 
          # Keeping the pos_in_log variable right is a bit tricky!  In general,
          # we have to tell() the filehandle before trying to read from it,
-         # getting the position before the data we've just read.  And after
-         # reading ahead until we find the *next* event, we are ready to emit
-         # *this* event, and before we do so, pos_in_log must remain pointed to
-         # the beginning of it.  After we read the event, pos_in_log has to
-         # point to the beginning of the next one, which is not where the actual
-         # filehandle position is.
-         $pos_in_log = $new_pos; # Saved from last call
-         MKDEBUG && _d('LLSP: Current $fh position:', $new_pos);
+         # getting the position before the data we've just read.  The simple
+         # rule is that when we push something onto @pending, which we almost
+         # always do, then $pos_in_log should point to the beginning of that
+         # saved content in the file.
+         MKDEBUG && _d('LLSP: Current virtual $fh position:', $pos_in_log);
+         my $new_pos = 0;
 
          # @arg_lines is where we store up the content we're about to return.
          # It contains $content; @pending contains a single saved $line.
@@ -134,21 +136,33 @@ sub make_closures {
          my $line;
          LINE:
          while (
-               defined($line = shift @pending)
-            || (
-               do { eval { $new_pos = $tell->() }; 1; }
-               && defined($line = $next_event->()))
+            defined($line = shift @pending)
+            || do {
+               # Save $new_pos, because when we hit EOF we can't $tell->()
+               # anymore.
+               eval { $new_pos = -1; $new_pos = $tell->() };
+               defined($line = $next_event->());
+            }
          ) {
             MKDEBUG && _d('LLSP: Line:', $line);
 
-            # Parse the line.  Stop if we reach a new message.
+            # Parse the line.
             ($msg_nr, $line_nr, $content) = $line =~ m/$syslog_regex/o;
             if ( !$msg_nr ) {
                die "Can't parse line: $line";
             }
+
+            # The message number has changed -- thus, new message.
             elsif ( $msg_nr != $last_msg_nr ) {
                MKDEBUG && _d('LLSP: $msg_nr', $last_msg_nr, '=>', $msg_nr);
                $last_msg_nr = $msg_nr;
+               last LINE;
+            }
+
+            # Or, the caller gave us a custom new_event_test and it is true --
+            # thus, also new message.
+            elsif ( @arg_lines && $new_event_test && $new_event_test->($content) ) {
+               MKDEBUG && _d('LLSP: $new_event_test matches');
                last LINE;
             }
 
@@ -163,11 +177,6 @@ sub make_closures {
             $content =~ s/\^I/\t/g;
             # TODO $content =~ s/\A\t/\n/; belongs in PgLogParser
             push @arg_lines, $content;
-
-            # TODO && ( $line_nr == 1 || $content !~ m/$log_line_regex/o
-            # We need to accept a user-defined regex to mark places where there
-            # could be one syslog entry that the application wants to see as one
-            # entry.  PgLogParser will pass that in.
          }
          MKDEBUG && _d('LLSP: Exited while-loop after finding a complete entry');
 
@@ -175,10 +184,13 @@ sub make_closures {
          my $psql_log_event = @arg_lines ? join('', @arg_lines) : undef;
          MKDEBUG && _d('LLSP: Final log entry:', $psql_log_event);
 
-         # Save the new content into @pending for the next time.
+         # Save the new content into @pending for the next time.  $pos_in_log
+         # must also be updated to whatever $new_pos is.
          if ( defined $line ) {
-            @pending = $line;
             MKDEBUG && _d('LLSP: Saving $line:', $line);
+            @pending = $line;
+            MKDEBUG && _d('LLSP: $pos_in_log:', $pos_in_log, '=>', $new_pos);
+            $pos_in_log = $new_pos;
          }
          else {
             # We hit the end of the file.
