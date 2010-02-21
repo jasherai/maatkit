@@ -2424,7 +2424,7 @@ sub main {
    my $o  = new OptionParser(
       strict      => 0,
       prompt      => '[OPTION...] FILE',
-      description => q{examines MySQL queries for inefficiencies.},
+      description => q{analyzes queries and advises on possible problems.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -2866,7 +2866,7 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-mk-query-advisor - Analyze queries and find inefficiencies.
+mk-query-advisor - Analyze queries and advise on possible problems.
 
 =head1 SYNOPSIS
 
@@ -2897,9 +2897,9 @@ mk-query-advisor advises about queries.
 
 =head1 CHECKS
 
-These are the check that mk-advisor can perform on a query.  There are several
-classes of checks, each described in its own seciton.  You can add new checks
-by adding new entires like the ones below.  Read L<"CHECK SYNTAX"> to learn
+These are the checks that mk-advisor can perform on a query.  There are several
+classes of checks, each described in its own section.  You can add new checks
+by adding new entries like the ones below.  Read L<"CHECK SYNTAX"> to learn
 the structure of these checks.
 
 =head2 Literals
@@ -2927,7 +2927,7 @@ desc:  All columns.  Selecting specific columns is preferable to SELECT *.
 id:    TBL.002
 level: note
 rules: columns match [\w`-]+\.\*\s+(?:AS\s+)?[[\w`-]+
-desc:  Alaised all columns.  Aliasing an all columns reference like "tbl.* foo"
+desc:  Aliased all columns.  Aliasing an all columns reference like "tbl.* foo"
        is confusing.
 
 =head2 Query
@@ -2968,7 +2968,7 @@ following attributes:
   * desc   A terse, fuller and complete description of the check.
 
 The check is two parts: CCC.NNN where CCC is the class abbreviation and NNN
-is the next avaiable number.  The classes are shown above, LIT for Literals,
+is the next available number.  The classes are shown above, LIT for Literals,
 TBL for Table List, etc.  The numbers should never overlap or change.
 
 The level is either note, warn or crit (for "critical").
