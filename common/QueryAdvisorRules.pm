@@ -30,8 +30,29 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-# These are our builtin mk-query-advisor rules.  Returned by get_rules().
-my @rules = (
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(PodParser) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my @rules = get_rules();
+
+   my $self = {
+      %args,
+      rules          => \@rules,
+      rule_index_for => {},
+      rule_info      => {},
+   };
+
+   my $i = 0;
+   map { $self->{rule_index_for}->{ $_->{id} } = $i++ } @rules;
+
+   return bless $self, $class;
+}
+
+sub get_rules {
+   return
    {
       id   => 'LIT.001',
       code => sub {
@@ -78,37 +99,6 @@ my @rules = (
          return 0;
       },
    },
-);
-
-# Maps rules by ID to their array index in @rules.  Initialized
-# in new(), used in load_rule_info() to check that a rule exists
-# for the loaded info (i.e. so POD doesn't list rules for which
-# there's no code).
-my %rule_index_for;
-
-# ID, severity, description, etc. for each rule.  Initialized in
-# load_rule_info(), used in get_rule_info().
-my %rule_info;
-
-sub new {
-   my ( $class, %args ) = @_;
-   foreach my $arg ( qw(PodParser) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-
-   my $self = {
-      %args,
-   };
-
-   # Intialize %rule_index_for.
-   my $i = 0;
-   map { $rule_index_for{ $_->{id} } = $i++ } @rules;
-
-   return bless $self, $class;
-}
-
-sub get_rules {
-   return @rules;
 }
 
 # Arguments:
@@ -145,15 +135,15 @@ sub load_rule_info {
          die "Rule info does not specify a description:\n$para",
             unless $rule_info->{description};
          die "Rule $rule_info->{id} is not defined"
-            unless defined $rule_index_for{ $rule_info->{id} };
+            unless defined $self->{rule_index_for}->{ $rule_info->{id} };
 
          my $id = $rule_info->{id};
-         if ( exists $rule_info{$id} ) {
+         if ( exists $self->{rule_info}->{$id} ) {
             die "Info for rule $rule_info->{id} already exists "
                . "and cannot be redefined"
          }
 
-         $rule_info{$id} = $rule_info;
+         $self->{rule_info}->{$id} = $rule_info;
 
          return;
       },
@@ -162,7 +152,7 @@ sub load_rule_info {
    # Check that rule info was gotten for each requested rule.
    foreach my $rule ( @$rules ) {
       die "There is no info for rule $rule->{id}"
-         unless $rule_info{ $rule->{id} };
+         unless $self->{rule_info}->{ $rule->{id} };
    }
 
    return;
@@ -171,7 +161,7 @@ sub load_rule_info {
 sub get_rule_info {
    my ( $self, $id ) = @_;
    return unless $id;
-   return $rule_info{$id};
+   return $self->{rule_info}->{$id};
 }
 
 # Called by load_rule_info() to parse a rule paragraph from the POD.
@@ -210,7 +200,7 @@ sub _parse_rule_info {
 # Used for testing.
 sub _reset_rule_info {
    my ( $self ) = @_;
-   %rule_info = ();
+   $self->{rule_info} = {};
    return;
 }
 

@@ -25,10 +25,6 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-my @rules;           # Rules from all advisor modules.
-my %rule_index_for;  # Maps rules by ID to their array index in $rules.
-my %rule_info;       # ID, severity, description, etc. for each rule.
-
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw() ) {
@@ -37,6 +33,9 @@ sub new {
 
    my $self = {
       %args,
+      rules          => [],  # Rules from all advisor modules.
+      rule_index_for => {},  # Maps rules by ID to their array index in $rules.
+      rule_info      => {},  # ID, severity, description, etc. for each rule.
    };
 
    return bless $self, $class;
@@ -46,13 +45,13 @@ sub load_rules {
    my ( $self, $advisor ) = @_;
    return unless $advisor;
    MKDEBUG && _d('Loading rules from', ref $advisor);
-   my $i = scalar @rules;
+   my $i = scalar @{$self->{rules}};
    foreach my $advisor_rule ( $advisor->get_rules() ) {
       my $id = $advisor_rule->{id};
       die "Rule $id already exists and cannot be redefined"
-         if defined $rule_index_for{$id};
-      push @rules, $advisor_rule;
-      $rule_index_for{$id} = $i++;
+         if defined $self->{rule_index_for}->{$id};
+      push @{$self->{rules}}, $advisor_rule;
+      $self->{rule_index_for}->{$id} = $i++;
    }
    return;
 }
@@ -61,15 +60,16 @@ sub load_rule_info {
    my ( $self, $advisor ) = @_;
    return unless $advisor;
    MKDEBUG && _d('Loading rule info from', ref $advisor);
-   foreach my $rule ( @rules ) {
+   my $rules = $self->{rules};
+   foreach my $rule ( @$rules ) {
       my $id        = $rule->{id};
       my $rule_info = $advisor->get_rule_info($id);
       next unless $rule_info;
 
       die "Info for rule $id already exists and cannot be redefined"
-         if $rule_info{$id};
+         if $self->{rule_info}->{$id};
 
-      $rule_info{$id} = $rule_info;
+      $self->{rule_info}->{$id} = $rule_info;
    }
    return;
 }
@@ -77,7 +77,8 @@ sub load_rule_info {
 sub run_rules {
    my ( $self, %args ) = @_;
    my @matched_rules;
-   foreach my $rule ( @rules ) {
+   my $rules = $self->{rules};
+   foreach my $rule ( @$rules ) {
       if ( $rule->{code}->(%args) ) {
          MKDEBUG && _d('Matches rule', $rule->{id});
          push @matched_rules, $rule->{id};
@@ -89,7 +90,7 @@ sub run_rules {
 sub get_rule_info {
    my ( $self, $id ) = @_;
    return unless $id;
-   return $rule_info{$id};
+   return $self->{rule_info}->{$id};
 }
 
 sub _d {
