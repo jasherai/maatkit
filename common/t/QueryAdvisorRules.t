@@ -27,15 +27,14 @@ use QueryAdvisorRules;
 my $p   = new PodParser();
 my $qar = new QueryAdvisorRules(PodParser => $p);
 
-my $rules = $qar->get_rules();
-is(
-   ref $rules,
-   'ARRAY',
-   'Returns arrayref of rules'
+my @rules = $qar->get_rules();
+ok(
+   scalar @rules,
+   'Returns array of rules'
 );
 
 my $rules_ok = 1;
-foreach my $rule ( @$rules ) {
+foreach my $rule ( @rules ) {
    if (    !$rule->{id}
         || !$rule->{code}
         || (ref $rule->{code} ne 'CODE') )
@@ -52,7 +51,7 @@ ok(
 # Test that we can load rule info from POD.  Make a sample POD file that has a
 # single sample rule definition for LIT.001 or something.
 $qar->load_rule_info(
-   rules    => $rules,
+   rules    => \@rules,
    file     => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
    section  => 'CHECKS',
 );
@@ -61,7 +60,7 @@ $qar->load_rule_info(
 throws_ok(
    sub {
       $qar->load_rule_info(
-         rules    => $rules,
+         rules    => \@rules,
          file     => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
          section  => 'CHECKS',
       );
@@ -94,7 +93,7 @@ is(
 );
 
 # Add a rule for which there is no POD info and test that it's not allowed.
-push @$rules, {
+push @rules, {
    id   => 'FOO.001',
    code => sub { return },
 };
@@ -102,7 +101,7 @@ $qar->_reset_rule_info();  # else we'll get "cannot redefine rule" error
 throws_ok (
    sub {
       $qar->load_rule_info(
-         rules    => $rules,
+         rules    => \@rules,
          file     => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
          section  => 'CHECKS',
       );
@@ -111,7 +110,7 @@ throws_ok (
    "Doesn't allow rules without info",
 );
 
-pop @$rules;
+pop @rules;
 
 # #############################################################################
 # Done.

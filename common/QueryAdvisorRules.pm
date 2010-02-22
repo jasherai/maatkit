@@ -26,7 +26,7 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # These are our builtin mk-query-advisor rules.  Returned by get_rules().
-my $rules = [
+my @rules = (
    {
       id   => 'LIT.001',
       code => sub {
@@ -34,9 +34,9 @@ my $rules = [
          return 1;
       },
    },
-];
+);
 
-# Maps rules by ID to their array index in $rules.  Initialized
+# Maps rules by ID to their array index in @rules.  Initialized
 # in new(), used in load_rule_info() to check that a rule exists
 # for the loaded info (i.e. so POD doesn't list rules for which
 # there's no code).
@@ -58,13 +58,13 @@ sub new {
 
    # Intialize %rule_index_for.
    my $i = 0;
-   map { $rule_index_for{ $_->{id} } = $i++ } @$rules;
+   map { $rule_index_for{ $_->{id} } = $i++ } @rules;
 
    return bless $self, $class;
 }
 
 sub get_rules {
-   return $rules;
+   return @rules;
 }
 
 # Arguments:
@@ -80,8 +80,8 @@ sub load_rule_info {
    foreach my $arg ( qw(rules file section) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $reqd_rules = $args{rules};  # requested/required rules
-   my $p          = $self->{PodParser};
+   my $rules = $args{rules};  # requested/required rules
+   my $p     = $self->{PodParser};
 
    # Parse rules and their info from the file's POD, saving
    # values to %rule_info.  Our trf sub returns nothing so
@@ -116,7 +116,7 @@ sub load_rule_info {
    );
 
    # Check that rule info was gotten for each requested rule.
-   foreach my $rule ( @$reqd_rules ) {
+   foreach my $rule ( @$rules ) {
       die "There is no info for rule $rule->{id}"
          unless $rule_info{ $rule->{id} };
    }
