@@ -437,12 +437,12 @@ sub parse {
    $query =~ s/\n/ /g;
    $query = $self->clean_query($query);
 
-   $parsed->{query}   = [ $query ];
+   $parsed->{query}   = $query,
    $parsed->{tables}  = $self->get_aliases($query, 1);
    $parsed->{columns} = $self->get_columns($query);
 
-   my ($dms) = $query =~ m/^(\w+)/;
-   $parsed->{dms} = [ lc $dms ],
+   my ($type) = $query =~ m/^(\w+)/;
+   $parsed->{type} = lc $type;
 
    # my @words = $query =~ m/
    #   [A-Za-z_.]+\(.*?\)+   # Match FUNCTION(...)
@@ -453,6 +453,8 @@ sub parse {
    #   |[^ ,]+
    #   |,
    #/gx;
+
+   $parsed->{sub_queries} = [];
 
    return $parsed;
 }

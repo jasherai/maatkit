@@ -23,6 +23,11 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # These are our builtin mk-query-advisor rules.  Returned by get_rules().
@@ -31,7 +36,46 @@ my @rules = (
       id   => 'LIT.001',
       code => sub {
          my ( %args ) = @_;
-         return 1;
+         my $query = $args{query};
+         return $query =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
+      },
+   },
+   {
+      id   => 'LIT.002',
+      code => sub {
+         my ( %args ) = @_;
+         my $query = $args{query};
+         return $query =~ m/[^'"](?:\d{2,4}-\d{1,2}-\d{1,2}|\d{4,6})/;
+      },
+   },
+   {
+      id   => 'GEN.001',
+      code => sub {
+         my ( %args ) = @_;
+
+         my $type = $args{query_struct}->{type};
+         return unless $type && $type eq 'select';
+
+         my $cols = $args{query_struct}->{columns};
+         return unless $cols;
+
+         foreach my $col ( @$cols ) {
+            return 1 if $col eq '*';
+         }
+         return 0;
+      },
+   },
+   {
+      id   => 'ALI.001',
+      code => sub {
+         my ( %args ) = @_;
+         my $cols = $args{query_struct}->{columns};
+         return unless $cols;
+         foreach my $col ( @$cols ) {
+            my @words = $col =~ m/(\S+)\s+(\S+)/;
+            return 1 if @words && @words > 1 && $words[1] !~ m/AS/i;
+         }
+         return 0;
       },
    },
 );

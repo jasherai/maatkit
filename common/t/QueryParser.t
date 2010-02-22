@@ -876,10 +876,11 @@ is_deeply(
 is_deeply(
    $qp->parse('SELECT * FROM tbl WHERE id=1'),
    {
-      query   => [ 'SELECT * FROM tbl WHERE id=1' ],
-      dms     => [ 'select' ],
-      tables  => [ qw(tbl) ],
-      columns => [ qw(*) ],
+      query       => 'SELECT * FROM tbl WHERE id=1',
+      type        => 'select',
+      tables      => [ qw(tbl) ],
+      columns     => [ qw(*) ],
+      sub_queries => [],
    },
    'parse basic SELECT'
 );
@@ -887,10 +888,11 @@ is_deeply(
 is_deeply(
    $qp->parse('SELECT col1, col2 FROM tbl t, foo AS bar WHERE id=1'),
    {
-      query   => [ 'SELECT col1, col2 FROM tbl t, foo AS bar WHERE id=1' ],
-      dms     => [ 'select' ],
-      tables  => [ 'tbl t', 'foo AS bar', ],
-      columns => [ qw(col1 col2) ],
+      query       => 'SELECT col1, col2 FROM tbl t, foo AS bar WHERE id=1',
+      type        => 'select',
+      tables      => [ 'tbl t', 'foo AS bar', ],
+      columns     => [ qw(col1 col2) ],
+      sub_queries => [],
    },
    'parse SELECT with columns and tables'
 );
@@ -898,10 +900,11 @@ is_deeply(
 is_deeply(
    $qp->parse('INSERT INTO tbl VALUES (1, "abc")'),
    {
-      query   => [ 'INSERT INTO tbl VALUES (1, "abc")' ],
-      dms     => [ 'insert' ],
-      tables  => [ qw(tbl) ],
-      columns => [],
+      query       => 'INSERT INTO tbl VALUES (1, "abc")',
+      type        => 'insert',
+      tables      => [ qw(tbl) ],
+      columns     => [],
+      sub_queries => [],
    },
    'parse basic INSERT'
 );
@@ -909,10 +912,11 @@ is_deeply(
 is_deeply(
    $qp->parse('INSERT INTO tbl (`a`,`b`) VALUES (1, "abc")'),
    {
-      query   => [ 'INSERT INTO tbl (`a`,`b`) VALUES (1, "abc")' ],
-      dms     => [ 'insert' ],
-      tables  => [ qw(tbl) ],
-      columns => [ qw(`a` `b`) ],
+      query       => 'INSERT INTO tbl (`a`,`b`) VALUES (1, "abc")',
+      type        => 'insert',
+      tables      => [ qw(tbl) ],
+      columns     => [ qw(`a` `b`) ],
+      sub_queries => [],
    },
    'parse INSERT with columns'
 );
@@ -920,10 +924,11 @@ is_deeply(
 is_deeply(
    $qp->parse('DELETE FROM foo WHERE bar=1'),
    {
-      query   => [ 'DELETE FROM foo WHERE bar=1' ],
-      dms     => [ 'delete' ],
-      tables  => [ qw(foo) ],
-      columns => [],
+      query       => 'DELETE FROM foo WHERE bar=1',
+      type        => 'delete',
+      tables      => [ qw(foo) ],
+      columns     => [],
+      sub_queries => [],
    },
    'parse basic DELETE'
 );
@@ -931,10 +936,11 @@ is_deeply(
 is_deeply(
    $qp->parse('BEGIN'),
    {
-      query   => [ 'BEGIN' ],
-      dms     => [ 'begin' ],
-      tables  => [ ],
-      columns => [ ],
+      query         => 'BEGIN',
+      type          => 'begin',
+      tables        => [ ],
+      columns       => [ ],
+      sub_queries => [],
    },
    'parse BEGIN'
 );

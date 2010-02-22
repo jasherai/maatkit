@@ -48,6 +48,10 @@ ok(
    'All rules are proper'
 );
 
+# QueryAdvisorRules.pm has more rules than mqa-rule-LIT.001.pod so to avoid
+# "There is no info" errors we remove all but LIT.001.
+@rules = grep { $_->{id} eq 'LIT.001' } @rules;
+
 # Test that we can load rule info from POD.  Make a sample POD file that has a
 # single sample rule definition for LIT.001 or something.
 $qar->load_rule_info(
