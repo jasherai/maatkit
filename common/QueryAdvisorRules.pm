@@ -25,17 +25,150 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+# These are our builtin mk-query-advisor rules.  Returned by get_rules().
+my $rules = [
+   {
+      id   => 'LIT.001',
+      code => sub {
+         my ( %args ) = @_;
+         return 1;
+      },
+   },
+];
+
+# Maps rules by ID to their array index in $rules.  Initialized
+# in new(), used in load_rule_info() to check that a rule exists
+# for the loaded info (i.e. so POD doesn't list rules for which
+# there's no code).
+my %rule_index_for;
+
+# ID, severity, description, etc. for each rule.  Initialized in
+# load_rule_info(), used in get_rule_info().
+my %rule_info;
+
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw() ) {
+   foreach my $arg ( qw(PodParser) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
    my $self = {
+      %args,
    };
+
+   # Intialize %rule_index_for.
+   my $i = 0;
+   map { $rule_index_for{ $_->{id} } = $i++ } @$rules;
+
    return bless $self, $class;
 }
 
+sub get_rules {
+   return $rules;
+}
+
+# Arguments:
+#   * rules      arrayref: rules for which info is required
+#   * file       scalar: file name with POD to parse rules from
+#   * section    scalar: head1 seciton name in file/POD
+#   * subsection scalar: (optional) head2 section name in section
+# Parses rules from the POD section/subsection in file, adding rule
+# info found therein to %rule_info.  Then checks that rule info
+# was gotten for all the required rules.
+sub load_rule_info {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(rules file section) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $reqd_rules = $args{rules};  # requested/required rules
+   my $p          = $self->{PodParser};
+
+   # Parse rules and their info from the file's POD, saving
+   # values to %rule_info.  Our trf sub returns nothing so
+   # parse_section() returns nothing.
+   $p->parse_section(
+      %args,
+      trf  => sub {
+         my ( $para ) = @_;
+         chomp $para;
+         my $rule_info = _parse_rule_info($para);
+         return unless $rule_info;
+
+         die "Rule info does not specify an ID:\n$para"
+            unless $rule_info->{id};
+         die "Rule info does not specify a severity:\n$para"
+            unless $rule_info->{severity};
+         die "Rule info does not specify a description:\n$para",
+            unless $rule_info->{description};
+         die "Rule $rule_info->{id} is not defined"
+            unless defined $rule_index_for{ $rule_info->{id} };
+
+         my $id = $rule_info->{id};
+         if ( exists $rule_info{$id} ) {
+            die "Info for rule $rule_info->{id} already exists "
+               . "and cannot be redefined"
+         }
+
+         $rule_info{$id} = $rule_info;
+
+         return;
+      },
+   );
+
+   # Check that rule info was gotten for each requested rule.
+   foreach my $rule ( @$reqd_rules ) {
+      die "There is no info for rule $rule->{id}"
+         unless $rule_info{ $rule->{id} };
+   }
+
+   return;
+}
+
+sub get_rule_info {
+   my ( $self, $id ) = @_;
+   return unless $id;
+   return $rule_info{$id};
+}
+
+# Called by load_rule_info() to parse a rule paragraph from the POD.
+sub _parse_rule_info {
+   my ( $para ) = @_;
+   return unless $para =~ m/^id:/i;
+   my $rule_info = {};
+   my @lines = split("\n", $para);
+   my $line;
+
+   # First 2 lines should be id and severity.
+   for ( 1..2 ) {
+      $line = shift @lines;
+      MKDEBUG && _d($line);
+      $line =~ m/(\w+):\s*(.+)/;
+      $rule_info->{lc $1} = uc $2;
+   }
+
+   # First line of desc.
+   $line = shift @lines;
+   MKDEBUG && _d($line);
+   $line =~ m/(\w+):\s*(.+)/;
+   my $desc        = lc $1;
+   $rule_info->{$desc} = $2;
+   # Rest of desc.
+   while ( my $d = shift @lines ) {
+      $rule_info->{$desc} .= $d;
+   }
+   $rule_info->{$desc} =~ s/\s+/ /g;
+   $rule_info->{$desc} =~ s/\s+$//;
+
+   MKDEBUG && _d('Parsed rule info:', Dumper($rule_info));
+   return $rule_info;
+}
+
+# Used for testing.
+sub _reset_rule_info {
+   my ( $self ) = @_;
+   %rule_info = ();
+   return;
+}
 
 sub _d {
    my ($package, undef, $line) = caller 0;

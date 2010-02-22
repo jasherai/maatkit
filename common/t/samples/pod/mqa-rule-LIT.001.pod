@@ -21,11 +21,11 @@ the structure of these checks.
 
 =head2 Literals
 
-id:    LIT.001
-level: note
-desc:  IP address used as string.  The string literal looks like an IP address
-       but is not used inside INET_ATON().  WHERE ip='127.0.0.1' is better as
-       ip=INET_ATON('127.0.0.1') if the column is numeric.
+id:          LIT.001
+severity:    note
+description: IP address used as string.  The string literal looks like an IP
+             address but is not used inside INET_ATON().  WHERE ip='127.0.0.1'
+             is better as ip=INET_ATON('127.0.0.1') if the column is numeric.
 
 =head1 OPTIONS
 

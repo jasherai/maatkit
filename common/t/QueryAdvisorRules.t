@@ -36,7 +36,7 @@ is(
 
 my $rules_ok = 1;
 foreach my $rule ( @$rules ) {
-   if (    !$rule->{ID}
+   if (    !$rule->{id}
         || !$rule->{code}
         || (ref $rule->{code} ne 'CODE') )
    {
@@ -52,16 +52,18 @@ ok(
 # Test that we can load rule info from POD.  Make a sample POD file that has a
 # single sample rule definition for LIT.001 or something.
 $qar->load_rule_info(
-   rules => $rules,
-   file  => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
+   rules    => $rules,
+   file     => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
+   section  => 'CHECKS',
 );
 
 # We shouldn't be able to load the same rule info twice.
-throws_ok (
+throws_ok(
    sub {
       $qar->load_rule_info(
-         rules => $rules,
-         file  => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
+         rules    => $rules,
+         file     => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
+         section  => 'CHECKS',
       );
    },
    qr/Info for rule \S+ already exists and cannot be redefined/,
@@ -71,21 +73,21 @@ throws_ok (
 # Test that we can now get a hashref as described above.
 is_deeply(
    $qar->get_rule_info('LIT.001'),
-   {  ID          => 'LIT.001',
-      Severity    => 'NOTE',
-      Description => "IP address used as string. The string literal looks like an IP address but is not used inside INET_ATON(). WHERE ip='127.0.0.1' is better as ip=INET_ATON('127.0.0.1') if the column is numeric.",
+   {  id          => 'LIT.001',
+      severity    => 'NOTE',
+      description => "IP address used as string. The string literal looks like an IP address but is not used inside INET_ATON(). WHERE ip='127.0.0.1' is better as ip=INET_ATON('127.0.0.1') if the column is numeric.",
    },
    'get_rule_info(LIT.001) works',
 );
 
 # Test getting a nonexistent rule.
-is_deeply(
+is(
    $qar->get_rule_info('BAR.002'),
    undef,
    "get_rule_info() nonexistent rule"
 );
 
-is_deeply(
+is(
    $qar->get_rule_info(),
    undef,
    "get_rule_info(undef)"
@@ -93,14 +95,16 @@ is_deeply(
 
 # Add a rule for which there is no POD info and test that it's not allowed.
 push @$rules, {
-   ID   => 'FOO.001',
+   id   => 'FOO.001',
    code => sub { return },
 };
+$qar->_reset_rule_info();  # else we'll get "cannot redefine rule" error
 throws_ok (
    sub {
       $qar->load_rule_info(
-         rules => $rules,
-         file  => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
+         rules    => $rules,
+         file     => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
+         section  => 'CHECKS',
       );
    },
    qr/There is no info for rule FOO.001/,
