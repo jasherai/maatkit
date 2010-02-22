@@ -2325,7 +2325,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 5843
+# QueryAdvisorRules package 5845
 # ###########################################################################
 package QueryAdvisorRules;
 
@@ -2340,7 +2340,29 @@ $Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-my @rules = (
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(PodParser) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my @rules = get_rules();
+
+   my $self = {
+      %args,
+      rules          => \@rules,
+      rule_index_for => {},
+      rule_info      => {},
+   };
+
+   my $i = 0;
+   map { $self->{rule_index_for}->{ $_->{id} } = $i++ } @rules;
+
+   return bless $self, $class;
+}
+
+sub get_rules {
+   return
    {
       id   => 'LIT.001',
       code => sub {
@@ -2387,30 +2409,6 @@ my @rules = (
          return 0;
       },
    },
-);
-
-my %rule_index_for;
-
-my %rule_info;
-
-sub new {
-   my ( $class, %args ) = @_;
-   foreach my $arg ( qw(PodParser) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-
-   my $self = {
-      %args,
-   };
-
-   my $i = 0;
-   map { $rule_index_for{ $_->{id} } = $i++ } @rules;
-
-   return bless $self, $class;
-}
-
-sub get_rules {
-   return @rules;
 }
 
 sub load_rule_info {
@@ -2436,15 +2434,15 @@ sub load_rule_info {
          die "Rule info does not specify a description:\n$para",
             unless $rule_info->{description};
          die "Rule $rule_info->{id} is not defined"
-            unless defined $rule_index_for{ $rule_info->{id} };
+            unless defined $self->{rule_index_for}->{ $rule_info->{id} };
 
          my $id = $rule_info->{id};
-         if ( exists $rule_info{$id} ) {
+         if ( exists $self->{rule_info}->{$id} ) {
             die "Info for rule $rule_info->{id} already exists "
                . "and cannot be redefined"
          }
 
-         $rule_info{$id} = $rule_info;
+         $self->{rule_info}->{$id} = $rule_info;
 
          return;
       },
@@ -2452,7 +2450,7 @@ sub load_rule_info {
 
    foreach my $rule ( @$rules ) {
       die "There is no info for rule $rule->{id}"
-         unless $rule_info{ $rule->{id} };
+         unless $self->{rule_info}->{ $rule->{id} };
    }
 
    return;
@@ -2461,7 +2459,7 @@ sub load_rule_info {
 sub get_rule_info {
    my ( $self, $id ) = @_;
    return unless $id;
-   return $rule_info{$id};
+   return $self->{rule_info}->{$id};
 }
 
 sub _parse_rule_info {
@@ -2495,7 +2493,7 @@ sub _parse_rule_info {
 
 sub _reset_rule_info {
    my ( $self ) = @_;
-   %rule_info = ();
+   $self->{rule_info} = {};
    return;
 }
 
@@ -2514,7 +2512,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisor package 5843
+# QueryAdvisor package 5845
 # ###########################################################################
 package QueryAdvisor;
 
@@ -2524,10 +2522,6 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-my @rules;           # Rules from all advisor modules.
-my %rule_index_for;  # Maps rules by ID to their array index in $rules.
-my %rule_info;       # ID, severity, description, etc. for each rule.
-
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw() ) {
@@ -2536,6 +2530,9 @@ sub new {
 
    my $self = {
       %args,
+      rules          => [],  # Rules from all advisor modules.
+      rule_index_for => {},  # Maps rules by ID to their array index in $rules.
+      rule_info      => {},  # ID, severity, description, etc. for each rule.
    };
 
    return bless $self, $class;
@@ -2545,13 +2542,13 @@ sub load_rules {
    my ( $self, $advisor ) = @_;
    return unless $advisor;
    MKDEBUG && _d('Loading rules from', ref $advisor);
-   my $i = scalar @rules;
+   my $i = scalar @{$self->{rules}};
    foreach my $advisor_rule ( $advisor->get_rules() ) {
       my $id = $advisor_rule->{id};
       die "Rule $id already exists and cannot be redefined"
-         if defined $rule_index_for{$id};
-      push @rules, $advisor_rule;
-      $rule_index_for{$id} = $i++;
+         if defined $self->{rule_index_for}->{$id};
+      push @{$self->{rules}}, $advisor_rule;
+      $self->{rule_index_for}->{$id} = $i++;
    }
    return;
 }
@@ -2560,15 +2557,16 @@ sub load_rule_info {
    my ( $self, $advisor ) = @_;
    return unless $advisor;
    MKDEBUG && _d('Loading rule info from', ref $advisor);
-   foreach my $rule ( @rules ) {
+   my $rules = $self->{rules};
+   foreach my $rule ( @$rules ) {
       my $id        = $rule->{id};
       my $rule_info = $advisor->get_rule_info($id);
       next unless $rule_info;
 
       die "Info for rule $id already exists and cannot be redefined"
-         if $rule_info{$id};
+         if $self->{rule_info}->{$id};
 
-      $rule_info{$id} = $rule_info;
+      $self->{rule_info}->{$id} = $rule_info;
    }
    return;
 }
@@ -2576,7 +2574,8 @@ sub load_rule_info {
 sub run_rules {
    my ( $self, %args ) = @_;
    my @matched_rules;
-   foreach my $rule ( @rules ) {
+   my $rules = $self->{rules};
+   foreach my $rule ( @$rules ) {
       if ( $rule->{code}->(%args) ) {
          MKDEBUG && _d('Matches rule', $rule->{id});
          push @matched_rules, $rule->{id};
@@ -2588,7 +2587,7 @@ sub run_rules {
 sub get_rule_info {
    my ( $self, $id ) = @_;
    return unless $id;
-   return $rule_info{$id};
+   return $self->{rule_info}->{$id};
 }
 
 sub _d {
@@ -2603,6 +2602,82 @@ sub _d {
 
 # ###########################################################################
 # End QueryAdvisor package
+# ###########################################################################
+
+# ###########################################################################
+# PodParser package 5849
+# ###########################################################################
+package PodParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw() ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $self = {
+   };
+   return bless $self, $class;
+}
+
+sub parse_section {
+   my ( $self, %args ) = @_;
+   my ($file, $section, $subsection, $trf)
+      = @args{qw(file section subsection trf)};
+
+   $file ||= __FILE__;
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+   
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 $section/o;
+      last;
+   }
+
+   if ( $subsection ) {
+      while ( $para = <$fh> ) {
+         next unless $para =~ m/^=head2 $subsection/o;
+         last
+      }
+   }
+
+   my @chunks;
+   while ( $para = <$fh> ) {
+      last if ($subsection ? $para =~ m/^=head[12]/ : $para =~ m/^=head1/);
+      next if $para =~ m/=head/;
+      chomp $para;
+      $para =~ s/$POD_link_re/$1/go;
+      if ( $trf ) {
+         $para = $trf->($para);
+         next unless $para;
+      }
+      push @chunks, $para;
+   }
+
+   return @chunks;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End PodParser package
 # ###########################################################################
 
 # ###########################################################################
@@ -2649,16 +2724,22 @@ sub main {
    $o->usage_or_errors();
 
    # #########################################################################
-   # Parse checks from POD.
+   # Load rules from POD and plugins.
    # #########################################################################
-   my $ignore_checks = $o->get('ignore-checks');
-   my @checks        = $o->parse_section(
-      file        => __FILE__,
-      section     => 'CHECKS',
-      trf         => sub {
-         return filter_checks( parse_check(@_), $ignore_checks );
-      },
+   # TODO: reimplement somewhere my $ignore_checks = $o->get('ignore-checks');
+   my $p   = new PodParser();
+   my $qar = new QueryAdvisorRules(PodParser => $p);
+   my $qa  = new QueryAdvisor();
+
+   $qar->load_rule_info(
+      rules   => [ $qar->get_rules() ],
+      file    => __FILE__,
+      section => 'RULES',
    );
+   $qa->load_rules($qar);
+   $qa->load_rule_info($qar);
+
+   # TODO: load rules from plugins
 
    # #########################################################################
    # Make common modules.
@@ -2689,8 +2770,6 @@ sub main {
       };
    }
    else {
-      # This is straight from mk-query-digest but only slowlog and genlog
-      # are used in mk-query-advisor.
       my %alias_for = (
          slowlog   => ['SlowLogParser'],
          genlog    => ['GeneralLogParser'],
@@ -2701,10 +2780,7 @@ sub main {
       foreach my $module ( @$type ) {
          my $parser;
          eval {
-            $parser = $module->new(
-               # server => $o->get('watch-server'),
-               o      => $o,
-            );
+            $parser = $module->new(o => $o);
          };
          if ( $EVAL_ERROR ) {
             die "Failed to load $module module: $EVAL_ERROR";
@@ -2760,28 +2836,30 @@ sub main {
       return $event;
    };
 
-   # Check the query and get a list of checks that failed (flags).
+   # Check the query and get a list of rules that match.
    push @pipeline, sub {
       my ( %args ) = @_;
       MKDEBUG && _d('callback: check query');
-      my $event = $args{event};
-      my $flags = check_query(
-         checks       => \@checks,
+      my $event  = $args{event};
+      MKDEBUG && _d('Checking', $event->{arg});
+      my @advice = $qa->run_rules(
+         query        => $event->{arg},
          query_struct => $event->{query_struct},
       );
-      $event->{flags} = $flags;
+      $event->{advice} =  \@advice;
       return $event;
    };
 
    push @pipeline, sub {
       my ( %args ) = @_;
-      MKDEBUG && _d('callback: print flags');
+      MKDEBUG && _d('callback: print advice');
       my $event = $args{event};
-      print_flags(
+      print_advice(
          %args,
          verbose       => $o->get('verbose'),
          print_all     => $o->get('print-all'),
          report_format => $o->get('report-format'),
+         QueryAdvisor  => $qa,
       );
       return $event;
    };
@@ -2870,166 +2948,42 @@ sub main {
 # Subroutines
 # ##########################################################################
 
-# Callback (trf) to parse_section().  Translates a check paragraph
-# from the POD into a hashref of its key: values (e.g. id: LIT.001
-# becomes id => 'LIT.001').  See CHECK SYNTAX for how these paragraphs
-# are formatted.
-sub parse_check {
-   my ( $para ) = @_;
-   return unless $para =~ m/^id:/;
-   my $check = {};
-   my @lines = split("\n", $para);
-
-   # First 2 lines should be id and level.
-   for ( 1..2 ) {
-      my $line = shift @lines;
-      MKDEBUG && _d($line);
-      $line =~ m/(\w+):\s*(.+)/;
-      $check->{$1} = $2;
-   }
-
-   # First line of rules;
-   my $rule = shift @lines;
-   $rule =~ s/^rules:\s+//;
-   my @rules;
-   push @rules, $rule;
-
-   # Second and subsequent rules
-   my $line = shift @lines;
-   while ( $line !~ /^desc/ ) {
-      push @rules, $line;
-      $line = shift @lines;
-   }
-
-   # Skip this check and return unless its rule is valid.      
-   my $rules = parse_check_rules(@rules);
-   return unless $rules;
-   $check->{rules} = $rules;
-
-   # First line of desc.
-   MKDEBUG && _d($line);
-   $line =~ m/(\w+):\s*(.+)/;
-   my $desc = $1;
-   $check->{$1} = $2;
-   # Rest of desc.
-   while ( my $d = shift @lines ) {
-      $check->{$desc} .= $d;
-   }
-   $check->{$desc} =~ s/\s+/ /g;
-
-   MKDEBUG && _d('Parsed check:', Dumper($check));
-   return $check;
-}
-
-# Parse, verify and translate check rules.  Returns an arrayref of
-# the compiled check rules that check_query() can use.
-sub parse_check_rules {
-   my ( @rules ) = @_;
-   my @compiled;
-   foreach my $rule ( @rules ) {
-      MKDEBUG && _d('Rule:', $rule);
-      my ($obj, $m, $pat)
-         = $rule =~ m/^\s*(\S+)\s+((?:does not )?(?:match|matches))\s+(.+)/;
-      MKDEBUG && _d('Rule parsed:', $obj, $m, $pat);
-      if ( !$obj || !$m || !$pat ) {
-         warn "Invalid rule: $rule";
-         next;
-      }
-      push @compiled, {
-         obj            => lc $obj,
-         positive_match => $m =~ m/not/ ? 0 : 1,
-         pattern        => qr/$pat/i,
-      };
-   }
-   return \@compiled;
-}
-
-sub filter_checks {
-   my ( $check, $ignore_checks ) = @_;
-   return $check unless $ignore_checks;
-   return if $ignore_checks->{ $check->{id} };
-   return if $ignore_checks->{ $check->{level} };
-   return $check;
-}
-
-# Run each check against the query.  Each check has 1 or more rules,
-# all of which must match the query to flag the check.  An arrayref
-# of flagged checks are returned.  The rules' objects are parts of
-# query: "query" for the query itself, "column" for its column values,
-# "table" for its tables.  Each obj is an arrayref of those things
-# because rules match any one of an object (i.e. any table, column,
-# etc.). Even though there's only 1 query obj, it's an arrayref too
-# to keep the code simple.
-sub check_query {
-   my ( %args ) = @_;
-   my $checks        = $args{checks};
-   my $query_struct  = $args{query_struct};
-   my @flags;
-
-   foreach my $check ( @$checks ) {
-      my $rules   = $check->{rules};
-      my $matches = 0;
-
-      RULE:
-      foreach my $rule ( @$rules ) {
-         my $pat  = $rule->{pattern};
-         my $objs = $query_struct->{ $rule->{obj} };
-
-         OBJ:
-         foreach my $obj ( @$objs ) {
-            $matches = $rule->{positive_match} ? ($obj =~ m/$pat/ ? 1 : 0)
-                     :                           ($obj !~ m/$pat/ ? 1 : 0);
-
-            # Only one object needs to match so we can stop once one does.
-            last OBJ if $matches;
-         }
-
-         # All rules must match so we can stop early if one does not.
-         last RULE unless $matches;
-      }
-
-      if ( $matches ) {
-         MKDEBUG && _d('Flag', $check->{id});
-         push @flags, $check;
-      }
-   }
-
-   return \@flags;
-}
-
-sub print_flags {
+sub print_advice {
    my ( %args ) = @_;
    my $event   = $args{event};
    my $verbose = $args{verbose} || 0;
    my $format  = $args{report_format};
+   my $qa      = $args{QueryAdvisor};
 
-   my $flags   = $event->{flags};
-   my $n_flags = scalar @$flags;
+   my $advice   = $event->{advice};
+   my $n_advice = scalar @$advice;
    my @seen_ids;
 
-   return unless $n_flags || $args{print_all};
+   return unless $n_advice || $args{print_all};
 
    # Header
    my $id = make_checksum($event->{fingerprint} || $event->{arg});
    print "\n# Query ID 0x$id at byte " . ($event->{pos_in_log} || 0) . "\n";
 
    # New check IDs and their descriptions
-   foreach my $i ( 1..$n_flags ) {
-      my $c = $flags->[$i - 1];
-      if ( $format eq 'compact' && $seen_id{ $c->{id} }++ ) {
-         push @seen_ids, $c->{id};
+   foreach my $i ( 1..$n_advice ) {
+      my $id   = $advice->[$i - 1];
+      my $info = $qa->get_rule_info($id);
+      my $desc = $info->{description} || '';  # shouldn't be blank
+      if ( $format eq 'compact' && $seen_id{$id}++ ) {
+         push @seen_ids, $id;
       }
       else {
          # Haven't seen the description for this check ID yet so print it.
          my @desc = map {
                $_ .= '.' unless m/\.$/;
                $_;
-            } split(/\.\s{1,2}/, $c->{desc});
+            } split(/\.\s{1,2}/, $desc);
          my $desc = $verbose == 1 ? $desc[0]             # terse
                   : $verbose == 2 ? "$desc[0] $desc[1]"  # fuller
-                  : $verbose >  2 ? $c->{desc}           # complete
+                  : $verbose >  2 ? $desc                # complete
                   :                 '';                  # none
-         print "# $c->{level} $c->{id} $desc\n";
+         print "# $info->{severity} $id $desc\n";
       }
    }
 
@@ -3107,100 +3061,61 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 mk-query-advisor advises about queries.
 
-=head1 CHECKS
+=head1 RULES
 
-These are the checks that mk-advisor can perform on a query.  There are several
-classes of checks, each described in its own section.  You can add new checks
-by adding new entries like the ones below.  Read L<"CHECK SYNTAX"> to learn
-the structure of these checks.
+These are the checks that mk-advisor can perform on a query.
 
-=head2 Literals
+id: ALI.001
+severity: warn
+description: Alias without AS.
 
-id:    LIT.001
-level: note
-rules: query matches ['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}
-desc:  IP address used as string.  The string literal looks like an IP address
-       but is not used inside INET_ATON().  WHERE ip='127.0.0.1' is better as
-       ip=INET_ATON('127.0.0.1') if the column is numeric.
+id: LIT.001
+severity: note
+description:  IP address used as string.  The string literal looks like an IP
+address but is not used inside INET_ATON().  WHERE ip='127.0.0.1' is better as
+ip=INET_ATON('127.0.0.1') if the column is numeric.
 
-id:    LIT.002
-level: warn
-rules: query matches [^'"](?:\d{2,4}-\d{1,2}-\d{1,2}|\d{4,6})
-desc:  Date literal is not quoted.  WHERE col<2010-02-12 is valid but wrong;
-       the date should be quoted.
+id: LIT.002
+severity: warn
+description:  Date literal is not quoted.  WHERE col<2010-02-12 is valid but
+wrong; the date should be quoted.
 
-=head2 Table List
+id: GEN.001
+severity: note
+description: All columns.  Selecting specific columns is preferable to SELECT *.
 
-id:    TBL.001
-level: note
-rules: columns match \*
-desc:  All columns.  Selecting specific columns is preferable to SELECT *.
+=head1 RULES PENDING ID PREFIX SPEC
 
 id:    TBL.002
-level: note
+severity: note
 rules: columns match [\w`-]+\.\*\s+(?:AS\s+)?[[\w`-]+
-desc:  Aliased all columns.  Aliasing an all columns reference like "tbl.* foo"
+description:  Aliased all columns.  Aliasing an all columns reference like "tbl.* foo"
        is confusing.
 
-=head2 Query
-
 id:    QRY.001
-level: note
+severity: note
 rules: query matches ^INSERT|REPLACE
        query does not match INTO\s+\S+\s+\([^\)]\)
-desc:  Blind INSERT/REPLACE.  The INSERT/REPLACE does not specify columns. 
+description:  Blind INSERT/REPLACE.  The INSERT/REPLACE does not specify columns. 
        "INSERT INTO tbl (col1,col2) VALUES" is preferred to "INSERT INTO tbl
        VALUES".
 
 id:    QRY.002
-level: note
+severity: note
 rules: query matches SQL_CALC_FOUND_ROWS
-desc:  SQL_CALC_FOUND_ROWS does not scale.  SQL_CALC_FOUND_ROWS can cause
+description:  SQL_CALC_FOUND_ROWS does not scale.  SQL_CALC_FOUND_ROWS can cause
        performance problems because it does not scale well.
 
 id:    QRY.003
-level: note
+severity: note
 rules: query matches ^SELECT
        query does not match \bWHERE\b
-desc:  SELECT without WHERE.  The SELECT statement has no WHERE clause.
+description:  SELECT without WHERE.  The SELECT statement has no WHERE clause.
 
 id:    QRY.004;
-level: note
+severity: note
 rules: query matches ORDER BY RAND
-desc:  ORDER BY RAND().  ORDER BY RAND() is not preferred.
-
-=head1 CHECK SYNTAX
-
-Each check is a single paragraph (blank line before and after) with the
-following attributes:
-
-  * id     A unique ID used by the tool to identify the check
-  * level  note, warn, or crit
-  * rules  A special syntax telling the tool how to perform the check
-  * desc   A terse, fuller and complete description of the check.
-
-The check is two parts: CCC.NNN where CCC is the class abbreviation and NNN
-is the next available number.  The classes are shown above, LIT for Literals,
-TBL for Table List, etc.  The numbers should never overlap or change.
-
-The level is either note, warn or crit (for "critical").
-
-Each rule, one per line, is a simple sentence of the form:
-
-  OBJECT matches|does not match PATTERN
-
-PATTERN is any Perl regular expression.  OBJECT is one of:
-
-  OBJECT     REFERS TO
-  ========   =======================================================
-  query      The entire SQL text of the query
-  tables     Any table and its optional alias (e.g. pine AS tree)
-  columns    Columns from SELECT and, optionally, INSERT and REPLACE
-
-The description (desc) should have at least two period-terminate sentences.
-The first sentece should be the terse definition of the check.  The second
-sentence should be the fuller defintion.  Any more sentences are the complete
-defintion of the check.
+description:  ORDER BY RAND().  ORDER BY RAND() is not preferred.
 
 =head1 OPTIONS
 

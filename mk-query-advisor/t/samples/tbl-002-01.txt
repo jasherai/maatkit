@@ -1,5 +1,4 @@
 
 # Query ID 0x3DFF87AA8F233FE9 at byte 0
-# note TBL.001 All columns.
-# note TBL.002 Alaised all columns.
+# WARN ALI.001 Alias without AS.
 SELECT tbl.* foo, bar FROM tbl WHERE id=1

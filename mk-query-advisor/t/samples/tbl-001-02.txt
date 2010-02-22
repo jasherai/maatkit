@@ -1,4 +1,3 @@
 
 # Query ID 0x6528AD9149870F41 at byte 0
-# note TBL.001 All columns.
 SELECT tbl.* FROM tbl WHERE id=2
