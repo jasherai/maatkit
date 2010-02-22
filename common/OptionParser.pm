@@ -970,45 +970,6 @@ sub clone {
    return bless \%clone;     
 }
 
-sub parse_section {
-   my ( $self, %args ) = @_;
-   my ($file, $section, $subsection, $trf)
-      = @args{qw(file section subsection trf)};
-
-   $file ||= __FILE__;
-   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   
-   local $INPUT_RECORD_SEPARATOR = '';
-
-   my $para;
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 $section/o;
-      last;
-   }
-
-   if ( $subsection ) {
-      while ( $para = <$fh> ) {
-         next unless $para =~ m/^=head2 $subsection/o;
-         last
-      }
-   }
-
-   my @chunks;
-   while ( $para = <$fh> ) {
-      last if ($subsection ? $para =~ m/^=head[12]/ : $para =~ m/^=head1/);
-      next if $para =~ m/=head/;
-      chomp $para;
-      $para =~ s/$POD_link_re/$1/go;
-      if ( $trf ) {
-         $para = $trf->($para);
-         next unless $para;
-      }
-      push @chunks, $para;
-   }
-
-   return @chunks;
-}
-
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }

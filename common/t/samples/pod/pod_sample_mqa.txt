@@ -8,7 +8,9 @@ mk-query-advisor - Scrutinize queries.
 
 =head1 SYNOPSIS
 
-This POD sample simulates special POD stuff used by mk-query-advisor.
+This POD sample simulates special POD stuff used by mk-query-advisor.  The
+format used here is not the same actually used in mk-query-advisor.  This POD
+sample is, therore, just for testing.
 
 =head1 CHECKS
 
