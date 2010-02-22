@@ -40,7 +40,7 @@ my ($header, $packet);
 while ( my $text = <$fh> ) {
    if ( !$header ) {
       ($header) = split(/\n/, $text);
-      $header =~ s/^(\S+) (\S+) -> (\S+) TCP D=(\S+) S=(\S+)(.+)/2009-01-01 $1 IP $2.$5 > $3.$4: tcp 0/;
+      $header =~ s/^(\S+)\s+(\S+) -> (\S+)\s+TCP D=(\S+) S=(\S+)(.+)/2009-01-01 $1 IP $2.$5 > $3.$4: tcp 0/;
       $header .= "\n";
       next;
    }
