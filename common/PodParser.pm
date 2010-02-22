@@ -25,8 +25,6 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-my $POD_link_re = '[LC]<"?([^">]+)"?>';
-
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw() ) {
@@ -55,6 +53,7 @@ sub parse_section {
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
    
    local $INPUT_RECORD_SEPARATOR = '';
+   my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
    my $para;
    while ( $para = <$fh> ) {
