@@ -9,11 +9,11 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 7;
-use MaatkitTest;
+use Test::More tests => 8;
 
-use QueryAdvisorRules;
+use MaatkitTest;
 use PodParser;
+use QueryAdvisorRules;
 
 # This test should just test that the QueryAdvisor module conforms to the
 # expected interface:
@@ -24,25 +24,47 @@ use PodParser;
 #     store its own rule info.  But plugins supplied by users should.
 #   - It has a get_rule_info() method that accepts an ID and returns a hashref:
 #     {ID => 'ID', Severity => 'NOTE|WARN|CRIT', Description => '......'}
-my $qar = new QueryAdvisorRules();
+my $p   = new PodParser();
+my $qar = new QueryAdvisorRules(PodParser => $p);
 
-# TODO: write a test that calls $qar->get_rules().  Check that the result is an
-# array, and that each array element is a hashref as described above.
+my $rules = $qar->get_rules();
+is(
+   ref $rules,
+   'ARRAY',
+   'Returns arrayref of rules'
+);
+
+my $rules_ok = 1;
+foreach my $rule ( @$rules ) {
+   if (    !$rule->{ID}
+        || !$rule->{code}
+        || (ref $rule->{code} ne 'CODE') )
+   {
+      $rules_ok = 0;
+      last;
+   }
+}
+ok(
+   $rules_ok,
+   'All rules are proper'
+);
 
 # Test that we can load rule info from POD.  Make a sample POD file that has a
 # single sample rule definition for LIT.001 or something.
 $qar->load_rule_info(
-   $pp->parse_advisor_rule_info(
-      "$ENV{MAATKIT_TRUNK}/common/t/samples/POD-rule-LIT.001.pod"));
+   rules => $rules,
+   file  => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
+);
 
 # We shouldn't be able to load the same rule info twice.
 throws_ok (
    sub {
       $qar->load_rule_info(
-         $pp->parse_advisor_rule_info(
-            "$ENV{MAATKIT_TRUNK}/common/t/samples/POD-rule-LIT.001.pod"));
+         rules => $rules,
+         file  => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
+      );
    },
-   qr/Info for rule \S+ already exists, and cannot be redefined/,
+   qr/Info for rule \S+ already exists and cannot be redefined/,
    'Duplicate rule info is caught',
 );
 
@@ -51,10 +73,41 @@ is_deeply(
    $qar->get_rule_info('LIT.001'),
    {  ID          => 'LIT.001',
       Severity    => 'NOTE',
-      Description => 'Foo foo apple duck whatever',
+      Description => "IP address used as string. The string literal looks like an IP address but is not used inside INET_ATON(). WHERE ip='127.0.0.1' is better as ip=INET_ATON('127.0.0.1') if the column is numeric.",
    },
    'get_rule_info(LIT.001) works',
 );
+
+# Test getting a nonexistent rule.
+is_deeply(
+   $qar->get_rule_info('BAR.002'),
+   undef,
+   "get_rule_info() nonexistent rule"
+);
+
+is_deeply(
+   $qar->get_rule_info(),
+   undef,
+   "get_rule_info(undef)"
+);
+
+# Add a rule for which there is no POD info and test that it's not allowed.
+push @$rules, {
+   ID   => 'FOO.001',
+   code => sub { return },
+};
+throws_ok (
+   sub {
+      $qar->load_rule_info(
+         rules => $rules,
+         file  => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
+      );
+   },
+   qr/There is no info for rule FOO.001/,
+   "Doesn't allow rules without info",
+);
+
+pop @$rules;
 
 # #############################################################################
 # Done.
