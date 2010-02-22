@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 5770
+# OptionParser package 5839
 # ###########################################################################
 package OptionParser;
 
@@ -847,45 +847,6 @@ sub clone {
    return bless \%clone;     
 }
 
-sub parse_section {
-   my ( $self, %args ) = @_;
-   my ($file, $section, $subsection, $trf)
-      = @args{qw(file section subsection trf)};
-
-   $file ||= __FILE__;
-   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   
-   local $INPUT_RECORD_SEPARATOR = '';
-
-   my $para;
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 $section/o;
-      last;
-   }
-
-   if ( $subsection ) {
-      while ( $para = <$fh> ) {
-         next unless $para =~ m/^=head2 $subsection/o;
-         last
-      }
-   }
-
-   my @chunks;
-   while ( $para = <$fh> ) {
-      last if ($subsection ? $para =~ m/^=head[12]/ : $para =~ m/^=head1/);
-      next if $para =~ m/=head/;
-      chomp $para;
-      $para =~ s/$POD_link_re/$1/go;
-      if ( $trf ) {
-         $para = $trf->($para);
-         next unless $para;
-      }
-      push @chunks, $para;
-   }
-
-   return @chunks;
-}
-
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1080,9 +1041,9 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 5358
+# GeneralLogParser package 5359
 # ###########################################################################
-package BinaryLogParser;
+package GeneralLogParser;
 
 use strict;
 use warnings FATAL => 'all';
@@ -1096,17 +1057,25 @@ $Data::Dumper::Quotekeys = 0;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   my ( $class, %args ) = @_;
+   my ( $class ) = @_;
    my $self = {
-      delim     => undef,
-      delim_len => 0,
+      pending => [],
+      db_for  => {},
    };
    return bless $self, $class;
 }
 
-my $binlog_line_1 = qr/at (\d+)$/m;
-my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/m;
-my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
+my $genlog_line_1= qr{
+   \A
+   (?:(\d{6}\s\d{1,2}:\d\d:\d\d))? # Timestamp
+   \s+
+   (?:\s*(\d+))                        # Thread ID
+   \s
+   (\w+)                               # Command
+   \s+
+   (.*)                                # Argument
+   \Z
+}xs;
 
 sub parse_event {
    my ( $self, %args ) = @_;
@@ -1116,144 +1085,94 @@ sub parse_event {
    }
    my ($next_event, $tell) = @args{@required_args};
 
-   local $INPUT_RECORD_SEPARATOR = ";\n#";
+   my $pending = $self->{pending};
+   my $db_for  = $self->{db_for};
+   my $line;
    my $pos_in_log = $tell->();
-   my $stmt;
-   my ($delim, $delim_len) = ($self->{delim}, $self->{delim_len});
+   LINE:
+   while (
+         defined($line = shift @$pending)
+      or defined($line = $next_event->())
+   ) {
+      MKDEBUG && _d($line);
+      my ($ts, $thread_id, $cmd, $arg) = $line =~ m/$genlog_line_1/;
+      if ( !($thread_id && $cmd) ) {
+         MKDEBUG && _d('Not start of general log event');
+         next;
+      }
+      my @properties = ('pos_in_log', $pos_in_log, 'ts', $ts,
+         'Thread_id', $thread_id);
 
-   EVENT:
-   while ( defined($stmt = $next_event->()) ) {
-      my @properties = ('pos_in_log', $pos_in_log);
-      my ($ts, $sid, $end, $type, $rest);
       $pos_in_log = $tell->();
-      $stmt =~ s/;\n#?\Z//;
 
-      my ( $got_offset, $got_hdr );
-      my $pos = 0;
-      my $len = length($stmt);
-      my $found_arg = 0;
-      LINE:
-      while ( $stmt =~ m/^(.*)$/mg ) { # /g requires scalar match.
-         $pos     = pos($stmt);  # Be careful not to mess this up!
-         my $line = $1;          # Necessary for /g and pos() to work.
-         $line    =~ s/$delim// if $delim;
-         MKDEBUG && _d($line);
-
-         if ( $line =~ m/^\/\*.+\*\/;/ ) {
-            MKDEBUG && _d('Comment line');
-            next LINE;
-         }
- 
-         if ( $line =~ m/^DELIMITER/m ) {
-            my ( $del ) = $line =~ m/^DELIMITER (\S*)$/m;
-            if ( $del ) {
-               $self->{delim_len} = $delim_len = length $del;
-               $self->{delim}     = $delim     = quotemeta $del;
-               MKDEBUG && _d('delimiter:', $delim);
-            }
-            else {
-               MKDEBUG && _d('Delimiter reset to ;');
-               $self->{delim}     = $delim     = undef;
-               $self->{delim_len} = $delim_len = 0;
-            }
-            next LINE;
-         }
-
-         next LINE if $line =~ m/End of log file/;
-
-         if ( !$got_offset && (my ( $offset ) = $line =~ m/$binlog_line_1/m) ) {
-            MKDEBUG && _d('Got the at offset line');
-            push @properties, 'offset', $offset;
-            $got_offset++;
-         }
-
-         elsif ( !$got_hdr && $line =~ m/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)/ ) {
-            ($ts, $sid, $end, $type, $rest) = $line =~ m/$binlog_line_2/m;
-            MKDEBUG && _d('Got the header line; type:', $type, 'rest:', $rest);
-            push @properties, 'cmd', 'Query', 'ts', $ts, 'server_id', $sid,
-               'end_log_pos', $end;
-            $got_hdr++;
-         }
-
-         elsif ( $line =~ m/^(?:#|use |SET)/i ) {
-
-            if ( my ( $db ) = $line =~ m/^use ([^;]+)/ ) {
-               MKDEBUG && _d("Got a default database:", $db);
-               push @properties, 'db', $db;
-            }
-
-            elsif ( my ($setting) = $line =~ m/^SET\s+([^;]*)/ ) {
-               MKDEBUG && _d("Got some setting:", $setting);
-               push @properties, map { s/\s+//; lc } split(/,|\s*=\s*/, $setting);
-            }
-
-         }
-         else {
-            MKDEBUG && _d("Got the query/arg line at pos", $pos);
-            $found_arg++;
-            if ( $got_offset && $got_hdr ) {
-               if ( $type eq 'Xid' ) {
-                  my ($xid) = $rest =~ m/(\d+)/;
-                  push @properties, 'Xid', $xid;
-               }
-               elsif ( $type eq 'Query' ) {
-                  my ($i, $t, $c) = $rest =~ m/$binlog_line_2_rest/m;
-                  push @properties, 'Thread_id', $i, 'Query_time', $t,
-                                    'error_code', $c;
-               }
-               elsif ( $type eq 'Start:' ) {
-                  MKDEBUG && _d("Binlog start");
+      @$pending = ();
+      if ( $cmd eq 'Query' ) {
+         my $done = 0;
+         do {
+            $line = $next_event->();
+            if ( $line ) {
+               ($ts, $thread_id, $cmd, undef) = $line =~ m/$genlog_line_1/;
+               if ( $thread_id && $cmd ) {
+                  MKDEBUG && _d('Event done');
+                  $done = 1;
+                  push @$pending, $line;
                }
                else {
-                  MKDEBUG && _d('Unknown event type:', $type);
-                  next EVENT;
+                  MKDEBUG && _d('More arg:', $line);
+                  $arg .= $line;
                }
             }
             else {
-               MKDEBUG && _d("It's not a query/arg, it's just some SQL fluff");
-               push @properties, 'cmd', 'Query', 'ts', undef;
+               MKDEBUG && _d('No more lines');
+               $done = 1;
             }
+         } until ( $done );
 
-            my $delim_len = ($pos == length($stmt) ? $delim_len : 0);
-            my $arg = substr($stmt, $pos - length($line) - $delim_len);
-
-            $arg =~ s/$delim// if $delim; # Remove the delimiter.
-
-            if ( $arg =~ m/^DELIMITER/m ) {
-               my ( $del ) = $arg =~ m/^DELIMITER (\S*)$/m;
-               if ( $del ) {
-                  $self->{delim_len} = $delim_len = length $del;
-                  $self->{delim}     = $delim     = quotemeta $del;
-                  MKDEBUG && _d('delimiter:', $delim);
-               }
-               else {
-                  MKDEBUG && _d('Delimiter reset to ;');
-                  $del       = ';';
-                  $self->{delim}     = $delim     = undef;
-                  $self->{delim_len} = $delim_len = 0;
-               }
-
-               $arg =~ s/^DELIMITER.*$//m;  # Remove DELIMITER from arg.
-            }
-
-            $arg =~ s/;$//gm;  # Ensure ending ; are gone.
-            $arg =~ s/\s+$//;  # Remove trailing spaces and newlines.
-
-            push @properties, 'arg', $arg, 'bytes', length($arg);
-            last LINE;
-         }
-      } # LINE
-
-      if ( $found_arg ) {
-         MKDEBUG && _d('Properties of event:', Dumper(\@properties));
-         my $event = { @properties };
-         return $event;
+         chomp $arg;
+         push @properties, 'cmd', 'Query', 'arg', $arg;
+         push @properties, 'bytes', length($properties[-1]);
+         push @properties, 'db', $db_for->{$thread_id} if $db_for->{$thread_id};
       }
       else {
-         MKDEBUG && _d('Event had no arg');
-      }
-   } # EVENT
+         push @properties, 'cmd', 'Admin';
 
+         if ( $cmd eq 'Connect' ) {
+            if ( $arg =~ m/^Access denied/ ) {
+               $cmd = $arg;
+            }
+            else {
+               my ($user, undef, $db) = $arg =~ /(\S+)/g;
+               my $host;
+               ($user, $host) = split(/@/, $user);
+               MKDEBUG && _d('Connect', $user, '@', $host, 'on', $db);
+
+               push @properties, 'user', $user if $user;
+               push @properties, 'host', $host if $host;
+               push @properties, 'db',   $db   if $db;
+               $db_for->{$thread_id} = $db;
+            }
+         }
+         elsif ( $cmd eq 'Init' ) {
+            $cmd = 'Init DB';
+            $arg =~ s/^DB\s+//;
+            my ($db) = $arg =~ /(\S+)/;
+            MKDEBUG && _d('Init DB:', $db);
+            push @properties, 'db',   $db   if $db;
+            $db_for->{$thread_id} = $db;
+         }
+
+         push @properties, 'arg', "administrator command: $cmd";
+         push @properties, 'bytes', length($properties[-1]);
+      }
+
+      push @properties, 'Query_time', 0;
+
+      MKDEBUG && _d('Properties of event:', Dumper(\@properties));
+      my $event = { @properties };
+      return $event;
+   } # LINE
+
+   @{$self->{pending}} = ();
    $args{oktorun}->(0) if $args{oktorun};
    return;
 }
@@ -1269,11 +1188,11 @@ sub _d {
 1;
 
 # ###########################################################################
-# End BinaryLogParser package
+# End GeneralLogParser package
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 5783
+# QueryParser package 5843
 # ###########################################################################
 package QueryParser;
 
@@ -1607,13 +1526,15 @@ sub parse {
    $query =~ s/\n/ /g;
    $query = $self->clean_query($query);
 
-   $parsed->{query}   = [ $query ];
+   $parsed->{query}   = $query,
    $parsed->{tables}  = $self->get_aliases($query, 1);
    $parsed->{columns} = $self->get_columns($query);
 
-   my ($dms) = $query =~ m/^(\w+)/;
-   $parsed->{dms} = [ lc $dms ],
+   my ($type) = $query =~ m/^(\w+)/;
+   $parsed->{type} = lc $type;
 
+
+   $parsed->{sub_queries} = [];
 
    return $parsed;
 }
@@ -1633,7 +1554,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5563
+# QueryRewriter package 5706
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1741,7 +1662,7 @@ sub fingerprint {
    if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)?\s+INTO.+?VALUES\s*\(.*?\))\s*,\s*\(/is ) {
       $query = $beginning; # Shorten multi-value INSERT statements ASAP
    }
-
+  
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
@@ -1892,13 +1813,22 @@ sub convert_to_select {
               {__update_to_select($1, $2, $3, $4)}exsi
       || $query =~ s{
                     \A.*?
-                    (?:insert|replace)\s+
+                    (?:insert(?:\s+ignore)?|replace)\s+
                     .*?\binto\b(.*?)\(([^\)]+)\)\s*
                     values?\s*(\(.*?\))\s*
                     (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
                     \Z
                  }
                  {__insert_to_select($1, $2, $3)}exsi
+      || $query =~ s{
+                    \A.*?
+                    (?:insert(?:\s+ignore)?|replace)\s+
+                    (?:.*?\binto)\b(.*?)\s*
+                    set?\s*\b(.*?)\s*
+                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select_with_set($1, $2)}exsi
       || $query =~ s{
                     \A.*?
                     delete\s+(.*?)
@@ -1943,6 +1873,12 @@ sub __insert_to_select {
    else {
       return "select * from $tbl limit 1";
    }
+}
+
+sub __insert_to_select_with_set {
+   my ( $from, $set ) = @_;
+   $set =~ s/,/ and /g;
+   return "select * from $from where $set ";
 }
 
 sub __update_to_select {
@@ -2389,6 +2325,287 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# QueryAdvisorRules package 5843
+# ###########################################################################
+package QueryAdvisorRules;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+my @rules = (
+   {
+      id   => 'LIT.001',
+      code => sub {
+         my ( %args ) = @_;
+         my $query = $args{query};
+         return $query =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
+      },
+   },
+   {
+      id   => 'LIT.002',
+      code => sub {
+         my ( %args ) = @_;
+         my $query = $args{query};
+         return $query =~ m/[^'"](?:\d{2,4}-\d{1,2}-\d{1,2}|\d{4,6})/;
+      },
+   },
+   {
+      id   => 'GEN.001',
+      code => sub {
+         my ( %args ) = @_;
+
+         my $type = $args{query_struct}->{type};
+         return unless $type && $type eq 'select';
+
+         my $cols = $args{query_struct}->{columns};
+         return unless $cols;
+
+         foreach my $col ( @$cols ) {
+            return 1 if $col eq '*';
+         }
+         return 0;
+      },
+   },
+   {
+      id   => 'ALI.001',
+      code => sub {
+         my ( %args ) = @_;
+         my $cols = $args{query_struct}->{columns};
+         return unless $cols;
+         foreach my $col ( @$cols ) {
+            my @words = $col =~ m/(\S+)\s+(\S+)/;
+            return 1 if @words && @words > 1 && $words[1] !~ m/AS/i;
+         }
+         return 0;
+      },
+   },
+);
+
+my %rule_index_for;
+
+my %rule_info;
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(PodParser) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $self = {
+      %args,
+   };
+
+   my $i = 0;
+   map { $rule_index_for{ $_->{id} } = $i++ } @rules;
+
+   return bless $self, $class;
+}
+
+sub get_rules {
+   return @rules;
+}
+
+sub load_rule_info {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(rules file section) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $rules = $args{rules};  # requested/required rules
+   my $p     = $self->{PodParser};
+
+   $p->parse_section(
+      %args,
+      trf  => sub {
+         my ( $para ) = @_;
+         chomp $para;
+         my $rule_info = _parse_rule_info($para);
+         return unless $rule_info;
+
+         die "Rule info does not specify an ID:\n$para"
+            unless $rule_info->{id};
+         die "Rule info does not specify a severity:\n$para"
+            unless $rule_info->{severity};
+         die "Rule info does not specify a description:\n$para",
+            unless $rule_info->{description};
+         die "Rule $rule_info->{id} is not defined"
+            unless defined $rule_index_for{ $rule_info->{id} };
+
+         my $id = $rule_info->{id};
+         if ( exists $rule_info{$id} ) {
+            die "Info for rule $rule_info->{id} already exists "
+               . "and cannot be redefined"
+         }
+
+         $rule_info{$id} = $rule_info;
+
+         return;
+      },
+   );
+
+   foreach my $rule ( @$rules ) {
+      die "There is no info for rule $rule->{id}"
+         unless $rule_info{ $rule->{id} };
+   }
+
+   return;
+}
+
+sub get_rule_info {
+   my ( $self, $id ) = @_;
+   return unless $id;
+   return $rule_info{$id};
+}
+
+sub _parse_rule_info {
+   my ( $para ) = @_;
+   return unless $para =~ m/^id:/i;
+   my $rule_info = {};
+   my @lines = split("\n", $para);
+   my $line;
+
+   for ( 1..2 ) {
+      $line = shift @lines;
+      MKDEBUG && _d($line);
+      $line =~ m/(\w+):\s*(.+)/;
+      $rule_info->{lc $1} = uc $2;
+   }
+
+   $line = shift @lines;
+   MKDEBUG && _d($line);
+   $line =~ m/(\w+):\s*(.+)/;
+   my $desc        = lc $1;
+   $rule_info->{$desc} = $2;
+   while ( my $d = shift @lines ) {
+      $rule_info->{$desc} .= $d;
+   }
+   $rule_info->{$desc} =~ s/\s+/ /g;
+   $rule_info->{$desc} =~ s/\s+$//;
+
+   MKDEBUG && _d('Parsed rule info:', Dumper($rule_info));
+   return $rule_info;
+}
+
+sub _reset_rule_info {
+   my ( $self ) = @_;
+   %rule_info = ();
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End QueryAdvisorRules package
+# ###########################################################################
+
+# ###########################################################################
+# QueryAdvisor package 5843
+# ###########################################################################
+package QueryAdvisor;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+my @rules;           # Rules from all advisor modules.
+my %rule_index_for;  # Maps rules by ID to their array index in $rules.
+my %rule_info;       # ID, severity, description, etc. for each rule.
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw() ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $self = {
+      %args,
+   };
+
+   return bless $self, $class;
+}
+
+sub load_rules {
+   my ( $self, $advisor ) = @_;
+   return unless $advisor;
+   MKDEBUG && _d('Loading rules from', ref $advisor);
+   my $i = scalar @rules;
+   foreach my $advisor_rule ( $advisor->get_rules() ) {
+      my $id = $advisor_rule->{id};
+      die "Rule $id already exists and cannot be redefined"
+         if defined $rule_index_for{$id};
+      push @rules, $advisor_rule;
+      $rule_index_for{$id} = $i++;
+   }
+   return;
+}
+
+sub load_rule_info {
+   my ( $self, $advisor ) = @_;
+   return unless $advisor;
+   MKDEBUG && _d('Loading rule info from', ref $advisor);
+   foreach my $rule ( @rules ) {
+      my $id        = $rule->{id};
+      my $rule_info = $advisor->get_rule_info($id);
+      next unless $rule_info;
+
+      die "Info for rule $id already exists and cannot be redefined"
+         if $rule_info{$id};
+
+      $rule_info{$id} = $rule_info;
+   }
+   return;
+}
+
+sub run_rules {
+   my ( $self, %args ) = @_;
+   my @matched_rules;
+   foreach my $rule ( @rules ) {
+      if ( $rule->{code}->(%args) ) {
+         MKDEBUG && _d('Matches rule', $rule->{id});
+         push @matched_rules, $rule->{id};
+      }
+   }
+   return sort @matched_rules;
+};
+
+sub get_rule_info {
+   my ( $self, $id ) = @_;
+   return unless $id;
+   return $rule_info{$id};
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End QueryAdvisor package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -2476,12 +2693,7 @@ sub main {
       # are used in mk-query-advisor.
       my %alias_for = (
          slowlog   => ['SlowLogParser'],
-         binlog    => ['BinaryLogParser'],
          genlog    => ['GeneralLogParser'],
-         tcpdump   => ['TcpdumpParser','MySQLProtocolParser'],
-         memcached => ['TcpdumpParser','MemcachedProtocolParser',
-                       'MemcachedEvent'],
-         http      => ['TcpdumpParser','HTTPProtocolParser'],
       );
       my $type = $o->get('type');
       $type    = $alias_for{$type->[0]} if $alias_for{$type->[0]};
