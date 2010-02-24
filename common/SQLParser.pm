@@ -130,7 +130,7 @@ sub parse_delete {
 
    # Save, remove keywords.
    my $keywords   = qr/(LOW_PRIORITY|QUICK|IGNORE)/i;
-   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gixe;
+   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
 
    # Check for FROM clause.  This is required so it should always be there.
    # If there's a next clause (either WHERE, ORDER BY, or LIMIT), it will
@@ -188,7 +188,7 @@ sub parse_insert {
 
    # Save, remove keywords.
    my $keywords   = qr/(LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)/i;
-   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gixe;
+   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
 
    # Parse INTO clause.  Literal "INTO" is optional.
    if ( my @into = ($query =~ m/
@@ -246,7 +246,62 @@ sub parse_insert {
 }
 
 sub parse_select {
-   # TODO
+   my ( $self, $query ) = @_;
+   return unless $query;
+   my $struct = {};
+
+   # Remove first word, should be the type.
+   $query =~ s/^\S+\s+//;  
+
+   # Save, remove keywords.
+   my $keywords = qr/(
+       ALL
+      |DISTINCT
+      |DISTINCTROW
+      |HIGH_PRIORITY
+      |STRAIGHT_JOIN
+      |SQL_SMALL_RESULT
+      |SQL_BIG_RESULT
+      |SQL_BUFFER_RESULT
+      |SQL_CACHE
+      |SQL_NO_CACHE
+      |SQL_CALC_FOUND_ROWS
+      |FOR\sUPDATE
+      |LOCK\sIN\sSHARE\sMODE
+   )/xi;
+   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
+
+   # Go clausing.  (Same as we did in parse_delete().)
+   my $clauses = qr/(
+       FROM
+      |WHERE
+      |GROUP\sBY
+      |HAVING
+      |ORDER\sBY
+      |LIMIT
+      |PROCEDURE
+      |INTO OUTFILE
+   )/xi;
+   my @clause = grep { defined $_ }
+      ($query =~ m/\G(.+?)(?:$clauses\s+|\Z)/gci);
+
+   # select_expr
+   my $clause = 'columns',
+   my $value  = shift @clause;
+   $struct->{clauses}->{$clause} = $value;
+   MKDEBUG && _d('Clause:', $clause, $value);
+
+   # All other optional clauses after SELECT select_expr.
+   while ( @clause ) {
+      $clause = shift @clause;
+      $value  = shift @clause;
+      $struct->{clauses}->{lc $clause} = $value;
+      MKDEBUG && _d('Clause:', $clause, $value);
+   }
+
+   ($struct->{unknown}) = ($query =~ m/\G(.+)/);
+
+   return $struct;
 }
 
 sub parse_truncate {
@@ -442,6 +497,12 @@ sub parse_where {
    return $where;
 }
 
+sub parse_having {
+   my ( $self, $having ) = @_;
+   # TODO
+   return $having;
+}
+
 # [ORDER BY {col_name | expr | position} [ASC | DESC], ...]
 sub parse_order_by {
    my ( $self, $order_by ) = @_;
@@ -491,6 +552,17 @@ sub parse_csv {
    *parse_columns      = \&parse_csv;
    *parse_set          = \&parse_csv;
    *parse_on_duplicate = \&parse_csv;
+}
+
+# GROUP BY {col_name | expr | position} [ASC | DESC], ... [WITH ROLLUP]
+sub parse_group_by {
+   my ( $self, $group_by ) = @_;
+   my $with_rollup = $group_by =~ s/\s+WITH ROLLUP\s*//i;
+   my $struct = {
+      columns => $self->parse_csv($group_by),
+   };
+   $struct->{with_rollup} = 1 if $with_rollup;
+   return $struct;
 }
 
 sub _d {

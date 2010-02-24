@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 16;
+use Test::More tests => 19;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -264,7 +264,82 @@ my @cases = (
    # ########################################################################
    # SELECT
    # ########################################################################
-   
+   {  name   => 'SELECT',
+      query  => 'SELECT NOW()',
+      struct => {
+         type    => 'select',
+         clauses => { 
+            columns => 'NOW()',
+         },
+         columns => ['NOW()',],
+         unknown => undef,
+      },
+   },
+   {  name   => 'SELECT FROM',
+      query  => 'SELECT col1, col2 FROM tbl',
+      struct => {
+         type    => 'select',
+         clauses => { 
+            columns => 'col1, col2 ',
+            from    => 'tbl',
+         },
+         columns => [qw(col1 col2)],
+         from    => [ { name => 'tbl', } ],
+         unknown => undef,
+      },
+   },
+   {  name   => 'SELECT FROM JOIN WHERE GROUP BY ORDER BY LIMIT',
+      query  => '/* nonsensical but covers all the basic clauses */
+         SELECT t1.col1 a, t1.col2 as b
+         FROM tbl1 t1
+            LEFT JOIN tbl2 AS t2 ON t1.id = t2.id
+         WHERE
+            t2.col IS NOT NULL
+            AND t2.name = "bob"
+         GROUP BY a, b
+         ORDER BY t2.name ASC
+         LIMIT 100, 10
+      ',
+      struct => {
+         type    => 'select',
+         clauses => { 
+            columns  => 't1.col1 a, t1.col2 as b ',
+            from     => 'tbl1 t1 LEFT JOIN tbl2 AS t2 ON t1.id = t2.id ',
+            where    => 't2.col IS NOT NULL AND t2.name = "bob" ',
+            group_by => 'a, b ',
+            order_by => 't2.name ASC ',
+            limit    => '100, 10',
+         },
+         columns => ['t1.col1 a', 't1.col2 as b',],
+         from    => [
+            {
+               name  => 'tbl1',
+               alias => 't1',
+            },
+            {
+               name  => 'tbl2',
+               alias => 't2',
+               explicit_alias => 1,
+               join  => {
+                  to        => 'tbl1',
+                  type      => 'left',
+                  condition => 'on',
+                  predicates=> 't1.id = t2.id  ',
+                  ansi      => 1,
+               },
+            },
+         ],
+         where    => 't2.col IS NOT NULL AND t2.name = "bob" ',
+         group_by => { columns => [qw(a b)], },
+         order_by => ['t2.name ASC'],
+         limit    => {
+            row_count => 10,
+            offset    => 100,
+         },
+         unknown => undef,
+      },
+   },
+
    # ########################################################################
    # TRUNCATE
    # ########################################################################
