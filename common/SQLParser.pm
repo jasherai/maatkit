@@ -244,7 +244,6 @@ sub _parse_query {
 }
 
 sub parse_select {
-   MKDEBUG && _d('parse select', $_[1]);
    my $keywords = qr/(
        ALL
       |DISTINCT
