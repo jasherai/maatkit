@@ -210,7 +210,7 @@ sub _parse_query {
    # Save, remove keywords.
    1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
 
-   # Go clausing.  (Same as we did in parse_delete().)
+   # Go clausing.
    my @clause = grep { defined $_ }
       ($query =~ m/\G(.+?)(?:$clauses\s+|\Z)/gci);
 
@@ -262,6 +262,9 @@ sub parse_select {
 }
 
 sub parse_update {
+   my $keywords = qr/(LOW_PRIORITY|IGNORE)/i;
+   my $clauses  = qr/(SET|WHERE|ORDER BY|LIMIT)/i;
+   return _parse_query(@_, $keywords, 'tables', $clauses);
 
 }
 
@@ -441,7 +444,8 @@ sub _parse_tbl_ref {
 }
 {
    no warnings;  # Why? See same line above.
-   *parse_into = \&parse_from;
+   *parse_into   = \&parse_from;
+   *parse_tables = \&parse_from;
 }
 
 sub parse_where {

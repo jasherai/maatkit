@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 19;
+use Test::More tests => 21;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -347,6 +347,38 @@ my @cases = (
    # ########################################################################
    # UPDATE
    # ########################################################################
+   {  name   => 'UPDATE SET',
+      query  => 'UPDATE tbl SET col=1',
+      struct => {
+         type    => 'update',
+         clauses => { 
+            tables => 'tbl ',
+            set    => 'col=1',
+         },
+         tables  => [ { name => 'tbl', } ],
+         set     => ['col=1'],
+         unknown => undef,
+      },
+   },
+   {  name   => 'UPDATE SET WHERE ORDER BY LIMIT',
+      query  => 'UPDATE tbl AS t SET foo=NULL WHERE foo IS NOT NULL ORDER BY id LIMIT 10',
+      struct => {
+         type    => 'update',
+         clauses => { 
+            tables   => 'tbl AS t ',
+            set      => 'foo=NULL ',
+            where    => 'foo IS NOT NULL ',
+            order_by => 'id ',
+            limit    => '10',
+         },
+         tables   => [ { name => 'tbl', alias => 't', explicit_alias => 1, } ],
+         set      => ['foo=NULL'],
+         where    => 'foo IS NOT NULL ',
+         order_by => ['id'],
+         limit    => { row_count => 10 },
+         unknown => undef,
+      },
+   },
 );
 
 foreach my $test ( @cases ) {
