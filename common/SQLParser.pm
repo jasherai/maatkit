@@ -131,25 +131,48 @@ sub parse_delete {
    my $keywords   = qr/(LOW_PRIORITY|QUICK|IGNORE)/i;
    1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gixe;
 
-   # Save, remove FROM clause.  This is required so it should always be there.
+   # Check for FROM clause.  This is required so it should always be there.
    # If there's a next clause (either WHERE, ORDER BY, or LIMIT), it will
-   # saved in $2 and we'll go "clausing" later.
+   # saved in $clause[1] and we'll go "clausing" later.
    my $clauses = qr/(WHERE|ORDER BY|LIMIT)/i;
-   my $matched = $query =~ s/FROM\s+(.+?)(?:$clauses\s+|\Z)
-                            /$struct->{clauses}->{from}=$1, ''/gixe;
-   die "DELETE without FROM clause: $query" unless $matched;
 
-   # Go clausing: save, remove optional clauses.
-   my $next_clause = $2 ? lc $2 : undef;
-   while ( $matched && $next_clause && $query ) {
-      $matched = $query =~ s/^(.+?)(?:$clauses\s+|\Z)
-                            /$struct->{clauses}->{$next_clause}=$1, ''/gixe;
-      MKDEBUG && _d($next_clause, $1);
-      $next_clause = $2 ? lc $2 : undef;
+   if ( my @clause = ($query =~ m/FROM\s+(.+?)(?:$clauses\s+|\Z)/gci) ) {
+      my $clause = 'from';
+      my $value  = shift @clause;
+      $struct->{clauses}->{$clause} = $value;
+      MKDEBUG && _d('Clause:', $clause, $value);
+
+      # Next clause after FROM, if any.
+      if ( $clause = shift @clause ) {
+
+         # There's at least 1 clause after FROM, so go clausing,
+         # i.e. get all clauses and their values.  Since we already
+         # have the first clause (from the first match), the array
+         # will start with its value, then each pair of values after
+         # it will be the next clause and its value.
+         @clause = grep { defined $_ }
+            ($query =~ m/\G(.+?)(?:$clauses\s+|\Z)/gci);
+
+         # First optional clause after FROM.
+         $value = shift @clause;
+         $struct->{clauses}->{lc $clause} = $value;
+         MKDEBUG && _d('Clause:', $clause, $value);
+
+         # All other optional clauses after the first optional clause, if any.
+         while ( @clause ) {
+            $clause = shift @clause;
+            $value  = shift @clause;
+            $struct->{clauses}->{lc $clause} = $value;
+            MKDEBUG && _d('Clause:', $clause, $value);
+         }
+      }
+
+      # Save any leftovers.  If there are any, parsing missed something.
+      ($struct->{unknown}) = ($query =~ m/\G(.+)/);
    }
-
-   # Save any leftovers.  If there are any, parsing missed something.
-   $struct->{unknown} = $query;
+   else {
+      die "DELETE without FROM clause: $query";
+   }
 
    return $struct;
 }
@@ -398,6 +421,4 @@ sub _d {
 
 1;
 
-# ###########################################################################
-# End SQLParser package
 # ###########################################################################

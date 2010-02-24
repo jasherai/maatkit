@@ -20,34 +20,33 @@ my $sp = new SQLParser();
 # ###########################################################################
 # ORDER BY
 # ###########################################################################
-# See parse_order() for why these clauses must start with "BY ".
 is_deeply(
-   $sp->parse_order('BY foo'),
+   $sp->parse_order_by('foo'),
    [qw(foo)],
    'ORDER BY foo'
 );
 is_deeply(
-   $sp->parse_order('by foo'),
+   $sp->parse_order_by('foo'),
    [qw(foo)],
    'order by foo'
 );
 is_deeply(
-   $sp->parse_order('by foo, bar'),
+   $sp->parse_order_by('foo, bar'),
    [qw(foo bar)],
    'order by foo, bar'
 );
 is_deeply(
-   $sp->parse_order('by foo asc, bar'),
+   $sp->parse_order_by('foo asc, bar'),
    ['foo asc', 'bar'],
    'order by foo asc, bar'
 );
 is_deeply(
-   $sp->parse_order('BY 1'),
+   $sp->parse_order_by('1'),
    [qw(1)],
    'ORDER BY 1'
 );
 is_deeply(
-   $sp->parse_order('BY RAND()'),
+   $sp->parse_order_by('RAND()'),
    ['RAND()'],
    'ORDER BY RAND()'
 );
