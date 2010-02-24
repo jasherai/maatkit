@@ -36,7 +36,7 @@ my @cases = (
       struct => {
          type    => 'delete',
          clauses => { 
-            from  => 'tbl',
+            from  => 'tbl ',
             where => 'id=1',
          },
          from    => [ { name => 'tbl', } ],
@@ -49,7 +49,7 @@ my @cases = (
       struct => {
          type    => 'delete',
          clauses => {
-            from  => 'tbl',
+            from  => 'tbl ',
             limit => '5',
          },
          from    => [ { name => 'tbl', } ],
@@ -64,12 +64,12 @@ my @cases = (
       struct => {
          type    => 'delete',
          clauses => {
-            from  => 'tbl',
-            order => 'BY foo',
+            from     => 'tbl ',
+            order_by => 'foo',
          },
-         from    => [ { name => 'tbl', } ],
-         order   => [qw(foo)],
-         unknown => '',
+         from     => [ { name => 'tbl', } ],
+         order_by => [qw(foo)],
+         unknown  => '',
       },
    },
    {  name   => 'DELETE FROM WHERE LIMIT',
@@ -77,12 +77,12 @@ my @cases = (
       struct => {
          type    => 'delete',
          clauses => { 
-            from  => 'tbl',
-            where => 'id=1',
+            from  => 'tbl ',
+            where => 'id=1 ',
             limit => '3',
          },
          from    => [ { name => 'tbl', } ],
-         where   => 'id=1',
+         where   => 'id=1 ',
          limit   => {
             row_count => 3,
          },
@@ -94,14 +94,14 @@ my @cases = (
       struct => {
          type    => 'delete',
          clauses => { 
-            from  => 'tbl',
-            where => 'id=1',
-            order => 'BY id',
+            from     => 'tbl ',
+            where    => 'id=1 ',
+            order_by => 'id',
          },
-         from    => [ { name => 'tbl', } ],
-         where   => 'id=1',
-         order   => [qw(id)],
-         unknown => '',
+         from     => [ { name => 'tbl', } ],
+         where    => 'id=1 ',
+         order_by => [qw(id)],
+         unknown  => '',
       },
    },
    {  name   => 'DELETE FROM WHERE ORDER BY LIMIT',
@@ -109,14 +109,14 @@ my @cases = (
       struct => {
          type    => 'delete',
          clauses => { 
-            from  => 'tbl',
-            where => 'id=1',
-            order => 'BY id',
-            limit => '1',
+            from     => 'tbl ',
+            where    => 'id=1 ',
+            order_by => 'id ',
+            limit    => '1',
          },
          from    => [ { name => 'tbl', } ],
-         where   => 'id=1',
-         order   => [qw(id)],
+         where   => 'id=1 ',
+         order_by=> [qw(id)],
          limit   => {
             row_count => 1,
          },

@@ -54,8 +54,8 @@ sub new {
 #   * type       => '',    # one of $allowed_types
 #   * keywords   => {},    # LOW_PRIORITY, DISTINCT, SQL_CACHE, etc.
 #   * functions  => {},    # MAX(), SUM(), NOW(), etc.
-#   * tables     => [],    # referenced tables with JOIN info
-#   * clauses    => {},    # parsed clauses; WHERE, INTO, GROUP BY, etc.
+#   * clauses    => {},    # text of clauses, not parsed into structs
+#   * <clause>   => struct # a parsed clause's struct, e.g. from => [<tables>]
 #   * subqueries => [],    # pointers to subquery structs
 #
 # It varies, of course, depending on the query.  If something is missing
@@ -89,6 +89,14 @@ sub parse {
 
    # Parse raw text of clauses and functions.
    foreach my $clause ( keys %{$struct->{clauses}} ) {
+      # Rename/remove clauses with space in their names, like ORDER BY.
+      if ( $clause =~ m/ / ) {
+         (my $clause_no_space = $clause) =~ s/ /_/g;
+         $struct->{clauses}->{$clause_no_space} = $struct->{clauses}->{$clause};
+         delete $struct->{clauses}->{$clause};
+         $clause = $clause_no_space;
+      }
+
       $parse_func        = "parse_$clause";
       $struct->{$clause} = $self->$parse_func($struct->{clauses}->{$clause});
    }
@@ -126,15 +134,16 @@ sub parse_delete {
    # Save, remove FROM clause.  This is required so it should always be there.
    # If there's a next clause (either WHERE, ORDER BY, or LIMIT), it will
    # saved in $2 and we'll go "clausing" later.
-   $query =~ s/FROM\s+(.+?)(?:\s+(WHERE|ORDER|LIMIT)\s*|\Z)
-              /$struct->{clauses}->{from}=$1, ''/gixe;
+   my $clauses = qr/(WHERE|ORDER BY|LIMIT)/i;
+   my $matched = $query =~ s/FROM\s+(.+?)(?:$clauses\s+|\Z)
+                            /$struct->{clauses}->{from}=$1, ''/gixe;
+   die "DELETE without FROM clause: $query" unless $matched;
 
    # Go clausing: save, remove optional clauses.
    my $next_clause = $2 ? lc $2 : undef;
-   my $max_clauses = 3;  # sanity check, prevent infinite loop
-   while ( $next_clause && $query && $max_clauses--  ) {
-      $query =~ s/^(.+?)(?:\s+(WHERE|ORDER|LIMIT)\s*|\Z)
-                 /$struct->{clauses}->{$next_clause}=$1, ''/gixe;
+   while ( $matched && $next_clause && $query ) {
+      $matched = $query =~ s/^(.+?)(?:$clauses\s+|\Z)
+                            /$struct->{clauses}->{$next_clause}=$1, ''/gixe;
       MKDEBUG && _d($next_clause, $1);
       $next_clause = $2 ? lc $2 : undef;
    }
@@ -349,16 +358,13 @@ sub parse_where {
 }
 
 # [ORDER BY {col_name | expr | position} [ASC | DESC], ...]
-# Because ORDER BY is two words and we only match single word
-# clauses, ORDER BY becomes just ORDER and the first word of
-# the text should be "BY ".
-sub parse_order {
-   my ( $self, $order ) = @_;
-   return unless $order;
-   $order =~ s/BY\s+//i;
+sub parse_order_by {
+   my ( $self, $order_by ) = @_;
+   return unless $order_by;
+   MKDEBUG && _d('Parse ORDER BY', $order_by);
    # They don't have to be cols, they can be expressions or positions;
    # we call them all cols for simplicity.
-   my @cols = map { s/^\s+//; s/\s+$//; $_ } split(',', $order);
+   my @cols = map { s/^\s+//; s/\s+$//; $_ } split(',', $order_by);
    return \@cols;
 }
 
