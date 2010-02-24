@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 13;
+use Test::More tests => 16;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -217,6 +217,49 @@ my @cases = (
    # ########################################################################
    # REPLACE
    # ########################################################################
+   # REPLACE are parsed by parse_insert() so if INSERT is well-tested we
+   # shouldn't need to test REPLACE much.
+   {  name   => 'REPLACE INTO VALUES',
+      query  => 'REPLACE INTO tbl VALUES (1,"foo")',
+      struct => {
+         type    => 'replace',
+         clauses => { 
+            into   => 'tbl',
+            values => '(1,"foo")',
+         },
+         into   => [ { name => 'tbl', } ],
+         values => [ '(1,"foo")', ],
+         unknown => undef,
+      },
+   },
+   {  name   => 'REPLACE VALUE',
+      query  => 'REPLACE tbl VALUE (1,"foo")',
+      struct => {
+         type    => 'replace',
+         clauses => { 
+            into   => 'tbl',
+            values => '(1,"foo")',
+         },
+         into   => [ { name => 'tbl', } ],
+         values => [ '(1,"foo")', ],
+         unknown => undef,
+      },
+   },
+   {  name   => 'REPLACE INTO cols VALUES',
+      query  => 'REPLACE INTO db.tbl (id, name) VALUE (2,"bob")',
+      struct => {
+         type    => 'replace',
+         clauses => { 
+            into    => 'db.tbl',
+            columns => 'id, name ',
+            values  => '(2,"bob")',
+         },
+         into    => [ { name => 'db.tbl', } ],
+         columns => [ qw(id name) ],
+         values  => [ '(2,"bob")', ],
+         unknown => undef,
+      },
+   },
 
    # ########################################################################
    # SELECT
