@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 9;
+use Test::More tests => 13;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -142,19 +142,75 @@ my @cases = (
          unknown => undef,
       },
    },
+   {  name   => 'INSERT VALUE',
+      query  => 'INSERT tbl VALUE (1,"foo")',
+      struct => {
+         type    => 'insert',
+         clauses => { 
+            into   => 'tbl',
+            values => '(1,"foo")',
+         },
+         into   => [ { name => 'tbl', } ],
+         values => [ '(1,"foo")', ],
+         unknown => undef,
+      },
+   },
    {  name   => 'INSERT INTO cols VALUES',
       query  => 'INSERT INTO db.tbl (id, name) VALUE (2,"bob")',
       struct => {
          type    => 'insert',
          clauses => { 
             into    => 'db.tbl',
-            columns => '(id, name) ',
+            columns => 'id, name ',
             values  => '(2,"bob")',
          },
          into    => [ { name => 'db.tbl', } ],
          columns => [ qw(id name) ],
          values  => [ '(2,"bob")', ],
          unknown => undef,
+      },
+   },
+   {  name   => 'INSERT INTO VALUES ON DUPLICATE',
+      query  => 'INSERT INTO tbl VALUE (3,"bob") ON DUPLICATE KEY UPDATE col1=9',
+      struct => {
+         type    => 'insert',
+         clauses => { 
+            into         => 'tbl',
+            values       => '(3,"bob") ',
+            on_duplicate => 'col1=9',
+         },
+         into         => [ { name => 'tbl', } ],
+         values       => [ '(3,"bob")', ],
+         on_duplicate => ['col1=9',],
+         unknown      => undef,
+      },
+   },
+   {  name   => 'INSERT INTO SET',
+      query  => 'INSERT INTO tbl SET id=1, foo=NULL',
+      struct => {
+         type    => 'insert',
+         clauses => { 
+            into => 'tbl',
+            set  => 'id=1, foo=NULL',
+         },
+         into    => [ { name => 'tbl', } ],
+         set     => ['id=1', 'foo=NULL',],
+         unknown => undef,
+      },
+   },
+   {  name   => 'INSERT INTO SET ON DUPLICATE',
+      query  => 'INSERT INTO tbl SET i=3 ON DUPLICATE KEY UPDATE col1=9',
+      struct => {
+         type    => 'insert',
+         clauses => { 
+            into         => 'tbl',
+            set          => 'i=3 ',
+            on_duplicate => 'col1=9',
+         },
+         into         => [ { name => 'tbl', } ],
+         set          => ['i=3',],
+         on_duplicate => ['col1=9',],
+         unknown      => undef,
       },
    },
 

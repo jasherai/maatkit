@@ -51,16 +51,17 @@ sub new {
 # clauses, subqueries, etc.).  Only queries of $allowed_types are
 # parsed.  The struct is roughly:
 # 
-#   * type       => '',    # one of $allowed_types
-#   * keywords   => {},    # LOW_PRIORITY, DISTINCT, SQL_CACHE, etc.
-#   * functions  => {},    # MAX(), SUM(), NOW(), etc.
-#   * clauses    => {},    # text of clauses, not parsed into structs
-#   * <clause>   => struct # a parsed clause's struct, e.g. from => [<tables>]
-#   * subqueries => [],    # pointers to subquery structs
+#   * type       => '',     # one of $allowed_types
+#   * clauses    => {},     # raw, unparsed text of clauses
+#   * <clause>   => struct  # parsed clause struct, e.g. from => [<tables>]
+#   * keywords   => {},     # LOW_PRIORITY, DISTINCT, SQL_CACHE, etc.
+#   * functions  => {},     # MAX(), SUM(), NOW(), etc.
+#   * subqueries => [],     # pointers to subquery structs
 #
 # It varies, of course, depending on the query.  If something is missing
 # it means the query doesn't have that part.  E.g. TRUNCATE has no clauses
-# or keywords, etc.
+# or keywords, etc.  Each clause struct is different; see their respective
+# parse_CLAUSE subs.
 sub parse {
    my ( $self, $query ) = @_;
    return unless $query;
@@ -78,8 +79,8 @@ sub parse {
    # Parse raw text parts from query.  The parse_TYPE subs only do half
    # the work: parsing raw text parts of clauses, tables, functions, etc.
    # Since these parts are invariant (e.g. a LIMIT clause is same for any
-   # type of SQL statement) they are parsed later via other parse_* subs,
-   # instead of parsing them individually in each parse_TYPE sub.
+   # type of SQL statement) they are parsed later via other parse_CLAUSE
+   # subs, instead of parsing them individually in each parse_TYPE sub.
    my $parse_func = "parse_$type";
    my $struct     = $self->$parse_func($query);
    if ( !$struct ) {
@@ -191,27 +192,40 @@ sub parse_insert {
 
    # Parse INTO clause.  Literal "INTO" is optional.
    if ( my @into = ($query =~ m/
-            (?:INTO\s+)?      # INTO, optional
-            (.+?)\s+          # table ref
-            (\([^\)]+\)\s+)?  # column list, optional
-            VALUE.?\s+        # start of next caluse, VALUES
+            (?:INTO\s+)?            # INTO, optional
+            (.+?)\s+                # table ref
+            (\([^\)]+\)\s+)?        # column list, optional
+            (VALUE.?|SET|SELECT)\s+ # start of next caluse
          /xgci)
    ) {
-      my $tbl  = shift @into;
+      my $tbl  = shift @into;  # table ref
       $struct->{clauses}->{into} = $tbl;
       MKDEBUG && _d('Clause: into', $tbl);
 
-      my $cols = shift @into;
-      $struct->{clauses}->{columns} = $cols if $cols;
-      MKDEBUG && _d('Clause: columns', $cols);
+      my $cols = shift @into;  # columns, maybe
+      if ( $cols ) {
+         $cols =~ s/[\(\)]//g;
+         $struct->{clauses}->{columns} = $cols;
+         MKDEBUG && _d('Clause: columns', $cols);
+      }
 
-      # Should be at start of values now.
-      my ($values) = ($query =~ m/\G(.+?)(?:ON|\Z)/gci);
+      my $next_clause = lc(shift @into);  # VALUES, SET or SELECT
+      die "INSERT/REPLACE without clause after table: $query"
+         unless $next_clause;
+      $next_clause = 'values' if $next_clause eq 'value';
+      my ($values, $on) = ($query =~ m/\G(.+?)(ON|\Z)/gci);
       die "INSERT/REPLACE without values: $query" unless $values;
-      $struct->{clauses}->{values} = $values;
-      MKDEBUG && _d('Clause: values', $values);
+      $struct->{clauses}->{$next_clause} = $values;
+      MKDEBUG && _d('Clause:', $next_clause, $values);
 
-      # TODO: ON DUPLICATE KEY
+      # TODO: INSERT ... SELECT
+
+      if ( $on ) {
+         ($values) = ($query =~ m/ON DUPLICATE KEY UPDATE (.+)/i);
+         die "No values after ON DUPLICATE KEY UPDATE: $query" unless $values;
+         $struct->{clauses}->{on_duplicate} = $values;
+         MKDEBUG && _d('Clause: on duplicate key update', $values);
+      }
    }
 
    # Save any leftovers.  If there are any, parsing missed something.
@@ -220,10 +234,15 @@ sub parse_insert {
    return $struct;
 }
 
-# INSERT and REPLACE are so similar that they are both parsed
-# in parse_insert().
-sub parse_replace {
-   return parse_insert(@_);
+{
+   # Suppress warnings like "Name "SQLParser::parse_set" used only once:
+   # possible typo at SQLParser.pm line 480." caused by the fact that we
+   # don't call these aliases directly, they're called indirectly using
+   # $parse_func, hence Perl can't see their being called a compile time.
+   no warnings;
+   # INSERT and REPLACE are so similar that they are both parsed
+   # in parse_insert().
+   *parse_replace = \&parse_insert;
 }
 
 sub parse_select {
@@ -412,9 +431,9 @@ sub _parse_tbl_ref {
    }
    return %tbl;
 }
-
-sub parse_into {
-   return parse_from(@_);
+{
+   no warnings;  # Why? See same line above.
+   *parse_into = \&parse_from;
 }
 
 sub parse_where {
@@ -461,12 +480,17 @@ sub parse_values {
    return \@vals;
 }
 
-sub parse_columns {
-   my ( $self, $cols ) = @_;
-   return unless $cols;
-   $cols =~ s/[\(\)]//g;
-   my @cols = map { s/^\s+//; s/\s+$//; $_ } split(',', $cols);
-   return \@cols;
+sub parse_csv {
+   my ( $self, $vals ) = @_;
+   return unless $vals;
+   my @vals = map { s/^\s+//; s/\s+$//; $_ } split(',', $vals);
+   return \@vals;
+}
+{
+   no warnings;  # Why? See same line above.
+   *parse_columns      = \&parse_csv;
+   *parse_set          = \&parse_csv;
+   *parse_on_duplicate = \&parse_csv;
 }
 
 sub _d {
