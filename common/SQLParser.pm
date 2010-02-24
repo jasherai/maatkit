@@ -69,10 +69,18 @@ sub parse {
    # Flatten and clean query.
    $query = $self->clean_query($query);
 
-   my ($type) = $query =~ m/^(\w+)\s+/;  # Match first word, should be the type.
-   $type = lc $type;
-   MKDEBUG && _d('Query type:', $type);
-   if ( $type !~ m/$allowed_types/i ) {
+   # Remove first word, should be the statement type.  The parse_TYPE subs
+   # expect that this is already removed.
+   my $type;
+   if ( $query =~ s/^(\w+)\s+// ) {
+      $type = lc $1;
+      MKDEBUG && _d('Query type:', $type);
+      if ( $type !~ m/$allowed_types/i ) {
+         return;
+      }
+   }
+   else {
+      MKDEBUG && _d('No first word/type');
       return;
    }
 
@@ -87,7 +95,16 @@ sub parse {
       MKDEBUG && _d($parse_func, 'failed to parse query');
       return;
    }
+   $struct->{type} = $type;
+   $self->_parse_clauses($struct);
+   # TODO: parse functions
 
+   MKDEBUG && _d('Query struct:', Dumper($struct));
+   return $struct;
+}
+
+sub _parse_clauses {
+   my ( $self, $struct ) = @_;
    # Parse raw text of clauses and functions.
    foreach my $clause ( keys %{$struct->{clauses}} ) {
       # Rename/remove clauses with space in their names, like ORDER BY.
@@ -98,15 +115,15 @@ sub parse {
          $clause = $clause_no_space;
       }
 
-      $parse_func        = "parse_$clause";
+      my $parse_func     = "parse_$clause";
       $struct->{$clause} = $self->$parse_func($struct->{clauses}->{$clause});
+
+      if ( $clause eq 'select' ) {
+         MKDEBUG && _d('Parsing subquery clauses');
+         $self->_parse_clauses($struct->{select});
+      }
    }
-
-   # TODO: parse functions
-
-   $struct->{type} = $type;
-   MKDEBUG && _d('Query struct:', Dumper($struct));
-   return $struct;
+   return;
 }
 
 sub clean_query {
@@ -136,9 +153,6 @@ sub parse_insert {
    my ( $self, $query ) = @_;
    return unless $query;
    my $struct = {};
-
-   # Remove first word, should be the type.
-   $query =~ s/^\S+\s+//;  
 
    # Save, remove keywords.
    my $keywords   = qr/(LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)/i;
@@ -204,9 +218,6 @@ sub _parse_query {
    return unless $query;
    my $struct = {};
 
-   # Remove first word, should be the type.
-   $query =~ s/^\S+\s+//;  
-
    # Save, remove keywords.
    1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
 
@@ -233,6 +244,7 @@ sub _parse_query {
 }
 
 sub parse_select {
+   MKDEBUG && _d('parse select', $_[1]);
    my $keywords = qr/(
        ALL
       |DISTINCT

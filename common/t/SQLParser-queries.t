@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 22;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -210,6 +210,31 @@ my @cases = (
          into         => [ { name => 'tbl', } ],
          set          => ['i=3',],
          on_duplicate => ['col1=9',],
+         unknown      => undef,
+      },
+   },
+   {  name   => 'INSERT ... SELECT',
+      query  => 'INSERT INTO tbl (col) SELECT id FROM tbl2 WHERE id > 100',
+      struct => {
+         type    => 'insert',
+         clauses => { 
+            into    => 'tbl',
+            columns => 'col ',
+            select  => 'id FROM tbl2 WHERE id > 100',
+         },
+         into         => [ { name => 'tbl', } ],
+         columns      => ['col'],
+         select       => {
+            clauses => { 
+               columns => 'id ',
+               from    => 'tbl2 ',
+               where   => 'id > 100',
+            },
+            columns => [qw(id)],
+            from    => [ { name => 'tbl2', } ],
+            where   => 'id > 100',
+            unknown => undef,
+         },
          unknown      => undef,
       },
    },
