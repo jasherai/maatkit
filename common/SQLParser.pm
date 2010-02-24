@@ -122,60 +122,14 @@ sub clean_query {
 
 sub parse_delete {
    my ( $self, $query ) = @_;
-   return unless $query;
-   my $struct = {};
-
-   # Remove first word, should be the type.
-   $query =~ s/^\S+\s+//;  
-
-   # Save, remove keywords.
-   my $keywords   = qr/(LOW_PRIORITY|QUICK|IGNORE)/i;
-   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
-
-   # Check for FROM clause.  This is required so it should always be there.
-   # If there's a next clause (either WHERE, ORDER BY, or LIMIT), it will
-   # saved in $clause[1] and we'll go "clausing" later.
-   my $clauses = qr/(WHERE|ORDER BY|LIMIT)/i;
-
-   if ( my @clause = ($query =~ m/FROM\s+(.+?)(?:$clauses\s+|\Z)/gci) ) {
-      my $clause = 'from';
-      my $value  = shift @clause;
-      $struct->{clauses}->{$clause} = $value;
-      MKDEBUG && _d('Clause:', $clause, $value);
-
-      # Next clause after FROM, if any.
-      if ( $clause = shift @clause ) {
-
-         # There's at least 1 clause after FROM, so go clausing,
-         # i.e. get all clauses and their values.  Since we already
-         # have the first clause (from the first match), the array
-         # will start with its value, then each pair of values after
-         # it will be the next clause and its value.
-         @clause = grep { defined $_ }
-            ($query =~ m/\G(.+?)(?:$clauses\s+|\Z)/gci);
-
-         # First optional clause after FROM.
-         $value = shift @clause;
-         $struct->{clauses}->{lc $clause} = $value;
-         MKDEBUG && _d('Clause:', $clause, $value);
-
-         # All other optional clauses after the first optional clause, if any.
-         while ( @clause ) {
-            $clause = shift @clause;
-            $value  = shift @clause;
-            $struct->{clauses}->{lc $clause} = $value;
-            MKDEBUG && _d('Clause:', $clause, $value);
-         }
-      }
-
-      # Save any leftovers.  If there are any, parsing missed something.
-      ($struct->{unknown}) = ($query =~ m/\G(.+)/);
+   if ( $query =~ s/FROM\s+// ) {
+      my $keywords = qr/(LOW_PRIORITY|QUICK|IGNORE)/i;
+      my $clauses  = qr/(FROM|WHERE|ORDER BY|LIMIT)/i;
+      return $self->_parse_query($query, $keywords, 'from', $clauses);
    }
    else {
-      die "DELETE without FROM clause: $query";
+      die "DELETE without FROM: $query";
    }
-
-   return $struct;
 }
 
 sub parse_insert {
@@ -245,8 +199,8 @@ sub parse_insert {
    *parse_replace = \&parse_insert;
 }
 
-sub parse_select {
-   my ( $self, $query ) = @_;
+sub _parse_query {
+   my ( $self, $query, $keywords, $first_clause, $clauses ) = @_;
    return unless $query;
    my $struct = {};
 
@@ -254,6 +208,31 @@ sub parse_select {
    $query =~ s/^\S+\s+//;  
 
    # Save, remove keywords.
+   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
+
+   # Go clausing.  (Same as we did in parse_delete().)
+   my @clause = grep { defined $_ }
+      ($query =~ m/\G(.+?)(?:$clauses\s+|\Z)/gci);
+
+   my $clause = $first_clause,
+   my $value  = shift @clause;
+   $struct->{clauses}->{$clause} = $value;
+   MKDEBUG && _d('Clause:', $clause, $value);
+
+   # All other clauses.
+   while ( @clause ) {
+      $clause = shift @clause;
+      $value  = shift @clause;
+      $struct->{clauses}->{lc $clause} = $value;
+      MKDEBUG && _d('Clause:', $clause, $value);
+   }
+
+   ($struct->{unknown}) = ($query =~ m/\G(.+)/);
+
+   return $struct;
+}
+
+sub parse_select {
    my $keywords = qr/(
        ALL
       |DISTINCT
@@ -269,9 +248,6 @@ sub parse_select {
       |FOR\sUPDATE
       |LOCK\sIN\sSHARE\sMODE
    )/xi;
-   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
-
-   # Go clausing.  (Same as we did in parse_delete().)
    my $clauses = qr/(
        FROM
       |WHERE
@@ -282,34 +258,11 @@ sub parse_select {
       |PROCEDURE
       |INTO OUTFILE
    )/xi;
-   my @clause = grep { defined $_ }
-      ($query =~ m/\G(.+?)(?:$clauses\s+|\Z)/gci);
-
-   # select_expr
-   my $clause = 'columns',
-   my $value  = shift @clause;
-   $struct->{clauses}->{$clause} = $value;
-   MKDEBUG && _d('Clause:', $clause, $value);
-
-   # All other optional clauses after SELECT select_expr.
-   while ( @clause ) {
-      $clause = shift @clause;
-      $value  = shift @clause;
-      $struct->{clauses}->{lc $clause} = $value;
-      MKDEBUG && _d('Clause:', $clause, $value);
-   }
-
-   ($struct->{unknown}) = ($query =~ m/\G(.+)/);
-
-   return $struct;
-}
-
-sub parse_truncate {
-   # TODO
+   return _parse_query(@_, $keywords, 'columns', $clauses);
 }
 
 sub parse_update {
-   # TODO
+
 }
 
 # Parse a FROM clause, a.k.a. the table references.  Returns an arrayref
