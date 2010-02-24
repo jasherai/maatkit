@@ -178,7 +178,46 @@ sub parse_delete {
 }
 
 sub parse_insert {
-   # TODO
+   my ( $self, $query ) = @_;
+   return unless $query;
+   my $struct = {};
+
+   # Remove first word, should be the type.
+   $query =~ s/^\S+\s+//;  
+
+   # Save, remove keywords.
+   my $keywords   = qr/(LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)/i;
+   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gixe;
+
+   # Parse INTO clause.  Literal "INTO" is optional.
+   if ( my @into = ($query =~ m/
+            (?:INTO\s+)?      # INTO, optional
+            (.+?)\s+          # table ref
+            (\([^\)]+\)\s+)?  # column list, optional
+            VALUE.?\s+        # start of next caluse, VALUES
+         /xgci)
+   ) {
+      my $tbl  = shift @into;
+      $struct->{clauses}->{into} = $tbl;
+      MKDEBUG && _d('Clause: into', $tbl);
+
+      my $cols = shift @into;
+      $struct->{clauses}->{columns} = $cols if $cols;
+      MKDEBUG && _d('Clause: columns', $cols);
+
+      # Should be at start of values now.
+      my ($values) = ($query =~ m/\G(.+?)(?:ON|\Z)/gci);
+      die "INSERT/REPLACE without values: $query" unless $values;
+      $struct->{clauses}->{values} = $values;
+      MKDEBUG && _d('Clause: values', $values);
+
+      # TODO: ON DUPLICATE KEY
+   }
+
+   # Save any leftovers.  If there are any, parsing missed something.
+   ($struct->{unknown}) = ($query =~ m/\G(.+)/);
+
+   return $struct;
 }
 
 # INSERT and REPLACE are so similar that they are both parsed
@@ -374,6 +413,10 @@ sub _parse_tbl_ref {
    return %tbl;
 }
 
+sub parse_into {
+   return parse_from(@_);
+}
+
 sub parse_where {
    my ( $self, $where ) = @_;
    # TODO
@@ -409,6 +452,21 @@ sub parse_limit {
       $struct->{offset}    = $offset if defined $offset;
    }
    return $struct;
+}
+
+sub parse_values {
+   my ( $self, $values ) = @_;
+   return unless $values;
+   my @vals = ($values =~ m/\([^\)]+\)/g);
+   return \@vals;
+}
+
+sub parse_columns {
+   my ( $self, $cols ) = @_;
+   return unless $cols;
+   $cols =~ s/[\(\)]//g;
+   my @cols = map { s/^\s+//; s/\s+$//; $_ } split(',', $cols);
+   return \@cols;
 }
 
 sub _d {

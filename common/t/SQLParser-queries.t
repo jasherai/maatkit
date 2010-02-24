@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 7;
+use Test::More tests => 9;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -129,6 +129,34 @@ my @cases = (
    # ########################################################################
    # INSERT
    # ########################################################################
+   {  name   => 'INSERT INTO VALUES',
+      query  => 'INSERT INTO tbl VALUES (1,"foo")',
+      struct => {
+         type    => 'insert',
+         clauses => { 
+            into   => 'tbl',
+            values => '(1,"foo")',
+         },
+         into   => [ { name => 'tbl', } ],
+         values => [ '(1,"foo")', ],
+         unknown => undef,
+      },
+   },
+   {  name   => 'INSERT INTO cols VALUES',
+      query  => 'INSERT INTO db.tbl (id, name) VALUE (2,"bob")',
+      struct => {
+         type    => 'insert',
+         clauses => { 
+            into    => 'db.tbl',
+            columns => '(id, name) ',
+            values  => '(2,"bob")',
+         },
+         into    => [ { name => 'db.tbl', } ],
+         columns => [ qw(id name) ],
+         values  => [ '(2,"bob")', ],
+         unknown => undef,
+      },
+   },
 
    # ########################################################################
    # REPLACE
