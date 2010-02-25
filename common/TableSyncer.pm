@@ -102,7 +102,10 @@ sub sync_table {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   MKDEBUG && _d('Syncing table with args', Dumper(\%args));
+   MKDEBUG && _d('Syncing table with args:',
+      map { "$_: " . Dumper($args{$_}) }
+      qw(plugins src dst tbl_struct cols chunk_size));
+
    my ($plugins, $src, $dst, $tbl_struct, $cols, $chunk_size, $rd, $ch)
       = @args{@required_args};
 
