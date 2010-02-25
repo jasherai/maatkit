@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 26;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -313,6 +313,60 @@ test_from(
          },
       },
    ],
+);
+
+# Index hints.
+test_from(
+   'tbl FORCE INDEX (foo)',
+   [
+      {
+         name       => 'tbl',
+         index_hint => 'FORCE INDEX (foo)',
+      }
+   ]
+);
+
+test_from(
+   'tbl USE INDEX(foo)',
+   [
+      {
+         name       => 'tbl',
+         index_hint => 'USE INDEX(foo)',
+      }
+   ]
+);
+
+test_from(
+   'tbl FORCE KEY(foo)',
+   [
+      {
+         name       => 'tbl',
+         index_hint => 'FORCE KEY(foo)',
+      }
+   ]
+);
+
+test_from(
+   'tbl t FORCE KEY(foo)',
+   [
+      {
+         name       => 'tbl',
+         alias      => 't',
+         index_hint => 'FORCE KEY(foo)',
+      }
+   ]
+);
+
+test_from(
+   'tbl AS t FORCE KEY(foo)',
+   [
+      {
+         name           => 'tbl',
+         alias          => 't',
+         explicit_alias => 1,
+         index_hint     => 'FORCE KEY(foo)',
+      }
+   ]
 );
 
 # #############################################################################

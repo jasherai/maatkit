@@ -457,21 +457,44 @@ sub parse_from {
    return \@tbls;
 }
 
-# Parse a table ref like "tbl", "tbl alias" or "tbl AS alias".
+# Parse a table ref like "tbl", "tbl alias" or "tbl AS alias", where
+# tbl can be optionally "db." qualified.  Also handles FORCE|USE|IGNORE
+# INDEX hints.  Does not handle "FOR JOIN" hint.
 sub _parse_tbl_ref {
    my ( $self, $tbl_ref ) = @_;
+   my %tbl;
+
+   # First, check for an index hint.  Remove and save it if present.
+   my $index_hint;
+   if ( $tbl_ref =~ s/
+         \s+(
+            (?:FORCE|USE|INGORE)\s
+            (?:INDEX|KEY)
+            \s*\([^\)]+\)\s*
+         )//xi)
+   {
+      MKDEBUG && _d('Index hint:', $1);
+      $tbl{index_hint} = $1;
+   }
+
    my @words = $tbl_ref =~ m/(\S+)/g;
+   # tbl ref:  tbl AS foo
+   # words:      0  1   2
    MKDEBUG && _d('Table ref:', @words);
-   my %tbl = (
-      name => $words[0]
-   );
+
+   # Real table name.
+   $tbl{name} = $words[0];
+
+   # Alias.
    if ( $words[2] ) {
+      die "Bad table reference: $tbl_ref" unless ($words[1] || '') =~ m/AS/i;
       $tbl{alias}          = $words[2];
       $tbl{explicit_alias} = 1;
    }
    elsif ( $words[1] ) {
       $tbl{alias} = $words[1];
    }
+
    return %tbl;
 }
 {
