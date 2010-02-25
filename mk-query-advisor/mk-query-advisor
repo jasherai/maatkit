@@ -2681,6 +2681,480 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# SQLParser package 5873
+# ###########################################################################
+package SQLParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+my $allowed_types = qr/(?:
+    DELETE
+   |INSERT
+   |REPLACE
+   |SELECT
+   |UPDATE
+)/xi;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+   };
+   return bless $self, $class;
+}
+
+sub parse {
+   my ( $self, $query ) = @_;
+   return unless $query;
+
+   $query = $self->clean_query($query);
+
+   my $type;
+   if ( $query =~ s/^(\w+)\s+// ) {
+      $type = lc $1;
+      MKDEBUG && _d('Query type:', $type);
+      if ( $type !~ m/$allowed_types/i ) {
+         return;
+      }
+   }
+   else {
+      MKDEBUG && _d('No first word/type');
+      return;
+   }
+
+   my $parse_func = "parse_$type";
+   my $struct     = $self->$parse_func($query);
+   if ( !$struct ) {
+      MKDEBUG && _d($parse_func, 'failed to parse query');
+      return;
+   }
+   $struct->{type} = $type;
+   $self->_parse_clauses($struct);
+
+   MKDEBUG && _d('Query struct:', Dumper($struct));
+   return $struct;
+}
+
+sub _parse_clauses {
+   my ( $self, $struct ) = @_;
+   foreach my $clause ( keys %{$struct->{clauses}} ) {
+      if ( $clause =~ m/ / ) {
+         (my $clause_no_space = $clause) =~ s/ /_/g;
+         $struct->{clauses}->{$clause_no_space} = $struct->{clauses}->{$clause};
+         delete $struct->{clauses}->{$clause};
+         $clause = $clause_no_space;
+      }
+
+      my $parse_func     = "parse_$clause";
+      $struct->{$clause} = $self->$parse_func($struct->{clauses}->{$clause});
+
+      if ( $clause eq 'select' ) {
+         MKDEBUG && _d('Parsing subquery clauses');
+         $self->_parse_clauses($struct->{select});
+      }
+   }
+   return;
+}
+
+sub clean_query {
+   my ( $self, $query ) = @_;
+   return unless $query;
+
+   $query =~ s/^\s*--.*$//gm;  # -- comments
+   $query =~ s/\s+/ /g;        # extra spaces/flatten
+   $query =~ s!/\*.*?\*/!!g;   # /* comments */
+   $query =~ s/^\s+//;         # leading spaces
+   $query =~ s/\s+$//;         # trailing spaces
+
+   $query =~ s/\b(VALUE(?:S)?)\(/$1 (/i;
+   $query =~ s/\bON\(/on (/gi;
+   $query =~ s/\bUSING\(/using (/gi;
+
+   return $query;
+}
+
+sub _parse_query {
+   my ( $self, $query, $keywords, $first_clause, $clauses ) = @_;
+   return unless $query;
+   my $struct = {};
+
+   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
+
+   my @clause = grep { defined $_ }
+      ($query =~ m/\G(.+?)(?:$clauses\s+|\Z)/gci);
+
+   my $clause = $first_clause,
+   my $value  = shift @clause;
+   $struct->{clauses}->{$clause} = $value;
+   MKDEBUG && _d('Clause:', $clause, $value);
+
+   while ( @clause ) {
+      $clause = shift @clause;
+      $value  = shift @clause;
+      $struct->{clauses}->{lc $clause} = $value;
+      MKDEBUG && _d('Clause:', $clause, $value);
+   }
+
+   ($struct->{unknown}) = ($query =~ m/\G(.+)/);
+
+   return $struct;
+}
+
+sub parse_delete {
+   my ( $self, $query ) = @_;
+   if ( $query =~ s/FROM\s+// ) {
+      my $keywords = qr/(LOW_PRIORITY|QUICK|IGNORE)/i;
+      my $clauses  = qr/(FROM|WHERE|ORDER BY|LIMIT)/i;
+      return $self->_parse_query($query, $keywords, 'from', $clauses);
+   }
+   else {
+      die "DELETE without FROM: $query";
+   }
+}
+
+sub parse_insert {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   my $struct = {};
+
+   my $keywords   = qr/(LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)/i;
+   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
+
+   if ( my @into = ($query =~ m/
+            (?:INTO\s+)?            # INTO, optional
+            (.+?)\s+                # table ref
+            (\([^\)]+\)\s+)?        # column list, optional
+            (VALUE.?|SET|SELECT)\s+ # start of next caluse
+         /xgci)
+   ) {
+      my $tbl  = shift @into;  # table ref
+      $struct->{clauses}->{into} = $tbl;
+      MKDEBUG && _d('Clause: into', $tbl);
+
+      my $cols = shift @into;  # columns, maybe
+      if ( $cols ) {
+         $cols =~ s/[\(\)]//g;
+         $struct->{clauses}->{columns} = $cols;
+         MKDEBUG && _d('Clause: columns', $cols);
+      }
+
+      my $next_clause = lc(shift @into);  # VALUES, SET or SELECT
+      die "INSERT/REPLACE without clause after table: $query"
+         unless $next_clause;
+      $next_clause = 'values' if $next_clause eq 'value';
+      my ($values, $on) = ($query =~ m/\G(.+?)(ON|\Z)/gci);
+      die "INSERT/REPLACE without values: $query" unless $values;
+      $struct->{clauses}->{$next_clause} = $values;
+      MKDEBUG && _d('Clause:', $next_clause, $values);
+
+      if ( $on ) {
+         ($values) = ($query =~ m/ON DUPLICATE KEY UPDATE (.+)/i);
+         die "No values after ON DUPLICATE KEY UPDATE: $query" unless $values;
+         $struct->{clauses}->{on_duplicate} = $values;
+         MKDEBUG && _d('Clause: on duplicate key update', $values);
+      }
+   }
+
+   ($struct->{unknown}) = ($query =~ m/\G(.+)/);
+
+   return $struct;
+}
+{
+   no warnings;
+   *parse_replace = \&parse_insert;
+}
+
+sub parse_select {
+   my ( $self, $query ) = @_;
+
+   my @keywords;
+   my $final_keywords = qr/(FOR UPDATE|LOCK IN SHARE MODE)/i; 
+   1 while $query =~ s/\s+$final_keywords/(push @keywords, $1), ''/gie;
+
+   my $keywords = qr/(
+       ALL
+      |DISTINCT
+      |DISTINCTROW
+      |HIGH_PRIORITY
+      |STRAIGHT_JOIN
+      |SQL_SMALL_RESULT
+      |SQL_BIG_RESULT
+      |SQL_BUFFER_RESULT
+      |SQL_CACHE
+      |SQL_NO_CACHE
+      |SQL_CALC_FOUND_ROWS
+   )/xi;
+   my $clauses = qr/(
+       FROM
+      |WHERE
+      |GROUP\sBY
+      |HAVING
+      |ORDER\sBY
+      |LIMIT
+      |PROCEDURE
+      |INTO OUTFILE
+   )/xi;
+   my $struct = $self->_parse_query($query, $keywords, 'columns', $clauses);
+
+   map { s/ /_/g; $struct->{keywords}->{lc $_} = 1; } @keywords;
+
+   return $struct;
+}
+
+sub parse_update {
+   my $keywords = qr/(LOW_PRIORITY|IGNORE)/i;
+   my $clauses  = qr/(SET|WHERE|ORDER BY|LIMIT)/i;
+   return _parse_query(@_, $keywords, 'tables', $clauses);
+
+}
+
+sub parse_from {
+   my ( $self, $from ) = @_;
+   return unless $from;
+   MKDEBUG && _d('FROM clause:', $from);
+
+
+   my @tbls;  # All parsed tables.
+   my $tbl;   # This gets pushed to @tbls when it's set.  It may not be
+
+   my $pending_tbl;         
+   my $state      = undef;  
+   my $join       = '';  # JOIN syntax words, without JOIN; becomes type
+   my $joinno     = 0;   # join number for debugging
+   my $redo       = 0;   # save $pending_tbl, redo loop for new JOIN
+
+   my $join_back  = 0;
+   my $last_thing = '';
+
+   my $join_delim
+      = qr/,|INNER|CROSS|STRAIGHT_JOIN|LEFT|RIGHT|OUTER|NATURAL|JOIN|ON|USING/i;
+   my $next_tbl
+      = qr/,|INNER|CROSS|STRAIGHT_JOIN|LEFT|RIGHT|OUTER|NATURAL|JOIN/i;
+
+   foreach my $thing ( split(/\s*($join_delim)\s+/io, $from) ) {
+      next unless $thing;
+      MKDEBUG && _d('Table thing:', $thing, 'state:', $state); 
+
+      if ( !$state && $thing !~ m/$join_delim/i ) {
+         MKDEBUG && _d('Table factor');
+         $tbl = { $self->_parse_tbl_ref($thing) };
+         
+         $join_back = 1 if ($last_thing || '') eq ',';
+      }
+      else {
+         if ( !$state ) {
+            $joinno++;
+            MKDEBUG && _d('JOIN', $joinno, 'start');
+            $join .= ' ' . lc $thing;
+            if ( $join =~ m/join$/ ) {
+               $join =~ s/ join$//;
+               $join =~ s/^\s+//;
+               MKDEBUG && _d('JOIN', $joinno, 'type:', $join);
+               my $last_tbl = $tbls[-1];
+               die "Invalid syntax: $from\n"
+                  . "JOIN without preceding table reference" unless $last_tbl;
+               $pending_tbl->{join} = {
+                  to   => $last_tbl->{name},
+                  type => $join,
+                  ansi => 1,
+               };
+               $join    = '';
+               $state   = 'join tbl';
+            }
+         }
+         elsif ( $state eq 'join tbl' ) {
+            my %tbl_ref = $self->_parse_tbl_ref($thing);
+            @{$pending_tbl}{keys %tbl_ref} = values %tbl_ref;
+            $state = 'join condition';
+         }
+         elsif ( $state eq 'join condition' ) {
+            if ( $thing =~ m/$next_tbl/io ) {
+               MKDEBUG && _d('JOIN', $joinno, 'end');
+               $tbl  = $pending_tbl;
+               $redo = 1;  # save $pending_tbl then redo this new JOIN
+            }
+            elsif ( $thing =~ m/ON|USING/i ) {
+               MKDEBUG && _d('JOIN', $joinno, 'codition');
+               $pending_tbl->{join}->{condition} = lc $thing;
+            }
+            else {
+               MKDEBUG && _d('JOIN', $joinno, 'predicate');
+               $pending_tbl->{join}->{predicates} .= "$thing ";
+            }
+         }
+         else {
+            die "Unknown state '$state' parsing JOIN syntax: $from";
+         }
+      }
+
+      $last_thing = $thing;
+
+      if ( $tbl ) {
+         if ( $join_back ) {
+            my $prev_tbl = $tbls[-1];
+            if ( $tbl->{join} ) {
+               die "Cannot implicitly join $tbl->{name} to $prev_tbl->{name} "
+                  . "because it is already joined to $tbl->{join}->{to}";
+            }
+            $tbl->{join} = {
+               to   => $prev_tbl->{name},
+               type => 'inner',
+               ansi => 0,
+            }
+         }
+         push @tbls, $tbl;
+         $tbl         = undef;
+         $state       = undef;
+         $pending_tbl = undef;
+         $join        = '';
+         $join_back   = 0;
+      }
+      else {
+         MKDEBUG && _d('Table pending:', Dumper($pending_tbl));
+      }
+      if ( $redo ) {
+         MKDEBUG && _d("Redoing this thing");
+         $redo = 0;
+         redo;
+      }
+   }
+
+   if ( $pending_tbl ) {
+      push @tbls, $pending_tbl;
+   }
+
+   MKDEBUG && _d('Parsed tables:', Dumper(\@tbls));
+   return \@tbls;
+}
+
+sub _parse_tbl_ref {
+   my ( $self, $tbl_ref ) = @_;
+   my %tbl;
+
+   my $index_hint;
+   if ( $tbl_ref =~ s/
+         \s+(
+            (?:FORCE|USE|INGORE)\s
+            (?:INDEX|KEY)
+            \s*\([^\)]+\)\s*
+         )//xi)
+   {
+      MKDEBUG && _d('Index hint:', $1);
+      $tbl{index_hint} = $1;
+   }
+
+   my @words = $tbl_ref =~ m/(\S+)/g;
+   MKDEBUG && _d('Table ref:', @words);
+
+   $tbl{name} = $words[0];
+
+   if ( $words[2] ) {
+      die "Bad table reference: $tbl_ref" unless ($words[1] || '') =~ m/AS/i;
+      $tbl{alias}          = $words[2];
+      $tbl{explicit_alias} = 1;
+   }
+   elsif ( $words[1] ) {
+      $tbl{alias} = $words[1];
+   }
+
+   return %tbl;
+}
+{
+   no warnings;  # Why? See same line above.
+   *parse_into   = \&parse_from;
+   *parse_tables = \&parse_from;
+}
+
+sub parse_where {
+   my ( $self, $where ) = @_;
+   return $where;
+}
+
+sub parse_having {
+   my ( $self, $having ) = @_;
+   return $having;
+}
+
+sub parse_order_by {
+   my ( $self, $order_by ) = @_;
+   return unless $order_by;
+   MKDEBUG && _d('Parse ORDER BY', $order_by);
+   my @cols = map { s/^\s+//; s/\s+$//; $_ } split(',', $order_by);
+   return \@cols;
+}
+
+sub parse_limit {
+   my ( $self, $limit ) = @_;
+   return unless $limit;
+   my $struct = {
+      row_count => undef,
+   };
+   if ( $limit =~ m/(\S+)\s+OFFSET\s+(\S+)/i ) {
+      $struct->{explicit_offset} = 1;
+      $struct->{row_count}       = $1;
+      $struct->{offset}          = $2;
+   }
+   else {
+      my ($offset, $cnt) = $limit =~ m/(?:(\S+),\s+)?(\S+)/i;
+      $struct->{row_count} = $cnt;
+      $struct->{offset}    = $offset if defined $offset;
+   }
+   return $struct;
+}
+
+sub parse_values {
+   my ( $self, $values ) = @_;
+   return unless $values;
+   my @vals = ($values =~ m/\([^\)]+\)/g);
+   return \@vals;
+}
+
+sub parse_csv {
+   my ( $self, $vals ) = @_;
+   return unless $vals;
+   my @vals = map { s/^\s+//; s/\s+$//; $_ } split(',', $vals);
+   return \@vals;
+}
+{
+   no warnings;  # Why? See same line above.
+   *parse_columns      = \&parse_csv;
+   *parse_set          = \&parse_csv;
+   *parse_on_duplicate = \&parse_csv;
+}
+
+sub parse_group_by {
+   my ( $self, $group_by ) = @_;
+   my $with_rollup = $group_by =~ s/\s+WITH ROLLUP\s*//i;
+   my $struct = {
+      columns => $self->parse_csv($group_by),
+   };
+   $struct->{with_rollup} = 1 if $with_rollup;
+   return $struct;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SQLParser package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -2705,10 +3179,11 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use sigtrap 'handler', \&sig_int, 'normal-signals';
 
 my $oktorun = 1;  # global for sig handler
-my %seen_id;      # already printed check ID descriptions
 
 sub main {
    @ARGV = @_;  # set global ARGV for this package
+
+   my %seen_id; # already printed check ID descriptions
 
    # ########################################################################
    # Get configuration information.
@@ -2746,10 +3221,12 @@ sub main {
    # #########################################################################
    my $qp = new QueryParser();
    my $qr = new QueryRewriter( QueryParser => $qp );
+   my $sp = new SQLParser();
    my %common_modules = (
       OptionParser  => $o,
       QueryParser   => $qp,
       QueryRewriter => $qr,
+      SQLParser     => $sp,
    );
 
    # #########################################################################
@@ -2856,6 +3333,7 @@ sub main {
       my $event = $args{event};
       print_advice(
          %args,
+         seen_id       => \%seen_id,
          verbose       => $o->get('verbose'),
          print_all     => $o->get('print-all'),
          report_format => $o->get('report-format'),
@@ -2954,6 +3432,7 @@ sub print_advice {
    my $verbose = $args{verbose} || 0;
    my $format  = $args{report_format};
    my $qa      = $args{QueryAdvisor};
+   my $seen_id = $args{seen_id};
 
    my $advice   = $event->{advice};
    my $n_advice = scalar @$advice;
@@ -2970,7 +3449,7 @@ sub print_advice {
       my $id   = $advice->[$i - 1];
       my $info = $qa->get_rule_info($id);
       my $desc = $info->{description} || '';  # shouldn't be blank
-      if ( $format eq 'compact' && $seen_id{$id}++ ) {
+      if ( $format eq 'compact' && $seen_id->{$id}++ ) {
          push @seen_ids, $id;
       }
       else {
