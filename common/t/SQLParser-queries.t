@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 22;
+use Test::More tests => 24;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -238,6 +238,21 @@ my @cases = (
          unknown      => undef,
       },
    },
+   {  name   => 'INSERT INTO VALUES()',
+      query  => 'INSERT INTO db.tbl (id, name) VALUES(2,"bob")',
+      struct => {
+         type    => 'insert',
+         clauses => { 
+            into    => 'db.tbl',
+            columns => 'id, name ',
+            values  => '(2,"bob")',
+         },
+         into    => [ { name => 'db.tbl', } ],
+         columns => [ qw(id name) ],
+         values  => [ '(2,"bob")', ],
+         unknown => undef,
+      },
+   },
 
    # ########################################################################
    # REPLACE
@@ -361,6 +376,58 @@ my @cases = (
             row_count => 10,
             offset    => 100,
          },
+         unknown => undef,
+      },
+   },
+   {  name   => 'SELECT FROM JOIN ON() JOIN USING() WHERE',
+      query  => 'SELECT t1.col1 a, t1.col2 as b
+
+         FROM tbl1 t1
+
+            JOIN tbl2 AS t2 ON(t1.id = t2.id)
+
+            JOIN tbl3 t3 USING(id) 
+
+         WHERE
+            t2.col IS NOT NULL',
+      struct => {
+         type    => 'select',
+         clauses => { 
+            columns  => 't1.col1 a, t1.col2 as b ',
+            from     => 'tbl1 t1 JOIN tbl2 AS t2 on (t1.id = t2.id) JOIN tbl3 t3 using (id) ',
+            where    => 't2.col IS NOT NULL',
+         },
+         columns => ['t1.col1 a', 't1.col2 as b',],
+         from    => [
+            {
+               name  => 'tbl1',
+               alias => 't1',
+            },
+            {
+               name  => 'tbl2',
+               alias => 't2',
+               explicit_alias => 1,
+               join  => {
+                  to        => 'tbl1',
+                  type      => '',
+                  condition => 'on',
+                  predicates=> '(t1.id = t2.id) ',
+                  ansi      => 1,
+               },
+            },
+            {
+               name  => 'tbl3',
+               alias => 't3',
+               join  => {
+                  to        => 'tbl2',
+                  type      => '',
+                  condition => 'using',
+                  predicates=> '(id)  ',
+                  ansi      => 1,
+               },
+            },
+         ],
+         where    => 't2.col IS NOT NULL',
          unknown => undef,
       },
    },

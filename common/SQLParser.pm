@@ -129,11 +129,19 @@ sub _parse_clauses {
 sub clean_query {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query =~ s/(--.*)(\n|$)/ /;  # -- comments
-   $query =~ s/\s+/ /g;          # extra spaces/flatten
-   $query =~ s!/\*.*?\*/!!g;     # /* comments */
-   $query =~ s/^\s+//;           # leading spaces
-   $query =~ s/\s+$//;           # trailing spaces
+
+   # Whitespace and comments.
+   $query =~ s/^\s*--.*$//gm;  # -- comments
+   $query =~ s/\s+/ /g;        # extra spaces/flatten
+   $query =~ s!/\*.*?\*/!!g;   # /* comments */
+   $query =~ s/^\s+//;         # leading spaces
+   $query =~ s/\s+$//;         # trailing spaces
+
+   # Add spaces between important tokens to help the parse_* subs.
+   $query =~ s/\b(VALUE(?:S)?)\(/$1 (/i;
+   $query =~ s/\bON\(/on (/gi;
+   $query =~ s/\bUSING\(/using (/gi;
+
    return $query;
 }
 
