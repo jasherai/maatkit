@@ -3346,6 +3346,12 @@ sub main {
    # Get ready to do the main work.
    # ##########################################################################
    my $fh;
+   my $event       = {};
+   my $more_events = 1;
+   my $oktorun_sub = sub { $more_events = $_[0]; };
+   my $next_event;
+   my $tell;
+
    if ( @ARGV == 0 ) {
       push @ARGV, '-'; # Magical STDIN filename.
    }
@@ -3388,13 +3394,12 @@ sub main {
             }
             MKDEBUG && _d('Reading', $file);
          }
+         $next_event  = sub { return <$fh>; };
+         $tell        = sub { return tell $fh; };
       }
 
-      my $event       = {};
-      my $next_event  = sub { return <$fh>; };
-      my $tell        = sub { return tell $fh; };
-      my $more_events = 1;
-      my $oktorun_sub = sub { $more_events = $_[0]; };
+      $event       = {};
+      $more_events = 1;
       eval {
          foreach my $proc ( @pipeline ) {
             last unless $oktorun;  # the global oktorun var
