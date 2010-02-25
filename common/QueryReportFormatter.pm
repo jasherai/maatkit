@@ -48,22 +48,8 @@ my $bool_format = '# %3s%% %-6s %s';
 sub new {
    my ( $class, %args ) = @_;
 
+   # If ever someone wishes for a wider label width.
    my $label_width = $args{label_width} || 9;
-   if ( lc($label_width) eq 'auto' ) {
-      $label_width = 9;  # Start with default, try to increase it.
-      eval {
-         # With default label width 9 we have a 74 char wide report line
-         # for a default 80 char wide terminal.  We can increase the label
-         # width by 1 char for every 1 char over 80 we have, up to a max
-         # label width of 15.
-         require Term::ReadKey;
-         Term::ReadKey->import(qw(GetTerminalSize));
-         (my $w) = GetTerminalSize();
-         if ( $w > 80 ) {
-            do $label_width++ while $label_width < 15 && --$w >= 80;
-         }
-      };
-   }
    MKDEBUG && _d('Label width:', $label_width);
 
    my $self = {

@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 139;
+use Test::More tests => 133;
 use English qw(-no_match_vars);
 
 use QueryRewriter;
