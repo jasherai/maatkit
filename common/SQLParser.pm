@@ -48,13 +48,15 @@ sub new {
 
 # Parse the query and return a hashref struct of its parts (keywords,
 # clauses, subqueries, etc.).  Only queries of $allowed_types are
-# parsed.  The struct is roughly:
+# parsed.  All keys and almost all  vals are lowercase for consistency.
+# The struct is roughly:
 # 
 #   * type       => '',     # one of $allowed_types
 #   * clauses    => {},     # raw, unparsed text of clauses
 #   * <clause>   => struct  # parsed clause struct, e.g. from => [<tables>]
 #   * keywords   => {},     # LOW_PRIORITY, DISTINCT, SQL_CACHE, etc.
 #   * functions  => {},     # MAX(), SUM(), NOW(), etc.
+#   * select     => {},     # SELECT struct for INSERT/REPLACE ... SELECT
 #   * subqueries => [],     # pointers to subquery structs
 #
 # It varies, of course, depending on the query.  If something is missing
@@ -144,6 +146,44 @@ sub clean_query {
    return $query;
 }
 
+# This sub is called by the parse_TYPE subs except parse_insert.
+# It does two things: remove, save the given keywords, all of which
+# should appear at the beginning of the query; and, save (but not
+# remove) the given clauses.  The query should start with the values
+# for the first clause because the query's first word was removed
+# in parse().  So for "SELECT cols FROM ...", the query given here
+# is "cols FROM ..." where "cols" belongs to the first clause "columns".
+# Then the query is walked clause-by-clause, saving each.
+sub _parse_query {
+   my ( $self, $query, $keywords, $first_clause, $clauses ) = @_;
+   return unless $query;
+   my $struct = {};
+
+   # Save, remove keywords.
+   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
+
+   # Go clausing.
+   my @clause = grep { defined $_ }
+      ($query =~ m/\G(.+?)(?:$clauses\s+|\Z)/gci);
+
+   my $clause = $first_clause,
+   my $value  = shift @clause;
+   $struct->{clauses}->{$clause} = $value;
+   MKDEBUG && _d('Clause:', $clause, $value);
+
+   # All other clauses.
+   while ( @clause ) {
+      $clause = shift @clause;
+      $value  = shift @clause;
+      $struct->{clauses}->{lc $clause} = $value;
+      MKDEBUG && _d('Clause:', $clause, $value);
+   }
+
+   ($struct->{unknown}) = ($query =~ m/\G(.+)/);
+
+   return $struct;
+}
+
 sub parse_delete {
    my ( $self, $query ) = @_;
    if ( $query =~ s/FROM\s+// ) {
@@ -193,8 +233,6 @@ sub parse_insert {
       $struct->{clauses}->{$next_clause} = $values;
       MKDEBUG && _d('Clause:', $next_clause, $values);
 
-      # TODO: INSERT ... SELECT
-
       if ( $on ) {
          ($values) = ($query =~ m/ON DUPLICATE KEY UPDATE (.+)/i);
          die "No values after ON DUPLICATE KEY UPDATE: $query" unless $values;
@@ -208,7 +246,6 @@ sub parse_insert {
 
    return $struct;
 }
-
 {
    # Suppress warnings like "Name "SQLParser::parse_set" used only once:
    # possible typo at SQLParser.pm line 480." caused by the fact that we
@@ -218,36 +255,6 @@ sub parse_insert {
    # INSERT and REPLACE are so similar that they are both parsed
    # in parse_insert().
    *parse_replace = \&parse_insert;
-}
-
-sub _parse_query {
-   my ( $self, $query, $keywords, $first_clause, $clauses ) = @_;
-   return unless $query;
-   my $struct = {};
-
-   # Save, remove keywords.
-   1 while $query =~ s/$keywords\s+/$struct->{keywords}->{lc $1}=1, ''/gie;
-
-   # Go clausing.
-   my @clause = grep { defined $_ }
-      ($query =~ m/\G(.+?)(?:$clauses\s+|\Z)/gci);
-
-   my $clause = $first_clause,
-   my $value  = shift @clause;
-   $struct->{clauses}->{$clause} = $value;
-   MKDEBUG && _d('Clause:', $clause, $value);
-
-   # All other clauses.
-   while ( @clause ) {
-      $clause = shift @clause;
-      $value  = shift @clause;
-      $struct->{clauses}->{lc $clause} = $value;
-      MKDEBUG && _d('Clause:', $clause, $value);
-   }
-
-   ($struct->{unknown}) = ($query =~ m/\G(.+)/);
-
-   return $struct;
 }
 
 sub parse_select {
@@ -458,7 +465,8 @@ sub parse_from {
 
 # Parse a table ref like "tbl", "tbl alias" or "tbl AS alias", where
 # tbl can be optionally "db." qualified.  Also handles FORCE|USE|IGNORE
-# INDEX hints.  Does not handle "FOR JOIN" hint.
+# INDEX hints.  Does not handle "FOR JOIN" hint because "JOIN" here gets
+# confused with the "JOIN" thing in parse_from().
 sub _parse_tbl_ref {
    my ( $self, $tbl_ref ) = @_;
    my %tbl;
@@ -545,13 +553,20 @@ sub parse_limit {
    return $struct;
 }
 
+# Parses the list of values after, e.g., INSERT tbl VALUES (...), (...).
+# Does not currently parse each set of values; it just splits the list.
 sub parse_values {
    my ( $self, $values ) = @_;
    return unless $values;
+   # split(',', $values) will not work (without some kind of regex
+   # look-around assertion) because there are commas inside the sets
+   # of values.
    my @vals = ($values =~ m/\([^\)]+\)/g);
    return \@vals;
 }
 
+# Split any comma-separated list of values, removing leading
+# and trailing spaces.
 sub parse_csv {
    my ( $self, $vals ) = @_;
    return unless $vals;
