@@ -6236,6 +6236,9 @@ my %dsn_for;
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
+   # Reset global vars else tests will have weird results.
+   %dsn_for = ();
+
    # ########################################################################
    # Get configuration information.
    # ########################################################################
