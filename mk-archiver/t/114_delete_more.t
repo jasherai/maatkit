@@ -18,12 +18,13 @@ require "$trunk/mk-archiver/mk-archiver";
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
+my $slave_dbh = $sb->get_dbh_for('slave1');
 
 if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 12;
+   plan tests => 18;
 }
 
 my $output;
@@ -87,6 +88,93 @@ is_deeply(
    ],
    'other_table-123 data after archiving (limit 2)'
 );
+
+SKIP: {
+   skip 'Cannot connect to slave sandbox', 6 unless $slave_dbh;
+   $slave_dbh->do('use dm');
+   is_deeply(
+      $slave_dbh->selectall_arrayref('select * from `main_table-123` order by id'),
+      [
+         [1, '2010-02-16', 'a'],
+         [2, '2010-02-15', 'b'],
+         [3, '2010-02-15', 'c'],
+         [4, '2010-02-16', 'd'],
+         [5, '2010-02-14', 'e'],
+      ],
+      'Slave main_table-123 not changed'
+   );
+
+   is_deeply(
+      $slave_dbh->selectall_arrayref('select * from `other_table-123` order by id'),
+      [
+         [1, 'a'],
+         [2, 'b'],
+         [2, 'b2'],
+         [2, 'b3'],
+         [3, 'c'],
+         [4, 'd'],
+         [5, 'e'],
+         [6, 'ot1'],
+      ],
+      'Slave other_table-123 not changed'
+   );
+
+   # Run it again without DSN b so changes should be made on slave.
+   $sb->load_file('master', "mk-archiver/t/samples/delete_more.sql");
+   sleep 1;
+
+   is_deeply(
+      $slave_dbh->selectall_arrayref('select * from `main_table-123` order by id'),
+      [
+         [1, '2010-02-16', 'a'],
+         [2, '2010-02-15', 'b'],
+         [3, '2010-02-15', 'c'],
+         [4, '2010-02-16', 'd'],
+         [5, '2010-02-14', 'e'],
+      ],
+      'Reset slave main_table-123'
+   );
+
+   is_deeply(
+      $slave_dbh->selectall_arrayref('select * from `other_table-123` order by id'),
+      [
+         [1, 'a'],
+         [2, 'b'],
+         [2, 'b2'],
+         [2, 'b3'],
+         [3, 'c'],
+         [4, 'd'],
+         [5, 'e'],
+         [6, 'ot1'],
+      ],
+      'Reset slave other_table-123'
+   );
+
+   `$cmd --purge --primary-key-only --source F=$cnf,D=dm,t=main_table-123,i=pub_date,m=delete_more --where "pub_date < '2010-02-16'" --bulk-delete --limit 2`;
+   sleep 1;
+
+   is_deeply(
+      $slave_dbh->selectall_arrayref('select * from `main_table-123` order by id'),
+      [
+         [1, '2010-02-16', 'a'],
+         # [2, '2010-02-15', 'b'],
+         # [3, '2010-02-15', 'c'],
+         [4, '2010-02-16', 'd'],
+         # [5, '2010-02-14', 'e'],
+      ],
+      'Slave main_table-123 changed'
+   );
+
+   is_deeply(
+      $slave_dbh->selectall_arrayref('select * from `other_table-123` order by id'),
+      [
+         [1, 'a'],
+         [4, 'd'],
+         [6, 'ot1'],
+      ],
+      'Slave other_table-123 changed'
+   );
+}
 
 # ###########################################################################
 # Bulk delete in single chunk.
