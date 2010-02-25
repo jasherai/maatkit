@@ -36,7 +36,6 @@ my $allowed_types = qr/(?:
    |INSERT
    |REPLACE
    |SELECT
-   |TRUNCATE
    |UPDATE
 )/xi;
 
@@ -59,9 +58,9 @@ sub new {
 #   * subqueries => [],     # pointers to subquery structs
 #
 # It varies, of course, depending on the query.  If something is missing
-# it means the query doesn't have that part.  E.g. TRUNCATE has no clauses
-# or keywords, etc.  Each clause struct is different; see their respective
-# parse_CLAUSE subs.
+# it means the query doesn't have that part.  E.g. INSERT has an INTO clause
+# but DELETE does not, and only DELETE and SELECT have FROM clauses.  Each
+# clause struct is different; see their respective parse_CLAUSE subs.
 sub parse {
    my ( $self, $query ) = @_;
    return unless $query;
