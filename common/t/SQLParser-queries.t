@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 24;
+use Test::More tests => 25;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -429,6 +429,23 @@ my @cases = (
          ],
          where    => 't2.col IS NOT NULL',
          unknown => undef,
+      },
+   },
+   {  name   => 'SELECT keywords',
+      query  => 'SELECT all high_priority SQL_CALC_FOUND_ROWS NOW() LOCK IN SHARE MODE',
+      struct => {
+         type     => 'select',
+         clauses  => { 
+            columns => 'NOW()',
+         },
+         columns  => ['NOW()',],
+         keywords => {
+            all                 => 1,
+            high_priority       => 1,
+            sql_calc_found_rows => 1,
+            lock_in_share_mode  => 1,
+         },
+         unknown  => undef,
       },
    },
 

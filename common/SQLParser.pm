@@ -252,6 +252,16 @@ sub _parse_query {
 }
 
 sub parse_select {
+   my ( $self, $query ) = @_;
+
+   # Keywords are expected to be at the start of the query, so these
+   # that appear at the end are handled separately.  Afaik, SELECT is
+   # only statement with optional keywords at the end.  Also, these
+   # appear to be the only keywords with spaces instead of _.
+   my @keywords;
+   my $final_keywords = qr/(FOR UPDATE|LOCK IN SHARE MODE)/i; 
+   1 while $query =~ s/\s+$final_keywords/(push @keywords, $1), ''/gie;
+
    my $keywords = qr/(
        ALL
       |DISTINCT
@@ -264,8 +274,6 @@ sub parse_select {
       |SQL_CACHE
       |SQL_NO_CACHE
       |SQL_CALC_FOUND_ROWS
-      |FOR\sUPDATE
-      |LOCK\sIN\sSHARE\sMODE
    )/xi;
    my $clauses = qr/(
        FROM
@@ -277,7 +285,12 @@ sub parse_select {
       |PROCEDURE
       |INTO OUTFILE
    )/xi;
-   return _parse_query(@_, $keywords, 'columns', $clauses);
+   my $struct = $self->_parse_query($query, $keywords, 'columns', $clauses);
+
+   # Add final keywords, if any.
+   map { s/ /_/g; $struct->{keywords}->{lc $_} = 1; } @keywords;
+
+   return $struct;
 }
 
 sub parse_update {
