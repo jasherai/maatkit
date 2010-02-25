@@ -3549,57 +3549,84 @@ mk-query-advisor advises about queries.
 
 These are the checks that mk-advisor can perform on a query.
 
-id: ALI.001
-severity: warn
-description: Alias without AS.
+id:          ALI.001
+severity:    note
+description: Alias without AS.  Explicit table alias like "tbl AS alias"
+             are preferred to implicit alias like "tbl alias".
 
-id: LIT.001
-severity: note
-description:  IP address used as string.  The string literal looks like an IP
-address but is not used inside INET_ATON().  WHERE ip='127.0.0.1' is better as
-ip=INET_ATON('127.0.0.1') if the column is numeric.
+id:          ALI.002
+severity:    warn
+description: Alaised table.*.  Aliasing an all columns reference like
+             "tbl.* foo" is confusing.
 
-id: LIT.002
-severity: warn
-description:  Date literal is not quoted.  WHERE col<2010-02-12 is valid but
-wrong; the date should be quoted.
+id:          ALI.003
+severity:    note
+description: Alias is real name.  The column's alias is the same as its real
+             name.
 
-id: GEN.001
-severity: note
-description: All columns.  Selecting specific columns is preferable to SELECT *.
+id:          ARG.001
+severity:    warn
+description: Argument with leading wildcard.  An argument has a leading
+             wildcard character like "%foo".  The predicate with this argument
+             is not sargable.
 
-=head1 RULES PENDING ID PREFIX SPEC
+id:          CLA.001
+severity:    warn
+description: SELECT without WHERE.  The SELECT statement has no WHERE clause.
 
-id:    TBL.002
-severity: note
-rules: columns match [\w`-]+\.\*\s+(?:AS\s+)?[[\w`-]+
-description:  Aliased all columns.  Aliasing an all columns reference like "tbl.* foo"
-       is confusing.
+id:          CLA.002
+severity:    note
+description: ORDER BY RAND().  ORDER BY RAND() is not preferred.
 
-id:    QRY.001
-severity: note
-rules: query matches ^INSERT|REPLACE
-       query does not match INTO\s+\S+\s+\([^\)]\)
-description:  Blind INSERT/REPLACE.  The INSERT/REPLACE does not specify columns. 
-       "INSERT INTO tbl (col1,col2) VALUES" is preferred to "INSERT INTO tbl
-       VALUES".
+id:          CLA.003
+severity:    note
+description: LIMIT with OFFSET does not scale.
 
-id:    QRY.002
-severity: note
-rules: query matches SQL_CALC_FOUND_ROWS
-description:  SQL_CALC_FOUND_ROWS does not scale.  SQL_CALC_FOUND_ROWS can cause
-       performance problems because it does not scale well.
+id:          CLA.004
+severity:    note
+description: GROUP BY <number> is potentially bad.
 
-id:    QRY.003
-severity: note
-rules: query matches ^SELECT
-       query does not match \bWHERE\b
-description:  SELECT without WHERE.  The SELECT statement has no WHERE clause.
+id:          COL.001
+severity:    note
+description: SELECT *.  Selecting specific columns is preferable to SELECT *.
 
-id:    QRY.004;
-severity: note
-rules: query matches ORDER BY RAND
-description:  ORDER BY RAND().  ORDER BY RAND() is not preferred.
+id:          COL.002
+severity:    note
+description: INSERT/REPLACE doesn't specify columns. "INSERT INTO tbl
+             (col1,col2) VALUES" is preferred to "INSERT INTO tbl VALUES".
+
+id:          LIT.001
+severity:    warn
+description: IP address used as string.  The string literal looks like an IP
+             address but is not used inside INET_ATON().  WHERE ip='127.0.0.1'
+             is better as ip=INET_ATON('127.0.0.1') if the column is numeric.
+
+id:          LIT.002
+severity:    warn
+description: Date literal is not quoted.  WHERE col<2010-02-12 is valid but
+             wrong; the date should be quoted.
+
+id:          KWR.002
+severity:    note
+description: SQL_CALC_FOUND_ROWS does not scale.  SQL_CALC_FOUND_ROWS can cause
+             performance problems because it does not scale well.
+
+id:          JOI.001
+severity:    crit
+description: Mix of comma and ANSI joins.  Mixing comma joins and ANSI joins
+             is problematic and differs between some MySQL versions.
+
+id:          RES.001
+severity:    warn
+description: GROUP BY causes non-deterministic results.
+
+id:          RES.002
+severity:    warn
+description: LIMIT without ORDER BY causes non-deterministic results.
+
+id:          STA.001
+severity:    note
+description: != is not standard SQL; use <>.
 
 =head1 OPTIONS
 
