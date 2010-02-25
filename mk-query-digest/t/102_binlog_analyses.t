@@ -17,8 +17,6 @@ use MaatkitTest;
 shift @INC;  # our unshift (above)
 shift @INC;  # MaatkitTest's unshift
 
-$ENV{LABEL_WIDTH} = 9;  
-
 require "$trunk/mk-query-digest/mk-query-digest";
 
 # #############################################################################

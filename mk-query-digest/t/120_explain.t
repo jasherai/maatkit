@@ -18,7 +18,7 @@ use VersionParser;
 shift @INC;  # our unshift (above)
 shift @INC;  # MaatkitTest's unshift
 shift @INC;  # Sandbox
-$ENV{LABEL_WIDTH} = 9;
+
 require "$trunk/mk-query-digest/mk-query-digest";
 
 my $dp  = new DSNParser();

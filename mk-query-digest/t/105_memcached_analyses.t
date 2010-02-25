@@ -11,8 +11,6 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 11;
 
-$ENV{LABEL_WIDTH} = 9;  
-
 use MaatkitTest;
 
 my $run_with = "$trunk/mk-query-digest/mk-query-digest --report-format=query_report --limit 10 $trunk/common/t/samples/";

@@ -26,8 +26,6 @@ else {
    plan tests => 15;
 }
 
-$ENV{LABEL_WIDTH} = 9;
-
 my $run_with = "$trunk/mk-query-digest/mk-query-digest --report-format=query_report --limit 10 $trunk/common/t/samples/";
 my $output;
 my $cmd;

@@ -13,8 +13,6 @@ use Test::More tests => 1;
 
 use MaatkitTest;
 
-$ENV{LABEL_WIDTH} = 9;  
-
 my $run_with = "$trunk/mk-query-digest/mk-query-digest --report-format=query_report --type http --limit 10 $trunk/common/t/samples/";
 
 ok(

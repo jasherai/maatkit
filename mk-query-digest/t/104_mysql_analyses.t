@@ -17,8 +17,6 @@ use MaatkitTest;
 shift @INC;  # our unshift (above)
 shift @INC;  # MaatkitTest's unshift
 
-$ENV{LABEL_WIDTH} = 9;  
-
 require "$trunk/mk-query-digest/mk-query-digest";
 
 my @args   = qw(--type tcpdump --report-format=query_report --limit 10);
