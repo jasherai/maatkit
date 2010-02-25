@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 5568
+# OptionParser package 5839
 # ###########################################################################
 package OptionParser;
 
@@ -1452,7 +1452,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5693
+# TableParser package 5826
 # ###########################################################################
 package TableParser;
 
@@ -1506,7 +1506,7 @@ sub parse {
 
    my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
-   MKDEBUG && _d('Columns:', join(', ', @cols));
+   MKDEBUG && _d('Table cols:', join(', ', map { "`$_`" } @cols));
 
    my %def_for;
    @def_for{@cols} = @defs;
@@ -1717,14 +1717,14 @@ sub get_keys {
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
       my @cols;
       my @col_prefixes;
-      foreach my $col_def ( split(',', $cols) ) {
+      foreach my $col_def ( $cols =~ m/`[^`]+`(?:\(\d+\))?/g ) {
          my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
       }
       $name =~ s/`//g;
 
-      MKDEBUG && _d('Key', $name, 'cols:', join(', ', @cols));
+      MKDEBUG && _d( $name, 'key cols:', join(', ', map { "`$_`" } @cols));
 
       $keys->{$name} = {
          name         => $name,
@@ -4211,7 +4211,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 5700
+# TableSyncer package 5863
 # ###########################################################################
 package TableSyncer;
 
@@ -4261,7 +4261,10 @@ sub sync_table {
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   MKDEBUG && _d('Syncing table with args', Dumper(\%args));
+   MKDEBUG && _d('Syncing table with args:',
+      map { "$_: " . Dumper($args{$_}) }
+      qw(plugins src dst tbl_struct cols chunk_size));
+
    my ($plugins, $src, $dst, $tbl_struct, $cols, $chunk_size, $rd, $ch)
       = @args{@required_args};
 
