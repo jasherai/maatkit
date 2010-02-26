@@ -1,4 +1,4 @@
 
 # Query ID 0xF02D443D3304AE6E at byte 0
-# NOTE LIT.001 IP address used as string.
+# WARN LIT.001 IP address used as string.
 SELECT ip FROM tbl WHERE ip="127.0.0.1"

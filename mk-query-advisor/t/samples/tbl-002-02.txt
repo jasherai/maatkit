@@ -1,3 +1,5 @@
 
 # Query ID 0xC3F81CFF173E937C at byte 0
+# WARN ALI.002 Alaised table.*.
+# NOTE COL.001 SELECT *.
 SELECT tbl.* AS foo, bar FROM tbl WHERE id=2

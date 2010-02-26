@@ -1,3 +1,4 @@
 
 # Query ID 0xD74D5B3F809203E6 at byte 0
+# NOTE COL.002 INSERT/REPLACE doesn't specify columns.
 insert into foo values ("bar")

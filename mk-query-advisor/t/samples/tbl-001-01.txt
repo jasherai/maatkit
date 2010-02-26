@@ -1,4 +1,4 @@
 
 # Query ID 0xE6B3C7360EE0D6B0 at byte 0
-# NOTE GEN.001 All columns.
+# NOTE COL.001 SELECT *.
 SELECT * FROM tbl WHERE id=1
