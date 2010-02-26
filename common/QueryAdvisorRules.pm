@@ -37,6 +37,7 @@ sub new {
    }
 
    my @rules = get_rules();
+   MKDEBUG && _d(scalar @rules, 'rules');
 
    my $self = {
       %args,
@@ -54,52 +55,211 @@ sub new {
 sub get_rules {
    return
    {
-      id   => 'LIT.001',
+      id   => 'ALI.001',      # Implicit alias
       code => sub {
          my ( %args ) = @_;
-         my $query = $args{query};
-         return $query =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
+         my $struct = $args{query_struct};
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         foreach my $tbl ( @$tbls ) {
+            return 1 if $tbl->{alias} && !$tbl->{explicit_alias};
+         }
+         my $cols = $struct->{columns};
+         return unless $cols;
+         foreach my $col ( @$cols ) {
+            return 1 if $col->{alias} && !$col->{explicit_alias};
+         }
+         return 0;
       },
    },
    {
-      id   => 'LIT.002',
+      id   => 'ALI.002',      # tbl.* alias
       code => sub {
          my ( %args ) = @_;
-         my $query = $args{query};
-         return $query =~ m/[^'"](?:\d{2,4}-\d{1,2}-\d{1,2}|\d{4,6})/;
+         my $cols = $args{query_struct}->{columns};
+         return unless $cols;
+         foreach my $col ( @$cols ) {
+            return 1 if $col->{db} && $col->{name } eq '*' &&  $col->{alias};
+         }
+         return 0;
       },
    },
    {
-      id   => 'GEN.001',
+      id   => 'ALI.003',      # tbl AS tbl
       code => sub {
          my ( %args ) = @_;
-
+         my $struct = $args{query_struct};
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         foreach my $tbl ( @$tbls ) {
+            return 1 if $tbl->{alias} && $tbl->{alias} eq $tbl->{name};
+         }
+         my $cols = $struct->{columns};
+         return unless $cols;
+         foreach my $col ( @$cols ) {
+            return 1 if $col->{alias} && $col->{alias} eq $col->{name};
+         }
+         return 0;
+      },
+   },
+   {
+      id   => 'ARG.001',      # col = '%foo'
+      code => sub {
+         my ( %args ) = @_;
+         return 1 if $args{query} =~ m/[\'\"][\%\_]\w/;
+         return 0;
+      },
+   },
+   {
+      id   => 'CLA.001',      # SELECT w/o WHERE
+      code => sub {
+         my ( %args ) = @_;
+         return 0 unless $args{query_struct}->{type} eq 'select';
+         return 1 unless $args{query_struct}->{where};
+         return 0;
+      },
+   },
+   {
+      id   => 'CLA.002',      # ORDER BY RAND()
+      code => sub {
+         my ( %args ) = @_;
+         my $orderby = $args{query_struct}->{order_by};
+         return unless $orderby;
+         foreach my $col ( @$orderby ) {
+            return 1 if $col =~ m/RAND\([^\)]*\)/i;
+         }
+         return 0;
+      },
+   },
+   {
+      id   => 'CLA.003',      # LIMIT w/ OFFSET
+      code => sub {
+         my ( %args ) = @_;
+         return 0 unless $args{query_struct}->{limit};
+         return 0 unless defined $args{query_struct}->{limit}->{offset};
+         return 1;
+      },
+   },
+   {
+      id   => 'CLA.004',      # GROUP BY <number>
+      code => sub {
+         my ( %args ) = @_;
+         my $groupby = $args{query_struct}->{group_by};
+         return unless $groupby;
+         foreach my $col ( @{$groupby->{columns}} ) {
+            return 1 if $col =~ m/^\d+\b/;
+         }
+         return 0;
+      },
+   },
+   {
+      id   => 'COL.001',      # SELECT *
+      code => sub {
+         my ( %args ) = @_;
+         my $type = $args{query_struct}->{type} eq 'select';
+         my $cols = $args{query_struct}->{columns};
+         return unless $cols;
+         foreach my $col ( @$cols ) {
+            return 1 if $col->{name} eq '*';
+         }
+         return 0;
+      },
+   },
+   {
+      id   => 'COL.002',      # INSERT w/o (cols) def
+      code => sub {
+         my ( %args ) = @_;
          my $type = $args{query_struct}->{type};
-         return unless $type && $type eq 'select';
-
-         my $cols = $args{query_struct}->{columns};
-         return unless $cols;
-
-         foreach my $col ( @$cols ) {
-            return 1 if $col eq '*';
+         return 0 unless $type eq 'insert' || $type eq 'replace';
+         return 1 unless $args{query_struct}->{columns};
+         return 0;
+      },
+   },
+   {
+      id   => 'LIT.001',      # IP as string
+      code => sub {
+         my ( %args ) = @_;
+         return $args{query} =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
+      },
+   },
+   {
+      id   => 'LIT.002',      # Date not quoted
+      code => sub {
+         my ( %args ) = @_;
+         return $args{query} =~ m/[^'"](?:\d{2,4}-\d{1,2}-\d{1,2}|\d{4,6})/;
+      },
+   },
+   {
+      id   => 'KWR.001',      # SQL_CALC_FOUND_ROWS
+      code => sub {
+         my ( %args ) = @_;
+         return 1 if $args{query_struct}->{keywords}->{sql_calc_found_rows};
+         return 0;
+      },
+   },
+   {
+      id   => 'JOI.001',      # comma and ansi joins
+      code => sub {
+         my ( %args ) = @_;
+         my $struct = $args{query_struct};
+         my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
+         return unless $tbls;
+         my $comma_join = 0;
+         my $ansi_join  = 0;
+         foreach my $tbl ( @$tbls ) {
+            if ( $tbl->{join} ) {
+               if ( $tbl->{join}->{ansi} ) {
+                  $ansi_join = 1;
+               }
+               else {
+                  $comma_join = 1;
+               }
+            }
+            return 1 if $comma_join && $ansi_join;
          }
          return 0;
       },
    },
    {
-      id   => 'ALI.001',
+      id   => 'RES.001',      # non-deterministic GROUP BY
       code => sub {
          my ( %args ) = @_;
+         return unless $args{query_struct}->{type} eq 'select';
+         my $groupby = $args{query_struct}->{group_by};
+         return unless $groupby;
+         # Only check GROUP BY column names, not numbers.  GROUP BY number
+         # is handled in CLA.004.
+         my %groupby_col = map { $_ => 1 }
+                           grep { m/^[^\d]+\b/ }
+                           @{$groupby->{columns}};
+         return unless scalar %groupby_col;
          my $cols = $args{query_struct}->{columns};
-         return unless $cols;
+         # All SELECT cols must be in GROUP BY cols clause.
+         # E.g. select a, b, c from tbl group by a; -- non-deterministic
          foreach my $col ( @$cols ) {
-            my @words = $col =~ m/(\S+)\s+(\S+)/;
-            return 1 if @words && @words > 1 && $words[1] !~ m/AS/i;
+            return 1 unless $groupby_col{ $col->{name} };
          }
          return 0;
       },
    },
-}
+   {
+      id   => 'RES.002',      # non-deterministic LIMIT w/o ORDER BY
+      code => sub {
+         my ( %args ) = @_;
+         return 0 unless $args{query_struct}->{limit};
+         return 1 unless $args{query_struct}->{order_by};
+         return 0;
+      },
+   },
+   {
+      id   => 'STA.001',      # != instead of <>
+      code => sub {
+         my ( %args ) = @_;
+         return 1 if $args{query} =~ m/!=/;
+         return 0;
+      },
+   },
+};
 
 # Arguments:
 #   * rules      arrayref: rules for which info is required
