@@ -3729,18 +3729,18 @@ These are the checks that mk-advisor can perform on a query.
 
 id:          ALI.001
 severity:    note
-description: Alias without AS.  Explicit table alias like "tbl AS alias"
-             are preferred to implicit alias like "tbl alias".
+description: Alias without AS.  Explicit column or table aliases like
+             "tbl AS alias" are preferred to implicit aliases like "tbl alias".
 
 id:          ALI.002
 severity:    warn
-description: Alaised table.*.  Aliasing an all columns reference like
-             "tbl.* foo" is confusing.
+description: Aliased db.*.  Aliasing an all columns reference like
+             "db.* foo" is confusing.
 
 id:          ALI.003
 severity:    note
-description: Alias is real name.  The column's alias is the same as its real
-             name.
+description: Alias is real name.  The table or column's alias is the same as
+             its real name.
 
 id:          ARG.001
 severity:    warn
