@@ -483,14 +483,18 @@ sub _parse_tbl_ref {
       MKDEBUG && _d('Index hint:', $1);
       $tbl{index_hint} = $1;
    }
+   
+   my $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 
-   my @words = $tbl_ref =~ m/(\S+)/g;
+   my @words = map { s/`//g if defined; $_; } $tbl_ref =~ m/($tbl_ident)/g;
    # tbl ref:  tbl AS foo
    # words:      0  1   2
    MKDEBUG && _d('Table ref:', @words);
 
-   # Real table name.
-   $tbl{name} = $words[0];
+   # Real table name with optional db. qualifier.
+   my ($db, $tbl) = $words[0] =~ m/(?:(.+?)\.)?(.+)$/;
+   $tbl{db}   = $db if $db;
+   $tbl{name} = $tbl;
 
    # Alias.
    if ( $words[2] ) {

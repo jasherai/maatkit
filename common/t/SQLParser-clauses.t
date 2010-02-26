@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 26;
+use Test::More tests => 40;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -367,6 +367,77 @@ test_from(
          index_hint     => 'FORCE KEY(foo)',
       }
    ]
+);
+
+# #############################################################################
+# _parse_tbl_ref()
+# #############################################################################
+sub test_tbl_ref {
+   my ( $tbl, $struct ) = @_;
+   my %s = $sp->_parse_tbl_ref($tbl);
+   is_deeply(
+      \%s,
+      $struct,
+      $tbl
+   );
+   return;
+}
+
+test_tbl_ref('tbl',
+   { name => 'tbl', }
+);
+
+test_tbl_ref('tbl a',
+   { name => 'tbl', alias => 'a', }
+);
+
+test_tbl_ref('tbl as a',
+   { name => 'tbl', alias => 'a', explicit_alias => 1, }
+);
+
+test_tbl_ref('tbl AS a',
+   { name => 'tbl', alias => 'a', explicit_alias => 1, }
+);
+
+test_tbl_ref('db.tbl',
+   { name => 'tbl', db => 'db', }
+);
+
+test_tbl_ref('db.tbl a',
+   { name => 'tbl', db => 'db', alias => 'a', }
+);
+
+test_tbl_ref('db.tbl AS a',
+   { name => 'tbl', db => 'db', alias => 'a', explicit_alias => 1, }
+);
+
+
+test_tbl_ref('`tbl`',
+   { name => 'tbl', }
+);
+
+test_tbl_ref('`tbl` `a`',
+   { name => 'tbl', alias => 'a', }
+);
+
+test_tbl_ref('`tbl` as `a`',
+   { name => 'tbl', alias => 'a', explicit_alias => 1, }
+);
+
+test_tbl_ref('`tbl` AS `a`',
+   { name => 'tbl', alias => 'a', explicit_alias => 1, }
+);
+
+test_tbl_ref('`db`.`tbl`',
+   { name => 'tbl', db => 'db', }
+);
+
+test_tbl_ref('`db`.`tbl` `a`',
+   { name => 'tbl', db => 'db', alias => 'a', }
+);
+
+test_tbl_ref('`db`.`tbl` AS `a`',
+   { name => 'tbl', db => 'db', alias => 'a', explicit_alias => 1, }
 );
 
 # #############################################################################
