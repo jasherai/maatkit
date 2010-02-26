@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 40;
+use Test::More tests => 41;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -438,6 +438,10 @@ test_parse_identifier('`db`.`tbl` `a`',
 
 test_parse_identifier('`db`.`tbl` AS `a`',
    { name => 'tbl', db => 'db', alias => 'a', explicit_alias => 1, }
+);
+
+test_parse_identifier('db.* foo',
+   { name => '*', db => 'db', alias => 'foo' }
 );
 
 # #############################################################################

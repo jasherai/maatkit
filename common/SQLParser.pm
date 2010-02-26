@@ -486,10 +486,10 @@ sub parse_identifier {
    }
 
    my $tbl_ident = qr/
-      (?:`[^`]+`|[\w*]+)         # `something`, or something
-      (?:                     # optionally followed by either
-         \.(?:`[^`]+`|\w+)    #   .`something` or .something, or
-         |\([^\)]*\)          #   (function stuff)  (e.g. NOW())
+      (?:`[^`]+`|[\w*]+)       # `something`, or something
+      (?:                      # optionally followed by either
+         \.(?:`[^`]+`|[\w*]+)  #   .`something` or .something, or
+         |\([^\)]*\)           #   (function stuff)  (e.g. NOW())
       )?             
    /x;
 
@@ -505,7 +505,7 @@ sub parse_identifier {
 
    # Alias.
    if ( $words[2] ) {
-      die "Bad table reference: $tbl_ref" unless ($words[1] || '') =~ m/AS/i;
+      die "Bad identifier: $tbl_ref" unless ($words[1] || '') =~ m/AS/i;
       $tbl{alias}          = $words[2];
       $tbl{explicit_alias} = 1;
    }
