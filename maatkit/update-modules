@@ -29,7 +29,7 @@ fi
 
 set -u
 
-if [ ! -d ../$PACK ]; then
+if [ ! -d $trunk/$PACK ]; then
    echo "$PACK doesn't exist."
    exit 1
 fi

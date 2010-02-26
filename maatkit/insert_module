@@ -9,10 +9,13 @@ use English qw(-no_match_vars);
 # the most recent version of the module.
 # Example: :%!../maatkit/insert_module TableParser
 
+my $trunk = $ENV{MAATKIT_TRUNK};
+die "MAATKIT_TRUNK environment variable is not set." unless $trunk;
+
 $INPUT_RECORD_SEPARATOR = undef;
 my $input = <STDIN>;
 my $module = shift @ARGV;
-open my $file, "<", "../common/$module.pm"
+open my $file, "<", "$trunk/common/$module.pm"
    or die $OS_ERROR;
 my $text = <$file>;
 my ( $ver ) = $text =~ m/\$Revision: (\d+) \$/;
