@@ -370,11 +370,11 @@ test_from(
 );
 
 # #############################################################################
-# _parse_tbl_ref()
+# parse_identifier()
 # #############################################################################
-sub test_tbl_ref {
+sub test_parse_identifier {
    my ( $tbl, $struct ) = @_;
-   my %s = $sp->_parse_tbl_ref($tbl);
+   my %s = $sp->parse_identifier($tbl);
    is_deeply(
       \%s,
       $struct,
@@ -383,60 +383,60 @@ sub test_tbl_ref {
    return;
 }
 
-test_tbl_ref('tbl',
+test_parse_identifier('tbl',
    { name => 'tbl', }
 );
 
-test_tbl_ref('tbl a',
+test_parse_identifier('tbl a',
    { name => 'tbl', alias => 'a', }
 );
 
-test_tbl_ref('tbl as a',
+test_parse_identifier('tbl as a',
    { name => 'tbl', alias => 'a', explicit_alias => 1, }
 );
 
-test_tbl_ref('tbl AS a',
+test_parse_identifier('tbl AS a',
    { name => 'tbl', alias => 'a', explicit_alias => 1, }
 );
 
-test_tbl_ref('db.tbl',
+test_parse_identifier('db.tbl',
    { name => 'tbl', db => 'db', }
 );
 
-test_tbl_ref('db.tbl a',
+test_parse_identifier('db.tbl a',
    { name => 'tbl', db => 'db', alias => 'a', }
 );
 
-test_tbl_ref('db.tbl AS a',
+test_parse_identifier('db.tbl AS a',
    { name => 'tbl', db => 'db', alias => 'a', explicit_alias => 1, }
 );
 
 
-test_tbl_ref('`tbl`',
+test_parse_identifier('`tbl`',
    { name => 'tbl', }
 );
 
-test_tbl_ref('`tbl` `a`',
+test_parse_identifier('`tbl` `a`',
    { name => 'tbl', alias => 'a', }
 );
 
-test_tbl_ref('`tbl` as `a`',
+test_parse_identifier('`tbl` as `a`',
    { name => 'tbl', alias => 'a', explicit_alias => 1, }
 );
 
-test_tbl_ref('`tbl` AS `a`',
+test_parse_identifier('`tbl` AS `a`',
    { name => 'tbl', alias => 'a', explicit_alias => 1, }
 );
 
-test_tbl_ref('`db`.`tbl`',
+test_parse_identifier('`db`.`tbl`',
    { name => 'tbl', db => 'db', }
 );
 
-test_tbl_ref('`db`.`tbl` `a`',
+test_parse_identifier('`db`.`tbl` `a`',
    { name => 'tbl', db => 'db', alias => 'a', }
 );
 
-test_tbl_ref('`db`.`tbl` AS `a`',
+test_parse_identifier('`db`.`tbl` AS `a`',
    { name => 'tbl', db => 'db', alias => 'a', explicit_alias => 1, }
 );
 

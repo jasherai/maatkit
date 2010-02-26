@@ -366,7 +366,7 @@ sub parse_from {
 
       if ( !$state && $thing !~ m/$join_delim/i ) {
          MKDEBUG && _d('Table factor');
-         $tbl = { $self->_parse_tbl_ref($thing) };
+         $tbl = { $self->parse_identifier($thing) };
          
          # Non-ANSI implicit INNER join to previous table, e.g. "tbl1, tbl2".
          # Manual says: "INNER JOIN and , (comma) are semantically equivalent
@@ -397,7 +397,7 @@ sub parse_from {
          }
          elsif ( $state eq 'join tbl' ) {
             # Table for this join (i.e. tbl to right of JOIN).
-            my %tbl_ref = $self->_parse_tbl_ref($thing);
+            my %tbl_ref = $self->parse_identifier($thing);
             @{$pending_tbl}{keys %tbl_ref} = values %tbl_ref;
             $state = 'join condition';
          }
@@ -467,7 +467,7 @@ sub parse_from {
 # tbl can be optionally "db." qualified.  Also handles FORCE|USE|IGNORE
 # INDEX hints.  Does not handle "FOR JOIN" hint because "JOIN" here gets
 # confused with the "JOIN" thing in parse_from().
-sub _parse_tbl_ref {
+sub parse_identifier {
    my ( $self, $tbl_ref ) = @_;
    my %tbl;
 
@@ -483,8 +483,14 @@ sub _parse_tbl_ref {
       MKDEBUG && _d('Index hint:', $1);
       $tbl{index_hint} = $1;
    }
-   
-   my $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
+
+   my $tbl_ident = qr/
+      (?:`[^`]+`|\w+)         # `something`, or something
+      (?:                     # optionally followed by either
+         \.(?:`[^`]+`|\w+)    #   .`something` or .something, or
+         |\([^\)]*\)          #   (function stuff)  (e.g. NOW())
+      )?             
+   /x;
 
    my @words = map { s/`//g if defined; $_; } $tbl_ref =~ m/($tbl_ident)/g;
    # tbl ref:  tbl AS foo
@@ -579,9 +585,17 @@ sub parse_csv {
 }
 {
    no warnings;  # Why? See same line above.
-   *parse_columns      = \&parse_csv;
    *parse_set          = \&parse_csv;
    *parse_on_duplicate = \&parse_csv;
+}
+
+sub parse_columns {
+   my ( $self, $cols ) = @_;
+   my @cols = map {
+      my %ref = $self->parse_identifier($_);
+      \%ref;
+   } @{ $self->parse_csv($cols) };
+   return \@cols;
 }
 
 # GROUP BY {col_name | expr | position} [ASC | DESC], ... [WITH ROLLUP]
