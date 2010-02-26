@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 25;
+use Test::More tests => 26;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -449,6 +449,21 @@ my @cases = (
             sql_calc_found_rows => 1,
             lock_in_share_mode  => 1,
          },
+         unknown  => undef,
+      },
+   },
+   { name   => 'SELECT * FROM WHERE',
+     query  => 'SELECT * FROM tbl WHERE ip="127.0.0.1"',
+     struct => {
+         type     => 'select',
+         clauses  => { 
+            columns => '* ',
+            from    => 'tbl ',
+            where   => 'ip="127.0.0.1"',
+         },
+         columns  => [ { name => '*' } ],
+         from     => [ { name => 'tbl' } ],
+         where    => 'ip="127.0.0.1"',
          unknown  => undef,
       },
    },

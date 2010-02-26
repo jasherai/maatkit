@@ -470,6 +470,7 @@ sub parse_from {
 sub parse_identifier {
    my ( $self, $tbl_ref ) = @_;
    my %tbl;
+   MKDEBUG && _d('Identifier string:', $tbl_ref);
 
    # First, check for an index hint.  Remove and save it if present.
    my $index_hint;
@@ -485,7 +486,7 @@ sub parse_identifier {
    }
 
    my $tbl_ident = qr/
-      (?:`[^`]+`|\w+)         # `something`, or something
+      (?:`[^`]+`|[\w*]+)         # `something`, or something
       (?:                     # optionally followed by either
          \.(?:`[^`]+`|\w+)    #   .`something` or .something, or
          |\([^\)]*\)          #   (function stuff)  (e.g. NOW())
@@ -495,7 +496,7 @@ sub parse_identifier {
    my @words = map { s/`//g if defined; $_; } $tbl_ref =~ m/($tbl_ident)/g;
    # tbl ref:  tbl AS foo
    # words:      0  1   2
-   MKDEBUG && _d('Table ref:', @words);
+   MKDEBUG && _d('Identifier words:', @words);
 
    # Real table name with optional db. qualifier.
    my ($db, $tbl) = $words[0] =~ m/(?:(.+?)\.)?(.+)$/;
