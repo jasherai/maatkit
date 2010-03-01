@@ -1,5 +1,8 @@
 Changelog for mk-parallel-dump:
 
+   * Added --client-side-buffering (issue 837).
+   * Enabled mysql_use_result by default (issue 837).
+
 2010-02-01: version 1.0.21
 
    * Database-qualified --tables filters did not work (issue 806).

@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 5266
+# DSNParser package 5893
 # ###########################################################################
 package DSNParser;
 
@@ -243,6 +243,10 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
+   if ( $opts->{mysql_use_result} ) {
+      $defaults->{mysql_use_result} = 1;
+   }
+
    if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
@@ -386,7 +390,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5568
+# OptionParser package 5839
 # ###########################################################################
 package OptionParser;
 
@@ -1223,7 +1227,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5266
+# TableParser package 5826
 # ###########################################################################
 package TableParser;
 
@@ -1277,7 +1281,7 @@ sub parse {
 
    my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
-   MKDEBUG && _d('Columns:', join(', ', @cols));
+   MKDEBUG && _d('Table cols:', join(', ', map { "`$_`" } @cols));
 
    my %def_for;
    @def_for{@cols} = @defs;
@@ -1488,14 +1492,14 @@ sub get_keys {
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
       my @cols;
       my @col_prefixes;
-      foreach my $col_def ( split(',', $cols) ) {
+      foreach my $col_def ( $cols =~ m/`[^`]+`(?:\(\d+\))?/g ) {
          my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
       }
       $name =~ s/`//g;
 
-      MKDEBUG && _d('Key', $name, 'cols:', join(', ', @cols));
+      MKDEBUG && _d( $name, 'key cols:', join(', ', map { "`$_`" } @cols));
 
       $keys->{$name} = {
          name         => $name,
@@ -1572,7 +1576,10 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         "ADD $_->{ddl}";
+
+         my $key_ddl = "ADD $_->{ddl}";
+         $key_ddl   .= ',' unless $key_ddl =~ m/,$/;
+         $key_ddl;
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
@@ -2314,20 +2321,19 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5266
+# Quoter package 5697
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package Quoter;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   return bless {}, $class;
 }
 
 sub quote {
@@ -2379,7 +2385,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 5266
+# Transformers package 5715
 # ###########################################################################
 
 package Transformers;
@@ -2400,6 +2406,7 @@ our @EXPORT_OK   = qw(
    micro_t
    percentage_of
    secs_to_time
+   time_to_secs
    shorten
    ts
    parse_timestamp
@@ -2476,6 +2483,26 @@ sub secs_to_time {
          $secs % 60);
 }
 
+sub time_to_secs {
+   my ( $val, $default_suffix ) = @_;
+   die "I need a val argument" unless defined $val;
+   my $t = 0;
+   my ( $prefix, $num, $suffix ) = $val =~ m/([+-]?)(\d+)([a-z])?$/;
+   $suffix = $suffix || $default_suffix || 's';
+   if ( $suffix =~ m/[smhd]/ ) {
+      $t = $suffix eq 's' ? $num * 1        # Seconds
+         : $suffix eq 'm' ? $num * 60       # Minutes
+         : $suffix eq 'h' ? $num * 3600     # Hours
+         :                  $num * 86400;   # Days
+
+      $t *= -1 if $prefix && $prefix eq '-';
+   }
+   else {
+      die "Invalid suffix for $val: $suffix";
+   }
+   return $t;
+}
+
 sub shorten {
    my ( $num, %args ) = @_;
    my $p = defined $args{p} ? $args{p} : 2;     # float precision
@@ -2547,6 +2574,10 @@ sub any_unix_timestamp {
          :                  $n;           # default: Seconds
       MKDEBUG && _d('ts is now - N[shmd]:', $n);
       return time - $n;
+   }
+   elsif ( $val =~ m/^\d{9,}/ ) {
+      MKDEBUG && _d('ts is already a unix timestamp');
+      return $val;
    }
    elsif ( my ($ymd, $hms) = $val =~ m/^(\d{6})(?:\s+(\d+:\d+:\d+))?/ ) {
       MKDEBUG && _d('ts is MySQL slow log timestamp');
@@ -3224,8 +3255,16 @@ sub main {
       $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
 
+   # http://code.google.com/p/maatkit/issues/detail?id=837
+   my $dbh_attribs = {
+      mysql_use_result => $o->get('client-side-buffering') ? 0 : 1,
+   };
+
    my $dsn                  = $dp->parse_options($o);
-   my $dbh                  = $dp->get_dbh($dp->get_cxn_params($dsn));
+   my $dbh                  = $dp->get_dbh(
+                                 $dp->get_cxn_params($dsn),
+                                 $dbh_attribs,
+                              );
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref() 
 
@@ -3426,7 +3465,10 @@ sub main {
       while ( !$dbh->ping && $tries++ < $o->get('wait') ) {
          sleep(1);
          eval {
-            $dbh = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
+            $dbh = $dp->get_dbh(
+               $dp->get_cxn_params($dp->parse_options($o)),
+               $dbh_attribs,
+            );
          };
          if ( $EVAL_ERROR ) {
             info($o, 0, 'Waiting: ' . scalar(localtime)
@@ -3502,8 +3544,9 @@ sub main {
             $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
             MKDEBUG && _d('Start PID', $PID);
             my $exit_status = dump_chunk(
-               chunk => $chunk,
-               file  => $file,
+               chunk       => $chunk,
+               file        => $file,
+               dbh_attribs => $dbh_attribs,
                %common_modules,
             );
             MKDEBUG && _d('End PID', $PID, 'exit status', $exit_status);
@@ -3849,7 +3892,8 @@ sub interp {
 # --chunk-size is specified.
 sub dump_chunk {
    my ( %args ) = @_;
-   my @required_args = qw(chunk file DSNParser OptionParser Quoter MySQLDump);
+   my @required_args = qw(chunk file DSNParser OptionParser Quoter MySQLDump
+                          dbh_attribs);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -3862,7 +3906,10 @@ sub dump_chunk {
 
    my $dbh;
    if ( !$o->get('dry-run') ) {
-      $dbh = $dp->get_dbh($dp->get_cxn_params($dp->parse_options($o)));
+      $dbh = $dp->get_dbh(
+         $dp->get_cxn_params($dp->parse_options($o)),
+         $args{dbh_attribs},
+      );
    }
 
    # Dump SHOW CREATE TABLE  before the first chunk.
@@ -4548,6 +4595,23 @@ given.  The syntax is either a plain integer, which is interpreted as a number
 of rows per chunk, or an integer with a suffix of G, M, or k, which is
 interpreted as the size of the data to be dumped in each chunk.  See L<"CHUNKS">
 for more details.
+
+=item --client-side-buffering
+
+Fetch and buffer results in memory on client.
+
+By default this option is not enabled because it causes data to be completely
+fetched from the server then buffered in-memory on the client.  For large dumps
+this can require a lot of memory
+
+Instead, the default (when this option is not specified) is to fetch and dump
+rows one-by-one from the server.  This requires a lot less memory on the client
+but can keep the tables on the server locked longer.
+
+Use this option only if you're sure that the data being dumped is relatively
+small and the client has sufficient memory.  Remember that, if this option is
+specified, all L<"--threads"> will buffer their results in-memory, so memory
+consumption can increase by a factor of N L<"--threads">.
 
 =item --config
 
