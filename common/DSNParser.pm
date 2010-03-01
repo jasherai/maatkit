@@ -264,6 +264,13 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
+   # Only add this if explicitly set because we're not sure if
+   # mysql_use_result=0 would leave default mysql_store_result
+   # enabled.
+   if ( $opts->{mysql_use_result} ) {
+      $defaults->{mysql_use_result} = 1;
+   }
+
    if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "

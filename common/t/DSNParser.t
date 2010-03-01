@@ -398,7 +398,7 @@ SKIP: {
    $dp = new DSNParser();
    $dp->prop('set-vars', 'wait_timeout=1000');
    $d  = $dp->parse('h=127.0.0.1,P=12345,A=utf8,u=msandbox,p=msandbox');
-   my $dbh2 = $dp->get_dbh($dp->get_cxn_params($d), {});
+   my $dbh2 = $dp->get_dbh($dp->get_cxn_params($d), {mysql_use_result=>1});
    sleep 2;
    eval {
       $dbh2->do('SELECT DATABASE()');
