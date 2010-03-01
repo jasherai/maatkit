@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2010-03-01: version 1.0.25
+
    * Row-based replication prevented some changes (issue 95).
 
 2010-02-01: version 1.0.24

@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+2010-03-01: version 1.0.20
+
    * --fast-index failed to restore some keys (issue 833).
 
 2010-01-06: version 1.0.19

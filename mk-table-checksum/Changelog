@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2010-03-01: version 1.2.12
+
    * --engines did not work (issue 891).
    * Index names with commas caused a crash (issue 388).
 

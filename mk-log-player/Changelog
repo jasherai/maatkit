@@ -1,5 +1,7 @@
 Changelog for mk-log-player:
 
+2010-03-01: version 1.0.6
+
    * --only-select did not handle leading /* comments */ (issue 903).
    * Not all sessions were assigned/played in some cases.
    * Added --dry-run.
