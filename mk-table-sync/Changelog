@@ -3,6 +3,12 @@ Changelog for mk-table-sync:
 2010-03-01: version 1.0.25
 
    * Row-based replication prevented some changes (issue 95).
+   * Added --bidirectional (issue 464).
+   * Added --conflict-column for bidirectional sync (issue 464).
+   * Added --conflict-comparison for bidirectional sync (issue 464).
+   * Added --conflict-value for bidirectional sync (issue 464).
+   * Added --conflict-threshold for bidirectional sync (issue 464).
+   * Added --conflict-error for bidirectional sync (issue 464).
 
 2010-02-01: version 1.0.24
 
