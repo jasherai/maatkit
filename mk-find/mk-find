@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 5266
+# DSNParser package 5893
 # ###########################################################################
 package DSNParser;
 
@@ -244,6 +244,10 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
+   if ( $opts->{mysql_use_result} ) {
+      $defaults->{mysql_use_result} = 1;
+   }
+
    if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
@@ -387,7 +391,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5568
+# OptionParser package 5839
 # ###########################################################################
 package OptionParser;
 
@@ -1224,20 +1228,19 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5266
+# Quoter package 5697
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package Quoter;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   return bless {}, $class;
 }
 
 sub quote {
@@ -1338,7 +1341,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5266
+# TableParser package 5826
 # ###########################################################################
 package TableParser;
 
@@ -1392,7 +1395,7 @@ sub parse {
 
    my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
-   MKDEBUG && _d('Columns:', join(', ', @cols));
+   MKDEBUG && _d('Table cols:', join(', ', map { "`$_`" } @cols));
 
    my %def_for;
    @def_for{@cols} = @defs;
@@ -1603,14 +1606,14 @@ sub get_keys {
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
       my @cols;
       my @col_prefixes;
-      foreach my $col_def ( split(',', $cols) ) {
+      foreach my $col_def ( $cols =~ m/`[^`]+`(?:\(\d+\))?/g ) {
          my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
       }
       $name =~ s/`//g;
 
-      MKDEBUG && _d('Key', $name, 'cols:', join(', ', @cols));
+      MKDEBUG && _d( $name, 'key cols:', join(', ', map { "`$_`" } @cols));
 
       $keys->{$name} = {
          name         => $name,
@@ -1687,7 +1690,10 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         "ADD $_->{ddl}";
+
+         my $key_ddl = "ADD $_->{ddl}";
+         $key_ddl   .= ',' unless $key_ddl =~ m/,$/;
+         $key_ddl;
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};

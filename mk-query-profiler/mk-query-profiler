@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 5568
+# OptionParser package 5839
 # ###########################################################################
 package OptionParser;
 
@@ -864,7 +864,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5266
+# DSNParser package 5893
 # ###########################################################################
 package DSNParser;
 
@@ -1079,6 +1079,10 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
+
+   if ( $opts->{mysql_use_result} ) {
+      $defaults->{mysql_use_result} = 1;
+   }
 
    if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "

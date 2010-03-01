@@ -4,6 +4,7 @@ Changelog for mk-query-digest:
    * --ask-pass did not work (issue 795).
    * Made D part of --execute DSN as default database (issue 727).
    * --tcpdump didn't work if dumped packet header had extra info (issue 906).
+   * Added --type pglog for parsing Postgres logs (issue 535).
 
 2010-02-01: version 0.9.14
 

@@ -141,7 +141,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5693
+# TableParser package 5826
 # ###########################################################################
 package TableParser;
 
@@ -195,7 +195,7 @@ sub parse {
 
    my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols   = map { $_ =~ m/`([^`]+)`/ } @defs;
-   MKDEBUG && _d('Columns:', join(', ', @cols));
+   MKDEBUG && _d('Table cols:', join(', ', map { "`$_`" } @cols));
 
    my %def_for;
    @def_for{@cols} = @defs;
@@ -406,14 +406,14 @@ sub get_keys {
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
       my @cols;
       my @col_prefixes;
-      foreach my $col_def ( split(',', $cols) ) {
+      foreach my $col_def ( $cols =~ m/`[^`]+`(?:\(\d+\))?/g ) {
          my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
       }
       $name =~ s/`//g;
 
-      MKDEBUG && _d('Key', $name, 'cols:', join(', ', @cols));
+      MKDEBUG && _d( $name, 'key cols:', join(', ', map { "`$_`" } @cols));
 
       $keys->{$name} = {
          name         => $name,
@@ -1058,7 +1058,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5266
+# DSNParser package 5893
 # ###########################################################################
 package DSNParser;
 
@@ -1274,6 +1274,10 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
+   if ( $opts->{mysql_use_result} ) {
+      $defaults->{mysql_use_result} = 1;
+   }
+
    if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
          . "installed or not found.  Run 'perl -MDBI' to see the directories "
@@ -1417,7 +1421,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5770
+# OptionParser package 5839
 # ###########################################################################
 package OptionParser;
 
@@ -2237,45 +2241,6 @@ sub clone {
    }
 
    return bless \%clone;     
-}
-
-sub parse_section {
-   my ( $self, %args ) = @_;
-   my ($file, $section, $subsection, $trf)
-      = @args{qw(file section subsection trf)};
-
-   $file ||= __FILE__;
-   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   
-   local $INPUT_RECORD_SEPARATOR = '';
-
-   my $para;
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 $section/o;
-      last;
-   }
-
-   if ( $subsection ) {
-      while ( $para = <$fh> ) {
-         next unless $para =~ m/^=head2 $subsection/o;
-         last
-      }
-   }
-
-   my @chunks;
-   while ( $para = <$fh> ) {
-      last if ($subsection ? $para =~ m/^=head[12]/ : $para =~ m/^=head1/);
-      next if $para =~ m/=head/;
-      chomp $para;
-      $para =~ s/$POD_link_re/$1/go;
-      if ( $trf ) {
-         $para = $trf->($para);
-         next unless $para;
-      }
-      push @chunks, $para;
-   }
-
-   return @chunks;
 }
 
 sub _d {

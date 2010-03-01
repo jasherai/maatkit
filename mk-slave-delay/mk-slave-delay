@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 5568
+# OptionParser package 5839
 # ###########################################################################
 package OptionParser;
 
@@ -913,7 +913,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5266
+# DSNParser package 5893
 # ###########################################################################
 package DSNParser;
 
@@ -1128,6 +1128,10 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
+
+   if ( $opts->{mysql_use_result} ) {
+      $defaults->{mysql_use_result} = 1;
+   }
 
    if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
@@ -1451,7 +1455,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 5266
+# Transformers package 5715
 # ###########################################################################
 
 package Transformers;
@@ -1472,6 +1476,7 @@ our @EXPORT_OK   = qw(
    micro_t
    percentage_of
    secs_to_time
+   time_to_secs
    shorten
    ts
    parse_timestamp
@@ -1548,6 +1553,26 @@ sub secs_to_time {
          $secs % 60);
 }
 
+sub time_to_secs {
+   my ( $val, $default_suffix ) = @_;
+   die "I need a val argument" unless defined $val;
+   my $t = 0;
+   my ( $prefix, $num, $suffix ) = $val =~ m/([+-]?)(\d+)([a-z])?$/;
+   $suffix = $suffix || $default_suffix || 's';
+   if ( $suffix =~ m/[smhd]/ ) {
+      $t = $suffix eq 's' ? $num * 1        # Seconds
+         : $suffix eq 'm' ? $num * 60       # Minutes
+         : $suffix eq 'h' ? $num * 3600     # Hours
+         :                  $num * 86400;   # Days
+
+      $t *= -1 if $prefix && $prefix eq '-';
+   }
+   else {
+      die "Invalid suffix for $val: $suffix";
+   }
+   return $t;
+}
+
 sub shorten {
    my ( $num, %args ) = @_;
    my $p = defined $args{p} ? $args{p} : 2;     # float precision
@@ -1619,6 +1644,10 @@ sub any_unix_timestamp {
          :                  $n;           # default: Seconds
       MKDEBUG && _d('ts is now - N[shmd]:', $n);
       return time - $n;
+   }
+   elsif ( $val =~ m/^\d{9,}/ ) {
+      MKDEBUG && _d('ts is already a unix timestamp');
+      return $val;
    }
    elsif ( my ($ymd, $hms) = $val =~ m/^(\d{6})(?:\s+(\d+:\d+:\d+))?/ ) {
       MKDEBUG && _d('ts is MySQL slow log timestamp');

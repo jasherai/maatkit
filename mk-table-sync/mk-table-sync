@@ -929,7 +929,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5266
+# DSNParser package 5893
 # ###########################################################################
 package DSNParser;
 
@@ -1144,6 +1144,10 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
+
+   if ( $opts->{mysql_use_result} ) {
+      $defaults->{mysql_use_result} = 1;
+   }
 
    if ( !$have_dbi ) {
       die "Cannot connect to MySQL because the Perl DBI module is not "
@@ -7528,8 +7532,8 @@ unique index.  Although it can synchronize data in tables lacking a primary key
 or unique index, it might be best to sychronize that data by another means.
 
 At the time of this release, there is a bug that causes invalid SQL when
-syncing columns with binary data, and a potential bug using
-L<"--lock-and-rename"> with MySQL 5.1.
+syncing columns with binary data, a potential bug using L<"--lock-and-rename">
+with MySQL 5.1, and a bug detecting certain differences.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
@@ -8023,7 +8027,7 @@ Amount by which one L<"--conflict-column"> must exceed the other.
 
 The L<"--conflict-threshold"> prevents a conflict from being resolved if
 the absolute difference between the two L<"--conflict-column"> values is
-less than this amount.  For example, if two L<"--conflict-columns"> have
+less than this amount.  For example, if two L<"--conflict-column"> have
 timestamp values "2009-12-01 12:00:00" and "2009-12-01 12:05:00" the difference
 is 5 minutes.  If L<"--conflict-threshold"> is set to "5m" the conflict will
 be resolved, but if L<"--conflict-threshold"> is set to "6m" the conflict
