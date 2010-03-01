@@ -42,7 +42,7 @@ foreach my $package ( @packages ) {
    if ( $new ) { # Skip ones that have a version at the top of the file
       next if $contents =~ m/\AChangelog[^:]*:\n+20/;
    }
-   my ($log) = $contents =~ m/^(200.*?)(?=^200|\Z)/sm;
+   my ($log) = $contents =~ m/^(20.*?)(?=^20|\Z)/sm;
    die "help: $package has no log?" unless $log;
    my ($pre, $ver) = $log =~ m/^\d{4}-\d\d-\d\d: version (\d+\.\d+\.)(\d+)/;
    die "Can't find version in $package" unless defined $ver;
