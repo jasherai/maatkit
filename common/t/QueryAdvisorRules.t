@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 31;
+use Test::More tests => 32;
 
 use MaatkitTest;
 use PodParser;
@@ -210,6 +210,12 @@ my @cases = (
    },
    {  name   => "LIT.002 doesn't match",
       query  => "update db2.tuningdetail_21_265507 inner join db1.gonzo using(g) set n.c1 = a.c1, n.w3 = a.w3",
+      advice => [],
+   },
+   {  name   => "LIT.002 doesn't match",
+      query  => "UPDATE db4.vab3concept1upload
+                 SET    vab3concept1id = '91848182522'
+                 WHERE  vab3concept1upload='6994465'",
       advice => [],
    },
 );
