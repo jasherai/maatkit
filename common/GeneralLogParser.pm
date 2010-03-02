@@ -41,13 +41,13 @@ sub new {
 
 my $genlog_line_1= qr{
    \A
-   (?:(\d{6}\s\d{1,2}:\d\d:\d\d))? # Timestamp
+   (?:(\d{6}\s{1,2}\d{1,2}:\d\d:\d\d))? # Timestamp
    \s+
-   (?:\s*(\d+))                        # Thread ID
+   (?:\s*(\d+))                         # Thread ID
    \s
-   (\w+)                               # Command
+   (\w+)                                # Command
    \s+
-   (.*)                                # Argument
+   (.*)                                 # Argument
    \Z
 }xs;
 
@@ -85,13 +85,16 @@ sub parse_event {
 
       @$pending = ();
       if ( $cmd eq 'Query' ) {
-         # There may be more lines to this query.
+         # There may be more lines to this query.  Read lines until
+         # the next id/cmd is found.  Append these lines to this
+         # event's arg, push the next id/cmd to pending.
          my $done = 0;
          do {
             $line = $next_event->();
             if ( $line ) {
-               ($ts, $thread_id, $cmd, undef) = $line =~ m/$genlog_line_1/;
-               if ( $thread_id && $cmd ) {
+               my (undef, $next_thread_id, $next_cmd)
+                  = $line =~ m/$genlog_line_1/;
+               if ( $next_thread_id && $next_cmd ) {
                   MKDEBUG && _d('Event done');
                   $done = 1;
                   push @$pending, $line;
