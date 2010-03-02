@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * General log parsing failed sometimes (issue 926).
+
 2010-03-01: version 0.9.15
 
    * --explain did not report failures.
