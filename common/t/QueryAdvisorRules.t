@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 29;
+use Test::More tests => 31;
 
 use MaatkitTest;
 use PodParser;
@@ -203,6 +203,14 @@ my @cases = (
    {  name   => '!= instead of <>',
       query  => 'select a from t where i != 2',
       advice => [qw(STA.001)],
+   },
+   {  name   => "LIT.002 doesn't match",
+      query  => "update foo.bar set biz = '91848182522'",
+      advice => [],
+   },
+   {  name   => "LIT.002 doesn't match",
+      query  => "update db2.tuningdetail_21_265507 inner join db1.gonzo using(g) set n.c1 = a.c1, n.w3 = a.w3",
+      advice => [],
    },
 );
 
