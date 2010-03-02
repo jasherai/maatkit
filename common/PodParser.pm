@@ -51,21 +51,31 @@ sub parse_section {
 
    $file ||= __FILE__;
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   
+   MKDEBUG && _d('Parsing POD section', $section, $subsection, 'from', $file);
+
    local $INPUT_RECORD_SEPARATOR = '';
    my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
    my $para;
    while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 $section/o;
+      next unless $para =~ m/^=head1 $section/;
+      MKDEBUG && _d($para);
       last;
+   }
+   if ( !$para ) {
+      MKDEBUG && _d('Did not find section', $section);
+      return;
    }
 
    if ( $subsection ) {
       while ( $para = <$fh> ) {
-         next unless $para =~ m/^=head2 $subsection/o;
+         next unless $para =~ m/^=head2 $subsection/;
          last
       }
+   }
+   if ( !$para ) {
+      MKDEBUG && _d('Did not find subsection', $subsection);
+      return;
    }
 
    my @chunks;

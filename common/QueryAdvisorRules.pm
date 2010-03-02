@@ -311,7 +311,7 @@ sub load_rule_info {
 
    # Check that rule info was gotten for each requested rule.
    foreach my $rule ( @$rules ) {
-      die "There is no info for rule $rule->{id}"
+      die "There is no info for rule $rule->{id} in $args{file}"
          unless $self->{rule_info}->{ $rule->{id} };
    }
 
