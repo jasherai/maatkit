@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 33;
+use Test::More tests => 35;
 
 use MaatkitTest;
 use PodParser;
@@ -221,6 +221,14 @@ my @cases = (
    {  name   => "LIT.002 at end of query",
       query  => "select c from t where d=20061010",
       advice => [qw(LIT.002)],
+   },
+   {  name   => "LIT.002 5 digits doesn't match",
+      query  => "select c from t where d=12345",
+      advice => [],
+   },
+   {  name   => "LIT.002 7 digits doesn't match",
+      query  => "select c from t where d=1234567",
+      advice => [],
    },
 );
 
