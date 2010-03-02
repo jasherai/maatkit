@@ -186,7 +186,7 @@ sub get_rules {
       id   => 'LIT.002',      # Date not quoted
       code => sub {
          my ( %args ) = @_;
-         return $args{query} =~ m/\b(?:\d{2,4}-\d{1,2}-\d{1,2}|\d{4,8})[^'"\d]/;
+         return $args{query} =~ m/\b(?:\d{2,4}-\d{1,2}-\d{1,2}|\d{4,8})(?:[^'"\d]|\Z)/;
       },
    },
    {

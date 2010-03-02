@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 32;
+use Test::More tests => 33;
 
 use MaatkitTest;
 use PodParser;
@@ -217,6 +217,10 @@ my @cases = (
                  SET    vab3concept1id = '91848182522'
                  WHERE  vab3concept1upload='6994465'",
       advice => [],
+   },
+   {  name   => "LIT.002 at end of query",
+      query  => "select c from t where d=20061010",
+      advice => [qw(LIT.002)],
    },
 );
 
