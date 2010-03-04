@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+   * --secondary-indexes did not work (issue 932).
+
 2010-02-01: version 1.0.15
 
    * --secondary-indexes queries did not use current database (issue 844).

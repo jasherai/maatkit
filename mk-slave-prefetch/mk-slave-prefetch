@@ -3920,6 +3920,7 @@ sub main {
             push @sql, $query;  # primary query
             if ( $o->get('secondary-indexes') ) {
                push @sql, get_secondary_index_queries(
+                  query       => $query,
                   dbh         => $tdbh,
                   MySQLDump   => $du,
                   TableParser => $tp,

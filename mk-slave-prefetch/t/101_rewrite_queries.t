@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 1;
+   plan tests => 2;
 }
 
 my $output;
@@ -43,6 +43,21 @@ select isnull(coalesce(  i=6 )) from bar where  i=3 /*tid1*/
 );
 
 # #############################################################################
+# Secondary indexes.
+# #############################################################################
+$sb->load_file('master', 'mk-slave-prefetch/t/samples/secondary_indexes.sql');
+$output = `$cmd $trunk/common/t/samples/binlogs/binlog007.txt --secondary-indexes`;
+is(
+   $output,
+"select 1 from  test2.t where a=1 /*tid1*/
+SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1 /*tid1*/
+SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1 /*tid1*/
+",
+   "Get secondary indexes"
+);
+
+# #############################################################################
 # Done.
 # #############################################################################
+$sb->wipe_clean($dbh);
 exit;
