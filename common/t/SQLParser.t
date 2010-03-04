@@ -658,20 +658,30 @@ $query = "select col from tbl
 is_deeply(
    \@subqueries,
    [
-      'select col from tbl where id=__SQ1__ and col in(__SQ0__) limit 1',
+      'select col from tbl where id=__SQ3__ and col in(__SQ2__) limit 1',
       {
-         query    => 'select a from a',
-         context  => 'list',
-         nested   => 1,
+         query   => 'select a from a',
+         context => 'list',
+         nested  => 1,
       },
       {
-         query    => 'select b from fn where id=1 and b > any(__SQ0__)',
-         context  => 'identifier',
-         nested   => 2,
+         query   => 'select b from fn where id=1 and b > any(__SQ0__)',
+         context => 'identifier',
+         nested  => 2,
+      },
+      {
+         query   => 'select foo from (__SQ1__)',
+         context => 'list',
+      },
+      {
+         query   => 'select max(id) from tbl2 where foo=\'bar\'',
+         context => 'scalar',
       },
    ],
-   'Subquery as scalar and IN()'
+   'Mutiple and nested subqueries'
 );
+print Dumper(\@subqueries);
+exit;
 
 # #############################################################################
 # Test parsing full queries.

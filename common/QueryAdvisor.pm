@@ -75,11 +75,11 @@ sub load_rule_info {
 }
 
 sub run_rules {
-   my ( $self, %args ) = @_;
+   my ( $self, $event ) = @_;
    my @matched_rules;
    my $rules = $self->{rules};
    foreach my $rule ( @$rules ) {
-      if ( $rule->{code}->(%args) ) {
+      if ( $rule->{code}->($event) ) {
          MKDEBUG && _d('Matches rule', $rule->{id});
          push @matched_rules, $rule->{id};
       }
