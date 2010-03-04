@@ -1562,7 +1562,7 @@ $ea = new EventAggregator(
    unroll_limit => 1,
 );
 eval {
-   parse_file('common/t/samples/binlog004.txt', $bp, $ea);
+   parse_file('common/t/samples/binlogs/binlog004.txt', $bp, $ea);
 };
 is(
    $EVAL_ERROR,

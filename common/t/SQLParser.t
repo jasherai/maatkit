@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 77;
+use Test::More tests => 83;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -525,6 +525,152 @@ test_parse_identifier('`db`.`tbl` AS `a`',
 
 test_parse_identifier('db.* foo',
    { name => '*', db => 'db', alias => 'foo' }
+);
+
+# #############################################################################
+# Subqueries.
+# #############################################################################
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+my $query = "DELETE FROM t1
+WHERE s11 > ANY
+(SELECT COUNT(*) /* no hint */ FROM t2 WHERE NOT EXISTS
+   (SELECT * FROM t3 WHERE ROW(5*t2.s1,77)=
+      (SELECT 50,11*s1 FROM
+         (SELECT * FROM t5) AS t5
+      )
+   )
+)";
+my @subqueries = $sp->remove_subqueries($sp->clean_query($query));
+is_deeply(
+   \@subqueries,
+   [
+      'DELETE FROM t1 WHERE s11 > ANY (__SQ3__)',
+      {
+         alias   => 't5',
+         query   => 'SELECT * FROM t5',
+         context => 'identifier',
+         nested  => 1,
+      },
+      {
+         query   => 'SELECT 50,11*s1 FROM __SQ0__',
+         context => 'scalar',
+         nested  => 2,
+      },
+      {
+         query   => 'SELECT * FROM t3 WHERE ROW(5*t2.s1,77)= __SQ1__',
+         context => 'list',
+         nested  => 3,
+      },
+      {
+         query   => 'SELECT COUNT(*)  FROM t2 WHERE NOT EXISTS (__SQ2__)',
+         context => 'list',
+      }
+   ],
+   'DELETE with nested subqueries'
+);
+
+$query = "select col from tbl
+          where id=(select max(id) from tbl2 where foo='bar') limit 1";
+@subqueries = $sp->remove_subqueries($sp->clean_query($query));
+is_deeply(
+   \@subqueries,
+   [
+      'select col from tbl where id=__SQ0__ limit 1',
+      {
+         query   => "select max(id) from tbl2 where foo='bar'",
+         context => 'scalar',
+      },
+   ],
+   'Subquery as scalar'
+);
+
+$query = "select col from tbl
+          where id=(select max(id) from tbl2 where foo='bar') and col in(select foo from tbl3) limit 1";
+@subqueries = $sp->remove_subqueries($sp->clean_query($query));
+is_deeply(
+   \@subqueries,
+   [
+      'select col from tbl where id=__SQ1__ and col in(__SQ0__) limit 1',
+      {
+         query   => "select foo from tbl3",
+         context => 'list',
+      },
+      {
+         query   => "select max(id) from tbl2 where foo='bar'",
+         context => 'scalar',
+      },
+   ],
+   'Subquery as scalar and IN()'
+);
+
+$query = "SELECT NOW() AS a1, (SELECT f1(5)) AS a2";
+@subqueries = $sp->remove_subqueries($sp->clean_query($query));
+is_deeply(
+   \@subqueries,
+   [
+      'SELECT NOW() AS a1, __SQ0__ ',
+      {
+         query   => "SELECT f1(5)",
+         alias   => 'a2',
+         context => 'identifier',
+      },
+   ],
+   'Subquery as SELECT column'
+);
+
+$query = "SELECT DISTINCT store_type FROM stores s1
+WHERE NOT EXISTS (
+SELECT * FROM cities WHERE NOT EXISTS (
+SELECT * FROM cities_stores
+WHERE cities_stores.city = cities.city
+AND cities_stores.store_type = stores.store_type))";
+@subqueries = $sp->remove_subqueries($sp->clean_query($query));
+is_deeply(
+   \@subqueries,
+   [
+      'SELECT DISTINCT store_type FROM stores s1 WHERE NOT EXISTS (__SQ1__)',
+      {
+         query   => "SELECT * FROM cities_stores WHERE cities_stores.city = cities.city AND cities_stores.store_type = stores.store_type",
+         context => 'list',
+         nested  => 1,
+      },
+      {
+         query   => "SELECT * FROM cities WHERE NOT EXISTS (__SQ0__)",
+         context => 'list',
+      },
+   ],
+   'Two nested NOT EXISTS subqueries'
+);
+
+$query = "select col from tbl
+          where id=(select max(id) from tbl2 where foo='bar')
+          and col in(select foo from
+            (select b from fn where id=1
+               and b > any(select a from a)
+            )
+         ) limit 1";
+@subqueries = $sp->remove_subqueries($sp->clean_query($query));
+is_deeply(
+   \@subqueries,
+   [
+      'select col from tbl where id=__SQ1__ and col in(__SQ0__) limit 1',
+      {
+         query    => 'select a from a',
+         context  => 'list',
+         nested   => 1,
+      },
+      {
+         query    => 'select b from fn where id=1 and b > any(__SQ0__)',
+         context  => 'identifier',
+         nested   => 2,
+      },
+   ],
+   'Subquery as scalar and IN()'
 );
 
 # #############################################################################

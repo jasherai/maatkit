@@ -248,12 +248,12 @@ my $sp = new SQLParser();
 
 foreach my $test ( @cases ) {
    my $query_struct = $sp->parse($test->{query});
-   my %args = (
-      query        => $test->{query},
+   my $event = {
+      arg          => $test->{query},
       query_struct => $query_struct,
-   );
+   };
    is_deeply(
-      [ $qa->run_rules(%args) ],
+      [ $qa->run_rules($event) ],
       [ sort @{$test->{advice}} ],
       $test->{name},
    );

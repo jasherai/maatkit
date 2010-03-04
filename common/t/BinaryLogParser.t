@@ -17,10 +17,11 @@ use MaatkitTest;
 my $p = new BinaryLogParser();
 
 my $oktorun = 1;
+my $sample  = "common/t/samples/binlogs/";
 
 test_log_parser(
    parser  => $p,
-   file    => 'common/t/samples/binlog001.txt',
+   file    => $sample."binlog001.txt",
    oktorun => sub { $oktorun = $_[0]; },
    result  => [
   {
@@ -192,7 +193,7 @@ is(
 
 test_log_parser(
    parser => $p,
-   file   => 'common/t/samples/binlog002.txt',
+   file   => $sample."binlog002.txt",
    result => [
   {
     arg => 'ROLLBACK',
@@ -270,7 +271,7 @@ test_log_parser(
 # #############################################################################
 test_log_parser(
    parser => $p,
-   file   => 'common/t/samples/binlog006.txt',
+   file   => $sample."binlog006.txt",
    result => [],
 );
 

@@ -694,7 +694,7 @@ sub ple {
    }
 }
 
-parse_binlog("$trunk/common/t/samples/binlog003.txt");
+parse_binlog("$trunk/common/t/samples/binlogs/binlog003.txt");
 # print Dumper(\@events);  # uncomment if you want to see what's going on
 
 $spf->set_window(100, 300);
