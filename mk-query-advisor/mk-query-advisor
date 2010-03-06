@@ -1041,7 +1041,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# GeneralLogParser package 5359
+# GeneralLogParser package 5902
 # ###########################################################################
 package GeneralLogParser;
 
@@ -1067,13 +1067,13 @@ sub new {
 
 my $genlog_line_1= qr{
    \A
-   (?:(\d{6}\s\d{1,2}:\d\d:\d\d))? # Timestamp
+   (?:(\d{6}\s{1,2}\d{1,2}:\d\d:\d\d))? # Timestamp
    \s+
-   (?:\s*(\d+))                        # Thread ID
+   (?:\s*(\d+))                         # Thread ID
    \s
-   (\w+)                               # Command
+   (\w+)                                # Command
    \s+
-   (.*)                                # Argument
+   (.*)                                 # Argument
    \Z
 }xs;
 
@@ -1111,8 +1111,9 @@ sub parse_event {
          do {
             $line = $next_event->();
             if ( $line ) {
-               ($ts, $thread_id, $cmd, undef) = $line =~ m/$genlog_line_1/;
-               if ( $thread_id && $cmd ) {
+               my (undef, $next_thread_id, $next_cmd)
+                  = $line =~ m/$genlog_line_1/;
+               if ( $next_thread_id && $next_cmd ) {
                   MKDEBUG && _d('Event done');
                   $done = 1;
                   push @$pending, $line;
@@ -2325,7 +2326,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 5883
+# QueryAdvisorRules package 5913
 # ###########################################################################
 package QueryAdvisorRules;
 
@@ -2367,8 +2368,8 @@ sub get_rules {
    {
       id   => 'ALI.001',      # Implicit alias
       code => sub {
-         my ( %args ) = @_;
-         my $struct = $args{query_struct};
+         my ( $event ) = @_;
+         my $struct = $event->{query_struct};
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
          foreach my $tbl ( @$tbls ) {
@@ -2385,8 +2386,8 @@ sub get_rules {
    {
       id   => 'ALI.002',      # tbl.* alias
       code => sub {
-         my ( %args ) = @_;
-         my $cols = $args{query_struct}->{columns};
+         my ( $event ) = @_;
+         my $cols = $event->{query_struct}->{columns};
          return unless $cols;
          foreach my $col ( @$cols ) {
             return 1 if $col->{db} && $col->{name } eq '*' &&  $col->{alias};
@@ -2397,8 +2398,8 @@ sub get_rules {
    {
       id   => 'ALI.003',      # tbl AS tbl
       code => sub {
-         my ( %args ) = @_;
-         my $struct = $args{query_struct};
+         my ( $event ) = @_;
+         my $struct = $event->{query_struct};
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
          foreach my $tbl ( @$tbls ) {
@@ -2415,25 +2416,25 @@ sub get_rules {
    {
       id   => 'ARG.001',      # col = '%foo'
       code => sub {
-         my ( %args ) = @_;
-         return 1 if $args{query} =~ m/[\'\"][\%\_]\w/;
+         my ( $event ) = @_;
+         return 1 if $event->{arg} =~ m/[\'\"][\%\_]\w/;
          return 0;
       },
    },
    {
       id   => 'CLA.001',      # SELECT w/o WHERE
       code => sub {
-         my ( %args ) = @_;
-         return 0 unless $args{query_struct}->{type} eq 'select';
-         return 1 unless $args{query_struct}->{where};
+         my ( $event ) = @_;
+         return 0 unless $event->{query_struct}->{type} eq 'select';
+         return 1 unless $event->{query_struct}->{where};
          return 0;
       },
    },
    {
       id   => 'CLA.002',      # ORDER BY RAND()
       code => sub {
-         my ( %args ) = @_;
-         my $orderby = $args{query_struct}->{order_by};
+         my ( $event ) = @_;
+         my $orderby = $event->{query_struct}->{order_by};
          return unless $orderby;
          foreach my $col ( @$orderby ) {
             return 1 if $col =~ m/RAND\([^\)]*\)/i;
@@ -2444,17 +2445,17 @@ sub get_rules {
    {
       id   => 'CLA.003',      # LIMIT w/ OFFSET
       code => sub {
-         my ( %args ) = @_;
-         return 0 unless $args{query_struct}->{limit};
-         return 0 unless defined $args{query_struct}->{limit}->{offset};
+         my ( $event ) = @_;
+         return 0 unless $event->{query_struct}->{limit};
+         return 0 unless defined $event->{query_struct}->{limit}->{offset};
          return 1;
       },
    },
    {
       id   => 'CLA.004',      # GROUP BY <number>
       code => sub {
-         my ( %args ) = @_;
-         my $groupby = $args{query_struct}->{group_by};
+         my ( $event ) = @_;
+         my $groupby = $event->{query_struct}->{group_by};
          return unless $groupby;
          foreach my $col ( @{$groupby->{columns}} ) {
             return 1 if $col =~ m/^\d+\b/;
@@ -2465,9 +2466,9 @@ sub get_rules {
    {
       id   => 'COL.001',      # SELECT *
       code => sub {
-         my ( %args ) = @_;
-         my $type = $args{query_struct}->{type} eq 'select';
-         my $cols = $args{query_struct}->{columns};
+         my ( $event ) = @_;
+         my $type = $event->{query_struct}->{type} eq 'select';
+         my $cols = $event->{query_struct}->{columns};
          return unless $cols;
          foreach my $col ( @$cols ) {
             return 1 if $col->{name} eq '*';
@@ -2478,40 +2479,51 @@ sub get_rules {
    {
       id   => 'COL.002',      # INSERT w/o (cols) def
       code => sub {
-         my ( %args ) = @_;
-         my $type = $args{query_struct}->{type};
+         my ( $event ) = @_;
+         my $type = $event->{query_struct}->{type};
          return 0 unless $type eq 'insert' || $type eq 'replace';
-         return 1 unless $args{query_struct}->{columns};
+         return 1 unless $event->{query_struct}->{columns};
          return 0;
       },
    },
    {
       id   => 'LIT.001',      # IP as string
       code => sub {
-         my ( %args ) = @_;
-         return $args{query} =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
+         my ( $event ) = @_;
+         return $event->{arg} =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
       },
    },
    {
       id   => 'LIT.002',      # Date not quoted
       code => sub {
-         my ( %args ) = @_;
-         return $args{query} =~ m/[^'"](?:\d{2,4}-\d{1,2}-\d{1,2}|\d{4,6})/;
+         my ( $event ) = @_;
+         return $event->{arg} =~ m/
+            \b
+            (?:
+               \d{2,4}-\d{1,2}-\d{1,2}  # YY-MM-DD, YYYY-MM-DD
+               |\d{4}                   # or YYYY
+               |\d{6}                   # or YYYYMM
+               |\d{8}                   # or YYYYMMDD
+            )
+            (?:                         # followed by
+               [^'"\d]                  # neither ', " or another digit
+               |\Z                      # or end of string
+            )/x;
       },
    },
    {
       id   => 'KWR.001',      # SQL_CALC_FOUND_ROWS
       code => sub {
-         my ( %args ) = @_;
-         return 1 if $args{query_struct}->{keywords}->{sql_calc_found_rows};
+         my ( $event ) = @_;
+         return 1 if $event->{query_struct}->{keywords}->{sql_calc_found_rows};
          return 0;
       },
    },
    {
       id   => 'JOI.001',      # comma and ansi joins
       code => sub {
-         my ( %args ) = @_;
-         my $struct = $args{query_struct};
+         my ( $event ) = @_;
+         my $struct = $event->{query_struct};
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
          my $comma_join = 0;
@@ -2533,15 +2545,15 @@ sub get_rules {
    {
       id   => 'RES.001',      # non-deterministic GROUP BY
       code => sub {
-         my ( %args ) = @_;
-         return unless $args{query_struct}->{type} eq 'select';
-         my $groupby = $args{query_struct}->{group_by};
+         my ( $event ) = @_;
+         return unless $event->{query_struct}->{type} eq 'select';
+         my $groupby = $event->{query_struct}->{group_by};
          return unless $groupby;
          my %groupby_col = map { $_ => 1 }
                            grep { m/^[^\d]+\b/ }
                            @{$groupby->{columns}};
          return unless scalar %groupby_col;
-         my $cols = $args{query_struct}->{columns};
+         my $cols = $event->{query_struct}->{columns};
          foreach my $col ( @$cols ) {
             return 1 unless $groupby_col{ $col->{name} };
          }
@@ -2551,17 +2563,17 @@ sub get_rules {
    {
       id   => 'RES.002',      # non-deterministic LIMIT w/o ORDER BY
       code => sub {
-         my ( %args ) = @_;
-         return 0 unless $args{query_struct}->{limit};
-         return 1 unless $args{query_struct}->{order_by};
+         my ( $event ) = @_;
+         return 0 unless $event->{query_struct}->{limit};
+         return 1 unless $event->{query_struct}->{order_by};
          return 0;
       },
    },
    {
       id   => 'STA.001',      # != instead of <>
       code => sub {
-         my ( %args ) = @_;
-         return 1 if $args{query} =~ m/!=/;
+         my ( $event ) = @_;
+         return 1 if $event->{arg} =~ m/!=/;
          return 0;
       },
    },
@@ -2605,7 +2617,7 @@ sub load_rule_info {
    );
 
    foreach my $rule ( @$rules ) {
-      die "There is no info for rule $rule->{id}"
+      die "There is no info for rule $rule->{id} in $args{file}"
          unless $self->{rule_info}->{ $rule->{id} };
    }
 
@@ -2668,7 +2680,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisor package 5845
+# QueryAdvisor package 5913
 # ###########################################################################
 package QueryAdvisor;
 
@@ -2728,11 +2740,11 @@ sub load_rule_info {
 }
 
 sub run_rules {
-   my ( $self, %args ) = @_;
+   my ( $self, $event ) = @_;
    my @matched_rules;
    my $rules = $self->{rules};
    foreach my $rule ( @$rules ) {
-      if ( $rule->{code}->(%args) ) {
+      if ( $rule->{code}->($event) ) {
          MKDEBUG && _d('Matches rule', $rule->{id});
          push @matched_rules, $rule->{id};
       }
@@ -2761,7 +2773,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# PodParser package 5849
+# PodParser package 5904
 # ###########################################################################
 package PodParser;
 
@@ -2789,21 +2801,31 @@ sub parse_section {
 
    $file ||= __FILE__;
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   
+   MKDEBUG && _d('Parsing POD section', $section, $subsection, 'from', $file);
+
    local $INPUT_RECORD_SEPARATOR = '';
    my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
    my $para;
    while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 $section/o;
+      next unless $para =~ m/^=head1 $section/;
+      MKDEBUG && _d($para);
       last;
+   }
+   if ( !$para ) {
+      MKDEBUG && _d('Did not find section', $section);
+      return;
    }
 
    if ( $subsection ) {
       while ( $para = <$fh> ) {
-         next unless $para =~ m/^=head2 $subsection/o;
+         next unless $para =~ m/^=head2 $subsection/;
          last
       }
+   }
+   if ( !$para ) {
+      MKDEBUG && _d('Did not find subsection', $subsection);
+      return;
    }
 
    my @chunks;
@@ -2837,7 +2859,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLParser package 5882
+# SQLParser package 5914
 # ###########################################################################
 package SQLParser;
 
@@ -2886,6 +2908,13 @@ sub parse {
       return;
    }
 
+   my @subqueries;
+   if ( $query =~ m/(\(SELECT )/i ) {
+      MKDEBUG && _d('Removing subqueries');
+      @subqueries = $self->remove_subqueries($query);
+      $query      = shift @subqueries;
+   }
+
    my $parse_func = "parse_$type";
    my $struct     = $self->$parse_func($query);
    if ( !$struct ) {
@@ -2894,6 +2923,15 @@ sub parse {
    }
    $struct->{type} = $type;
    $self->_parse_clauses($struct);
+
+   if ( @subqueries ) {
+      MKDEBUG && _d('Parsing subqueries');
+      foreach my $subquery ( @subqueries ) {
+         my $subquery_struct = $self->parse($subquery->{query});
+         @{$subquery_struct}{keys %$subquery} = values %$subquery;
+         push @{$struct->{subqueries}}, $subquery_struct;
+      }
+   }
 
    MKDEBUG && _d('Query struct:', Dumper($struct));
    return $struct;
@@ -2933,6 +2971,8 @@ sub clean_query {
    $query =~ s/\b(VALUE(?:S)?)\(/$1 (/i;
    $query =~ s/\bON\(/on (/gi;
    $query =~ s/\bUSING\(/using (/gi;
+
+   $query =~ s/\(\s+SELECT\s+/(SELECT /gi;
 
    return $query;
 }
@@ -3315,6 +3355,86 @@ sub parse_group_by {
    return $struct;
 }
 
+sub remove_subqueries {
+   my ( $self, $query ) = @_;
+
+   my @start_pos;
+   while ( $query =~ m/(\(SELECT )/gi ) {
+      my $pos = (pos $query) - (length $1);
+      push @start_pos, $pos;
+   }
+
+   @start_pos = reverse @start_pos;
+   my @end_pos;
+   for my $i ( 0..$#start_pos ) {
+      my $closed = 0;
+      pos $query = $start_pos[$i];
+      while ( $query =~ m/([\(\)])/cg ) {
+         my $c = $1;
+         $closed += ($c eq '(' ? 1 : -1);
+         last unless $closed;
+      }
+      push @end_pos, pos $query;
+   }
+
+   my @subqueries;
+   my $len_adj = 0;
+   my $n    = 0;
+   for my $i ( 0..$#start_pos ) {
+      MKDEBUG && _d('Query:', $query);
+      my $offset = $start_pos[$i];
+      my $len    = $end_pos[$i] - $start_pos[$i] - $len_adj;
+      MKDEBUG && _d("Subquery $n start", $start_pos[$i],
+            'orig end', $end_pos[$i], 'adj', $len_adj, 'adj end',
+            $offset + $len, 'len', $len);
+
+      my $struct   = {};
+      my $token    = '__SQ' . $n . '__';
+      my $subquery = substr($query, $offset, $len, $token);
+      MKDEBUG && _d("Subquery $n:", $subquery);
+
+      my $outer_start = $start_pos[$i + 1];
+      my $outer_end   = $end_pos[$i + 1];
+      if (    $outer_start && ($outer_start < $start_pos[$i])
+           && $outer_end   && ($outer_end   > $end_pos[$i]) ) {
+         MKDEBUG && _d("Subquery $n nested in next subquery");
+         $len_adj += $len - length $token;
+         $struct->{nested} = $i + 1;
+      }
+      else {
+         MKDEBUG && _d("Subquery $n not nested");
+         $len_adj = 0;
+         if ( $subqueries[-1] && $subqueries[-1]->{nested} ) {
+            MKDEBUG && _d("Outermost subquery");
+         }
+      }
+
+      if ( $query =~ m/(?:=|>|<|>=|<=|<>|!=|<=>)\s*$token/ ) {
+         $struct->{context} = 'scalar';
+      }
+      elsif ( $query =~ m/\b(?:IN|ANY|SOME|ALL|EXISTS)\s*$token/i ) {
+         if ( $query !~ m/\($token\)/ ) {
+            $query =~ s/$token/\($token\)/;
+            $len_adj -= 2 if $struct->{nested};
+         }
+         $struct->{context} = 'list';
+      }
+      else {
+         $struct->{context} = 'identifier';
+      }
+      MKDEBUG && _d("Subquery $n context:", $struct->{context});
+
+      $subquery =~ s/^\s*\(//;
+      $subquery =~ s/\s*\)\s*$//;
+
+      $struct->{query} = $subquery;
+      push @subqueries, $struct;
+      $n++;
+   }
+
+   return $query, @subqueries;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -3482,12 +3602,17 @@ sub main {
       my ( %args ) = @_;
       MKDEBUG && _d('callback: parse query');
       my $event        = $args{event};
-      my $query_struct = $sp->parse($event->{arg});
-      if ( !$query_struct ) {
+      my $query_struct;
+      eval {
+         $query_struct = $sp->parse($event->{arg});
+         if ( !$query_struct ) {
+            MKDEBUG && _d('Failed to parse query struct');
+         }
+         $event->{query_struct} = $query_struct;
+      };
+      if ( $EVAL_ERROR ) {
          MKDEBUG && _d('Failed to parse query struct');
-         return;
-      }
-      $event->{query_struct} = $query_struct;
+      } 
       return $event;
    };
 
@@ -3497,10 +3622,7 @@ sub main {
       MKDEBUG && _d('callback: check query');
       my $event  = $args{event};
       MKDEBUG && _d('Checking', $event->{arg});
-      my @advice = $qa->run_rules(
-         query        => $event->{arg},
-         query_struct => $event->{query_struct},
-      );
+      my @advice = $qa->run_rules($event);
       $event->{advice} =  \@advice;
       return $event;
    };
