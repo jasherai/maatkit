@@ -85,6 +85,15 @@ sub parse {
       return;
    }
 
+   # If query has any subqueries, remove/save them and replace them.
+   # They'll be parsed later, after the main outer query.
+   my @subqueries;
+   if ( $query =~ m/(\(SELECT )/i ) {
+      MKDEBUG && _d('Removing subqueries');
+      @subqueries = $self->remove_subqueries($query);
+      $query      = shift @subqueries;
+   }
+
    # Parse raw text parts from query.  The parse_TYPE subs only do half
    # the work: parsing raw text parts of clauses, tables, functions, etc.
    # Since these parts are invariant (e.g. a LIMIT clause is same for any
@@ -99,6 +108,15 @@ sub parse {
    $struct->{type} = $type;
    $self->_parse_clauses($struct);
    # TODO: parse functions
+
+   if ( @subqueries ) {
+      MKDEBUG && _d('Parsing subqueries');
+      foreach my $subquery ( @subqueries ) {
+         my $subquery_struct = $self->parse($subquery->{query});
+         @{$subquery_struct}{keys %$subquery} = values %$subquery;
+         push @{$struct->{subqueries}}, $subquery_struct;
+      }
+   }
 
    MKDEBUG && _d('Query struct:', Dumper($struct));
    return $struct;
@@ -614,25 +632,35 @@ sub parse_group_by {
 }
 
 # Remove subqueries from query, return modified query and list of subqueries.
-# Each subquery is replaced with the special identifier __SQn_ where n is the
-# subquery's ID.  The inner-most subquery is ID 0.  Each subquery ID corresponds
-# to its index in the list of returned subquery hashrefs after the modified
-# query.  So __SQ2__ is subqueries[2].  Each hashref has a query key with text
-# of subquery and, optionally, an alias key if the subquery is in a FROM clause
-# and aliased. 
+# Each subquery is replaced with the special token __SQn__ where n is the
+# subquery's ID.  Subqueries are parsed and removed in to out, last to first;
+# i.e. the last, inner-most subquery is ID 0 and the first, outermost
+# subquery has the greatest ID.  Each subquery ID corresponds to its index in
+# the list of returned subquery hashrefs after the modified query.  __SQ2__
+# is subqueries[2].  Each hashref is like:
+#   * query    Subquery text
+#   * context  scalar, list or identifier
+#   * nested   (optional) 1 if nested
+# This sub does not handle UNION and it expects to that subqueries start
+# with "(SELECT ".  See SQLParser.t for examples.
 sub remove_subqueries {
    my ( $self, $query ) = @_;
 
+   # Find starting pos of all subqueries.
    my @start_pos;
-   while ( $query =~ m/((?:\(|UNION )SELECT )/gi ) {
+   while ( $query =~ m/(\(SELECT )/gi ) {
       my $pos = (pos $query) - (length $1);
       push @start_pos, $pos;
    }
 
+   # Starting with the inner-most, last subquery, find ending pos of
+   # all subqueries.  This is done by counting open and close parentheses
+   # until all are closed.  The last closing ) should close the ( that
+   # opened the subquery.  No sane regex can help us here for cases like:
+   # (select max(id) from t where col in(1,2,3) and foo='(bar)').
+   @start_pos = reverse @start_pos;
    my @end_pos;
-   my $i = 0;
-   for ( 0..$#start_pos ) {
-      $i--;
+   for my $i ( 0..$#start_pos ) {
       my $closed = 0;
       pos $query = $start_pos[$i];
       while ( $query =~ m/([\(\)])/cg ) {
@@ -642,38 +670,39 @@ sub remove_subqueries {
       }
       push @end_pos, pos $query;
    }
-   @start_pos = reverse @start_pos;
 
+   # Replace each subquery with a __SQn__ token.
    my @subqueries;
    my $len_adj = 0;
-   my $sqid    = 0;
+   my $n    = 0;
    for my $i ( 0..$#start_pos ) {
       MKDEBUG && _d('Query:', $query);
       my $offset = $start_pos[$i];
-      my $len    = $end_pos[$i] - $len_adj - $start_pos[$i];
-      MKDEBUG && _d("Subquery $sqid start", $start_pos[$i],
+      my $len    = $end_pos[$i] - $start_pos[$i] - $len_adj;
+      MKDEBUG && _d("Subquery $n start", $start_pos[$i],
             'orig end', $end_pos[$i], 'adj', $len_adj, 'adj end',
             $offset + $len, 'len', $len);
 
-      my $sq       = '__SQ' . $sqid . '__';
       my $struct   = {};
-      my $subquery = substr($query, $offset, $len, $sq);
-      MKDEBUG && _d("Subquery $sqid:", $subquery);
+      my $token    = '__SQ' . $n . '__';
+      my $subquery = substr($query, $offset, $len, $token);
+      MKDEBUG && _d("Subquery $n:", $subquery);
 
       # Adjust len for next outer subquery.  This is required because the
       # subqueries' start/end pos are found relative to one another, so
-      # when a subquery is replaced with its shorter __SQn__ identifier
-      # the end pos for the other subqueries decreases.
+      # when a subquery is replaced with its shorter __SQn__ token the end
+      # pos for the other subqueries decreases.  The token is shorter than
+      # any valid subquery so the end pos should only decrease.
       my $outer_start = $start_pos[$i + 1];
       my $outer_end   = $end_pos[$i + 1];
       if (    $outer_start && ($outer_start < $start_pos[$i])
            && $outer_end   && ($outer_end   > $end_pos[$i]) ) {
-         MKDEBUG && _d("Subquery $sqid nested in next subquery");
-         $len_adj += ($len - (length $sq)) - 1;
+         MKDEBUG && _d("Subquery $n nested in next subquery");
+         $len_adj += $len - length $token;
          $struct->{nested} = $i + 1;
       }
       else {
-         MKDEBUG && _d("Subquery $sqid not nested");
+         MKDEBUG && _d("Subquery $n not nested");
          $len_adj = 0;
          if ( $subqueries[-1] && $subqueries[-1]->{nested} ) {
             MKDEBUG && _d("Outermost subquery");
@@ -681,19 +710,15 @@ sub remove_subqueries {
       }
 
       # Get subquery context: scalar, list or identifier.
-      if ( $query =~ m/(?:=|>|<|>=|<=|<>|!=|<=>)\s*$sq/i ) {
+      if ( $query =~ m/(?:=|>|<|>=|<=|<>|!=|<=>)\s*$token/ ) {
          $struct->{context} = 'scalar';
       }
-      elsif ( $query =~ m/(?:IN|ANY|SOME|ALL|EXISTS)\s*$sq/i ) {
+      elsif ( $query =~ m/\b(?:IN|ANY|SOME|ALL|EXISTS)\s*$token/i ) {
          # Add ( ) around __SQn__ for things like "IN(__SQn__)"
          # unless they're already there.
-         if ( $query !~ m/\($sq\)/ ) {
-            $query =~ s/$sq/\($sq\)/;
-            if ( $struct->{nested } ) {
-               MKDEBUG && _d('was', $len_adj);
-               $len_adj -= 2;
-               MKDEBUG && _d('now', $len_adj);
-            }
+         if ( $query !~ m/\($token\)/ ) {
+            $query =~ s/$token/\($token\)/;
+            $len_adj -= 2 if $struct->{nested};
          }
          $struct->{context} = 'list';
       }
@@ -702,21 +727,17 @@ sub remove_subqueries {
          # or IN(), EXISTS(), etc. then it should be an indentifier,
          # either a derived table or column.
          $struct->{context} = 'identifier';
-         if ( $query =~ s/$sq(\s+(?:AS\s+)?([\w`]+)(?:\s+|\Z))/$sq /i ) {
-            MKDEBUG && _d('Alias:', $2, $1);
-            $struct->{alias} = $2;
-            $len_adj += length $1;
-         }
       }
-      MKDEBUG && _d("Subquery $sqid context:", $struct->{context});
+      MKDEBUG && _d("Subquery $n context:", $struct->{context});
 
-      $subquery =~ s/^\s*\(//;     # Remove leading (
-      $subquery =~ s/\s*\)\s*$//;  # Remove any trailing )
+      # Remove ( ) around subquery so it can be parsed by a parse_TYPE sub.
+      $subquery =~ s/^\s*\(//;
+      $subquery =~ s/\s*\)\s*$//;
 
       # Save subquery to struct after modifications above.
       $struct->{query} = $subquery;
       push @subqueries, $struct;
-      $sqid++;
+      $n++;
    }
 
    return $query, @subqueries;

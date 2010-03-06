@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 83;
+use Test::More tests => 86;
 use English qw(-no_match_vars);
 
 use MaatkitTest;
@@ -531,11 +531,6 @@ test_parse_identifier('db.* foo',
 # Subqueries.
 # #############################################################################
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
 my $query = "DELETE FROM t1
 WHERE s11 > ANY
 (SELECT COUNT(*) /* no hint */ FROM t2 WHERE NOT EXISTS
@@ -551,13 +546,12 @@ is_deeply(
    [
       'DELETE FROM t1 WHERE s11 > ANY (__SQ3__)',
       {
-         alias   => 't5',
          query   => 'SELECT * FROM t5',
          context => 'identifier',
          nested  => 1,
       },
       {
-         query   => 'SELECT 50,11*s1 FROM __SQ0__',
+         query   => 'SELECT 50,11*s1 FROM __SQ0__ AS t5',
          context => 'scalar',
          nested  => 2,
       },
@@ -613,10 +607,9 @@ $query = "SELECT NOW() AS a1, (SELECT f1(5)) AS a2";
 is_deeply(
    \@subqueries,
    [
-      'SELECT NOW() AS a1, __SQ0__ ',
+      'SELECT NOW() AS a1, __SQ0__ AS a2',
       {
          query   => "SELECT f1(5)",
-         alias   => 'a2',
          context => 'identifier',
       },
    ],
@@ -670,7 +663,7 @@ is_deeply(
          nested  => 2,
       },
       {
-         query   => 'select foo from (__SQ1__)',
+         query   => 'select foo from __SQ1__',
          context => 'list',
       },
       {
@@ -680,8 +673,20 @@ is_deeply(
    ],
    'Mutiple and nested subqueries'
 );
-print Dumper(\@subqueries);
-exit;
+
+$query = "select (select now()) from universe";
+@subqueries = $sp->remove_subqueries($sp->clean_query($query));
+is_deeply(
+   \@subqueries,
+   [
+      'select __SQ0__ from universe',
+      {
+         query   => 'select now()',
+         context => 'identifier',
+      },
+   ],
+   'Subquery as non-aliased column identifier'
+);
 
 # #############################################################################
 # Test parsing full queries.
@@ -1135,6 +1140,153 @@ my @cases = (
          from     => [ { name => 'tbl' } ],
          where    => 'ip="127.0.0.1"',
          unknown  => undef,
+      },
+   },
+   { name    => 'SELECT with simple subquery',
+     query   => 'select * from t where id in(select col from t2) where i=1',
+     struct  => {
+         type    => 'select',
+         clauses => { 
+            columns => '* ',
+            from    => 't ',
+            where   => 'i=1',
+         },
+         columns    => [ { name => '*' } ],
+         from       => [ { name => 't' } ],
+         where      => 'i=1',
+         unknown    => undef,
+         subqueries => [
+            {
+               query   => 'select col from t2',
+               context => 'list',
+               type    => 'select',
+               clauses => { 
+                  columns => 'col ',
+                  from    => 't2',
+               },
+               columns    => [ { name => 'col' } ],
+               from       => [ { name => 't2' } ],
+               unknown    => undef,
+            },
+         ],
+      },
+   },
+   { name    => 'Complex SELECT, multiple JOIN and subqueries',
+     query   => 'select now(), (select foo from bar where id=1)
+                 from t1, t2 join (select * from sqt1) as t3 using (`select`)
+                 join t4 on t4.id=t3.id 
+                 where c1 > any(select col2 as z from sqt2 zz
+                    where sqtc<(select max(col) from l where col<100))
+                 and s in ("select", "tricky") or s <> "select"
+                 group by 1 limit 10',
+      struct => {
+         type       => 'select',
+         clauses    => { 
+            columns  => 'now(), __SQ3__ ',
+            from     => 't1, t2 join __SQ2__ as t3 using (`select`) join t4 on t4.id=t3.id ',
+            where    => 'c1 > any(__SQ1__) and s in ("select", "tricky") or s <> "select" ',
+            group_by => '1 ',
+            limit    => '10',
+         },
+         columns    => [ { name => 'now()' }, { name => '__SQ3__' } ],
+         from       => [
+            {
+               name => 't1',
+            },
+            {
+               name => 't2',
+               join => {
+                  to   => 't1',
+                  ansi => 0,
+                  type => 'inner',
+               },
+            },
+            {
+               name  => '__SQ2__',
+               alias => 't3',
+               explicit_alias => 1,
+               join  => {
+                  to   => 't2',
+                  ansi => 1,
+                  type => '',
+                  predicates => '(`select`) ',
+                  condition  => 'using',
+               },
+            },
+            {
+               name => 't4',
+               join => {
+                  to   => '__SQ2__',
+                  ansi => 1,
+                  type => '',
+                  predicates => 't4.id=t3.id  ',
+                  condition  => 'on',
+               },
+            },
+         ],
+         where      => 'c1 > any(__SQ1__) and s in ("select", "tricky") or s <> "select" ',
+         limit      => { row_count => 10 },
+         group_by   => { columns => ['1'], },
+         unknown    => undef,
+         subqueries => [
+            {
+               clauses => {
+                  columns => 'max(col) ',
+                  from    => 'l ',
+                  where   => 'col<100'
+               },
+               columns => [ { name => 'max(col)' } ],
+               context => 'scalar',
+               from    => [ { name => 'l' } ],
+               nested  => 1,
+               query   => 'select max(col) from l where col<100',
+               type    => 'select',
+               unknown => undef,
+               where   => 'col<100'
+            },
+            {
+               clauses  => {
+                  columns => 'col2 as z ',
+                  from    => 'sqt2 zz ',
+                  where   => 'sqtc<__SQ0__'
+               },
+               columns => [
+                  { alias => 'z', explicit_alias => 1, name => 'col2' }
+               ],
+               context  => 'list',
+               from     => [ { alias => 'zz', name => 'sqt2' } ],
+               query    => 'select col2 as z from sqt2 zz where sqtc<__SQ0__',
+               type     => 'select',
+               unknown  => undef,
+               where    => 'sqtc<__SQ0__'
+            },
+            {
+               clauses  => {
+                  columns => '* ',
+                  from    => 'sqt1'
+               },
+               columns  => [ { name => '*' } ],
+               context  => 'identifier',
+               from     => [ { name => 'sqt1' } ],
+               query    => 'select * from sqt1',
+               type     => 'select',
+               unknown  => undef
+            },
+            {
+               clauses  => {
+               columns  => 'foo ',
+                  from  => 'bar ',
+                  where => 'id=1'
+               },
+               columns  => [ { name => 'foo' } ],
+               context  => 'identifier',
+               from     => [ { name => 'bar' } ],
+               query    => 'select foo from bar where id=1',
+               type     => 'select',
+               unknown  => undef,
+               where    => 'id=1'
+            },
+         ],
       },
    },
 
