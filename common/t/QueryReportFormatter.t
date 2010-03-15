@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 18;
+use Test::More tests => 21;
 
 use Transformers;
 use QueryReportFormatter;
@@ -687,6 +687,97 @@ $result = $qrf->global_report(
 );
 
 is($result, $expected, 'No string attribs in global report (issue 478)');
+
+# #############################################################################
+# Issue 744: Option to show all Hosts
+# #############################################################################
+
+# Don't shorten IP addresses.
+$events = [
+   {
+      cmd        => 'Query',
+      arg        => "foo",
+      Query_time => '8.000652',
+      host       => '123.123.123.456',
+   },
+   {
+      cmd        => 'Query',
+      arg        => "foo",
+      Query_time => '8.000652',
+      host       => '123.123.123.789',
+   },
+];
+$expected = <<EOF;
+# Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       2
+# Exec time    100     16s      8s      8s      8s      8s       0      8s
+# Hosts                  2 123.123.123.456 (1), 123.123.123.789 (1)
+EOF
+
+$ea  = new EventAggregator(
+   groupby => 'arg',
+   worst   => 'Query_time',
+   ignore_attributes => [qw(arg cmd)],
+);
+foreach my $event (@$events) {
+   $ea->aggregate($event);
+}
+$result = $qrf->event_report(
+   $ea,
+   select => [ qw(Query_time host) ],
+   where   => 'foo',
+   rank    => 1,
+   worst   => 'Query_time',
+);
+
+is($result, $expected, "IPs not shortened");
+
+# Add another event so we get "... N more" to make sure that IPs
+# are still not shortened.
+push @$events, 
+   {
+      cmd        => 'Query',
+      arg        => "foo",
+      Query_time => '8.000652',
+      host       => '123.123.123.999',
+   };
+$ea->aggregate($events->[-1]);
+$result = $qrf->event_report(
+   $ea,
+   select => [ qw(Query_time host) ],
+   where   => 'foo',
+   rank    => 1,
+   worst   => 'Query_time',
+);
+
+$expected = <<EOF;
+# Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       3
+# Exec time    100     24s      8s      8s      8s      8s       0      8s
+# Hosts                  3 123.123.123.456 (1), 123.123.123.789 (1)... 1 more
+EOF
+is($result, $expected, "IPs not shortened with more");
+
+# Test show_all.
+$result = $qrf->event_report(
+   $ea,
+   select   => [ qw(Query_time host) ],
+   where    => 'foo',
+   rank     => 1,
+   worst    => 'Query_time',
+   show_all => { host=>1 },
+);
+
+$expected = <<EOF;
+# Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       3
+# Exec time    100     24s      8s      8s      8s      8s       0      8s
+# Hosts                  3 123.123.123.456 (1), 123.123.123.789 (1), 123.123.123.999 (1)
+EOF
+is($result, $expected, "Show all hosts");
 
 # #############################################################################
 # Done.

@@ -176,6 +176,7 @@ sub global_report {
 #  * rank         The (optional) rank of the query, for the header
 #  * worst        The --orderby attribute
 #  * reason       Why this one is being reported on: top|outlier
+#  * show_all     (optional) Show all vals for these (string) attribs
 # TODO: it would be good to start using $ea->metrics() here for simplicity and
 # uniform code.
 sub event_report {
@@ -262,7 +263,7 @@ sub event_report {
          }
          elsif ( $attrib_type eq 'string' ) {
             push @values,
-               format_string_list($vals),
+               format_string_list($vals, $opts{show_all}->{$attrib}),
                (map { '' } 0..9); # just for good measure
             $pct = '';
          }
@@ -375,7 +376,7 @@ sub format_bool_attrib {
 
 # Does pretty-printing for lists of strings like users, hosts, db.
 sub format_string_list {
-   my ( $stats ) = @_;
+   my ( $stats, $show_all ) = @_;
    if ( exists $stats->{unq} ) {
       # Only class stats have unq.
       my $cnt_for = $stats->{unq};
@@ -392,13 +393,18 @@ sub format_string_list {
       my $i = 0;
       foreach my $str ( @top ) {
          my $print_str;
-         if ( length $str > MAX_STRING_LENGTH ) {
+         if ( $str =~ m/(?:\d+\.){3}\d+/ ) {
+            $print_str = $str;  # Do not shorten IP addresses.
+         }
+         elsif ( length $str > MAX_STRING_LENGTH ) {
             $print_str = substr($str, 0, MAX_STRING_LENGTH) . '...';
          }
          else {
             $print_str = $str;
          }
-         last if (length $line) + (length $print_str)  > LINE_LENGTH - 27;
+         if ( !$show_all ) {
+            last if (length $line) + (length $print_str)  > LINE_LENGTH - 27;
+         }
          $line .= "$print_str ($cnt_for->{$str}), ";
          $i++;
       }
