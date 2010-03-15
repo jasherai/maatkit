@@ -120,7 +120,7 @@ sub get_rules {
       id   => 'CLA.001',      # SELECT w/o WHERE
       code => sub {
          my ( $event ) = @_;
-         return 0 unless $event->{query_struct}->{type} eq 'select';
+         return 0 unless ($event->{query_struct}->{type} || '') eq 'select';
          return 1 unless $event->{query_struct}->{where};
          return 0;
       },
@@ -162,7 +162,7 @@ sub get_rules {
       id   => 'COL.001',      # SELECT *
       code => sub {
          my ( $event ) = @_;
-         my $type = $event->{query_struct}->{type} eq 'select';
+         return 0 unless ($event->{query_struct}->{type} || '') eq 'select';
          my $cols = $event->{query_struct}->{columns};
          return unless $cols;
          foreach my $col ( @$cols ) {
@@ -175,7 +175,7 @@ sub get_rules {
       id   => 'COL.002',      # INSERT w/o (cols) def
       code => sub {
          my ( $event ) = @_;
-         my $type = $event->{query_struct}->{type};
+         my $type = $event->{query_struct}->{type} || '';
          return 0 unless $type eq 'insert' || $type eq 'replace';
          return 1 unless $event->{query_struct}->{columns};
          return 0;
