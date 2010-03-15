@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Stopped caching SHOW CREATE TABLE info.
+
 2010-03-01: version 1.2.11
 
    * Duplicate clustered index names were not preserved (issue 901).

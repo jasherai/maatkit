@@ -3260,7 +3260,7 @@ sub main {
 
    my $ks = $o->get('summary') ? new KeySize(q=>$q) : undef;
    my $dk = new DuplicateKeyFinder();
-   my $du = new MySQLDump();
+   my $du = new MySQLDump(cache => 0);
 
    my %tp_opts = (
       ignore_type  => $o->get('all-structs'),
