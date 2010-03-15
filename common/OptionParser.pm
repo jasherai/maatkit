@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -516,7 +516,14 @@ sub get_opts {
       }
    }
 
-   foreach my $long ( keys %{$self->{opts}} ) {
+   $self->_check_opts( keys %{$self->{opts}} );
+   $self->{got_opts} = 1;
+   return;
+}
+
+sub _check_opts {
+   my ( $self, @long ) = @_;
+   foreach my $long ( @long ) {
       my $opt = $self->{opts}->{$long};
       if ( $opt->{got} ) {
          # Rule: opt disables other opts.
@@ -574,7 +581,6 @@ sub get_opts {
       $self->_validate_type($opt);
    }
 
-   $self->{got_opts} = 1;
    return;
 }
 
