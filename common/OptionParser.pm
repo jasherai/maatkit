@@ -523,62 +523,76 @@ sub get_opts {
 
 sub _check_opts {
    my ( $self, @long ) = @_;
-   foreach my $long ( @long ) {
-      my $opt = $self->{opts}->{$long};
-      if ( $opt->{got} ) {
-         # Rule: opt disables other opts.
-         if ( exists $self->{disables}->{$long} ) {
-            my @disable_opts = @{$self->{disables}->{$long}};
-            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
-            MKDEBUG && _d('Unset options', @disable_opts,
-               'because', $long,'disables them');
-         }
+   my $long_last = scalar @long;
+   while ( @long ) {
+      foreach my $i ( 0..$#long ) {
+         my $long = $long[$i];
+         my $opt  = $self->{opts}->{$long};
+         if ( $opt->{got} ) {
+            # Rule: opt disables other opts.
+            if ( exists $self->{disables}->{$long} ) {
+               my @disable_opts = @{$self->{disables}->{$long}};
+               map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
+               MKDEBUG && _d('Unset options', @disable_opts,
+                  'because', $long,'disables them');
+            }
 
-         # Group restrictions.
-         if ( exists $self->{allowed_groups}->{$long} ) {
-            # This option is only allowed with other options from
-            # certain groups.  Check that no options from restricted
-            # groups were gotten.
+            # Group restrictions.
+            if ( exists $self->{allowed_groups}->{$long} ) {
+               # This option is only allowed with other options from
+               # certain groups.  Check that no options from restricted
+               # groups were gotten.
 
-            my @restricted_groups = grep {
-               !exists $self->{allowed_groups}->{$long}->{$_}
-            } keys %{$self->{groups}};
+               my @restricted_groups = grep {
+                  !exists $self->{allowed_groups}->{$long}->{$_}
+               } keys %{$self->{groups}};
 
-            my @restricted_opts;
-            foreach my $restricted_group ( @restricted_groups ) {
-               RESTRICTED_OPT:
-               foreach my $restricted_opt (
-                  keys %{$self->{groups}->{$restricted_group}} )
-               {
-                  next RESTRICTED_OPT if $restricted_opt eq $long;
-                  push @restricted_opts, $restricted_opt
-                     if $self->{opts}->{$restricted_opt}->{got};
+               my @restricted_opts;
+               foreach my $restricted_group ( @restricted_groups ) {
+                  RESTRICTED_OPT:
+                  foreach my $restricted_opt (
+                     keys %{$self->{groups}->{$restricted_group}} )
+                  {
+                     next RESTRICTED_OPT if $restricted_opt eq $long;
+                     push @restricted_opts, $restricted_opt
+                        if $self->{opts}->{$restricted_opt}->{got};
+                  }
+               }
+
+               if ( @restricted_opts ) {
+                  my $err;
+                  if ( @restricted_opts == 1 ) {
+                     $err = "--$restricted_opts[0]";
+                  }
+                  else {
+                     $err = join(', ',
+                               map { "--$self->{opts}->{$_}->{long}" }
+                               grep { $_ } 
+                               @restricted_opts[0..scalar(@restricted_opts) - 2]
+                            )
+                          . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+                  }
+                  $self->save_error("--$long is not allowed with $err");
                }
             }
 
-            if ( @restricted_opts ) {
-               my $err;
-               if ( @restricted_opts == 1 ) {
-                  $err = "--$restricted_opts[0]";
-               }
-               else {
-                  $err = join(', ',
-                            map { "--$self->{opts}->{$_}->{long}" }
-                            grep { $_ } 
-                            @restricted_opts[0..scalar(@restricted_opts) - 2]
-                         )
-                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
-               }
-               $self->save_error("--$long is not allowed with $err");
-            }
+         }
+         elsif ( $opt->{is_required} ) { 
+            $self->save_error("Required option --$long must be specified");
          }
 
-      }
-      elsif ( $opt->{is_required} ) { 
-         $self->save_error("Required option --$long must be specified");
+         $self->_validate_type($opt);
+         if ( $opt->{parsed} ) {
+            delete $long[$i];
+         }
+         else {
+            MKDEBUG && _d('Temporarily failed to parse', $long);
+         }
       }
 
-      $self->_validate_type($opt);
+      die "Failed to parse options, possibly due to circular dependencies"
+         if @long == $long_last;
+      $long_last = @long;
    }
 
    return;
@@ -586,7 +600,14 @@ sub _check_opts {
 
 sub _validate_type {
    my ( $self, $opt ) = @_;
-   return unless $opt && $opt->{type};
+   return unless $opt;
+
+   if ( !$opt->{type} ) {
+      # Magic opts like --help and --version.
+      $opt->{parsed} = 1;
+      return;
+   }
+
    my $val = $opt->{value};
 
    if ( $val && $opt->{type} eq 'm' ) {  # type time
@@ -620,7 +641,14 @@ sub _validate_type {
       my $from_key = $self->{defaults_to}->{ $opt->{long} };
       if ( $from_key ) {
          MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
-         $prev = $self->{opts}->{$from_key}->{value};
+         if ( $self->{opts}->{$from_key}->{parsed} ) {
+            $prev = $self->{opts}->{$from_key}->{value};
+         }
+         else {
+            MKDEBUG && _d('Cannot parse', $opt->{long}, 'until',
+               $from_key, 'parsed');
+            return;
+         }
       }
       my $defaults = $self->{dp}->parse_options($self);
       $opt->{value} = $self->{dp}->parse($val, $prev, $defaults);
@@ -652,6 +680,7 @@ sub _validate_type {
          $opt->{long}, 'type', $opt->{type}, 'value', $val);
    }
 
+   $opt->{parsed} = 1;
    return;
 }
 

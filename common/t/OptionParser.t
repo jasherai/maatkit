@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 143;
+use Test::More tests => 144;
 
 use OptionParser;
 use DSNParser;
@@ -925,6 +925,7 @@ is_deeply(
       desc          => 'Bar (default 1)',
       long          => 'bar',
       type          => undef,
+      parsed        => 1,
    },
    'Disabled opt is not destroyed'
 );
@@ -1981,6 +1982,36 @@ is_deeply(
       A => undef,
    },
    'Resolves dependency'
+);
+
+# Should die on circular dependency, avoid infinite loop.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dp           => $dp,
+);
+$o->_parse_specs(
+   { spec => 'foo=d', desc => 'DSN foo' },
+   { spec => 'bar=d', desc => 'DSN bar' },
+   'DSN values in --foo default to values in --bar if COPY is yes.',
+   'DSN values in --bar default to values in --foo if COPY is yes.',
+);
+$o->{opts}->{bar} = {
+   long  => 'bar',
+   value => 'D=DB,u=USER,h=localhost',
+   got   => 1,
+   type  => 'd',
+};
+$o->{opts}->{foo} = {
+   long  => 'foo',
+   value => 'h=otherhost',
+   got   => 1,
+   type  => 'd',
+};
+
+throws_ok(
+   sub { $o->_check_opts(qw(foo bar)) },
+   qr/circular dependencies/,
+   'Dies on circular dependency'
 );
 
 # #############################################################################
