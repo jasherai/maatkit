@@ -25,7 +25,7 @@ require "$trunk/mk-query-digest/mk-query-digest";
 # We want the profile report so we can check that queries like
 # CREATE DATABASE are distilled correctly.
 my @args   = ('--report-format', 'header,query_report,profile', '--type', 'binlog');
-my $sample = "$trunk/common/t/samples/";
+my $sample = "$trunk/common/t/samples/binlogs/";
 
 ok(
    no_diff(
