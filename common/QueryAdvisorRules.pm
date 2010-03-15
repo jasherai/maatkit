@@ -244,7 +244,7 @@ sub get_rules {
       id   => 'RES.001',      # non-deterministic GROUP BY
       code => sub {
          my ( $event ) = @_;
-         return unless $event->{query_struct}->{type} eq 'select';
+         return unless ($event->{query_struct}->{type} || '') eq 'select';
          my $groupby = $event->{query_struct}->{group_by};
          return unless $groupby;
          # Only check GROUP BY column names, not numbers.  GROUP BY number
