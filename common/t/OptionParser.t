@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 142;
+use Test::More tests => 143;
 
 use OptionParser;
 use DSNParser;
@@ -1944,6 +1944,44 @@ is_deeply(
 # #############################################################################
 # Issue 940: OptionParser cannot resolve option dependencies
 # #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dp           => $dp,
+);
+$o->_parse_specs(
+   { spec => 'foo=d', desc => 'DSN foo' },
+   { spec => 'bar=d', desc => 'DSN bar' },
+   'DSN values in --foo default to values in --bar if COPY is yes.',
+);
+# This simulates what get_opts() does but allows us to call
+# _check_opts() manually with foo first.
+$o->{opts}->{bar} = {
+   long  => 'bar',
+   value => 'D=DB,u=USER,h=localhost',
+   got   => 1,
+   type  => 'd',
+};
+$o->{opts}->{foo} = {
+   long  => 'foo',
+   value => 'h=otherhost',
+   got   => 1,
+   type  => 'd',
+};
+$o->_check_opts(qw(foo bar));
+is_deeply(
+   $o->get('foo'),
+   {
+      D => 'DB',
+      u => 'USER',
+      S => undef,
+      F => undef,
+      P => undef,
+      h => 'otherhost',
+      p => undef,
+      A => undef,
+   },
+   'Resolves dependency'
+);
 
 # #############################################################################
 # Done.
