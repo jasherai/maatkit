@@ -1,5 +1,7 @@
 Changelog for mk-deadlock-logger:
 
+   * --clear-deadlocks did not work with --interval (issue 942).
+
 2010-01-06: version 1.0.19
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).

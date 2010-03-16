@@ -23,7 +23,7 @@ if ( !$dbh1 ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 3;
 }
 
 my $output;
@@ -49,6 +49,17 @@ like(
    $output,
    qr/CREATE TABLE test.make_deadlock/,
    'Create --clear-deadlocks table (debug)'
+);
+
+
+# #############################################################################
+# Issue 942: mk-deadlock-logger --clear-deadlocks doesn't work with --interval
+# #############################################################################
+$output = `MKDEBUG=1 $trunk/mk-deadlock-logger/mk-deadlock-logger F=$cnf,D=test --clear-deadlocks test.make_deadlock2 --interval 1 --run-time 1 2>&1`;
+like(
+   $output,
+   qr/CREATE TABLE test.make_deadlock2/,
+   '--clear-deadlocks with --interval (isue 942)'
 );
 
 # #############################################################################

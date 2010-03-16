@@ -1730,6 +1730,46 @@ sub main {
          }
       }
 
+      # If specified, clear the deadlock... 
+      if ( my $db_tbl = $o->get('clear-deadlocks') ) {
+         MKDEBUG && _d('Creating --clear-deadlocks table', $db_tbl);
+         $dbh->{AutoCommit} = 0;
+         my $sql = $o->read_para_after(__FILE__, qr/MAGIC_clear_deadlocks/);
+
+         if ( !$vp->version_ge($dbh, '4.1.2') ) {
+            $sql =~ s/ENGINE=/TYPE=/;
+         }
+         $sql =~ s/test.deadlock_maker/$db_tbl/;
+         MKDEBUG && _d($sql);
+         $dbh->do($sql);
+         $sql = "INSERT INTO $db_tbl(a) VALUES(1)";
+         MKDEBUG && _d($sql);
+         $dbh->do($sql); # I'm holding locks on the table now.
+
+         # Fork off a child to try to take a lock on the table.
+         my $pid = fork();
+         if ( defined($pid) && $pid == 0 ) { # I am a child
+            my $dbh_child = get_cxn($source_dsn, 0);
+            $sql = "SELECT * FROM $db_tbl FOR UPDATE";
+            MKDEBUG && _d($sql);
+            eval { $dbh_child->do($sql); }; # Should block against parent.
+            MKDEBUG && _d($EVAL_ERROR); # Parent inserted value 0.
+            $sql = "DROP TABLE $db_tbl";
+            MKDEBUG && _d($sql);
+            $dbh_child->do($sql);
+            exit;
+         }
+         elsif ( !defined($pid) ) {
+            die("Unable to fork for clearing deadlocks!\n");
+         }
+         sleep 1;
+         $sql = "INSERT INTO $db_tbl(a) VALUES(0)";# Will make child deadlock
+         MKDEBUG && _d($sql);
+         eval { $dbh->do($sql); };
+         MKDEBUG && _d($EVAL_ERROR);
+         waitpid($pid, 0);
+      }
+      
       # If there's an --interval argument, run forever or till specified.
       # Otherwise just run once.
       if ( $o->got('interval') ) {
@@ -1738,45 +1778,6 @@ sub main {
       }
       else {
          $oktorun = 0;
-         # If specified, clear the deadlock... 
-         if ( my $db_tbl = $o->get('clear-deadlocks') ) {
-            MKDEBUG && _d('Creating --clear-deadlocks table', $db_tbl);
-            $dbh->{AutoCommit} = 0;
-            my $sql = $o->read_para_after(__FILE__, qr/MAGIC_clear_deadlocks/);
-
-            if ( !$vp->version_ge($dbh, '4.1.2') ) {
-               $sql =~ s/ENGINE=/TYPE=/;
-            }
-            $sql =~ s/test.deadlock_maker/$db_tbl/;
-            MKDEBUG && _d($sql);
-            $dbh->do($sql);
-            $sql = "INSERT INTO $db_tbl(a) VALUES(1)";
-            MKDEBUG && _d($sql);
-            $dbh->do($sql); # I'm holding locks on the table now.
-
-            # Fork off a child to try to take a lock on the table.
-            my $pid = fork();
-            if ( defined($pid) && $pid == 0 ) { # I am a child
-               my $dbh_child = get_cxn($source_dsn, 0);
-               $sql = "SELECT * FROM $db_tbl FOR UPDATE";
-               MKDEBUG && _d($sql);
-               eval { $dbh_child->do($sql); }; # Should block against parent.
-               MKDEBUG && _d($EVAL_ERROR); # Parent inserted value 0.
-               $sql = "DROP TABLE $db_tbl";
-               MKDEBUG && _d($sql);
-               $dbh_child->do($sql);
-               exit;
-            }
-            elsif ( !defined($pid) ) {
-               die("Unable to fork for clearing deadlocks!\n");
-            }
-            sleep 1;
-            $sql = "INSERT INTO $db_tbl(a) VALUES(0)";# Will make child deadlock
-            MKDEBUG && _d($sql);
-            eval { $dbh->do($sql); };
-            MKDEBUG && _d($EVAL_ERROR);
-            waitpid($pid, 0);
-         }
       }
    }
 
