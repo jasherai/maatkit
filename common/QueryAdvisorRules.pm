@@ -201,8 +201,8 @@ sub get_rules {
                \d{1,2}:\d{1,2}:\d{1,2}  # HH:MM:SS
                (?:
                   \.\d+                 # .subsecond
-               )?
-            )?
+               )?+                      #   (Note the + to keep Perl from
+            )?+                         #    backtracking--these are needed.)
             (?:                         # followed by
                [^'"\d]                  # neither ', " or another digit
                |\Z                      # or end of string

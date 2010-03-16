@@ -244,11 +244,11 @@ my @cases = (
    },
    {  name   => "Date with time doesn't match",
       query  => "select c from t where d > '2010-03-15 09:09:09'",
-      advice => [qw(LIT.002)],
+      advice => [qw()],
    },
    {  name   => "Date with time and subseconds doesn't match",
       query  => "select c from t where d > '2010-03-15 09:09:09.123456'",
-      advice => [qw(LIT.002)],
+      advice => [qw()],
    },
 );
 
