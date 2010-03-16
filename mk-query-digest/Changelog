@@ -1,6 +1,9 @@
 Changelog for mk-query-digest:
 
    * General log parsing failed sometimes (issue 926).
+   * IP addresses were truncated (issue 744).
+   * Some options could fail to parse (issue 940).
+   * Added --show-all (issue 744).
 
 2010-03-01: version 0.9.15
 

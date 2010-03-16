@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 35;
+use Test::More tests => 37;
 
 use MaatkitTest;
 
@@ -345,6 +345,25 @@ is(
    'No warnings on file 041'
 );
 diag(`rm -rf /tmp/mqd-warnings.txt`);
+
+# Issue 940
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow042.txt',
+            qw(--report-format query_report)) },
+      "mk-query-digest/t/samples/slow042.txt",
+   ),
+   'Analysis for slow042'
+);
+
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow042.txt',
+            qw(--report-format query_report --show-all host)) },
+      "mk-query-digest/t/samples/slow042-show-all-host.txt",
+   ),
+   'Analysis for slow042 with --show-all hosts'
+);
 
 # #############################################################################
 # Done.
