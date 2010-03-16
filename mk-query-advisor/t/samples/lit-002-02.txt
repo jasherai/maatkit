@@ -1,4 +1,3 @@
 
 # Query ID 0x62642EFA84F41D57 at byte 0
-# WARN LIT.002 Date literal is not quoted.
 SELECT c FROM tbl WHERE c=20100215
