@@ -2361,7 +2361,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 5931
+# QueryAdvisorRules package 5934
 # ###########################################################################
 package QueryAdvisorRules;
 
@@ -2535,9 +2535,14 @@ sub get_rules {
          my ( $event ) = @_;
          return $event->{arg} =~ m/
             \b
-            (?:
-               \d{2,4}-\d{1,2}-\d{1,2}  # YY-MM-DD, YYYY-MM-DD
-            )
+            \d{2,4}-\d{1,2}-\d{1,2}     # YY-MM-DD, YYYY-MM-DD
+            (?:                         # with optional
+               \s+
+               \d{1,2}:\d{1,2}:\d{1,2}  # HH:MM:SS
+               (?:
+                  \.\d+                 # .subsecond
+               )?+                      #   (Note the + to keep Perl from
+            )?+                         #    backtracking--these are needed.)
             (?:                         # followed by
                [^'"\d]                  # neither ', " or another digit
                |\Z                      # or end of string
@@ -3514,7 +3519,8 @@ my $oktorun = 1;  # global for sig handler
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
-   my %seen_id; # already printed check ID descriptions
+   my %seen_id;           # already printed rule info (advice)
+   my %seen_fingerprint;  # already seen queries
 
    # ########################################################################
    # Get configuration information.
@@ -3532,7 +3538,6 @@ sub main {
    # #########################################################################
    # Load rules from POD and plugins.
    # #########################################################################
-   # TODO: reimplement somewhere my $ignore_checks = $o->get('ignore-checks');
    my $p   = new PodParser();
    my $qar = new QueryAdvisorRules(PodParser => $p);
    my $qa  = new QueryAdvisor();
@@ -3601,6 +3606,8 @@ sub main {
       }
    }
 
+   # This proc is important because all procs below, and some of the
+   # rules, expect the event to have an arg.
    push @pipeline, sub {
       my ( %args ) = @_;
       MKDEBUG && _d('callback: check cmd and arg');
@@ -3616,24 +3623,24 @@ sub main {
       return $event;
    };
 
-   if ( $o->get('fingerprint') ) {
-      my %seen_fingerprint;
-      push @pipeline, sub {
-         my ( %args ) = @_;
-         MKDEBUG && _d('callback: fingerprint');
-         my $event = $args{event};
-         $event->{fingerprint} = $qr->fingerprint($event->{arg});
-         if ( $seen_fingerprint{ $event->{fingerprint} }++ ) {
-            MKDEBUG && _d('Skipping already seen fingerprint');
-            return;
-         }
-         return $event;
-      };
-   }
+   # Fingerprint query and check how many times we've seen it for --sample.
+   my %seen;
+   my $num_samples = $o->get('sample');
+   push @pipeline, sub {
+      my ( %args ) = @_;
+      MKDEBUG && _d('callback: fingerprint/sample');
+      my $event = $args{event};
+      $event->{fingerprint} = $qr->fingerprint($event->{arg});
+      if ( ++$seen_fingerprint{ $event->{fingerprint} } > $num_samples ) {
+         MKDEBUG && _d("Event skipped because of --sample");
+         return;
+      }
+      return $event;
+   };
 
-   # Parser the query.  The query struct is a hashref with keys
-   # to various parts of the query.  These keys are the subjects
-   # of checks.
+   # Parse the query.  The query struct is a hashref with keys
+   # to various parts of the query.  If this fails we still
+   # continue because some rules may not need the query struct.
    push @pipeline, sub {
       my ( %args ) = @_;
       MKDEBUG && _d('callback: parse query');
@@ -3652,17 +3659,18 @@ sub main {
       return $event;
    };
 
-   # Check the query and get a list of rules that match.
+   # Run rules on query, get a list of rules that match (advice).
    push @pipeline, sub {
       my ( %args ) = @_;
       MKDEBUG && _d('callback: check query');
       my $event  = $args{event};
       MKDEBUG && _d('Checking', $event->{arg});
       my @advice = $qa->run_rules($event);
-      $event->{advice} =  \@advice;
+      $event->{advice} = \@advice;
       return $event;
    };
 
+   # Print info (advice) about each rule that matched this query.
    push @pipeline, sub {
       my ( %args ) = @_;
       MKDEBUG && _d('callback: print advice');
@@ -3782,7 +3790,7 @@ sub print_advice {
    return unless $n_advice || $args{print_all};
 
    # Header
-   my $id = make_checksum($event->{fingerprint} || $event->{arg});
+   my $id = make_checksum($event->{fingerprint});
    print "\n# Query ID 0x$id at byte " . ($event->{pos_in_log} || 0) . "\n";
 
    # New check IDs and their descriptions
@@ -4057,10 +4065,6 @@ short form: -F; type: string
 Only read mysql options from the given file.  You must give an absolute
 pathname.
 
-=item --fingerprint
-
-Fingerprint and analyze only one sample of each unique query.
-
 =item --help
 
 Show help and exit.
@@ -4071,14 +4075,14 @@ short form: -h; type: string
 
 Connect to host.
 
-=item --ignore-checks
+=item --ignore-rules
 
 type: hash
 
-Ignore these check IDs or levels.
+Ignore these rule IDs.
 
-Specify a comma-separated list of check IDs (e.g. LIT.001) or levels
-(e.g. warn) to ignore.
+Specify a comma-separated list of rule IDs (e.g. LIT.001,RES.002,etc.)
+to ignore.
 
 =item --password
 
@@ -4129,6 +4133,13 @@ type: Array
 
 The type of input to parse (default slowlog).  The permitted types are
 slowlog and genlog.
+
+=item --sample
+
+type: int; default: 1
+
+How many samples of the query to show.
+
 
 =item --set-vars
 

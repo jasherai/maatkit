@@ -1,4 +1,4 @@
 
-# Query ID 0x2D9B7A18188A2EE4 at byte 0
-# WARN LIT.002 Date literal is not quoted.
+# Query ID 0x0C74A51C7CA7AA15 at byte 0
+# WARN LIT.002 Unquoted date/time literal.
 SELECT c FROM tbl WHERE c < 2010-02-15
