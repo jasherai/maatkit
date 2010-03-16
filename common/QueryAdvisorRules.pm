@@ -117,6 +117,13 @@ sub get_rules {
       },
    },
    {
+      id   => 'ARG.002',      # LIKE w/o wildcard
+      code => sub {
+         my ( $event ) = @_;
+         return 0;
+      },
+   },
+   {
       id   => 'CLA.001',      # SELECT w/o WHERE
       code => sub {
          my ( $event ) = @_;
