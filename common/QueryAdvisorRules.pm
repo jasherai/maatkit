@@ -121,6 +121,7 @@ sub get_rules {
       code => sub {
          my ( $event ) = @_;
          return 0 unless ($event->{query_struct}->{type} || '') eq 'select';
+         return 0 unless $event->{query_struct}->{from};
          return 1 unless $event->{query_struct}->{where};
          return 0;
       },
@@ -261,6 +262,10 @@ sub get_rules {
       code => sub {
          my ( $event ) = @_;
          return 0 unless $event->{query_struct}->{limit};
+         # If query doesn't use tables then this check isn't applicable.
+         return 0 unless    $event->{query_struct}->{from}
+                         || $event->{query_struct}->{into}
+                         || $event->{query_struct}->{tables};
          return 1 unless $event->{query_struct}->{order_by};
          return 0;
       },
