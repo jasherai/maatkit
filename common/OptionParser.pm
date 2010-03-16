@@ -527,6 +527,7 @@ sub _check_opts {
    while ( @long ) {
       foreach my $i ( 0..$#long ) {
          my $long = $long[$i];
+         next unless $long;
          my $opt  = $self->{opts}->{$long};
          if ( $opt->{got} ) {
             # Rule: opt disables other opts.
