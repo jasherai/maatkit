@@ -3820,7 +3820,7 @@ mk-query-advisor - Analyze queries and advise on possible problems.
 
 =head1 SYNOPSIS
 
-   mk-query-advisor
+   mk-query-advisor /path/to/slow-query.log
 
 =head1 RISKS
 
@@ -3829,7 +3829,8 @@ whether known or unknown, of using this tool.  The two main categories of risks
 are those created by the nature of the tool (e.g. read-only tools vs. read-write
 tools) and those created by bugs.
 
-mk-query-advisor merely reads schema information and should be very low-risk.
+mk-query-advisor simply reads queries and examines them, and is thus
+very low risk.
 
 At the time of this release, we know of no bugs that could cause serious harm to
 users.
@@ -3843,32 +3844,67 @@ See also L<"BUGS"> for more information on filing bugs and getting help.
 
 =head1 DESCRIPTION
 
-mk-query-advisor advises about queries.
+mk-query-advisor examines queries and applies rules to them, trying to
+find queries that look bad according to the rules.  It reports on
+queries that match the rules, so you can find bad practices or hidden
+problems in your SQL.  By default, it accepts a MySQL slow query log
+as input.
 
 =head1 RULES
 
-These are the checks that mk-advisor can perform on a query.
+These are the rules that mk-advisor will apply to the queries it
+examines.  Each rule has a few bits of information:
+
+=over
+
+=item Rule ID
+
+The rule's ID is its identifier.  We use a seven-character ID, and the
+naming convention is three characters, a period, and a three-digit
+number.  The first three characters are sort of an abbreviation of the
+general class of the rule.  For example, ALI.001 is some rule related
+to how the query uses aliases.
+
+=item Severity
+
+The rule's severity is an indication of how important it is that this
+rule matched a query.  We use NOTE, WARN, and CRIT to denote these
+levels.
+
+=item Description
+
+The rule's description is a textual, human-readable explanation of
+what it means when a query matches this rule.  Depending on the
+verbosity of the report you generate, you will see more of the text in
+the description.  By default, you'll see only the first sentence,
+which is sort of a terse synopsis of the rule's meaning.  At a higher
+verbosity, you'll see subsequent sentences.
+
+=back
 
 id:          ALI.001
 severity:    note
-description: Alias without AS.  Explicit column or table aliases like
-             "tbl AS alias" are preferred to implicit aliases like "tbl alias".
+description: Aliasing without the AS keyword.  Explicitly using the AS keyword in
+             column or table aliases, such as "tbl AS alias," is more readable
+             than implicit aliases such as "tbl alias".
 
 id:          ALI.002
 severity:    warn
-description: Aliased db.*.  Aliasing an all columns reference like
-             "db.* foo" is confusing.
+description: Aliasing the '*' wildcard.  Aliasing a column wildcard, such as
+             "SELECT tbl.* col1, col2" probably indicates a bug in your SQL.
+             You probably meant for the query to retrive col1, but instead it
+             renames the last column in the *-wildcarded list.
 
 id:          ALI.003
 severity:    note
-description: Alias is real name.  The table or column's alias is the same as
-             its real name.
+description: Aliasing without renaming.  The table or column's alias is the same as
+             its real name, and the alias just makes the query harder to read.
 
 id:          ARG.001
 severity:    warn
 description: Argument with leading wildcard.  An argument has a leading
-             wildcard character like "%foo".  The predicate with this argument
-             is not sargable.
+             wildcard character, such as "%foo".  The predicate with this argument
+             is not sargable and cannot use an index if one exists.
 
 id:          CLA.001
 severity:    warn
@@ -3876,57 +3912,73 @@ description: SELECT without WHERE.  The SELECT statement has no WHERE clause.
 
 id:          CLA.002
 severity:    note
-description: ORDER BY RAND().  ORDER BY RAND() is not preferred.
+description: ORDER BY RAND().  ORDER BY RAND() is a very inefficient way to
+             retrieve a random row from the results.
 
 id:          CLA.003
 severity:    note
-description: LIMIT with OFFSET does not scale.
+description: LIMIT with OFFSET.  Paginating a result set with LIMIT and OFFSET is
+             O(n^2) complexity, and will cause performance problems as the data
+             grows larger.
 
 id:          CLA.004
 severity:    note
-description: GROUP BY <number> is potentially bad.
+description: Ordinal in the GROUP BY clause.  Using a number in the GROUP BY clause,
+             instead of an expression or column name, can cause problems if the
+             query is changed.
 
 id:          COL.001
 severity:    note
-description: SELECT *.  Selecting specific columns is preferable to SELECT *.
+description: SELECT *.  Selecting all columns with the * wildcard will cause the
+             query's meaning and behavior to change if the table's schema
+             changes, and might cause the query to retrieve too much data.
 
 id:          COL.002
 severity:    note
-description: INSERT/REPLACE doesn't specify columns. "INSERT INTO tbl
-             (col1,col2) VALUES" is preferred to "INSERT INTO tbl VALUES".
+description: Blind INSERT.  The INSERT or REPLACE query doesn't specify the
+             columns explicitly, so the query's behavior will change if the
+             table's schema changes; use "INSERT INTO tbl(col1, col2) VALUES..."
+             instead.
 
 id:          LIT.001
 severity:    warn
-description: IP address used as string.  The string literal looks like an IP
-             address but is not used inside INET_ATON().  WHERE ip='127.0.0.1'
-             is better as ip=INET_ATON('127.0.0.1') if the column is numeric.
+description: Storing an IP address as characters.  The string literal looks like
+             an IP address, but is not an argument to INET_ATON(), indicating that
+             the data is stored as characters instead of as integers.  It is
+             more efficient to store IP addresses as integers.
 
 id:          LIT.002
 severity:    warn
-description: Date literal is not quoted.  WHERE col<2010-02-12 is valid but
-             wrong; the date should be quoted.
+description: Unquoted date/time literal.  A query such as "WHERE col<2010-02-12"
+             is valid SQL but is probably a bug; the literal should be quoted.
 
 id:          KWR.001
 severity:    note
-description: SQL_CALC_FOUND_ROWS does not scale.  SQL_CALC_FOUND_ROWS can cause
-             performance problems because it does not scale well.
+description: SQL_CALC_FOUND_ROWS is inefficient.  SQL_CALC_FOUND_ROWS can cause
+             performance problems because it does not scale well; use
+             alternative strategies to build functionality such as paginated
+             result screens.
 
 id:          JOI.001
 severity:    crit
-description: Mix of comma and ANSI joins.  Mixing comma joins and ANSI joins
-             is problematic and differs between some MySQL versions.
+description: Mixing comma and ANSI joins.  Mixing comma joins and ANSI joins
+             is confusing to humans, and the behavior differs between some
+             MySQL versions.
 
 id:          RES.001
 severity:    warn
-description: GROUP BY causes non-deterministic results.
+description: Non-deterministic GROUP BY.  The SQL retrieves columns that are
+             neither in an aggregate function nor the GROUP BY expression, so
+             these values will be non-deterministic in the result.
 
 id:          RES.002
 severity:    warn
-description: LIMIT without ORDER BY causes non-deterministic results.
+description: LIMIT without ORDER BY.  LIMIT without ORDER BY causes
+             non-deterministic results, depending on the query execution plan.
 
 id:          STA.001
 severity:    note
-description: != is not standard SQL; use <>.
+description: != is non-standard.  Use the <> operator to test for inequality.
 
 =head1 OPTIONS
 
@@ -4016,33 +4068,31 @@ Port number to use for connection.
 
 =item --print-all
 
-Print all queries, even those with no flagged checks.
+Print all queries, even those that do not match any rules.
 
 =item --query
 
 type: string
 
-Analyze this single query; ignores files on command line.
-
-This option allows you to supply a single query on the command line.  Any
-logs also specified on the command line are ignored.
+Analyze this single query and ignore files and STDIN.  This option
+allows you to supply a single query on the command line.  Any files
+also specified on the command line are ignored.
 
 =item --report-format
 
 type: string; default: compact
 
-Type of report format: full or compact;
-
-A full report lists the check description for every query even if the check
-has been seen before in another query.  A compact report only lists the
-description for new checks and lists the check IDs for already seen checks.
+Type of report format: full or compact.  In full mode, every query's
+report contains the description of the rules it matched, even if this
+information was previously displayed.  In compact mode, the repeated
+information is suppressed, and only the rule ID is displayed.
 
 =item --type
 
 type: Array
 
 The type of input to parse (default slowlog).  The permitted types are
-either slowlog or genlog.
+slowlog and genlog.
 
 =item --set-vars
 
@@ -4067,7 +4117,10 @@ User for login if not current user.
 
 short form: -v; cumulative: yes; default: 1
 
-Increase verbosity of output.
+Increase verbosity of output.  At the default level of verbosity, the
+program prints only the first sentence of each rule's description.  At
+higher levels, the program prints more of the description.  See also
+L<"--report-format">.
 
 =item --version
 
