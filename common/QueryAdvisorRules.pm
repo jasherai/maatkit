@@ -112,7 +112,7 @@ sub get_rules {
       id   => 'ARG.001',      # col = '%foo'
       code => sub {
          my ( $event ) = @_;
-         return 1 if $event->{arg} =~ m/[\'\"][\%\_]\w/;
+         return 1 if $event->{arg} =~ m/[\'\"][\%\_]./;
          return 0;
       },
    },

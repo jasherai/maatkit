@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 40;
+use Test::More tests => 43;
 
 use MaatkitTest;
 use PodParser;
@@ -194,6 +194,18 @@ my @cases = (
    },
    {  name   => 'Leading %wildcard',
       query  => 'select a from t where i="%hm"',
+      advice => [qw(ARG.001)],
+   },
+   {  name   => 'Leading _wildcard',
+      query  => 'select a from t where i="_hm"',
+      advice => [qw(ARG.001)],
+   },
+   {  name   => 'Leading "% wildcard"',
+      query  => 'select a from t where i="% eh "',
+      advice => [qw(ARG.001)],
+   },
+   {  name   => 'Leading "_ wildcard"',
+      query  => 'select a from t where i="_ eh "',
       advice => [qw(ARG.001)],
    },
    {  name   => 'GROUP BY number',
