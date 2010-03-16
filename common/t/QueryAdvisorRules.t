@@ -219,7 +219,7 @@ my @cases = (
       advice => [],
    },
    {  name   => "LIT.002 at end of query",
-      query  => "select c from t where d=20061010",
+      query  => "select c from t where d=2006-10-10",
       advice => [qw(LIT.002)],
    },
    {  name   => "LIT.002 5 digits doesn't match",

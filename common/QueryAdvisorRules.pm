@@ -192,16 +192,10 @@ sub get_rules {
       id   => 'LIT.002',      # Date not quoted
       code => sub {
          my ( $event ) = @_;
-         # This match is going to have some false-positives (unless the
-         # regex is really smart or somehow we know what type columns
-         # are) because col=200605 might not be a date.
          return $event->{arg} =~ m/
             \b
             (?:
                \d{2,4}-\d{1,2}-\d{1,2}  # YY-MM-DD, YYYY-MM-DD
-               |\d{4}                   # or YYYY
-               |\d{6}                   # or YYYYMM
-               |\d{8}                   # or YYYYMMDD
             )
             (?:                         # followed by
                [^'"\d]                  # neither ', " or another digit
