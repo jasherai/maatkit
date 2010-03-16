@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 36;
+use Test::More tests => 40;
 
 use MaatkitTest;
 use PodParser;
@@ -233,6 +233,22 @@ my @cases = (
    {  name   => "SELECT var LIMIT",
       query  => "select \@\@version_comment limit 1 ",
       advice => [],
+   },
+   {  name   => "Date with time",
+      query  => "select c from t where d > 2010-03-15 09:09:09",
+      advice => [qw(LIT.002)],
+   },
+   {  name   => "Date with time and subseconds",
+      query  => "select c from t where d > 2010-03-15 09:09:09.123456",
+      advice => [qw(LIT.002)],
+   },
+   {  name   => "Date with time doesn't match",
+      query  => "select c from t where d > '2010-03-15 09:09:09'",
+      advice => [qw(LIT.002)],
+   },
+   {  name   => "Date with time and subseconds doesn't match",
+      query  => "select c from t where d > '2010-03-15 09:09:09.123456'",
+      advice => [qw(LIT.002)],
    },
 );
 

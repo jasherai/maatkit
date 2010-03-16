@@ -195,9 +195,14 @@ sub get_rules {
          my ( $event ) = @_;
          return $event->{arg} =~ m/
             \b
-            (?:
-               \d{2,4}-\d{1,2}-\d{1,2}  # YY-MM-DD, YYYY-MM-DD
-            )
+            \d{2,4}-\d{1,2}-\d{1,2}     # YY-MM-DD, YYYY-MM-DD
+            (?:                         # with optional
+               \s+
+               \d{1,2}:\d{1,2}:\d{1,2}  # HH:MM:SS
+               (?:
+                  \.\d+                 # .subsecond
+               )?
+            )?
             (?:                         # followed by
                [^'"\d]                  # neither ', " or another digit
                |\Z                      # or end of string
