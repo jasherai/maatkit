@@ -207,7 +207,7 @@ sub _parse_query {
 
 sub parse_delete {
    my ( $self, $query ) = @_;
-   if ( $query =~ s/FROM\s+// ) {
+   if ( $query =~ s/FROM\s+//i ) {
       my $keywords = qr/(LOW_PRIORITY|QUICK|IGNORE)/i;
       my $clauses  = qr/(FROM|WHERE|ORDER BY|LIMIT)/i;
       return $self->_parse_query($query, $keywords, 'from', $clauses);
@@ -542,9 +542,13 @@ sub parse_identifier {
    *parse_tables = \&parse_from;
 }
 
+# For now this just chops a WHERE clause into its predicates.
+# We do not handled nested conditions, operator precedence, etc.
+# Predicates are separated by either AND or OR.  Since either
+# of those words can appear in an argval (e.g. c="me or him")
+# and AND is used with BETWEEN, we have to parse carefully.
 sub parse_where {
    my ( $self, $where ) = @_;
-   # TODO
    return $where;
 }
 
