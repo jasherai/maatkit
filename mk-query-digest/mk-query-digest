@@ -11648,7 +11648,7 @@ The parser expects the input to be formatted with the following options: C<-x -n
 -q -tttt>.  For example, if you want to capture output from your local machine,
 you can do something like
 
-  tcpdump -i eth0 port 3306 -s 65535 -c 1000 -x -n -q -tttt > mysql.tcp.txt
+  tcpdump -i eth0 port 3306 -s 65535 -c 1000 -x -nn -q -tttt > mysql.tcp.txt
   mk-query-digest --type tcpdump mysql.tcp.txt
 
 The other tcpdump parameters, such as -s, -c, and -i, are up to you.  Just make
@@ -11687,7 +11687,7 @@ inspected and decoded.
 Similar to tcpdump, but the expected input is memcached packets
 instead of MySQL packets.  For example:
 
-  tcpdump -i eth0 port 11211 -s 65535 -x -n -q -tttt > memcached.tcp.txt
+  tcpdump -i eth0 port 11211 -s 65535 -x -nn -q -tttt > memcached.tcp.txt
   mk-query-digest --type memcached memcached.tcp.txt
 
 memcached uses port 11211 by default.
