@@ -2361,7 +2361,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 5943
+# QueryAdvisorRules package 5947
 # ###########################################################################
 package QueryAdvisorRules;
 
@@ -2543,10 +2543,10 @@ sub get_rules {
       id   => 'LIT.002',      # Date not quoted
       code => sub {
          my ( $event ) = @_;
-         if ( $event->{arg} =~ m/(?<!['"])\d{4}-\d{1,2}-\d{1,2}\b/gc ) {
+         if ( $event->{arg} =~ m/(?<!['"\w-])\d{4}-\d{1,2}-\d{1,2}\b/gc ) {
             return (pos $event->{arg}) || 0;
          }
-         if ( $event->{arg} =~ m/(?<!['"\d])\d{2}-\d{1,2}-\d{1,2}\b/gc ) {
+         if ( $event->{arg} =~ m/(?<!['"\w\d-])\d{2}-\d{1,2}-\d{1,2}\b/gc ) {
             return (pos $event->{arg}) || 0;
          }
          return;
@@ -2905,7 +2905,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLParser package 5914
+# SQLParser package 5945
 # ###########################################################################
 package SQLParser;
 
@@ -3052,7 +3052,7 @@ sub _parse_query {
 
 sub parse_delete {
    my ( $self, $query ) = @_;
-   if ( $query =~ s/FROM\s+// ) {
+   if ( $query =~ s/FROM\s+//i ) {
       my $keywords = qr/(LOW_PRIORITY|QUICK|IGNORE)/i;
       my $clauses  = qr/(FROM|WHERE|ORDER BY|LIMIT)/i;
       return $self->_parse_query($query, $keywords, 'from', $clauses);
