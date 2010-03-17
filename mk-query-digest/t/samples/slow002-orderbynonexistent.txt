@@ -50,10 +50,10 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
 # bytes         20     103     103     103     103     103       0     103
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
-# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB IO rw      0       0       0       0       0       0       0       0
 # IDB pages     10      11      11      11      11      11       0      11
-# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
-# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB queue      0       0       0       0       0       0       0       0
+# IDB rec l      0       0       0       0       0       0       0       0
 # Merge pas      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us
@@ -88,10 +88,10 @@ select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   va
 # bytes         16      82      41      41      41      41       0      41
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
-# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB IO rw      0       0       0       0       0       0       0       0
 # IDB pages     33      36      18      18      18      18       0      18
-# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
-# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB queue      0       0       0       0       0       0       0       0
+# IDB rec l      0       0       0       0       0       0       0       0
 # Merge pas      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us
@@ -125,10 +125,10 @@ select     biz = '91848182522' from foo.bar \G
 # bytes         11      60      60      60      60      60       0      60
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
-# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB IO rw      0       0       0       0       0       0       0       0
 # IDB pages     16      18      18      18      18      18       0      18
-# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
-# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB queue      0       0       0       0       0       0       0       0
+# IDB rec l      0       0       0       0       0       0       0       0
 # Merge pas      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us
@@ -163,10 +163,10 @@ select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 # bytes         11      57      57      57      57      57       0      57
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
-# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB IO rw      0       0       0       0       0       0       0       0
 # IDB pages     16      18      18      18      18      18       0      18
-# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
-# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB queue      0       0       0       0       0       0       0       0
+# IDB rec l      0       0       0       0       0       0       0       0
 # Merge pas      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us
@@ -197,10 +197,10 @@ VALUES ('211', '18')\G
 # bytes         13      66      66      66      66      66       0      66
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
-# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB IO rw      0       0       0       0       0       0       0       0
 # IDB pages     22      24      24      24      24      24       0      24
-# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
-# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB queue      0       0       0       0       0       0       0       0
+# IDB rec l      0       0       0       0       0       0       0       0
 # Merge pas      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us

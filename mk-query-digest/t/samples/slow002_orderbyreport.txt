@@ -14,10 +14,10 @@
 # bytes         16      82      41      41      41      41       0      41
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
-# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB IO rw      0       0       0       0       0       0       0       0
 # IDB pages     33      36      18      18      18      18       0      18
-# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
-# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB queue      0       0       0       0       0       0       0       0
+# IDB rec l      0       0       0       0       0       0       0       0
 # Merge pas      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us

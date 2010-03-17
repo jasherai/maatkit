@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 37;
+use Test::More tests => 38;
 
 use MaatkitTest;
 
@@ -363,6 +363,18 @@ ok(
       "mk-query-digest/t/samples/slow042-show-all-host.txt",
    ),
    'Analysis for slow042 with --show-all hosts'
+);
+
+# #############################################################################
+# Issue 948: mk-query-digest treats InnoDB_rec_lock_wait value as number
+# instead of time
+# #############################################################################
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'slow032.txt') },
+      "mk-query-digest/t/samples/slow032.txt",
+   ),
+   'Analysis for slow032 (issue 948)',
 );
 
 # #############################################################################

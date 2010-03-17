@@ -3,6 +3,7 @@ Changelog for mk-query-digest:
    * General log parsing failed sometimes (issue 926).
    * IP addresses were truncated (issue 744).
    * Some options could fail to parse (issue 940).
+   * InnoDB_*_wait attributes were not formatted as times (issue 948).
    * Added --show-all (issue 744).
 
 2010-03-01: version 0.9.15

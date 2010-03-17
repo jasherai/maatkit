@@ -5233,7 +5233,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 5921
+# QueryReportFormatter package 5950
 # ###########################################################################
 
 
@@ -5344,7 +5344,7 @@ sub global_report {
          my $store = $stats->{globals}->{$attrib};
          my @values;
          if ( $attrib_type eq 'num' ) {
-            my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
+            my $func = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
             MKDEBUG && _d('Calculating global statistical_metrics for', $attrib);
             my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
             @values = (
@@ -5440,7 +5440,7 @@ sub event_report {
          my @values;
          my $pct;
          if ( $attrib_type eq 'num' ) {
-            my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
+            my $func = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
             my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
             @values = (
                @{$vals}{qw(sum min max)},

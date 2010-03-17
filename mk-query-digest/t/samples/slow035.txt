@@ -8,10 +8,10 @@
 # bytes                 92      44      48      46      48    2.83      46
 # IDB IO rb              0       0       0       0       0       0       0
 # IDB IO ro              0       0       0       0       0       0       0
-# IDB IO rw              0    0.00    0.00       0    0.00       0    0.00
+# IDB IO rw              0       0       0       0       0       0       0
 # IDB pages              0       0       0       0       0       0       0
-# IDB queue              0    0.00    0.00       0    0.00       0    0.00
-# IDB rec l              0    0.00    0.00       0    0.00       0    0.00
+# IDB queue              0       0       0       0       0       0       0
+# IDB rec l              0       0       0       0       0       0       0
 # Merge pas              0       0       0       0       0       0       0
 
 # Query 1: 0 QPS, 0x concurrency, ID 0x727841EC88423713 at byte 0 ________
@@ -28,10 +28,10 @@
 # bytes         47      44      44      44      44      44       0      44
 # IDB IO rb      0       0       0       0       0       0       0       0
 # IDB IO ro      0       0       0       0       0       0       0       0
-# IDB IO rw      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB IO rw      0       0       0       0       0       0       0       0
 # IDB pages      0       0       0       0       0       0       0       0
-# IDB queue      0       0    0.00    0.00       0    0.00       0    0.00
-# IDB rec l      0       0    0.00    0.00       0    0.00       0    0.00
+# IDB queue      0       0       0       0       0       0       0       0
+# IDB rec l      0       0       0       0       0       0       0       0
 # Merge pas      0       0       0       0       0       0       0       0
 # Query_time distribution
 #   1us
