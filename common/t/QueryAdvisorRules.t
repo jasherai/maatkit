@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 46;
+use Test::More tests => 51;
 
 use MaatkitTest;
 use PodParser;
@@ -260,6 +260,26 @@ my @cases = (
    },
    {  name   => "Date with time and subseconds doesn't match",
       query  => "select c from t where d > '2010-03-15 09:09:09.123456'",
+      advice => [qw()],
+   },
+   {  name   => "Short date",
+      query  => "select c from t where d=73-03-15",
+      advice => [qw(LIT.002)],
+   },
+   {  name   => "Short date with time",
+      query  => "select c from t where d > 73-03-15 09:09:09",
+      advice => [qw(LIT.002)],
+   },
+   {  name   => "Short date with time and subseconds",
+      query  => "select c from t where d > 73-03-15 09:09:09.123456",
+      advice => [qw(LIT.002)],
+   },
+   {  name   => "Short date with time doesn't match",
+      query  => "select c from t where d > '73-03-15 09:09:09'",
+      advice => [qw()],
+   },
+   {  name   => "Short date with time and subseconds doesn't match",
+      query  => "select c from t where d > '73-03-15 09:09:09.123456'",
       advice => [qw()],
    },
    {  name   => "LIKE without wildcard",

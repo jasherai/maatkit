@@ -200,20 +200,11 @@ sub get_rules {
       id   => 'LIT.002',      # Date not quoted
       code => sub {
          my ( $event ) = @_;
-         return $event->{arg} =~ m/
-            \b
-            \d{2,4}-\d{1,2}-\d{1,2}     # YY-MM-DD, YYYY-MM-DD
-            (?:                         # with optional
-               \s+
-               \d{1,2}:\d{1,2}:\d{1,2}  # HH:MM:SS
-               (?:
-                  \.\d+                 # .subsecond
-               )?+                      #   (Note the + to keep Perl from
-            )?+                         #    backtracking--these are needed.)
-            (?:                         # followed by
-               [^'"\d]                  # neither ', " or another digit
-               |\Z                      # or end of string
-            )/x;
+         # YYYY-MM-DD
+         return 1 if $event->{arg} =~ m/(?<!['"])\d{4}-\d{1,2}-\d{1,2}\b/;
+         # YY-MM-DD
+         return 1 if $event->{arg} =~ m/(?<!['"\d])\d{2}-\d{1,2}-\d{1,2}\b/;
+         return 0;
       },
    },
    {
