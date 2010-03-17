@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 21;
+use Test::More tests => 22;
 
 use Transformers;
 use QueryReportFormatter;
@@ -778,6 +778,49 @@ $expected = <<EOF;
 # Hosts                  3 123.123.123.456 (1), 123.123.123.789 (1), 123.123.123.999 (1)
 EOF
 is($result, $expected, "Show all hosts");
+
+# #############################################################################
+# Issue 948: mk-query-digest treats InnoDB_rec_lock_wait value as number
+# instead of time
+# #############################################################################
+
+$events = [
+   {
+      cmd        => 'Query',
+      arg        => "foo",
+      Query_time => '8.000652',
+      InnoDB_rec_lock_wait => 0.001,
+      InnoDB_IO_r_wait     => 0.002,
+      InnoDB_queue_wait    => 0.003,
+   },
+];
+$expected = <<EOF;
+# Item 1: 0 QPS, 0x concurrency, ID 0xEDEF654FCCC4A4D8 at byte 0 _________
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       1
+# Exec time    100      8s      8s      8s      8s      8s       0      8s
+# IDB IO rw    100     2ms     2ms     2ms     2ms     2ms       0     2ms
+# IDB queue    100     3ms     3ms     3ms     3ms     3ms       0     3ms
+# IDB rec l    100     1ms     1ms     1ms     1ms     1ms       0     1ms
+EOF
+
+$ea  = new EventAggregator(
+   groupby => 'arg',
+   worst   => 'Query_time',
+   ignore_attributes => [qw(arg cmd)],
+);
+foreach my $event (@$events) {
+   $ea->aggregate($event);
+}
+$result = $qrf->event_report(
+   $ea,
+   select => [ qw(Query_time InnoDB_rec_lock_wait InnoDB_IO_r_wait InnoDB_queue_wait) ],
+   where   => 'foo',
+   rank    => 1,
+   worst   => 'Query_time',
+);
+
+is($result, $expected, "_wait attribs treated as times (issue 948)");
 
 # #############################################################################
 # Done.
