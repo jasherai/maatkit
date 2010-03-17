@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 53;
+use Test::More tests => 54;
 
 use MaatkitTest;
 use PodParser;
@@ -296,6 +296,11 @@ my @cases = (
       query  => "select c from t where i like 'lamp_'",
       advice => [qw()],
    },
+   {  name   => "Issue 946: LIT.002 false-positive",
+      query  => "delete from t where d in('MD6500-26', 'MD6500-21-22', 'MD6214')",
+      advice => [qw()],
+   },
+   
 );
 
 # Run the test cases.

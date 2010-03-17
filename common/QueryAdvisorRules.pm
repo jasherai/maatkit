@@ -205,11 +205,11 @@ sub get_rules {
       code => sub {
          my ( $event ) = @_;
          # YYYY-MM-DD
-         if ( $event->{arg} =~ m/(?<!['"])\d{4}-\d{1,2}-\d{1,2}\b/gc ) {
+         if ( $event->{arg} =~ m/(?<!['"\w])\d{4}-\d{1,2}-\d{1,2}\b/gc ) {
             return (pos $event->{arg}) || 0;
          }
          # YY-MM-DD
-         if ( $event->{arg} =~ m/(?<!['"\d])\d{2}-\d{1,2}-\d{1,2}\b/gc ) {
+         if ( $event->{arg} =~ m/(?<!['"\w\d])\d{2}-\d{1,2}-\d{1,2}\b/gc ) {
             return (pos $event->{arg}) || 0;
          }
          return;
