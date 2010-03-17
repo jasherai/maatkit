@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 51;
+use Test::More tests => 53;
 
 use MaatkitTest;
 use PodParser;
@@ -122,7 +122,8 @@ throws_ok (
 my @cases = (
    {  name   => 'IP address not inside INET_ATON, plus SELECT * is used',
       query  => 'SELECT * FROM tbl WHERE ip="127.0.0.1"',
-      advice => [qw(LIT.001 COL.001)],
+      advice => [qw(COL.001 LIT.001)],
+      pos    => [0, 37],
    },
    {  name   => 'Date literal not quoted',
       query  => 'SELECT col FROM tbl WHERE col < 2001-01-01',
@@ -269,6 +270,7 @@ my @cases = (
    {  name   => "Short date with time",
       query  => "select c from t where d > 73-03-15 09:09:09",
       advice => [qw(LIT.002)],
+      pos    => [34],
    },
    {  name   => "Short date with time and subseconds",
       query  => "select c from t where d > 73-03-15 09:09:09.123456",
@@ -316,11 +318,23 @@ foreach my $test ( @cases ) {
       arg          => $test->{query},
       query_struct => $query_struct,
    };
+   my ($ids, $pos) = $qa->run_rules($event);
    is_deeply(
-      [ $qa->run_rules($event) ],
-      [ sort @{$test->{advice}} ],
+      $ids,
+      $test->{advice},
       $test->{name},
    );
+
+   if ( $test->{pos} ) {
+      is_deeply(
+         $pos,
+         $test->{pos},
+         "$test->{name} matched near pos"
+      );
+   }
+
+   # To help me debug.
+   die if $test->{stop};
 }
 
 # #############################################################################

@@ -77,14 +77,16 @@ sub load_rule_info {
 sub run_rules {
    my ( $self, $event ) = @_;
    my @matched_rules;
+   my @matched_pos;
    my $rules = $self->{rules};
    foreach my $rule ( @$rules ) {
-      if ( $rule->{code}->($event) ) {
-         MKDEBUG && _d('Matches rule', $rule->{id});
+      if ( defined(my $pos = $rule->{code}->($event)) ) {
+         MKDEBUG && _d('Matches rule', $rule->{id}, 'near pos', $pos);
          push @matched_rules, $rule->{id};
+         push @matched_pos,   $pos;
       }
    }
-   return sort @matched_rules;
+   return \@matched_rules, \@matched_pos;
 };
 
 sub get_rule_info {

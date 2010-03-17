@@ -55,9 +55,10 @@ sub new {
 # Each rules is a hashref with two keys:
 #   * id       Unique PREFIX.NUMBER for the rule.  The prefix is three chars
 #              which hints to the nature of the rule.  See example below.
-#   * code     Coderef to check rule, returns true if rule matches, else
-#              returns false.  The code is passed a single arg: a hashref
-#              event.
+#   * code     Coderef to check rule, returns undef if rule does not match,
+#              else returns the string pos near where the rule matches or 0
+#              to indicate it doesn't know the pos.  The code is passed a\
+#              single arg: a hashref event.
 sub get_rules {
    return
    {
@@ -68,14 +69,14 @@ sub get_rules {
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
          foreach my $tbl ( @$tbls ) {
-            return 1 if $tbl->{alias} && !$tbl->{explicit_alias};
+            return 0 if $tbl->{alias} && !$tbl->{explicit_alias};
          }
          my $cols = $struct->{columns};
          return unless $cols;
          foreach my $col ( @$cols ) {
-            return 1 if $col->{alias} && !$col->{explicit_alias};
+            return 0 if $col->{alias} && !$col->{explicit_alias};
          }
-         return 0;
+         return;
       },
    },
    {
@@ -85,9 +86,9 @@ sub get_rules {
          my $cols = $event->{query_struct}->{columns};
          return unless $cols;
          foreach my $col ( @$cols ) {
-            return 1 if $col->{db} && $col->{name } eq '*' &&  $col->{alias};
+            return 0 if $col->{db} && $col->{name } eq '*' &&  $col->{alias};
          }
-         return 0;
+         return;
       },
    },
    {
@@ -98,39 +99,39 @@ sub get_rules {
          my $tbls   = $struct->{from} || $struct->{into} || $struct->{tables};
          return unless $tbls;
          foreach my $tbl ( @$tbls ) {
-            return 1 if $tbl->{alias} && $tbl->{alias} eq $tbl->{name};
+            return 0 if $tbl->{alias} && $tbl->{alias} eq $tbl->{name};
          }
          my $cols = $struct->{columns};
          return unless $cols;
          foreach my $col ( @$cols ) {
-            return 1 if $col->{alias} && $col->{alias} eq $col->{name};
+            return 0 if $col->{alias} && $col->{alias} eq $col->{name};
          }
-         return 0;
+         return;
       },
    },
    {
       id   => 'ARG.001',      # col = '%foo'
       code => sub {
          my ( $event ) = @_;
-         return 1 if $event->{arg} =~ m/[\'\"][\%\_]./;
-         return 0;
+         return 0 if $event->{arg} =~ m/[\'\"][\%\_]./;
+         return;
       },
    },
    {
       id   => 'ARG.002',      # LIKE w/o wildcard
       code => sub {
          my ( $event ) = @_;
-         return 0;
+         return;
       },
    },
    {
       id   => 'CLA.001',      # SELECT w/o WHERE
       code => sub {
          my ( $event ) = @_;
-         return 0 unless ($event->{query_struct}->{type} || '') eq 'select';
-         return 0 unless $event->{query_struct}->{from};
-         return 1 unless $event->{query_struct}->{where};
-         return 0;
+         return unless ($event->{query_struct}->{type} || '') eq 'select';
+         return unless $event->{query_struct}->{from};
+         return 0 unless $event->{query_struct}->{where};
+         return;
       },
    },
    {
@@ -140,18 +141,18 @@ sub get_rules {
          my $orderby = $event->{query_struct}->{order_by};
          return unless $orderby;
          foreach my $col ( @$orderby ) {
-            return 1 if $col =~ m/RAND\([^\)]*\)/i;
+            return 0 if $col =~ m/RAND\([^\)]*\)/i;
          }
-         return 0;
+         return;
       },
    },
    {
       id   => 'CLA.003',      # LIMIT w/ OFFSET
       code => sub {
          my ( $event ) = @_;
-         return 0 unless $event->{query_struct}->{limit};
-         return 0 unless defined $event->{query_struct}->{limit}->{offset};
-         return 1;
+         return unless $event->{query_struct}->{limit};
+         return unless defined $event->{query_struct}->{limit}->{offset};
+         return 0;
       },
    },
    {
@@ -161,22 +162,22 @@ sub get_rules {
          my $groupby = $event->{query_struct}->{group_by};
          return unless $groupby;
          foreach my $col ( @{$groupby->{columns}} ) {
-            return 1 if $col =~ m/^\d+\b/;
+            return 0 if $col =~ m/^\d+\b/;
          }
-         return 0;
+         return;
       },
    },
    {
       id   => 'COL.001',      # SELECT *
       code => sub {
          my ( $event ) = @_;
-         return 0 unless ($event->{query_struct}->{type} || '') eq 'select';
+         return unless ($event->{query_struct}->{type} || '') eq 'select';
          my $cols = $event->{query_struct}->{columns};
          return unless $cols;
          foreach my $col ( @$cols ) {
-            return 1 if $col->{name} eq '*';
+            return 0 if $col->{name} eq '*';
          }
-         return 0;
+         return;
       },
    },
    {
@@ -184,16 +185,19 @@ sub get_rules {
       code => sub {
          my ( $event ) = @_;
          my $type = $event->{query_struct}->{type} || '';
-         return 0 unless $type eq 'insert' || $type eq 'replace';
-         return 1 unless $event->{query_struct}->{columns};
-         return 0;
+         return unless $type eq 'insert' || $type eq 'replace';
+         return 0 unless $event->{query_struct}->{columns};
+         return;
       },
    },
    {
       id   => 'LIT.001',      # IP as string
       code => sub {
          my ( $event ) = @_;
-         return $event->{arg} =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
+         if ( $event->{arg} =~ m/['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/gc ) {
+            return (pos $event->{arg}) || 0;
+         }
+         return;
       },
    },
    {
@@ -201,18 +205,22 @@ sub get_rules {
       code => sub {
          my ( $event ) = @_;
          # YYYY-MM-DD
-         return 1 if $event->{arg} =~ m/(?<!['"])\d{4}-\d{1,2}-\d{1,2}\b/;
+         if ( $event->{arg} =~ m/(?<!['"])\d{4}-\d{1,2}-\d{1,2}\b/gc ) {
+            return (pos $event->{arg}) || 0;
+         }
          # YY-MM-DD
-         return 1 if $event->{arg} =~ m/(?<!['"\d])\d{2}-\d{1,2}-\d{1,2}\b/;
-         return 0;
+         if ( $event->{arg} =~ m/(?<!['"\d])\d{2}-\d{1,2}-\d{1,2}\b/gc ) {
+            return (pos $event->{arg}) || 0;
+         }
+         return;
       },
    },
    {
       id   => 'KWR.001',      # SQL_CALC_FOUND_ROWS
       code => sub {
          my ( $event ) = @_;
-         return 1 if $event->{query_struct}->{keywords}->{sql_calc_found_rows};
-         return 0;
+         return 0 if $event->{query_struct}->{keywords}->{sql_calc_found_rows};
+         return;
       },
    },
    {
@@ -233,9 +241,9 @@ sub get_rules {
                   $comma_join = 1;
                }
             }
-            return 1 if $comma_join && $ansi_join;
+            return 0 if $comma_join && $ansi_join;
          }
-         return 0;
+         return;
       },
    },
    {
@@ -255,30 +263,30 @@ sub get_rules {
          # All SELECT cols must be in GROUP BY cols clause.
          # E.g. select a, b, c from tbl group by a; -- non-deterministic
          foreach my $col ( @$cols ) {
-            return 1 unless $groupby_col{ $col->{name} };
+            return 0 unless $groupby_col{ $col->{name} };
          }
-         return 0;
+         return;
       },
    },
    {
       id   => 'RES.002',      # non-deterministic LIMIT w/o ORDER BY
       code => sub {
          my ( $event ) = @_;
-         return 0 unless $event->{query_struct}->{limit};
+         return unless $event->{query_struct}->{limit};
          # If query doesn't use tables then this check isn't applicable.
-         return 0 unless    $event->{query_struct}->{from}
+         return unless    $event->{query_struct}->{from}
                          || $event->{query_struct}->{into}
                          || $event->{query_struct}->{tables};
-         return 1 unless $event->{query_struct}->{order_by};
-         return 0;
+         return 0 unless $event->{query_struct}->{order_by};
+         return;
       },
    },
    {
       id   => 'STA.001',      # != instead of <>
       code => sub {
          my ( $event ) = @_;
-         return 1 if $event->{arg} =~ m/!=/;
-         return 0;
+         return 0 if $event->{arg} =~ m/!=/;
+         return;
       },
    },
 };
