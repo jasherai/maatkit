@@ -1,4 +1,5 @@
 
 # Query ID 0x0C74A51C7CA7AA15 at byte 0
 # WARN LIT.002 Unquoted date/time literal.
+#   matches near: < 2010-02-15
 SELECT c FROM tbl WHERE c < 2010-02-15
