@@ -5144,16 +5144,27 @@ sub do_tbl_replicate {
    $dbh->do($sql, {}, @{$tbl}{qw(database table)}, $where);
 
    # Catch any warnings thrown....
-   $sql = 'SHOW WARNINGS';
-   MKDEBUG && _d($sql);
-   my $warnings = $dbh->selectall_arrayref($sql, { Slice => {} } );
+   my $sql_warn = 'SHOW WARNINGS';
+   MKDEBUG && _d($sql_warn);
+   my $warnings = $dbh->selectall_arrayref($sql_warn, { Slice => {} } );
    foreach my $warning ( @$warnings ) {
       if ( $warning->{message} =~ m/Data truncated for column 'boundaries'/ ) {
          _d("Warning: WHERE clause too large for boundaries column; ",
             "mk-table-sync may fail; value:", $where);
       }
+      elsif ( $warning->{message} =~ m/not safe to log in statement format/ ) {
+         # Ignore this warning because we have purposely set statement-based
+         # replication.
+         MKDEBUG && _d('Ignoring warning:', $warning->{message});
+      }
       else {
-         die Dumper($warning);
+         # die doesn't permit extra line breaks so warn then die.
+         warn "\nChecksum query caused a warning:\n"
+            . join("\n",
+                 map { "\t$_: " . $warning->{$_} || '' } qw(level code message)
+              )
+            . "\n\tquery: $sql\n\n";
+         die;
       }
    }
 

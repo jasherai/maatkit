@@ -16,6 +16,7 @@ use Sandbox;
 require "$trunk/mk-table-checksum/mk-table-checksum";
 
 my $dp = new DSNParser();
+my $vp = new VersionParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
 
@@ -54,9 +55,8 @@ like(
    '--create-replicate-table creates the replicate table'
 );
 
-is(
-   $master_dbh->selectrow_hashref('show create table test.checksum')->{'Create Table'},
-"CREATE TABLE `checksum` (
+# In 5.0 "on" in "on update" is lowercase, in 5.1 it's uppercase.
+my $create_tbl = lc("CREATE TABLE `checksum` (
   `db` char(64) NOT NULL,
   `tbl` char(64) NOT NULL,
   `chunk` int(11) NOT NULL,
@@ -67,7 +67,16 @@ is(
   `master_cnt` int(11) default NULL,
   `ts` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
   PRIMARY KEY  (`db`,`tbl`,`chunk`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1",
+) ENGINE=MyISAM DEFAULT CHARSET=latin1");
+
+# In 5.0 there's 2 spaces, in 5.1 there 1.
+if ( $vp->version_ge($master_dbh, '5.1.0') ) {
+   $create_tbl =~ s/primary key  /primary key /;
+}
+
+is(
+   lc($master_dbh->selectrow_hashref('show create table test.checksum')->{'Create Table'}),
+   $create_tbl,
    'Creates the replicate table'
 );
 
