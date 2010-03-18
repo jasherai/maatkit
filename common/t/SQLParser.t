@@ -18,6 +18,87 @@ use SQLParser;
 my $sp = new SQLParser();
 
 # #############################################################################
+# WHERE where_condition
+# #############################################################################
+SKIP: {
+   skip 'Work in progress', 0;
+sub test_where {
+   my ( $where, $struct ) = @_;
+   is_deeply(
+      $sp->parse_where($where),
+      $struct,
+      "WHERE $where"
+   );
+};
+
+test_where(
+   'i=1',
+   ['i=1'],
+);
+
+test_where(
+   'i=1 and foo="bar"',
+   [
+      'i=1',
+      'foo="bar"',
+   ],
+);
+
+test_where(
+   '(i=1 and foo="bar")',
+   [
+      'i=1',
+      'foo="bar"',
+   ],
+);
+
+test_where(
+   '(i=1) and (foo="bar")',
+   [
+      'i=1',
+      'foo="bar"',
+   ],
+);
+
+test_where(
+   'i= 1 and foo ="bar" and j = 2',
+   [
+      'i= 1',
+      'foo ="bar"',
+      'j = 2',
+   ],
+);
+
+test_where(
+   'i=1 and foo="i have spaces and a keyword!"',
+   [
+      'i=1',
+      'foo="i have spaces and a keyword!"',
+   ],
+);
+
+test_where(
+   'i="this and this" or j="that and that" and k="and or and" and z=1',
+   [
+      'i="this and"',
+      'j="and that"',
+      'k="and or oh my"',
+      'z=1',
+   ],
+);
+
+test_where(
+   'i="this and this" or j in ("and", "or") and x is not null',
+   [
+      'i="this and"',
+      'j="and that"',
+      'k="and or oh my"',
+      'z=1',
+   ],
+);
+}
+
+# #############################################################################
 # Whitespace and comments.
 # #############################################################################
 is(
