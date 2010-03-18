@@ -347,6 +347,29 @@ sub get_range_statistics {
          die $EVAL_ERROR;
       }
    }
+
+   # Don't want minimum row if its zero or NULL.
+   if ( !$args{zero_row} ) {
+      if ( !$min
+           || $min eq '0'
+           || $min eq '0000-00-00'
+           || $min eq '0000-00-00 00:00:00'
+         )
+      {
+         MKDEBUG && _d('Discarding zero min:', $min);
+         $sql = "SELECT MIN(" . $q->quote($col) . ") FROM "
+              . $q->quote($db, $tbl)
+              . "WHERE $col > ? "
+              . ($where ? " AND $where " : '')
+              . "LIMIT 1";
+         MKDEBUG && _d($sql);
+         my $sth = $dbh->prepare($sql);
+         $sth->execute($min);
+         ($min) = $sth->fetchrow_array();
+         MKDEBUG && _d('New min:', $min);
+      }
+   }
+
    $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
       . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($sql);

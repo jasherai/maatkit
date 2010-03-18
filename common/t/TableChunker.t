@@ -27,7 +27,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 30;
+   plan tests => 38;
 }
 
 $sb->create_dbs($dbh, ['test']);
@@ -546,5 +546,116 @@ is_deeply(
    'find_chunk_columns() returns col and idx candidates'
 );
 
+# #############################################################################
+# Issue 941: mk-table-checksum chunking should treat zero dates similar to NULL
+# #############################################################################
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+# These tables have rows like: 0, 100, 101, 102, etc.  Without the
+# zero-row option, the result is like:
+#   range stats:
+#     min           => '0',
+#     max           => '107',
+#     rows_in_range => '9'
+#   chunks:
+#     '`i` < 24',
+#     '`i` >= 24 AND `i` < 48',
+#     '`i` >= 48 AND `i` < 72',
+#     '`i` >= 72 AND `i` < 96',
+#     '`i` >= 96'
+# Problem is that the last chunk does all the work.  If the zero row
+# is ignored then the chunks are much better and the first chunk will
+# cover the zero row.
+
+$sb->load_file('master', 'common/t/samples/issue_941.sql');
+
+sub test_zero_row {
+   my ( $tbl, $range, $chunks ) = @_;
+   $t = $p->parse( $du->get_create_table($dbh, $q, 'issue_941', $tbl) );
+   %params = $c->get_range_statistics(
+      dbh       => $dbh,
+      db        => 'issue_941',
+      tbl       => $tbl,
+      chunk_col => $tbl,
+      zero_row  => 0,
+   );
+   is_deeply(
+      \%params,
+      $range,
+      "$tbl range without zero row"
+   ) or print STDERR "Got ", Dumper(\%params);
+
+   @chunks = $c->calculate_chunks(
+      dbh        => $dbh,
+      tbl_struct => $t,
+      chunk_col  => $tbl,
+      chunk_size => '2',
+      %params,
+   );
+   is_deeply(
+      \@chunks,
+      $chunks,
+      "$tbl chunks without zero row"
+   ) or print STDERR "Got ", Dumper(\@chunks);
+
+   return;
+}
+
+test_zero_row(
+   'i',
+   { min=>100, max=>107, rows_in_range=>9 },
+   [
+      '`i` < 102',
+      '`i` >= 102 AND `i` < 104',
+      '`i` >= 104 AND `i` < 106',
+      '`i` >= 106',
+   ],
+);
+
+test_zero_row(
+   'i_null',
+   { min=>100, max=>107, rows_in_range=>9 },
+   [
+      '`i_null` < 102',
+      '`i_null` >= 102 AND `i_null` < 104',
+      '`i_null` >= 104 AND `i_null` < 106',
+      '`i_null` >= 106',
+      '`i_null` IS NULL',
+   ],
+);
+
+test_zero_row(
+   'd',
+   {
+      min => '2010-03-01',
+      max => '2010-03-05',
+      rows_in_range => '6'
+   },
+   [
+      '`d` < "2010-03-03"',
+      '`d` >= "2010-03-03"',
+   ],
+);
+
+test_zero_row(
+   'dt',
+   {
+      min => '2010-03-01 02:01:00',
+      max => '2010-03-05 00:30:00',
+      rows_in_range => '6',
+   },
+   [
+      '`dt` < "2010-03-02 09:30:40"',
+      '`dt` >= "2010-03-02 09:30:40" AND `dt` < "2010-03-03 17:00:20"',
+      '`dt` >= "2010-03-03 17:00:20"',
+   ],
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 $sb->wipe_clean($dbh);
 exit;
