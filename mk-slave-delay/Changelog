@@ -1,5 +1,7 @@
 Changelog for mk-slave-delay:
 
+   * --ask-pass crashed if h DSN part wasn't specified (issue 949).
+
 2010-01-06: version 1.0.19
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).

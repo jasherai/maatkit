@@ -1953,7 +1953,8 @@ sub get_dbh {
    my ( $dp, $info, $db ) = @_;
 
    if ( $o->get('ask-pass') ) {
-      $info->{p} = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
+      $info->{p} = OptionParser::prompt_noecho(
+         "Enter password" . ($info->{h} ? " for $info->{h}: " : ": "));
    }
 
    my $dbh = $dp->get_dbh(
