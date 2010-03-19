@@ -9,13 +9,64 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 27;
+use Test::More tests => 24;
 
 use DSNParser;
 use OptionParser;
 use MaatkitTest;
 
-my $dp = new DSNParser;
+my $opts = [
+   {
+      key => 'A',
+      desc => 'Default character set',
+      dsn  => 'charset',
+      copy => 1,
+   },
+   {
+      key => 'D',
+      desc => 'Database to use',
+      dsn  => 'database',
+      copy => 1,
+   },
+   {
+      key => 'F',
+      desc => 'Only read default options from the given file',
+      dsn  => 'mysql_read_default_file',
+      copy => 1,
+   },
+   {
+      key => 'h',
+      desc => 'Connect to host',
+      dsn  => 'host',
+      copy => 1,
+   },
+   {
+      key => 'p',
+      desc => 'Password to use when connecting',
+      dsn  => 'password',
+      copy => 1,
+   },
+   {
+      key => 'P',
+      desc => 'Port number to use for connection',
+      dsn  => 'port',
+      copy => 1,
+   },
+   {
+      key => 'S',
+      desc => 'Socket file to use for connection',
+      dsn  => 'mysql_socket',
+      copy => 1,
+   },
+   {
+      key => 'u',
+      desc => 'User for login if not current user',
+      dsn  => 'user',
+      copy => 1,
+   },
+];
+
+my $dp = new DSNParser(opts => $opts);
 
 is_deeply(
    $dp->parse('u=a,p=b'),
@@ -45,24 +96,8 @@ is_deeply(
    'Basic DSN with charset'
 );
 
-$dp = new DSNParser(
-   { key => 't', copy => 0 }
-   );
-
-is_deeply(
-   $dp->parse('u=a,p=b'),
-   {  u => 'a',
-      p => 'b',
-      S => undef,
-      h => undef,
-      P => undef,
-      F => undef,
-      D => undef,
-      t => undef,
-      A => undef,
-   },
-   'DSN with an extra option'
-);
+# The test that was here is no longer needed now because
+# all opts must be specified now.
 
 is_deeply(
    $dp->parse('u=a,p=b', { D => 'foo', h => 'me' }, { S => 'bar', h => 'host' } ),
@@ -72,7 +107,6 @@ is_deeply(
       p => 'b',
       P => undef,
       S => 'bar',
-      t => undef,
       u => 'a',
       A => undef,
    },
@@ -101,25 +135,8 @@ is (
    'DSN stringifies without extra crap',
 );
 
-is ($dp->usage(),
-<<EOF
-DSN syntax is key=value[,key=value...]  Allowable DSN keys:
-
-  KEY  COPY  MEANING
-  ===  ====  =============================================
-  A    yes   Default character set
-  D    yes   Database to use
-  F    yes   Only read default options from the given file
-  P    yes   Port number to use for connection
-  S    yes   Socket file to use for connection
-  h    yes   Connect to host
-  p    yes   Password to use when connecting
-  t    no    [No description]
-  u    yes   User for login if not current user
-
-  If the DSN is a bareword, the word is treated as the 'h' key.
-EOF
-, 'Usage');
+# The test that was here is no longer need due to issue 55.
+# DSN usage comes from the POD now.
 
 $dp->prop('autokey', 'h');
 is_deeply(
@@ -130,7 +147,6 @@ is_deeply(
       p => undef,
       P => undef,
       S => undef,
-      t => undef,
       u => undef,
       A => undef,
    },
@@ -147,7 +163,6 @@ is_deeply(
       P => undef,
       F => undef,
       D => undef,
-      t => undef,
       A => 'utf8',
    },
    'DSN with an explicit key and an autokey',
@@ -163,32 +178,14 @@ is_deeply(
       p => 'b',
       P => undef,
       S => 'bar',
-      t => undef,
       u => 'a',
       A => undef,
    },
    'DSN with defaults and an autokey'
 );
 
-is ($dp->usage(),
-<<EOF
-DSN syntax is key=value[,key=value...]  Allowable DSN keys:
-
-  KEY  COPY  MEANING
-  ===  ====  =============================================
-  A    yes   Default character set
-  D    yes   Database to use
-  F    yes   Only read default options from the given file
-  P    yes   Port number to use for connection
-  S    yes   Socket file to use for connection
-  h    yes   Connect to host
-  p    yes   Password to use when connecting
-  t    no    [No description]
-  u    yes   User for login if not current user
-
-  If the DSN is a bareword, the word is treated as the 'h' key.
-EOF
-, 'Usage');
+# The test that was here is no longer need due to issue 55.
+# DSN usage comes from the POD now.
 
 is_deeply (
    [
@@ -267,13 +264,13 @@ is_deeply (
 $dp->prop('required', { h => 1 } );
 throws_ok (
    sub { $dp->parse('u=b') },
-   qr/Missing DSN part 'h' in 'u=b'/,
+   qr/Missing required DSN option 'h' in 'u=b'/,
    'Missing host part',
 );
 
 throws_ok (
    sub { $dp->parse('h=foo,Z=moo') },
-   qr/Unrecognized DSN part 'Z' in 'h=foo,Z=moo'/,
+   qr/Unknown DSN option 'Z' in 'h=foo,Z=moo'/,
    'Extra key',
 );
 
@@ -304,7 +301,6 @@ is_deeply(
       p => undef,
       P => undef,
       S => undef,
-      t => undef,
       u => 'foo',
       A => undef,
    },
@@ -314,6 +310,10 @@ is_deeply(
 # #############################################################################
 # Test copy().
 # #############################################################################
+
+push @$opts, { key => 't', desc => 'table' };
+$dp = new DSNParser(opts => $opts);
+
 my $dsn_1 = {
    D => undef,
    F => undef,
@@ -395,7 +395,7 @@ SKIP: {
    # it now else we'll get an error.
    $dbh->disconnect();
 
-   $dp = new DSNParser();
+   $dp = new DSNParser(opts => $opts);
    $dp->prop('set-vars', 'wait_timeout=1000');
    $d  = $dp->parse('h=127.0.0.1,P=12345,A=utf8,u=msandbox,p=msandbox');
    my $dbh2 = $dp->get_dbh($dp->get_cxn_params($d), {mysql_use_result=>1});

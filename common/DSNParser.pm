@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -33,58 +33,24 @@ my $have_dbi = $EVAL_ERROR ? 0 : 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-# Defaults are built-in, but you can add/replace items by passing them as
-# hashrefs of {key, desc, copy, dsn}.  The desc and dsn items are optional.
-# You can set properties with the prop() sub.  Don't set the 'opts' property.
 sub new {
-   my ( $class, @opts ) = @_;
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(opts) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    my $self = {
-      opts => {
-         A => {
-            desc => 'Default character set',
-            dsn  => 'charset',
-            copy => 1,
-         },
-         D => {
-            desc => 'Database to use',
-            dsn  => 'database',
-            copy => 1,
-         },
-         F => {
-            desc => 'Only read default options from the given file',
-            dsn  => 'mysql_read_default_file',
-            copy => 1,
-         },
-         h => {
-            desc => 'Connect to host',
-            dsn  => 'host',
-            copy => 1,
-         },
-         p => {
-            desc => 'Password to use when connecting',
-            dsn  => 'password',
-            copy => 1,
-         },
-         P => {
-            desc => 'Port number to use for connection',
-            dsn  => 'port',
-            copy => 1,
-         },
-         S => {
-            desc => 'Socket file to use for connection',
-            dsn  => 'mysql_socket',
-            copy => 1,
-         },
-         u => {
-            desc => 'User for login if not current user',
-            dsn  => 'user',
-            copy => 1,
-         },
-      },
+      opts => {}  # h, P, u, etc.  Should come from DSN OPTIONS section in POD.
    };
-   foreach my $opt ( @opts ) {
-      MKDEBUG && _d('Adding extra property', $opt->{key});
-      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   foreach my $opt ( @{$args{opts}} ) {
+      if ( !$opt->{key} || !$opt->{desc} ) {
+         die "Invalid DSN option: ", Dumper($opt);
+      }
+      MKDEBUG && _d('DSN option:', Dumper($opt));
+      $self->{opts}->{$opt->{key}} = {
+         dsn  => $opt->{dsn},
+         desc => $opt->{desc},
+         copy => $opt->{copy} || 0,
+      };
    }
    return bless $self, $class;
 }
@@ -126,7 +92,7 @@ sub parse {
    $defaults ||= {};
    my %given_props;
    my %final_props;
-   my %opts = %{$self->{opts}};
+   my $opts = $self->{opts};
 
    # Parse given props
    foreach my $dsn_part ( split(/,/, $dsn) ) {
@@ -142,11 +108,11 @@ sub parse {
    }
 
    # Fill in final props from given, previous, and/or default props
-   foreach my $key ( keys %opts ) {
+   foreach my $key ( keys %$opts ) {
       MKDEBUG && _d('Finding value for', $key);
       $final_props{$key} = $given_props{$key};
       if (   !defined $final_props{$key}
-           && defined $prev->{$key} && $opts{$key}->{copy} )
+           && defined $prev->{$key} && $opts->{$key}->{copy} )
       {
          $final_props{$key} = $prev->{$key};
          MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
@@ -159,12 +125,17 @@ sub parse {
 
    # Sanity check props
    foreach my $key ( keys %given_props ) {
-      die "Unrecognized DSN part '$key' in '$dsn'\n"
-         unless exists $opts{$key};
+      die "Unknown DSN option '$key' in '$dsn'.  For more details, "
+            . "please use the --help option, or try 'perldoc $PROGRAM_NAME' "
+            . "for complete documentation."
+         unless exists $opts->{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
+         die "Missing required DSN option '$key' in '$dsn'.  For more details, "
+               . "please use the --help option, or try 'perldoc $PROGRAM_NAME' "
+               . "for complete documentation."
+            unless $final_props{$key};
       }
    }
 
@@ -193,23 +164,6 @@ sub as_string {
       map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
       sort keys %$dsn );
-}
-
-sub usage {
-   my ( $self ) = @_;
-   my $usage
-      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n\n"
-      . "  KEY  COPY  MEANING\n"
-      . "  ===  ====  =============================================\n";
-   my %opts = %{$self->{opts}};
-   foreach my $key ( sort keys %opts ) {
-      $usage .= "  $key    "
-             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
-             .  ($opts{$key}->{desc} || '[No description]')
-             . "\n";
-   }
-   $usage .= "\n  If the DSN is a bareword, the word is treated as the 'h' key.\n";
-   return $usage;
 }
 
 # Supports PostgreSQL via the dbidriver element of $info, but assumes MySQL by
