@@ -45,7 +45,12 @@ sub new {
       if ( !$opt->{key} || !$opt->{desc} ) {
          die "Invalid DSN option: ", Dumper($opt);
       }
-      MKDEBUG && _d('DSN option:', Dumper($opt));
+      MKDEBUG && _d('DSN option:',
+         join(', ',
+            map { "$_=" . (defined $opt->{$_} ? ($opt->{$_} || '') : 'undef') }
+               keys %$opt
+         )
+      );
       $self->{opts}->{$opt->{key}} = {
          dsn  => $opt->{dsn},
          desc => $opt->{desc},
@@ -164,6 +169,23 @@ sub as_string {
       map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
       sort keys %$dsn );
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my $usage
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n\n"
+      . "  KEY  COPY  MEANING\n"
+      . "  ===  ====  =============================================\n";
+   my %opts = %{$self->{opts}};
+   foreach my $key ( sort keys %opts ) {
+      $usage .= "  $key    "
+             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
+             .  ($opts{$key}->{desc} || '[No description]')
+             . "\n";
+   }
+   $usage .= "\n  If the DSN is a bareword, the word is treated as the 'h' key.\n";
+   return $usage;
 }
 
 # Supports PostgreSQL via the dbidriver element of $info, but assumes MySQL by

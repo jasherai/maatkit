@@ -9,17 +9,15 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 145;
+use Test::More tests => 146;
 
 use OptionParser;
 use DSNParser;
 use MaatkitTest;
 
-my $dp = new DSNParser();
 my $o  = new OptionParser(
    description  => 'parses command line options.',
    prompt       => '[OPTIONS]',
-   dp           => $dp,
 );
 
 isa_ok($o, 'OptionParser');
@@ -33,6 +31,62 @@ my %opts;
 # To make this test path-independent, we don't break lines.  This only
 # affects testing.
 $ENV{DONT_BREAK_LINES} = 1;
+
+# Some tests need a DSNParser but we don't provide a POD with a
+# DSN OPTIONS section that would cause the OptionParser to create
+# a DSNParser automatically.  So we create the DSNParser manually
+# and hack it into the OptionParser.
+my $dsn_opts = [
+   {
+      key => 'A',
+      desc => 'Default character set',
+      dsn  => 'charset',
+      copy => 1,
+   },
+   {
+      key => 'D',
+      desc => 'Database to use',
+      dsn  => 'database',
+      copy => 1,
+   },
+   {
+      key => 'F',
+      desc => 'Only read default options from the given file',
+      dsn  => 'mysql_read_default_file',
+      copy => 1,
+   },
+   {
+      key => 'h',
+      desc => 'Connect to host',
+      dsn  => 'host',
+      copy => 1,
+   },
+   {
+      key => 'p',
+      desc => 'Password to use when connecting',
+      dsn  => 'password',
+      copy => 1,
+   },
+   {
+      key => 'P',
+      desc => 'Port number to use for connection',
+      dsn  => 'port',
+      copy => 1,
+   },
+   {
+      key => 'S',
+      desc => 'Socket file to use for connection',
+      dsn  => 'mysql_socket',
+      copy => 1,
+   },
+   {
+      key => 'u',
+      desc => 'User for login if not current user',
+      dsn  => 'user',
+      copy => 1,
+   },
+];
+my $dp = new DSNParser(opts => $dsn_opts);
 
 # #############################################################################
 # Test basic usage.
@@ -49,7 +103,6 @@ ok(
 # More exhaustive test of how the standard interface works internally.
 $o  = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
 ok(!$o->has('time'), 'There is no --time yet');
 @opt_specs = $o->_pod_to_specs("$trunk/common/t/samples/pod/pod_sample_01.txt");
@@ -378,7 +431,7 @@ like(
 eval { $o->_pod_to_specs("$trunk/common/t/samples/pod/pod_sample_03.txt"); };
 like(
    $EVAL_ERROR,
-   qr/No valid specs in POD OPTIONS/,
+   qr/No valid specs in OPTIONS/,
    'Dies on POD with an OPTIONS section but no option items'
 );
 
@@ -713,7 +766,6 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
 $o->_parse_specs(
    { spec => 'cat|C=s', desc => 'How to catch the cat; required' }
@@ -949,7 +1001,6 @@ like(
 # Option can't 'allowed with' a nonexistent option.
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
 eval {
    $o->_parse_specs(
@@ -969,8 +1020,10 @@ like(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
+# Hack DSNParser into OptionParser.  This is just for testing.
+$o->{DSNParser} = $dp;
+
 $o->_parse_specs(
    { spec => 'foo=i',   desc => 'Foo (default 5)'                 },
    { spec => 'bar',     desc => 'Bar (default)'                   },
@@ -1195,8 +1248,9 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
+# Hack DSNParser into OptionParser.  This is just for testing.
+$o->{DSNParser} = $dp;
 $o->_parse_specs(
    { spec => 'foo=d', desc => 'DSN foo' },
    { spec => 'bar=d', desc => 'DSN bar' },
@@ -1314,8 +1368,10 @@ EOF
 
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
+# Hack DSNParser into OptionParser.  This is just for testing.
+$o->{DSNParser} = $dp;
+
 $o->_parse_specs(
    { spec => 'foo|f=d', desc => 'DSN foo' },
    { spec => 'bar|b=d', desc => 'DSN bar' },
@@ -1777,8 +1833,9 @@ like(
 # The problem is actually in how OptionParser handles copying DSN vals.
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
+# Hack DSNParser into OptionParser.  This is just for testing.
+$o->{DSNParser} = $dp;
 $o->_parse_specs(
    { spec  => 'source=d',   desc  => 'source',   },
    { spec  => 'dest=d',     desc  => 'dest',     },
@@ -1814,8 +1871,9 @@ is_deeply(
 # case ii.
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
+# Hack DSNParser into OptionParser.  This is just for testing.
+$o->{DSNParser} = $dp;
 $o->get_specs("$trunk/mk-archiver/mk-archiver");
 @ARGV = (
    '--source',    'h=127.1,S=/tmp/mysql.socket',
@@ -1873,7 +1931,6 @@ is_deeply(
 diag(`echo "iterations=4" > ~/.OptionParser.t.conf`);
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
 $o->get_specs("$trunk/mk-query-digest/mk-query-digest");
 @ARGV = (qw(--iterations 9));
@@ -1892,7 +1949,6 @@ diag(`rm -rf ~/.OptionParser.t.conf`);
 # time type opts need to allow leading +/-
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
 $o->get_specs("$trunk/mk-query-digest/mk-query-digest");
 @ARGV = (qw(--run-time +9));
@@ -1928,7 +1984,6 @@ is(
 # has spaces like val, val, val.
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
 $o->_parse_specs(
    { spec  => 'foo=a',   desc => 'foo (default arg, cmd, ip, port)' },
@@ -1947,8 +2002,9 @@ is_deeply(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
+# Hack DSNParser into OptionParser.  This is just for testing.
+$o->{DSNParser} = $dp;
 $o->_parse_specs(
    { spec => 'foo=d', desc => 'DSN foo' },
    { spec => 'bar=d', desc => 'DSN bar' },
@@ -1987,7 +2043,6 @@ is_deeply(
 # Should die on circular dependency, avoid infinite loop.
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
 $o->_parse_specs(
    { spec => 'foo=d', desc => 'DSN foo' },
@@ -2020,7 +2075,6 @@ throws_ok(
 # #############################################################################
 $o = new OptionParser(
    description  => 'parses command line options.',
-   dp           => $dp,
 );
 $o->_parse_specs(
    { spec  => 'foo=z',   desc => 'foo' },
@@ -2031,6 +2085,18 @@ is(
    $o->get('foo'),
    'null',
    'NULL size'
+);
+
+# #############################################################################
+# Issue 55: Integrate DSN specifications into POD
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+);
+$o->get_specs("$trunk/common/t/samples/pod/pod_sample_dsn.txt");
+ok(
+   $o->DSNParser(),
+   'Auto-created DNSParser obj'
 );
 
 # #############################################################################
