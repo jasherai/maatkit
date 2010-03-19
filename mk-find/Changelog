@@ -1,5 +1,9 @@
 Changelog for mk-find:
 
+   * Added --column-type test (issue 25).
+   * Added ability to test for NULL size (issue 344).
+   * --ask-pass didn't work if --password was specified.
+
 2010-01-06: version 0.9.21
 
    * The script crashed immediately on some OS or versions of Perl (issue 733).

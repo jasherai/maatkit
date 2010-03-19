@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 18;
+   plan tests => 20;
 }
 
 my $output;
@@ -46,7 +46,7 @@ like(
 # becomes an issue, I may commit my copy of the sakila db to Google Code.
 
 SKIP: {
-   skip 'Sandbox master does not have the sakila database', 15
+   skip 'Sandbox master does not have the sakila database', 17
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
    # ########################################################################
@@ -71,11 +71,19 @@ SKIP: {
       'Explicit --print',
    );
 
+   # Test --column-*
    $output = `$cmd sakila  --column-name release_year --print`;
    is(
       $output,
       "`sakila`.`film`\n",
       '--column-name'
+   );
+
+   $output = `$cmd sakila --tbllike actor --column-type smallint --print`;
+   is(
+      $output,
+      "`sakila`.`actor`\n",
+      '--column-type'
    );
 
    # Test --view.
@@ -167,6 +175,21 @@ SKIP: {
       $output,
       '',
       "--trigger that doesn't match with non-matching --trigger-table"
+   );
+
+   # Test NULL sizes.
+   $output = `$cmd sakila  --datasize NULL`,
+   is(
+      $output,
+"`sakila`.`actor_info`
+`sakila`.`customer_list`
+`sakila`.`film_list`
+`sakila`.`nicer_but_slower_film_list`
+`sakila`.`sales_by_film_category`
+`sakila`.`sales_by_store`
+`sakila`.`staff_list`
+",
+      '--datasize NULL',
    );
 };
 

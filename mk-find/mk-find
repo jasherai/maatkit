@@ -391,7 +391,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 5839
+# OptionParser package 5963
 # ###########################################################################
 package OptionParser;
 
@@ -822,66 +822,93 @@ sub get_opts {
       }
    }
 
-   foreach my $long ( keys %{$self->{opts}} ) {
-      my $opt = $self->{opts}->{$long};
-      if ( $opt->{got} ) {
-         if ( exists $self->{disables}->{$long} ) {
-            my @disable_opts = @{$self->{disables}->{$long}};
-            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
-            MKDEBUG && _d('Unset options', @disable_opts,
-               'because', $long,'disables them');
-         }
+   $self->_check_opts( keys %{$self->{opts}} );
+   $self->{got_opts} = 1;
+   return;
+}
 
-         if ( exists $self->{allowed_groups}->{$long} ) {
+sub _check_opts {
+   my ( $self, @long ) = @_;
+   my $long_last = scalar @long;
+   while ( @long ) {
+      foreach my $i ( 0..$#long ) {
+         my $long = $long[$i];
+         next unless $long;
+         my $opt  = $self->{opts}->{$long};
+         if ( $opt->{got} ) {
+            if ( exists $self->{disables}->{$long} ) {
+               my @disable_opts = @{$self->{disables}->{$long}};
+               map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
+               MKDEBUG && _d('Unset options', @disable_opts,
+                  'because', $long,'disables them');
+            }
 
-            my @restricted_groups = grep {
-               !exists $self->{allowed_groups}->{$long}->{$_}
-            } keys %{$self->{groups}};
+            if ( exists $self->{allowed_groups}->{$long} ) {
 
-            my @restricted_opts;
-            foreach my $restricted_group ( @restricted_groups ) {
-               RESTRICTED_OPT:
-               foreach my $restricted_opt (
-                  keys %{$self->{groups}->{$restricted_group}} )
-               {
-                  next RESTRICTED_OPT if $restricted_opt eq $long;
-                  push @restricted_opts, $restricted_opt
-                     if $self->{opts}->{$restricted_opt}->{got};
+               my @restricted_groups = grep {
+                  !exists $self->{allowed_groups}->{$long}->{$_}
+               } keys %{$self->{groups}};
+
+               my @restricted_opts;
+               foreach my $restricted_group ( @restricted_groups ) {
+                  RESTRICTED_OPT:
+                  foreach my $restricted_opt (
+                     keys %{$self->{groups}->{$restricted_group}} )
+                  {
+                     next RESTRICTED_OPT if $restricted_opt eq $long;
+                     push @restricted_opts, $restricted_opt
+                        if $self->{opts}->{$restricted_opt}->{got};
+                  }
+               }
+
+               if ( @restricted_opts ) {
+                  my $err;
+                  if ( @restricted_opts == 1 ) {
+                     $err = "--$restricted_opts[0]";
+                  }
+                  else {
+                     $err = join(', ',
+                               map { "--$self->{opts}->{$_}->{long}" }
+                               grep { $_ } 
+                               @restricted_opts[0..scalar(@restricted_opts) - 2]
+                            )
+                          . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+                  }
+                  $self->save_error("--$long is not allowed with $err");
                }
             }
 
-            if ( @restricted_opts ) {
-               my $err;
-               if ( @restricted_opts == 1 ) {
-                  $err = "--$restricted_opts[0]";
-               }
-               else {
-                  $err = join(', ',
-                            map { "--$self->{opts}->{$_}->{long}" }
-                            grep { $_ } 
-                            @restricted_opts[0..scalar(@restricted_opts) - 2]
-                         )
-                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
-               }
-               $self->save_error("--$long is not allowed with $err");
-            }
+         }
+         elsif ( $opt->{is_required} ) { 
+            $self->save_error("Required option --$long must be specified");
          }
 
-      }
-      elsif ( $opt->{is_required} ) { 
-         $self->save_error("Required option --$long must be specified");
+         $self->_validate_type($opt);
+         if ( $opt->{parsed} ) {
+            delete $long[$i];
+         }
+         else {
+            MKDEBUG && _d('Temporarily failed to parse', $long);
+         }
       }
 
-      $self->_validate_type($opt);
+      die "Failed to parse options, possibly due to circular dependencies"
+         if @long == $long_last;
+      $long_last = @long;
    }
 
-   $self->{got_opts} = 1;
    return;
 }
 
 sub _validate_type {
    my ( $self, $opt ) = @_;
-   return unless $opt && $opt->{type};
+   return unless $opt;
+
+   if ( !$opt->{type} ) {
+      $opt->{parsed} = 1;
+      return;
+   }
+
    my $val = $opt->{value};
 
    if ( $val && $opt->{type} eq 'm' ) {  # type time
@@ -911,26 +938,21 @@ sub _validate_type {
       my $from_key = $self->{defaults_to}->{ $opt->{long} };
       if ( $from_key ) {
          MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
-         $prev = $self->{opts}->{$from_key}->{value};
+         if ( $self->{opts}->{$from_key}->{parsed} ) {
+            $prev = $self->{opts}->{$from_key}->{value};
+         }
+         else {
+            MKDEBUG && _d('Cannot parse', $opt->{long}, 'until',
+               $from_key, 'parsed');
+            return;
+         }
       }
       my $defaults = $self->{dp}->parse_options($self);
       $opt->{value} = $self->{dp}->parse($val, $prev, $defaults);
    }
    elsif ( $val && $opt->{type} eq 'z' ) {  # type size
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
-      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
-      if ( defined $num ) {
-         if ( $factor ) {
-            $num *= $factor_for{$factor};
-            MKDEBUG && _d('Setting option', $opt->{y},
-               'to num', $num, '* factor', $factor);
-         }
-         $opt->{value} = ($pre || '') . $num;
-      }
-      else {
-         $self->save_error("Invalid size for --$opt->{long}");
-      }
+      $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
       $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -943,6 +965,7 @@ sub _validate_type {
          $opt->{long}, 'type', $opt->{type}, 'value', $val);
    }
 
+   $opt->{parsed} = 1;
    return;
 }
 
@@ -1211,6 +1234,31 @@ sub clone {
    }
 
    return bless \%clone;     
+}
+
+sub _parse_size {
+   my ( $self, $opt, $val ) = @_;
+
+   if ( lc($val || '') eq 'null' ) {
+      MKDEBUG && _d('NULL size for', $opt->{long});
+      $opt->{value} = 'null';
+      return;
+   }
+
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+   my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+   if ( defined $num ) {
+      if ( $factor ) {
+         $num *= $factor_for{$factor};
+         MKDEBUG && _d('Setting option', $opt->{y},
+            'to num', $num, '* factor', $factor);
+      }
+      $opt->{value} = ($pre || '') . $num;
+   }
+   else {
+      $self->save_error("Invalid size for --$opt->{long}");
+   }
+   return;
 }
 
 sub _d {
@@ -2224,6 +2272,8 @@ sub _d {
 # ###########################################################################
 package mk_find;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
@@ -2275,6 +2325,17 @@ my %test_for = (
       }
       foreach my $col ( @{$struct->{cols}} ) {
          return 1 if $col =~ m/$test/;
+      }
+      return 0;
+   },
+   'column-type' => sub {
+      my ( $table ) = @_;
+      my $struct = $table->{struct};
+      return unless $struct;
+      my $test     = lc($o->get('column-type'));
+      my $type_for = $struct->{type_for};
+      foreach my $col ( keys %$type_for ) {
+         return 1 if $type_for->{$col} eq $test;
       }
       return 0;
    },
@@ -2466,6 +2527,7 @@ my %arg_for = (
 
 my @table_struct_tests = qw(
    column-name
+   column-type
    view
 );
 
@@ -2485,7 +2547,7 @@ sub main {
    my $dp = new DSNParser();
       $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[option]... [database...]',
+      prompt      => '[OPTION]... [DATABASE...]',
       description => 'searches for MySQL tables and executes actions, like '
                    . 'GNU find.  The default action is to print the database '
                    . 'and table name.',
@@ -2549,7 +2611,7 @@ sub main {
    # ########################################################################
 
    # Connect to the database.
-   if ( !$o->get('password') && $o->get('ask-pass') ) {
+   if ( $o->get('ask-pass') ) {
       $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
 
@@ -2720,7 +2782,7 @@ sub main {
             $table;  # No tests == all tables (issue 549).
          }
       } @tables;
-   
+
       # Quote database and table names if desired.
       if ( $o->get('quote') ) {
          foreach my $table ( @tables ) {
@@ -2774,6 +2836,12 @@ sub all {
 # Checks the given property of the given table to see if it passes the test
 sub test_number {
    my ( $table, $prop, $test ) = @_;
+
+   # E.g. --datasize NULL.
+   if ( $test eq 'null' ) {
+      return !defined $table->{$prop};
+   }
+
    my ($num) = $test =~ m/(\d+)/;
    return defined $table->{$prop} && (
          ( $test =~ m/-/  && $table->{$prop} < $num )
@@ -3080,6 +3148,7 @@ Table's next AUTO_INCREMENT is n.  This tests the Auto_increment column.
 type: size; group: Tests
 
 Table avg row len is n bytes.  This tests the Avg_row_length column.
+The specified size can be "NULL" to test where Avg_row_length IS NULL.
 
 =item --checksum
 
@@ -3104,6 +3173,15 @@ Table collation matches pattern.  This tests the Collation column.
 type: string; group: Tests
 
 A column name in the table matches pattern.
+
+=item --column-type
+
+type: string; group: Tests
+
+A column in the table matches this type (case-insensitive).
+
+Examples of types are: varchar, char, int, smallint, bigint, decimal, year,
+timestamp, text, enum.
 
 =item --comment
 
@@ -3166,12 +3244,14 @@ Table was created n days ago.  This tests the Create_time column.
 type: size; group: Tests
 
 Table has n bytes of free space.  This tests the Data_free column.
+The specified size can be "NULL" to test where Data_free IS NULL.
 
 =item --datasize
 
 type: size; group: Tests
 
 Table data uses n bytes of space.  This tests the Data_length column.
+The specified size can be "NULL" to test where Data_length IS NULL.
 
 =item --dblike
 
@@ -3209,6 +3289,7 @@ Function definition matches pattern.
 type: size; group: Tests
 
 Table indexes use n bytes of space.  This tests the Index_length column.
+The specified size can be "NULL" to test where Index_length IS NULL.
 
 =item --kmin
 
@@ -3251,6 +3332,7 @@ Table row format matches pattern.  This tests the Row_format column.
 type: size; group: Tests
 
 Table has n rows.  This tests the Rows column.
+The specified size can be "NULL" to test where Rows IS NULL.
 
 =item --server-id
 
