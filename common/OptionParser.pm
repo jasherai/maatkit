@@ -656,19 +656,7 @@ sub _validate_type {
    }
    elsif ( $val && $opt->{type} eq 'z' ) {  # type size
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
-      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
-      if ( defined $num ) {
-         if ( $factor ) {
-            $num *= $factor_for{$factor};
-            MKDEBUG && _d('Setting option', $opt->{y},
-               'to num', $num, '* factor', $factor);
-         }
-         $opt->{value} = ($pre || '') . $num;
-      }
-      else {
-         $self->save_error("Invalid size for --$opt->{long}");
-      }
+      $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
       $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -1004,6 +992,32 @@ sub clone {
    }
 
    return bless \%clone;     
+}
+
+sub _parse_size {
+   my ( $self, $opt, $val ) = @_;
+
+   # Special case used by mk-find to do things like --datasize null.
+   if ( lc($val || '') eq 'null' ) {
+      MKDEBUG && _d('NULL size for', $opt->{long});
+      $opt->{value} = 'null';
+      return;
+   }
+
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+   my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+   if ( defined $num ) {
+      if ( $factor ) {
+         $num *= $factor_for{$factor};
+         MKDEBUG && _d('Setting option', $opt->{y},
+            'to num', $num, '* factor', $factor);
+      }
+      $opt->{value} = ($pre || '') . $num;
+   }
+   else {
+      $self->save_error("Invalid size for --$opt->{long}");
+   }
+   return;
 }
 
 sub _d {

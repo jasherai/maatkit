@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 144;
+use Test::More tests => 145;
 
 use OptionParser;
 use DSNParser;
@@ -2012,6 +2012,25 @@ throws_ok(
    sub { $o->_check_opts(qw(foo bar)) },
    qr/circular dependencies/,
    'Dies on circular dependency'
+);
+
+
+# #############################################################################
+# Issue 344
+# #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dp           => $dp,
+);
+$o->_parse_specs(
+   { spec  => 'foo=z',   desc => 'foo' },
+);
+@ARGV = qw(--foo null);
+$o->get_opts();
+is(
+   $o->get('foo'),
+   'null',
+   'NULL size'
 );
 
 # #############################################################################
