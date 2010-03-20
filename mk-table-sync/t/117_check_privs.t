@@ -29,7 +29,7 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 5;
+   plan tests => 2;
 }
 
 $sb->wipe_clean($master_dbh);
@@ -39,36 +39,25 @@ $sb->create_dbs($master_dbh, [qw(test)]);
 # #############################################################################
 # Issue 907: Add --[no]check-privileges 
 # #############################################################################
-$sb->load_file('master', 'mk-table-sync/t/samples/before.sql');
-$output = `$trunk/mk-table-sync/mk-table-sync --print h=127.1,P=12345,u=test,D=test,t=test3 t=test4`;
-# This test changed because the row sql now does ORDER BY key_col (id here)
-is($output, <<EOF,
-UPDATE `test`.`test4` SET `name`='001' WHERE `id`=1 LIMIT 1;
-UPDATE `test`.`test4` SET `name`=51707 WHERE `id`=15034 LIMIT 1;
-EOF
-  'Baseline for --columns: found differences');
 
-$output = `$trunk/mk-table-sync/mk-table-sync --columns=id --print h=127.0.0.1,P=12345,u=test,D=test,t=test3 t=test4`;
-is($output, "", '--columns id: found no differences');
+#1) get the script to create the underprivileged user  
 
-$output = `$trunk/mk-table-sync/mk-table-sync --ignore-columns name --print h=127.0.0.1,P=12345,u=test,D=test,t=test3 t=test4`;
-is($output, "", '--ignore-columns name: found no differences');
+$master_dbh->do('CREATE USER \'test_907\'@\'localhost\'');
+#2) run and get output to see what it's like when it's broken,  
+$output=`$trunk/mk-table-sync/mk-table-sync --no-check-slave --sync-to-master --print h=127.0.0.1,P=12346,u=msandbox,p=msandbox,D=mysql,t=user`;
+like($output, qr/Access denied for user/, 'Testing fail even on print with unprivileged user') || diag explain $output;
+#3) run again (outside of test) to see what output is like when it works 
+# done, output is :
+#DBI connect('mysql;host=127.0.0.1;port=12346;mysql_read_default_group=client','test',...) failed: Access denied for user 'test'@'localhost' (using password: NO) at ../mk-table-sync line 1169
+#check if its ok with no privleges option
+$output=`$trunk/mk-table-sync/mk-table-sync --no-check-privileges --no-check-slave --sync-to-master --print h=127.0.0.1,P=12346,u=test_907,D=mysql,t=user`;
+like($output, '', 'Test fail with no check privileges also') || diag explain $output;
 
-$output = `$trunk/mk-table-sync/mk-table-sync --ignore-columns id --print h=127.0.0.1,P=12345,u=test,D=test,t=test3 t=test4`;
-# This test changed for the same reason as above.
-is($output, <<EOF,
-UPDATE `test`.`test4` SET `name`='001' WHERE `id`=1 LIMIT 1;
-UPDATE `test`.`test4` SET `name`=51707 WHERE `id`=15034 LIMIT 1;
-EOF
-  '--ignore-columns id: found differences');
+#+ clean up user
+$master_dbh->do('DROP USER \'test_907\'@\'localhost\'');
 
-$output = `$trunk/mk-table-sync/mk-table-sync --columns name --print h=127.0.0.1,P=12345,u=test,D=test,t=test3 t=test4`;
-# This test changed for the same reason as above.
-is($output, <<EOF,
-UPDATE `test`.`test4` SET `name`='001' WHERE `id`=1 LIMIT 1;
-UPDATE `test`.`test4` SET `name`=51707 WHERE `id`=15034 LIMIT 1;
-EOF
-  '--columns name: found differences');
+
+
 
 # #############################################################################
 # Done.
