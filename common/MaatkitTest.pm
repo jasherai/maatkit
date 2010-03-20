@@ -135,10 +135,11 @@ sub output {
    }
    local *STDOUT = *output_fh;
    local *STDERR if $args{stderr};  # do in outer scope of this sub
-   if ( $args{stderr} ) {
-      open  STDERR, ">&STDOUT"
-         or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
-   }
+   *STDERR = *STDOUT;
+   #if ( $args{stderr} ) {
+   #   open  STDERR, ">&STDOUT"
+   #      or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
+   #}
    eval { $code->() };
    close *output_fh;
    if ( $EVAL_ERROR ) {
