@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Usage: ./make-pdf <name of PDF file>
+# This just goes into a loop of rebuilding the PDF file whenever the LaTeX
+# file(s) are changed.  It assumes you're using the Gnome desktop environment.
+
+killall evince;
+evince "$1" >/dev/null 2>&1 &
+
+while inotifywait -qq -e modify *.tex || true; do
+   echo "`date` File modified";
+   pdflatex "${1%%.pdf}" < /dev/null >/tmp/makepdf 2>&1;
+   if grep -q 'Emergency stop' /tmp/makepdf; then
+      echo "Error."; grep -A1 '^!' /tmp/makepdf;
+   fi
+done
