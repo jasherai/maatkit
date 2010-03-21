@@ -1,0 +1,59 @@
+\documentclass{beamer}
+
+\title{Query analysis with mk-query-digest}
+%\author{Baron Schwartz}
+%\institute{Maatkit}
+\titlegraphic{\includegraphics[width=40mm]{maatkit-logo}}
+\date{March 27, 2010}
+
+\begin{document}
+
+\begin{frame}<handout:0>
+  \titlepage
+\end{frame}
+
+\section{Introduction to Maatkit}
+
+\begin{frame}
+   \frametitle{What is Maatkit?}
+   \begin{block}{Command-line Perl utilities, originally for MySQL}
+      \begin{itemize}
+         \item Checksum replicas -vs- their master
+         \item Synchronize data
+         \item Analyze queries
+         \item And dozens more tasks\dots
+      \end{itemize}
+   \end{block}
+   \pause
+   \begin{block}{Today, Maatkit is useful for many systems}
+      \begin{itemize}
+         \item MySQL
+         \item PostgreSQL
+         \item Web servers
+         \item Memcached
+      \end{itemize}
+   \end{block}
+\end{frame}
+
+\begin{frame}
+   \frametitle{What's nice about Maatkit}
+   \begin{block}{High quality}
+      \begin{itemize}
+         \item Thousands of unit and integration tests
+         \item Complete and accurate documentation
+      \end{itemize}
+   \end{block}
+   \pause
+   \begin{block}{Easy to use}
+      \begin{itemize}
+         \item Consistent options and behavior amongst tools
+         \item Single file per tool, self-contained
+         \item Output is command-line \emph{and} human friendly
+         \item No need to install, just download
+         \item \texttt{wget http://www.maatkit.org/get/mk-<toolname>}
+      \end{itemize}
+   \end{block}
+\end{frame}
+
+\end{document}
+
