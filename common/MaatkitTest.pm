@@ -134,8 +134,8 @@ sub output {
          or die "Cannot capture output to variable: $OS_ERROR";
    }
    local *STDOUT = *output_fh;
-   local *STDERR if $args{stderr};  # do in outer scope of this sub
-   *STDERR = *STDOUT;
+   local *STDERR     if $args{stderr};  # do in outer scope of this sub
+   *STDERR = *STDOUT if $args{stderr};
    #if ( $args{stderr} ) {
    #   open  STDERR, ">&STDOUT"
    #      or die "Cannot dupe STDERR to STDOUT: $OS_ERROR";
