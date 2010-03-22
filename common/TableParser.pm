@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -450,7 +450,7 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          # Escape ( ) in the key def so Perl treats them literally.
          $key_def =~ s/([\(\)])/\\$1/g;
-         $ddl =~ s/\s+$key_def//;
+         $ddl =~ s/\s+$key_def//i;
 
          my $key_ddl = "ADD $_->{ddl}";
          # Last key in table won't have trailing comma, but since
