@@ -18,7 +18,7 @@ require "$trunk/mk-upgrade/mk-upgrade";
 # This runs immediately if the server is already running, else it starts it.
 diag(`$trunk/sandbox/start-sandbox master 12347 >/dev/null`);
 
-my $dp = new DSNParser();
+my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave2');
