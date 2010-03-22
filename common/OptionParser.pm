@@ -105,6 +105,7 @@ sub new {
 # no file is given. This sub must be called before get_opts();
 sub get_specs {
    my ( $self, $file ) = @_;
+   $file ||= __FILE__;
    my @specs = $self->_pod_to_specs($file);
    $self->_parse_specs(@specs);
 
@@ -114,10 +115,6 @@ sub get_specs {
    my $contents = do { local $/ = undef; <$fh> };
    close $file;
    if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
       MKDEBUG && _d('Parsing DSN OPTIONS');
       my $dsn_attribs = {
          dsn  => 1,
