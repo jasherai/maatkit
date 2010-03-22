@@ -1,0 +1,131 @@
+\section{Using mk-query-digest with PostgreSQL}
+
+\begin{frame}
+   \frametitle{Using mk-query-digest with PostgreSQL}
+   \begin{block}{Overview}
+      \begin{itemize}
+         \item How to configure logging
+         \item Demonstrations
+         \item Features that aren't done yet, future work
+      \end{itemize}
+   \end{block}
+   \begin{center}
+   \includegraphics[width=30mm]{../image/elephant}
+   \includegraphics[width=20mm]{../maatkit-logo}
+   \end{center}
+\end{frame}
+
+\begin{frame}[fragile]
+   \frametitle{Choosing a log destination}
+   \begin{block}{Configuring postgresql.conf}
+   \begin{itemize}
+      \item You can use either syslog or stderr
+      \item Syslog has some benefits
+      \item For syslog logging:
+         \begin{verbatim}
+         log_destination=syslog
+         syslog_facility='LOCAL0'
+         syslog_ident='postgres'
+         \end{verbatim}
+      \item Send to a separate log file:
+         \begin{verbatim}
+         # in /etc/rsyslog.conf
+         local0.*  -/var/log/pgsql
+         \end{verbatim}
+   \end{itemize}
+   \end{block}
+\end{frame}
+
+\begin{frame}
+   \frametitle{Query event attributes}
+   \begin{block}{What attributes can mk-query-digest extract?}
+   \begin{itemize}
+      \item The query, of course!
+      \item Error message
+      \item Query time (response time)
+      \item Byte offset in the log file
+      \item Timestamp of the event
+      \item Everything in the log line prefix
+   \end{itemize}
+   \end{block}
+\end{frame}
+
+\begin{frame}[fragile]
+   \frametitle{Configuring logging parameters}
+   \begin{block}{Log as much detail as you can}
+   \begin{itemize}
+      \item More is better for performance analysis!
+      \item For syslog logging:
+         \begin{verbatim}
+         log_min_duration_statement = 0
+         log_connections = on
+         log_disconnections = on
+         \end{verbatim}
+      \item Comment out the following to prevent duplicate output
+         \begin{verbatim}
+         #log_statement = 'all' # none, ddl, mod, all
+         \end{verbatim}
+   \end{itemize}
+   \end{block}
+\end{frame}
+
+\begin{frame}[fragile]
+   \frametitle{Configuring log\_line\_prefix}
+   \begin{itemize}
+      \item Very important way to get event attributes
+      \item Suggested setting:
+         \begin{verbatim}
+         log_line_prefix = '%m c=%c,u=%u,D=%d '
+         \end{verbatim}
+      \item Compatible with pgfouine's settings, but more is better!
+   \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+   \frametitle{Configuring log\_line\_prefix}
+   mk-query-digest recognizes every possible attribute
+         \begin{verbatim}
+         u => 'user',
+         d => 'db',
+         r => 'host', # With port
+         h => 'host',
+         p => 'Process_id',
+         t => 'ts',
+         m => 'ts',   # With milliseconds
+         i => 'Query_type',
+         c => 'Session_id',
+         l => 'Line_no',
+         s => 'Session_id',
+         v => 'Vrt_trx_id',
+         x => 'Trx_id',
+         \end{verbatim}
+\end{frame}
+
+\begin{frame}
+   \frametitle{Future}
+   \begin{block}{Current Limitations}
+   \begin{itemize}
+      \item CSV log format not supported yet
+      \item Assumes English locale, just like pgfouine
+      \item The helpful hints (\texttt{SHOW CREATE TABLE}) are MySQL-centric
+   \end{itemize}
+   \end{block}
+   \begin{block}{What's next?}
+   \begin{itemize}
+      \item I need to learn about Postgres 9.0's logging enhancements
+      \item Support for TCP protocol would be great
+      \item What do you want?
+   \end{itemize}
+   \end{block}
+   \includegraphics[width=20mm]{../image/money}
+\end{frame}
+
+\begin{frame}
+   \frametitle{More Demonstrations}
+   \begin{itemize}
+      \item Demo 0: Look at the report from \texttt{pg-log-001.txt}
+      \item Demo 1: Try out \texttt{--report-format=profile}
+      \item Demo 2: difference between pg-sample2
+   \end{itemize}
+   \includegraphics[width=20mm]{../image/demo}
+\end{frame}
