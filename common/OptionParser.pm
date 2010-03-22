@@ -130,9 +130,9 @@ sub get_specs {
       my $dsn_o = new OptionParser(
          description       => 'DSN OPTIONS',
          head1             => 'DSN OPTIONS',
-         dsn               => 0,      # XXX don't infinitely recurse!
-         item              => '(.)',  # key opts are a single character
-         skip_rules        => 1,      # no rules before opts
+         dsn               => 0,         # XXX don't infinitely recurse!
+         item              => '\* (.)',  # key opts are a single character
+         skip_rules        => 1,         # no rules before opts
          attributes        => $dsn_attribs,
          parse_attributes  => $parse_dsn_attribs,
       );
