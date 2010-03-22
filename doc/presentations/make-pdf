@@ -4,6 +4,8 @@
 # This just goes into a loop of rebuilding the PDF file whenever the LaTeX
 # file(s) are changed.  It assumes you're using the Gnome desktop environment.
 
+pdflatex "${1%%.pdf}" < /dev/null >/tmp/makepdf 2>&1;
+
 killall evince;
 evince "$1" >/dev/null 2>&1 &
 
