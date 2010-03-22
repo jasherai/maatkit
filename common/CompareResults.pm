@@ -190,6 +190,8 @@ sub after_execute {
 # Required args:
 #   * events  arrayref: events
 #   * hosts   arrayref: hosts hashrefs with at least a dbh key
+# Optional args:
+#   * temp-database  scalar: temp db name
 # Returns: array
 # Can die: yes
 # compare() compares events that have been run through before_execute(),
@@ -457,7 +459,7 @@ sub _compare_rows {
          right_outfile   => $right_outfile,
          res_struct      => $res_struct,
          query           => $event0->{arg},
-         db              => $args{tmp_db} || $event0->{db},
+         db              => $args{'temp-database'} || $event0->{db},
       );
 
       # Save differences.
@@ -506,6 +508,11 @@ sub diff_rows {
    my ($left_dbh, $left_outfile, $right_dbh, $right_outfile, $res_struct,
        $db, $query)
       = @args{@required_args};
+
+   # Switch to the given db.  This may be different from the event's
+   # db if, for example, --temp-database was specified.
+   my $orig_left_db  = $self->_use_db($left_dbh, $db);
+   my $orig_right_db = $self->_use_db($right_dbh, $db);
 
    # First thing, make two temps tables into which the outfiles can
    # be loaded.  This requires that we make a CREATE TABLE statement
@@ -672,6 +679,10 @@ sub diff_rows {
    if ( $n_diff < $max_diff ) {
       $same_row->() if $l_r[LEFT] || $l_r[RIGHT];  # save remaining rows
    }
+
+   # Switch back to the original dbs.
+   $self->_use_db($left_dbh,  $orig_left_db);
+   $self->_use_db($right_dbh, $orig_right_db);
 
    return @different_rows;
 }
@@ -954,6 +965,23 @@ sub reset {
    $self->{diffs}   = {};
    $self->{samples} = {};
    return;
+}
+
+# USE $new_db, return current db before the switch.
+sub _use_db {
+   my ( $self, $dbh, $new_db ) = @_;
+   return unless $new_db;
+   my $sql = 'SELECT DATABASE()';
+   MKDEBUG && _d($sql);
+   my $curr = $dbh->selectrow_array($sql);
+   if ( $curr && $new_db && $curr eq $new_db ) {
+      MKDEBUG && _d('Current and new DB are the same');
+      return $curr;
+   }
+   $sql = "USE `$new_db`";
+   MKDEBUG && _d($sql);
+   $dbh->do($sql);
+   return $curr;
 }
 
 sub _d {
