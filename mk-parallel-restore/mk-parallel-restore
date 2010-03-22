@@ -1770,7 +1770,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 5826
+# TableParser package 5980
 # ###########################################################################
 package TableParser;
 
@@ -2118,7 +2118,7 @@ sub remove_secondary_indexes {
       my @sec_indexes   = map {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
-         $ddl =~ s/\s+$key_def//;
+         $ddl =~ s/\s+$key_def//i;
 
          my $key_ddl = "ADD $_->{ddl}";
          $key_ddl   .= ',' unless $key_ddl =~ m/,$/;

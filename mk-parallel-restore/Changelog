@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * --fast-index was case-sensitive (issue 956).
+
 2010-03-01: version 1.0.20
 
    * --fast-index failed to restore some keys (issue 833).
