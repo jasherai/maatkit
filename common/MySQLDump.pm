@@ -50,13 +50,12 @@ EOF
    /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 EOF
 
-# Arguments:
-# * cache: defaults to 1
 sub new {
    my ( $class, %args ) = @_;
-   $args{cache} = 1 unless defined $args{cache};
-   my $self = bless \%args, $class;
-   return $self;
+   # Afaik no script uses this cache any longer because it has caused
+   # difficult-to-find bugs more than once in the past.
+   $args{cache} = 0; 
+   return bless {}, $class;
 }
 
 sub dump {
