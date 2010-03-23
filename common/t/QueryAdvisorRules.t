@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 55;
+use Test::More tests => 56;
 
 use MaatkitTest;
 use PodParser;
@@ -286,6 +286,10 @@ my @cases = (
    },
    {  name   => "LIKE without wildcard",
       query  => "select c from t where i like 'lamp'",
+      advice => [qw(ARG.002)],
+   },
+   {  name   => "LIKE without wildcard, 2nd arg",
+      query  => "select c from t where i like 'lamp%' or like 'foo'",
       advice => [qw(ARG.002)],
    },
    {  name   => "LIKE with wildcard %",

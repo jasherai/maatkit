@@ -121,6 +121,11 @@ sub get_rules {
       id   => 'ARG.002',      # LIKE w/o wildcard
       code => sub {
          my ( $event ) = @_;
+         # TODO: this pattern doesn't handle spaces.
+         my @like_args = $event->{arg} =~ m/\bLIKE\s+(\S+)/gi;
+         foreach my $arg ( @like_args ) {
+            return 0 if $arg !~ m/[%_]/;
+         }
          return;
       },
    },
