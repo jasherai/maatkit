@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Added DSN OPTIONS section to POD (issue 55).
+
 2010-03-01: version 1.0.25
 
    * Row-based replication prevented some changes (issue 95).

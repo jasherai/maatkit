@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * Added DSN OPTIONS section to POD (issue 55).
+
 2010-03-01: version 1.0.22
 
    * Added --client-side-buffering (issue 837).

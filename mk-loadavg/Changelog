@@ -1,5 +1,8 @@
 Changelog for mk-loadavg:
 
+   * Added ability to specify a DSN on the command line.
+   * Added DSN OPTIONS section to POD (issue 55).
+
 2010-02-01: version 0.9.4
 
    * Using non-integer --wait value caused a crash (issue 803).

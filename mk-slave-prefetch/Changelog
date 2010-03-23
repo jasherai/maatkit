@@ -1,6 +1,7 @@
 Changelog for mk-slave-prefetch:
 
    * --secondary-indexes did not work (issue 932).
+   * Added DSN OPTIONS section to POD (issue 55).
 
 2010-02-01: version 1.0.15
 

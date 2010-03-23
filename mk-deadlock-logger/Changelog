@@ -1,6 +1,7 @@
 Changelog for mk-deadlock-logger:
 
    * --clear-deadlocks did not work with --interval (issue 942).
+   * Added DSN OPTIONS section to POD (issue 55).
 
 2010-01-06: version 1.0.19
 

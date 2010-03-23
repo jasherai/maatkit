@@ -5,6 +5,7 @@ Changelog for mk-query-digest:
    * Some options could fail to parse (issue 940).
    * InnoDB_*_wait attributes were not formatted as times (issue 948).
    * Added --show-all (issue 744).
+   * Added DSN OPTIONS section to POD (issue 55).
 
 2010-03-01: version 0.9.15
 

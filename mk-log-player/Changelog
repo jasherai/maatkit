@@ -1,5 +1,7 @@
 Changelog for mk-log-player:
 
+   * Added DSN OPTIONS section to POD (issue 55).
+
 2010-03-01: version 1.0.6
 
    * --only-select did not handle leading /* comments */ (issue 903).

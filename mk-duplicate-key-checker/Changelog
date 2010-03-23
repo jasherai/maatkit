@@ -1,6 +1,8 @@
 Changelog for mk-duplicate-key-checker:
 
    * Stopped caching SHOW CREATE TABLE info.
+   * Added ability to specify a DSN on the command line.
+   * Added DSN OPTIONS section to POD (issue 55).
 
 2010-03-01: version 1.2.11
 

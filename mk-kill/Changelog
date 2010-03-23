@@ -1,5 +1,7 @@
 Changelog for mk-kill:
 
+   * Added DSN OPTIONS section to POD (issue 55).
+
 2010-02-01: version 0.9.3
 
    * Added --kill-query (issue 750).
