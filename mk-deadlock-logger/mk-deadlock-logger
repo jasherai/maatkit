@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 5839
+# OptionParser package 5985
 # ###########################################################################
 package OptionParser;
 
@@ -43,58 +43,132 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
-my %attributes = (
-   'type'       => 1,
-   'short form' => 1,
-   'group'      => 1,
-   'default'    => 1,
-   'cumulative' => 1,
-   'negatable'  => 1,
-);
-
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(description) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+
    my ($program_name) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
    $program_name ||= $PROGRAM_NAME;
    my $home = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '.';
 
+   my %attributes = (
+      'type'       => 1,
+      'short form' => 1,
+      'group'      => 1,
+      'default'    => 1,
+      'cumulative' => 1,
+      'negatable'  => 1,
+   );
+
    my $self = {
-      description    => $args{description},
-      prompt         => $args{prompt} || '<options>',
-      strict         => (exists $args{strict} ? $args{strict} : 1),
-      dp             => $args{dp}     || undef,
-      program_name   => $program_name,
-      opts           => {},
-      got_opts       => 0,
-      short_opts     => {},
-      defaults       => {},
-      groups         => {},
-      allowed_groups => {},
-      errors         => [],
-      rules          => [],  # desc of rules for --help
-      mutex          => [],  # rule: opts are mutually exclusive
-      atleast1       => [],  # rule: at least one opt is required
-      disables       => {},  # rule: opt disables other opts 
-      defaults_to    => {},  # rule: opt defaults to value of other opt
-      default_files  => [
+      strict            => 1,
+      prompt            => '<options>',
+      head1             => 'OPTIONS',
+      skip_rules        => 0,
+      item              => '--(.*)',
+      attributes        => \%attributes,
+      parse_attributes  => \&_parse_attribs,
+
+      %args,
+
+      program_name      => $program_name,
+      opts              => {},
+      got_opts          => 0,
+      short_opts        => {},
+      defaults          => {},
+      groups            => {},
+      allowed_groups    => {},
+      errors            => [],
+      rules             => [],  # desc of rules for --help
+      mutex             => [],  # rule: opts are mutually exclusive
+      atleast1          => [],  # rule: at least one opt is required
+      disables          => {},  # rule: opt disables other opts 
+      defaults_to       => {},  # rule: opt defaults to value of other opt
+      DSNParser         => undef,
+      default_files     => [
          "/etc/maatkit/maatkit.conf",
          "/etc/maatkit/$program_name.conf",
          "$home/.maatkit.conf",
          "$home/.$program_name.conf",
       ],
+      types             => {
+         string => 's', # standard Getopt type
+         int    => 'i', # standard Getopt type
+         float  => 'f', # standard Getopt type
+         Hash   => 'H', # hash, formed from a comma-separated list
+         hash   => 'h', # hash as above, but only if a value is given
+         Array  => 'A', # array, similar to Hash
+         array  => 'a', # array, similar to hash
+         DSN    => 'd', # DSN
+         size   => 'z', # size with kMG suffix (powers of 2^10)
+         time   => 'm', # time, with an optional suffix of s/h/m/d
+      },
    };
+
    return bless $self, $class;
 }
 
 sub get_specs {
    my ( $self, $file ) = @_;
+   $file ||= __FILE__;
    my @specs = $self->_pod_to_specs($file);
    $self->_parse_specs(@specs);
+
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   my $contents = do { local $/ = undef; <$fh> };
+   close $file;
+   if ( $contents =~ m/^=head1 DSN OPTIONS/m ) {
+      MKDEBUG && _d('Parsing DSN OPTIONS');
+      my $dsn_attribs = {
+         dsn  => 1,
+         copy => 1,
+      };
+      my $parse_dsn_attribs = sub {
+         my ( $self, $option, $attribs ) = @_;
+         map {
+            my $val = $attribs->{$_};
+            if ( $val ) {
+               $val    = $val eq 'yes' ? 1
+                       : $val eq 'no'  ? 0
+                       :                 $val;
+               $attribs->{$_} = $val;
+            }
+         } keys %$attribs;
+         return {
+            key => $option,
+            %$attribs,
+         };
+      };
+      my $dsn_o = new OptionParser(
+         description       => 'DSN OPTIONS',
+         head1             => 'DSN OPTIONS',
+         dsn               => 0,         # XXX don't infinitely recurse!
+         item              => '\* (.)',  # key opts are a single character
+         skip_rules        => 1,         # no rules before opts
+         attributes        => $dsn_attribs,
+         parse_attributes  => $parse_dsn_attribs,
+      );
+      my @dsn_opts = map {
+         my $opts = {
+            key  => $_->{spec}->{key},
+            dsn  => $_->{spec}->{dsn},
+            copy => $_->{spec}->{copy},
+            desc => $_->{desc},
+         };
+         $opts;
+      } $dsn_o->_pod_to_specs($file);
+      $self->{DSNParser} = DSNParser->new(opts => \@dsn_opts);
+   }
+
    return;
 }
+
+sub DSNParser {
+   my ( $self ) = @_;
+   return $self->{DSNParser};
+};
 
 sub get_defaults_files {
    my ( $self ) = @_;
@@ -106,30 +180,19 @@ sub _pod_to_specs {
    $file ||= __FILE__;
    open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 
-   my %types = (
-      string => 's', # standard Getopt type
-      'int'  => 'i', # standard Getopt type
-      float  => 'f', # standard Getopt type
-      Hash   => 'H', # hash, formed from a comma-separated list
-      hash   => 'h', # hash as above, but only if a value is given
-      Array  => 'A', # array, similar to Hash
-      array  => 'a', # array, similar to hash
-      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dp}
-      size   => 'z', # size with kMG suffix (powers of 2^10)
-      'time' => 'm', # time, with an optional suffix of s/h/m/d
-   );
    my @specs = ();
    my @rules = ();
    my $para;
 
    local $INPUT_RECORD_SEPARATOR = '';
    while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 OPTIONS/;
+      next unless $para =~ m/^=head1 $self->{head1}/;
       last;
    }
 
    while ( $para = <$fh> ) {
       last if $para =~ m/^=over/;
+      next if $self->{skip_rules};
       chomp $para;
       $para =~ s/\s+/ /g;
       $para =~ s/$POD_link_re/$1/go;
@@ -137,10 +200,10 @@ sub _pod_to_specs {
       push @rules, $para;
    }
 
-   die 'POD has no OPTIONS section' unless $para;
+   die "POD has no $self->{head1} section" unless $para;
 
    do {
-      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+      if ( my ($option) = $para =~ m/^=item $self->{item}/ ) {
          chomp $para;
          MKDEBUG && _d($para);
          my %attribs;
@@ -152,7 +215,7 @@ sub _pod_to_specs {
             %attribs = map {
                   my ( $attrib, $val) = split(/: /, $_);
                   die "Unrecognized attribute for --$option: $attrib"
-                     unless $attributes{$attrib};
+                     unless $self->{attributes}->{$attrib};
                   ($attrib, $val);
                } split(/; /, $para);
             if ( $attribs{'short form'} ) {
@@ -179,11 +242,7 @@ sub _pod_to_specs {
          }
 
          push @specs, {
-            spec  => $option
-               . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
-               . ($attribs{'negatable'}  ? '!'                          : '' )
-               . ($attribs{'cumulative'} ? '+'                          : '' )
-               . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
+            spec  => $self->{parse_attributes}->($self, $option, \%attribs), 
             desc  => $para
                . ($attribs{default} ? " (default $attribs{default})" : ''),
             group => ($attribs{'group'} ? $attribs{'group'} : 'default'),
@@ -191,17 +250,15 @@ sub _pod_to_specs {
       }
       while ( $para = <$fh> ) {
          last unless $para;
-
-
          if ( $para =~ m/^=head1/ ) {
             $para = undef; # Can't 'last' out of a do {} block.
             last;
          }
-         last if $para =~ m/^=item --/;
+         last if $para =~ m/^=item /;
       }
    } while ( $para );
 
-   die 'No valid specs in POD OPTIONS' unless @specs;
+   die "No valid specs in $self->{head1}" unless @specs;
 
    close $fh;
    return @specs, @rules;
@@ -254,10 +311,6 @@ sub _parse_specs {
          $opt->{type} = $type;
          MKDEBUG && _d($long, 'type:', $type);
 
-         if ( $type && $type eq 'd' && !$self->{dp} ) {
-            die "$opt->{long} is type DSN (d) but no dp argument "
-               . "was given when this OptionParser object was created";
-         }
 
          $opt->{spec} =~ s/=./=s/ if ( $type && $type =~ m/[HhAadzm]/ );
 
@@ -459,66 +512,93 @@ sub get_opts {
       }
    }
 
-   foreach my $long ( keys %{$self->{opts}} ) {
-      my $opt = $self->{opts}->{$long};
-      if ( $opt->{got} ) {
-         if ( exists $self->{disables}->{$long} ) {
-            my @disable_opts = @{$self->{disables}->{$long}};
-            map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
-            MKDEBUG && _d('Unset options', @disable_opts,
-               'because', $long,'disables them');
-         }
+   $self->_check_opts( keys %{$self->{opts}} );
+   $self->{got_opts} = 1;
+   return;
+}
 
-         if ( exists $self->{allowed_groups}->{$long} ) {
+sub _check_opts {
+   my ( $self, @long ) = @_;
+   my $long_last = scalar @long;
+   while ( @long ) {
+      foreach my $i ( 0..$#long ) {
+         my $long = $long[$i];
+         next unless $long;
+         my $opt  = $self->{opts}->{$long};
+         if ( $opt->{got} ) {
+            if ( exists $self->{disables}->{$long} ) {
+               my @disable_opts = @{$self->{disables}->{$long}};
+               map { $self->{opts}->{$_}->{value} = undef; } @disable_opts;
+               MKDEBUG && _d('Unset options', @disable_opts,
+                  'because', $long,'disables them');
+            }
 
-            my @restricted_groups = grep {
-               !exists $self->{allowed_groups}->{$long}->{$_}
-            } keys %{$self->{groups}};
+            if ( exists $self->{allowed_groups}->{$long} ) {
 
-            my @restricted_opts;
-            foreach my $restricted_group ( @restricted_groups ) {
-               RESTRICTED_OPT:
-               foreach my $restricted_opt (
-                  keys %{$self->{groups}->{$restricted_group}} )
-               {
-                  next RESTRICTED_OPT if $restricted_opt eq $long;
-                  push @restricted_opts, $restricted_opt
-                     if $self->{opts}->{$restricted_opt}->{got};
+               my @restricted_groups = grep {
+                  !exists $self->{allowed_groups}->{$long}->{$_}
+               } keys %{$self->{groups}};
+
+               my @restricted_opts;
+               foreach my $restricted_group ( @restricted_groups ) {
+                  RESTRICTED_OPT:
+                  foreach my $restricted_opt (
+                     keys %{$self->{groups}->{$restricted_group}} )
+                  {
+                     next RESTRICTED_OPT if $restricted_opt eq $long;
+                     push @restricted_opts, $restricted_opt
+                        if $self->{opts}->{$restricted_opt}->{got};
+                  }
+               }
+
+               if ( @restricted_opts ) {
+                  my $err;
+                  if ( @restricted_opts == 1 ) {
+                     $err = "--$restricted_opts[0]";
+                  }
+                  else {
+                     $err = join(', ',
+                               map { "--$self->{opts}->{$_}->{long}" }
+                               grep { $_ } 
+                               @restricted_opts[0..scalar(@restricted_opts) - 2]
+                            )
+                          . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
+                  }
+                  $self->save_error("--$long is not allowed with $err");
                }
             }
 
-            if ( @restricted_opts ) {
-               my $err;
-               if ( @restricted_opts == 1 ) {
-                  $err = "--$restricted_opts[0]";
-               }
-               else {
-                  $err = join(', ',
-                            map { "--$self->{opts}->{$_}->{long}" }
-                            grep { $_ } 
-                            @restricted_opts[0..scalar(@restricted_opts) - 2]
-                         )
-                       . ' or --'.$self->{opts}->{$restricted_opts[-1]}->{long};
-               }
-               $self->save_error("--$long is not allowed with $err");
-            }
+         }
+         elsif ( $opt->{is_required} ) { 
+            $self->save_error("Required option --$long must be specified");
          }
 
-      }
-      elsif ( $opt->{is_required} ) { 
-         $self->save_error("Required option --$long must be specified");
+         $self->_validate_type($opt);
+         if ( $opt->{parsed} ) {
+            delete $long[$i];
+         }
+         else {
+            MKDEBUG && _d('Temporarily failed to parse', $long);
+         }
       }
 
-      $self->_validate_type($opt);
+      die "Failed to parse options, possibly due to circular dependencies"
+         if @long == $long_last;
+      $long_last = @long;
    }
 
-   $self->{got_opts} = 1;
    return;
 }
 
 sub _validate_type {
    my ( $self, $opt ) = @_;
-   return unless $opt && $opt->{type};
+   return unless $opt;
+
+   if ( !$opt->{type} ) {
+      $opt->{parsed} = 1;
+      return;
+   }
+
    my $val = $opt->{value};
 
    if ( $val && $opt->{type} eq 'm' ) {  # type time
@@ -548,26 +628,21 @@ sub _validate_type {
       my $from_key = $self->{defaults_to}->{ $opt->{long} };
       if ( $from_key ) {
          MKDEBUG && _d($opt->{long}, 'DSN copies from', $from_key, 'DSN');
-         $prev = $self->{opts}->{$from_key}->{value};
+         if ( $self->{opts}->{$from_key}->{parsed} ) {
+            $prev = $self->{opts}->{$from_key}->{value};
+         }
+         else {
+            MKDEBUG && _d('Cannot parse', $opt->{long}, 'until',
+               $from_key, 'parsed');
+            return;
+         }
       }
-      my $defaults = $self->{dp}->parse_options($self);
-      $opt->{value} = $self->{dp}->parse($val, $prev, $defaults);
+      my $defaults = $self->{DSNParser}->parse_options($self);
+      $opt->{value} = $self->{DSNParser}->parse($val, $prev, $defaults);
    }
    elsif ( $val && $opt->{type} eq 'z' ) {  # type size
       MKDEBUG && _d('Parsing option', $opt->{long}, 'as a size value');
-      my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-      my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
-      if ( defined $num ) {
-         if ( $factor ) {
-            $num *= $factor_for{$factor};
-            MKDEBUG && _d('Setting option', $opt->{y},
-               'to num', $num, '* factor', $factor);
-         }
-         $opt->{value} = ($pre || '') . $num;
-      }
-      else {
-         $self->save_error("Invalid size for --$opt->{long}");
-      }
+      $self->_parse_size($opt, $val);
    }
    elsif ( $opt->{type} eq 'H' || (defined $val && $opt->{type} eq 'h') ) {
       $opt->{value} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -580,6 +655,7 @@ sub _validate_type {
          $opt->{long}, 'type', $opt->{type}, 'value', $val);
    }
 
+   $opt->{parsed} = 1;
    return;
 }
 
@@ -720,20 +796,20 @@ sub print_usage {
       $usage .= "\nRules:\n\n";
       $usage .= join("\n", map { "  $_" } @rules) . "\n";
    }
-   if ( $self->{dp} ) {
-      $usage .= "\n" . $self->{dp}->usage();
+   if ( $self->{DSNParser} ) {
+      $usage .= "\n" . $self->{DSNParser}->usage();
    }
    $usage .= "\nOptions and values after processing arguments:\n\n";
    foreach my $opt ( sort { $a->{long} cmp $b->{long} } @opts ) {
       my $val   = $opt->{value};
       my $type  = $opt->{type} || '';
       my $bool  = $opt->{spec} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
-      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
-                : !defined $val             ? '(No value)'
-                : $type eq 'd'              ? $self->{dp}->as_string($val)
-                : $type =~ m/H|h/           ? join(',', sort keys %$val)
-                : $type =~ m/A|a/           ? join(',', @$val)
-                :                             $val;
+      $val      = $bool              ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val      ? '(No value)'
+                : $type eq 'd'       ? $self->{DSNParser}->as_string($val)
+                : $type =~ m/H|h/    ? join(',', sort keys %$val)
+                : $type =~ m/A|a/    ? join(',', @$val)
+                :                    $val;
       $usage .= sprintf("  --%-${lcol}s  %s\n", $opt->{long}, $val);
    }
    return $usage;
@@ -848,6 +924,41 @@ sub clone {
    }
 
    return bless \%clone;     
+}
+
+sub _parse_size {
+   my ( $self, $opt, $val ) = @_;
+
+   if ( lc($val || '') eq 'null' ) {
+      MKDEBUG && _d('NULL size for', $opt->{long});
+      $opt->{value} = 'null';
+      return;
+   }
+
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+   my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+   if ( defined $num ) {
+      if ( $factor ) {
+         $num *= $factor_for{$factor};
+         MKDEBUG && _d('Setting option', $opt->{y},
+            'to num', $num, '* factor', $factor);
+      }
+      $opt->{value} = ($pre || '') . $num;
+   }
+   else {
+      $self->save_error("Invalid size for --$opt->{long}");
+   }
+   return;
+}
+
+sub _parse_attribs {
+   my ( $self, $option, $attribs ) = @_;
+   my $types = $self->{types};
+   return $option
+      . ($attribs->{'short form'} ? '|' . $attribs->{'short form'}   : '' )
+      . ($attribs->{'negatable'}  ? '!'                              : '' )
+      . ($attribs->{'cumulative'} ? '+'                              : '' )
+      . ($attribs->{'type'}       ? '=' . $types->{$attribs->{type}} : '' );
 }
 
 sub _d {
@@ -978,7 +1089,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5893
+# DSNParser package 5966
 # ###########################################################################
 package DSNParser;
 
@@ -997,54 +1108,28 @@ my $have_dbi = $EVAL_ERROR ? 0 : 1;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   my ( $class, @opts ) = @_;
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(opts) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    my $self = {
-      opts => {
-         A => {
-            desc => 'Default character set',
-            dsn  => 'charset',
-            copy => 1,
-         },
-         D => {
-            desc => 'Database to use',
-            dsn  => 'database',
-            copy => 1,
-         },
-         F => {
-            desc => 'Only read default options from the given file',
-            dsn  => 'mysql_read_default_file',
-            copy => 1,
-         },
-         h => {
-            desc => 'Connect to host',
-            dsn  => 'host',
-            copy => 1,
-         },
-         p => {
-            desc => 'Password to use when connecting',
-            dsn  => 'password',
-            copy => 1,
-         },
-         P => {
-            desc => 'Port number to use for connection',
-            dsn  => 'port',
-            copy => 1,
-         },
-         S => {
-            desc => 'Socket file to use for connection',
-            dsn  => 'mysql_socket',
-            copy => 1,
-         },
-         u => {
-            desc => 'User for login if not current user',
-            dsn  => 'user',
-            copy => 1,
-         },
-      },
+      opts => {}  # h, P, u, etc.  Should come from DSN OPTIONS section in POD.
    };
-   foreach my $opt ( @opts ) {
-      MKDEBUG && _d('Adding extra property', $opt->{key});
-      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   foreach my $opt ( @{$args{opts}} ) {
+      if ( !$opt->{key} || !$opt->{desc} ) {
+         die "Invalid DSN option: ", Dumper($opt);
+      }
+      MKDEBUG && _d('DSN option:',
+         join(', ',
+            map { "$_=" . (defined $opt->{$_} ? ($opt->{$_} || '') : 'undef') }
+               keys %$opt
+         )
+      );
+      $self->{opts}->{$opt->{key}} = {
+         dsn  => $opt->{dsn},
+         desc => $opt->{desc},
+         copy => $opt->{copy} || 0,
+      };
    }
    return bless $self, $class;
 }
@@ -1069,7 +1154,7 @@ sub parse {
    $defaults ||= {};
    my %given_props;
    my %final_props;
-   my %opts = %{$self->{opts}};
+   my $opts = $self->{opts};
 
    foreach my $dsn_part ( split(/,/, $dsn) ) {
       if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
@@ -1081,11 +1166,11 @@ sub parse {
       }
    }
 
-   foreach my $key ( keys %opts ) {
+   foreach my $key ( keys %$opts ) {
       MKDEBUG && _d('Finding value for', $key);
       $final_props{$key} = $given_props{$key};
       if (   !defined $final_props{$key}
-           && defined $prev->{$key} && $opts{$key}->{copy} )
+           && defined $prev->{$key} && $opts->{$key}->{copy} )
       {
          $final_props{$key} = $prev->{$key};
          MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
@@ -1097,12 +1182,17 @@ sub parse {
    }
 
    foreach my $key ( keys %given_props ) {
-      die "Unrecognized DSN part '$key' in '$dsn'\n"
-         unless exists $opts{$key};
+      die "Unknown DSN option '$key' in '$dsn'.  For more details, "
+            . "please use the --help option, or try 'perldoc $PROGRAM_NAME' "
+            . "for complete documentation."
+         unless exists $opts->{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
+         die "Missing required DSN option '$key' in '$dsn'.  For more details, "
+               . "please use the --help option, or try 'perldoc $PROGRAM_NAME' "
+               . "for complete documentation."
+            unless $final_props{$key};
       }
    }
 
@@ -1592,29 +1682,23 @@ sub main {
 
    my $q  = new Quoter();
    my $vp = new VersionParser();
-   $dp    = new DSNParser(
-      { key => 't',
-        copy => 1,
-        desc => 'Table in which to store deadlock information'
-      },
-   );
 
    # ########################################################################
    # Get configuration information.
    # ########################################################################
    $o = new OptionParser(
       strict      => 0,
+      prompt      => '[OPTION...] SOURCE_DSN',
       description => q{extracts and saves information about the most }
                    . q{recent deadlock in a MySQL server.},
-      prompt      => 'SOURCE_DSN [OPTION]...',
-      dp          => $dp,
    );
 
    $o->get_specs();
    $o->get_opts();
 
    $o->set('collapse', $o->get('print')) unless $o->got('collapse'); 
- 
+
+   $dp = $o->DSNParser(); 
    my $dsn_defaults = $dp->parse_options($o);
    $source_dsn = @ARGV ? $dp->parse(shift @ARGV,$dsn_defaults) : $dsn_defaults;
    $dest_dsn   = $o->get('dest');
@@ -2329,6 +2413,70 @@ User for login if not current user.
 =item --version
 
 Show version and exit.
+
+=back
+
+=head1 DSN OPTIONS
+
+These DSN options are used to create a DSN.  Each option is given like
+C<option=value>.  The options are case-sensitive, so P and p are not the
+same option.  There cannot be whitespace before or after the C<=> and
+if the value contains whitespace it must be quoted.  DSN options are
+comma-separated.  See the L<maatkit> manpage for full details.
+
+=over
+
+=item * A
+
+dsn: charset; copy: yes
+
+Default character set.
+
+=item * D
+
+dsn: database; copy: yes
+
+Default database.
+
+=item * F
+
+dsn: mysql_read_default_file; copy: yes
+
+Only read default options from the given file
+
+=item * h
+
+dsn: host; copy: yes
+
+Connect to host.
+
+=item * p
+
+dsn: password; copy: yes
+
+Password to use when connecting.
+
+=item * P
+
+dsn: port; copy: yes
+
+Port number to use for connection.
+
+=item * S
+
+dsn: mysql_socket; copy: yes
+
+Socket file to use for connection.
+
+=item * t
+
+Table in which to store deadlock information.
+
+=item * u
+
+dsn: user; copy: yes
+
+User for login if not current user.
 
 =back
 
