@@ -69,49 +69,55 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 our $dsn_opts = [
    {
-      key => 'A',
+      key  => 'A',
       desc => 'Default character set',
       dsn  => 'charset',
       copy => 1,
    },
    {
-      key => 'D',
+      key  => 'D',
       desc => 'Database to use',
       dsn  => 'database',
       copy => 1,
    },
    {
-      key => 'F',
+      key  => 'F',
       desc => 'Only read default options from the given file',
       dsn  => 'mysql_read_default_file',
       copy => 1,
    },
    {
-      key => 'h',
+      key  => 'h',
       desc => 'Connect to host',
       dsn  => 'host',
       copy => 1,
    },
    {
-      key => 'p',
+      key  => 'p',
       desc => 'Password to use when connecting',
       dsn  => 'password',
       copy => 1,
    },
    {
-      key => 'P',
+      key  => 'P',
       desc => 'Port number to use for connection',
       dsn  => 'port',
       copy => 1,
    },
    {
-      key => 'S',
+      key  => 'S',
       desc => 'Socket file to use for connection',
       dsn  => 'mysql_socket',
       copy => 1,
    },
    {
-      key => 'u',
+      key  => 't',
+      desc => 'Table',
+      dsn  => undef,
+      copy => 1,
+   },
+   {
+      key  => 'u',
       desc => 'User for login if not current user',
       dsn  => 'user',
       copy => 1,
