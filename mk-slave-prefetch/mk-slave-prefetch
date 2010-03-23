@@ -2098,7 +2098,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 5266
+# MySQLDump package 5993
 # ###########################################################################
 package MySQLDump;
 
@@ -2135,9 +2135,8 @@ EOF
 
 sub new {
    my ( $class, %args ) = @_;
-   $args{cache} = 1 unless defined $args{cache};
-   my $self = bless \%args, $class;
-   return $self;
+   $args{cache} = 0; 
+   return bless {}, $class;
 }
 
 sub dump {
