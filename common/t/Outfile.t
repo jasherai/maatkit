@@ -18,7 +18,7 @@ use MaatkitTest;
 
 # This is just for grabbing stuff from fetchrow_arrayref()
 # instead of writing test rows by hand.
-my $dp  = new DSNParser();
+my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 

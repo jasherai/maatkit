@@ -18,7 +18,7 @@ use DSNParser;
 use Sandbox;
 use MaatkitTest;
 
-my $dp = new DSNParser();
+my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;

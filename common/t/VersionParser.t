@@ -25,7 +25,7 @@ is(
 # Open a connection to MySQL, or skip the rest of the tests.
 use DSNParser;
 use Sandbox;
-my $dp  = new DSNParser();
+my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 SKIP: {

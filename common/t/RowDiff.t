@@ -26,7 +26,7 @@ my ($d, $s);
 my $q  = new Quoter();
 my $du = new MySQLDump();
 my $tp = new TableParser(Quoter => $q);
-my $dp = new DSNParser();
+my $dp = new DSNParser(opts=>$dsn_opts);
 
 # Connect to sandbox now to make sure it's running.
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);

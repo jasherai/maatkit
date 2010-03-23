@@ -138,7 +138,7 @@ is(
 
 use DSNParser;
 use Sandbox;
-my $dp = new DSNParser();
+my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 SKIP: {

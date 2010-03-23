@@ -67,7 +67,7 @@ is_deeply(
    {
       id          => 'ALI.001',
       severity    => 'NOTE',
-      description => 'Alias without AS. Explicit column or table aliases like "tbl AS alias" are preferred to implicit aliases like "tbl alias".',
+      description => 'Aliasing without the AS keyword. Explicitly using the AS keyword in column or table aliases, such as "tbl AS alias," is more readable than implicit aliases such as "tbl alias".',
    },
    'get_rule_info()'
 );

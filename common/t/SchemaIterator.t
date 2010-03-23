@@ -28,7 +28,7 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 my $q   = new Quoter();
-my $dp  = new DSNParser();
+my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');

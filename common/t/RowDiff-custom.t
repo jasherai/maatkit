@@ -61,6 +61,7 @@ use Test::More tests => 4;
 use English qw(-no_match_vars);
 use DBI;
 use DBD::mysql;  # so we can print $DBD::mysql::VERSION
+use MaatkitTest;
 
 SKIP: {
    skip "MK_PERL_LIB env var is not set", 4 unless defined $ENV{MK_PERL_LIB};
@@ -81,7 +82,7 @@ SKIP: {
    my $q  = new Quoter();
    my $du = new MySQLDump();
    my $tp = new TableParser(Quoter => $q);
-   my $dp = new DSNParser();
+   my $dp = new DSNParser(opts=>$dsn_opts);
 
    # Connect to sandbox now to make sure it's running.
    my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
