@@ -15,7 +15,7 @@ use MaatkitTest;
 use Sandbox;
 require "$trunk/mk-parallel-dump/mk-parallel-dump";
 
-my $dp = new DSNParser();
+my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 

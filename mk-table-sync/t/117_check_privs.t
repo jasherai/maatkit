@@ -15,9 +15,9 @@ use MaatkitTest;
 use Sandbox;
 require "$trunk/mk-table-sync/mk-table-sync";
 
-my $output;
+
 my $vp = new VersionParser();
-my $dp = new DSNParser();
+my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
 my $slave_dbh  = $sb->get_dbh_for('slave1');
@@ -34,7 +34,9 @@ else {
 
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
-$sb->create_dbs($master_dbh, [qw(test)]);
+
+my $output;
+my @args = ('h=127.1,P=12345,u=test_907,p=msandbox', 'P=12346,u=msandbox', qw(--print --no-check-slave -d issue_907));
 
 # #############################################################################
 # Issue 907: Add --[no]check-privileges 
@@ -42,22 +44,43 @@ $sb->create_dbs($master_dbh, [qw(test)]);
 
 #1) get the script to create the underprivileged user  
 
-$master_dbh->do('CREATE USER \'test_907\'@\'localhost\'');
+$master_dbh->do('drop database if exists issue_907');
+$master_dbh->do('create database issue_907');
+$master_dbh->do('create table issue_907.t (i int)');
+$slave_dbh->do('insert into issue_907.t values (1)');
+
+`/tmp/12345/use -uroot -e "GRANT SELECT, SHOW DATABASES ON *.* TO 'test_907'\@'localhost' IDENTIFIED BY 'msandbox'"`;
+
 #2) run and get output to see what it's like when it's broken,  
-$output=`$trunk/mk-table-sync/mk-table-sync --no-check-slave --sync-to-master --print h=127.0.0.1,P=12346,u=msandbox,p=msandbox,D=mysql,t=user`;
-like($output, qr/Access denied for user/, 'Testing fail even on print with unprivileged user') || diag explain $output;
+$output = output(
+   sub { mk_table_sync::main(@args) },
+   undef,
+   stderr => 1,
+);
+like(
+   $output,
+   qr/User does not have all necessary privileges/,
+   "Can't --print without all privs"
+);
+
 #3) run again (outside of test) to see what output is like when it works 
 # done, output is :
-#DBI connect('mysql;host=127.0.0.1;port=12346;mysql_read_default_group=client','test',...) failed: Access denied for user 'test'@'localhost' (using password: NO) at ../mk-table-sync line 1169
+
 #check if its ok with no privleges option
-$output=`$trunk/mk-table-sync/mk-table-sync --no-check-privileges --no-check-slave --sync-to-master --print h=127.0.0.1,P=12346,u=test_907,D=mysql,t=user`;
-like($output, '', 'Test fail with no check privileges also') || diag explain $output;
+$output = output(
+   sub { mk_table_sync::main(@args, '--no-check-privileges') },
+   undef,
+   stderr => 1,
+);
+is(
+   $output,
+   "DELETE FROM `issue_907`.`t` WHERE `i`=1 LIMIT 1;
+",
+   "Can --print without all privs and --no-check-privileges"
+);
 
 #+ clean up user
 $master_dbh->do('DROP USER \'test_907\'@\'localhost\'');
-
-
-
 
 # #############################################################################
 # Done.

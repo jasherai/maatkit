@@ -15,7 +15,7 @@ use MaatkitTest;
 use Sandbox;
 require "$trunk/mk-table-checksum/mk-table-checksum";
 
-my $dp = new DSNParser();
+my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
 my $slave_dbh  = $sb->get_dbh_for('slave1');

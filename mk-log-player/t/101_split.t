@@ -51,7 +51,7 @@ is(
 # Issue 570: Integrate BinaryLogPrarser into mk-log-player
 # #############################################################################
 diag(`rm -rf $tmpdir/*`);
-`$cmd --split Thread_id $trunk/common/t/samples/binlog001.txt --type binlog --session-files 1`;
+`$cmd --split Thread_id $trunk/common/t/samples/binlogs/binlog001.txt --type binlog --session-files 1`;
 $output = `diff $tmpdir/sessions-1.txt $trunk/mk-log-player/t/samples/split_binlog001.txt`;
 
 is(
@@ -64,7 +64,7 @@ is(
 # Issue 172: Make mk-query-digest able to read general logs
 # #############################################################################
 diag(`rm -rf $tmpdir/*`);
-`$cmd --split Thread_id $trunk/common/t/samples/genlog001.txt --type genlog --session-files 1`;
+`$cmd --split Thread_id $trunk/common/t/samples/genlogs/genlog001.txt --type genlog --session-files 1`;
 
 $output = `diff $tmpdir/sessions-1.txt $trunk/mk-log-player/t/samples/split_genlog001.txt`;
 

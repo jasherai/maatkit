@@ -15,7 +15,7 @@ use MaatkitTest;
 use Sandbox;
 require "$trunk/mk-deadlock-logger/mk-deadlock-logger";
 
-my $dp   = new DSNParser();
+my $dp   = new DSNParser(opts=>$dsn_opts);
 my $sb   = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master', { PrintError => 0, RaiseError => 1, AutoCommit => 0 });
 my $dbh2 = $sb->get_dbh_for('master', { PrintError => 0, RaiseError => 1, AutoCommit => 0 });

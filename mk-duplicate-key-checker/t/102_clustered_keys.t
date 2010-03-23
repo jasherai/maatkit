@@ -15,7 +15,7 @@ use MaatkitTest;
 use Sandbox;
 require "$trunk/mk-duplicate-key-checker/mk-duplicate-key-checker";
 
-my $dp  = new DSNParser();
+my $dp  = new DSNParser(opts=>$dsn_opts);
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 

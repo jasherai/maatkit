@@ -15,7 +15,7 @@ use MaatkitTest;
 use Sandbox;
 require "$trunk/mk-archiver/mk-archiver";
 
-my $dp   = new DSNParser();
+my $dp   = new DSNParser(opts=>$dsn_opts);
 my $sb   = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh  = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave1');

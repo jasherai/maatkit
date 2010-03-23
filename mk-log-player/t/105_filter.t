@@ -24,7 +24,7 @@ diag(`rm -rf $tmpdir 2>/dev/null; mkdir $tmpdir`);
 # #############################################################################
 # Issue 571: Add --filter to mk-log-player
 # #############################################################################
-`$cmd --split Thread_id $trunk/common/t/samples/binlog001.txt --type binlog --session-files 1 --filter '\$event->{arg} && \$event->{arg} eq \"foo\"'`;
+`$cmd --split Thread_id $trunk/common/t/samples/binlogs/binlog001.txt --type binlog --session-files 1 --filter '\$event->{arg} && \$event->{arg} eq \"foo\"'`;
 ok(
    !-f "$tmpdir/sessions-1.txt",
    '--filter'

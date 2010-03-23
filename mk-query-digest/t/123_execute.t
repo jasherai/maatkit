@@ -21,7 +21,7 @@ shift @INC;  # Sandbox
 
 require "$trunk/mk-query-digest/mk-query-digest";
 
-my $dp  = new DSNParser();
+my $dp  = new DSNParser(opts=>$dsn_opts);
 my $vp  = new VersionParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
