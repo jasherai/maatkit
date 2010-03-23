@@ -423,7 +423,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 5993
+# MySQLDump package 5998
 # ###########################################################################
 package MySQLDump;
 
@@ -460,8 +460,10 @@ EOF
 
 sub new {
    my ( $class, %args ) = @_;
-   $args{cache} = 0; 
-   return bless {}, $class;
+   my $self = {
+      cache => 0,  # Afaik no script uses this cache any longer because
+   };
+   return bless $self, $class;
 }
 
 sub dump {
