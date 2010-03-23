@@ -52,10 +52,11 @@ EOF
 
 sub new {
    my ( $class, %args ) = @_;
-   # Afaik no script uses this cache any longer because it has caused
-   # difficult-to-find bugs more than once in the past.
-   $args{cache} = 0; 
-   return bless {}, $class;
+   my $self = {
+      cache => 0,  # Afaik no script uses this cache any longer because
+                   # it has caused difficult-to-find bugs in the past.
+   };
+   return bless $self, $class;
 }
 
 sub dump {
