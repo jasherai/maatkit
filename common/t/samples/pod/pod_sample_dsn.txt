@@ -71,6 +71,12 @@ dsn: user; copy: yes
 
 User for login if not current user.
 
+=item * z
+
+copy: no
+
+Don't copy opt.
+
 =back
 
 =cut

@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 146;
+use Test::More tests => 147;
 
 use OptionParser;
 use DSNParser;
@@ -1888,13 +1888,18 @@ my $src_dsn = $o->get('source');
 is_deeply(
    $src_dsn,
    {
+      a => undef,
       A => undef,
+      b => undef,
       D => undef,
       F => undef,
+      i => undef,
+      m => undef,
       P => '12345',
       S => '/tmp/mysql.socket',
       h => '127.1',
       p => 'foo',
+      t => undef,
       u => 'bob',
    },
    'DSN opt gets missing vals from --host, --port, etc. (issue 248)',
@@ -1912,13 +1917,18 @@ $dest_dsn = $o->get('dest');
 is_deeply(
    $dest_dsn,
    {
+      a => undef,
       A => undef,
+      b => undef,
       D => undef,
       F => undef,
+      i => undef,
+      m => undef,
       P => undef,
       S => undef,
       h => '127.1',
       p => undef,
+      t => undef,
       u => 'bob',
    },
    'Vals from "defaults to" DSN take precedence over defaults (issue 248)'
@@ -2094,9 +2104,18 @@ $o = new OptionParser(
    description  => 'parses command line options.',
 );
 $o->get_specs("$trunk/common/t/samples/pod/pod_sample_dsn.txt");
+
 ok(
    $o->DSNParser(),
    'Auto-created DNSParser obj'
+);
+
+@ARGV = ();
+$o->get_opts();
+like(
+   $o->print_usage(),
+   qr/z\s+no\s+/,
+   'copy: no'
 );
 
 # #############################################################################

@@ -122,6 +122,15 @@ sub get_specs {
       };
       my $parse_dsn_attribs = sub {
          my ( $self, $option, $attribs ) = @_;
+         map {
+            my $val = $attribs->{$_};
+            if ( $val ) {
+               $val    = $val eq 'yes' ? 1
+                       : $val eq 'no'  ? 0
+                       :                 $val;
+               $attribs->{$_} = $val;
+            }
+         } keys %$attribs;
          return {
             key => $option,
             %$attribs,
