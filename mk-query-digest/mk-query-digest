@@ -9530,7 +9530,12 @@ sub main {
       MKDEBUG && _d('Patterns for embedded attributes:', $misc->{embed},
             $misc->{capture});
    }
-   
+
+   # Enable timings to instrument code for either of these two opts.
+   # Else, don't instrument to avoid cost of measurement.
+   my $instrument = $o->get('pipeline-profile') || $o->get('execute-throttle');
+   MKDEBUG && _d('Instrument:', $instrument);
+
    if ( @ARGV == 0 ) {
       push @ARGV, '-'; # Magical STDIN filename.
    }
@@ -9607,7 +9612,7 @@ sub main {
             my $oktorun_sub = sub { $more_events = $_[0]; };
             foreach my $callback ( @callbacks ) {
                last unless $oktorun;  # the global oktorun var
-               my $start = time;
+               my $start = $instrument ? time : 0;
                $event = $callback->(
                   $event,  # for backwards compatibility
                   event      => $event,  # new interface
@@ -9617,13 +9622,15 @@ sub main {
                   misc       => $misc,
                   stats      => \%stats,
                );
-               my $end  = time;
-               my $t    = $end - $start;
-               my $name = $callback_names{$callback} || $callback;
-               $prof{callback}->{$name}->{time} += $t;
-               $prof{callback}->{$name}->{count}++;
-               $prof{total}->{time} += $t;
-               $prof{total}->{count}++;
+               my $end = $instrument ? time : 0;
+               my $t   = $end - $start;
+               if ( $instrument ) {
+                  my $name = $callback_names{$callback} || $callback;
+                  $prof{callback}->{$name}->{time} += $t;
+                  $prof{callback}->{$name}->{count}++;
+                  $prof{total}->{time} += $t;
+                  $prof{total}->{count}++;
+               }
                last unless $event;
             }
             if ( !$more_events ) {

@@ -6,6 +6,7 @@ Changelog for mk-query-digest:
    * InnoDB_*_wait attributes were not formatted as times (issue 948).
    * Added --show-all (issue 744).
    * Added DSN OPTIONS section to POD (issue 55).
+   * Fixed performance regression introduced in v0.9.12/r5240 (issue 954).
 
 2010-03-01: version 0.9.15
 
