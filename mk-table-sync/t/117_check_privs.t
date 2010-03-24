@@ -47,6 +47,9 @@ my @args = ('h=127.1,P=12345,u=test_907,p=msandbox', 'P=12346,u=msandbox', qw(--
 $master_dbh->do('drop database if exists issue_907');
 $master_dbh->do('create database issue_907');
 $master_dbh->do('create table issue_907.t (i int)');
+$slave_dbh->do('drop database if exists issue_907');
+$slave_dbh->do('create database issue_907');
+$slave_dbh->do('create table issue_907.t (i int)');
 $slave_dbh->do('insert into issue_907.t values (1)');
 
 `/tmp/12345/use -uroot -e "GRANT SELECT, SHOW DATABASES ON *.* TO 'test_907'\@'localhost' IDENTIFIED BY 'msandbox'"`;
