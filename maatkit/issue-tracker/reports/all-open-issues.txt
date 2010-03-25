@@ -1,1336 +1,1336 @@
-332 open issues as of 2010-03-25 21:55:52.426391
+332 open issues as of 2010-03-25 23:33:06.451195
 
-Issue 821: Make mk-parallel-dump able to write tab-separated files locally
+Issue 834, rank 104: Fix mk-parallel-dump locking
+	open 56 days, opened on 2010-01-28
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+	Sponsored
+
+Issue 839, rank 103: Fix misc issues in mk-parallel-dump r5517
+	open 56 days, opened on 2010-01-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+	Sponsored
+
+Issue 838, rank 103: Make mk-parallel-dump print blobs as hex
+	open 56 days, opened on 2010-01-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+	Sponsored
+
+Issue 836, rank 103: Make mk-parallel-dump split big INSERTs
+	open 56 days, opened on 2010-01-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+	Sponsored
+
+Issue 835, rank 103: Make mk-parallel-dump always dump lossless floats
+	open 56 days, opened on 2010-01-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+	Sponsored
+
+Issue 821, rank 103: Make mk-parallel-dump able to write tab-separated files locally
 	open 60 days, opened on 2010-01-24
-	type: enhancement, severity:  effort: moderate, benefit: helpful
+	type: enhancement, severity: , effort: moderate, benefit: helpful
 	Sponsored
 
-Issue 834: Fix mk-parallel-dump locking
-	open 56 days, opened on 2010-01-28
-	type: defect, severity: minor effort: moderate, benefit: helpful
-	Sponsored
-
-Issue 839: Fix misc issues in mk-parallel-dump r5517
-	open 56 days, opened on 2010-01-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-	Sponsored
-
-Issue 838: Make mk-parallel-dump print blobs as hex
-	open 56 days, opened on 2010-01-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-	Sponsored
-
-Issue 836: Make mk-parallel-dump split big INSERTs
-	open 56 days, opened on 2010-01-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-	Sponsored
-
-Issue 835: Make mk-parallel-dump always dump lossless floats
-	open 56 days, opened on 2010-01-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-	Sponsored
-
-Issue 20: Build FNV_64() binaries and make available as a download
-	open 596 days, opened on 2008-08-06
-	type: task, severity:  effort: moderate, benefit: minimal
-
-Issue 19: Add MURMUR_HASH() hash function as a UDF
-	open 596 days, opened on 2008-08-06
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 24: check and report after running mk-table-checksum --replicate
-	open 596 days, opened on 2008-08-06
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 38: Make mk-parallel-dump do a consistent MyISAM/InnoDB dump
-	open 591 days, opened on 2008-08-11
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 67: Govern checksum speed by slave lag
-	open 554 days, opened on 2008-09-16
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 76: Add alerting mechanism to mk-heartbeat?
-	open 547 days, opened on 2008-09-24
-	type: enhancement, severity:  effort: moderate, benefit: lifechanging
-
-Issue 73: Make mk-checksum-filter more helpful
-	open 548 days, opened on 2008-09-23
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 78: mk-table-sync should be able to skip checking for slave up-to-dateness
-	open 545 days, opened on 2008-09-26
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 80: Make mk-table-sync ignore auto-increment PK
-	open 541 days, opened on 2008-09-30
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 88: Make mk-table-sync support reverse syncing
-	open 538 days, opened on 2008-10-03
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 91: Make mk-table-checksum support CHECKSUM=1 for MyISAM tables
-	open 536 days, opened on 2008-10-04
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 98: Make mk-table-checksum support schema objects
-	open 532 days, opened on 2008-10-09
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 101: Refactor, improve and clean up mk-table-checksum internals
-	open 524 days, opened on 2008-10-17
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 125: mk-slave-restart should handle a new kind of log corruption
-	open 506 days, opened on 2008-11-04
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 144: Make mk-parallel-dump stop and start individual replication threads
-	open 476 days, opened on 2008-12-04
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 147: New tool to parallelize replication
-	open 475 days, opened on 2008-12-05
-	type: task, severity:  effort: extensive, benefit: lifechanging
-
-Issue 146: Make mk-parallel-restore start the replication slave after restoring a dump.
-	open 475 days, opened on 2008-12-05
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 143: Make mk-slave-move support promotion to master-master
-	open 476 days, opened on 2008-12-04
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 158: Make mk-query-digest display row estimates
-	open 468 days, opened on 2008-12-11
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 157: Make mk-query-digest reformat (pretty-print) queries
-	open 468 days, opened on 2008-12-11
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 156: Show day/time clustering in mk-query-digest
-	open 468 days, opened on 2008-12-11
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 169: Make mk-query-digest give progress reports
-	open 464 days, opened on 2008-12-16
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 176: Add a --tabulate report to mk-query-digest
-	open 461 days, opened on 2008-12-19
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 183: Add an --ignoredb-regex option to mk-find
-	open 457 days, opened on 2008-12-23
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 193: Make a way to update mk-query-digest --review information
-	open 451 days, opened on 2008-12-29
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 201: Make mk-query-digest store information about query plans
-	open 449 days, opened on 2008-12-31
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 212: Make mk-query-digest time buckets more flexible
-	open 446 days, opened on 2009-01-03
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 238: Add init scripts for all tools
-	open 433 days, opened on 2009-01-16
-	type: task, severity:  effort: extensive, benefit: helpful
-
-Issue 251: PROCESSLIST sniffer does not deal with replication thread
-	open 423 days, opened on 2009-01-26
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 246: Roll innotop into maatkit (mk-top?)
-	open 426 days, opened on 2009-01-23
-	type: task, severity:  effort: extensive, benefit: minimal
-
-Issue 261: Make mk-schema-advisor fingerprint table/db names
-	open 417 days, opened on 2009-02-01
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 273: Use Google Charts API to enhance some tools
-	open 403 days, opened on 2009-02-15
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 270: Make mk-table-checksum use consistent snapshots when not --replicate
-	open 404 days, opened on 2009-02-13
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 279: Make quick-download targets
-	open 397 days, opened on 2009-02-21
-	type: other, severity:  effort: easy, benefit: minimal
-
-Issue 285: mk-table-sync dies on SHOW GRANTS
-	open 395 days, opened on 2009-02-23
-	type: defect, severity: serious effort: extensive, benefit: helpful
-
-Issue 288: mk-slave-prefetch does not respect MySQL's relay-log option/variable
-	open 392 days, opened on 2009-02-25
-	type: defect, severity: serious effort: moderate, benefit: helpful
-
-Issue 299: Make mk-schema-advisor able to read a file
-	open 389 days, opened on 2009-03-01
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 305: mk-table-checksum generates bad --where clause with --since
-	open 385 days, opened on 2009-03-05
-	type: defect, severity: serious effort: extensive, benefit: helpful
-
-Issue 304: mk-table-checksum --replicate deletes old checksums even with --resume-replicate
-	open 386 days, opened on 2009-03-04
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 310: mk-table-sync asks for password too many times
-	open 382 days, opened on 2009-03-07
-	type: defect, severity: minor effort: easy, benefit: minimal
-
-Issue 312: mk-table-sync: --columns option ignored when generating update commands!
-	open 382 days, opened on 2009-03-08
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 314: false varchar with int value handling in where clause causes performance issues
-	open 382 days, opened on 2009-03-08
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 309: Make --help not print values after normal output
-	open 382 days, opened on 2009-03-07
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 324: Add schema to fingerprint and make --orderby handle multiple items
-	open 371 days, opened on 2009-03-19
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 327: Make mk-query-digest read the output of mysql-proxy
-	open 366 days, opened on 2009-03-24
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 333: Standardize regex patterns
-	open 361 days, opened on 2009-03-29
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 338: Make all of tool's --help output come from POD
-	open 348 days, opened on 2009-04-11
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 342: Make mk-table-checksum work better with binlog-do-db
-	open 344 days, opened on 2009-04-15
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 345: Make mk-table-checksum handle deadlocks and lock timeouts
-	open 344 days, opened on 2009-04-15
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 341: Make mk-table-checksum do relative-sized chunks
-	open 344 days, opened on 2009-04-15
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 347: A badly rewritten query
-	open 341 days, opened on 2009-04-18
-	type: defect, severity: minor effort: moderate, benefit: minimal
-
-Issue 354: Add NOW_USEC() function to Maatkit and add support to mk-heartbeat
-	open 340 days, opened on 2009-04-19
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 358: mk-parallel-dump on partition boundaries
-	open 336 days, opened on 2009-04-23
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 362: Optimize RowDiff.pm for early termination
-	open 330 days, opened on 2009-04-29
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 379: Make mk-table-sync multi-threaded
-	open 328 days, opened on 2009-05-01
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 378: Make mk-table-checksum try to use the index preferred by the optimizer
-	open 328 days, opened on 2009-05-01
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 377: Make mk-table-sync print start/end times
-	open 328 days, opened on 2009-05-01
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 376: Permit specifying an index for mk-table-sync
-	open 328 days, opened on 2009-05-01
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 375: Make mk-table-sync choose better indexes
-	open 328 days, opened on 2009-05-01
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 374: Add --progress to mk-table-sync
-	open 328 days, opened on 2009-05-01
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 370: Make mk-table-sync do one transaction per chunk
-	open 328 days, opened on 2009-05-01
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 380: Create mk-progress-report
-	open 328 days, opened on 2009-05-01
-	type: task, severity:  effort: moderate, benefit: minimal
-
-Issue 371: Make mk-table-sync preserve column order in SQL
-	open 328 days, opened on 2009-05-01
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 368: Create backup/restore manager
-	open 328 days, opened on 2009-04-30
-	type: task, severity:  effort: extensive, benefit: helpful
-
-Issue 372: Make mk-table-sync with --chunk do two-level chunking
-	open 328 days, opened on 2009-05-01
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 369: Make completely lock-free syncs possible with mk-table-sync 
-	open 328 days, opened on 2009-05-01
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 387: More useful comments in mk-table-sync statements
-	open 323 days, opened on 2009-05-06
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 385: Add partition support for table-checksum 
-	open 324 days, opened on 2009-05-04
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 389: Handle stupidly-quoted table and column names
-	open 322 days, opened on 2009-05-07
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 397: Make processlist sniffer use TIME_MS column when available
-	open 314 days, opened on 2009-05-15
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 395: Make processlist sniffer capture information about temp tables, etc
-	open 315 days, opened on 2009-05-14
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 400: Consider missing/extra tables as differences in mk-checksum-filter
-	open 310 days, opened on 2009-05-19
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 403: Create mk-data-generator
-	open 308 days, opened on 2009-05-20
-	type: task, severity:  effort: extensive, benefit: helpful
-
-Issue 405: Implement extra rules in OptionParser like "implies"
-	open 306 days, opened on 2009-05-23
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 411: Make mk-table-sync and mk-table-checksum get filters from mysql server by default
-	open 304 days, opened on 2009-05-25
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 421: Add safety features to mk-table-sync
-	open 300 days, opened on 2009-05-29
-	type: enhancement, severity:  effort: moderate, benefit: lifechanging
-
-Issue 423: Make mk-show-grants support column privileges
-	open 297 days, opened on 2009-06-01
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 443: Make mk-schema-advisor alert when column matching (updat|insert|delet|creat)ed is not TIMESTAMP
-	open 295 days, opened on 2009-06-03
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 436: Detect queries that use multi-column IN clause
-	open 295 days, opened on 2009-06-03
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 433: Add timezone to DSN syntax
-	open 295 days, opened on 2009-06-03
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 432: Make script or implement feature in existing script to determine how fast slave is replicating
-	open 295 days, opened on 2009-06-03
-	type: task, severity:  effort: moderate, benefit: helpful
-
-Issue 431: Make script to automate InnoDB recovery
-	open 295 days, opened on 2009-06-03
-	type: task, severity:  effort: extensive, benefit: helpful
-
-Issue 439: Make visual-explain tell which columns are used in the index
-	open 295 days, opened on 2009-06-03
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 438: Create mk-schema-sync
-	open 295 days, opened on 2009-06-03
-	type: task, severity:  effort: extensive, benefit: helpful
-
-Issue 435: Make mk-slave-delay implement a different definition of 'delay'
-	open 295 days, opened on 2009-06-03
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 434: Make mk-slave-delay use a heartbeat table from mk-heartbeat
-	open 295 days, opened on 2009-06-03
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 454: Generate a list of tables and columns that a query accesses
-	open 290 days, opened on 2009-06-08
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 461: Add partition support to mk-archiver for re-partitioning
-	open 280 days, opened on 2009-06-18
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 463: Make mk-query-digest rewrite more kinds of long queries
-	open 275 days, opened on 2009-06-23
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 472: EventTimeLine needs explicit attribs but attribs are auto-detected now
-	open 268 days, opened on 2009-06-30
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 492: Get list of DSNs from table
-	open 266 days, opened on 2009-07-02
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 491: mk-find: add --continue-on-error
-	open 266 days, opened on 2009-07-02
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 488: Shorten values printed in mk-duplicate-key-checker::print_key_summary()
-	open 266 days, opened on 2009-07-02
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 486: mk-fifo-split: make progress messages the default
-	open 266 days, opened on 2009-07-02
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 482: mk-fifo-split: print out $INPUT_LINE_NUMBER on exit (including exit by CTRL-C)
-	open 266 days, opened on 2009-07-02
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 490: mk-find: add --haskey(col), add --hascol
-	open 266 days, opened on 2009-07-02
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 487: mk-fifo-split: print %complete and ETA
-	open 266 days, opened on 2009-07-02
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 481: mk-fifo-split: add limit arguments so you can read a splice out of the middle
-	open 266 days, opened on 2009-07-02
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 480: mk-fifo-split: support binmode
-	open 266 days, opened on 2009-07-02
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 511: Make mk-query-digest report number of query variations
-	open 264 days, opened on 2009-07-04
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 500: Modularize common subroutines like mysql_error_msg
-	open 266 days, opened on 2009-07-02
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 513: mk-table-scan: don't scan table when table is clustered index
-	open 262 days, opened on 2009-07-06
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 519: mk-table-checksum Needs A chunkcol Option
-	open 260 days, opened on 2009-07-08
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 522: mk-slave-prefetch: need to change --statistics to print only N top queries
-	open 260 days, opened on 2009-07-08
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 520: Make mk-slave-prefetch filter/throw away non-replicated DBs/tables
-	open 260 days, opened on 2009-07-08
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 529: Calculate "real" concurrency with mk-query-digest
-	open 255 days, opened on 2009-07-13
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 532: mk-table-checksum problem when DSN refers to SSH tunnel from localhost
-	open 248 days, opened on 2009-07-20
-	type: defect, severity: serious effort: moderate, benefit: helpful
-
-Issue 535: Make mk-query-digest parse the postgresql log format
-	open 244 days, opened on 2009-07-24
-	type: enhancement, severity:  effort: moderate, benefit: lifechanging
-
-Issue 543: Sort by expressions like Rows_sent/Rows_examined in mk-query-digest
-	open 233 days, opened on 2009-08-04
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 541: Sort by ninetyfive, stddev and med in mk-query-digest
-	open 233 days, opened on 2009-08-04
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 547: Detect queries that have duplicated columns
-	open 230 days, opened on 2009-08-07
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 557: mk-slave-move should check for open temp tables before moving slaves
-	open 225 days, opened on 2009-08-12
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 556: mk-slave-move needs an option to kill connections that have open transactions.
-	open 225 days, opened on 2009-08-12
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 555: mk-slave-move needs an option to kill all other connections
-	open 225 days, opened on 2009-08-12
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 554: mk-slave-move needs an option to set servers read_only
-	open 225 days, opened on 2009-08-12
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 553: mk-slave-move: new opt to find newest slave of a given set of siblings or a given master
-	open 225 days, opened on 2009-08-12
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 552: mk-slave-move needs an option to specify the grandparent, in case the master is dead
-	open 225 days, opened on 2009-08-12
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 568: mk-table-checksum doesn't use chunk-size with a varchar primary key
-	open 218 days, opened on 2009-08-19
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 589: mk-table-checksum should eval certain operations
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: lifechanging
-
-Issue 577: mk-query-digest should only --execute cmd=Query events
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 592: Make mk-table-sync use prepared statements
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 590: mk-table-checksum: check that dbh is master of supposed slave
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 588: mk-table-checksum: allow user-specified functions to use --optimize-xor
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 585: mk-slave-restart: let user specify more patterns and actions
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 582: Make mk-slave-delay print slave status and execute SQL
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 580: mk-show-grants: search for obsolete grant statements
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 576: Add info to TableParser to get original letter-case of column names
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 595: Handle "Using index condition"
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 594: mk-table-sync needs a better way to check for triggers
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 591: Abstract SQL making into a module
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 581: Build a module that prints grants by inspecting the grant tables
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 579: mk-query-profiler doesn't handle MAX_ULONG correctly on 64-bit servers
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 578: mk-query-profiler should determine which vars are session-specific by looking for @@
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 587: mk-table-checksum should not prefetch tables
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 583: New mk-slave-move options like --promote and --resume
-	open 209 days, opened on 2009-08-28
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 600: mk-slave-prefetch doesn't parse INSERT INTO Table SET c1 = v1, c2 = v2 ...
-	open 205 days, opened on 2009-09-01
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 599: mk-slave-prefetch doesn't parse INSERT IGNORE
-	open 205 days, opened on 2009-09-01
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 602: mk-table-checksum issue with invalid dates
-	open 204 days, opened on 2009-09-01
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 603: Make mk-schema-advisor check that all tables in a merge have the same structure
-	open 203 days, opened on 2009-09-03
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 604: mk-query-digest uses incorrect command line parameters for 'ps' on OpenBSD
-	open 200 days, opened on 2009-09-05
-	type: defect, severity: serious effort: moderate, benefit: helpful
-
-Issue 608: mk-duplicate-key-checker over-recommends dropping keys: problem with prefix-of-clustered-index recommendation
-	open 193 days, opened on 2009-09-13
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 610: mk-heartbeat feature request: --no-newline option while using --file
-	open 191 days, opened on 2009-09-15
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 615: Make mk-variable-advisor report differences between servers
-	open 182 days, opened on 2009-09-24
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 626: Post Maatkit release notes on maatkit.org
-	open 175 days, opened on 2009-10-01
-	type: website, severity:  effort: easy, benefit: helpful
-
-Issue 629: Gearmand support in mk-query-digest
-	open 174 days, opened on 2009-10-02
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 633: Make mk-query-digest able to parse snoop output
-	open 171 days, opened on 2009-10-05
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 632: Make mk-query-digest analyze index usage
-	open 171 days, opened on 2009-10-05
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 641: Make mk-table-sync use hex for binary/blob data
-	open 167 days, opened on 2009-10-09
-	type: defect, severity: serious effort: moderate, benefit: helpful
-
-Issue 646: Make a tool to estimate index sizes
-	open 162 days, opened on 2009-10-14
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 645: Make a tool to recursively discover foreign key relationships
-	open 162 days, opened on 2009-10-14
-	type: task, severity:  effort: moderate, benefit: helpful
-
-Issue 647: Make a tool that can make minimal ALTER statements
-	open 162 days, opened on 2009-10-14
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 652: mk-table-sync --transaction should set transaction isolation level
-	open 156 days, opened on 2009-10-20
-	type: defect, severity: minor effort: easy, benefit: helpful
-
-Issue 654: Make it possible to use different passwords for master and slave
-	open 155 days, opened on 2009-10-21
-	type: enhancement, severity:  effort: moderate, benefit: lifechanging
-
-Issue 653: Make mk-table-sync do lockless master-to-slave syncing
-	open 155 days, opened on 2009-10-20
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 657: Add trevorprice metric back to mk-loadavg
-	open 149 days, opened on 2009-10-27
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 660: Look for SQL injection patterns in mk-query-advisor
-	open 148 days, opened on 2009-10-28
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 659: mk-parallel-dump --progress is inaccurate when a chunked dump is resumed
-	open 148 days, opened on 2009-10-28
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 666: Test maatkit on other OSes
-	open 146 days, opened on 2009-10-30
-	type: testing, severity:  effort: moderate, benefit: lifechanging
-
-Issue 674: mk-table-sync should find common checksum algo
-	open 143 days, opened on 2009-11-02
-	type: enhancement, severity:  effort: easy, benefit: lifechanging
-
-Issue 667: Can mk-query-digest detect JOINs without an index from tcpdump?
-	open 146 days, opened on 2009-10-30
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 670: Make mk-query-digest capture the error message from tcpdump
-	open 144 days, opened on 2009-11-01
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 676: mk-query-digest --group-by distill doesn't print text for administrator commands
-	open 143 days, opened on 2009-11-02
-	type: defect, severity: minor effort: easy, benefit: minimal
-
-Issue 671: Make mk-query-digest capture bytes and rows returned from queries
-	open 144 days, opened on 2009-11-01
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 672: mk-table-sync should COALESCE to avoid undef
-	open 143 days, opened on 2009-11-02
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 688: Add mysql_connect_timeout to DSNs
-	open 135 days, opened on 2009-11-10
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 685: Make mk-variable-advisor
-	open 135 days, opened on 2009-11-10
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 690: Add Sphinx protocol parser for mk-query-digest
-	open 132 days, opened on 2009-11-13
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 697: Compute Transmit_time whenever possible
-	open 131 days, opened on 2009-11-14
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 696: Neaten mk-query-digest report formatting 
-	open 131 days, opened on 2009-11-14
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 701: Make a tool that can replicate from multiple masters to one slave.
-	open 130 days, opened on 2009-11-15
-	type: task, severity:  effort: extensive, benefit: lifechanging
-
-Issue 700: Make mk-query-digest truncate attrib names better
-	open 130 days, opened on 2009-11-15
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 699: mk-query-digest report table is hard to read
-	open 130 days, opened on 2009-11-15
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 698: Make mk-query-digest print cleaner output in --review mode
-	open 130 days, opened on 2009-11-15
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 694: Make mk-query-digest support the postgresql TCP protocol
-	open 131 days, opened on 2009-11-14
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 706: Add pos_in_log to resource profile in mk-query-digest output
-	open 125 days, opened on 2009-11-20
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 707: Parse logical packets from physical packets
-	open 125 days, opened on 2009-11-20
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 704: Make mk-query-advisor query mk-query-digest's --review table
-	open 125 days, opened on 2009-11-20
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 709: Docs are no longer pretty
-	open 124 days, opened on 2009-11-21
-	type: website, severity:  effort: moderate, benefit: helpful
-
-Issue 720: Cannot change binlog_format while using READ COMMITTED
-	open 121 days, opened on 2009-11-24
-	type: defect, severity: serious effort: moderate, benefit: helpful
-
-Issue 717: Make mk-query-digest compute distribution of arrival times
-	open 123 days, opened on 2009-11-22
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 714: Diff EXPLAIN
-	open 123 days, opened on 2009-11-22
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 713: Make mk-query-digest able to store events into a database
-	open 123 days, opened on 2009-11-22
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 710: Make mk-query-digest handle several kinds of tcpdump at once
-	open 124 days, opened on 2009-11-21
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 716: Make mk-review-helper graph queries over time
-	open 123 days, opened on 2009-11-22
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 715: Inspect a tool similar to mk-kill and see if it has anything we should implement
-	open 123 days, opened on 2009-11-22
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 723: Make mk-variable-advisor report on deprecated parameters
-	open 117 days, opened on 2009-11-28
-	type: enhancement, severity:  effort: moderate, benefit: lifechanging
-
-Issue 725: Add review instance to mk-query-digest --review
-	open 117 days, opened on 2009-11-28
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 724: Make mk-query-digest able to filter events post-report
-	open 117 days, opened on 2009-11-28
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 731: mk-archiver deletes less rows than its inserting causing duplicate rows in the archive table
-	open 111 days, opened on 2009-12-04
-	type: defect, severity: critical effort: moderate, benefit: helpful
-
-Issue 737: mk-parallel-restore tries to restore files by reading into memory and executing
-	open 109 days, opened on 2009-12-06
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 736: mk-query-digest doesn't handle badly distilled queries
-	open 109 days, opened on 2009-12-06
-	type: testing, severity:  effort: easy, benefit: minimal
-
-Issue 738: mk-query-digest --review-history entries have nothing to identify them as part of one review
-	open 108 days, opened on 2009-12-07
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 741: mk-query-profiler docs are incomplete
-	open 107 days, opened on 2009-12-08
-	type: docs, severity:  effort: easy, benefit: minimal
-
-Issue 739: Make mk-review-helper format query reports just like mk-query-digest
-	open 108 days, opened on 2009-12-07
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 749: mk-table-checksum --recheck checks all chunks
-	open 105 days, opened on 2009-12-09
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 748: Make mk-table-sync retry MASTER_POS_WAIT
-	open 105 days, opened on 2009-12-09
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 745: mk-parallel-dump performance issues
-	open 106 days, opened on 2009-12-09
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 752: mk-query-digest's ts event attributes aren't defined consistently
-	open 104 days, opened on 2009-12-10
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 751: Add support for the MongoDB protocol to mk-query-digest
-	open 105 days, opened on 2009-12-10
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 743: Make mk-query-digest fingerprint and aggregate by sessions
-	open 106 days, opened on 2009-12-09
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 756: Make mk-query-digest print the current date in global header
-	open 103 days, opened on 2009-12-12
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 753: Make a tool that can generate query plans
-	open 104 days, opened on 2009-12-11
-	type: task, severity:  effort: extensive, benefit: helpful
-
-Issue 762: Make mk-query-digest percentile configurable
-	open 97 days, opened on 2009-12-18
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 769: Make mk-query-digest histogram width configurable
-	open 96 days, opened on 2009-12-19
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 768: Make mk-query-digest analyze the "shape" of histograms
-	open 96 days, opened on 2009-12-19
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 767: Make mk-query-digest show a trend of query arrival and reply timestamps
-	open 96 days, opened on 2009-12-19
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 766: Make mk-query-digest show embedded literals in prepared statements
-	open 96 days, opened on 2009-12-19
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 772: Add redis protocol support to mk-query-digest
-	open 93 days, opened on 2009-12-22
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 775: Add developer documentation
-	open 90 days, opened on 2009-12-25
-	type: docs, severity:  effort: moderate, benefit: helpful
-
-Issue 774: Update /get/ and /trunk/ on maatkit.org
-	open 90 days, opened on 2009-12-25
-	type: website, severity:  effort: moderate, benefit: helpful
-
-Issue 773: mk-query-digest --processlist is hacked into the pipeline
-	open 92 days, opened on 2009-12-23
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 776: Add --pause feature to tools
-	open 86 days, opened on 2009-12-29
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 785: ReportFormatter doesn't handle widths right
-	open 83 days, opened on 2010-01-01
-	type: defect, severity: minor effort: easy, benefit: helpful
-
-Issue 779: Make mk-kill kill all but N duplicates of a query
-	open 85 days, opened on 2009-12-30
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 778: Write VIEW definitions for mk-query-digest review information
-	open 85 days, opened on 2009-12-30
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 781: mk-query-digest doesn't distill or extract tables properly
-	open 83 days, opened on 2010-01-01
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 780: Create mk-stat
-	open 85 days, opened on 2009-12-30
-	type: task, severity:  effort: extensive, benefit: helpful
-
-Issue 789: SHOW INNODB STATUS changed from 5.0 to 5.1
+Issue 793, rank 6: mk-loadavg doesn't count processlist statuses right
+	open 77 days, opened on 2010-01-07
+	type: defect, severity: serious, effort: easy, benefit: helpful
+
+Issue 790, rank 6: mk-table-sync --lock-and-rename doesn't work on 5.1
+	open 79 days, opened on 2010-01-05
+	type: defect, severity: serious, effort: easy, benefit: helpful
+
+Issue 789, rank 6: SHOW INNODB STATUS changed from 5.0 to 5.1
 	open 79 days, opened on 2010-01-04
-	type: defect, severity: serious effort: easy, benefit: helpful
+	type: defect, severity: serious, effort: easy, benefit: helpful
 
-Issue 783: Make mk-table-sync sync via SELECT INTO OUTFILE / LOAD DATA INFILE
-	open 83 days, opened on 2010-01-01
-	type: enhancement, severity:  effort: extensive, benefit: helpful
+Issue 731, rank 6: mk-archiver deletes less rows than its inserting causing duplicate rows in the archive table
+	open 111 days, opened on 2009-12-04
+	type: defect, severity: critical, effort: moderate, benefit: helpful
 
-Issue 790: mk-table-sync --lock-and-rename doesn't work on 5.1
-	open 78 days, opened on 2010-01-05
-	type: defect, severity: serious effort: easy, benefit: helpful
+Issue 674, rank 6: mk-table-sync should find common checksum algo
+	open 143 days, opened on 2009-11-02
+	type: enhancement, severity: , effort: easy, benefit: lifechanging
 
-Issue 793: mk-loadavg doesn't count processlist statuses right
-	open 77 days, opened on 2010-01-07
-	type: defect, severity: serious effort: easy, benefit: helpful
+Issue 288, rank 6: mk-slave-prefetch does not respect MySQL's relay-log option/variable
+	open 393 days, opened on 2009-02-25
+	type: defect, severity: serious, effort: moderate, benefit: helpful
 
-Issue 787: Make mk-query-digest find "bad spots" over time
-	open 80 days, opened on 2010-01-03
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
+Issue 76, rank 6: Add alerting mechanism to mk-heartbeat?
+	open 547 days, opened on 2008-09-24
+	type: enhancement, severity: , effort: moderate, benefit: lifechanging
 
-Issue 792: Enhance tools' PODs with more and better examples
-	open 77 days, opened on 2010-01-07
-	type: docs, severity:  effort: easy, benefit: helpful
-
-Issue 791: Add more mysql protocol flags to event attributes for mk-query-digest
-	open 77 days, opened on 2010-01-07
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 797: Make mk-kill able to send emails with killed queries
-	open 75 days, opened on 2010-01-09
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 796: Make mk-table-checksum skip tables that'll be too big/slow
-	open 75 days, opened on 2010-01-09
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 801: DSNParser clobbers SQL_MODE
-	open 72 days, opened on 2010-01-12
-	type: defect, severity: minor effort: easy, benefit: helpful
-
-Issue 802: Recursing to slave doesn't work with --defaults-file (-F)
-	open 72 days, opened on 2010-01-12
-	type: defect, severity: minor effort: moderate, benefit: minimal
-
-Issue 805: Add --print to mk-table-checksum
-	open 70 days, opened on 2010-01-14
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 808: Make mk-table-(checksum,sync) treat hex data as numeric for chunking
-	open 68 days, opened on 2010-01-16
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 812: Differences in SHOW CREATE TABLE in 5.1 make tests fail
-	open 66 days, opened on 2010-01-18
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 811: Make mk-kill not kill queries updating MyISAM tables
-	open 66 days, opened on 2010-01-17
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 809: Make mk-query-digest do sliding-window analysis
-	open 66 days, opened on 2010-01-17
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 815: Make mk-query-digest get queries from a table in mysql5.1
-	open 65 days, opened on 2010-01-19
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 813: mk-table-checksum, mk-table-sync skip slave
-	open 65 days, opened on 2010-01-19
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 820: Make mk-table-sync honor schema filters with --replicate
-	open 60 days, opened on 2010-01-24
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 819: Make mk-parallel-dump reimplement mysqldump
-	open 60 days, opened on 2010-01-24
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 827: Do Erlang C math
-	open 58 days, opened on 2010-01-26
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 826: Make mk-query-digest pluggable
-	open 58 days, opened on 2010-01-26
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 823: Use closures instead of dynamic anon subs evaled at run-time
-	open 59 days, opened on 2010-01-25
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 828: Add tabular tables -vs- queries report to mk-query-digest
-	open 57 days, opened on 2010-01-27
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 852: Add a --finger option to mk-kill
-	open 54 days, opened on 2010-01-30
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 843: Add --memory-limit to mk-query-digest
-	open 55 days, opened on 2010-01-29
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 863: Make mk-query-advisor examine table schema
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: moderate, benefit: lifechanging
-
-Issue 860: Examine QOT tools for inspiration for mk-query-advisor
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 853: Make mk-kill kill all queries
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: easy, benefit: helpful
-
-Issue 850: Create mk-cluster
-	open 54 days, opened on 2010-01-30
-	type: task, severity:  effort: extensive, benefit: lifechanging
-
-Issue 846: Make mk-archiver do reverse nibbling
-	open 54 days, opened on 2010-01-29
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 877: Make mk-table-sync support action filtering again
-	open 52 days, opened on 2010-02-01
-	type: enhancement, severity:  effort: moderate, benefit: lifechanging
-
-Issue 869: Make mk-query-digest compute a scaling graph
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 868: Make mk-query-digest calculate true concurrency from processlist
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 867: Make mk-query-digest detect Lock_time from processlist
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 866: Make mk-query-digest use less memory
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 864: Make mk-query-advisor rules pluggable
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 862: Make mk-query-advisor examine EXPLAIN plans
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 861: Create mk-query-advisor
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 858: Make nicer output for mk-upgrade
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 856: Instrument all tools
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 855: Make mk-loadavg thresholds look like an SQL query
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 854: Make mk-kill notice and stop abusive queries
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 851: Make mk-duplicate-key-checker's output nicer
-	open 54 days, opened on 2010-01-30
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 849: Make a binary log parser
-	open 54 days, opened on 2010-01-30
-	type: task, severity:  effort: extensive, benefit: helpful
-
-Issue 875: Make mk-table-sync support plugins
-	open 52 days, opened on 2010-02-01
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 874: Make mk-table-sync do iterations before --lock-and-rename
-	open 52 days, opened on 2010-02-01
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 865: Make mk-query-advisor deconstruct/expand stored procedures
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 859: Make mk-parallel-restore choose more optimal concurrency
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 857: Create mk-log-server
-	open 53 days, opened on 2010-01-31
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 847: Embed pure-Perl mysql implementation
-	open 54 days, opened on 2010-01-30
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 885: History table miss the "schema" column
-	open 50 days, opened on 2010-02-03
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 882: Make a visual ascii art chart of query activity
-	open 51 days, opened on 2010-02-02
-	type: enhancement, severity:  effort: extensive, benefit: lifechanging
-
-Issue 880: Make mk-archiver support bulk-delete via IN list
-	open 51 days, opened on 2010-02-02
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 878: Make mk-table-checksum report differences across slaves
-	open 52 days, opened on 2010-02-01
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 876: Make sure plugins don't hurt performance
-	open 52 days, opened on 2010-02-01
-	type: enhancement, severity:  effort: moderate, benefit: minimal
-
-Issue 871: Build generic crosstab functionality
-	open 52 days, opened on 2010-02-01
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 870: Make mk-slave-prefetch tune its behavior based on InnoDB status
-	open 52 days, opened on 2010-02-01
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 881: Make mk-query-digest show iostat-style running statistics
-	open 51 days, opened on 2010-02-02
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 879: Optimize mk-table-sync tight loops
-	open 52 days, opened on 2010-02-01
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 873: Make mk-table-sync use arrays instead of hashes
-	open 52 days, opened on 2010-02-01
-	type: enhancement, severity:  effort: extensive, benefit: minimal
-
-Issue 887: Make mk-slave-prefetch query-rewrites pluggable
-	open 49 days, opened on 2010-02-04
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 891: --engines option may be broken
-	open 47 days, opened on 2010-02-05
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 890: Make chunking possible on multi-column indexes
-	open 49 days, opened on 2010-02-04
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 892: Make mk-query-digest explain its pipeline
-	open 47 days, opened on 2010-02-06
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 894: mk-query-digest fails to compile if needed modules are in path
-	open 42 days, opened on 2010-02-11
-	type: defect, severity: minor effort: easy, benefit: minimal
-
-Issue 896: mk-slave-delay Issue With 72h Delay
-	open 41 days, opened on 2010-02-12
-	type: defect, severity: minor effort: moderate, benefit: helpful
-
-Issue 895: Make mk-query-digest output XML format
-	open 42 days, opened on 2010-02-11
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 893: Add header line to embedded modules
-	open 42 days, opened on 2010-02-11
-	type: docs, severity:  effort: easy, benefit: minimal
-
-Issue 900: One big ALTER TABLE DROP INDEX
-	open 38 days, opened on 2010-02-15
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 899: Print duplicate index sizes per-table and per-index
-	open 38 days, opened on 2010-02-15
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 907: Add a --no-check-privileges option to mk-table-sync
+Issue 907, rank 5: Add a --no-check-privileges option to mk-table-sync
 	open 34 days, opened on 2010-02-19
-	type: enhancement, severity:  effort: easy, benefit: helpful
+	type: enhancement, severity: , effort: easy, benefit: helpful
 
-Issue 905: common/t tests should die not bail out
-	open 36 days, opened on 2010-02-17
-	type: testing, severity:  effort: moderate, benefit: minimal
+Issue 801, rank 5: DSNParser clobbers SQL_MODE
+	open 72 days, opened on 2010-01-12
+	type: defect, severity: minor, effort: easy, benefit: helpful
 
-Issue 908: DUAL isn't a real table
-	open 33 days, opened on 2010-02-20
-	type: enhancement, severity:  effort: easy, benefit: minimal
+Issue 785, rank 5: ReportFormatter doesn't handle widths right
+	open 83 days, opened on 2010-01-01
+	type: defect, severity: minor, effort: easy, benefit: helpful
 
-Issue 912: Another test case for mk-error-log
-	open 30 days, opened on 2010-02-23
-	type: defect, severity: minor effort: easy, benefit: helpful
+Issue 720, rank 5: Cannot change binlog_format while using READ COMMITTED
+	open 121 days, opened on 2009-11-24
+	type: defect, severity: serious, effort: moderate, benefit: helpful
 
-Issue 910: Add postgres support to mk-error-log
-	open 33 days, opened on 2010-02-20
-	type: enhancement, severity:  effort: moderate, benefit: minimal
+Issue 654, rank 5: Make it possible to use different passwords for master and slave
+	open 155 days, opened on 2009-10-21
+	type: enhancement, severity: , effort: moderate, benefit: lifechanging
 
-Issue 909: Add textual explain for mk-visual-explain
-	open 33 days, opened on 2010-02-20
-	type: enhancement, severity:  effort: extensive, benefit: helpful
+Issue 652, rank 5: mk-table-sync --transaction should set transaction isolation level
+	open 156 days, opened on 2009-10-20
+	type: defect, severity: minor, effort: easy, benefit: helpful
 
-Issue 913: Make genlog parser have syslog wrapper
-	open 30 days, opened on 2010-02-23
-	type: enhancement, severity:  effort: moderate, benefit: helpful
+Issue 641, rank 5: Make mk-table-sync use hex for binary/blob data
+	open 167 days, opened on 2009-10-09
+	type: defect, severity: serious, effort: moderate, benefit: helpful
 
-Issue 920: mk-table-sync Chunk and Nibble do not detect some differences
-	open 28 days, opened on 2010-02-25
-	type: defect, severity: minor effort: moderate, benefit: helpful
+Issue 604, rank 5: mk-query-digest uses incorrect command line parameters for 'ps' on OpenBSD
+	open 201 days, opened on 2009-09-05
+	type: defect, severity: serious, effort: moderate, benefit: helpful
 
-Issue 918: mk-query-digest does not fingerprint LOAD DATA
-	open 29 days, opened on 2010-02-24
-	type: enhancement, severity:  effort: easy, benefit: minimal
+Issue 532, rank 5: mk-table-checksum problem when DSN refers to SSH tunnel from localhost
+	open 248 days, opened on 2009-07-20
+	type: defect, severity: serious, effort: moderate, benefit: helpful
 
-Issue 915: Add Sphinx searchd log support to mk-query-digest
-	open 29 days, opened on 2010-02-24
-	type: enhancement, severity:  effort: moderate, benefit: helpful
+Issue 310, rank 5: mk-table-sync asks for password too many times
+	open 383 days, opened on 2009-03-07
+	type: defect, severity: minor, effort: easy, benefit: minimal
 
-Issue 921: Add InnoDB error rules to mk-error-log
-	open 28 days, opened on 2010-02-25
-	type: enhancement, severity:  effort: moderate, benefit: helpful
+Issue 305, rank 5: mk-table-checksum generates bad --where clause with --since
+	open 385 days, opened on 2009-03-05
+	type: defect, severity: serious, effort: extensive, benefit: helpful
 
-Issue 916: Make a tool to summarize SHOW INNODB STATUS
-	open 29 days, opened on 2010-02-24
-	type: enhancement, severity:  effort: extensive, benefit: helpful
+Issue 285, rank 5: mk-table-sync dies on SHOW GRANTS
+	open 395 days, opened on 2009-02-23
+	type: defect, severity: serious, effort: extensive, benefit: helpful
 
-Issue 914: Create a way to analyze temp table usage
-	open 29 days, opened on 2010-02-23
-	type: enhancement, severity:  effort: extensive, benefit: helpful
+Issue 251, rank 5: PROCESSLIST sniffer does not deal with replication thread
+	open 423 days, opened on 2009-01-26
+	type: defect, severity: minor, effort: moderate, benefit: helpful
 
-Issue 922: mk-table-checksum --arg-table causes false positive results
-	open 26 days, opened on 2010-02-26
-	type: defect, severity: minor effort: moderate, benefit: helpful
+Issue 144, rank 5: Make mk-parallel-dump stop and start individual replication threads
+	open 476 days, opened on 2008-12-04
+	type: enhancement, severity: , effort: easy, benefit: helpful
 
-Issue 919: Create mk-diff
-	open 28 days, opened on 2010-02-25
-	type: enhancement, severity:  effort: extensive, benefit: helpful
+Issue 78, rank 5: mk-table-sync should be able to skip checking for slave up-to-dateness
+	open 545 days, opened on 2008-09-26
+	type: enhancement, severity: , effort: easy, benefit: helpful
 
-Issue 925: Make mk-slave-restart able to restart InnoDB lock wait timeouts
-	open 24 days, opened on 2010-03-01
-	type: enhancement, severity:  effort: moderate, benefit: helpful
+Issue 67, rank 5: Govern checksum speed by slave lag
+	open 555 days, opened on 2008-09-16
+	type: enhancement, severity: , effort: moderate, benefit: helpful
 
-Issue 927: Create a tool to summarize InnoDB output
-	open 23 days, opened on 2010-03-02
-	type: enhancement, severity:  effort: moderate, benefit: helpful
+Issue 957, rank 4: mk-query-digest error: "my" variable $verbs masks earlier declaration
+	open 3 days, opened on 2010-03-22
+	type: defect, severity: serious, effort: easy, benefit: helpful
 
-Issue 930: Make mk-slave-find purge binlogs on master up until oldest slave
-	open 22 days, opened on 2010-03-03
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 929: Make mk-query-digest signal when --attribute-value-limit is applied
-	open 22 days, opened on 2010-03-03
-	type: enhancement, severity:  effort: easy, benefit: minimal
-
-Issue 928: Time::HiRes::sleep(-0.24267): negative time not invented yet at ./mk-table-checksum line 4718. 
-	open 22 days, opened on 2010-03-03
-	type: defect, severity: minor effort: moderate, benefit: minimal
-
-Issue 933: mk-query-digest :: Allow me to specify SLA for a query when using --review
-	open 20 days, opened on 2010-03-05
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 931: Add InnoDB status as a source of query events
-	open 21 days, opened on 2010-03-04
-	type: enhancement, severity:  effort: extensive, benefit: helpful
-
-Issue 936: Make mk-table-sync do n-way synchronization
-	open 13 days, opened on 2010-03-12
-	type: enhancement, severity:  effort: moderate, benefit: lifechanging
-
-Issue 935: Make mk-query-digest profile come first
-	open 14 days, opened on 2010-03-10
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 938: Make mk-query-digest consume SHOW PROFILES data
-	open 13 days, opened on 2010-03-12
-	type: enhancement, severity:  effort: moderate, benefit: helpful
-
-Issue 947: mk-table-checksum crashes if h DSN part is not given
+Issue 947, rank 4: mk-table-checksum crashes if h DSN part is not given
 	open 8 days, opened on 2010-03-17
-	type: defect, severity: serious effort: easy, benefit: minimal
+	type: defect, severity: serious, effort: easy, benefit: minimal
 
-Issue 941: mk-table-checksum chunking should treat zero dates similar to NULL
+Issue 912, rank 4: Another test case for mk-error-log
+	open 30 days, opened on 2010-02-23
+	type: defect, severity: minor, effort: easy, benefit: helpful
+
+Issue 896, rank 4: mk-slave-delay Issue With 72h Delay
+	open 41 days, opened on 2010-02-12
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 894, rank 4: mk-query-digest fails to compile if needed modules are in path
+	open 42 days, opened on 2010-02-11
+	type: defect, severity: minor, effort: easy, benefit: minimal
+
+Issue 891, rank 4: --engines option may be broken
+	open 48 days, opened on 2010-02-05
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 885, rank 4: History table miss the "schema" column
+	open 50 days, opened on 2010-02-03
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 877, rank 4: Make mk-table-sync support action filtering again
+	open 52 days, opened on 2010-02-01
+	type: enhancement, severity: , effort: moderate, benefit: lifechanging
+
+Issue 863, rank 4: Make mk-query-advisor examine table schema
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: moderate, benefit: lifechanging
+
+Issue 860, rank 4: Examine QOT tools for inspiration for mk-query-advisor
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 853, rank 4: Make mk-kill kill all queries
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 852, rank 4: Add a --finger option to mk-kill
+	open 54 days, opened on 2010-01-30
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 820, rank 4: Make mk-table-sync honor schema filters with --replicate
+	open 60 days, opened on 2010-01-24
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 812, rank 4: Differences in SHOW CREATE TABLE in 5.1 make tests fail
+	open 66 days, opened on 2010-01-18
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 792, rank 4: Enhance tools' PODs with more and better examples
+	open 77 days, opened on 2010-01-07
+	type: docs, severity: , effort: easy, benefit: helpful
+
+Issue 791, rank 4: Add more mysql protocol flags to event attributes for mk-query-digest
+	open 77 days, opened on 2010-01-07
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 781, rank 4: mk-query-digest doesn't distill or extract tables properly
+	open 83 days, opened on 2010-01-01
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 756, rank 4: Make mk-query-digest print the current date in global header
+	open 103 days, opened on 2009-12-12
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 752, rank 4: mk-query-digest's ts event attributes aren't defined consistently
+	open 105 days, opened on 2009-12-10
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 749, rank 4: mk-table-checksum --recheck checks all chunks
+	open 106 days, opened on 2009-12-09
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 748, rank 4: Make mk-table-sync retry MASTER_POS_WAIT
+	open 106 days, opened on 2009-12-09
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 737, rank 4: mk-parallel-restore tries to restore files by reading into memory and executing
+	open 109 days, opened on 2009-12-06
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 723, rank 4: Make mk-variable-advisor report on deprecated parameters
+	open 117 days, opened on 2009-11-28
+	type: enhancement, severity: , effort: moderate, benefit: lifechanging
+
+Issue 706, rank 4: Add pos_in_log to resource profile in mk-query-digest output
+	open 125 days, opened on 2009-11-20
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 688, rank 4: Add mysql_connect_timeout to DSNs
+	open 135 days, opened on 2009-11-10
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 676, rank 4: mk-query-digest --group-by distill doesn't print text for administrator commands
+	open 143 days, opened on 2009-11-02
+	type: defect, severity: minor, effort: easy, benefit: minimal
+
+Issue 670, rank 4: Make mk-query-digest capture the error message from tcpdump
+	open 144 days, opened on 2009-11-01
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 666, rank 4: Test maatkit on other OSes
+	open 146 days, opened on 2009-10-30
+	type: testing, severity: , effort: moderate, benefit: lifechanging
+
+Issue 660, rank 4: Look for SQL injection patterns in mk-query-advisor
+	open 148 days, opened on 2009-10-28
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 657, rank 4: Add trevorprice metric back to mk-loadavg
+	open 149 days, opened on 2009-10-27
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 626, rank 4: Post Maatkit release notes on maatkit.org
+	open 175 days, opened on 2009-10-01
+	type: website, severity: , effort: easy, benefit: helpful
+
+Issue 608, rank 4: mk-duplicate-key-checker over-recommends dropping keys: problem with prefix-of-clustered-index recommendation
+	open 193 days, opened on 2009-09-13
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 602, rank 4: mk-table-checksum issue with invalid dates
+	open 205 days, opened on 2009-09-01
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 600, rank 4: mk-slave-prefetch doesn't parse INSERT INTO Table SET c1 = v1, c2 = v2 ...
+	open 205 days, opened on 2009-09-01
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 599, rank 4: mk-slave-prefetch doesn't parse INSERT IGNORE
+	open 205 days, opened on 2009-09-01
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 589, rank 4: mk-table-checksum should eval certain operations
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: lifechanging
+
+Issue 577, rank 4: mk-query-digest should only --execute cmd=Query events
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 568, rank 4: mk-table-checksum doesn't use chunk-size with a varchar primary key
+	open 218 days, opened on 2009-08-19
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 543, rank 4: Sort by expressions like Rows_sent/Rows_examined in mk-query-digest
+	open 233 days, opened on 2009-08-04
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 535, rank 4: Make mk-query-digest parse the postgresql log format
+	open 244 days, opened on 2009-07-24
+	type: enhancement, severity: , effort: moderate, benefit: lifechanging
+
+Issue 421, rank 4: Add safety features to mk-table-sync
+	open 300 days, opened on 2009-05-29
+	type: enhancement, severity: , effort: moderate, benefit: lifechanging
+
+Issue 400, rank 4: Consider missing/extra tables as differences in mk-checksum-filter
+	open 310 days, opened on 2009-05-19
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 304, rank 4: mk-table-checksum --replicate deletes old checksums even with --resume-replicate
+	open 386 days, opened on 2009-03-04
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 299, rank 4: Make mk-schema-advisor able to read a file
+	open 389 days, opened on 2009-03-01
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 279, rank 4: Make quick-download targets
+	open 397 days, opened on 2009-02-21
+	type: other, severity: , effort: easy, benefit: minimal
+
+Issue 261, rank 4: Make mk-schema-advisor fingerprint table/db names
+	open 417 days, opened on 2009-02-01
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 183, rank 4: Add an --ignoredb-regex option to mk-find
+	open 457 days, opened on 2008-12-23
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 158, rank 4: Make mk-query-digest display row estimates
+	open 469 days, opened on 2008-12-11
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 157, rank 4: Make mk-query-digest reformat (pretty-print) queries
+	open 469 days, opened on 2008-12-11
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 156, rank 4: Show day/time clustering in mk-query-digest
+	open 469 days, opened on 2008-12-11
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 147, rank 4: New tool to parallelize replication
+	open 475 days, opened on 2008-12-05
+	type: task, severity: , effort: extensive, benefit: lifechanging
+
+Issue 146, rank 4: Make mk-parallel-restore start the replication slave after restoring a dump.
+	open 475 days, opened on 2008-12-05
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 98, rank 4: Make mk-table-checksum support schema objects
+	open 532 days, opened on 2008-10-09
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 91, rank 4: Make mk-table-checksum support CHECKSUM=1 for MyISAM tables
+	open 537 days, opened on 2008-10-04
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 80, rank 4: Make mk-table-sync ignore auto-increment PK
+	open 541 days, opened on 2008-09-30
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 38, rank 4: Make mk-parallel-dump do a consistent MyISAM/InnoDB dump
+	open 591 days, opened on 2008-08-11
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 961, rank 3: mk-slave-delay: init.d script depend on non-existing virtual facility $mysql
+	open 2 days, opened on 2010-03-23
+	type: defect, severity: serious, effort: moderate, benefit: helpful
+
+Issue 959, rank 3: mk-upgrade error 'Duplicate column name ... Not a SCALAR reference'
+	open 2 days, opened on 2010-03-23
+	type: defect, severity: serious, effort: moderate, benefit: helpful
+
+Issue 958, rank 3: Use of uninitialized value in concatenation (.) or string at ./mk-duplicate-key-checker line 3446. 
+	open 3 days, opened on 2010-03-22
+	type: defect, severity: serious, effort: moderate, benefit: helpful
+
+Issue 941, rank 3: mk-table-checksum chunking should treat zero dates similar to NULL
 	open 9 days, opened on 2010-03-16
-	type: enhancement, severity:  effort: moderate, benefit: helpful
+	type: enhancement, severity: , effort: moderate, benefit: helpful
 
-Issue 939: Document privileges required for mk-slave-delay
+Issue 936, rank 3: Make mk-table-sync do n-way synchronization
+	open 13 days, opened on 2010-03-12
+	type: enhancement, severity: , effort: moderate, benefit: lifechanging
+
+Issue 922, rank 3: mk-table-checksum --arg-table causes false positive results
+	open 27 days, opened on 2010-02-26
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 920, rank 3: mk-table-sync Chunk and Nibble do not detect some differences
+	open 28 days, opened on 2010-02-25
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 908, rank 3: DUAL isn't a real table
+	open 33 days, opened on 2010-02-20
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 900, rank 3: One big ALTER TABLE DROP INDEX
+	open 38 days, opened on 2010-02-15
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 899, rank 3: Print duplicate index sizes per-table and per-index
+	open 38 days, opened on 2010-02-15
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 895, rank 3: Make mk-query-digest output XML format
+	open 42 days, opened on 2010-02-11
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 893, rank 3: Add header line to embedded modules
+	open 42 days, opened on 2010-02-11
+	type: docs, severity: , effort: easy, benefit: minimal
+
+Issue 892, rank 3: Make mk-query-digest explain its pipeline
+	open 47 days, opened on 2010-02-06
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 887, rank 3: Make mk-slave-prefetch query-rewrites pluggable
+	open 49 days, opened on 2010-02-04
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 882, rank 3: Make a visual ascii art chart of query activity
+	open 51 days, opened on 2010-02-02
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 880, rank 3: Make mk-archiver support bulk-delete via IN list
+	open 51 days, opened on 2010-02-02
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 875, rank 3: Make mk-table-sync support plugins
+	open 52 days, opened on 2010-02-01
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 874, rank 3: Make mk-table-sync do iterations before --lock-and-rename
+	open 52 days, opened on 2010-02-01
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 869, rank 3: Make mk-query-digest compute a scaling graph
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 868, rank 3: Make mk-query-digest calculate true concurrency from processlist
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 867, rank 3: Make mk-query-digest detect Lock_time from processlist
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 866, rank 3: Make mk-query-digest use less memory
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 864, rank 3: Make mk-query-advisor rules pluggable
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 862, rank 3: Make mk-query-advisor examine EXPLAIN plans
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 861, rank 3: Create mk-query-advisor
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 858, rank 3: Make nicer output for mk-upgrade
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 856, rank 3: Instrument all tools
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 855, rank 3: Make mk-loadavg thresholds look like an SQL query
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 854, rank 3: Make mk-kill notice and stop abusive queries
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 850, rank 3: Create mk-cluster
+	open 54 days, opened on 2010-01-30
+	type: task, severity: , effort: extensive, benefit: lifechanging
+
+Issue 846, rank 3: Make mk-archiver do reverse nibbling
+	open 55 days, opened on 2010-01-29
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 843, rank 3: Add --memory-limit to mk-query-digest
+	open 55 days, opened on 2010-01-29
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 828, rank 3: Add tabular tables -vs- queries report to mk-query-digest
+	open 57 days, opened on 2010-01-27
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 827, rank 3: Do Erlang C math
+	open 58 days, opened on 2010-01-26
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 826, rank 3: Make mk-query-digest pluggable
+	open 58 days, opened on 2010-01-26
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 815, rank 3: Make mk-query-digest get queries from a table in mysql5.1
+	open 65 days, opened on 2010-01-19
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 811, rank 3: Make mk-kill not kill queries updating MyISAM tables
+	open 67 days, opened on 2010-01-17
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 809, rank 3: Make mk-query-digest do sliding-window analysis
+	open 67 days, opened on 2010-01-17
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 808, rank 3: Make mk-table-(checksum,sync) treat hex data as numeric for chunking
+	open 68 days, opened on 2010-01-16
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 805, rank 3: Add --print to mk-table-checksum
+	open 70 days, opened on 2010-01-14
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 802, rank 3: Recursing to slave doesn't work with --defaults-file (-F)
+	open 72 days, opened on 2010-01-12
+	type: defect, severity: minor, effort: moderate, benefit: minimal
+
+Issue 797, rank 3: Make mk-kill able to send emails with killed queries
+	open 75 days, opened on 2010-01-09
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 796, rank 3: Make mk-table-checksum skip tables that'll be too big/slow
+	open 75 days, opened on 2010-01-09
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 787, rank 3: Make mk-query-digest find "bad spots" over time
+	open 81 days, opened on 2010-01-03
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 779, rank 3: Make mk-kill kill all but N duplicates of a query
+	open 85 days, opened on 2009-12-30
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 778, rank 3: Write VIEW definitions for mk-query-digest review information
+	open 85 days, opened on 2009-12-30
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 776, rank 3: Add --pause feature to tools
+	open 86 days, opened on 2009-12-29
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 775, rank 3: Add developer documentation
+	open 90 days, opened on 2009-12-25
+	type: docs, severity: , effort: moderate, benefit: helpful
+
+Issue 774, rank 3: Update /get/ and /trunk/ on maatkit.org
+	open 90 days, opened on 2009-12-25
+	type: website, severity: , effort: moderate, benefit: helpful
+
+Issue 772, rank 3: Add redis protocol support to mk-query-digest
+	open 93 days, opened on 2009-12-22
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 769, rank 3: Make mk-query-digest histogram width configurable
+	open 96 days, opened on 2009-12-19
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 768, rank 3: Make mk-query-digest analyze the "shape" of histograms
+	open 96 days, opened on 2009-12-19
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 767, rank 3: Make mk-query-digest show a trend of query arrival and reply timestamps
+	open 96 days, opened on 2009-12-19
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 766, rank 3: Make mk-query-digest show embedded literals in prepared statements
+	open 96 days, opened on 2009-12-19
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 762, rank 3: Make mk-query-digest percentile configurable
+	open 97 days, opened on 2009-12-18
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 751, rank 3: Add support for the MongoDB protocol to mk-query-digest
+	open 105 days, opened on 2009-12-10
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 745, rank 3: mk-parallel-dump performance issues
+	open 106 days, opened on 2009-12-09
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 741, rank 3: mk-query-profiler docs are incomplete
+	open 107 days, opened on 2009-12-08
+	type: docs, severity: , effort: easy, benefit: minimal
+
+Issue 738, rank 3: mk-query-digest --review-history entries have nothing to identify them as part of one review
+	open 108 days, opened on 2009-12-07
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 736, rank 3: mk-query-digest doesn't handle badly distilled queries
+	open 109 days, opened on 2009-12-06
+	type: testing, severity: , effort: easy, benefit: minimal
+
+Issue 717, rank 3: Make mk-query-digest compute distribution of arrival times
+	open 123 days, opened on 2009-11-22
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 714, rank 3: Diff EXPLAIN
+	open 123 days, opened on 2009-11-22
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 713, rank 3: Make mk-query-digest able to store events into a database
+	open 123 days, opened on 2009-11-22
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 709, rank 3: Docs are no longer pretty
+	open 124 days, opened on 2009-11-21
+	type: website, severity: , effort: moderate, benefit: helpful
+
+Issue 707, rank 3: Parse logical packets from physical packets
+	open 125 days, opened on 2009-11-20
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 704, rank 3: Make mk-query-advisor query mk-query-digest's --review table
+	open 125 days, opened on 2009-11-20
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 701, rank 3: Make a tool that can replicate from multiple masters to one slave.
+	open 130 days, opened on 2009-11-15
+	type: task, severity: , effort: extensive, benefit: lifechanging
+
+Issue 700, rank 3: Make mk-query-digest truncate attrib names better
+	open 130 days, opened on 2009-11-15
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 699, rank 3: mk-query-digest report table is hard to read
+	open 130 days, opened on 2009-11-15
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 698, rank 3: Make mk-query-digest print cleaner output in --review mode
+	open 130 days, opened on 2009-11-15
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 697, rank 3: Compute Transmit_time whenever possible
+	open 131 days, opened on 2009-11-14
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 696, rank 3: Neaten mk-query-digest report formatting 
+	open 131 days, opened on 2009-11-14
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 690, rank 3: Add Sphinx protocol parser for mk-query-digest
+	open 132 days, opened on 2009-11-13
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 685, rank 3: Make mk-variable-advisor
+	open 135 days, opened on 2009-11-10
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 672, rank 3: mk-table-sync should COALESCE to avoid undef
+	open 143 days, opened on 2009-11-02
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 671, rank 3: Make mk-query-digest capture bytes and rows returned from queries
+	open 144 days, opened on 2009-11-01
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 667, rank 3: Can mk-query-digest detect JOINs without an index from tcpdump?
+	open 146 days, opened on 2009-10-30
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 659, rank 3: mk-parallel-dump --progress is inaccurate when a chunked dump is resumed
+	open 148 days, opened on 2009-10-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 646, rank 3: Make a tool to estimate index sizes
+	open 162 days, opened on 2009-10-14
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 645, rank 3: Make a tool to recursively discover foreign key relationships
+	open 162 days, opened on 2009-10-14
+	type: task, severity: , effort: moderate, benefit: helpful
+
+Issue 633, rank 3: Make mk-query-digest able to parse snoop output
+	open 171 days, opened on 2009-10-05
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 632, rank 3: Make mk-query-digest analyze index usage
+	open 171 days, opened on 2009-10-05
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 629, rank 3: Gearmand support in mk-query-digest
+	open 174 days, opened on 2009-10-02
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 615, rank 3: Make mk-variable-advisor report differences between servers
+	open 182 days, opened on 2009-09-24
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 610, rank 3: mk-heartbeat feature request: --no-newline option while using --file
+	open 191 days, opened on 2009-09-15
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 603, rank 3: Make mk-schema-advisor check that all tables in a merge have the same structure
+	open 203 days, opened on 2009-09-03
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 592, rank 3: Make mk-table-sync use prepared statements
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: extensive, benefit: lifechanging
+
+Issue 590, rank 3: mk-table-checksum: check that dbh is master of supposed slave
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 588, rank 3: mk-table-checksum: allow user-specified functions to use --optimize-xor
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 585, rank 3: mk-slave-restart: let user specify more patterns and actions
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 582, rank 3: Make mk-slave-delay print slave status and execute SQL
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 580, rank 3: mk-show-grants: search for obsolete grant statements
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 576, rank 3: Add info to TableParser to get original letter-case of column names
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 547, rank 3: Detect queries that have duplicated columns
+	open 230 days, opened on 2009-08-07
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 529, rank 3: Calculate "real" concurrency with mk-query-digest
+	open 255 days, opened on 2009-07-13
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 519, rank 3: mk-table-checksum Needs A chunkcol Option
+	open 260 days, opened on 2009-07-08
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 511, rank 3: Make mk-query-digest report number of query variations
+	open 264 days, opened on 2009-07-04
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 492, rank 3: Get list of DSNs from table
+	open 266 days, opened on 2009-07-02
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 491, rank 3: mk-find: add --continue-on-error
+	open 266 days, opened on 2009-07-02
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 488, rank 3: Shorten values printed in mk-duplicate-key-checker::print_key_summary()
+	open 266 days, opened on 2009-07-02
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 486, rank 3: mk-fifo-split: make progress messages the default
+	open 266 days, opened on 2009-07-02
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 482, rank 3: mk-fifo-split: print out $INPUT_LINE_NUMBER on exit (including exit by CTRL-C)
+	open 266 days, opened on 2009-07-02
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 443, rank 3: Make mk-schema-advisor alert when column matching (updat|insert|delet|creat)ed is not TIMESTAMP
+	open 295 days, opened on 2009-06-03
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 436, rank 3: Detect queries that use multi-column IN clause
+	open 295 days, opened on 2009-06-03
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 433, rank 3: Add timezone to DSN syntax
+	open 295 days, opened on 2009-06-03
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 432, rank 3: Make script or implement feature in existing script to determine how fast slave is replicating
+	open 295 days, opened on 2009-06-03
+	type: task, severity: , effort: moderate, benefit: helpful
+
+Issue 431, rank 3: Make script to automate InnoDB recovery
+	open 295 days, opened on 2009-06-03
+	type: task, severity: , effort: extensive, benefit: helpful
+
+Issue 405, rank 3: Implement extra rules in OptionParser like "implies"
+	open 306 days, opened on 2009-05-23
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 397, rank 3: Make processlist sniffer use TIME_MS column when available
+	open 314 days, opened on 2009-05-15
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 389, rank 3: Handle stupidly-quoted table and column names
+	open 322 days, opened on 2009-05-07
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 387, rank 3: More useful comments in mk-table-sync statements
+	open 323 days, opened on 2009-05-06
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 379, rank 3: Make mk-table-sync multi-threaded
+	open 328 days, opened on 2009-05-01
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 378, rank 3: Make mk-table-checksum try to use the index preferred by the optimizer
+	open 328 days, opened on 2009-05-01
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 377, rank 3: Make mk-table-sync print start/end times
+	open 328 days, opened on 2009-05-01
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 376, rank 3: Permit specifying an index for mk-table-sync
+	open 328 days, opened on 2009-05-01
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 375, rank 3: Make mk-table-sync choose better indexes
+	open 328 days, opened on 2009-05-01
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 374, rank 3: Add --progress to mk-table-sync
+	open 328 days, opened on 2009-05-01
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 370, rank 3: Make mk-table-sync do one transaction per chunk
+	open 328 days, opened on 2009-05-01
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 347, rank 3: A badly rewritten query
+	open 341 days, opened on 2009-04-18
+	type: defect, severity: minor, effort: moderate, benefit: minimal
+
+Issue 327, rank 3: Make mk-query-digest read the output of mysql-proxy
+	open 366 days, opened on 2009-03-24
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 312, rank 3: mk-table-sync: --columns option ignored when generating update commands!
+	open 382 days, opened on 2009-03-08
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 273, rank 3: Use Google Charts API to enhance some tools
+	open 403 days, opened on 2009-02-15
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 238, rank 3: Add init scripts for all tools
+	open 433 days, opened on 2009-01-16
+	type: task, severity: , effort: extensive, benefit: helpful
+
+Issue 201, rank 3: Make mk-query-digest store information about query plans
+	open 449 days, opened on 2008-12-31
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 193, rank 3: Make a way to update mk-query-digest --review information
+	open 451 days, opened on 2008-12-29
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 176, rank 3: Add a --tabulate report to mk-query-digest
+	open 461 days, opened on 2008-12-19
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 169, rank 3: Make mk-query-digest give progress reports
+	open 464 days, opened on 2008-12-16
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 143, rank 3: Make mk-slave-move support promotion to master-master
+	open 476 days, opened on 2008-12-04
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 125, rank 3: mk-slave-restart should handle a new kind of log corruption
+	open 506 days, opened on 2008-11-04
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 88, rank 3: Make mk-table-sync support reverse syncing
+	open 538 days, opened on 2008-10-03
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 73, rank 3: Make mk-checksum-filter more helpful
+	open 548 days, opened on 2008-09-23
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 20, rank 3: Build FNV_64() binaries and make available as a download
+	open 596 days, opened on 2008-08-06
+	type: task, severity: , effort: moderate, benefit: minimal
+
+Issue 19, rank 3: Add MURMUR_HASH() hash function as a UDF
+	open 596 days, opened on 2008-08-06
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 963, rank 2: Review mk-table-sync docs for clarity
+	open 2 days, opened on 2010-03-23
+	type: docs, severity: , effort: easy, benefit: helpful
+
+Issue 960, rank 2: mk-table-sync is using mysql round() which behavior is not defined across platforms
+	open 2 days, opened on 2010-03-23
+	type: defect, severity: minor, effort: moderate, benefit: helpful
+
+Issue 955, rank 2: Make mk-query-digest report header show filename(s)
+	open 3 days, opened on 2010-03-22
+	type: enhancement, severity: , effort: easy, benefit: helpful
+
+Issue 943, rank 2: mk-deadlock-logger reports the same deadlock with --interval
+	open 9 days, opened on 2010-03-16
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 939, rank 2: Document privileges required for mk-slave-delay
 	open 10 days, opened on 2010-03-15
-	type: docs, severity:  effort: easy, benefit: minimal
+	type: docs, severity: , effort: easy, benefit: minimal
 
-Issue 943: mk-deadlock-logger reports the same deadlock with --interval
-	open 8 days, opened on 2010-03-16
-	type: enhancement, severity:  effort: moderate, benefit: helpful
+Issue 938, rank 2: Make mk-query-digest consume SHOW PROFILES data
+	open 13 days, opened on 2010-03-12
+	type: enhancement, severity: , effort: moderate, benefit: helpful
 
-Issue 957: mk-query-digest error: "my" variable $verbs masks earlier declaration
-	open 3 days, opened on 2010-03-22
-	type: defect, severity: serious effort: easy, benefit: helpful
+Issue 935, rank 2: Make mk-query-digest profile come first
+	open 15 days, opened on 2010-03-10
+	type: enhancement, severity: , effort: moderate, benefit: helpful
 
-Issue 950: Make mk-query-advisor detect broken exclusion joins
-	open 6 days, opened on 2010-03-19
-	type: enhancement, severity:  effort: moderate, benefit: helpful
+Issue 933, rank 2: mk-query-digest :: Allow me to specify SLA for a query when using --review
+	open 20 days, opened on 2010-03-05
+	type: enhancement, severity: , effort: moderate, benefit: helpful
 
-Issue 958: Use of uninitialized value in concatenation (.) or string at ./mk-duplicate-key-checker line 3446. 
-	open 3 days, opened on 2010-03-22
-	type: defect, severity: serious effort: moderate, benefit: helpful
+Issue 930, rank 2: Make mk-slave-find purge binlogs on master up until oldest slave
+	open 22 days, opened on 2010-03-03
+	type: enhancement, severity: , effort: moderate, benefit: helpful
 
-Issue 953: Make mk-query-advisor suggest FORCE INDEX
+Issue 929, rank 2: Make mk-query-digest signal when --attribute-value-limit is applied
+	open 22 days, opened on 2010-03-03
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 928, rank 2: Time::HiRes::sleep(-0.24267): negative time not invented yet at ./mk-table-checksum line 4718. 
+	open 22 days, opened on 2010-03-03
+	type: defect, severity: minor, effort: moderate, benefit: minimal
+
+Issue 927, rank 2: Create a tool to summarize InnoDB output
+	open 23 days, opened on 2010-03-02
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 925, rank 2: Make mk-slave-restart able to restart InnoDB lock wait timeouts
+	open 24 days, opened on 2010-03-01
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 921, rank 2: Add InnoDB error rules to mk-error-log
+	open 28 days, opened on 2010-02-25
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 918, rank 2: mk-query-digest does not fingerprint LOAD DATA
+	open 29 days, opened on 2010-02-24
+	type: enhancement, severity: , effort: easy, benefit: minimal
+
+Issue 915, rank 2: Add Sphinx searchd log support to mk-query-digest
+	open 29 days, opened on 2010-02-24
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 913, rank 2: Make genlog parser have syslog wrapper
+	open 30 days, opened on 2010-02-23
+	type: enhancement, severity: , effort: moderate, benefit: helpful
+
+Issue 910, rank 2: Add postgres support to mk-error-log
+	open 33 days, opened on 2010-02-20
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 909, rank 2: Add textual explain for mk-visual-explain
+	open 33 days, opened on 2010-02-20
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 905, rank 2: common/t tests should die not bail out
+	open 36 days, opened on 2010-02-17
+	type: testing, severity: , effort: moderate, benefit: minimal
+
+Issue 890, rank 2: Make chunking possible on multi-column indexes
+	open 49 days, opened on 2010-02-04
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 881, rank 2: Make mk-query-digest show iostat-style running statistics
+	open 51 days, opened on 2010-02-02
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 878, rank 2: Make mk-table-checksum report differences across slaves
+	open 52 days, opened on 2010-02-01
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 876, rank 2: Make sure plugins don't hurt performance
+	open 52 days, opened on 2010-02-01
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 871, rank 2: Build generic crosstab functionality
+	open 52 days, opened on 2010-02-01
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 870, rank 2: Make mk-slave-prefetch tune its behavior based on InnoDB status
+	open 52 days, opened on 2010-02-01
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 865, rank 2: Make mk-query-advisor deconstruct/expand stored procedures
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 859, rank 2: Make mk-parallel-restore choose more optimal concurrency
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 857, rank 2: Create mk-log-server
+	open 53 days, opened on 2010-01-31
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 851, rank 2: Make mk-duplicate-key-checker's output nicer
+	open 54 days, opened on 2010-01-30
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 849, rank 2: Make a binary log parser
+	open 54 days, opened on 2010-01-30
+	type: task, severity: , effort: extensive, benefit: helpful
+
+Issue 823, rank 2: Use closures instead of dynamic anon subs evaled at run-time
+	open 59 days, opened on 2010-01-25
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 819, rank 2: Make mk-parallel-dump reimplement mysqldump
+	open 60 days, opened on 2010-01-24
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 783, rank 2: Make mk-table-sync sync via SELECT INTO OUTFILE / LOAD DATA INFILE
+	open 83 days, opened on 2010-01-01
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 780, rank 2: Create mk-stat
+	open 85 days, opened on 2009-12-30
+	type: task, severity: , effort: extensive, benefit: helpful
+
+Issue 753, rank 2: Make a tool that can generate query plans
+	open 104 days, opened on 2009-12-11
+	type: task, severity: , effort: extensive, benefit: helpful
+
+Issue 743, rank 2: Make mk-query-digest fingerprint and aggregate by sessions
+	open 106 days, opened on 2009-12-09
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 739, rank 2: Make mk-review-helper format query reports just like mk-query-digest
+	open 108 days, opened on 2009-12-07
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 725, rank 2: Add review instance to mk-query-digest --review
+	open 117 days, opened on 2009-11-28
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 724, rank 2: Make mk-query-digest able to filter events post-report
+	open 117 days, opened on 2009-11-28
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 716, rank 2: Make mk-review-helper graph queries over time
+	open 123 days, opened on 2009-11-22
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 715, rank 2: Inspect a tool similar to mk-kill and see if it has anything we should implement
+	open 123 days, opened on 2009-11-22
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 710, rank 2: Make mk-query-digest handle several kinds of tcpdump at once
+	open 124 days, opened on 2009-11-21
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 694, rank 2: Make mk-query-digest support the postgresql TCP protocol
+	open 131 days, opened on 2009-11-14
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 653, rank 2: Make mk-table-sync do lockless master-to-slave syncing
+	open 156 days, opened on 2009-10-20
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 647, rank 2: Make a tool that can make minimal ALTER statements
+	open 162 days, opened on 2009-10-14
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 595, rank 2: Handle "Using index condition"
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 594, rank 2: mk-table-sync needs a better way to check for triggers
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 591, rank 2: Abstract SQL making into a module
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 581, rank 2: Build a module that prints grants by inspecting the grant tables
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 579, rank 2: mk-query-profiler doesn't handle MAX_ULONG correctly on 64-bit servers
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 578, rank 2: mk-query-profiler should determine which vars are session-specific by looking for @@
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 557, rank 2: mk-slave-move should check for open temp tables before moving slaves
+	open 225 days, opened on 2009-08-12
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 556, rank 2: mk-slave-move needs an option to kill connections that have open transactions.
+	open 225 days, opened on 2009-08-12
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 555, rank 2: mk-slave-move needs an option to kill all other connections
+	open 225 days, opened on 2009-08-12
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 554, rank 2: mk-slave-move needs an option to set servers read_only
+	open 225 days, opened on 2009-08-12
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 553, rank 2: mk-slave-move: new opt to find newest slave of a given set of siblings or a given master
+	open 225 days, opened on 2009-08-12
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 552, rank 2: mk-slave-move needs an option to specify the grandparent, in case the master is dead
+	open 225 days, opened on 2009-08-12
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 541, rank 2: Sort by ninetyfive, stddev and med in mk-query-digest
+	open 233 days, opened on 2009-08-04
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 522, rank 2: mk-slave-prefetch: need to change --statistics to print only N top queries
+	open 260 days, opened on 2009-07-08
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 520, rank 2: Make mk-slave-prefetch filter/throw away non-replicated DBs/tables
+	open 260 days, opened on 2009-07-08
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 513, rank 2: mk-table-scan: don't scan table when table is clustered index
+	open 262 days, opened on 2009-07-06
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 490, rank 2: mk-find: add --haskey(col), add --hascol
+	open 266 days, opened on 2009-07-02
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 487, rank 2: mk-fifo-split: print %complete and ETA
+	open 266 days, opened on 2009-07-02
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 481, rank 2: mk-fifo-split: add limit arguments so you can read a splice out of the middle
+	open 266 days, opened on 2009-07-02
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 480, rank 2: mk-fifo-split: support binmode
+	open 266 days, opened on 2009-07-02
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 472, rank 2: EventTimeLine needs explicit attribs but attribs are auto-detected now
+	open 268 days, opened on 2009-06-30
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 461, rank 2: Add partition support to mk-archiver for re-partitioning
+	open 280 days, opened on 2009-06-18
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 454, rank 2: Generate a list of tables and columns that a query accesses
+	open 290 days, opened on 2009-06-08
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 439, rank 2: Make visual-explain tell which columns are used in the index
+	open 295 days, opened on 2009-06-03
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 438, rank 2: Create mk-schema-sync
+	open 295 days, opened on 2009-06-03
+	type: task, severity: , effort: extensive, benefit: helpful
+
+Issue 435, rank 2: Make mk-slave-delay implement a different definition of 'delay'
+	open 295 days, opened on 2009-06-03
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 434, rank 2: Make mk-slave-delay use a heartbeat table from mk-heartbeat
+	open 295 days, opened on 2009-06-03
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 423, rank 2: Make mk-show-grants support column privileges
+	open 297 days, opened on 2009-06-01
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 411, rank 2: Make mk-table-sync and mk-table-checksum get filters from mysql server by default
+	open 304 days, opened on 2009-05-25
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 403, rank 2: Create mk-data-generator
+	open 309 days, opened on 2009-05-20
+	type: task, severity: , effort: extensive, benefit: helpful
+
+Issue 395, rank 2: Make processlist sniffer capture information about temp tables, etc
+	open 315 days, opened on 2009-05-14
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 385, rank 2: Add partition support for table-checksum 
+	open 325 days, opened on 2009-05-04
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 380, rank 2: Create mk-progress-report
+	open 328 days, opened on 2009-05-01
+	type: task, severity: , effort: moderate, benefit: minimal
+
+Issue 371, rank 2: Make mk-table-sync preserve column order in SQL
+	open 328 days, opened on 2009-05-01
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 368, rank 2: Create backup/restore manager
+	open 329 days, opened on 2009-04-30
+	type: task, severity: , effort: extensive, benefit: helpful
+
+Issue 362, rank 2: Optimize RowDiff.pm for early termination
+	open 330 days, opened on 2009-04-29
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 354, rank 2: Add NOW_USEC() function to Maatkit and add support to mk-heartbeat
+	open 340 days, opened on 2009-04-19
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 342, rank 2: Make mk-table-checksum work better with binlog-do-db
+	open 344 days, opened on 2009-04-15
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 333, rank 2: Standardize regex patterns
+	open 361 days, opened on 2009-03-29
+	type: enhancement, severity: , effort: moderate, benefit: minimal
+
+Issue 324, rank 2: Add schema to fingerprint and make --orderby handle multiple items
+	open 371 days, opened on 2009-03-19
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 314, rank 2: false varchar with int value handling in where clause causes performance issues
+	open 382 days, opened on 2009-03-08
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 309, rank 2: Make --help not print values after normal output
+	open 383 days, opened on 2009-03-07
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 270, rank 2: Make mk-table-checksum use consistent snapshots when not --replicate
+	open 405 days, opened on 2009-02-13
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 246, rank 2: Roll innotop into maatkit (mk-top?)
+	open 426 days, opened on 2009-01-23
+	type: task, severity: , effort: extensive, benefit: minimal
+
+Issue 212, rank 2: Make mk-query-digest time buckets more flexible
+	open 446 days, opened on 2009-01-03
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 101, rank 2: Refactor, improve and clean up mk-table-checksum internals
+	open 524 days, opened on 2008-10-17
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 24, rank 2: check and report after running mk-table-checksum --replicate
+	open 596 days, opened on 2008-08-06
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 953, rank 1: Make mk-query-advisor suggest FORCE INDEX
 	open 5 days, opened on 2010-03-20
-	type: enhancement, severity:  effort: moderate, benefit: helpful
+	type: enhancement, severity: , effort: moderate, benefit: helpful
 
-Issue 961: mk-slave-delay: init.d script depend on non-existing virtual facility $mysql
-	open 2 days, opened on 2010-03-23
-	type: defect, severity: serious effort: moderate, benefit: helpful
+Issue 950, rank 1: Make mk-query-advisor detect broken exclusion joins
+	open 6 days, opened on 2010-03-19
+	type: enhancement, severity: , effort: moderate, benefit: helpful
 
-Issue 959: mk-upgrade error 'Duplicate column name ... Not a SCALAR reference'
-	open 2 days, opened on 2010-03-23
-	type: defect, severity: serious effort: moderate, benefit: helpful
+Issue 931, rank 1: Add InnoDB status as a source of query events
+	open 21 days, opened on 2010-03-04
+	type: enhancement, severity: , effort: extensive, benefit: helpful
 
-Issue 955: Make mk-query-digest report header show filename(s)
-	open 3 days, opened on 2010-03-22
-	type: enhancement, severity:  effort: easy, benefit: helpful
+Issue 919, rank 1: Create mk-diff
+	open 28 days, opened on 2010-02-25
+	type: enhancement, severity: , effort: extensive, benefit: helpful
 
-Issue 963: Review mk-table-sync docs for clarity
-	open 2 days, opened on 2010-03-23
-	type: docs, severity:  effort: easy, benefit: helpful
+Issue 916, rank 1: Make a tool to summarize SHOW INNODB STATUS
+	open 29 days, opened on 2010-02-24
+	type: enhancement, severity: , effort: extensive, benefit: helpful
 
-Issue 960: mk-table-sync is using mysql round() which behavior is not defined across platforms
-	open 2 days, opened on 2010-03-23
-	type: defect, severity: minor effort: moderate, benefit: helpful
+Issue 914, rank 1: Create a way to analyze temp table usage
+	open 30 days, opened on 2010-02-23
+	type: enhancement, severity: , effort: extensive, benefit: helpful
+
+Issue 879, rank 1: Optimize mk-table-sync tight loops
+	open 52 days, opened on 2010-02-01
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 873, rank 1: Make mk-table-sync use arrays instead of hashes
+	open 52 days, opened on 2010-02-01
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 847, rank 1: Embed pure-Perl mysql implementation
+	open 54 days, opened on 2010-01-30
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 813, rank 1: mk-table-checksum, mk-table-sync skip slave
+	open 65 days, opened on 2010-01-19
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 773, rank 1: mk-query-digest --processlist is hacked into the pipeline
+	open 92 days, opened on 2009-12-23
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 587, rank 1: mk-table-checksum should not prefetch tables
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 583, rank 1: New mk-slave-move options like --promote and --resume
+	open 209 days, opened on 2009-08-28
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 500, rank 1: Modularize common subroutines like mysql_error_msg
+	open 266 days, opened on 2009-07-02
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 463, rank 1: Make mk-query-digest rewrite more kinds of long queries
+	open 275 days, opened on 2009-06-23
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 372, rank 1: Make mk-table-sync with --chunk do two-level chunking
+	open 328 days, opened on 2009-05-01
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 369, rank 1: Make completely lock-free syncs possible with mk-table-sync 
+	open 328 days, opened on 2009-05-01
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 358, rank 1: mk-parallel-dump on partition boundaries
+	open 336 days, opened on 2009-04-23
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 345, rank 1: Make mk-table-checksum handle deadlocks and lock timeouts
+	open 344 days, opened on 2009-04-15
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 341, rank 1: Make mk-table-checksum do relative-sized chunks
+	open 344 days, opened on 2009-04-15
+	type: enhancement, severity: , effort: extensive, benefit: minimal
+
+Issue 338, rank 1: Make all of tool's --help output come from POD
+	open 348 days, opened on 2009-04-11
+	type: enhancement, severity: , effort: extensive, benefit: minimal
 

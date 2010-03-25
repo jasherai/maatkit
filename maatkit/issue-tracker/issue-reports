@@ -37,7 +37,7 @@ rank_incr = {  # rank increases
         'minimal'      : 1,
     },
     'labels' : {
-        'sponsored'        : 9999, # always on top
+        'sponsored'        : 100, # always on top
         'patchcontributed' : 1,
         'solutionproposed' : 1,
     },
@@ -124,7 +124,17 @@ def parse_labels(labels):
 
 # Rank issues by number of days open and the labels defined in rank_incr.
 def rank_issue(issue):
-    rank = issue['open_days']
+    rank = 0
+    if issue['open_days'] < 1:
+       rank = 0
+    elif issue['open_days'] < 8:
+       rank = 1
+    elif issue['open_days'] < 31:
+       rank = 2
+    elif issue['open_days'] < 366:
+       rank = 3
+    else:
+       rank = 4
     for (key, val) in issue.iteritems():
         if key in rank_incr:
             rank += rank_incr[key][val]
@@ -160,10 +170,10 @@ def print_prio_report():
 
     # Print by rank, descending.
     for issue in open_issues:
-        print "Issue %s: %s"   % (issue['id'], issue['summary'])
+        print "Issue %s, rank %s: %s"   % (issue['id'], issue['rank'], issue['summary'])
         print "\topen %d days, opened on %s" \
             % (issue['open_days'], issue['open_date'])
-        print "\ttype: %s, severity: %s effort: %s, benefit: %s" \
+        print "\ttype: %s, severity: %s, effort: %s, benefit: %s" \
             % (issue['type'], issue['severity'], issue['effort'],
                issue['benefit'])
         if 'sponsored' in issue:
