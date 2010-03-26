@@ -131,6 +131,19 @@ sub parse_event {
             $last_line = 1 if $next_line =~ m/, Error_code:/;
          }
       }
+		# Multi-line query to fix issue 921, innodb error message: [ERROR] Cannot find table
+      elsif ( $line =~ m/\bCannot find table/) {
+         MKDEBUG && _d('Special Multiline message:', $line);
+         my $next_line;
+         my $last_line = 0;
+         while ( !$last_line && defined($next_line = <$fh>) ) {
+            chomp $next_line;
+            MKDEBUG && _d('Pending next line:', $next_line);
+				$line     .= ' ';
+            $line     .= $next_line;
+            $last_line = 1 if $next_line =~ m/\bhow you can resolve the problem/;	      
+         }
+      }
 
       # Save the error line.
       chomp $line;

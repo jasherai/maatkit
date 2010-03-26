@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 16;
+use Test::More tests => 18;
 
 use ErrorLogParser;
 use MaatkitTest;
@@ -3406,6 +3406,22 @@ test_log_parser(
          },
    ],
 );
+
+test_log_parser(
+   parser  => $p,
+   file    => 'common/t/samples/errlogs/errlog010.txt',
+   oktorun => sub { $oktorun = $_[0]; },
+   result  => [
+      {
+       pos_in_log => '0',
+       ts         => '080816  7:53:17',
+       Level      => 'error',
+       arg        => '[ERROR] Cannot find table exampledb/exampletable from the internal data dictionary of InnoDB though the .frm file for the table exists. Maybe you have deleted and recreated InnoDB data files but have forgotten to delete the corresponding .frm files of InnoDB tables, or you have moved .frm files to another database? See http://dev.mysql.com/doc/refman/5.0/en/innodb-troubleshooting.html how you can resolve the problem.',
+		},
+   ],
+);
+
+
 
 # #############################################################################
 # Done.
