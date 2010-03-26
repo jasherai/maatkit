@@ -10378,7 +10378,7 @@ report on queries.
 
 =head1 SYNOPSIS
 
-Analyze and report on a slow log:
+Analyze, aggregate, and report on a slow query log:
 
  mk-query-digest /path/to/slow.log
 
@@ -10387,17 +10387,20 @@ server running on host1.  See L<"--review"> for more on reviewing queries:
 
  mk-query-digest --review h=host1,D=test,t=query_review /path/to/slow.log
 
-Watch a server's SHOW FULL PROCESSLIST and analyze the queries as if they were
-from a slow query log:
+Filter out everything but SELECT queries, replay the queries against another
+server, then use the timings from replaying them to analyze their performance:
 
- mk-query-digest --processlist h=host1
-
-Watch a server's SHOW FULL PROCESSLIST, filter out everything but SELECT
-queries, and replay the queries against another server, then use the timings
-from replaying them to analyze their performance:
-
- mk-query-digest --processlist h=host1 --execute h=another_server \
+ mk-query-digest /path/to/slow.log --execute h=another_server \
    --filter '$event->{fingerprint} =~ m/^select/'
+
+Watch SHOW FULL PROCESSLIST and output a log in slow query log format:
+
+ mk-query-digest --processlist h=host1 --print --no-report
+
+The default aggregation and analysis is CPU and memory intensive.  Disable it if
+you don't need the default report:
+
+ mk-query-digest <arguments> --no-report
 
 =head1 RISKS
 
@@ -10685,8 +10688,9 @@ Both of those queries will fingerprint to
 Once the query's fingerprint is known, we can then talk about a query as though
 it represents all similar queries.
 
-What C<mk-query-digest> does is analogous to a GROUP BY statement in SQL.
-If your command-line looks like this,
+What C<mk-query-digest> does is analogous to a GROUP BY statement in SQL.  (But
+note that "multiple columns" doesn't define a multi-column grouping; it defines
+multiple reports!) If your command-line looks like this,
 
   mk-query-digest /path/to/slow.log --select Rows_read,Rows_sent \
       --group-by fingerprint --order-by Query_time:sum --limit 10
