@@ -1,5 +1,6 @@
 Changelog for mk-slave-delay:
 
+   * Privileges needed for operation weren't documented (issue 939).
    * --ask-pass crashed if h DSN part wasn't specified (issue 949).
    * Added DSN OPTIONS section to POD (issue 55).
 

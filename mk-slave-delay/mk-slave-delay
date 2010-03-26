@@ -2127,19 +2127,7 @@ daemonized.  In this case, it exits.  Therefore, if you think your slave might
 encounter this condition, you should be sure to either specify
 L<"--use-master"> explicitly when daemonizing, or don't specify L<"--ask-pass">.
 
-The SLAVE-HOST and optional MASTER-HOST are both DSNs.  A DSN is a special
-syntax that can be either just a hostname (like C<server.domain.com> or
-C<1.2.3.4>), or a C<key=value,key=value> string.  Keys are a single letter:
-
-   KEY MEANING
-   === =======
-   h   Connect to host
-   P   Port number to use for connection
-   S   Socket file to use for connection
-   u   User for login if not current user
-   p   Password to use when connecting
-   F   Only read default options from the given file
-
+The SLAVE-HOST and optional MASTER-HOST are both DSNs.  See L<"DSN OPTIONS">.
 Missing MASTER-HOST values are filled in with values from SLAVE-HOST, so you
 don't need to specify them in both places.  C<mk-slave-delay> reads all normal
 MySQL option files, such as ~/.my.cnf, so you may not need to specify username,
@@ -2147,6 +2135,11 @@ password and other common options at all.
 
 C<mk-slave-delay> tries to exit gracefully by trapping signals such as Ctrl-C.
 You cannot bypass L<"--[no]continue"> with a trappable signal.
+
+=head1 PRIVILEGES
+
+mk-slave-delay requires the following privileges: PROCESS, REPLICATION CLIENT,
+and SUPER.
 
 =head1 OUTPUT
 
