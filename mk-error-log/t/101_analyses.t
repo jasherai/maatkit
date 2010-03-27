@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 9;
+use Test::More tests => 10;
 
 use MaatkitTest;
 require "$trunk/mk-error-log/mk-error-log";
@@ -105,6 +105,15 @@ ok(
       trf => 'sort'
    ),
    'Analysis for errlog009.txt'
+);
+
+ok(
+   no_diff(
+      sub { mk_error_log::main($sample.'errlog010.txt') },
+      "mk-error-log/t/samples/errlog010-report.txt",
+      trf => 'sort',
+   ),
+   'Analysis for errlog010.txt'
 );
 
 
