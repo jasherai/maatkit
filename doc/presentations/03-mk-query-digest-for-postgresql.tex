@@ -61,9 +61,9 @@
          log_connections = on
          log_disconnections = on
          \end{verbatim}
-      \item Comment out the following to prevent duplicate output
+      \item Set the following to prevent duplicate output
          \begin{verbatim}
-         #log_statement = 'all' # none, ddl, mod, all
+         log_statement = 'none' # none, ddl, mod, all
          \end{verbatim}
    \end{itemize}
    \end{block}
@@ -102,6 +102,20 @@
 \end{frame}
 
 \begin{frame}
+   \frametitle{Future Features}
+   \begin{block}{Deeper Analysis}
+   \begin{itemize}
+      \item Time-series analysis
+      \item Features for capacity planning (Erlang C math\dots)
+      \item Session-based analysis
+      \item Drill-down analysis
+      \item \emph{R} -vs- \emph{X} analysis
+   \end{itemize}
+   \end{block}
+   \includegraphics[width=20mm]{../image/money}
+\end{frame}
+
+\begin{frame}
    \frametitle{Future}
    \begin{block}{Current Limitations}
    \begin{itemize}
@@ -110,10 +124,11 @@
       \item The helpful hints (\texttt{SHOW CREATE TABLE}) are MySQL-centric
    \end{itemize}
    \end{block}
-   \begin{block}{What's next?}
+   \begin{block}{What's next for PostgreSQL?}
    \begin{itemize}
       \item I need to learn about Postgres 9.0's logging enhancements
       \item Support for TCP protocol would be great
+      \item Niceties, improvements to fingerprinting
       \item What do you want?
    \end{itemize}
    \end{block}
