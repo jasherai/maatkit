@@ -11,7 +11,7 @@
 %\headheight 35pt
 \rfoot{\raisebox{-3pt}{\includegraphics[width=20mm]{../image/by-nc-nd}}}
 \cfoot{\footnotesize http://www.maatkit.org/}
-\lfoot{\footnotesize Copyright \copyright{} 2010 Maatkit.}
+\lfoot{\footnotesize Copyright \copyright{} 2010 Maatkit}
 \renewcommand{\footrulewidth}{0.4pt}
 \renewcommand{\headrulewidth}{0pt}
 \setlength{\headheight}{0pt}
@@ -29,9 +29,8 @@
 \begin{document}
 
 \begin{minipage}{0.8\textwidth}
-\section*{Advanced command-line tools for MySQL\tiny\textregistered}
+\section*{\LARGE Advanced command-line tools for MySQL\tiny\textregistered}
 \normalsize
-
 Maatkit makes hard things easy with powerful, high-quality command-line tools.
 From data synchronization to query analysis, these tools are designed by and for
 DBAs. You can use them for one-off jobs, or build scheduled tasks with them. See
@@ -39,7 +38,7 @@ the other side for more information on specific tools.
 \end{minipage}
 \hspace*{0.5cm}
 \begin{minipage}{0.2\textwidth}
-\includegraphics[width=0.9\textwidth]{../maatkit-logo.png}
+\includegraphics[width=0.9\textwidth]{../logo/maatkit-logo-glossy.png}
 \end{minipage}
 
 
@@ -83,7 +82,7 @@ GNU/Linux distributions, and might even be installed by default!
 \end{minipage}
 \begin{minipage}{0.8\textwidth}
 \section*{Well Documented}
-Maatkit has complete and accurate documentation. It's embedded inside the
+Maatkit has excellent, accurate documentation. It's embedded inside the
 tools, so you never have to search for it! And the documentation is
 actually part of the code, so it's subject to quality control and
 tests.
@@ -104,5 +103,62 @@ And if you want commercial support, that's available too!
 Want to know more?  Go to \emph{http://www.maatkit.org/} and browse around.
 Jump on the mailing list or the IRC channel, and chat with other users.
 There's lots of information in the documentation and on the wiki.
+
+\newpage
+
+\begin{minipage}{0.8\textwidth}
+\section*{\LARGE What Can Maatkit Do For You Today?}
+\normalsize
+So, what does Maatkit \emph{do}?  It would take a book to answer that question
+fully.  Here's a list of three essential activities for every MySQL DBA, and how
+Maatkit makes them easy.  See \emph{http://www.maatkit.org/users} for success
+stories from users such as Tuenti, Second Life, and more.
+\end{minipage}
+\hspace*{0.5cm}
+\begin{minipage}{0.2\textwidth}
+\includegraphics[width=0.9\textwidth]{../logo/maatkit-logo-glossy.png}
+\end{minipage}
+
+\section*{\includegraphics[width=1em]{../image/success} Verify Replication Integrity}
+
+Do you use MySQL replication?  Are you sure that your slaves have a faithful
+copy of their master's data?  If you haven't verified, you should!  You might be
+surprised to find out that the slaves have become different from the
+master.  Maatkit's \emph{mk-table-checksum} tool is the only way to check.  It
+executes checksum queries against the master.  These queries propagate through
+replication to the slaves, and then a simple query against the slaves can reveal
+whether there are differences from the master.  The tool has smart features
+that make everything as easy and efficient as possible for
+the server and the DBA.  It's all wrapped up into one super-handy package.  And
+if you find differences, the \emph{mk-table-sync} tool can fix them---without
+even interrupting a production system!  Maatkit not only makes it possible for
+you to verify replication integrity, it actually makes it easy!
+
+\section*{\includegraphics[width=1em]{../image/success} Analyze Queries}
+
+Quick, what are the most expensive queries running on your system?  Don't know?
+Use the \emph{mk-query-digest} tool to find out easily!  It reads your server's
+query log, and creates an amazing report that shows exactly what you
+need to focus on---complete with a profile of the queries.  It can even store
+the results in a database, where you can annotate them, query them with SQL,
+mark them as ``reviewed'' so the tool won't show them to you again, and more.
+Create a scheduled task to do this, and you'll get a report every day that shows
+you what queries are ``new'' on your system---a great way to catch problem SQL
+proactively.  It has tons of advanced features, including the ability to capture
+queries from the network so you don't even have to enable logging.  Without a
+doubt, \emph{mk-query-digest} is the most sophisticated log analysis tool 
+for MySQL!
+
+\section*{\includegraphics[width=1em]{../image/success} Test Changes Before
+Deploying}
+
+Wouldn't it be nice if you could test your changes before you deploy them, and
+ensure that nothing bad is going to happen?  The \emph{mk-upgrade} tool can help
+you execute queries against two systems and compare the results.  Use it before
+you upgrade MySQL, to ensure there are no performance regressions, changes in
+syntax, differences in query plans, new warnings or errors, and more.  Use it
+before you change server settings, too!  It's a sensible way to be safe and
+careful with changes to vital production systems.  If it helps Facebook, then
+it can help you too!
 
 \end{document}
