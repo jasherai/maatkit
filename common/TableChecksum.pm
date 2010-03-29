@@ -307,7 +307,7 @@ sub make_row_checksum {
             $result = "ROUND($result, $args{float_precision})";
          }
          elsif ( $type =~ m/varchar/ && $args{trim} ) {
-            $result = "TRIM($result) AS $result";
+            $result = "TRIM($result)";
          }
          $result;
       }
@@ -330,6 +330,10 @@ sub make_row_checksum {
                         # Alias col name back to itself else its name becomes
                         # "col + 0" instead of just "col".
                         my ($real_col) = /^(\S+)/;
+                        $col .= " AS $real_col";
+                     }
+                     elsif ( $col =~ m/TRIM/ ) {
+                        my ($real_col) = m/TRIM\(([^\)]+)\)/;
                         $col .= " AS $real_col";
                      }
                      $col;
