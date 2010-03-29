@@ -23,75 +23,131 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+# This package subclasses Pod::Parser.
+use Pod::Parser;
+our @ISA = qw(Pod::Parser);
+
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+# List =item from these head1 sections will be parsed into a hash
+# with the item's name as the key and its paragraphs parsed as
+# another hash of attribute-value pairs.  The first para is usually
+# a single line of attrib: value; ..., but this is optional.  The
+# other paras are the item's description, saved under the desc key.
+my %parse_items_from = (
+   'OPTIONS'     => 1,
+   'DSN OPTIONS' => 1,
+   'RULES'       => 1,
+);
+
+# Pattern to match and capture the item's name after "=item ".
+my %item_pattern_for = (
+   'OPTIONS'     => qr/--(.*)/,
+   'DSN OPTIONS' => qr/\* (.)/,
+   'RULES'       => qr/(.*)/,
+);
+
+# True if the head1 section's paragraphs before its first =item
+# define rules, one per para/line.  These rules are saved in an
+# arrayref under the rules key.
+my %section_has_rules = (
+   'OPTIONS'     => 1,
+   'DSN OPTIONS' => 0,
+   'RULES'       => 0,
+);
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw() ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-
    my $self = {
+      current_section => '',
+      current_item    => '',
+      in_list         => 0,
+      items           => {},
    };
    return bless $self, $class;
 }
 
-# Arguments:
-#   * file       scalar: file name with POD to parse (default __FILE__)
-#   * section    scalar: head1 section name to parse
-#   * subsection scalar: (optional) head2 subsection under head1 section
-#                        to parse
-#   * trf        coderef: callback to transform or reject parsed (sub)section
-# Return an array of paragraphs from the (sub)section.  If trf returns
-# undef, that paragraph is discarded.
-sub parse_section {
-   my ( $self, %args ) = @_;
-   my ($file, $section, $subsection, $trf)
-      = @args{qw(file section subsection trf)};
+sub get_items {
+   my ( $self, $section ) = @_;
+   return $section ? $self->{items}->{$section} : $self->{items};
+}
 
-   $file ||= __FILE__;
-   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   MKDEBUG && _d('Parsing POD section', $section, $subsection, 'from', $file);
-
-   local $INPUT_RECORD_SEPARATOR = '';
-   my $POD_link_re = '[LC]<"?([^">]+)"?>';
-
-   my $para;
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 $section/;
-      MKDEBUG && _d($para);
-      last;
+# Commands like =head1, =over, =item and =back.  Paragraphs following
+# these command are passed to textblock().
+sub command {
+   my ( $self, $cmd, $name, $lineno ) = @_;
+   
+   $name =~ s/\s+\Z//m;  # Remove \n and blank line after name.
+   
+   if  ( $cmd eq 'head1' && $parse_items_from{$name} ) {
+      MKDEBUG && _d('In section', $name);
+      $self->{current_section} = $name;
+      $self->{items}->{$name}  = {};
    }
-   if ( !$para ) {
-      MKDEBUG && _d('Did not find section', $section);
-      return;
+   elsif ( $cmd eq 'over' ) {
+      MKDEBUG && _d('Start items in', $self->{current_section},
+         'at line', $lineno);
+      $self->{in_list} = 1;
    }
-
-   if ( $subsection ) {
-      while ( $para = <$fh> ) {
-         next unless $para =~ m/^=head2 $subsection/;
-         last
+   elsif ( $cmd eq 'item' ) {
+      my $pat = $item_pattern_for{ $self->{current_section} };
+      my ($item) = $name =~ m/$pat/;
+      if ( $item ) {
+         MKDEBUG && _d($self->{current_section}, 'item:', $item);
+         $self->{items}->{ $self->{current_section} }->{$item} = {
+            desc => '',  # every item should have a desc
+         };
+         $self->{current_item} = $item;
+      }
+      else {
+         warn "Item $name does not match $pat";
       }
    }
-   if ( !$para ) {
-      MKDEBUG && _d('Did not find subsection', $subsection);
-      return;
+   elsif ( $cmd eq '=back' ) {
+      MKDEBUG && _d('End items');
+      $self->{in_list} = 0;
+   }
+   else {
+      $self->{current_section} = '';
+      $self->{in_list}         = 0;
+   }
+   
+   return;
+}
+
+# Paragraphs after a command.
+sub textblock {
+   my ( $self, $para, $lineno ) = @_;
+
+   return unless $self->{current_section} && $self->{current_item};
+
+   my $section = $self->{current_section};
+   my $item    = $self->{items}->{$section}->{ $self->{current_item} };
+
+   $para =~ s/\s+\Z//;
+
+   if ( $para =~ m/\b\w+: / ) {
+      MKDEBUG && _d('Item attributes:', $para);
+      map {
+         my ($attrib, $val) = split(/: /, $_);
+         $item->{$attrib} = defined $val ? $val : 1;
+      } split(/; /, $para);
+   }
+   else {
+      MKDEBUG && _d('Item desc:', substr($para, 0, 40),
+         length($para) > 40 ? '...' : '');
+      $para =~ s/\n+/ /g;
+      $item->{desc} .= $para;
    }
 
-   my @chunks;
-   while ( $para = <$fh> ) {
-      last if ($subsection ? $para =~ m/^=head[12]/ : $para =~ m/^=head1/);
-      next if $para =~ m/=head/;
-      chomp $para;
-      $para =~ s/$POD_link_re/$1/go;
-      if ( $trf ) {
-         $para = $trf->($para);
-         next unless $para;
-      }
-      push @chunks, $para;
-   }
+   return;
+}
 
-   return @chunks;
+# Indented blocks of text, e.g. SYNOPSIS examples.  We don't
+# do anything with these yet.
+sub verbatim {
+   my ( $self, $para, $lineno ) = @_;
+   return;
 }
 
 sub _d {
