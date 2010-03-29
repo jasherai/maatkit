@@ -3130,7 +3130,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 5712
+# TableChecksum package 6018
 # ###########################################################################
 package TableChecksum;
 
@@ -3382,6 +3382,10 @@ sub make_row_checksum {
                      my $col = $_;
                      if ( $col =~ m/\+ 0/ ) {
                         my ($real_col) = /^(\S+)/;
+                        $col .= " AS $real_col";
+                     }
+                     elsif ( $col =~ m/TRIM/ ) {
+                        my ($real_col) = m/TRIM\(([^\)]+)\)/;
                         $col .= " AS $real_col";
                      }
                      $col;
