@@ -334,11 +334,11 @@ $t = $tp->parse(load_file('common/t/samples/sakila.film.sql'));
 
 like (
    $c->make_row_checksum(
-      function      => 'SHA1',
+      function   => 'SHA1',
       tbl_struct => $t,
-      trim      => 1,
+      trim       => 1,
    ),
-   qr{TRIM\(`title`\)},
+   qr{TRIM\(`title`\) AS `title`},
    'VARCHAR column is trimmed',
 );
 

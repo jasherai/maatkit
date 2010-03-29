@@ -307,7 +307,7 @@ sub make_row_checksum {
             $result = "ROUND($result, $args{float_precision})";
          }
          elsif ( $type =~ m/varchar/ && $args{trim} ) {
-            $result = "TRIM($result)";
+            $result = "TRIM($result) AS $result";
          }
          $result;
       }
