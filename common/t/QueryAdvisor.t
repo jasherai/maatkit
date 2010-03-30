@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 use MaatkitTest;
 use QueryAdvisorRules;
@@ -70,6 +70,21 @@ is_deeply(
       description => 'Aliasing without the AS keyword.  Explicitly using the AS keyword in column or table aliases, such as "tbl AS alias," is more readable than implicit aliases such as "tbl alias".',
    },
    'get_rule_info()'
+);
+
+
+# #############################################################################
+# Ignore rules.
+# #############################################################################
+$qa = new QueryAdvisor(
+   ignore_rules => { 'LIT.002' => 1 },
+);
+$qa->load_rules($qar);
+$qa->load_rule_info($qar);
+is(
+   $qa->get_rule_info('LIT.002'),
+   undef,
+   "Didn't load ignored rule"
 );
 
 # #############################################################################

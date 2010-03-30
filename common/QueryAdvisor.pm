@@ -25,6 +25,8 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+# Arguments:
+#   * ignore_rules  hashref: rule IDs to ignore
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw() ) {
@@ -41,18 +43,31 @@ sub new {
    return bless $self, $class;
 }
 
+# Load rules from the given advisor module.  Will die on duplicate
+# rule IDs.
 sub load_rules {
    my ( $self, $advisor ) = @_;
    return unless $advisor;
    MKDEBUG && _d('Loading rules from', ref $advisor);
+
+   # Starting index value in rules arrayref for these rules.
+   # This is >0 if rules from other advisor modules have
+   # already been loaded.
    my $i = scalar @{$self->{rules}};
-   foreach my $advisor_rule ( $advisor->get_rules() ) {
-      my $id = $advisor_rule->{id};
+
+   RULE:
+   foreach my $rule ( $advisor->get_rules() ) {
+      my $id = $rule->{id};
+      if ( $self->{ignore_rules}->{$id} ) {
+         MKDEBUG && _d("Ignoring rule", $id);
+         next RULE;
+      }
       die "Rule $id already exists and cannot be redefined"
          if defined $self->{rule_index_for}->{$id};
-      push @{$self->{rules}}, $advisor_rule;
+      push @{$self->{rules}}, $rule;
       $self->{rule_index_for}->{$id} = $i++;
    }
+
    return;
 }
 
@@ -62,13 +77,16 @@ sub load_rule_info {
    MKDEBUG && _d('Loading rule info from', ref $advisor);
    my $rules = $self->{rules};
    foreach my $rule ( @$rules ) {
-      my $id        = $rule->{id};
+      my $id = $rule->{id};
+      if ( $self->{ignore_rules}->{$id} ) {
+         # This shouldn't happen.  load_rules() should keep any ignored
+         # rules out of $self->{rules}.
+         die "Rule $id was loaded but should be ignored";
+      }
       my $rule_info = $advisor->get_rule_info($id);
       next unless $rule_info;
-
       die "Info for rule $id already exists and cannot be redefined"
          if $self->{rule_info}->{$id};
-
       $self->{rule_info}->{$id} = $rule_info;
    }
    return;
