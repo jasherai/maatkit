@@ -58,7 +58,7 @@ sub load_rules {
    RULE:
    foreach my $rule ( $advisor->get_rules() ) {
       my $id = $rule->{id};
-      if ( $self->{ignore_rules}->{$id} ) {
+      if ( $self->{ignore_rules}->{uc $id} ) {
          MKDEBUG && _d("Ignoring rule", $id);
          next RULE;
       }
@@ -78,7 +78,7 @@ sub load_rule_info {
    my $rules = $self->{rules};
    foreach my $rule ( @$rules ) {
       my $id = $rule->{id};
-      if ( $self->{ignore_rules}->{$id} ) {
+      if ( $self->{ignore_rules}->{uc $id} ) {
          # This shouldn't happen.  load_rules() should keep any ignored
          # rules out of $self->{rules}.
          die "Rule $id was loaded but should be ignored";
