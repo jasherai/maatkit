@@ -26,7 +26,7 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # Alternate values because offline/config my-var=ON is shown
-# online as var_var=TRUE.
+# online as my_var=TRUE.
 my %alt_val_for = (
    ON    => 1,
    YES   => 1,
