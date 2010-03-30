@@ -10675,7 +10675,7 @@ classes of queries.
 
 A query fingerprint is the abstracted form of a query, which makes it possible
 to group similar queries together.  Abstracting a query removes literal values,
-normalizes whitespace, and so on.  For example, these two queries:
+normalizes whitespace, and so on.  For example, consider these two queries:
 
   SELECT name, password FROM user WHERE id='12823';
   select name,   password from user
@@ -10706,15 +10706,68 @@ The corresponding pseudo-SQL looks like this:
 You can also use the value C<distill>, which is a kind of super-fingerprint.
 See L<"--group-by"> for more.
 
-=head2 memcached
+When parsing memcached input (L<"--type"> memcached), the fingerprint is an
+abstracted version of the command and key, with placeholders removed.  For
+example, "get user_123_preferences" fingerprints to "get user_?_preferences".
+There is also a "key_print" which a fingerprinted version of the key.  This
+example's key_print is "user_?_preferences".
 
-If parsing memcached input (L<"--type"> memcached), the fingerprint is an
-abstracted version of the command and key, with placeholders removed.
-For example, "get user_123_preferences" fingerprints to
-"get user_?_preferences".
+Query fingerprinting accommodates a great many special cases, which have proven
+necessary in the real world.  For example, an IN list with 5 literals is really
+equivalent to one with 4 literals, so lists of literals are collapsed to a
+single one.  If you want to understand more about how and why all of these cases
+are handled, please review the test cases in the Subversion repository.  If you
+find something that is not fingerprinted properly, please submit a bug report
+with a reproducible test case.  Here is a list of transformations during
+fingerprinting, which might not be exhaustive:
 
-There is also a "key_print" which a fingerprinted version of the key.  For
-the example above, its key_print is "user_?_preferences".
+=over
+
+=item *
+
+Group all SELECT queries from mysqldump together, even if they are against
+different tables.  Ditto for all of mk-table-checksum's checksum queries.
+
+=item *
+
+Shorten multi-value INSERT statements to a single VALUES() list.
+
+=item *
+
+Strip comments.
+
+=item *
+
+Abstract the databases in USE statements, so all USE statements are grouped
+together.
+
+=item *
+
+Replace all literals, such as quoted strings.  For efficiency, the code that
+replaces literal numbers is somewhat non-selective, and might replace some
+things as numbers when they really are not.  Hexadecimal literals are also
+replaced.  NULL is treated as a literal.  Numbers embedded in identifiers are
+also replaced, so tables named similarly will be fingerprinted to the same
+values (e.g. users_2009 and users_2010 will fingerprint identically).
+
+=item *
+
+Collapse all whitespace into a single space.
+
+=item *
+
+Lowercase the entire query.
+
+=item *
+
+Replace all literals inside of IN() and VALUES() lists with a single
+placeholder, regardless of cardinality.
+
+=item *
+
+Collapse multiple identical UNION queries into a single one.
+
+=back
 
 =head1 OPTIONS
 
