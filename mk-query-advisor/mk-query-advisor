@@ -2437,7 +2437,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisorRules package 5947
+# QueryAdvisorRules package 6026
 # ###########################################################################
 package QueryAdvisorRules;
 
@@ -2463,13 +2463,9 @@ sub new {
 
    my $self = {
       %args,
-      rules          => \@rules,
-      rule_index_for => {},
-      rule_info      => {},
+      rules     => \@rules,
+      rule_info => {},
    };
-
-   my $i = 0;
-   map { $self->{rule_index_for}->{ $_->{id} } = $i++ } @rules;
 
    return bless $self, $class;
 }
@@ -2536,6 +2532,10 @@ sub get_rules {
       id   => 'ARG.002',      # LIKE w/o wildcard
       code => sub {
          my ( $event ) = @_;
+         my @like_args = $event->{arg} =~ m/\bLIKE\s+(\S+)/gi;
+         foreach my $arg ( @like_args ) {
+            return 0 if $arg !~ m/[%_]/;
+         }
          return;
       },
    },
@@ -2701,40 +2701,27 @@ sub get_rules {
 
 sub load_rule_info {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(rules file section) ) {
+   foreach my $arg ( qw(file section ) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $rules = $args{rules};  # requested/required rules
+   my $rules = $args{rules} || $self->{rules};
    my $p     = $self->{PodParser};
 
-   $p->parse_section(
-      %args,
-      trf  => sub {
-         my ( $para ) = @_;
-         chomp $para;
-         my $rule_info = _parse_rule_info($para);
-         return unless $rule_info;
-
-         die "Rule info does not specify an ID:\n$para"
-            unless $rule_info->{id};
-         die "Rule info does not specify a severity:\n$para"
-            unless $rule_info->{severity};
-         die "Rule info does not specify a description:\n$para",
-            unless $rule_info->{description};
-         die "Rule $rule_info->{id} is not defined"
-            unless defined $self->{rule_index_for}->{ $rule_info->{id} };
-
-         my $id = $rule_info->{id};
-         if ( exists $self->{rule_info}->{$id} ) {
-            die "Info for rule $rule_info->{id} already exists "
-               . "and cannot be redefined"
-         }
-
-         $self->{rule_info}->{$id} = $rule_info;
-
-         return;
-      },
-   );
+   $p->parse_from_file($args{file});
+   my $rule_items = $p->get_items($args{section});
+   my %seen;
+   foreach my $rule_id ( keys %$rule_items ) {
+      my $rule = $rule_items->{$rule_id};
+      die "Rule $rule_id has no description" unless $rule->{desc};
+      die "Rule $rule_id has no severity"    unless $rule->{severity};
+      die "Rule $rule_id is already defined"
+         if exists $self->{rule_info}->{$rule_id};
+      $self->{rule_info}->{$rule_id} = {
+         id          => $rule_id,
+         severity    => $rule->{severity},
+         description => $rule->{desc},
+      };
+   }
 
    foreach my $rule ( @$rules ) {
       die "There is no info for rule $rule->{id} in $args{file}"
@@ -2748,35 +2735,6 @@ sub get_rule_info {
    my ( $self, $id ) = @_;
    return unless $id;
    return $self->{rule_info}->{$id};
-}
-
-sub _parse_rule_info {
-   my ( $para ) = @_;
-   return unless $para =~ m/^id:/i;
-   my $rule_info = {};
-   my @lines = split("\n", $para);
-   my $line;
-
-   for ( 1..2 ) {
-      $line = shift @lines;
-      MKDEBUG && _d($line);
-      $line =~ m/(\w+):\s*(.+)/;
-      $rule_info->{lc $1} = uc $2;
-   }
-
-   $line = shift @lines;
-   MKDEBUG && _d($line);
-   $line =~ m/(\w+):\s*(.+)/;
-   my $desc        = lc $1;
-   $rule_info->{$desc} = $2;
-   while ( my $d = shift @lines ) {
-      $rule_info->{$desc} .= $d;
-   }
-   $rule_info->{$desc} =~ s/\s+/ /g;
-   $rule_info->{$desc} =~ s/\s+$//;
-
-   MKDEBUG && _d('Parsed rule info:', Dumper($rule_info));
-   return $rule_info;
 }
 
 sub _reset_rule_info {
@@ -2895,9 +2853,10 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# PodParser package 5904
+# PodParser package 6025
 # ###########################################################################
 package PodParser;
+
 
 use strict;
 use warnings FATAL => 'all';
@@ -2905,65 +2864,136 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+my %parse_items_from = (
+   'OPTIONS'     => 1,
+   'DSN OPTIONS' => 1,
+   'RULES'       => 1,
+);
+
+my %item_pattern_for = (
+   'OPTIONS'     => qr/--(.*)/,
+   'DSN OPTIONS' => qr/\* (.)/,
+   'RULES'       => qr/(.*)/,
+);
+
+my %section_has_rules = (
+   'OPTIONS'     => 1,
+   'DSN OPTIONS' => 0,
+   'RULES'       => 0,
+);
+
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw() ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-
    my $self = {
+      current_section => '',
+      current_item    => '',
+      in_list         => 0,
+      items           => {},
    };
    return bless $self, $class;
 }
+ 
+sub get_items {
+   my ( $self, $section ) = @_;
+   return $section ? $self->{items}->{$section} : $self->{items};
+}
 
-sub parse_section {
-   my ( $self, %args ) = @_;
-   my ($file, $section, $subsection, $trf)
-      = @args{qw(file section subsection trf)};
+sub parse_from_file {
+   my ( $self, $file ) = @_;
+   return unless $file;
 
-   $file ||= __FILE__;
-   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   MKDEBUG && _d('Parsing POD section', $section, $subsection, 'from', $file);
-
-   local $INPUT_RECORD_SEPARATOR = '';
-   my $POD_link_re = '[LC]<"?([^">]+)"?>';
-
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';  # read paragraphs
    my $para;
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 $section/;
-      MKDEBUG && _d($para);
-      last;
-   }
-   if ( !$para ) {
-      MKDEBUG && _d('Did not find section', $section);
-      return;
-   }
 
-   if ( $subsection ) {
-      while ( $para = <$fh> ) {
-         next unless $para =~ m/^=head2 $subsection/;
-         last
+   1 while defined($para = <$fh>) && $para !~ m/^=pod/;
+   die "$file does not contain =pod" unless $para;
+
+   while ( defined($para = <$fh>) && $para !~ m/^=cut/ ) {
+      if ( $para =~ m/^=(head|item|over|back)/ ) {
+         my ($cmd, $name) = $para =~ m/^=(\w+)(?:\s+(.+))?/;
+         $name ||= '';
+         MKDEBUG && _d('cmd:', $cmd, 'name:', $name);
+         $self->command($cmd, $name);
+      }
+      else {
+         $self->textblock($para);
       }
    }
-   if ( !$para ) {
-      MKDEBUG && _d('Did not find subsection', $subsection);
-      return;
-   }
 
-   my @chunks;
-   while ( $para = <$fh> ) {
-      last if ($subsection ? $para =~ m/^=head[12]/ : $para =~ m/^=head1/);
-      next if $para =~ m/=head/;
-      chomp $para;
-      $para =~ s/$POD_link_re/$1/go;
-      if ( $trf ) {
-         $para = $trf->($para);
-         next unless $para;
+   close $fh;
+}
+
+sub command {
+   my ( $self, $cmd, $name ) = @_;
+   
+   $name =~ s/\s+\Z//m;  # Remove \n and blank line after name.
+   
+   if  ( $cmd eq 'head1' && $parse_items_from{$name} ) {
+      MKDEBUG && _d('In section', $name);
+      $self->{current_section} = $name;
+      $self->{items}->{$name}  = {};
+   }
+   elsif ( $cmd eq 'over' ) {
+      MKDEBUG && _d('Start items in', $self->{current_section});
+      $self->{in_list} = 1;
+   }
+   elsif ( $cmd eq 'item' ) {
+      my $pat = $item_pattern_for{ $self->{current_section} };
+      my ($item) = $name =~ m/$pat/;
+      if ( $item ) {
+         MKDEBUG && _d($self->{current_section}, 'item:', $item);
+         $self->{items}->{ $self->{current_section} }->{$item} = {
+            desc => '',  # every item should have a desc
+         };
+         $self->{current_item} = $item;
       }
-      push @chunks, $para;
+      else {
+         warn "Item $name does not match $pat";
+      }
+   }
+   elsif ( $cmd eq '=back' ) {
+      MKDEBUG && _d('End items');
+      $self->{in_list} = 0;
+   }
+   else {
+      $self->{current_section} = '';
+      $self->{in_list}         = 0;
+   }
+   
+   return;
+}
+
+sub textblock {
+   my ( $self, $para ) = @_;
+
+   return unless $self->{current_section} && $self->{current_item};
+
+   my $section = $self->{current_section};
+   my $item    = $self->{items}->{$section}->{ $self->{current_item} };
+
+   $para =~ s/\s+\Z//;
+
+   if ( $para =~ m/\b\w+: / ) {
+      MKDEBUG && _d('Item attributes:', $para);
+      map {
+         my ($attrib, $val) = split(/: /, $_);
+         $item->{$attrib} = defined $val ? $val : 1;
+      } split(/; /, $para);
+   }
+   else {
+      MKDEBUG && _d('Item desc:', substr($para, 0, 40),
+         length($para) > 40 ? '...' : '');
+      $para =~ s/\n+/ /g;
+      $item->{desc} .= $para;
    }
 
-   return @chunks;
+   return;
+}
+
+sub verbatim {
+   my ( $self, $para ) = @_;
+   return;
 }
 
 sub _d {
@@ -3629,7 +3659,6 @@ sub main {
    my $qa  = new QueryAdvisor();
 
    $qar->load_rule_info(
-      rules   => [ $qar->get_rules() ],
       file    => __FILE__,
       section => 'RULES',
    );
@@ -3900,7 +3929,7 @@ sub print_advice {
                   : $verbose == 2 ? "$desc[0] $desc[1]"  # fuller
                   : $verbose >  2 ? $desc                # complete
                   :                 '';                  # none
-         print "# $info->{severity} $id $desc\n";
+         print "# ", uc $info->{severity}, " $id $desc\n";
 
          if ( $pos ) {
             my $offset = $pos > POS_CONTEXT ? $pos - POS_CONTEXT : 0;
@@ -3996,11 +4025,8 @@ as input.
 =head1 RULES
 
 These are the rules that mk-advisor will apply to the queries it
-examines.  Each rule has a few bits of information:
-
-=over
-
-=item Rule ID
+examines.  Each rule has three bits of information: an ID, a severity
+and a description.
 
 The rule's ID is its identifier.  We use a seven-character ID, and the
 naming convention is three characters, a period, and a three-digit
@@ -4008,13 +4034,9 @@ number.  The first three characters are sort of an abbreviation of the
 general class of the rule.  For example, ALI.001 is some rule related
 to how the query uses aliases.
 
-=item Severity
-
 The rule's severity is an indication of how important it is that this
 rule matched a query.  We use NOTE, WARN, and CRIT to denote these
 levels.
-
-=item Description
 
 The rule's description is a textual, human-readable explanation of
 what it means when a query matches this rule.  Depending on the
@@ -4023,110 +4045,148 @@ the description.  By default, you'll see only the first sentence,
 which is sort of a terse synopsis of the rule's meaning.  At a higher
 verbosity, you'll see subsequent sentences.
 
+=over
+
+=item ALI.001
+
+severity: note
+
+Aliasing without the AS keyword.  Explicitly using the AS keyword in
+column or table aliases, such as "tbl AS alias," is more readable
+than implicit aliases such as "tbl alias".
+
+=item ALI.002
+
+severity: warn
+
+Aliasing the '*' wildcard.  Aliasing a column wildcard, such as
+"SELECT tbl.* col1, col2" probably indicates a bug in your SQL.
+You probably meant for the query to retrive col1, but instead it
+renames the last column in the *-wildcarded list.
+
+=item ALI.003
+
+severity: note
+
+Aliasing without renaming.  The table or column's alias is the same as
+its real name, and the alias just makes the query harder to read.
+
+=item ARG.001
+
+severity: warn
+
+Argument with leading wildcard.  An argument has a leading
+wildcard character, such as "%foo".  The predicate with this argument
+is not sargable and cannot use an index if one exists.
+
+=item ARG.002
+
+severity: note
+
+LIKE without a wildcard.  A LIKE pattern that does not include a
+wildcard is potentially a bug in the SQL.
+
+=item CLA.001
+
+severity: warn
+
+SELECT without WHERE.  The SELECT statement has no WHERE clause.
+
+=item CLA.002
+
+severity: note
+
+ORDER BY RAND().  ORDER BY RAND() is a very inefficient way to
+retrieve a random row from the results.
+
+=item CLA.003
+
+severity: note
+
+LIMIT with OFFSET.  Paginating a result set with LIMIT and OFFSET is
+O(n^2) complexity, and will cause performance problems as the data
+grows larger.
+
+=item CLA.004
+
+severity: note
+
+Ordinal in the GROUP BY clause.  Using a number in the GROUP BY clause,
+instead of an expression or column name, can cause problems if the
+query is changed.
+
+=item COL.001
+
+severity: note
+
+SELECT *.  Selecting all columns with the * wildcard will cause the
+query's meaning and behavior to change if the table's schema
+changes, and might cause the query to retrieve too much data.
+
+=item COL.002
+
+severity: note
+
+Blind INSERT.  The INSERT or REPLACE query doesn't specify the
+columns explicitly, so the query's behavior will change if the
+table's schema changes; use "INSERT INTO tbl(col1, col2) VALUES..."
+instead.
+
+=item LIT.001
+
+severity: warn
+
+Storing an IP address as characters.  The string literal looks like
+an IP address, but is not an argument to INET_ATON(), indicating that
+the data is stored as characters instead of as integers.  It is
+more efficient to store IP addresses as integers.
+
+=item LIT.002
+
+severity: warn
+
+Unquoted date/time literal.  A query such as "WHERE col<2010-02-12"
+is valid SQL but is probably a bug; the literal should be quoted.
+
+=item KWR.001
+
+severity: note
+
+SQL_CALC_FOUND_ROWS is inefficient.  SQL_CALC_FOUND_ROWS can cause
+performance problems because it does not scale well; use
+alternative strategies to build functionality such as paginated
+result screens.
+
+=item JOI.001
+
+severity: crit
+
+Mixing comma and ANSI joins.  Mixing comma joins and ANSI joins
+is confusing to humans, and the behavior differs between some
+MySQL versions.
+
+=item RES.001
+
+severity: warn
+
+Non-deterministic GROUP BY.  The SQL retrieves columns that are
+neither in an aggregate function nor the GROUP BY expression, so
+these values will be non-deterministic in the result.
+
+=item RES.002
+
+severity: warn
+
+LIMIT without ORDER BY.  LIMIT without ORDER BY causes
+non-deterministic results, depending on the query execution plan.
+
+=item STA.001
+
+severity: note
+
+!= is non-standard.  Use the <> operator to test for inequality.
+
 =back
-
-id:          ALI.001
-severity:    note
-description: Aliasing without the AS keyword.  Explicitly using the AS keyword in
-             column or table aliases, such as "tbl AS alias," is more readable
-             than implicit aliases such as "tbl alias".
-
-id:          ALI.002
-severity:    warn
-description: Aliasing the '*' wildcard.  Aliasing a column wildcard, such as
-             "SELECT tbl.* col1, col2" probably indicates a bug in your SQL.
-             You probably meant for the query to retrive col1, but instead it
-             renames the last column in the *-wildcarded list.
-
-id:          ALI.003
-severity:    note
-description: Aliasing without renaming.  The table or column's alias is the same as
-             its real name, and the alias just makes the query harder to read.
-
-id:          ARG.001
-severity:    warn
-description: Argument with leading wildcard.  An argument has a leading
-             wildcard character, such as "%foo".  The predicate with this argument
-             is not sargable and cannot use an index if one exists.
-
-id:          ARG.002
-severity:    note
-description: LIKE without a wildcard.  A LIKE pattern that does not include a
-             wildcard is potentially a bug in the SQL.
-
-id:          CLA.001
-severity:    warn
-description: SELECT without WHERE.  The SELECT statement has no WHERE clause.
-
-id:          CLA.002
-severity:    note
-description: ORDER BY RAND().  ORDER BY RAND() is a very inefficient way to
-             retrieve a random row from the results.
-
-id:          CLA.003
-severity:    note
-description: LIMIT with OFFSET.  Paginating a result set with LIMIT and OFFSET is
-             O(n^2) complexity, and will cause performance problems as the data
-             grows larger.
-
-id:          CLA.004
-severity:    note
-description: Ordinal in the GROUP BY clause.  Using a number in the GROUP BY clause,
-             instead of an expression or column name, can cause problems if the
-             query is changed.
-
-id:          COL.001
-severity:    note
-description: SELECT *.  Selecting all columns with the * wildcard will cause the
-             query's meaning and behavior to change if the table's schema
-             changes, and might cause the query to retrieve too much data.
-
-id:          COL.002
-severity:    note
-description: Blind INSERT.  The INSERT or REPLACE query doesn't specify the
-             columns explicitly, so the query's behavior will change if the
-             table's schema changes; use "INSERT INTO tbl(col1, col2) VALUES..."
-             instead.
-
-id:          LIT.001
-severity:    warn
-description: Storing an IP address as characters.  The string literal looks like
-             an IP address, but is not an argument to INET_ATON(), indicating that
-             the data is stored as characters instead of as integers.  It is
-             more efficient to store IP addresses as integers.
-
-id:          LIT.002
-severity:    warn
-description: Unquoted date/time literal.  A query such as "WHERE col<2010-02-12"
-             is valid SQL but is probably a bug; the literal should be quoted.
-
-id:          KWR.001
-severity:    note
-description: SQL_CALC_FOUND_ROWS is inefficient.  SQL_CALC_FOUND_ROWS can cause
-             performance problems because it does not scale well; use
-             alternative strategies to build functionality such as paginated
-             result screens.
-
-id:          JOI.001
-severity:    crit
-description: Mixing comma and ANSI joins.  Mixing comma joins and ANSI joins
-             is confusing to humans, and the behavior differs between some
-             MySQL versions.
-
-id:          RES.001
-severity:    warn
-description: Non-deterministic GROUP BY.  The SQL retrieves columns that are
-             neither in an aggregate function nor the GROUP BY expression, so
-             these values will be non-deterministic in the result.
-
-id:          RES.002
-severity:    warn
-description: LIMIT without ORDER BY.  LIMIT without ORDER BY causes
-             non-deterministic results, depending on the query execution plan.
-
-id:          STA.001
-severity:    note
-description: != is non-standard.  Use the <> operator to test for inequality.
 
 =head1 OPTIONS
 
