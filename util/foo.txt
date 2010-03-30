@@ -1,0 +1,23 @@
+*************************** 1. row ***************************
+         points_id: 558
+              code: 3AYRD33C8Q
+            amount: 10000
+          currency: EUR
+     current_value: 0
+       customer_id: 6240
+      recipient_id: 6241
+       points_type: voucher
+          validity: 1
+           message:          Happy Birthday!! 
+      
+              Big Kiss :*
+          
+               Love
+              Patrick
+ 
+     purchase_date: 2008-09-17 16:46:20
+       redeem_date: NULL
+       expire_date: 2009-09-30 16:46:20
+ modification_date: 2009-09-01 12:38:13
+package_voucher_id: NULL
+    extra_xml_info: 
