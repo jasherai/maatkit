@@ -59,7 +59,7 @@ ok(
 $qar->load_rule_info(
    rules    => \@rules,
    file     => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
-   section  => 'CHECKS',
+   section  => 'RULES',
 );
 
 # We shouldn't be able to load the same rule info twice.
@@ -68,19 +68,19 @@ throws_ok(
       $qar->load_rule_info(
          rules    => \@rules,
          file     => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
-         section  => 'CHECKS',
+         section  => 'RULES',
       );
    },
-   qr/Info for rule \S+ already exists and cannot be redefined/,
-   'Duplicate rule info is caught',
+   qr/Rule \S+ is already defined/,
+   'Duplicate rule info is caught'
 );
 
 # Test that we can now get a hashref as described above.
 is_deeply(
    $qar->get_rule_info('LIT.001'),
    {  id          => 'LIT.001',
-      severity    => 'NOTE',
-      description => "IP address used as string. The string literal looks like an IP address but is not used inside INET_ATON(). WHERE ip='127.0.0.1' is better as ip=INET_ATON('127.0.0.1') if the column is numeric.",
+      severity    => 'note',
+      description => "IP address used as string.  The string literal looks like an IP address but is not used inside INET_ATON().  WHERE ip='127.0.0.1' is better as ip=INET_ATON('127.0.0.1') if the column is numeric.",
    },
    'get_rule_info(LIT.001) works',
 );
@@ -109,7 +109,7 @@ throws_ok (
       $qar->load_rule_info(
          rules    => \@rules,
          file     => "$trunk/common/t/samples/pod/mqa-rule-LIT.001.pod",
-         section  => 'CHECKS',
+         section  => 'RULES',
       );
    },
    qr/There is no info for rule FOO.001/,

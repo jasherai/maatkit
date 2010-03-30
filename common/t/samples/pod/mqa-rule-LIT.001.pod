@@ -12,20 +12,24 @@ This POD sample simulates special POD stuff used by mk-query-advisor.  The
 format used here is not the same actually used in mk-query-advisor.  This POD
 sample is, therore, just for testing.
 
-=head1 CHECKS
+=head1 RULES
 
 These are the check that mk-advisor can perform on a query.  There are several
 classes of checks, each described in its own seciton.  You can add new checks
 by adding new entires like the ones below.  Read L<"CHECK SYNTAX"> to learn
 the structure of these checks.
 
-=head2 Literals
+=over
 
-id:          LIT.001
-severity:    note
-description: IP address used as string.  The string literal looks like an IP
-             address but is not used inside INET_ATON().  WHERE ip='127.0.0.1'
-             is better as ip=INET_ATON('127.0.0.1') if the column is numeric.
+=item LIT.001
+
+severity: note
+
+IP address used as string.  The string literal looks like an IP
+address but is not used inside INET_ATON().  WHERE ip='127.0.0.1'
+is better as ip=INET_ATON('127.0.0.1') if the column is numeric.
+
+=back
 
 =head1 OPTIONS
 

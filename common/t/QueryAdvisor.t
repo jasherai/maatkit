@@ -66,8 +66,8 @@ is_deeply(
    $qa->get_rule_info('ALI.001'),
    {
       id          => 'ALI.001',
-      severity    => 'NOTE',
-      description => 'Aliasing without the AS keyword. Explicitly using the AS keyword in column or table aliases, such as "tbl AS alias," is more readable than implicit aliases such as "tbl alias".',
+      severity    => 'note',
+      description => 'Aliasing without the AS keyword.  Explicitly using the AS keyword in column or table aliases, such as "tbl AS alias," is more readable than implicit aliases such as "tbl alias".',
    },
    'get_rule_info()'
 );
