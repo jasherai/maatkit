@@ -24,7 +24,7 @@ if ( !$dbh1 || !$dbh2 ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 8;
+   plan tests => 9;
 }
 
 my $output;
@@ -98,6 +98,20 @@ like(
    '--print is implicit'
 );
 
+
+# #############################################################################
+# Issue 943: mk-deadlock-logger reports the same deadlock with --interval
+# #############################################################################
+
+# The deadlock from above won't be re-printed so even after running for
+# 3 seconds and checking multiple times only the single, 3 line deadlock
+# should be reported.
+chomp($output = `$cmd --run-time 3 | wc -l`);
+is(
+   $output,
+   3,
+   "Doesn't re-print same deadlock (issue 943)"
+);
 
 # #############################################################################
 # Check that deadlocks from previous test were stored in table.

@@ -1722,6 +1722,11 @@ sub main {
       if ( $dest_dsn && !$dest_dsn->{t} ) {
          $o->save_error("--dest requires a 't' (table) part");
       }
+
+      # Avoid running forever with zero second interval.
+      if ( $o->get('run-time') && !$o->get('interval') ) {
+         $o->set('interval', 1);
+      }
    }
 
    $o->usage_or_errors();
@@ -1730,9 +1735,6 @@ sub main {
    # Start working.
    # ########################################################################
    my $dbh   = get_cxn($source_dsn, 1);
-   my $start = time();
-   my $end   = $start + ($o->get('run-time') || 0); # When we should exit
-   my $now   = $start;
    my $dest_dbh;
    my $sth;
    my $ins_sth;
@@ -1759,11 +1761,13 @@ sub main {
       $dest_dbh = get_cxn($dest_dsn, 0);
       my $cols  = join(',', map { $q->quote($_) } @cols);
       my $parms = join(',', map { '?' } @cols);
-      $ins_sth  = $dest_dbh->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
+      my $sql   = "INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)";
+      MKDEBUG && _d($sql);
+      $ins_sth  = $dest_dbh->prepare($sql);
 
       if ( $o->get('create-dest-table') ) {
          my $db_tbl = $q->quote($dest_dsn->{D}, $dest_dsn->{t});
-         my $sql    = $o->read_para_after(__FILE__, qr/MAGIC_dest_table/);
+         $sql       = $o->read_para_after(__FILE__, qr/MAGIC_dest_table/);
          $sql       =~ s/deadlocks/IF NOT EXISTS $db_tbl/;
          MKDEBUG && _d($sql);
          $dest_dbh->do($sql);
@@ -1783,16 +1787,20 @@ sub main {
       $daemon->make_PID_file();
    }
 
-   $oktorun = 1;
+   my $last_fingerprint = '';
+
+   $oktorun  = 1;
+   my $start = time();
+   my $end   = $start + ($o->get('run-time') || 0); # When we should exit
+   my $now   = $start;
    while (                            # Quit if:
       ($start == $end || $now < $end) # time is exceeded
       && $oktorun                     # or instructed to quit
       )
    {
-
-      my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
-
-      my %txns = %{parse_deadlocks($text)};
+      my $text        = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
+      my %txns        = %{parse_deadlocks($text)};
+      my $fingerprint = fingerprint(\%txns);
 
       if ( $ins_sth ) {
          foreach my $txn (sort { $a->{thread} <=> $b->{thread} } values %txns) {
@@ -1801,18 +1809,26 @@ sub main {
          $dest_dbh->commit();
       }
 
-      if ( $o->got('print') || !$o->got('dest') ) {
-         my $sep = $o->get('tab') ? "\t" : ' ';
-         print join($sep, @cols), "\n";
-         foreach my $txn (sort { $a->{thread} <=> $b->{thread} } values %txns) {
-            # If 'collapse' is on, it's already been taken care of,
-            # but if it's unset, by default strip whitespace.
-            if ( !$o->got('collapse') ) {
-               $txn->{query} =~ s/\s+/ /g;
+      if ( $fingerprint ne $last_fingerprint ) {
+         MKDEBUG && _d('New deadlock');
+         if ( $o->got('print') || !$o->got('dest') ) {
+            my $sep = $o->get('tab') ? "\t" : ' ';
+            print join($sep, @cols), "\n";
+            foreach my $txn (sort {$a->{thread}<=>$b->{thread}} values %txns) {
+               # If 'collapse' is on, it's already been taken care of,
+               # but if it's unset, by default strip whitespace.
+               if ( !$o->got('collapse') ) {
+                  $txn->{query} =~ s/\s+/ /g;
+               }
+               print join($sep, map { $txn->{$_} } @cols), "\n";
             }
-            print join($sep, map { $txn->{$_} } @cols), "\n";
          }
       }
+      else {
+         MKDEBUG && _d('Same deadlock, not printing');
+      }
+      # Save deadlock's fingerprint for next interval.
+      $last_fingerprint = $fingerprint;
 
       # If specified, clear the deadlock... 
       if ( my $db_tbl = $o->get('clear-deadlocks') ) {
@@ -1856,7 +1872,7 @@ sub main {
       
       # If there's an --interval argument, run forever or till specified.
       # Otherwise just run once.
-      if ( $o->got('interval') ) {
+      if ( $o->get('interval') ) {
          sleep($o->get('interval'));
          $now = time();
       }
@@ -2001,6 +2017,17 @@ sub parse_deadlocks {
    }
 
    return \%txns;
+}
+
+sub fingerprint {
+   my ( $txns ) = @_;
+   my $fingerprint = '';
+   foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %$txns ) {
+      $fingerprint = $fingerprint
+                   . join('', map { $txn->{$_} } qw(server ts thread) );
+   }
+   MKDEBUG && _d('Deadlock fingerprint:', $fingerprint);
+   return $fingerprint;
 }
 
 # Catches signals so the program can exit gracefully.
@@ -2341,9 +2368,11 @@ Connect to host.
 
 =item --interval
 
-type: time; default: 0s
+type: time
 
-How often to check for deadlocks.
+How often to check for deadlocks.  If no L<"--run-time"> is specified,
+mk-deadlock-logger runs forever, checking for deadlocks at every interval.
+See also L<"--run-time">.
 
 =item --log
 
@@ -2381,11 +2410,19 @@ Port number to use for connection.
 Print results on standard output.  See L<"OUTPUT"> for more.  By default,
 enables L<"--[no]collapse"> unless you explicitly disable it.
 
+If L<"--interval"> or L<"--run-time"> is specified, only new deadlocks are
+printed at each interval.  A fingerprint for each deadlock is created using
+L<"--columns"> server, ts and thread (even if those columns were not specified
+by L<"--columns">) and if the current deadlock's fingerprint is different from
+the last deadlock's fingerprint, then it is printed.
+
 =item --run-time
 
 type: time
 
-How long to run before exiting.
+How long to run before exiting.  By default mk-deadlock-logger runs once,
+checks for deadlocks, and exits.  If L<"--run-time"> is specified but
+no L<"--interval"> is specified, a default 1 second interval will be used.
 
 =item --set-vars
 
