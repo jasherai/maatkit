@@ -19,13 +19,13 @@
 # ###########################################################################
 package PodParser;
 
+# This package wants to subclasses Pod::Parser but because some people
+# still run ancient systems on which even "core" modules are missing,
+# we have to roll our own pod parser.
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
-# This package subclasses Pod::Parser.
-use Pod::Parser;
-our @ISA = qw(Pod::Parser);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -66,16 +66,43 @@ sub new {
    };
    return bless $self, $class;
 }
-
+ 
 sub get_items {
    my ( $self, $section ) = @_;
    return $section ? $self->{items}->{$section} : $self->{items};
 }
 
+sub parse_from_file {
+   my ( $self, $file ) = @_;
+   return unless $file;
+
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';  # read paragraphs
+   my $para;
+
+   # Skip past file contents until we reach start of POD.
+   1 while defined($para = <$fh>) && $para !~ m/^=pod/;
+   die "$file does not contain =pod" unless $para;
+
+   while ( defined($para = <$fh>) && $para !~ m/^=cut/ ) {
+      if ( $para =~ m/^=(head|item|over|back)/ ) {
+         my ($cmd, $name) = $para =~ m/^=(\w+)(?:\s+(.+))?/;
+         $name ||= '';
+         MKDEBUG && _d('cmd:', $cmd, 'name:', $name);
+         $self->command($cmd, $name);
+      }
+      else {
+         $self->textblock($para);
+      }
+   }
+
+   close $fh;
+}
+
 # Commands like =head1, =over, =item and =back.  Paragraphs following
 # these command are passed to textblock().
 sub command {
-   my ( $self, $cmd, $name, $lineno ) = @_;
+   my ( $self, $cmd, $name ) = @_;
    
    $name =~ s/\s+\Z//m;  # Remove \n and blank line after name.
    
@@ -85,8 +112,7 @@ sub command {
       $self->{items}->{$name}  = {};
    }
    elsif ( $cmd eq 'over' ) {
-      MKDEBUG && _d('Start items in', $self->{current_section},
-         'at line', $lineno);
+      MKDEBUG && _d('Start items in', $self->{current_section});
       $self->{in_list} = 1;
    }
    elsif ( $cmd eq 'item' ) {
@@ -117,7 +143,7 @@ sub command {
 
 # Paragraphs after a command.
 sub textblock {
-   my ( $self, $para, $lineno ) = @_;
+   my ( $self, $para ) = @_;
 
    return unless $self->{current_section} && $self->{current_item};
 
@@ -146,7 +172,7 @@ sub textblock {
 # Indented blocks of text, e.g. SYNOPSIS examples.  We don't
 # do anything with these yet.
 sub verbatim {
-   my ( $self, $para, $lineno ) = @_;
+   my ( $self, $para ) = @_;
    return;
 }
 
