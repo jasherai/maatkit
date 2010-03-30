@@ -1,0 +1,31 @@
+#!/usr/bin/env perl
+
+BEGIN {
+   die "The MAATKIT_TRUNK environment variable is not set.  See http://code.google.com/p/maatkit/wiki/Testing"
+      unless $ENV{MAATKIT_TRUNK} && -d $ENV{MAATKIT_TRUNK};
+   unshift @INC, "$ENV{MAATKIT_TRUNK}/common";
+};
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Test::More tests => 1;
+
+use MaatkitTest;
+require "$trunk/mk-query-advisor/mk-query-advisor";
+
+my @args = qw(--print-all --report-format full);
+
+ok(
+   no_diff(sub { mk_query_advisor::main(@args,
+         qw(--ignore-rules COL.001),
+         '--query', 'SELECT * FROM tbl WHERE id=1') },
+      'mk-query-advisor/t/samples/tbl-001-01-ignored.txt',
+   ),
+   'Ignore a rule'
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
+exit;

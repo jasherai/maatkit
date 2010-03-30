@@ -2758,7 +2758,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryAdvisor package 5943
+# QueryAdvisor package 6029
 # ###########################################################################
 package QueryAdvisor;
 
@@ -2788,14 +2788,22 @@ sub load_rules {
    my ( $self, $advisor ) = @_;
    return unless $advisor;
    MKDEBUG && _d('Loading rules from', ref $advisor);
+
    my $i = scalar @{$self->{rules}};
-   foreach my $advisor_rule ( $advisor->get_rules() ) {
-      my $id = $advisor_rule->{id};
+
+   RULE:
+   foreach my $rule ( $advisor->get_rules() ) {
+      my $id = $rule->{id};
+      if ( $self->{ignore_rules}->{uc $id} ) {
+         MKDEBUG && _d("Ignoring rule", $id);
+         next RULE;
+      }
       die "Rule $id already exists and cannot be redefined"
          if defined $self->{rule_index_for}->{$id};
-      push @{$self->{rules}}, $advisor_rule;
+      push @{$self->{rules}}, $rule;
       $self->{rule_index_for}->{$id} = $i++;
    }
+
    return;
 }
 
@@ -2805,13 +2813,14 @@ sub load_rule_info {
    MKDEBUG && _d('Loading rule info from', ref $advisor);
    my $rules = $self->{rules};
    foreach my $rule ( @$rules ) {
-      my $id        = $rule->{id};
+      my $id = $rule->{id};
+      if ( $self->{ignore_rules}->{uc $id} ) {
+         die "Rule $id was loaded but should be ignored";
+      }
       my $rule_info = $advisor->get_rule_info($id);
       next unless $rule_info;
-
       die "Info for rule $id already exists and cannot be redefined"
          if $self->{rule_info}->{$id};
-
       $self->{rule_info}->{$id} = $rule_info;
    }
    return;
@@ -3656,7 +3665,9 @@ sub main {
    # #########################################################################
    my $p   = new PodParser();
    my $qar = new QueryAdvisorRules(PodParser => $p);
-   my $qa  = new QueryAdvisor();
+   my $qa  = new QueryAdvisor(
+      ignore_rules => $o->get('ignore-rules'),
+   );
 
    $qar->load_rule_info(
       file    => __FILE__,
@@ -4248,7 +4259,7 @@ type: hash
 Ignore these rule IDs.
 
 Specify a comma-separated list of rule IDs (e.g. LIT.001,RES.002,etc.)
-to ignore.
+to ignore. Currently, the rule IDs are case-sensitive and must be uppercase.
 
 =item --password
 
@@ -4305,7 +4316,6 @@ slowlog and genlog.
 type: int; default: 1
 
 How many samples of the query to show.
-
 
 =item --set-vars
 
