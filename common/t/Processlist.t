@@ -463,6 +463,41 @@ is_deeply(
    'idle_time'
 );
 
+# #########################################################################
+# Tests for "find" functionality.
+# #########################################################################
+
+%find_spec = (
+   replication_threads => 1,
+   busy_time    => undef,
+   ignore => {
+   },
+   match => {
+   },
+);
+is_deeply(
+   [
+      $pl->find(
+         $rsp->parse(load_file('common/t/samples/pl/recset008.txt')),
+         %find_spec,
+      )
+   ],
+   [
+      {
+         Id    => '7',
+         User  => 'msandbox',
+         Host  => 'localhost:53246',
+         db    => 'NULL',
+         Command => 'Binlog Dump',
+         Time  => '1174',
+         State => 'Has sent all binlog to slave; waiting for binlog to be updated',
+         Info  => 'NULL',
+      }
+   ],
+   'got rep thread'
+);
+
+
 # #############################################################################
 # Done.
 # #############################################################################
