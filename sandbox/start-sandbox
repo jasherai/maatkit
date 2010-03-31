@@ -107,29 +107,22 @@ if [ -z "$MAATKIT_SANDBOX_BASEDIR" ]; then
    fi
 fi
 
-mysqld=''
+
+# ###########################################################################
+# Get server version.
+# ###########################################################################
 if [ -x "$MAATKIT_SANDBOX_BASEDIR/bin/mysqld" ]; then
-   mysqld='bin/mysqld'
+   mysqld="$MAATKIT_SANDBOX_BASEDIR/bin/mysqld"
 elif [ -x "$MAATKIT_SANDBOX_BASEDIR/sbin/mysqld" ]; then
-   mysqld='sbin/mysqld'
+   mysqld="$MAATKIT_SANDBOX_BASEDIR/sbin/mysqld"
 elif [ -x "$MAATKIT_SANDBOX_BASEDIR/libexec/mysqld" ]; then
-   mysqld='libexec/mysqld'
+   mysqld="$MAATKIT_SANDBOX_BASEDIR/libexec/mysqld"
 else
-   err "$MAATKIT_SANDBOX_BASEDIR/bin/mysqld or $MAATKIT_SANDBOX_BASEDIR/sbin/mysqld does not exist or is not executable."
-   exit 1
+   err "Cannot find executable mysqld in $MAATKIT_SANDBOX_BASEDIR/bin, $MAATKIT_SANDBOX_BASEDIR/sbin or $MAATKIT_SANDBOX_BASEDIR/libexec."
 fi
-
-# ###########################################################################
-# Determine the MySQL version.
-# ###########################################################################
-
-# bin/mysqld -V should print something like:
-#  /usr/bin/mysqld  Ver 5.1.34 for linux-gnu on x86_64 (MySQL Community Server)
-version=`$MAATKIT_SANDBOX_BASEDIR/$mysqld -V | awk '{print $3}' | cut -d. -f 1,2`;
-if [ "$version" != "5.0" ] && [ "$version" != "5.1" ]; then
-   err "MySQL version not supported: $version" \
-       "Supported versions are 5.0 and 5.1."
-   exit 1
+version=`$mysqld -V | awk '{print $3}' | cut -d. -f 1,2`;
+if [ ! -f "$MAATKIT_TRUNK/sandbox/server-$version.tar.gz" ]; then
+   err "$MAATKIT_TRUNK/sandbox/server-$version.tar.gz does not exist."
 fi
 
 # ###########################################################################

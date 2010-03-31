@@ -60,7 +60,7 @@ set_mysql_basedir() {
    # Auto-detect basedir if its not explicitly set.
    if [ -z "$MAATKIT_SANDBOX_BASEDIR" ]; then
       BASEDIR_AUTO_DETECTED=1
-      local mysqld=`which mysqld`
+      mysqld=`which mysqld`
       if [ -n "$mysqld" ]; then
          _d "Found mysqld: $mysqld"
          MAATKIT_SANDBOX_BASEDIR=`$mysqld --verbose --help 2>/dev/null | grep 'basedir ' | awk '{print $2}'`
@@ -70,6 +70,17 @@ set_mysql_basedir() {
          fi
       else
          _d "Could not find mysqld"
+         return 0
+      fi
+   else
+      if [ -x "$MAATKIT_SANDBOX_BASEDIR/bin/mysqld" ]; then
+         mysqld="$MAATKIT_SANDBOX_BASEDIR/bin/mysqld"
+      elif [ -x "$MAATKIT_SANDBOX_BASEDIR/sbin/mysqld" ]; then
+         mysqld="$MAATKIT_SANDBOX_BASEDIR/sbin/mysqld"
+      elif [ -x "$MAATKIT_SANDBOX_BASEDIR/libexec/mysqld" ]; then
+         mysqld="$MAATKIT_SANDBOX_BASEDIR/libexec/mysqld"
+      else
+         err "Cannot find executable mysqld in $MAATKIT_SANDBOX_BASEDIR/bin, $MAATKIT_SANDBOX_BASEDIR/sbin or $MAATKIT_SANDBOX_BASEDIR/libexec."
          return 0
       fi
    fi
@@ -152,13 +163,16 @@ sandbox_status() {
    $MAATKIT_SANDBOX_BASEDIR/bin/mysqladmin --defaults-file="/tmp/$port/my.sandbox.cnf" ping >/dev/null 2>&1
    if [ $? -eq 0 ]; then
       echo "yes"
-      echo -n "  sakila db is loaded - "
-      /tmp/$port/use -e 'show databases like "sakila"' 2>/dev/null | grep sakila >/dev/null 2>&1
-      if [ $? -eq 0 ]; then
-         echo "yes"
-      else
-         echo "NO"
-         status=1
+
+      if [ "$version" != "4.1" ]; then
+         echo -n "  sakila db is loaded - "
+         /tmp/$port/use -e 'show databases like "sakila"' 2>/dev/null | grep sakila >/dev/null 2>&1
+         if [ $? -eq 0 ]; then
+            echo "yes"
+         else
+            echo "NO"
+            status=1
+         fi
       fi
 
       if [ "$type" = "slave" ]; then
@@ -279,6 +293,16 @@ else
    fi
 fi
 
+# Determine the MySQL version.
+# bin/mysqld -V should print something like:
+#  /usr/bin/mysqld  Ver 5.1.34 for linux-gnu on x86_64 (MySQL Community Server)
+version=`$mysqld -V | awk '{print $3}' | cut -d. -f 1,2`;
+if [ "$version" != "4.1" ] && [ "$version" != "5.0" ] && [ "$version" != "5.1" ]; then
+   err "MySQL version not supported: $version" \
+       "Supported versions are 4.1, 5.0 and 5.1."
+   exit 1
+fi
+
 case $opt in
    start)
       cd $MAATKIT_TRUNK/sandbox
@@ -287,10 +311,12 @@ case $opt in
       if [ $exit_status -eq 0 ]; then
          ./start-sandbox slave 12346 12345
          exit_status=$?
-         if [ $? -eq 0 ]; then
-            echo "Loading sakila database..."
-            ./load-sakila-db 12345
-            exit_status=$?
+         if [ $version != "4.1" ]; then
+            if [ $? -eq 0 ]; then
+               echo "Loading sakila database..."
+               ./load-sakila-db 12345
+               exit_status=$?
+            fi
          fi
       fi
       if [ $exit_status -eq 0 ]; then
