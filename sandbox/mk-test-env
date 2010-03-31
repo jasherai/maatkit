@@ -164,7 +164,7 @@ sandbox_status() {
    if [ $? -eq 0 ]; then
       echo "yes"
 
-      if [ "$version" != "4.1" ]; then
+      if [ "$version" != "4.0" ] && [ "$version" != "4.1" ]; then
          echo -n "  sakila db is loaded - "
          /tmp/$port/use -e 'show databases like "sakila"' 2>/dev/null | grep sakila >/dev/null 2>&1
          if [ $? -eq 0 ]; then
@@ -297,9 +297,8 @@ fi
 # bin/mysqld -V should print something like:
 #  /usr/bin/mysqld  Ver 5.1.34 for linux-gnu on x86_64 (MySQL Community Server)
 version=`$mysqld -V | awk '{print $3}' | cut -d. -f 1,2`;
-if [ "$version" != "4.1" ] && [ "$version" != "5.0" ] && [ "$version" != "5.1" ]; then
-   err "MySQL version not supported: $version" \
-       "Supported versions are 4.1, 5.0 and 5.1."
+if [ ! -f "$MAATKIT_TRUNK/sandbox/server-$version.tar.gz" ]; then
+   err "Maatkit sandbox server-$version.tar.gz does not exists."
    exit 1
 fi
 
@@ -311,7 +310,7 @@ case $opt in
       if [ $exit_status -eq 0 ]; then
          ./start-sandbox slave 12346 12345
          exit_status=$?
-         if [ $version != "4.1" ]; then
+         if [ "$version" != "4.0" ] && [ "$version" != "4.1" ]; then
             if [ $? -eq 0 ]; then
                echo "Loading sakila database..."
                ./load-sakila-db 12345
