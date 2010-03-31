@@ -1,4 +1,4 @@
-# This program is copyright 2007-2009 Baron Schwartz.
+# This program is copyright 2007-2010 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -31,7 +31,9 @@ $Data::Dumper::Indent    = 0;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   bless {}, shift;
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 # Descends to slaves by examining SHOW SLAVE HOSTS.  Arguments is a hashref:
@@ -206,15 +208,52 @@ sub _find_slaves_by_hosts {
 sub get_connected_slaves {
    my ( $self, $dbh ) = @_;
 
-   # Check for the PROCESS privilege.
-   my $proc =
-      grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
-      @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+   # Check for the PROCESS privilege.  SHOW GRANTS operates differently
+   # before 4.1.2: it requires "FROM ..." and it's not until 4.0.6 that
+   # CURRENT_USER() is available.  So for versions <4.1.2 we get current
+   # user with USER(), quote it, and then add it to statement.
+   my $show = "SHOW GRANTS FOR ";
+   my $user = 'CURRENT_USER()';
+   my $vp   = $self->{VersionParser};
+   MKDEBUG && _d('here');
+   if ( $vp && !$vp->version_ge($dbh, '4.1.2') ) {
+      $user = $dbh->selectrow_arrayref('SELECT USER()')->[0];
+      $user =~ s/([^@]+)@(.+)/'$1'\@'$2'/;
+   }
+   my $sql = $show . $user;
+   MKDEBUG && _d($dbh, $sql);
+
+   my $proc;
+   eval {
+      $proc = grep {
+         m/ALL PRIVILEGES.*?\*\.\*|PROCESS/
+      } @{$dbh->selectcol_arrayref($sql)};
+   };
+   if ( $EVAL_ERROR ) {
+
+      if ( $EVAL_ERROR =~ m/no such grant defined for user/ ) {
+         # Try again without a host.
+         MKDEBUG && _d('Retrying SHOW GRANTS without host; error:',
+            $EVAL_ERROR);
+         ($user) = split('@', $user);
+         $sql    = $show . $user;
+         MKDEBUG && _d($sql);
+         eval {
+            $proc = grep {
+               m/ALL PRIVILEGES.*?\*\.\*|PROCESS/
+            } @{$dbh->selectcol_arrayref($sql)};
+         };
+      }
+
+      # The 2nd try above might have cleared $EVAL_ERROR.
+      # If not, die now.
+      die "Failed to $sql: $EVAL_ERROR" if $EVAL_ERROR;
+   }
    if ( !$proc ) {
       die "You do not have the PROCESS privilege";
    }
 
-   my $sql = 'SHOW PROCESSLIST';
+   $sql = 'SHOW PROCESSLIST';
    MKDEBUG && _d($dbh, $sql);
    # It's probably a slave if it's doing a binlog dump.
    grep { $_->{command} =~ m/Binlog Dump/i }
