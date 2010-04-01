@@ -16,7 +16,7 @@ clean:
 
 .PHONY: upload
 upload:
-	./upload
+	echo "Run the upload script manually"
 
 test:
-	./test.sh
+	echo "See http://code.google.com/p/maatkit/wiki/Testing"
