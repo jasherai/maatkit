@@ -1,18 +1,36 @@
 #!/bin/sh
 
 set -e
-set -u
+# set -u
+
+gc_username=$1
+if [ -z "$gc_username" ]; then
+   echo "Usage: $0 google-code-username"
+   exit 1
+fi
 
 VER=`grep Revision packlist | head -n 1 | awk '{print $2}'`
 
+if [ -z "$VER" ]; then
+   echo "Failed to parse release version from packlist"
+   exit 1
+fi
+
 ./googlecode_upload.py -p maatkit -s "tarball release $VER" \
-   -u baron.schwartz -l Featured release/maatkit-$VER.tar.gz;
+   -u $gc_username -l Featured release/maatkit-$VER.tar.gz;
 
 ./googlecode_upload.py -p maatkit -s "zip release $VER" \
-   -u baron.schwartz -l Featured release/maatkit-$VER.zip;
+   -u $gc_username -l Featured release/maatkit-$VER.zip;
 
 ./googlecode_upload.py -p maatkit -s ".deb release $VER" \
-   -u baron.schwartz -l Featured release-debian/maatkit_$VER-1_all.deb;
+   -u $gc_username -l Featured release-debian/maatkit_$VER-1_all.deb;
 
 ./googlecode_upload.py -p maatkit -s ".rpm release $VER" \
-   -u baron.schwartz -l Featured release-rpm/maatkit-$VER-1.noarch.rpm;
+   -u $gc_username -l Featured release-rpm/maatkit-$VER-1.noarch.rpm;
+
+echo
+echo "Done uploading release $VER packages to Google Code."
+echo "Remember to remove the \"Featured\" label from the previous release."
+echo
+
+exit 0
