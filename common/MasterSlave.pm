@@ -215,7 +215,6 @@ sub get_connected_slaves {
    my $show = "SHOW GRANTS FOR ";
    my $user = 'CURRENT_USER()';
    my $vp   = $self->{VersionParser};
-   MKDEBUG && _d('here');
    if ( $vp && !$vp->version_ge($dbh, '4.1.2') ) {
       $user = $dbh->selectrow_arrayref('SELECT USER()')->[0];
       $user =~ s/([^@]+)@(.+)/'$1'\@'$2'/;
