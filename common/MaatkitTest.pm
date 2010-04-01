@@ -436,21 +436,25 @@ sub no_diff {
       `cp $tmp_file $tmp_file_orig`;
       `$trf $tmp_file_orig > $tmp_file`;
    }
-   if ( $ENV{UPDATE_SAMPLES} || $args{update_sample} ) {
-      `cat $tmp_file > $expected_output`;
-      print STDERR "Updated $expected_output\n";
-   }
 
    # diff the outputs.
    my $retval = system("diff $expected_output $tmp_file");
+
+   # diff returns 0 if there were no differences,
+   # so !0 = 1 = no diff in our testing parlance.
+   $retval = $retval >> 8; 
+
+   if ( $retval ) {
+      if ( $ENV{UPDATE_SAMPLES} || $args{update_sample} ) {
+         `cat $tmp_file > $expected_output`;
+         print STDERR "Updated $expected_output\n";
+      }
+   }
 
    # Remove our tmp files.
    `rm -f $tmp_file $tmp_file_orig`
       unless $ENV{KEEP_OUTPUT} || $args{keep_output};
 
-   # diff returns 0 if there were no differences,
-   # so !0 = 1 = no diff in our testing parlance.
-   $retval = $retval >> 8; 
    return !$retval;
 }
 
