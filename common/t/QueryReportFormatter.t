@@ -234,7 +234,7 @@ $events = [
       db                 => 'mysql',
       ip                 => '127.0.0.1',
       arg                => 'administrator command: Connect',
-      fingerprint        => 'administrator command: connect',
+      fingerprint        => 'administrator command: Connect',
       Rows_affected      => 0,
       user               => 'msandbox',
       Warning_count      => 0,
@@ -272,7 +272,7 @@ $result = $qrf->global_report(
 is($result, $expected, 'Global report with all zeroes');
 
 $expected = <<EOF;
-# Query 1: 0 QPS, 0x concurrency, ID 0x261703E684370D2C at byte 0 ________
+# Query 1: 0 QPS, 0x concurrency, ID 0x5D51E5F01B88B79E at byte 0 ________
 # This item is included in the report because it matches --limit.
 #              pct   total     min     max     avg     95%  stddev  median
 # Count        100       1
@@ -285,7 +285,7 @@ EOF
 $result = $qrf->event_report(
    $ea,
    select => [ qw(Query_time Lock_time Rows_sent Rows_examined ts db user users) ],
-   where   => 'administrator command: connect',
+   where   => 'administrator command: Connect',
    rank    => 1,
    worst   => 'Query_time',
    reason  => 'top',
@@ -309,7 +309,7 @@ EOF
 $result = $qrf->chart_distro(
    $ea,
    attribute => 'Query_time',
-   where     => 'administrator command: connect',
+   where     => 'administrator command: Connect',
 );
 
 is($result, $expected, 'Chart distro with all zeroes');
