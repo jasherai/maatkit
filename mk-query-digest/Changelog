@@ -3,6 +3,7 @@ Changelog for mk-query-digest:
    * Admin commands were not always distilled (issue 676).
    * Admin commands were not fingerprinted correctly (issue 676).
    * General log parsing failed sometimes (issue 926).
+   * Some general log timestamps were not parsed (issue 972).
    * IP addresses were truncated (issue 744).
    * Some options could fail to parse (issue 940).
    * InnoDB_*_wait attributes were not formatted as times (issue 948).

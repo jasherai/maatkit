@@ -7951,7 +7951,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# GeneralLogParser package 5902
+# GeneralLogParser package 6054
 # ###########################################################################
 package GeneralLogParser;
 
@@ -7977,13 +7977,13 @@ sub new {
 
 my $genlog_line_1= qr{
    \A
-   (?:(\d{6}\s{1,2}\d{1,2}:\d\d:\d\d))? # Timestamp
+   (?:(\d{6}\s+\d{1,2}:\d\d:\d\d))? # Timestamp
    \s+
-   (?:\s*(\d+))                         # Thread ID
+   (?:\s*(\d+))                     # Thread ID
    \s
-   (\w+)                                # Command
+   (\w+)                            # Command
    \s+
-   (.*)                                 # Argument
+   (.*)                             # Argument
    \Z
 }xs;
 
@@ -9199,13 +9199,26 @@ sub main {
    }
 
    # Carry attribs forward for --inherit-attributes.
-   my $prev_vals = {};
-   my $inherit_attrib_sub = make_inherit_attribs(
-      $o->get('inherit-attributes'),
-      $prev_vals
-   );
-   push @callbacks, $inherit_attrib_sub if $inherit_attrib_sub;
-   $callback_names{$callbacks[-1]} = 'inherit attributes';
+   my $inherited_attribs = $o->get('inherit-attributes');
+   if ( @$inherited_attribs ) {
+      my $last_val = {};
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         MKDEBUG && _d("callback: inherit attribs");
+         foreach my $attrib ( @$inherited_attribs ) {
+            if ( defined $event->{$attrib} ) {
+               # Event has val for this attrib; save it as the last val.
+               $last_val->{$attrib} = $event->{$attrib};
+            }
+            else {
+               # Inherit last val for this attrib.
+               $event->{$attrib} = $last_val->{$attrib};
+            }
+         }
+         return $event;
+      };
+      $callback_names{$callbacks[-1]} = 'inherit attributes';
+   }
 
    if ( grep { $_ eq 'tables' } @groupby ) {
       push @callbacks, sub {
@@ -10258,22 +10271,6 @@ sub make_alt_attrib {
       } @alts),
       'return $event; }';
    MKDEBUG && _d('attrib alias sub for', $attrib, ':', @lines);
-   my $sub = eval join("\n", @lines);
-   die if $EVAL_ERROR;
-   return $sub;
-}
-
-sub make_inherit_attribs {
-   my ( $attribs, $prev ) = @_;
-   my @lines;
-   push @lines,
-      'sub { my ( $event ) = @_; ',
-      'MKDEBUG && _d("callback: inherit attribs");',
-      (map {
-         "if ( defined \$event->{'$_'} ) { \$prev->{'$_'} = \$event->{'$_'} } else { \$event->{'$_'} = \$prev->{'$_'}; }"
-       } @$attribs),
-      'return $event; }';
-   MKDEBUG && _d('inherit attribs sub:', @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
    return $sub;

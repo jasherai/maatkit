@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 3;
+use Test::More tests => 4;
 
 use MaatkitTest;
 
@@ -48,6 +48,14 @@ ok(
       "mk-query-digest/t/samples/genlog002.txt",
    ),
    'Analysis for genlog002',
+);
+
+ok(
+   no_diff(
+      sub { mk_query_digest::main(@args, $sample.'genlog003.txt') },
+      "mk-query-digest/t/samples/genlog003.txt"
+   ),
+   'Analysis for genlog003',
 );
 
 # #############################################################################
