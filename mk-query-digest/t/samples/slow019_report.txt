@@ -5,8 +5,8 @@
 # Count         66       2
 # Exec time     95    19ms     2us    19ms     9ms    19ms    13ms     9ms
 # Lock time    100     9ms       0     9ms     5ms     9ms     7ms     5ms
-# Rows sent    100      14       5       9       7       9    2.83       7
-# Rows exam     62       5       2       3    2.50       3    0.71    2.50
+# Rows sent      0       0       0       0       0       0       0       0
+# Rows exam      0       0       0       0       0       0       0       0
 # Users                  1    meow
 # Hosts                  1
 # Databases              2 db1 (1), db2 (1)
@@ -29,7 +29,7 @@ administrator command: Quit\G
 # Exec time      4   899us   899us   899us   899us   899us       0   899us
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent      0       0       0       0       0       0       0       0
-# Rows exam     37       3       3       3       3       3       0       3
+# Rows exam    100       3       3       3       3       3       0       3
 # Users                  1    meow
 # Hosts                  1
 # Databases              1      db
