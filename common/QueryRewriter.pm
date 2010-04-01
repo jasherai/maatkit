@@ -153,7 +153,7 @@ sub fingerprint {
    $query =~ m#/\*\w+\.\w+:[0-9]/[0-9]\*/#     # mk-table-checksum, etc query
       && return 'maatkit';
    # Administrator commands appear to be a comment, so return them as-is
-   $query =~ m/\A# administrator command: /
+   $query =~ m/\Aadministrator command: /
       && return $query;
    # Special-case for stored procedures.
    $query =~ m/\A\s*(call\s+\S+)\(/i
@@ -209,8 +209,8 @@ sub distill_verbs {
    $query =~ m/\A\s*UNLOCK TABLES/i  && return "UNLOCK";
    $query =~ m/\A\s*xa\s+(\S+)/i     && return "XA_$1";
 
-   if ( $query =~ m/\A# administrator command:/ ) {
-      $query =~ s/# administrator command:/ADMIN/go;
+   if ( $query =~ m/\Aadministrator command:/ ) {
+      $query =~ s/administrator command:/ADMIN/;
       $query = uc $query;
       return $query;
    }

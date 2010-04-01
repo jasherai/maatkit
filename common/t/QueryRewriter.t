@@ -69,8 +69,8 @@ is(
 );
 
 is(
-   $qr->fingerprint('# administrator command: Init DB'),
-   '# administrator command: Init DB',
+   $qr->fingerprint('administrator command: Init DB'),
+   'administrator command: Init DB',
    'Fingerprints admin commands as themselves',
 );
 
@@ -1112,7 +1112,7 @@ is(
 );
 
 is( 
-	$qr->distill('# administrator command: Statistics'),
+	$qr->distill('administrator command: Statistics'),
 	'ADMIN STATISTICS',
 	"distills ADMIN STATISTICS"
 );
