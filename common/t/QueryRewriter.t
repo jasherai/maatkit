@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 244;
+use Test::More tests => 246;
 
 use QueryRewriter;
 use QueryParser;
@@ -1137,6 +1137,18 @@ is(
 	$qr->distill("UPDATE (`jedi_forces`) set side = 'dark' and name = 'Lord Vader' where name = 'Anakin Skywalker'"),
 	'UPDATE jedi_forces',
 	'distills UPDATE (`tbl`)'
+);
+
+is(
+	$qr->distill("select c from (tbl1 JOIN tbl2 on (id)) where x=y"),
+	'SELECT tbl?',
+	'distills SELECT (t1 JOIN t2)'
+);
+
+is(
+	$qr->distill("insert into (t1) value('a')"),
+	'INSERT t?',
+	'distills INSERT (tbl)'
 );
 
 # #############################################################################
