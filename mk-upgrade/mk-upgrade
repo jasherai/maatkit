@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 5966
+# DSNParser package 6057
 # ###########################################################################
 package DSNParser;
 
@@ -149,11 +149,13 @@ sub parse_options {
 }
 
 sub as_string {
-   my ( $self, $dsn ) = @_;
+   my ( $self, $dsn, $props ) = @_;
    return $dsn unless ref $dsn;
+   my %allowed = $props ? map { $_=>1 } @$props : ();
    return join(',',
-      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_})  }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      grep { !$props || $allowed{$_}                   }
       sort keys %$dsn );
 }
 
@@ -2310,7 +2312,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 5357
+# SlowLogParser package 6043
 # ###########################################################################
 package SlowLogParser;
 
@@ -2411,6 +2413,7 @@ sub parse_event {
 
             elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
                MKDEBUG && _d("Got admin command");
+               $line =~ s/^#\s+//;  # string leading "# ".
                push @properties, 'cmd', 'Admin', 'arg', $line;
                push @properties, 'bytes', length($properties[-1]);
                ++$found_arg;
@@ -2440,8 +2443,9 @@ sub parse_event {
                local $INPUT_RECORD_SEPARATOR = ";\n";
                if ( defined(my $l = $next_event->()) ) {
                   chomp $l;
+                  $l =~ s/^\s+//;
                   MKDEBUG && _d("Found admin statement", $l);
-                  push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+                  push @properties, 'cmd', 'Admin', 'arg', $l;
                   push @properties, 'bytes', length($properties[-1]);
                   $found_arg++;
                }
@@ -5106,7 +5110,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 5712
+# TableChecksum package 6018
 # ###########################################################################
 package TableChecksum;
 
@@ -5358,6 +5362,10 @@ sub make_row_checksum {
                      my $col = $_;
                      if ( $col =~ m/\+ 0/ ) {
                         my ($real_col) = /^(\S+)/;
+                        $col .= " AS $real_col";
+                     }
+                     elsif ( $col =~ m/TRIM/ ) {
+                        my ($real_col) = m/TRIM\(([^\)]+)\)/;
                         $col .= " AS $real_col";
                      }
                      $col;
