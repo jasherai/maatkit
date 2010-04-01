@@ -1614,7 +1614,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 5706
+# QueryRewriter package 6042
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1715,7 +1715,7 @@ sub fingerprint {
       && return 'mysqldump';
    $query =~ m#/\*\w+\.\w+:[0-9]/[0-9]\*/#     # mk-table-checksum, etc query
       && return 'maatkit';
-   $query =~ m/\A# administrator command: /
+   $query =~ m/\Aadministrator command: /
       && return $query;
    $query =~ m/\A\s*(call\s+\S+)\(/i
       && return lc($1); # Warning! $1 used, be careful.
@@ -1758,8 +1758,8 @@ sub distill_verbs {
    $query =~ m/\A\s*UNLOCK TABLES/i  && return "UNLOCK";
    $query =~ m/\A\s*xa\s+(\S+)/i     && return "XA_$1";
 
-   if ( $query =~ m/\A# administrator command:/ ) {
-      $query =~ s/# administrator command:/ADMIN/go;
+   if ( $query =~ m/\Aadministrator command:/ ) {
+      $query =~ s/administrator command:/ADMIN/;
       $query = uc $query;
       return $query;
    }
@@ -4262,7 +4262,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 5357
+# SlowLogParser package 6043
 # ###########################################################################
 package SlowLogParser;
 
@@ -4363,6 +4363,7 @@ sub parse_event {
 
             elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
                MKDEBUG && _d("Got admin command");
+               $line =~ s/^#\s+//;  # string leading "# ".
                push @properties, 'cmd', 'Admin', 'arg', $line;
                push @properties, 'bytes', length($properties[-1]);
                ++$found_arg;
@@ -4392,8 +4393,9 @@ sub parse_event {
                local $INPUT_RECORD_SEPARATOR = ";\n";
                if ( defined(my $l = $next_event->()) ) {
                   chomp $l;
+                  $l =~ s/^\s+//;
                   MKDEBUG && _d("Found admin statement", $l);
-                  push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+                  push @properties, 'cmd', 'Admin', 'arg', $l;
                   push @properties, 'bytes', length($properties[-1]);
                   $found_arg++;
                }
@@ -9277,10 +9279,10 @@ sub main {
       push @callbacks, sub {
          my ( $event ) = @_;
          MKDEBUG && _d('callback: zero admin');
-         if ( $event->{arg} && $event->{arg} =~ m/^# administrator/ ) {
-            $event->{Rows_sent}     = 0;
-            $event->{Rows_read}     = 0;
-            $event->{Rows_examined} = 0;
+         if ( $event->{arg} && $event->{arg} =~ m/^administrator/ ) {
+            $event->{Rows_sent}     = 0 if exists $event->{Rows_sent};
+            $event->{Rows_examined} = 0 if exists $event->{Rows_examined};
+            $event->{Rows_read}     = 0 if exists $event->{Rows_read};
          }
          return $event;
       };
