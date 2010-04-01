@@ -173,6 +173,7 @@ sub parse_event {
             # # administrator command: Quit;
             elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
                MKDEBUG && _d("Got admin command");
+               $line =~ s/^#\s+//;  # string leading "# ".
                push @properties, 'cmd', 'Admin', 'arg', $line;
                push @properties, 'bytes', length($properties[-1]);
                ++$found_arg;
@@ -223,8 +224,9 @@ sub parse_event {
                local $INPUT_RECORD_SEPARATOR = ";\n";
                if ( defined(my $l = $next_event->()) ) {
                   chomp $l;
+                  $l =~ s/^\s+//;
                   MKDEBUG && _d("Found admin statement", $l);
-                  push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+                  push @properties, 'cmd', 'Admin', 'arg', $l;
                   push @properties, 'bytes', length($properties[-1]);
                   $found_arg++;
                }
