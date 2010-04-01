@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 25;
 
 use DSNParser;
 use OptionParser;
@@ -133,6 +133,12 @@ is (
    $dp->as_string({ bez => 'bat', h => 'foo' }),
    'h=foo',
    'DSN stringifies without extra crap',
+);
+
+is (
+   $dp->as_string({ h=>'localhost', P=>'3306',p=>'omg'}, [qw(h P)]),
+   'P=3306,h=localhost',
+   'DSN stringifies only requested parts'
 );
 
 # The test that was here is no longer need due to issue 55.

@@ -162,12 +162,17 @@ sub parse_options {
    return $self->parse($dsn_string);
 }
 
+# $props is an optional arrayref of allowed DSN parts to
+# include in the string.  So if you only want to stringify
+# h and P, then pass [qw(h P)].
 sub as_string {
-   my ( $self, $dsn ) = @_;
+   my ( $self, $dsn, $props ) = @_;
    return $dsn unless ref $dsn;
+   my %allowed = $props ? map { $_=>1 } @$props : ();
    return join(',',
-      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_})  }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      grep { !$props || $allowed{$_}                   }
       sort keys %$dsn );
 }
 
