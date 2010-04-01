@@ -1740,7 +1740,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5966
+# DSNParser package 6057
 # ###########################################################################
 package DSNParser;
 
@@ -1864,11 +1864,13 @@ sub parse_options {
 }
 
 sub as_string {
-   my ( $self, $dsn ) = @_;
+   my ( $self, $dsn, $props ) = @_;
    return $dsn unless ref $dsn;
+   my %allowed = $props ? map { $_=>1 } @$props : ();
    return join(',',
-      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_})  }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      grep { !$props || $allowed{$_}                   }
       sort keys %$dsn );
 }
 
@@ -4921,7 +4923,7 @@ sub print_inconsistent_tbls {
    return if $o->get('quiet');
 
    my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
-   print "Differences on " . $dp->as_string($dsn) . "\n";
+   print "Differences on " . $dp->as_string($dsn, [qw(h P F)]) . "\n";
    my $max_db   = max(5, map { length($_->{db})  } @$tbls);
    my $max_tbl  = max(5, map { length($_->{tbl}) } @$tbls);
    my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
