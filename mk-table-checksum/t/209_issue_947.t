@@ -38,11 +38,9 @@ $output = output(
    undef,
    stderr   => 1,
 );
-is(
+like(
    $output,
-"DATABASE TABLE CHUNK HOST  ENGINE      COUNT         CHECKSUM TIME WAIT STAT  LAG
-mysql    user      0 dante MyISAM       NULL        878853993    0    0 NULL NULL
-",
+   qr/mysql\s+user\s+0/,
    "Doesn't crash if no h DSN part (issue 947)"
 );
 
