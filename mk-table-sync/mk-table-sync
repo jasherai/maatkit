@@ -5029,7 +5029,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 5362
+# MasterSlave package 6037
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -5045,7 +5045,9 @@ $Data::Dumper::Indent    = 0;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   bless {}, shift;
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 sub recurse_to_slaves {
@@ -5179,14 +5181,45 @@ sub _find_slaves_by_hosts {
 sub get_connected_slaves {
    my ( $self, $dbh ) = @_;
 
-   my $proc =
-      grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
-      @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+   my $show = "SHOW GRANTS FOR ";
+   my $user = 'CURRENT_USER()';
+   my $vp   = $self->{VersionParser};
+   MKDEBUG && _d('here');
+   if ( $vp && !$vp->version_ge($dbh, '4.1.2') ) {
+      $user = $dbh->selectrow_arrayref('SELECT USER()')->[0];
+      $user =~ s/([^@]+)@(.+)/'$1'\@'$2'/;
+   }
+   my $sql = $show . $user;
+   MKDEBUG && _d($dbh, $sql);
+
+   my $proc;
+   eval {
+      $proc = grep {
+         m/ALL PRIVILEGES.*?\*\.\*|PROCESS/
+      } @{$dbh->selectcol_arrayref($sql)};
+   };
+   if ( $EVAL_ERROR ) {
+
+      if ( $EVAL_ERROR =~ m/no such grant defined for user/ ) {
+         MKDEBUG && _d('Retrying SHOW GRANTS without host; error:',
+            $EVAL_ERROR);
+         ($user) = split('@', $user);
+         $sql    = $show . $user;
+         MKDEBUG && _d($sql);
+         eval {
+            $proc = grep {
+               m/ALL PRIVILEGES.*?\*\.\*|PROCESS/
+            } @{$dbh->selectcol_arrayref($sql)};
+         };
+      }
+
+      die "Failed to $sql: $EVAL_ERROR" if $EVAL_ERROR;
+   }
    if ( !$proc ) {
       die "You do not have the PROCESS privilege";
    }
 
-   my $sql = 'SHOW PROCESSLIST';
+   $sql = 'SHOW PROCESSLIST';
    MKDEBUG && _d($dbh, $sql);
    grep { $_->{command} =~ m/Binlog Dump/i }
    map  { # Lowercase the column names
@@ -6482,7 +6515,7 @@ sub main {
    my $q         = new Quoter();
    my $tp        = new TableParser( Quoter => $q );
    my $vp        = new VersionParser();
-   my $ms        = new MasterSlave();
+   my $ms        = new MasterSlave(VersionParser => $vp);
    my $du        = new MySQLDump( cache => 0 );
    my $chunker   = new TableChunker( Quoter => $q, MySQLDump => $du );
    my $nibbler   = new TableNibbler( Quoter => $q, TableParser => $tp );

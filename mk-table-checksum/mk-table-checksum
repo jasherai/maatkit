@@ -415,7 +415,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 5712
+# TableChecksum package 6018
 # ###########################################################################
 package TableChecksum;
 
@@ -667,6 +667,10 @@ sub make_row_checksum {
                      my $col = $_;
                      if ( $col =~ m/\+ 0/ ) {
                         my ($real_col) = /^(\S+)/;
+                        $col .= " AS $real_col";
+                     }
+                     elsif ( $col =~ m/TRIM/ ) {
+                        my ($real_col) = m/TRIM\(([^\)]+)\)/;
                         $col .= " AS $real_col";
                      }
                      $col;
@@ -2920,7 +2924,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 5362
+# MasterSlave package 6037
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2936,7 +2940,9 @@ $Data::Dumper::Indent    = 0;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
-   bless {}, shift;
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 sub recurse_to_slaves {
@@ -3070,14 +3076,45 @@ sub _find_slaves_by_hosts {
 sub get_connected_slaves {
    my ( $self, $dbh ) = @_;
 
-   my $proc =
-      grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
-      @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+   my $show = "SHOW GRANTS FOR ";
+   my $user = 'CURRENT_USER()';
+   my $vp   = $self->{VersionParser};
+   MKDEBUG && _d('here');
+   if ( $vp && !$vp->version_ge($dbh, '4.1.2') ) {
+      $user = $dbh->selectrow_arrayref('SELECT USER()')->[0];
+      $user =~ s/([^@]+)@(.+)/'$1'\@'$2'/;
+   }
+   my $sql = $show . $user;
+   MKDEBUG && _d($dbh, $sql);
+
+   my $proc;
+   eval {
+      $proc = grep {
+         m/ALL PRIVILEGES.*?\*\.\*|PROCESS/
+      } @{$dbh->selectcol_arrayref($sql)};
+   };
+   if ( $EVAL_ERROR ) {
+
+      if ( $EVAL_ERROR =~ m/no such grant defined for user/ ) {
+         MKDEBUG && _d('Retrying SHOW GRANTS without host; error:',
+            $EVAL_ERROR);
+         ($user) = split('@', $user);
+         $sql    = $show . $user;
+         MKDEBUG && _d($sql);
+         eval {
+            $proc = grep {
+               m/ALL PRIVILEGES.*?\*\.\*|PROCESS/
+            } @{$dbh->selectcol_arrayref($sql)};
+         };
+      }
+
+      die "Failed to $sql: $EVAL_ERROR" if $EVAL_ERROR;
+   }
    if ( !$proc ) {
       die "You do not have the PROCESS privilege";
    }
 
-   my $sql = 'SHOW PROCESSLIST';
+   $sql = 'SHOW PROCESSLIST';
    MKDEBUG && _d($dbh, $sql);
    grep { $_->{command} =~ m/Binlog Dump/i }
    map  { # Lowercase the column names
@@ -4150,7 +4187,7 @@ sub main {
    my $vp = new VersionParser();
    my $tp = new TableParser(Quoter => $q);
    my $tc = new TableChecksum(Quoter=> $q, VersionParser => $vp);
-   my $ms = new MasterSlave();
+   my $ms = new MasterSlave(VersionParser => $vp);
    my $du = new MySQLDump(cache => 0);
    my $ch = new TableChunker(Quoter => $q, MySQLDump => $du); 
    my %common_modules = (
