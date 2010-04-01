@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Tool crashed on MySQL 4.0 due to "SHOW GRANTS" (issue 285).
+
 2010-04-01: version 1.0.26
 
    * --trim caused impossible WHERE and invalid SQL (issue 965).
