@@ -4304,13 +4304,6 @@ report contains the description of the rules it matched, even if this
 information was previously displayed.  In compact mode, the repeated
 information is suppressed, and only the rule ID is displayed.
 
-=item --type
-
-type: Array
-
-The type of input to parse (default slowlog).  The permitted types are
-slowlog and genlog.
-
 =item --sample
 
 type: int; default: 1
@@ -4329,6 +4322,14 @@ will be appended to SET and executed.
 short form: -S; type: string
 
 Socket file to use for connection.
+
+=item --type
+
+type: Array
+
+The type of input to parse (default slowlog).  The permitted types are
+slowlog and genlog.
+
 
 =item --user
 
