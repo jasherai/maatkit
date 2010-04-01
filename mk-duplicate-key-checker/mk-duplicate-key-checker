@@ -3672,8 +3672,8 @@ tools) and those created by bugs.
 mk-duplicate-key-checker is a read-only tool that executes SHOW CREATE TABLE and
 related queries to inspect table structures, and thus is very low-risk.
 
-At the time of this release, we know of no bugs that could cause serious harm to
-users.
+At the time of this release, there is an unconfirmed bug that causes the tool
+to crash.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can

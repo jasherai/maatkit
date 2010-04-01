@@ -3223,8 +3223,8 @@ for purposes such as loading test data into a system quickly.  Do not use
 mk-parallel-restore for backups.  mk-parallel-restore inserts data unless you
 use the L<"--dry-run"> option.
 
-At the time of this release, we know of no bugs that could cause serious harm to
-users.
+At the time of this release, there is a bug that prevents huge statements from
+being printed when an error is encountered.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
