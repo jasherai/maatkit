@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 7;
 
 use GeneralLogParser;
 use MaatkitTest;
@@ -140,6 +140,84 @@ test_log_parser(
    ],
 );
 
+
+# #############################################################################
+# Issue 972: mk-query-digest genlog timestamp fix
+# #############################################################################
+test_log_parser(
+   parser  => $p,
+   file    => $sample.'genlog003.txt',
+   oktorun => sub { $oktorun = $_[0]; },
+   result  => [
+      {  ts         => '051007   21:55:24',
+         Thread_id  => '42',
+         arg        => 'administrator command: Connect',
+         bytes      => 30,
+         cmd        => 'Admin',
+         db         => 'db1',
+         host       => 'localhost',
+         pos_in_log => 0,
+         user       => 'root',
+         Query_time => 0,
+      },
+      {  ts         => undef,
+         Thread_id  => '42',
+         arg        => 'SELECT foo 
+                         FROM tbl
+                         WHERE col=12345
+                         ORDER BY col',
+         bytes      => 124,
+         cmd        => 'Query',
+         pos_in_log => 60,
+         Query_time => 0,
+         db         => 'db1',
+      },
+      {  ts         => undef,
+         Thread_id  => '42',
+         arg        => 'administrator command: Quit',
+         bytes      => 27,
+         cmd        => 'Admin',
+         pos_in_log => 246,
+         Query_time => 0,
+      },
+      {  ts         => undef,
+         Thread_id  => '11',
+         arg        => 'administrator command: Connect',
+         bytes      => 30,
+         cmd        => 'Admin',
+         host       => 'localhost',
+         pos_in_log => 246,
+         user       => 'root',
+         Query_time => 0,
+      },
+      {  ts         => undef,
+         Thread_id  => '11',
+         arg        => 'administrator command: Init DB',
+         bytes      => 30,
+         cmd        => 'Admin',
+         db         => 'my_webstats',
+         pos_in_log => 302,
+         Query_time => 0,
+      },
+      {  ts         => undef,
+         Thread_id  => '11',
+         arg        => 'SELECT DISTINCT col FROM tbl WHERE foo=20061219',
+         bytes      => 47,
+         cmd        => 'Query',
+         pos_in_log => 348,
+         Query_time => 0,
+         db         => 'my_webstats',
+      },
+      {  ts         => undef,
+         Thread_id  => '11',
+         arg        => 'administrator command: Quit',
+         bytes      => 27,
+         cmd        => 'Admin',
+         pos_in_log => 466,
+         Query_time => 0,
+      },
+   ]
+);
 
 # #############################################################################
 # Done.

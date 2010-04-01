@@ -41,13 +41,13 @@ sub new {
 
 my $genlog_line_1= qr{
    \A
-   (?:(\d{6}\s{1,2}\d{1,2}:\d\d:\d\d))? # Timestamp
+   (?:(\d{6}\s+\d{1,2}:\d\d:\d\d))? # Timestamp
    \s+
-   (?:\s*(\d+))                         # Thread ID
+   (?:\s*(\d+))                     # Thread ID
    \s
-   (\w+)                                # Command
+   (\w+)                            # Command
    \s+
-   (.*)                                 # Argument
+   (.*)                             # Argument
    \Z
 }xs;
 
