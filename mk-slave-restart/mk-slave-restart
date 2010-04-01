@@ -3074,6 +3074,8 @@ the current sleep time each time mk-slave-restart sleeps.
 
 =item --version
 
+=back
+
 Show version and exit.
 
 =head1 DSN OPTIONS
@@ -3133,8 +3135,6 @@ Socket file to use for connection.
 dsn: user; copy: yes
 
 User for login if not current user.
-
-=back
 
 =back
 
