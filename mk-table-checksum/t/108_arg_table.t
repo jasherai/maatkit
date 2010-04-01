@@ -18,12 +18,13 @@ require "$trunk/mk-table-checksum/mk-table-checksum";
 my $dp = new DSNParser(opts=>$dsn_opts);
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $master_dbh = $sb->get_dbh_for('master');
+my $slave_dbh  = $sb->get_dbh_for('slave1');
 
 if ( !$master_dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 4;
+   plan tests => 6;
 }
 
 my $output;
@@ -71,6 +72,32 @@ is(
    '',
    'chunk-size, modulo and offset in argtable (issue 467)'
 );
+
+# #############################################################################
+# Issue 922: mk-table-checksum --arg-table causes false positive results
+# #############################################################################
+SKIP: {
+   skip 'issue 922', 2 unless $slave_dbh;
+
+   $sb->wipe_clean($master_dbh);
+   $sb->create_dbs($master_dbh, [qw(test)]);
+   $sb->load_file('master', "mk-table-checksum/t/samples/issue_922.sql");
+   $sb->load_file('master', "mk-table-checksum/t/samples/arg-table.sql");
+
+   $master_dbh->do('insert into test.args values ("test", "t")');
+
+   is_deeply(
+      $master_dbh->selectall_arrayref('select * from test.t order by i'),
+      [[1,'aa'],[2,'ab'],[3,'ac'],[4,'ad'],[5,'zz'],[6,'zb']],
+      'Master has all rows'
+   );
+
+   is_deeply(
+      $slave_dbh->selectall_arrayref('select * from test.t order by i'),
+      [[1,'aa'],[2,'ab'],[3,'ac'],[4,'ad']],
+      'Slave missing 2 rows'
+   );
+}
 
 # #############################################################################
 # Done.
