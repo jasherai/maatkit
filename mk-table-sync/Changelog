@@ -2,6 +2,7 @@ Changelog for mk-table-sync:
 
    * --trim caused impossible WHERE and invalid SQL (issue 965).
    * Added DSN OPTIONS section to POD (issue 55).
+   * Tool crashed using --ask-pass if no DSN h part was specified (issue 947).
 
 2010-03-01: version 1.0.25
 

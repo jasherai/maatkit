@@ -1040,7 +1040,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5966
+# DSNParser package 6057
 # ###########################################################################
 package DSNParser;
 
@@ -1164,11 +1164,13 @@ sub parse_options {
 }
 
 sub as_string {
-   my ( $self, $dsn ) = @_;
+   my ( $self, $dsn, $props ) = @_;
    return $dsn unless ref $dsn;
+   my %allowed = $props ? map { $_=>1 } @$props : ();
    return join(',',
-      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_})  }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      grep { !$props || $allowed{$_}                   }
       sort keys %$dsn );
 }
 
@@ -7284,7 +7286,13 @@ sub get_cxn {
    my ($o, $dp) = @args{@required_args};
 
    if ( !$dsn->{p} && $o->get('ask-pass') ) {
-      $dsn->{p} = OptionParser::prompt_noecho("Enter password for $dsn->{h}: ");
+      # Just "F=file" is a valid DSN but fill_in_dsn() can't help us
+      # because we haven't connected yet.  If h is not specified,
+      # then user is relying on F or .my.cnf/system defaults.
+      # http://code.google.com/p/maatkit/issues/detail?id=947
+      my $host  = $dsn->{h} ? $dsn->{h}
+                :             "DSN ". $dp->as_string($dsn);
+      $dsn->{p} = OptionParser::prompt_noecho("Enter password for $host: ");
    }
    my $dbh = $dp->get_dbh(
       $dp->get_cxn_params($dsn, {})  # get_cxn_params needs the 2nd arg

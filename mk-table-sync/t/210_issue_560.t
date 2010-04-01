@@ -50,7 +50,7 @@ sleep 1;
 $output = `$trunk/mk-table-checksum/mk-table-checksum --replicate issue_560.checksum h=127.1,P=12345,u=msandbox,p=msandbox  -d issue_560 --replicate-check 1 --chunk-size 50`;
 is(
    $output,
-"Differences on P=12346,h=127.0.0.1,p=...,u=msandbox
+"Differences on P=12346,h=127.0.0.1
 DB        TBL        CHUNK CNT_DIFF CRC_DIFF BOUNDARIES
 issue_560 buddy_list     6        0        1 `player_id` >= 301 AND `player_id` < 351
 issue_560 buddy_list     9        0        1 `player_id` >= 451
