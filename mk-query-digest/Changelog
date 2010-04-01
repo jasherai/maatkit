@@ -9,6 +9,7 @@ Changelog for mk-query-digest:
    * Added --show-all (issue 744).
    * Added DSN OPTIONS section to POD (issue 55).
    * Fixed performance regression introduced in v0.9.12/r5240 (issue 954).
+   * Queries with tables in parentheses did not distill correctly (issue 781).
 
 2010-03-01: version 0.9.15
 
