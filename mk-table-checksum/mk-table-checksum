@@ -4187,7 +4187,7 @@ sub main {
    my $tp = new TableParser(Quoter => $q);
    my $tc = new TableChecksum(Quoter=> $q, VersionParser => $vp);
    my $ms = new MasterSlave(VersionParser => $vp);
-   my $du = new MySQLDump(cache => 0);
+   my $du = new MySQLDump();
    my $ch = new TableChunker(Quoter => $q, MySQLDump => $du); 
    my %common_modules = (
       ch => $ch,
@@ -4206,7 +4206,8 @@ sub main {
    my $lag_dbh;
    {
       if ( $o->get('check-slave-lag') ) {
-         my $dsn = $dp->parse($o->get('check-slave-lag'), $hosts[0], $dsn_defaults);
+         my $dsn = $dp->parse(
+            $o->get('check-slave-lag'), $hosts[0], $dsn_defaults);
          $lag_dbh = get_cxn($dsn, %common_modules);
       }
    }
@@ -5472,6 +5473,7 @@ sub get_cxn {
    my $ac  = $o->get('lock') ? 0 : 1;
    my $dbh = $dp->get_dbh(
       $dp->get_cxn_params($dsn), { AutoCommit => $ac });
+   $dp->fill_in_dsn($dbh, $dsn);
    $dbh->{InactiveDestroy}  = 1; # Prevent destroying on fork.
    $dbh->{FetchHashKeyName} = 'NAME_lc';
    return $dbh;
