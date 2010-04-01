@@ -13,6 +13,9 @@ my %not_instantiated = (
    MaatkitCommon  => 1,
    Transformers   => 1,
 );
+my %ignore = (
+   DSNParser => 1,
+);
 
 # If you specify one program, it has to be given like ../mk-find/mk-find
 my @progs = @ARGV;
@@ -41,7 +44,8 @@ foreach my $prog ( @progs ) {
          $unused = 1 unless $uses{$_};
       }
       $unused;
-   } $contents =~ m/^# (\w+) package \d+/gm;
+   }
+   grep { !$ignore{$_} } $contents =~ m/^# (\w+) package \d+/gm;
 
    if ( @unused ) {
       print "$program has unused modules:\n"
