@@ -1,5 +1,5 @@
 
-# Query 1: 0 QPS, 0x concurrency, ID 0x8EC70FAF5FB095A9 at byte 435 ______
+# Query 1: 0 QPS, 0x concurrency, ID 0xAA353644DE4C4CB4 at byte 435 ______
 # This item is included in the report because it matches --limit.
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         66       2
@@ -10,7 +10,7 @@
 # Users                  1    meow
 # Hosts                  1
 # Databases              2 db1 (1), db2 (1)
-# bytes         80      58      29      29      29      29       0      29
+# bytes         79      54      27      27      27      27       0      27
 # Query_time distribution
 #   1us  ################################################################
 #  10us
@@ -20,7 +20,7 @@
 # 100ms
 #    1s
 #  10s+
-# administrator command: Quit\G
+administrator command: Quit\G
 
 # Query 2: 0 QPS, 0x concurrency, ID 0xCC47B42511EA22DD at byte 221 ______
 # This item is included in the report because it matches --limit.
@@ -33,7 +33,7 @@
 # Users                  1    meow
 # Hosts                  1
 # Databases              1      db
-# bytes         19      14      14      14      14      14       0      14
+# bytes         20      14      14      14      14      14       0      14
 # Query_time distribution
 #   1us
 #  10us
