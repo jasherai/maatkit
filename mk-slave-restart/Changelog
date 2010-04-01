@@ -1,5 +1,7 @@
 Changelog for mk-slave-restart:
 
+2010-04-01: version 1.0.21
+
    * Added ability to specify a DSN on the command line.
    * Added DSN OPTIONS section to POD (issue 55).
 

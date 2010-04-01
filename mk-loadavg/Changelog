@@ -1,5 +1,7 @@
 Changelog for mk-loadavg:
 
+2010-04-01: version 0.9.5
+
    * Added ability to specify a DSN on the command line.
    * Added DSN OPTIONS section to POD (issue 55).
 

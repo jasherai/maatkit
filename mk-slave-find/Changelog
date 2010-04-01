@@ -1,5 +1,7 @@
 Changelog for mk-slave-find:
 
+2010-04-01: version 1.0.11
+
    * Added DSN OPTIONS section to POD (issue 55).
 
 2010-01-06: version 1.0.10

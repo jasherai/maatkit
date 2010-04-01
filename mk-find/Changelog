@@ -1,5 +1,7 @@
 Changelog for mk-find:
 
+2010-04-01: version 0.9.22
+
    * Added --column-type test (issue 25).
    * Added ability to test for NULL size (issue 344).
    * --ask-pass didn't work if --password was specified.

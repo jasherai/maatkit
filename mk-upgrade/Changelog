@@ -1,5 +1,7 @@
 Changelog for mk-upgrade:
 
+2010-04-01: version 0.9.6
+
    * --compare-results-method=rows did not use default database (issue 951).
    * --compare-results-method=rows did not use --temp-database (issue 951).
    * Added DSN OPTIONS section to POD (issue 55).

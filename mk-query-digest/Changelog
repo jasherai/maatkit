@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2010-04-01: version 0.9.16
+
    * Admin commands were not always distilled (issue 676).
    * Admin commands were not fingerprinted correctly (issue 676).
    * General log parsing failed sometimes (issue 926).

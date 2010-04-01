@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+2010-04-01: version 1.0.21
+
    * --fast-index was case-sensitive (issue 956).
    * Added DSN OPTIONS section to POD (issue 55).
 

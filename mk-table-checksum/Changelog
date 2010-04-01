@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2010-04-01: version 1.2.13
+
    * Checksum queries caused fatal warnings on MySQL 5.1 (issue 186).
    * Added DSN OPTIONS section to POD (issue 55).
    * Tool crashed if no DSN h part was specified (issue 947).

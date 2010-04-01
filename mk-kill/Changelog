@@ -1,5 +1,7 @@
 Changelog for mk-kill:
 
+2010-04-01: version 0.9.4
+
    * Added DSN OPTIONS section to POD (issue 55).
 
 2010-02-01: version 0.9.3
