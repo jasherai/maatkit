@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 56;
+use Test::More tests => 58;
 
 use MaatkitTest;
 use PodParser;
@@ -314,6 +314,12 @@ my @cases = (
 #      query  => "select c from t where c='foo 2010-03-17 bar'",
 #      advice => [qw()],
 #   },
+
+   {  name   => "IN(subquer)",
+      query  => "select c from t where i in(select d from z where 1)",
+      advice => [qw(SUB.001)],
+      pos    => [33],
+   },
    
 );
 

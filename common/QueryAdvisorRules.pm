@@ -290,6 +290,16 @@ sub get_rules {
          return;
       },
    },
+   {
+      id   => 'SUB.001',      # IN(<subquery>)
+      code => sub {
+         my ( $event ) = @_;
+         if ( $event->{arg} =~ m/\bIN\s*\(\s*SELECT\b/gi ) {
+            return pos $event->{arg};
+         }
+         return;
+      },
+   },
 };
 
 # Arguments:
