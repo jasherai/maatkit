@@ -8279,6 +8279,18 @@ information and benchmarks.
 
 Show help and exit.
 
+=item --[no]hex-blob
+
+default: yes
+
+C<HEX()> C<BLOB>, C<TEXT> and C<BINARY> columns.
+
+When row data from the source is fetched to create queries to sync the
+data (i.e. the queries seen with L<"--print"> and exeucted by L<"--execute">),
+binary columns are wrapped in HEX() so the binary data does not produce
+an invalid SQL statement.  You can disable this option but you probably
+shouldn't.
+
 =item --host
 
 short form: -h; type: string
