@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 51;
+use Test::More tests => 52;
 
 use TableChecksum;
 use VersionParser;
@@ -328,6 +328,18 @@ is (
    ),
    q{`rental_id`, ROUND(`foo`, 5), SHA1(CONCAT_WS('#', `rental_id`, ROUND(`foo`, 5)))},
    'FLOAT column is rounded to 5 places',
+);
+
+$t = $tp->parse(load_file('common/t/samples/sakila.staff.sql'));
+
+like(
+   $c->make_row_checksum(
+      function   => 'SHA1',
+      tbl_struct => $t,
+      hex_blob   => 1,
+   ),
+   qr{HEX\(`picture`\)},
+   'BLOB column is hexed',
 );
 
 $t = $tp->parse(load_file('common/t/samples/sakila.film.sql'));

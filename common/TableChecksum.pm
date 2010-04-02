@@ -275,7 +275,8 @@ sub make_xor_slices {
 # *   function    SHA1, MD5, etc
 # *   sep         (optional) Separator for CONCAT_WS(); default #
 # *   cols        (optional) arrayref of columns to checksum
-# *   trim        (optional) wrap VARCHAR in TRIM() for 4.x / 5.x compatibility
+# *   trim        (optional) wrap VARCHAR cols in TRIM() for v4/v5 compatibility
+# *   hex_blob    (optional) wrap BLOB|TEXT|BINARY cols in HEX()
 # *   ignorecols  (optional) arrayref of columns to exclude from checksum
 sub make_row_checksum {
    my ( $self, %args ) = @_;
@@ -303,11 +304,14 @@ sub make_row_checksum {
          if ( $type eq 'timestamp' ) {
             $result .= ' + 0';
          }
-         elsif ( $type =~ m/float|double/ && $args{float_precision} ) {
+         elsif ( $args{float_precision} && $type =~ m/float|double/ ) {
             $result = "ROUND($result, $args{float_precision})";
          }
-         elsif ( $type =~ m/varchar/ && $args{trim} ) {
+         elsif ( $args{trim} && $type =~ m/varchar/ ) {
             $result = "TRIM($result)";
+         }
+         elsif ( $args{hex_blob} && $type =~ m/blob|text|binary/ ) {
+            $result = "HEX($result)";
          }
          $result;
       }
@@ -332,8 +336,8 @@ sub make_row_checksum {
                         my ($real_col) = /^(\S+)/;
                         $col .= " AS $real_col";
                      }
-                     elsif ( $col =~ m/TRIM/ ) {
-                        my ($real_col) = m/TRIM\(([^\)]+)\)/;
+                     elsif ( my ($func) = $col =~ m/(TRIM|HEX)/ ) {
+                        my ($real_col) = m/$func\(([^\)]+)\)/;
                         $col .= " AS $real_col";
                      }
                      $col;
