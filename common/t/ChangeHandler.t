@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 29;
+use Test::More tests => 30;
 
 use ChangeHandler;
 use Quoter;
@@ -358,6 +358,25 @@ is(
    $ch->make_fetch_back_query('1=1'),
    "SELECT `a`, CONCAT('0x', HEX(`x`)) AS `x`, `b` FROM `test`.`lt` WHERE 1=1 LIMIT 1",
    "Wraps BLOB column in CONCAT('0x', HEX(col)) AS col"
+);
+
+$ch = new ChangeHandler(
+   Quoter     => $q,
+   left_db    => 'test',
+   left_tbl   => 'lt',
+   right_db   => 'test',
+   right_tbl  => 'rt',
+   actions    => [ sub {} ],
+   replace    => 0,
+   queue      => 0,
+   hex_blob   => 0,
+   tbl_struct => $tbl_struct,
+);
+
+is(
+   $ch->make_fetch_back_query('1=1'),
+   "SELECT `a`, `x`, `b` FROM `test`.`lt` WHERE 1=1 LIMIT 1",
+   "Disable blob hexing"
 );
 
 SKIP: {

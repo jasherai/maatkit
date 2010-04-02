@@ -39,6 +39,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 # * queue      Queue changes until process_rows is called with a greater
 #              queue level.
 # * tbl_struct (optional) Used to sort columns and detect binary columns
+# * hex_blob   (optional) HEX() BLOB columns (default yes)
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(Quoter left_db left_tbl right_db right_tbl
@@ -48,6 +49,7 @@ sub new {
    my $q = $args{Quoter};
 
    my $self = {
+      hex_blob     => 1,
       %args,
       left_db_tbl  => $q->quote(@args{qw(left_db left_tbl)}),
       right_db_tbl => $q->quote(@args{qw(right_db right_tbl)}),
@@ -344,7 +346,8 @@ sub make_fetch_back_query {
       $cols = join(', ',
          map {
             my $col = $_;
-            if ( $tbl_struct->{type_for}->{$col} =~ m/blob|text|binary/ ) {
+            if (    $self->{hex_blob}
+                 && $tbl_struct->{type_for}->{$col} =~ m/blob|text|binary/ ) {
                $col = "CONCAT('0x', HEX(`$col`)) AS `$col`";
             }
             else {
