@@ -38,7 +38,7 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 # * replace    Do UPDATE/INSERT as REPLACE.
 # * queue      Queue changes until process_rows is called with a greater
 #              queue level.
-# * tbl_struct (optional) Used to sort columns
+# * tbl_struct (optional) Used to sort columns and detect binary columns
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(Quoter left_db left_tbl right_db right_tbl
@@ -239,7 +239,7 @@ sub make_UPDATE {
    my $where = $self->make_where_clause($row, $cols);
    my @cols;
    if ( my $dbh = $self->{fetch_back} ) {
-      my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
+      my $sql = $self->make_fetch_back_query($where);
       MKDEBUG && _d('Fetching data on dbh', $dbh, 'for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
@@ -276,7 +276,7 @@ sub make_row {
    my @cols; 
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
-      my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
+      my $sql   = $self->make_fetch_back_query($where);
       MKDEBUG && _d('Fetching data on dbh', $dbh, 'for', $verb, ':', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
@@ -333,6 +333,34 @@ sub sort_cols {
       @cols = sort keys %$row;
    }
    return @cols;
+}
+
+sub make_fetch_back_query {
+   my ( $self, $where ) = @_;
+   die "I need a where argument" unless $where;
+   my $cols       = '*';
+   my $tbl_struct = $self->{tbl_struct};
+   if ( $tbl_struct ) {
+      $cols = join(', ',
+         map {
+            my $col = $_;
+            if ( $tbl_struct->{type_for}->{$col} =~ m/blob|text|binary/ ) {
+               $col = "CONCAT('0x', HEX(`$col`)) AS `$col`";
+            }
+            else {
+               $col = "`$col`";
+            }
+            $col;
+         } @{ $tbl_struct->{cols} }
+      );
+
+      if ( !$cols ) {
+         # This shouldn't happen in the real world.
+         MKDEBUG && _d('Failed to make explicit columns list from tbl struct');
+         $cols = '*';
+      }
+   }
+   return "SELECT $cols FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
 }
 
 sub _d {

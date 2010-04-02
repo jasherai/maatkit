@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 27;
+use Test::More tests => 29;
 
 use ChangeHandler;
 use Quoter;
@@ -17,9 +17,8 @@ use DSNParser;
 use Sandbox;
 use MaatkitTest;
 
-my $dp = new DSNParser(opts => $dsn_opts);
-my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-
+my $dp  = new DSNParser(opts => $dsn_opts);
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 
 throws_ok(
@@ -335,6 +334,67 @@ SKIP: {
       'make_UPDATE() preserves column order, with fetch-back'
    );
 };
+
+# #############################################################################
+# Issue 641: Make mk-table-sync use hex for binary/blob data
+# #############################################################################
+$tbl_struct = {
+   cols     => [qw(a x b)],
+   type_for => {a=>'int', x=>'blob', b=>'varchar'},
+};
+$ch = new ChangeHandler(
+   Quoter     => $q,
+   left_db    => 'test',
+   left_tbl   => 'lt',
+   right_db   => 'test',
+   right_tbl  => 'rt',
+   actions    => [ sub {} ],
+   replace    => 0,
+   queue      => 0,
+   tbl_struct => $tbl_struct,
+);
+
+is(
+   $ch->make_fetch_back_query('1=1'),
+   "SELECT `a`, CONCAT('0x', HEX(`x`)) AS `x`, `b` FROM `test`.`lt` WHERE 1=1 LIMIT 1",
+   "Wraps BLOB column in CONCAT('0x', HEX(col)) AS col"
+);
+
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $dbh;
+   $sb->load_file('master', "common/t/samples/issue_641.sql");
+
+   @rows = ();
+   $tbl_struct = {
+      cols     => [qw(id b)],
+      col_posn => {id=>0, b=>1},
+      type_for => {id=>'int', b=>'blob'},
+   };
+   $ch = new ChangeHandler(
+      Quoter     => $q,
+      left_db    => 'issue_641',
+      left_tbl   => 'lt',
+      right_db   => 'issue_641',
+      right_tbl  => 'rt',
+      actions   => [ sub { push @rows, $_[0]; } ],
+      replace    => 0,
+      queue      => 0,
+      tbl_struct => $tbl_struct,
+   );
+   $ch->fetch_back($dbh);
+
+   $ch->change('UPDATE', {id=>1}, [qw(id)] );
+   $ch->change('INSERT', {id=>1}, [qw(id)] );
+
+   is_deeply(
+      \@rows,
+      [
+         'UPDATE `issue_641`.`rt` SET `b`=0x089504E470D0A1A0A0000000D4948445200000079000000750802000000E55AD965000000097048597300000EC300000EC301C76FA8640000200049444154789C4CBB7794246779FFBBF78F7B7EBE466177677772CE3D9D667AA67BA62776CE39545557CE3974EE9EB049AB9556392210414258083 WHERE `id`=1 LIMIT 1',
+         'INSERT INTO `issue_641`.`rt`(`id`, `b`) VALUES (1, 0x089504E470D0A1A0A0000000D4948445200000079000000750802000000E55AD965000000097048597300000EC300000EC301C76FA8640000200049444154789C4CBB7794246779FFBBF78F7B7EBE466177677772CE3D9D667AA67BA62776CE39545557CE3974EE9EB049AB9556392210414258083)',
+      ],
+      "UPDATE and INSERT binary data as hex"
+   );
+}
 
 # #############################################################################
 # Done.

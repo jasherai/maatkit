@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 25;
 
 use Quoter;
 use MaatkitTest;
@@ -58,6 +58,7 @@ is( $q->quote_val(42, 0), "'42'", 'non-numeric number' );
 is( $q->quote_val(42, 1), "42", 'number is numeric' );
 is( $q->quote_val('123-abc'), "'123-abc'", 'looks numeric but is string');
 is( $q->quote_val('123abc'), "'123abc'", 'looks numeric but is string');
+is( $q->quote_val('0x89504E470'), '0x89504E470', 'hex string');
 
 # Splitting DB and tbl apart
 is_deeply(
