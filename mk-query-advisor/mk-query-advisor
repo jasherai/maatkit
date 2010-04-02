@@ -4199,7 +4199,7 @@ severity: note
 
 =item SUB.001
 
-seveirty: warn
+severity: warn
 
 IN() subqueries are poorly optimized.
 
