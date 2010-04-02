@@ -4197,6 +4197,12 @@ severity: note
 
 != is non-standard.  Use the <> operator to test for inequality.
 
+=item SUB.001
+
+seveirty: warn
+
+IN() subqueries are poorly optimized.
+
 =back
 
 =head1 OPTIONS
