@@ -5,7 +5,8 @@
 
 import sys
 import optparse
-import datetime
+from datetime import datetime
+import csv
 import gdata.projecthosting.client
 import gdata.projecthosting.data
 import gdata.gauth
@@ -14,11 +15,7 @@ import gdata.data
 import atom.http_core
 import atom.core
 
-today     = datetime.datetime.utcnow()
-reports   = [
-    "prio",
-    "new"
-]
+today     = datetime.utcnow()
 rank_incr = {  # rank increases
     'severity' : {
         'critical'  : 3,
@@ -43,15 +40,18 @@ rank_incr = {  # rank increases
     },
 }
 
-# Get, parse and rank up to max_results open issues.
-# Returns a list of dicts, one for each issue, not sorted.
-def get_open_issues(max_results=500):
-    open_issues = []
+# Get issues from Google Code.  Currently only gets open issues.
+# "Canned queries" are defined by the issue tracker API.
+# Returns a list of dicts, one for each issue.
+def get_issues_from_gc(canned_query='open'):
+    issues = []
 
     # Connect to Google Code project anonymously and get open issues.
-    client     = gdata.projecthosting.client.ProjectHostingClient()
-    query      = gdata.projecthosting.client.Query(canned_query='open',
-                                                   max_results=max_results)
+    client = gdata.projecthosting.client.ProjectHostingClient()
+    query  = gdata.projecthosting.client.Query(
+        canned_query = canned_query,
+        max_results  = 500,
+    )
     issue_list = client.get_issues('maatkit', query=query)
     print "%d open issues as of %s\n" % (len(issue_list.entry), today)
 
@@ -72,24 +72,44 @@ def get_open_issues(max_results=500):
             'open_date' : issue_info.published.text.split('T')[0],
             'open_days' : open_t.days,
         }
-        label_info = parse_labels(issue_info.label)
+        label_info = parse_labels( [l.text for l in issue_info.label] )
         issue.update(label_info)
-        rank_issue(issue)
+        issues.append(issue)
 
-        try:
-            check_issue(issue)
-        except Exception as E:
-            print E
-            sys.exit(-1)
+    return issues     
 
-        open_issues.append(issue)
+# File should be csv formatted, double-quoted vals, first line field
+# names, with fields ID, Summary, Opened, OpenedTimestamp and AllLabels.
+# The file is usually downloaded from the "CSV" link in the bottom-right
+# corner of the page http://code.google.com/p/maatkit/issues/list
+# But first you need to add "Opened" to the columns shown (click "...",
+# top-right corner).  See reports/maatkit-issues.csv for an example.
+# Returns a list of dicts, one for each issue.
+def get_issues_from_file(file):
+    issues = []
 
-    return open_issues     
+    fh = csv.DictReader(open(file))
+    for issue_info in fh:
+        # amount of time issue has been open
+        ts     = float(issue_info["OpenedTimestamp"])
+        open_t = today - datetime.utcfromtimestamp(ts)
+
+        issue = {
+            'id'        : issue_info["ID"],
+            'summary'   : issue_info["Summary"],
+            'open_date' : issue_info["Opened"],
+            'open_days' : open_t.days,
+        }
+        label_info = parse_labels(issue_info["AllLabels"].split(', '))
+        issue.update(label_info)
+        issues.append(issue)
+
+    return issues
 
 # Convert and return a GC timestamp like "2010-03-23T21:19:03.000Z"
 # as a datetime obj.
 def str_to_datetime(str):
-    return datetime.datetime.strptime(str, "%Y-%m-%dT%H:%M:%S.%fZ")
+    return datetime.strptime(str, "%Y-%m-%dT%H:%M:%S.%fZ")
 
 # Parse labels like Type-, Sponsored, etc.  Two word labels like
 # Type-Defect are saved as key-value.  One word labels are saved
@@ -101,7 +121,7 @@ def parse_labels(labels):
     modules    = []
     for label in labels:
         score = 0
-        vals  = label.text.split('-')
+        vals  = [v.strip() for v in label.split('-')]
         val   = vals[0].lower()
         if val == "tag":
             tags.append( vals[1] )
@@ -123,25 +143,26 @@ def parse_labels(labels):
     return label_info
 
 # Rank issues by number of days open and the labels defined in rank_incr.
-def rank_issue(issue):
-    rank = 0
-    if issue['open_days'] < 1:
-       rank = 0
-    elif issue['open_days'] < 8:
-       rank = 1
-    elif issue['open_days'] < 31:
-       rank = 2
-    elif issue['open_days'] < 366:
-       rank = 3
-    else:
-       rank = 4
-    for (key, val) in issue.iteritems():
-        if key in rank_incr:
-            rank += rank_incr[key][val]
-        elif key in rank_incr['labels']:
-            rank += rank_incr['labels'][val]
-    issue['rank'] = rank
-    return issue
+def rank_issues(issues):
+    for issue in issues:
+        rank = 0
+        if issue['open_days'] < 1:
+           rank = 0
+        elif issue['open_days'] < 8:
+           rank = 1
+        elif issue['open_days'] < 31:
+           rank = 2
+        elif issue['open_days'] < 366:
+           rank = 3
+        else:
+           rank = 4
+        for (key, val) in issue.iteritems():
+            if key in rank_incr:
+                rank += rank_incr[key][val]
+            elif key in rank_incr['labels']:
+                rank += rank_incr['labels'][val]
+        issue['rank'] = rank
+    return issues
 
 # Check that issue has required/proper labels.
 def check_issue(issue):
@@ -157,20 +178,20 @@ def check_issue(issue):
 
     return
 
-def print_prio_report():
-    # Get, parse and rank all open issues.
-    open_issues = get_open_issues()
+def print_prio_report(issues, limit=0):
+    rank_issues(issues)
 
     # Sort by rank, descending.
-    open_issues = sorted(
-        open_issues,
+    issues = sorted(
+        issues,
         lambda x, y: cmp(x['rank'], y['rank']),
         reverse=True
     )
 
     # Print by rank, descending.
-    for issue in open_issues:
-        print "Issue %s, rank %s: %s"   % (issue['id'], issue['rank'], issue['summary'])
+    for issue in issues:
+        print "Issue %s, rank %s: %s" \
+            % (issue['id'], issue['rank'], issue['summary'])
         print "\topen %d days, opened on %s" \
             % (issue['open_days'], issue['open_date'])
         print "\ttype: %s, severity: %s, effort: %s, benefit: %s" \
@@ -179,23 +200,51 @@ def print_prio_report():
         if 'sponsored' in issue:
             print "\tSponsored"
         print
+        
+        limit -= 1
+        if limit == 0:
+            break
 
     return
 
+# Prints any issues that fail the check.
+def print_check_report(issues, limit=0):
+    for issue in issues:
+        try:
+            check_issue(issue)
+        except Exception as E:
+            print E
+    return 
+
 def main():
-    option_parser = optparse.OptionParser(usage="issue-report")
-    (o, args) = option_parser.parse_args()
+    option_parser = optparse.OptionParser(
+        usage = "issue-reports [options] [file]"
+    )
+    option_parser.add_option(
+        "-r", "--report",
+        dest    = "report",
+        default = "prio",
+        choices = ["prio", "check"],
+    )
+    option_parser.add_option(
+        "--limit",
+        dest    = "limit",
+        type    = "int",
+        default = "500",
+    )
+    (options, args) = option_parser.parse_args()
 
-    try:
-        report = args[0]
-    except:
-        report = "prio"  # default
+    issues = []
+    if len(args):
+        file   = args[0]
+        issues = get_issues_from_file(file=file)
+    else:
+        issues = get_issues_from_gc()
 
-    if report not in reports:
-        option_parser.error("Invalid REPORT: " + report) 
-
-    if report == "prio":
-        print_prio_report()
+    if options.report == "prio":
+        print_prio_report(issues, limit=options.limit)
+    elif options.report == "check":
+        print_check_report(issues, limit=options.limit)
 
     return 0
 
