@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 9;
+use Test::More tests => 10;
 
 use MaatkitTest;
 require "$trunk/mk-query-advisor/mk-query-advisor";
@@ -99,6 +99,18 @@ ok(
       'mk-query-advisor/t/samples/qry-001-02.txt',
    ),
    'QRY.001 REPLACE'
+);
+
+# #############################################################################
+# Subqueries.
+# #############################################################################
+
+ok(
+   no_diff(sub { mk_query_advisor::main(@args,
+         'select t from w where i=1 or i in (select * from j)') },
+      'mk-query-advisor/t/samples/sub-001-01.txt',
+   ),
+   'SUB.001'
 );
 
 # #############################################################################

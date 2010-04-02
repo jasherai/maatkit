@@ -1,0 +1,5 @@
+
+# Query ID 0xD6E9D91F645455DB at byte 0
+# WARN SUB.001 IN() subqueries are poorly optimized.
+#   matches near: i in (select * from j)
+select t from w where i=1 or i in (select * from j)
