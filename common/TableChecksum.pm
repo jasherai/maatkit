@@ -276,7 +276,6 @@ sub make_xor_slices {
 # *   sep         (optional) Separator for CONCAT_WS(); default #
 # *   cols        (optional) arrayref of columns to checksum
 # *   trim        (optional) wrap VARCHAR cols in TRIM() for v4/v5 compatibility
-# *   hex_blob    (optional) wrap BLOB|TEXT|BINARY cols in HEX()
 # *   ignorecols  (optional) arrayref of columns to exclude from checksum
 sub make_row_checksum {
    my ( $self, %args ) = @_;
@@ -310,9 +309,6 @@ sub make_row_checksum {
          elsif ( $args{trim} && $type =~ m/varchar/ ) {
             $result = "TRIM($result)";
          }
-         elsif ( $args{hex_blob} && $type =~ m/blob|text|binary/ ) {
-            $result = "HEX($result)";
-         }
          $result;
       }
       grep {
@@ -336,8 +332,8 @@ sub make_row_checksum {
                         my ($real_col) = /^(\S+)/;
                         $col .= " AS $real_col";
                      }
-                     elsif ( my ($func) = $col =~ m/(TRIM|HEX)/ ) {
-                        my ($real_col) = m/$func\(([^\)]+)\)/;
+                     elsif ( $col =~ m/TRIM/ ) {
+                        my ($real_col) = m/TRIM\(([^\)]+)\)/;
                         $col .= " AS $real_col";
                      }
                      $col;
