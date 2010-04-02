@@ -976,7 +976,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5697
+# Quoter package 6079
 # ###########################################################################
 package Quoter;
 
@@ -1002,8 +1002,9 @@ sub quote {
 sub quote_val {
    my ( $self, $val, $is_numeric ) = @_;
 
-   return 'NULL' unless defined $val;  # undef = NULL
-   return "''" if $val eq '';          # blank string = ''
+   return 'NULL' unless defined $val;         # undef = NULL
+   return "''" if $val eq '';                 # blank string = ''
+   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
 
    if ( !defined $is_numeric ) {
       $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
@@ -2425,7 +2426,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 5714
+# ChangeHandler package 6081
 # ###########################################################################
 package ChangeHandler;
 
@@ -2447,6 +2448,7 @@ sub new {
    my $q = $args{Quoter};
 
    my $self = {
+      hex_blob     => 1,
       %args,
       left_db_tbl  => $q->quote(@args{qw(left_db left_tbl)}),
       right_db_tbl => $q->quote(@args{qw(right_db right_tbl)}),
@@ -2600,7 +2602,7 @@ sub make_UPDATE {
    my $where = $self->make_where_clause($row, $cols);
    my @cols;
    if ( my $dbh = $self->{fetch_back} ) {
-      my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
+      my $sql = $self->make_fetch_back_query($where);
       MKDEBUG && _d('Fetching data on dbh', $dbh, 'for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
@@ -2637,7 +2639,7 @@ sub make_row {
    my @cols; 
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
-      my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
+      my $sql   = $self->make_fetch_back_query($where);
       MKDEBUG && _d('Fetching data on dbh', $dbh, 'for', $verb, ':', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
@@ -2694,6 +2696,34 @@ sub sort_cols {
       @cols = sort keys %$row;
    }
    return @cols;
+}
+
+sub make_fetch_back_query {
+   my ( $self, $where ) = @_;
+   die "I need a where argument" unless $where;
+   my $cols       = '*';
+   my $tbl_struct = $self->{tbl_struct};
+   if ( $tbl_struct ) {
+      $cols = join(', ',
+         map {
+            my $col = $_;
+            if (    $self->{hex_blob}
+                 && $tbl_struct->{type_for}->{$col} =~ m/blob|text|binary/ ) {
+               $col = "CONCAT('0x', HEX(`$col`)) AS `$col`";
+            }
+            else {
+               $col = "`$col`";
+            }
+            $col;
+         } @{ $tbl_struct->{cols} }
+      );
+
+      if ( !$cols ) {
+         MKDEBUG && _d('Failed to make explicit columns list from tbl struct');
+         $cols = '*';
+      }
+   }
+   return "SELECT $cols FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
 }
 
 sub _d {
@@ -3132,7 +3162,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 6018
+# TableChecksum package 6078
 # ###########################################################################
 package TableChecksum;
 
@@ -3364,10 +3394,10 @@ sub make_row_checksum {
          if ( $type eq 'timestamp' ) {
             $result .= ' + 0';
          }
-         elsif ( $type =~ m/float|double/ && $args{float_precision} ) {
+         elsif ( $args{float_precision} && $type =~ m/float|double/ ) {
             $result = "ROUND($result, $args{float_precision})";
          }
-         elsif ( $type =~ m/varchar/ && $args{trim} ) {
+         elsif ( $args{trim} && $type =~ m/varchar/ ) {
             $result = "TRIM($result)";
          }
          $result;
@@ -7117,6 +7147,7 @@ sub sync_a_table {
          right_db   => $dst->{db},
          right_tbl  => $dst->{tbl}, 
          tbl_struct => $tbl_struct,
+         hex_blob   => $o->get('hex-blob'),
          queue      => $o->get('buffer-to-client') ? 1 : 0,
          replace    => $o->get('replace')
                        || $o->get('replicate')
