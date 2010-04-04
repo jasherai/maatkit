@@ -4211,9 +4211,13 @@ severity: note
 
 =item SUB.001
 
-severity: warn
+severity: crit
 
-IN() subqueries are poorly optimized.
+IN() and NOT IN() subqueries are poorly optimized.  MySQL executes the subquery
+as a dependent subquery for each row in the outer query.  This is a frequent
+cause of serious performance problems.  This might change version 6.0 of MySQL,
+but for versions 5.1 and older, the query should be rewritten as a JOIN or a
+LEFT OUTER JOIN, respectively.
 
 =back
 
