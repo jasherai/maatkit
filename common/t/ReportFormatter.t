@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 use Transformers;
 use ReportFormatter;
@@ -65,7 +65,7 @@ is(
 "# Truncate underline
 # col1  col2
 # ===== ======================================================================
-# short long long long long long long long long long long long long long long long long long long
+# short long long long long long long long long long long long long long lo...
 ",
    'Truncate header underlining to line width'
 );
@@ -73,7 +73,6 @@ is(
 
 # Make sure header labels are always left justified.
 $rf = new ReportFormatter(
-   line_width       => 74,
    long_last_column => 1,
 );
 $rf->set_columns(
@@ -82,7 +81,7 @@ $rf->set_columns(
    { name => 'Response time', right_justify => 1, },
    { name => 'Calls',         right_justify => 1, },
    { name => 'R/Call',        right_justify => 1, },
-   { name => 'Item',          },
+   { name => 'Item',                              },
 );
 $rf->add_line(
    '123456789', '0x31DA25F95494CA95', '0.1494 99.9%', '1', '0.1494', 'SHOW');
@@ -95,6 +94,32 @@ is(
 ",
    'Header labels are always left justified'
 );
+
+# #############################################################################
+# Respect line width.
+# #############################################################################
+$rf = new ReportFormatter();
+$rf->set_title('Respect line width');
+$rf->set_columns(
+   { name => 'col1' },
+   { name => 'col2' },
+   { name => 'col3' },
+);
+$rf->add_line(
+   'short',
+   'longer',
+   'long long long long long long long long long long long long long long long long long long');
+
+is(
+   $rf->get_report(),
+"# Respect line width
+# col1  col2   col3
+# ===== ====== ===============================================================
+# short longer long long long long long long long long long long long long ...
+",
+   'Respects line length'
+);
+
 
 # #############################################################################
 # Done.

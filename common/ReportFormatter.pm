@@ -52,13 +52,12 @@ sub new {
       underline_header   => 1,
       line_prefix        => '# ',
       line_width         => 78,
-      truncate_underline => 1,
       column_spacing     => ' ',
       %args,             # args above can be overriden, args below cannot
       n_cols             => 0,
    };
 
-   if ( $self->{line_width} eq 'auto' ) {
+   if ( ($self->{line_width} || '') eq 'auto' ) {
       die "Cannot auto-detect line width because the Term::ReadKey module "
          . "is not installed" unless $have_term;
       ($self->{line_width}) = GetTerminalSize();
@@ -160,11 +159,11 @@ sub get_report {
    $n_cols   -= 1 if $self->{long_last_column};  # handle this col specially
    my @col_fmts;
    for my $i ( 0..$n_cols ) {
-      my $col = $self->{cols}->[$i];
-      my $col_fmt = '%'
-                  . ($col->{right_justify} ? '' : '-')
-                  . ($col->{max_width} || $col->{max_val_width} || '')
-                  . ($col->{type} || 's');
+      my $col      = $self->{cols}->[$i];
+      my $col_fmt  = '%'
+                   . ($col->{right_justify} ? '' : '-')
+                   . ($col->{max_width} || $col->{max_val_width} || '')
+                   . ($col->{type} || 's');
       push @col_fmts, $col_fmt;
    }
    if ( $self->{long_last_column} ) {
@@ -181,27 +180,30 @@ sub get_report {
    # Build the report line by line, starting with the title and header lines.
    my @lines;
    push @lines, sprintf "$self->{line_prefix}$self->{title}" if $self->{title};
-   push @lines, sprintf $hdr_fmt, map { $_->{name} } @{$self->{cols}};
+   push @lines, $self->_truncate_to_line_width(
+         sprintf($hdr_fmt, map { $_->{name} } @{$self->{cols}}),
+         strip => 1,
+         mark  => undef,
+   );
 
    if ( $self->{underline_header} ) {
-      my $underline_len = 0;
       my @underlines = map {
          my $underline = '=' x $_->{max_val_width};
-         $underline_len += length $underline;
          $underline;
       } @{$self->{cols}};
-      $underline_len += (scalar @underlines) - 1;
-      if ( $self->{truncate_underline}
-           && (2 + $underline_len) > $self->{line_width} ) {
-         my $over = $self->{line_width} - (2 + $underline_len);
-         $underlines[-1] = substr($underlines[-1], 0, $over);
-      }
-      push @lines, sprintf $fmt, @underlines;
+      push @lines, $self->_truncate_to_line_width(
+         sprintf($fmt, @underlines),
+         strip => 1,
+         mark  => undef,
+      );
    }
 
-   foreach my $line ( @{$self->{lines}} ) {
-      push @lines, sprintf $fmt, @$line;
-   }
+   push @lines, map {
+      $self->_truncate_to_line_width(
+         sprintf($fmt, @$_),
+#         mark => 
+      )
+   } @{$self->{lines}};
 
    return join("\n", @lines) . "\n";
 }
@@ -211,6 +213,21 @@ sub _truncate {
    $val  = substr($val, 0, $width - length $col->{truncate_mark});
    $val .= $col->{truncate_mark};
    return $val;
+}
+
+sub _truncate_to_line_width {
+   my ( $self, $line, %args ) = @_;
+   $args{mark} = '...' unless exists $args{mark};
+   if ( $line ) {
+      $line =~ s/\s+$// if $args{strip};
+      my $len  = length($line);
+      if ( $len > $self->{line_width} ) {
+         my $adj_len = $args{mark} ? length $args{mark} : 0;
+         $line  = substr($line, 0, $self->{line_width} - $adj_len);
+         $line .= $args{mark} if $args{mark};
+      }
+   }
+   return $line;
 }
 
 sub _column_error {
