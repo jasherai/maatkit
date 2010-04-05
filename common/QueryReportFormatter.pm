@@ -29,7 +29,7 @@ Transformers->import(
    qw(shorten micro_t parse_timestamp unix_timestamp
       make_checksum percentage_of));
 
-use constant MKDEBUG           => $ENV{MKDEBUG};
+use constant MKDEBUG           => $ENV{MKDEBUG} || 0;
 use constant LINE_LENGTH       => 74;
 use constant MAX_STRING_LENGTH => 10;
 

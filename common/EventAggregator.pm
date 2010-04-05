@@ -29,7 +29,7 @@ use English qw(-no_match_vars);
 # and just incrementing the bucket each time works, although it is imprecise.
 # See http://code.google.com/p/maatkit/wiki/EventAggregatorInternals.
 # ###########################################################################
-use constant MKDEBUG      => $ENV{MKDEBUG};
+use constant MKDEBUG      => $ENV{MKDEBUG} || 0;
 use constant BUCK_SIZE    => 1.05;
 use constant BASE_LOG     => log(BUCK_SIZE);
 use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969

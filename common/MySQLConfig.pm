@@ -24,7 +24,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use File::Temp;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $option_pattern = '([^\s=]+)(?:=(\S+))?';
 
