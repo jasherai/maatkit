@@ -98,7 +98,7 @@ is(
 # #############################################################################
 # Respect line width.
 # #############################################################################
-$rf = new ReportFormatter();
+$rf = new ReportFormatter(long_last_column=>1);
 $rf->set_title('Respect line width');
 $rf->set_columns(
    { name => 'col1' },
@@ -108,7 +108,13 @@ $rf->set_columns(
 $rf->add_line(
    'short',
    'longer',
-   'long long long long long long long long long long long long long long long long long long');
+   'long long long long long long long long long long long long long long long long long long'
+);
+$rf->add_line(
+   'a',
+   'b',
+   'c',
+);
 
 is(
    $rf->get_report(),
@@ -116,6 +122,7 @@ is(
 # col1  col2   col3
 # ===== ====== ===============================================================
 # short longer long long long long long long long long long long long long ...
+# a     b      c
 ",
    'Respects line length'
 );
