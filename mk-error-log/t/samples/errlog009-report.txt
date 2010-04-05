@@ -1,4 +1,4 @@
-===== ======= ==================================================
-    1 info    mysqladmin debug memory status                    
-    2 warning [Warning] 'db' entry 'test nagios@4fa060606e2d579a
-Count Level   Message                                           
+===== ======= ================================================================
+    1 info    mysqladmin debug memory status
+    2 warning [Warning] 'db' entry 'test nagios@4fa060606e2d579a' ignored i...
+Count Level   Message

@@ -1,6 +1,6 @@
-===== ======= ==================================================
-    1 info    mysqladmin debug                                  
-    1 info    mysqld version info                               
-    1 info    [Note] /usr/sbin/mysqld: ready for connections.   
-    1 warning [Warning] 'db' entry 'test nagios@4fa060606e2d579a
-Count Level   Message                                           
+===== ======= ================================================================
+    1 info    mysqladmin debug
+    1 info    mysqld version info
+    1 info    [Note] /usr/sbin/mysqld: ready for connections.
+    1 warning [Warning] 'db' entry 'test nagios@4fa060606e2d579a' ignored i...
+Count Level   Message

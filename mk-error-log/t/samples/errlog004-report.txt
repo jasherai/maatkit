@@ -1,7 +1,7 @@
-===== ======= ==================================================
-    1 error   [ERROR] Error running query, slave SQL thread abor
-    1 error   InnoDB: Assertion failure                         
-    1 error   mysqld got signal                                 
-    1 unknown InnoDB: Unable to lock ./timer2/rates.ibd, error: 
-    1 unknown mysqld_safe Number of processes running now: 0    
-Count Level   Message                                           
+===== ======= ================================================================
+    1 error   [ERROR] Error running query, slave SQL thread aborted. Fix th...
+    1 error   InnoDB: Assertion failure
+    1 error   mysqld got signal
+    1 unknown InnoDB: Unable to lock ./timer2/rates.ibd, error: 37
+    1 unknown mysqld_safe Number of processes running now: 0
+Count Level   Message

@@ -1,5 +1,7 @@
 Changelog for mk-error-log:
 
+   * Extended Message column to 78 character line width.
+
 2010-04-01: version 1.0.2
 
    * Added DSN OPTIONS section to POD (issue 55).

@@ -1,4 +1,4 @@
 ===== ======= ========================================
-    1 error   InnoDB: Assertion failure               
+    1 error   InnoDB: Assertion failure
     2 warning InnoDB: Warning: cannot find a free slot
-Count Level   Message                                 
+Count Level   Message

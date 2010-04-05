@@ -1,5 +1,5 @@
-===== ======= ==================================================
-    1 error   [ERROR] Slave SQL: Error 'Incorrect key file for t
-    1 error   [ERROR] /usr/sbin/mysqld: Incorrect key file for t
-    1 warning [Warning] Slave: Incorrect key file for table './b
-Count Level   Message                                           
+===== ======= ================================================================
+    1 error   [ERROR] Slave SQL: Error 'Incorrect key file for table './bug...
+    1 error   [ERROR] /usr/sbin/mysqld: Incorrect key file for table './bug...
+    1 warning [Warning] Slave: Incorrect key file for table './bugs_eventum...
+Count Level   Message

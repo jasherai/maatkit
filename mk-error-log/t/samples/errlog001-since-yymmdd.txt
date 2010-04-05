@@ -1,5 +1,5 @@
-===== ===== ==================================================
-    1 error InnoDB: Error: cannot allocate 268451840 bytes of 
-    1 info  mysqld restarted                                  
+===== ===== ==================================================================
+    1 error InnoDB: Error: cannot allocate 268451840 bytes of memory with m...
+    1 info  mysqld restarted
     1 info  [Note] /usr/libexec/mysqld: ready for connections.
-Count Level Message                                           
+Count Level Message

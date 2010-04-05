@@ -1,6 +1,6 @@
 ===== ===== =========================
     1 error InnoDB: Assertion failure
-    1 error mysqld got signal        
-    1 info  mysqld restarted         
-Count Level Message                  
+    1 error mysqld got signal
+    1 info  mysqld restarted
+Count Level Message
 Resuming /tmp/errlog008.txt at position 0

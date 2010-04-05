@@ -70,7 +70,7 @@ is(
       sub { mk_error_log::main($sample_file, '--resume', $resume_file) },
    ),
 "Resuming $sample_file at position $pos
-Count Level   Message          
+Count Level   Message
 ===== ======= =================
     1 unknown mysqld took a nap
 ",
@@ -99,7 +99,7 @@ is(
       sub { mk_error_log::main($sample_file, '--resume', $resume_file) },
    ),
 "Resuming $sample_file at position $pos
-Count Level   Message           
+Count Level   Message
 ===== ======= ==================
     1 unknown mysqld fell asleep
 ",

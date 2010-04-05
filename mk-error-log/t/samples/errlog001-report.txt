@@ -1,28 +1,28 @@
-===== ======= ==================================================
-    1 error   [ERROR] bdb: log_archive: DB_ARCH_ABS: DB_NOTFOUND
-    1 error   [ERROR] Could not find target log during relay log
-    1 error   [ERROR] Failed to initialize the master info struc
-    1 error   [ERROR] Failed to open the relay log './srv-relay-
-    1 error   [ERROR] /usr/sbin/mysqld: unknown variable 'ssl-ke
-    1 error   InnoDB: Database was not shut down properly!      
-    1 error   InnoDB: Error: cannot allocate 268451840 bytes of 
-    1 info    InnoDB: Shutdown completed                        
-    1 info    InnoDB: Starting log scan                         
-    1 info    InnoDB: Starting shutdown                         
-    1 info    mysqld restarted                                  
-    1 info    [Note] Crash recovery finished.                   
-    1 info    [Note] Found 5 of 0 rows when repairing './test/a3
-    1 info    [Note] Recovering after a crash using srv-bin     
-    1 info    [Note] Starting crash recovery...                 
-    1 info    [Note] /usr/libexec/mysqld: Normal shutdown       
-    1 info    [Note] /usr/libexec/mysqld: Shutdown complete     
-    1 unknown Number of processes running now: 0                
-    1 warning [Warning] Neither --relay-log nor --relay-log-inde
-    1 warning [Warning] No argument was provided to --log-bin, a
-    1 warning [Warning] option 'log_slow_rate_limit': unsigned v
-    2 info    mysqld ended                                      
-    3 info    InnoDB: Started                                   
+===== ======= ================================================================
+    1 error   [ERROR] bdb: log_archive: DB_ARCH_ABS: DB_NOTFOUND: No matchi...
+    1 error   [ERROR] Could not find target log during relay log initializa...
+    1 error   [ERROR] Failed to initialize the master info structure
+    1 error   [ERROR] Failed to open the relay log './srv-relay-bin.000001'...
+    1 error   [ERROR] /usr/sbin/mysqld: unknown variable 'ssl-key=/opt/mysq...
+    1 error   InnoDB: Database was not shut down properly!
+    1 error   InnoDB: Error: cannot allocate 268451840 bytes of memory with...
+    1 info    InnoDB: Shutdown completed
+    1 info    InnoDB: Starting log scan
+    1 info    InnoDB: Starting shutdown
+    1 info    mysqld restarted
+    1 info    [Note] Crash recovery finished.
+    1 info    [Note] Found 5 of 0 rows when repairing './test/a3'
+    1 info    [Note] Recovering after a crash using srv-bin
+    1 info    [Note] Starting crash recovery...
+    1 info    [Note] /usr/libexec/mysqld: Normal shutdown
+    1 info    [Note] /usr/libexec/mysqld: Shutdown complete
+    1 unknown Number of processes running now: 0
+    1 warning [Warning] Neither --relay-log nor --relay-log-index were used...
+    1 warning [Warning] No argument was provided to --log-bin, and --log-bi...
+    1 warning [Warning] option 'log_slow_rate_limit': unsigned value 0 adju...
+    2 info    mysqld ended
+    3 info    InnoDB: Started
     3 info    [Note] /usr/libexec/mysqld: ready for connections.
-    4 info    mysqld version info                               
-    5 info    mysqld started                                    
-Count Level   Message                                           
+    4 info    mysqld version info
+    5 info    mysqld started
+Count Level   Message
