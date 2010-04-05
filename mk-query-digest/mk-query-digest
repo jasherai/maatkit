@@ -369,7 +369,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5697
+# Quoter package 6079
 # ###########################################################################
 package Quoter;
 
@@ -395,8 +395,9 @@ sub quote {
 sub quote_val {
    my ( $self, $val, $is_numeric ) = @_;
 
-   return 'NULL' unless defined $val;  # undef = NULL
-   return "''" if $val eq '';          # blank string = ''
+   return 'NULL' unless defined $val;         # undef = NULL
+   return "''" if $val eq '';                 # blank string = ''
+   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
 
    if ( !defined $is_numeric ) {
       $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
@@ -1616,7 +1617,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6042
+# QueryRewriter package 6093
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1801,10 +1802,10 @@ sub distill_verbs {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
    };
-   my $verbs = join(q{ }, @verbs);
-   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+   my $verb_str = join(q{ }, @verbs);
+   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
 
-   return $verbs;
+   return $verb_str;
 }
 
 sub __distill_tables {
@@ -4527,7 +4528,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 4916
+# EventAggregator package 6094
 # ###########################################################################
 package EventAggregator;
 
@@ -4535,7 +4536,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG      => $ENV{MKDEBUG};
+use constant MKDEBUG      => $ENV{MKDEBUG} || 0;
 use constant BUCK_SIZE    => 1.05;
 use constant BASE_LOG     => log(BUCK_SIZE);
 use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
@@ -5292,7 +5293,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 5950
+# QueryReportFormatter package 6094
 # ###########################################################################
 
 
@@ -5306,7 +5307,7 @@ Transformers->import(
    qw(shorten micro_t parse_timestamp unix_timestamp
       make_checksum percentage_of));
 
-use constant MKDEBUG           => $ENV{MKDEBUG};
+use constant MKDEBUG           => $ENV{MKDEBUG} || 0;
 use constant LINE_LENGTH       => 74;
 use constant MAX_STRING_LENGTH => 10;
 
