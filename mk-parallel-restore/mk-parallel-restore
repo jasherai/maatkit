@@ -2287,7 +2287,7 @@ sub main {
    # ########################################################################
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] PATH [PATH...]',
+      prompt      => '[OPTION...] [DSN] PATH [PATH...]',
       description => 'loads files into MySQL in parallel.',
    );
    $o->get_specs();
@@ -2321,6 +2321,29 @@ sub main {
       $o->set('foreign-key-checks', 0) unless $o->got('foreign-key-checks');
    }
 
+   my $dsn;
+   if ( @ARGV ) {
+      my @paths;
+      foreach my $arg ( @ARGV ) {
+         # Arg is a path if it's a path or file that exist or, for paths/files
+         # that don't exist, it doesn't have equal signs in its name (most
+         # paths/files shouldn't; most DSN do).
+         if ( -d $arg || -e $arg || $arg !~ m/=/ ) {
+            MKDEBUG && _d('Auto-detected', $arg, 'as a path');
+            push @paths, $arg;
+         }
+         else {
+            MKDEBUG && _d('Auto-detected', $arg, 'as a DSN');
+            if ( $dsn ) {
+               $o->save_error("More than one DSN was specified; "
+                  . "only one is allowed");
+               next;
+            }
+            $dsn = $arg;
+         }
+      }
+      @ARGV = @paths;
+   }
    if ( !@ARGV ) {
       $o->save_error("You did not specify any files to restore");
    }
@@ -2380,7 +2403,7 @@ sub main {
    if ( $o->get('ask-pass') ) {
       $o->set('password', OptionParser::prompt_noecho("Enter password: "));
    }
-   my $dbh = get_cxn(o=>$o, dp=>$dp);
+   my $dbh = get_cxn(o=>$o, dp=>$dp, dsn=>$dsn);
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
 
@@ -2574,7 +2597,7 @@ sub main {
       while ( !$dbh->ping && $tries++ < $o->get('wait') ) {
          sleep(1);
          eval {
-            $dbh = get_cxn(%common_modules);
+            $dbh = get_cxn(dsn=>$dsn, %common_modules);
          };
          if ( $EVAL_ERROR ) {
             info($o, 0, 'Waiting: ' . scalar(localtime) . ' '
@@ -2605,6 +2628,7 @@ sub main {
                files       => $files_for_table{$todo->{D}}->{$todo->{N}},
                file_size   => \%size_for_file,
                tbl_chunks  => \%chunks_for_table,
+               dsn         => $dsn,
                %common_modules,
             ) || $exit_status;
             exit($exit_status);
@@ -3128,7 +3152,9 @@ sub get_cxn {
    # DSNParser will interpret D has the default database for the connection,
    # but in this script D means the database into which all files are loaded.
    # Therefore, we must get the opt values and manually remove D.
-   my $dsn   = $dp->parse_options($o);
+   my $dsn_defaults = $dp->parse_options($o);
+   my $dsn   = $args{dsn} ? $dp->parse($args{dsn}, $dsn_defaults)
+             :              $dsn_defaults;
    $dsn->{D} = undef;
    my $dbh   = $dp->get_dbh($dp->get_cxn_params($dsn));
 

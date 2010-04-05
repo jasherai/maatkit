@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * Added ability to specify a DSN on the command line.
+
 2010-04-01: version 1.0.21
 
    * --fast-index was case-sensitive (issue 956).
