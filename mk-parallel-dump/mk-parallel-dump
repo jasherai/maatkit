@@ -3305,8 +3305,8 @@ sub main {
    # ########################################################################
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...]',
-      description => q{dumps sets of MySQL tables in parallel.},
+      prompt      => '[OPTION...] [DSN]',
+      description => q{dumps MySQL tables in parallel.},
    );
    $o->get_specs();
    $o->get_opts();
@@ -3375,11 +3375,10 @@ sub main {
       mysql_use_result => $o->get('client-side-buffering') ? 0 : 1,
    };
 
-   my $dsn                  = $dp->parse_options($o);
-   my $dbh                  = $dp->get_dbh(
-                                 $dp->get_cxn_params($dsn),
-                                 $dbh_attribs,
-                              );
+   my $dsn_defaults = $dp->parse_options($o);
+   my $dsn  = @ARGV ? $dp->parse(shift @ARGV, $dsn_defaults)
+            :         $dsn_defaults;
+   my $dbh  = $dp->get_dbh($dp->get_cxn_params($dsn), $dbh_attribs);
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref() 
 
@@ -3580,10 +3579,7 @@ sub main {
       while ( !$dbh->ping && $tries++ < $o->get('wait') ) {
          sleep(1);
          eval {
-            $dbh = $dp->get_dbh(
-               $dp->get_cxn_params($dp->parse_options($o)),
-               $dbh_attribs,
-            );
+            $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), $dbh_attribs);
          };
          if ( $EVAL_ERROR ) {
             info($o, 0, 'Waiting: ' . scalar(localtime)
@@ -3661,6 +3657,7 @@ sub main {
             my $exit_status = dump_chunk(
                chunk       => $chunk,
                file        => $file,
+               dsn         => $dsn,
                dbh_attribs => $dbh_attribs,
                %common_modules,
             );
@@ -4008,7 +4005,7 @@ sub interp {
 sub dump_chunk {
    my ( %args ) = @_;
    my @required_args = qw(chunk file DSNParser OptionParser Quoter MySQLDump
-                          dbh_attribs);
+                          dsn dbh_attribs);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
@@ -4021,10 +4018,9 @@ sub dump_chunk {
 
    my $dbh;
    if ( !$o->get('dry-run') ) {
-      $dbh = $dp->get_dbh(
-         $dp->get_cxn_params($dp->parse_options($o)),
-         $args{dbh_attribs},
-      );
+      my $dsn         = $args{dsn};
+      my $dbh_attribs = $args{dbh_attribs};
+      $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), $dbh_attribs);
    }
 
    # Dump SHOW CREATE TABLE  before the first chunk.

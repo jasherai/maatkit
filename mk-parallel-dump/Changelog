@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * Added ability to specify a DSN on the command line.
+
 2010-04-01: version 1.0.23
 
    * Added DSN OPTIONS section to POD (issue 55).
