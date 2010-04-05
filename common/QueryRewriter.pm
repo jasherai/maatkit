@@ -271,10 +271,14 @@ sub distill_verbs {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
    };
-   my $verbs = join(q{ }, @verbs);
-   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+   # This used to be "my $verbs" but older verisons of Perl complain that
+   # ""my" variable $verbs masks earlier declaration in same scope" where
+   # the earlier declaration is our $verbs.
+   # http://code.google.com/p/maatkit/issues/detail?id=957
+   my $verb_str = join(q{ }, @verbs);
+   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
 
-   return $verbs;
+   return $verb_str;
 }
 
 sub __distill_tables {
