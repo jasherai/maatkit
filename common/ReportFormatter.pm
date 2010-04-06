@@ -35,13 +35,13 @@ $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
 # Arguments:
-#  * underline_header   bool: underline headers with =
-#  * line_prefix        scalar: prefix every line with this string
-#  * line_width         scalar: line width in characters or 'auto'
-#  * truncate_underline bool: don't underline beyond line_width
-#  * column_errors      scalar: die or warn on column errors (default warn)
-#  * long_last_column   bool: don't length limit last (right-most) column
-#  * column_spacing     scalar: string between columns (default one space)
+#  * underline_header    bool: underline headers with =
+#  * line_prefix         scalar: prefix every line with this string
+#  * line_width          scalar: line width in characters or 'auto'
+#  * truncate_underline  bool: don't underline beyond line_width
+#  * column_errors       scalar: die or warn on column errors (default warn)
+#  * truncate_data_lines bool: truncate data lines to line_width (default yes)
+#  * column_spacing      scalar: string between columns (default one space)
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw();
@@ -49,12 +49,13 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
-      underline_header   => 1,
-      line_prefix        => '# ',
-      line_width         => 78,
-      column_spacing     => ' ',
-      %args,             # args above can be overriden, args below cannot
-      n_cols             => 0,
+      underline_header    => 1,
+      line_prefix         => '# ',
+      line_width          => 78,
+      column_spacing      => ' ',
+      truncate_data_lines => 1,
+      %args,              # args above can be overriden, args below cannot
+      n_cols              => 0,
    };
 
    if ( ($self->{line_width} || '') eq 'auto' ) {
@@ -155,8 +156,7 @@ sub get_report {
    my ( $self ) = @_;
 
    # Make the printf line format for each row given the columns' settings.
-   my $n_cols = $self->{n_cols} - 1;
-   $n_cols   -= 1 if $self->{long_last_column};  # handle this col specially
+   my $n_cols = $self->{n_cols} - 2;
    my @col_fmts;
    for my $i ( 0..$n_cols ) {
       my $col      = $self->{cols}->[$i];
@@ -166,9 +166,8 @@ sub get_report {
                    . ($col->{type} || 's');
       push @col_fmts, $col_fmt;
    }
-   if ( $self->{long_last_column} ) {
-      push @col_fmts, '%s';  # Let the column's value extend rightward forever
-   }
+   push @col_fmts, '%s';  # Let the column's value extend rightward forever
+
    my $fmt = ($self->{line_prefix} || '')
            . join($self->{column_spacing}, @col_fmts);
    MKDEBUG && _d('Format:', $fmt);
@@ -199,10 +198,13 @@ sub get_report {
    }
 
    push @lines, map {
-      $self->_truncate_to_line_width(
-         sprintf($fmt, @$_),
-#         mark => 
-      )
+      my $line = sprintf($fmt, @$_);
+      if ( $self->{truncate_data_lines} ) {
+         $self->_truncate_to_line_width($line);
+      }
+      else {
+         $line;
+      }
    } @{$self->{lines}};
 
    return join("\n", @lines) . "\n";

@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 7;
 
 use Transformers;
 use ReportFormatter;
@@ -44,15 +44,13 @@ is(
 "# Checksum differences
 # Query ID             db-1.foo.com 123.123.123.123
 # ==================== ============ ===============
-# 0x3A99CC42AEDCCFCD-1 ABC12345     ADD12345       
-# 0x234DDDAC43820481-3 0007C99B     BB008171       
+# 0x3A99CC42AEDCCFCD-1 ABC12345     ADD12345
+# 0x234DDDAC43820481-3 0007C99B     BB008171
 ",
    'Basic report'
 );
 
-$rf = new ReportFormatter(
-   long_last_column => 1,
-);
+$rf = new ReportFormatter();
 $rf->set_title('Truncate underline');
 $rf->set_columns(
    { name => 'col1' },
@@ -72,9 +70,7 @@ is(
 
 
 # Make sure header labels are always left justified.
-$rf = new ReportFormatter(
-   long_last_column => 1,
-);
+$rf = new ReportFormatter();
 $rf->set_columns(
    { name => 'Rank',          right_justify => 1, },
    { name => 'Query ID',                          },
@@ -98,7 +94,7 @@ is(
 # #############################################################################
 # Respect line width.
 # #############################################################################
-$rf = new ReportFormatter(long_last_column=>1);
+$rf = new ReportFormatter();
 $rf->set_title('Respect line width');
 $rf->set_columns(
    { name => 'col1' },
@@ -127,6 +123,38 @@ is(
    'Respects line length'
 );
 
+
+# #############################################################################
+# truncate_lines
+# #############################################################################
+$rf = new ReportFormatter(truncate_data_lines => 0);
+$rf->set_title('Respect line width');
+$rf->set_columns(
+   { name => 'col1' },
+   { name => 'col2' },
+   { name => 'col3' },
+);
+$rf->add_line(
+   'short',
+   'longer',
+   'long long long long long long long long long long long long long long long long long long'
+);
+$rf->add_line(
+   'a',
+   'b',
+   'c',
+);
+
+is(
+   $rf->get_report(),
+"# Respect line width
+# col1  col2   col3
+# ===== ====== ===============================================================
+# short longer long long long long long long long long long long long long long long long long long long
+# a     b      c
+",
+   "Don't truncate data lines"
+);
 
 # #############################################################################
 # Done.
