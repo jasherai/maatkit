@@ -22,6 +22,10 @@ package MySQLConfigComparer;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -73,64 +77,121 @@ sub new {
    return bless $self, $class;
 }
 
-# Returns an arrayref of hashrefs for each variable whose online
-# value is different from it's config/offline value.
-sub get_stale_variables {
+# Takes a list of config hashrefs (from MySQLConfig::get_config()),
+# compares the first to the others, returns an arrayref of hashrefs
+# of variables that differ, like:
+#   {
+#      max_connections => [ 100, 50 ],
+#   },
+# The value for each differing var is an arrayref of values corresponding
+# to the given configs.  So $configs[N] = $differing_var->[N].  Only vars
+# in the first config are compared, so if $configs[0] has var "foo" but
+# $configs[1] does not, then the var is skipped.  Similarly, if $configs[1]
+# has var "bar" but $configs[0] does not, then the var is not compared.
+# Called missing() to discover which vars are missing in the configs.
+sub diff {
+   my ( $self, @configs ) = @_;
+   my @diffs;
+   die "diff() requires at least one config" if @configs < 1;
+   return \@diffs if @configs == 1;  # One config can't differ with itself.
+   MKDEBUG && _d('diff configs:', Dumper(\@configs));
+
+   # Get list of vars that exist in all configs (intersection of their keys).
+   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect(@configs);
+
+   # Make a list of values from each config for all the common vars.  So,
+   #   %vals = {
+   #     var1 => [ config0-var1-val, config1-var2-val ],
+   #     var2 => [ config0-var2-val, config1-var2-val ],
+   #   }
+   my %vals = map {
+      my $var  = $_;
+      my $vals = [
+         map {
+            my $config = $_;
+            my $val    = defined $config->{$var} ? $config->{$var} : '';
+            $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
+            $val;
+         } @configs 
+      ];
+      $var => $vals;
+   } @vars;
+
+   VAR:
+   foreach my $var ( keys %vals ) {
+      my $vals     = $vals{$var};
+      my $last_val = scalar @$vals - 1;
+
+      # Compare config0 val to other configs' val.
+      # Stop when a difference is found.
+      VAL:
+      for my $i ( 1..$last_val ) {
+         # First try straight string equality comparison.  If the vals
+         # are equal, stop.  If not, try a special eq_for comparison.
+         if ( $vals->[0] ne $vals->[$i] ) {
+            if ( !$eq_for{$var} || !$eq_for{$var}->($vals->[0], $vals->[$i]) ) {
+               push @diffs, {
+                  var  => $var,
+                  vals => [ map { $_->{$var} } @configs ],  # original vals
+               };
+               last VAL;
+            }
+         }
+      } # VAL
+   } # VAR
+
+   return \@diffs;
+}
+
+# Given a MySQLConfig obj, returns an arrayref of hashrefs for each
+# variable whose online value is different from it's config/offline
+# value.  Each value in the hashref is an arrayref like,
+#   [online value, offline value].
+sub stale_variables {
    my ( $self, $config ) = @_;
    return unless $config;
 
-   my @stale;
-   my $offline = $config->get_config(offline=>1);
-   my $online  = $config->get_config();
+   my $diffs = $self->diff(
+      $config->get_config(),
+      $config->get_config(offline=>1)
+   );
 
-   if ( !keys %$online ) {
-      MKDEBUG && _d("Cannot check for stale vars without online config");
-      return;
-   }
-
-   foreach my $var ( keys %$offline  ) {
-      next if exists $ignore_vars{$var};
-      next unless exists $online->{$var};
-      MKDEBUG && _d('var:', $var);
-
-      my $online_val  = $config->get($var);
-      my $offline_val = $config->get($var, offline=>1);
-      my $stale       = 0;
-      MKDEBUG && _d('real val online:', $online_val, 'offline:', $offline_val);
-
-      # Normalize values: ON|YES|TRUE==1, OFF|NO|FALSE==0.
-      $online_val  = $alt_val_for{$online_val}
-         if exists $alt_val_for{$online_val};
-      $offline_val = $alt_val_for{$offline_val}
-         if exists $alt_val_for{$offline_val};
-      MKDEBUG && _d('alt val online:', $online_val, 'offline:', $offline_val);
-
-      # Caller should eval us and catch this because although we try
-      # to handle special cases for all sys vars, there's a lot of
-      # sys vars and you may encounter one we've not dealt with before.
-      die "Offline value for $var is undefined" unless defined $offline_val;
-      die "Online value for $var is undefined"  unless defined $online_val;
-
-      # Var is stale if the two values are not equal.  First try straight
-      # string equality comparison.  If the vals are equal, stop.  If not,
-      # try a special eq_for comparison if possible.
-      if ( $offline_val ne $online_val ) {
-         if ( !$eq_for{$var} || !$eq_for{$var}->($offline_val, $online_val) ) {
-            MKDEBUG && _d('stale:', $var);
-            $stale = 1;
-         }
+   # Convert diff struct to something more explicit.
+   my @stale_vars = map {
+      {
+         var         => $_->{var},
+         online_val  => $_->{vals}->[0],
+         offline_val => $_->{vals}->[1],
       }
+   } @$diffs;
 
-      if ( $stale ) {
-         push @stale, {
-            var         => $var,
-            online_val  => $config->get($var),
-            offline_val => $config->get($var, offline=>1),
-         }
+   return \@stale_vars;
+}
+
+sub missing {
+   my ( $self, @configs ) = @_;
+   my @missing;
+   die "missing() requires at least one config" if @configs < 1;
+   return \@missing if @configs == 1;  # One config can't differ with itself.
+   MKDEBUG && _d('missing configs:', Dumper(\@configs));
+
+   # Get all unique vars and how many times each exists.
+   my %vars;
+   map { $vars{$_}++ } map { keys %{$configs[$_]} } 0..$#configs;
+
+   # If a var exists less than the number of configs then it is
+   # missing from at least one of the configs.
+   my $n_configs = scalar @configs;
+   foreach my $var ( keys %vars ) {
+      if ( $vars{$var} < $n_configs ) {
+         push @missing, {
+            var     => $var,
+            missing => [ map { exists $_->{$var} ? 0 : 1 } @configs ],
+         };
       }
    }
 
-   return \@stale;
+   return \@missing;
 }
 
 # True if x is val1 or val2 and y is val1 or val2.
@@ -160,8 +221,22 @@ sub _eqifon {
 # True if offline value not set/configured (so online vals is
 # some built-in default).
 sub _eqifnoconf {
-   my ( $conf_val, $online_val ) = @_;
+   my ( $online_val, $conf_val ) = @_;
    return $conf_val == 0 ? 1 : 0;
+}
+
+# Given an array of hashes, returns an array of keys that
+# are the intersection of all the hashes' keys.  Example:
+#   my $foo = { foo=>1, nit=>1   };
+#   my $bar = { bar=>2, bla=>'', };
+#   my $zap = { zap=>3, foo=>2,  };
+#   my @a   = ( $foo, $bar, $zap );
+# key_intersect(\@a) return ['foo'].
+sub key_intersect {
+   my ( $self, @hashes ) = @_;
+   my %keys  = map { $_ => 1 } keys %{$hashes[0]};
+   my @isect = grep { $keys{$_} } map { keys %{$hashes[$_]} } 1..$#hashes;
+   return @isect;
 }
 
 sub _d {
