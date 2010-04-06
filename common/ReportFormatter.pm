@@ -115,7 +115,7 @@ sub set_columns {
 sub add_line {
    my ( $self, @vals ) = @_;
    my $n_vals = scalar @vals;
-   $self->_column_error("Number of columns ($$self->{n_cols}) and "
+   $self->_column_error("Number of columns ($self->{n_cols}) and "
       . "values ($n_vals) do not match") unless $self->{n_cols} == $n_vals;
 
    my @line;
