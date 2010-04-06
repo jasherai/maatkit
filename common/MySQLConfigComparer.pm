@@ -145,8 +145,8 @@ sub diff {
 
 # Given a MySQLConfig obj, returns an arrayref of hashrefs for each
 # variable whose online value is different from it's config/offline
-# value.  Each value in the hashref is an arrayref like,
-#   [online value, offline value].
+# value.  This is the same as diff()ing the config's online vals
+# against its offline vals.
 sub stale_variables {
    my ( $self, $config ) = @_;
    return unless $config;
