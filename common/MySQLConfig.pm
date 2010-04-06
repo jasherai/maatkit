@@ -22,18 +22,8 @@ package MySQLConfig;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use File::Temp;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-
-my $option_pattern = '([^\s=]+)(?:=(\S+))?';
-
-my %alias_for = (
-   ON   => 'TRUE',
-   OFF  => 'FALSE',
-   YES  => '1',
-   NO   => '0',
-);
 
 my %undef_for = (
    'log'                         => 'OFF',
@@ -45,12 +35,6 @@ my %undef_for = (
    skip_bdb                      => 0,
    skip_external_locking         => 'ON',
    skip_name_resolve             => 'ON',
-);
-
-my %ignore_vars = (
-   date_format     => 1,
-   datetime_format => 1,
-   time_format     => 1,
 );
 
 my %eq_for = (
@@ -144,9 +128,9 @@ sub get_duplicate_variables {
 # Arguments:
 #   * from    scalar: one of mysqld, my_print_defaults, or show_variables
 #   when from=mysqld or my_print_defaults:
-#     * cmd     scalar: cmd to run for from for output, or
-#     * file    scalar: file for from for output, or
-#     * fh      scalar: fh for from for output
+#     * cmd     scalar: get output from cmd, or
+#     * file    scalar: get output from file, or
+#     * fh      scalar: get output from fh
 #   when from=show_variables:
 #     * dbh     obj: dbh to get SHOW VARIABLES
 #     * rows    arrayref: vals from SHOW VARIABLES
@@ -178,8 +162,19 @@ sub set_config {
          $output = do { local $/ = undef; <$fh> };
       }
 
-      my $parse_sub = "parse_$from";
-      $self->$parse_sub($output);
+      my ($config, $dupes, $ddf);
+      if ( $from eq 'mysqld' ) {
+         ($config, $ddf) = $self->parse_mysqld($output);
+      }
+      elsif ( $from eq 'my_print_defaults' ) {
+         ($config, $dupes) = $self->parse_my_print_defaults($output);
+      }
+
+      die "Failed to parse MySQL config from $from" unless $config;
+      @{$self->{config}->{offline}}{keys %$config} = values %$config;
+
+      $self->{default_defaults_files} = $ddf   if $ddf;
+      $self->{duplicate_vars}         = $dupes if $dupes;
    }
    elsif ( $args{from} eq 'show_variables' ) {
       die "Setting the MySQL config from $from requires a "
@@ -200,11 +195,21 @@ sub set_config {
    return;
 }
 
-# Parse "mysqld --help --verbose" output which lists the default
-# defaults files and the offline system var values according to
-# whatever defaults file it was given explicitly with --defaults-file
-# or implicitily from one of the default defaults files.
-# Returns nothing.
+# Set online config given the arrayref of rows.  This arrayref is
+# usually from SHOW VARIABLES.  This sub is usually called via
+# set_config().
+sub set_online_config {
+   my ( $self, $rows ) = @_;
+   return unless $rows;
+   my %config = map { @$_ } @$rows;
+   $self->{config}->{online} = \%config;
+   return;
+}
+
+# Parse "mysqld --help --verbose" and return a hashref of variable=>values
+# and an arrayref of default defaults files if possible.  The "default
+# defaults files" are the defaults file that mysqld reads by default if no
+# defaults file is explicitly given by --default-file.
 sub parse_mysqld {
    my ( $self, $output ) = @_;
    return unless $output;
@@ -212,12 +217,12 @@ sub parse_mysqld {
    # First look for the list of default defaults files like
    #   Default options are read from the following files in the given order:
    #   /etc/my.cnf /usr/local/mysql/etc/my.cnf ~/.my.cnf 
+   my @ddf;
    if ( $output =~ m/^Default options are read.+\n/mg ) {
       my ($ddf) = $output =~ m/\G^(.+)\n/m;
       my %seen;
       my @ddf = grep { !$seen{$_} } split(' ', $ddf);
       MKDEBUG && _d('Default defaults files:', @ddf);
-      $self->{default_defaults_files} = \@ddf;
    }
    else {
       MKDEBUG && _d("mysqld help output doesn't list default defaults files");
@@ -242,39 +247,27 @@ sub parse_mysqld {
    # shouldn't be any with mysqld.
    my ($config, undef) = $self->_parse_varvals($varvals =~ m/\G^(\S+)(.*)\n/mg);
 
-   # Merge these var-vals into the offline config.
-   @{$self->{config}->{offline}}{keys %$config} = values %$config;
-
-   return; 
+   return $config, \@ddf;
 }
 
-# Parse "my_print_defaults" output.
-# Returns nothing.
+# Parse "my_print_defaults" output and return a hashref of variable=>values
+# and a hashref of any duplicated variables.
 sub parse_my_print_defaults {
    my ( $self, $output ) = @_;
    return unless $output;
 
    # Parse the "--var=val" lines.
-   my ($config, $duplicates) = $self->_parse_varvals(
-      map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output) );
+   my ($config, $dupes) = $self->_parse_varvals(
+      map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
+   );
 
-   # Merge these var-vals into the offline config.
-   @{$self->{config}->{offline}}{keys %$config} = values %$config;
-
-   # Save the duplicates.  Unlike mysqld, my_print_defaults prints duplicates.
-   $self->{duplicate_vars} = $duplicates;
-
-   return; 
+   return $config, $dupes;
 }
 
-sub set_online_config {
-   my ( $self, $rows ) = @_;
-   return unless $rows;
-   my %config = map { @$_ } @$rows;
-   $self->{config}->{online} = \%config;
-   return;
-}
-
+# Parses a list of variables and their values ("varvals"), returns two
+# hashrefs: one with normalized variable=>value, the other with duplicate
+# vars.  The varvals list should start with a var at index 0 and its value
+# at index 1 then repeat for the next var-val pair.  
 sub _parse_varvals {
    my ( $self, @varvals ) = @_;
 
@@ -298,7 +291,10 @@ sub _parse_varvals {
          # If this var exists in the offline config already, then
          # its a duplicate.  Its original value will be saved before
          # being overwritten with the new value.
-         $duplicate_var = 1 if exists $config{$item};
+         if ( exists $config{$item} && !$can_be_duplicate{$item} ) {
+            MKDEBUG && _d("Duplicate var:", $item);
+            $duplicate_var = 1;
+         }
 
          $var      = 0;  # next item should be the val for this var
          $last_var = $item;
@@ -337,123 +333,6 @@ sub _parse_varvals {
    }
 
    return \%config, \%duplicates;
-}
-
-# Everything below here is legacy from mk-audit.
-# It will be updated or removed.
-
-sub _defaults_file_op {
-   my ( $self, $ddf )   = @_;  # ddf = default defaults file (optional)
-   my $defaults_file_op = '';
-   my $tmp_file         = undef;
-   my $defaults_file    = defined $ddf ? $ddf
-                        : $self->{cmd_line_ops}->{defaults_file};
-
-   if ( $defaults_file && -f $defaults_file ) {
-      $tmp_file = File::Temp->new();
-      my $cp_cmd = "cp $defaults_file "
-                 . $tmp_file->filename;
-      `$cp_cmd`;
-      $defaults_file_op = "--defaults-file=" . $tmp_file->filename;
-
-      MKDEBUG && _d('Tmp file for defaults file', $defaults_file, ':',
-         $tmp_file->filename);
-   }
-   else {
-      MKDEBUG && _d('Defaults file does not exist:', $defaults_file);
-   }
-
-   return ( $defaults_file_op, $tmp_file );
-}
-
-sub overriden_sys_vars {
-   my ( $self ) = @_;
-   my %overriden_vars;
-   foreach my $var_val ( @{ $self->{defaults_file_sys_vars} } ) {
-      my ( $var, $val ) = ( $var_val->[0], $var_val->[1] );
-      if ( !defined $var || !defined $val ) {
-         MKDEBUG && _d('Undefined var or val:', Dumper($var_val));
-         next;
-      }
-      if ( exists $self->{cmd_line_ops}->{$var} ) {
-         if(    ( !defined $self->{cmd_line_ops}->{$var} && !defined $val)
-             || ( $self->{cmd_line_ops}->{$var} ne $val) ) {
-            $overriden_vars{$var} = [ $self->{cmd_line_ops}->{$var}, $val ];
-         }
-      }
-   }
-   return \%overriden_vars;
-}
-
-sub out_of_sync_sys_vars {
-   my ( $self ) = @_;
-   my %out_of_sync_vars;
-
-   VAR:
-   foreach my $var ( keys %{ $self->{conf_sys_vars} } ) {
-      next VAR if exists $ignore_vars{$var};
-      next VAR unless exists $self->{online_sys_vars}->{$var};
-
-      my $conf_val        = $self->{conf_sys_vars}->{$var};
-      my $online_val      = $self->{online_sys_vars}->{$var};
-      my $var_out_of_sync = 0;
-
-
-      if ( ($conf_val || $online_val) && ($conf_val ne $online_val) ) {
-         $var_out_of_sync = 1;
-
-         if ( exists $eq_for{$var} ) {
-            $var_out_of_sync = !$eq_for{$var}->($conf_val, $online_val);
-         }
-         if ( exists $alias_for{$online_val} ) {
-            $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
-         }
-      }
-
-      if ( $var_out_of_sync ) {
-         $out_of_sync_vars{$var} = { online=>$online_val, config=>$conf_val };
-      }
-   }
-
-   return \%out_of_sync_vars;
-}
-
-sub get_eq_for {
-   my ( $var ) = @_;
-   if ( exists $eq_for{$var} ) {
-      return $eq_for{$var};
-   }
-   return;
-}
-
-sub _veq { 
-   my ( $x, $y, $val1, $val2 ) = @_;
-   return 1 if ( ($x eq $val1 || $x eq $val2) && ($y eq $val1 || $y eq $val2) );
-   return 0;
-}
-
-sub _patheq {
-   my ( $x, $y ) = @_;
-   $x .= '/' if $x !~ m/\/$/;
-   $y .= '/' if $y !~ m/\/$/;
-   return $x eq $y;
-}
-
-sub _eqifon { 
-   my ( $x, $y ) = @_;
-   return 1 if ( $x && $x eq 'ON' && $y );
-   return 1 if ( $y && $y eq 'ON' && $x );
-   return 0;
-}
-
-sub _eqifconfundef {
-   my ( $conf_val, $online_val ) = @_;
-   return ($conf_val eq '' ? 1 : 0);
-}
-
-sub _numericeq {
-   my ( $x, $y ) = @_;
-   return ($x == $y ? 1 : 0);
 }
 
 sub _d {
