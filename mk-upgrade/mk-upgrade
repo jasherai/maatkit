@@ -1065,7 +1065,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5697
+# Quoter package 6079
 # ###########################################################################
 package Quoter;
 
@@ -1091,8 +1091,9 @@ sub quote {
 sub quote_val {
    my ( $self, $val, $is_numeric ) = @_;
 
-   return 'NULL' unless defined $val;  # undef = NULL
-   return "''" if $val eq '';          # blank string = ''
+   return 'NULL' unless defined $val;         # undef = NULL
+   return "''" if $val eq '';                 # blank string = ''
+   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
 
    if ( !defined $is_numeric ) {
       $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
@@ -2493,7 +2494,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 4916
+# EventAggregator package 6094
 # ###########################################################################
 package EventAggregator;
 
@@ -2501,7 +2502,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG      => $ENV{MKDEBUG};
+use constant MKDEBUG      => $ENV{MKDEBUG} || 0;
 use constant BUCK_SIZE    => 1.05;
 use constant BASE_LOG     => log(BUCK_SIZE);
 use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
@@ -3431,7 +3432,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6042
+# QueryRewriter package 6093
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3616,10 +3617,10 @@ sub distill_verbs {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
    };
-   my $verbs = join(q{ }, @verbs);
-   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+   my $verb_str = join(q{ }, @verbs);
+   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
 
-   return $verbs;
+   return $verb_str;
 }
 
 sub __distill_tables {
@@ -3967,7 +3968,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 5714
+# ChangeHandler package 6081
 # ###########################################################################
 package ChangeHandler;
 
@@ -3989,6 +3990,7 @@ sub new {
    my $q = $args{Quoter};
 
    my $self = {
+      hex_blob     => 1,
       %args,
       left_db_tbl  => $q->quote(@args{qw(left_db left_tbl)}),
       right_db_tbl => $q->quote(@args{qw(right_db right_tbl)}),
@@ -4142,7 +4144,7 @@ sub make_UPDATE {
    my $where = $self->make_where_clause($row, $cols);
    my @cols;
    if ( my $dbh = $self->{fetch_back} ) {
-      my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
+      my $sql = $self->make_fetch_back_query($where);
       MKDEBUG && _d('Fetching data on dbh', $dbh, 'for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
@@ -4179,7 +4181,7 @@ sub make_row {
    my @cols; 
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
-      my $sql = "SELECT * FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
+      my $sql   = $self->make_fetch_back_query($where);
       MKDEBUG && _d('Fetching data on dbh', $dbh, 'for', $verb, ':', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
@@ -4236,6 +4238,34 @@ sub sort_cols {
       @cols = sort keys %$row;
    }
    return @cols;
+}
+
+sub make_fetch_back_query {
+   my ( $self, $where ) = @_;
+   die "I need a where argument" unless $where;
+   my $cols       = '*';
+   my $tbl_struct = $self->{tbl_struct};
+   if ( $tbl_struct ) {
+      $cols = join(', ',
+         map {
+            my $col = $_;
+            if (    $self->{hex_blob}
+                 && $tbl_struct->{type_for}->{$col} =~ m/blob|text|binary/ ) {
+               $col = "CONCAT('0x', HEX(`$col`)) AS `$col`";
+            }
+            else {
+               $col = "`$col`";
+            }
+            $col;
+         } @{ $tbl_struct->{cols} }
+      );
+
+      if ( !$cols ) {
+         MKDEBUG && _d('Failed to make explicit columns list from tbl struct');
+         $cols = '*';
+      }
+   }
+   return "SELECT $cols FROM $self->{src_db_tbl} WHERE $where LIMIT 1";
 }
 
 sub _d {
@@ -5110,7 +5140,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 6018
+# TableChecksum package 6078
 # ###########################################################################
 package TableChecksum;
 
@@ -5342,10 +5372,10 @@ sub make_row_checksum {
          if ( $type eq 'timestamp' ) {
             $result .= ' + 0';
          }
-         elsif ( $type =~ m/float|double/ && $args{float_precision} ) {
+         elsif ( $args{float_precision} && $type =~ m/float|double/ ) {
             $result = "ROUND($result, $args{float_precision})";
          }
-         elsif ( $type =~ m/varchar/ && $args{trim} ) {
+         elsif ( $args{trim} && $type =~ m/varchar/ ) {
             $result = "TRIM($result)";
          }
          $result;
@@ -7039,7 +7069,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 5763
+# ReportFormatter package 6108
 # ###########################################################################
 package ReportFormatter;
 
@@ -7065,16 +7095,16 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
-      underline_header   => 1,
-      line_prefix        => '# ',
-      line_width         => 78,
-      truncate_underline => 1,
-      column_spacing     => ' ',
-      %args,             # args above can be overriden, args below cannot
-      n_cols             => 0,
+      underline_header    => 1,
+      line_prefix         => '# ',
+      line_width          => 78,
+      column_spacing      => ' ',
+      truncate_data_lines => 1,
+      %args,              # args above can be overriden, args below cannot
+      n_cols              => 0,
    };
 
-   if ( $self->{line_width} eq 'auto' ) {
+   if ( ($self->{line_width} || '') eq 'auto' ) {
       die "Cannot auto-detect line width because the Term::ReadKey module "
          . "is not installed" unless $have_term;
       ($self->{line_width}) = GetTerminalSize();
@@ -7118,7 +7148,7 @@ sub set_columns {
 sub add_line {
    my ( $self, @vals ) = @_;
    my $n_vals = scalar @vals;
-   $self->_column_error("Number of columns ($$self->{n_cols}) and "
+   $self->_column_error("Number of columns ($self->{n_cols}) and "
       . "values ($n_vals) do not match") unless $self->{n_cols} == $n_vals;
 
    my @line;
@@ -7153,19 +7183,18 @@ sub get_report {
    my ( $self ) = @_;
 
    my $n_cols = $self->{n_cols} - 1;
-   $n_cols   -= 1 if $self->{long_last_column};  # handle this col specially
    my @col_fmts;
    for my $i ( 0..$n_cols ) {
-      my $col = $self->{cols}->[$i];
-      my $col_fmt = '%'
-                  . ($col->{right_justify} ? '' : '-')
-                  . ($col->{max_width} || $col->{max_val_width} || '')
-                  . ($col->{type} || 's');
+      my $col      = $self->{cols}->[$i];
+      my $wid      = $i == $n_cols && !$col->{right_justify} ? ''
+                   : $col->{max_width} || $col->{max_val_width} || '';
+      my $col_fmt  = '%'
+                   . ($col->{right_justify} ? '' : '-')
+                   . $wid
+                   . ($col->{type} || 's');
       push @col_fmts, $col_fmt;
    }
-   if ( $self->{long_last_column} ) {
-      push @col_fmts, '%s';  # Let the column's value extend rightward forever
-   }
+
    my $fmt = ($self->{line_prefix} || '')
            . join($self->{column_spacing}, @col_fmts);
    MKDEBUG && _d('Format:', $fmt);
@@ -7174,27 +7203,33 @@ sub get_report {
 
    my @lines;
    push @lines, sprintf "$self->{line_prefix}$self->{title}" if $self->{title};
-   push @lines, sprintf $hdr_fmt, map { $_->{name} } @{$self->{cols}};
+   push @lines, $self->_truncate_to_line_width(
+         sprintf($hdr_fmt, map { $_->{name} } @{$self->{cols}}),
+         strip => 1,
+         mark  => undef,
+   );
 
    if ( $self->{underline_header} ) {
-      my $underline_len = 0;
       my @underlines = map {
          my $underline = '=' x $_->{max_val_width};
-         $underline_len += length $underline;
          $underline;
       } @{$self->{cols}};
-      $underline_len += (scalar @underlines) - 1;
-      if ( $self->{truncate_underline}
-           && (2 + $underline_len) > $self->{line_width} ) {
-         my $over = $self->{line_width} - (2 + $underline_len);
-         $underlines[-1] = substr($underlines[-1], 0, $over);
-      }
-      push @lines, sprintf $fmt, @underlines;
+      push @lines, $self->_truncate_to_line_width(
+         sprintf($fmt, @underlines),
+         strip => 1,
+         mark  => undef,
+      );
    }
 
-   foreach my $line ( @{$self->{lines}} ) {
-      push @lines, sprintf $fmt, @$line;
-   }
+   push @lines, map {
+      my $line = sprintf($fmt, @$_);
+      if ( $self->{truncate_data_lines} ) {
+         $self->_truncate_to_line_width($line);
+      }
+      else {
+         $line;
+      }
+   } @{$self->{lines}};
 
    return join("\n", @lines) . "\n";
 }
@@ -7204,6 +7239,21 @@ sub _truncate {
    $val  = substr($val, 0, $width - length $col->{truncate_mark});
    $val .= $col->{truncate_mark};
    return $val;
+}
+
+sub _truncate_to_line_width {
+   my ( $self, $line, %args ) = @_;
+   $args{mark} = '...' unless exists $args{mark};
+   if ( $line ) {
+      $line =~ s/\s+$// if $args{strip};
+      my $len  = length($line);
+      if ( $len > $self->{line_width} ) {
+         my $adj_len = $args{mark} ? length $args{mark} : 0;
+         $line  = substr($line, 0, $self->{line_width} - $adj_len);
+         $line .= $args{mark} if $args{mark};
+      }
+   }
+   return $line;
 }
 
 sub _column_error {
@@ -8545,7 +8595,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareWarnings package 5290
+# CompareWarnings package 6108
 # ###########################################################################
 package CompareWarnings;
 
@@ -8797,7 +8847,7 @@ sub _report_diff_warnings {
 
    return unless keys %{$self->{diffs}->{warnings}};
 
-   my $report = new ReportFormatter(long_last_column => 1);
+   my $report = new ReportFormatter(truncate_data_lines => 0);
    $report->set_title('New warnings');
    $report->set_columns(
       $args{query_id_col},
@@ -8831,7 +8881,7 @@ sub _report_diff_levels {
 
    return unless keys %{$self->{diffs}->{levels}};
 
-   my $report = new ReportFormatter(long_last_column => 1);
+   my $report = new ReportFormatter(truncate_data_lines => 0);
    $report->set_title('Warning level differences');
    $report->set_columns(
       $args{query_id_col},
@@ -8991,11 +9041,7 @@ sub main {
             ($hosts->[-1] ? $hosts->[-1]->{dsn} : undef),
             $dsn_defaults
          );
-         push @$hosts,
-            {
-               dsn  => $dsn,
-               name => $dp->as_string($dsn),
-            };
+         push @$hosts, { dsn  => $dsn, };
       }
       else {
          MKDEBUG && _d($arg, 'is a file');
@@ -9024,6 +9070,10 @@ sub main {
    # ########################################################################
    foreach my $host ( @$hosts ) {
       $host->{dbh} = get_cxn($dp, $o, $host->{dsn});
+      $dp->fill_in_dsn($host->{dbh}, $host->{dsn});
+      my $name       = $host->{dsn}->{h} || $host->{dsn}->{F};
+      $name         .= ":$host->{dsn}->{P}" if $host && $host->{dsn}->{P};
+      $host->{name}  = $name || 'unknown host';
    }
 
    # ########################################################################
@@ -9622,9 +9672,7 @@ sub report_errors {
 
    return unless keys %$errors;
 
-   my $rf = new ReportFormatter(
-      long_last_column => 1,
-   );
+   my $rf = new ReportFormatter(truncate_data_lines=>0);
    $rf->set_title('Errors');
    $rf->set_columns(
       {

@@ -1,5 +1,7 @@
 Changelog for mk-upgrade:
 
+   * Shortened hostname column headers.
+
 2010-04-01: version 0.9.6
 
    * --compare-results-method=rows did not use default database (issue 951).

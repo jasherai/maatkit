@@ -63,7 +63,7 @@ diag(`$cmd $trunk/mk-upgrade/t/samples/001/one-error.log >/dev/null 2>&1`);
 $output = `$cmd $trunk/mk-upgrade/t/samples/001/one-error.log`;
 like(
    $output,
-   qr/# 3B323396273BC4C7-1 P=12347,h=127.1,p=...,u=msandbox Failed to execute query.+Unknown column 'borked' in 'field list' \[for Statement "select borked"\] at .+?\n\n/,
+   qr/# 3B323396273BC4C7-1 127.1:12347 Failed to execute query.+Unknown column 'borked' in 'field list' \[for Statement "select borked"\] at .+?\n\n/,
    '--clear-warnings',
 );
 
@@ -79,7 +79,7 @@ like(
 $output = `$cmd --no-clear-warnings $trunk/mk-upgrade/t/samples/001/one-error.log`;
 like(
    $output,
-   qr/# 3B323396273BC4C7-1 P=12347,h=127.1,p=...,u=msandbox Failed to execute query.+Unknown column 'borked' in 'field list' \[for Statement "select borked"\] at .+?\n\n/,
+   qr/# 3B323396273BC4C7-1 127.1:12347 Failed to execute query.+Unknown column 'borked' in 'field list' \[for Statement "select borked"\] at .+?\n\n/,
    '--no-clear-warnings'
 );
 
