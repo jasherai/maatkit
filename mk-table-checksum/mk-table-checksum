@@ -6487,19 +6487,25 @@ type: string
 Replicate checksums to slaves (disallows --algorithm CHECKSUM).
 
 This option enables a completely different checksum strategy for a consistent,
-lock-free checksum across a master and its slaves.  This works only with
-statement-based replication (mk-table-checksum will switch the binlog format
-to STATEMENT for the duration of the session if your server uses row-based
-replication).  Instead of running the checksum queries on each server, you run
-it only on the master.  You specify a table to insert the results into.  The
-query will insert directly into the table, so it will be replicated through the
-binlog to the slaves.
+lock-free checksum across a master and its slaves.  Instead of running the
+checksum queries on each server, you run them only on the master.  You specify a
+table, fully qualified in db.table format, to insert the results into.  The
+checksum queries will insert directly into the table, so they will be replicated
+through the binlog to the slaves.
 
-The argument to the option is the table (fully qualified: db.table) in which the
-checksums should be stored. The table must have at least these columns: db, tbl,
-chunk, boundaries, this_crc, master_crc, this_cnt, master_cnt.  The table may be
-named anything you wish.  Here is a suggested table structure, which is
-automatically used for L<"--create-replicate-table"> (MAGIC_create_replicate):
+When the queries are finished replicating, you can run a simple query on each
+slave to see which tables have differences from the master.  With the
+L<"--replicate-check"> option, mk-table-checksum can run the query for you to
+make it even easier.  See L<"CONSISTENT CHECKSUMS"> for details.  
+
+If you find tables that have differences, you can use the chunk boundaries in a
+WHERE clause with L<mk-table-sync> to help repair them more efficiently.  See
+L<mk-table-sync> for details.
+
+The table must have at least these columns: db, tbl, chunk, boundaries,
+this_crc, master_crc, this_cnt, master_cnt.  The table may be named anything you
+wish.  Here is a suggested table structure, which is automatically used for
+L<"--create-replicate-table"> (MAGIC_create_replicate):
 
   CREATE TABLE checksum (
      db         char(64)     NOT NULL,
@@ -6522,15 +6528,16 @@ slave and break replication with "different error on master and slave."  This
 is not a problem with mk-table-checksum, it's a problem with MySQL
 replication, and you can read more about it in the MySQL manual.
 
-When the queries are finished replicating, you can run a simple query on each
-slave to see which tables have differences from the master.  See L<"CONSISTENT
-CHECKSUMS"> for details.  If you find tables that have differences, you can use
-the chunk boundaries in a WHERE clause with L<mk-table-sync> to help repair
-them more efficiently.  See L<mk-table-sync> for details.
+This works only with statement-based replication (mk-table-checksum will switch
+the binlog format to STATEMENT for the duration of the session if your server
+uses row-based replication).  
 
-This option eliminates the need to do complicated locking and unlocking, waiting
-for master binlog positions, and so on.  It disables L<"--lock">, L<"--wait">,
-and L<"--slave-lag">.
+In contrast to running the tool against multiple servers at once, using this
+option eliminates the complexities of synchronizing checksum queries across
+multiple servers, which normally requires locking and unlocking, waiting for
+master binlog positions, and so on.  Thus, it disables L<"--lock">, L<"--wait">,
+and L<"--slave-lag"> (but not L<"--check-slave-lag">, which is a way to throttle
+the execution speed).
 
 The checksum queries actually do a REPLACE into this table, so existing rows
 need not be removed before running.  However, you may wish to do this anyway to
@@ -6543,13 +6550,14 @@ should replicate to slaves even if --binlog-do-db settings on the master filter
 out the checksum table's database.  For more information on how --binlog-do-db
 works, see L<http://dev.mysql.com/doc/en/binary-log.html>.
 
-If the slaves have any --replicate-do-X or replicate-ignore-X options, you
+If the slaves have any --replicate-do-X or --replicate-ignore-X options, you
 should be careful not to checksum any databases or tables that exist on the
 master and not the slaves.  Changes to such tables may not normally be executed
-on the slaves because of the --replicate-X options, but the checksum queries
-change the checksum table, not the tables they checksum.  Therefore these
-queries will be executed on the slave, and if the table or database does not
-exist, they will cause replication to fail.  For more information on replication
+on the slaves because of the --replicate options, but the checksum queries
+modify the contents of the table that stores the checksums, not the tables whose
+data you are checksumming.  Therefore, these queries will be executed on the
+slave, and if the table or database you're checksumming does not exist, the
+queries will cause replication to fail.  For more information on replication
 rules, see L<http://dev.mysql.com/doc/en/replication-rules.html>.
 
 The table specified by L<"--replicate"> will never be checksummed itself.
@@ -6693,16 +6701,16 @@ probabilistic behavior apply to tables that aren't divided into chunks.
 
 =item --slave-lag
 
-Report how far slaves lag master.
+Report replication delay on the slaves.
 
 If this option is enabled, the output will show how many seconds behind the
 master each slave is.  This can be useful when you want a fast, parallel,
-non-blocking checksum, and you know your slaves might lag the master.  You can
-inspect the results and make an educated guess whether any discrepancies on the
-slave are due to slave lag instead of corrupt data.
+non-blocking checksum, and you know your slaves might be delayed relative to the
+master.  You can inspect the results and make an educated guess whether any
+discrepancies on the slave are due to replication delay instead of corrupt data.
 
-If you're using L<"--replicate">, slave lag is a non-issue and you don't need to
-worry about this.
+If you're using L<"--replicate">, a slave that is delayed relative to the master
+does not invalidate the correctness of the results, so this option is disabled.
 
 =item --sleep
 
@@ -6715,7 +6723,7 @@ number of seconds between checksums.  That is, it will sleep between every
 table, and if you specify L<"--chunk-size">, it will also sleep between chunks.
 
 This is a very crude way to throttle checksumming; see L<"--sleep-coef"> and
-L<"--check-slave-lag">.
+L<"--check-slave-lag"> for techniques that permit greater control.
 
 =item --sleep-coef
 
