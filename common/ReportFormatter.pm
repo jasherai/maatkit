@@ -156,17 +156,18 @@ sub get_report {
    my ( $self ) = @_;
 
    # Make the printf line format for each row given the columns' settings.
-   my $n_cols = $self->{n_cols} - 2;
+   my $n_cols = $self->{n_cols} - 1;
    my @col_fmts;
    for my $i ( 0..$n_cols ) {
       my $col      = $self->{cols}->[$i];
+      my $wid      = $i == $n_cols && !$col->{right_justify} ? ''
+                   : $col->{max_width} || $col->{max_val_width} || '';
       my $col_fmt  = '%'
                    . ($col->{right_justify} ? '' : '-')
-                   . ($col->{max_width} || $col->{max_val_width} || '')
+                   . $wid
                    . ($col->{type} || 's');
       push @col_fmts, $col_fmt;
    }
-   push @col_fmts, '%s';  # Let the column's value extend rightward forever
 
    my $fmt = ($self->{line_prefix} || '')
            . join($self->{column_spacing}, @col_fmts);
