@@ -101,7 +101,7 @@ sub diff {
 
    # Make a list of values from each config for all the common vars.  So,
    #   %vals = {
-   #     var1 => [ config0-var1-val, config1-var2-val ],
+   #     var1 => [ config0-var1-val, config1-var1-val ],
    #     var2 => [ config0-var2-val, config1-var2-val ],
    #   }
    my %vals = map {
