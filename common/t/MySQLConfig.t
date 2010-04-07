@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 15;
+use Test::More tests => 16;
 
 use MySQLConfig;
 use DSNParser;
@@ -398,12 +398,20 @@ SKIP: {
    skip 'Cannot connect to sandbox master', 1 unless $dbh;
 
    $config = new MySQLConfig();
-
    $config->set_config(from=>'show_variables', dbh=>$dbh);
    is(
       $config->get('datadir'),
       '/tmp/12345/data/',
       'set_config(from=>show_variables, dbh=>...)'
+   );
+
+   $config  = new MySQLConfig();
+   my $rows = $dbh->selectall_arrayref('show variables');
+   $config->set_config(from=>'show_variables', rows=>$rows);
+   is(
+      $config->get('datadir'),
+      '/tmp/12345/data/',
+      'set_config(from=>show_variables, rows=>...)'
    );
 }
 

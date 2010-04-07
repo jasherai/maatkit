@@ -75,12 +75,8 @@ sub new {
 
    my $self = {
       # defaults
-      defaults_file => undef, 
-      commands      => {
-         mysqld            => "mysqld",
-         my_print_defaults => "my_print_defaults",
-         show_variables    => "SHOW /*!40103 GLOBAL*/ VARIABLES",
-      },
+      defaults_file  => undef, 
+      show_variables => "SHOW /*!40103 GLOBAL*/ VARIABLES",
 
       # override defaults
       %args,
@@ -128,12 +124,11 @@ sub get_duplicate_variables {
 # Arguments:
 #   * from    scalar: one of mysqld, my_print_defaults, or show_variables
 #   when from=mysqld or my_print_defaults:
-#     * cmd     scalar: get output from cmd, or
 #     * file    scalar: get output from file, or
 #     * fh      scalar: get output from fh
 #   when from=show_variables:
-#     * dbh     obj: dbh to get SHOW VARIABLES
-#     * rows    arrayref: vals from SHOW VARIABLES
+#     * dbh     obj: get SHOW VARIABLES from dbh, or
+#     * rows    arrayref: get SHOW VARIABLES from rows
 # Sets the offline or online config values from the given source.
 # Returns nothing.
 sub set_config {
@@ -150,10 +145,6 @@ sub set_config {
 
       my $output;
       my $fh = $args{fh};
-      if ( $args{cmd} ) {
-         my $cmd_sub = "_get_${from}_output";
-         $output = $self->$cmd_sub();
-      }
       if ( $args{file} ) {
          open $fh, '<', $args{file}
             or die "Cannot open $args{file}: $OS_ERROR";
@@ -183,7 +174,7 @@ sub set_config {
 
       my $rows = $args{rows};
       if ( $args{dbh} ) {
-         my $sql = $self->{commands}->{show_variables};
+         my $sql = $self->{show_variables};
          MKDEBUG && _d($args{dbh}, $sql);
          $rows = $args{dbh}->selectall_arrayref($sql);
       }
