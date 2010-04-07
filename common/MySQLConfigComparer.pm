@@ -81,7 +81,8 @@ sub new {
 # compares the first to the others, returns an arrayref of hashrefs
 # of variables that differ, like:
 #   {
-#      max_connections => [ 100, 50 ],
+#      var  => max_connections,
+#      vals => [ 100, 50 ],
 #   },
 # The value for each differing var is an arrayref of values corresponding
 # to the given configs.  So $configs[N] = $differing_var->[N].  Only vars
