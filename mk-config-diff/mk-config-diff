@@ -973,7 +973,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5966
+# DSNParser package 6057
 # ###########################################################################
 package DSNParser;
 
@@ -1097,11 +1097,13 @@ sub parse_options {
 }
 
 sub as_string {
-   my ( $self, $dsn ) = @_;
+   my ( $self, $dsn, $props ) = @_;
    return $dsn unless ref $dsn;
+   my %allowed = $props ? map { $_=>1 } @$props : ();
    return join(',',
-      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_})  }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      grep { !$props || $allowed{$_}                   }
       sort keys %$dsn );
 }
 
@@ -1494,75 +1496,113 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# PodParser package 5904
+# TextResultSetParser package 5266
 # ###########################################################################
-package PodParser;
+package TextResultSetParser;
+
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw() ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-
-   my $self = {
-   };
+   my $self = { %args };
    return bless $self, $class;
 }
 
-sub parse_section {
-   my ( $self, %args ) = @_;
-   my ($file, $section, $subsection, $trf)
-      = @args{qw(file section subsection trf)};
+sub _parse_tabular {
+   my ( $text, @cols ) = @_;
+   my %row;
+   my @vals = $text =~ m/\| +([^\|]*?)(?= +\|)/msg;
+   return (undef, \@vals) unless @cols;
+   @row{@cols} = @vals;
+   return (\%row, undef);
+}
 
-   $file ||= __FILE__;
-   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   MKDEBUG && _d('Parsing POD section', $section, $subsection, 'from', $file);
+sub _parse_tab_sep {
+   my ( $text, @cols ) = @_;
+   my %row;
+   my @vals = split(/\t/, $text);
+   return (undef, \@vals) unless @cols;
+   @row{@cols} = @vals;
+   return (\%row, undef);
+}
 
-   local $INPUT_RECORD_SEPARATOR = '';
-   my $POD_link_re = '[LC]<"?([^">]+)"?>';
+sub parse_vertical_row {
+   my ( $text ) = @_;
+   my %row = $text =~ m/^\s*(\w+):(?: ([^\n]*))?/msg;
+   MKDEBUG && _d('vertical row:', Dumper(\%row));
+   return \%row;
+}
 
-   my $para;
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 $section/;
-      MKDEBUG && _d($para);
-      last;
+sub parse {
+   my ( $self, $text ) = @_;
+   my $result_set;
+
+   if ( $text =~ m/^\+---/m ) { # standard "tabular" output
+      MKDEBUG && _d('Result set text is standard tabular');
+      my $line_pattern  = qr/^(\| .*)[\r\n]+/m;
+      $result_set
+         = parse_horizontal_row($text, $line_pattern, \&_parse_tabular);
    }
-   if ( !$para ) {
-      MKDEBUG && _d('Did not find section', $section);
-      return;
+   elsif ( $text =~ m/^id\tselect_type\t/m ) { # tab-separated
+      MKDEBUG && _d('Result set text is tab-separated');
+      my $line_pattern  = qr/^(.*?\t.*)[\r\n]+/m;
+      $result_set
+         = parse_horizontal_row($text, $line_pattern, \&_parse_tab_sep);
    }
-
-   if ( $subsection ) {
-      while ( $para = <$fh> ) {
-         next unless $para =~ m/^=head2 $subsection/;
-         last
+   elsif ( $text =~ m/\*\*\* \d+\. row/ ) { # "vertical" output
+      MKDEBUG && _d('Result set text is vertical (\G)');
+      foreach my $row ( split_vertical_rows($text) ) {
+         push @$result_set, parse_vertical_row($row);
       }
    }
-   if ( !$para ) {
-      MKDEBUG && _d('Did not find subsection', $subsection);
-      return;
+   else {
+      die "Cannot determine if text is tabular, tab-separated or veritcal:\n"
+         . $text;
    }
 
-   my @chunks;
-   while ( $para = <$fh> ) {
-      last if ($subsection ? $para =~ m/^=head[12]/ : $para =~ m/^=head1/);
-      next if $para =~ m/=head/;
-      chomp $para;
-      $para =~ s/$POD_link_re/$1/go;
-      if ( $trf ) {
-         $para = $trf->($para);
-         next unless $para;
+   if ( $self->{value_for} ) {
+      foreach my $result_set ( @$result_set ) {
+         foreach my $key ( keys %$result_set ) {
+            $result_set->{$key} = $self->{value_for}->{ $result_set->{$key} }
+               if exists $self->{value_for}->{ $result_set->{$key} };
+         }
       }
-      push @chunks, $para;
    }
 
-   return @chunks;
+   return $result_set;
+}
+
+sub parse_horizontal_row {
+   my ( $text, $line_pattern, $sub ) = @_;
+   my @result_sets = ();
+   my @cols        = ();
+   foreach my $line ( $text =~ m/$line_pattern/g ) {
+      my ( $row, $cols ) = $sub->($line, @cols);
+      if ( $row ) {
+         push @result_sets, $row;
+      }
+      else {
+         @cols = @$cols;
+      }
+   }
+   return \@result_sets;
+}
+
+sub split_vertical_rows {
+   my ( $text ) = @_;
+   my $ROW_HEADER = '\*{3,} \d+\. row \*{3,}';
+   my @rows = $text =~ m/($ROW_HEADER.*?)(?=$ROW_HEADER|\z)/omgs;
+   return @rows;
 }
 
 sub _d {
@@ -1576,7 +1616,447 @@ sub _d {
 1;
 
 # ###########################################################################
-# End PodParser package
+# End TextResultSetParser package
+# ###########################################################################
+
+# ###########################################################################
+# MySQLConfig package 6115
+# ###########################################################################
+package MySQLConfig;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+my %undef_for = (
+   'log'                         => 'OFF',
+   log_bin                       => 'OFF',
+   log_slow_queries              => 'OFF',
+   log_slave_updates             => 'ON',
+   log_queries_not_using_indexes => 'ON',
+   log_update                    => 'OFF',
+   skip_bdb                      => 0,
+   skip_external_locking         => 'ON',
+   skip_name_resolve             => 'ON',
+);
+
+my %can_be_duplicate = (
+   replicate_wild_do_table     => 1,
+   replicate_wild_ignore_table => 1,
+   replicate_rewrite_db        => 1,
+   replicate_ignore_table      => 1,
+   replicate_ignore_db         => 1,
+   replicate_do_table          => 1,
+   replicate_do_db             => 1,
+);
+
+sub new {
+   my ( $class, %args ) = @_;
+
+   my $self = {
+      defaults_file  => undef, 
+      show_variables => "SHOW /*!40103 GLOBAL*/ VARIABLES",
+
+      %args,
+
+      default_defaults_files => [],
+      duplicate_vars         => {},
+      config                 => {
+         offline => {},  # vars as set by defaults files
+         online  => {},  # vars as currently set on running server
+      },
+   };
+
+   return bless $self, $class;
+}
+
+sub has {
+   my ( $self, $var ) = @_;
+   return exists $self->{config}->{offline}->{$var}
+       || exists $self->{config}->{online}->{$var};
+}
+
+sub get {
+   my ( $self, $var, %args ) = @_;
+   return unless $var;
+   return $args{offline} ? $self->{config}->{offline}->{$var}
+      :                    $self->{config}->{online}->{$var};
+}
+
+sub get_config {
+   my ( $self, %args ) = @_;
+   return $args{offline} ? $self->{config}->{offline}
+      :                    $self->{config}->{online};
+}
+
+sub get_duplicate_variables {
+   my ( $self ) = @_;
+   return $self->{duplicate_vars};
+}
+
+sub set_config {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(from) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $from = $args{from};
+
+   if ( $from eq 'mysqld' || $from eq 'my_print_defaults' ) {
+      die "Setting the MySQL config from $from requires a "
+            . "cmd, file, or fh argument"
+         unless $args{cmd} || $args{file} || $args{fh};
+
+      my $output;
+      my $fh = $args{fh};
+      if ( $args{file} ) {
+         open $fh, '<', $args{file}
+            or die "Cannot open $args{file}: $OS_ERROR";
+      }
+      if ( $fh ) {
+         $output = do { local $/ = undef; <$fh> };
+      }
+
+      my ($config, $dupes, $ddf);
+      if ( $from eq 'mysqld' ) {
+         ($config, $ddf) = $self->parse_mysqld($output);
+      }
+      elsif ( $from eq 'my_print_defaults' ) {
+         ($config, $dupes) = $self->parse_my_print_defaults($output);
+      }
+
+      die "Failed to parse MySQL config from $from" unless $config;
+      @{$self->{config}->{offline}}{keys %$config} = values %$config;
+
+      $self->{default_defaults_files} = $ddf   if $ddf;
+      $self->{duplicate_vars}         = $dupes if $dupes;
+   }
+   elsif ( $args{from} eq 'show_variables' ) {
+      die "Setting the MySQL config from $from requires a "
+            . "dbh or rows argument"
+         unless $args{dbh} || $args{rows};
+
+      my $rows = $args{rows};
+      if ( $args{dbh} ) {
+         my $sql = $self->{show_variables};
+         MKDEBUG && _d($args{dbh}, $sql);
+         $rows = $args{dbh}->selectall_arrayref($sql);
+      }
+      $self->set_online_config($rows);
+   }
+   else {
+      die "I don't know how to set the MySQL config from $from";
+   }
+   return;
+}
+
+sub set_online_config {
+   my ( $self, $rows ) = @_;
+   return unless $rows;
+   my %config = map { @$_ } @$rows;
+   $self->{config}->{online} = \%config;
+   return;
+}
+
+sub parse_mysqld {
+   my ( $self, $output ) = @_;
+   return unless $output;
+
+   my @ddf;
+   if ( $output =~ m/^Default options are read.+\n/mg ) {
+      my ($ddf) = $output =~ m/\G^(.+)\n/m;
+      my %seen;
+      my @ddf = grep { !$seen{$_} } split(' ', $ddf);
+      MKDEBUG && _d('Default defaults files:', @ddf);
+   }
+   else {
+      MKDEBUG && _d("mysqld help output doesn't list default defaults files");
+   }
+
+   if ( $output !~ m/^-+ -+$/mg ) {
+      MKDEBUG && _d("mysqld help output doesn't list vars and vals");
+      return;
+   }
+
+   my $varvals = substr($output, (pos $output) + 1, length $output);
+
+   my ($config, undef) = $self->_parse_varvals($varvals =~ m/\G^(\S+)(.*)\n/mg);
+
+   return $config, \@ddf;
+}
+
+sub parse_my_print_defaults {
+   my ( $self, $output ) = @_;
+   return unless $output;
+
+   my ($config, $dupes) = $self->_parse_varvals(
+      map { $_ =~ m/^--([^=]+)(?:=(.*))?$/ } split("\n", $output)
+   );
+
+   return $config, $dupes;
+}
+
+sub _parse_varvals {
+   my ( $self, @varvals ) = @_;
+
+   my %config;
+
+   my $duplicate_var = 0;
+   my %duplicates;
+
+   my $var      = 1;
+   my $last_var = undef;
+
+   foreach my $item ( @varvals ) {
+      if ( $var ) {
+         $item =~ s/-/_/g;
+
+         if ( exists $config{$item} && !$can_be_duplicate{$item} ) {
+            MKDEBUG && _d("Duplicate var:", $item);
+            $duplicate_var = 1;
+         }
+
+         $var      = 0;  # next item should be the val for this var
+         $last_var = $item;
+      }
+      else {
+         if ( $item ) {
+            $item =~ s/^\s+//;
+
+            if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])/i ) {
+               my %factor_for = (
+                  k => 1_024,
+                  m => 1_048_576,
+                  g => 1_073_741_824,
+                  t => 1_099_511_627_776,
+               );
+               $item = $num * $factor_for{lc $factor};
+            }
+            elsif ( $item =~ m/No default/ ) {
+               $item = undef;
+            }
+         }
+
+         $item = $undef_for{$last_var} || '' unless defined $item;
+
+         if ( $duplicate_var ) {
+            push @{$duplicates{$last_var}}, $config{$last_var};
+            $duplicate_var = 0;
+         }
+
+         $config{$last_var} = $item;
+
+         $var = 1;  # next item should be a var
+      }
+   }
+
+   return \%config, \%duplicates;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End MySQLConfig package
+# ###########################################################################
+
+# ###########################################################################
+# MySQLConfigComparer package 6112
+# ###########################################################################
+package MySQLConfigComparer;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+my %alt_val_for = (
+   ON    => 1,
+   YES   => 1,
+   TRUE  => 1,
+   OFF   => 0,
+   NO    => 0,
+   FALSE => 0,
+   ''    => 0,
+);
+
+my %ignore_vars = (
+   date_format     => 1,
+   datetime_format => 1,
+   time_format     => 1,
+);
+
+my %eq_for = (
+   ft_stopword_file          => sub { return _veq(@_, '(built-in)', 0); },
+
+   basedir                   => sub { return _patheq(@_);               },
+   language                  => sub { return _patheq(@_);               },
+
+   log_bin                   => sub { return _eqifon(@_);               },
+   log_slow_queries          => sub { return _eqifon(@_);               },
+
+   general_log_file          => sub { return _eqifnoconf(@_);           },
+   innodb_data_file_path     => sub { return _eqifnoconf(@_);           },
+   innodb_log_group_home_dir => sub { return _eqifnoconf(@_);           },
+   log_error                 => sub { return _eqifnoconf(@_);           },
+   open_files_limit          => sub { return _eqifnoconf(@_);           },
+   slow_query_log_file       => sub { return _eqifnoconf(@_);           },
+   tmpdir                    => sub { return _eqifnoconf(@_);           },
+
+   long_query_time           => sub { return $_[0] == $_[1] ? 1 : 0;    },
+);
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {
+   };
+   return bless $self, $class;
+}
+
+sub diff {
+   my ( $self, @configs ) = @_;
+   my @diffs;
+   die "diff() requires at least one config" if @configs < 1;
+   return \@diffs if @configs == 1;  # One config can't differ with itself.
+   MKDEBUG && _d('diff configs:', Dumper(\@configs));
+
+   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect(@configs);
+
+   my %vals = map {
+      my $var  = $_;
+      my $vals = [
+         map {
+            my $config = $_;
+            my $val    = defined $config->{$var} ? $config->{$var} : '';
+            $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
+            $val;
+         } @configs 
+      ];
+      $var => $vals;
+   } @vars;
+
+   VAR:
+   foreach my $var ( keys %vals ) {
+      my $vals     = $vals{$var};
+      my $last_val = scalar @$vals - 1;
+
+      VAL:
+      for my $i ( 1..$last_val ) {
+         if ( $vals->[0] ne $vals->[$i] ) {
+            if ( !$eq_for{$var} || !$eq_for{$var}->($vals->[0], $vals->[$i]) ) {
+               push @diffs, {
+                  var  => $var,
+                  vals => [ map { $_->{$var} } @configs ],  # original vals
+               };
+               last VAL;
+            }
+         }
+      } # VAL
+   } # VAR
+
+   return \@diffs;
+}
+
+sub stale_variables {
+   my ( $self, $config ) = @_;
+   return unless $config;
+
+   my $diffs = $self->diff(
+      $config->get_config(),
+      $config->get_config(offline=>1)
+   );
+
+   my @stale_vars = map {
+      {
+         var         => $_->{var},
+         online_val  => $_->{vals}->[0],
+         offline_val => $_->{vals}->[1],
+      }
+   } @$diffs;
+
+   return \@stale_vars;
+}
+
+sub missing {
+   my ( $self, @configs ) = @_;
+   my @missing;
+   die "missing() requires at least one config" if @configs < 1;
+   return \@missing if @configs == 1;  # One config can't differ with itself.
+   MKDEBUG && _d('missing configs:', Dumper(\@configs));
+
+   my %vars;
+   map { $vars{$_}++ } map { keys %{$configs[$_]} } 0..$#configs;
+
+   my $n_configs = scalar @configs;
+   foreach my $var ( keys %vars ) {
+      if ( $vars{$var} < $n_configs ) {
+         push @missing, {
+            var     => $var,
+            missing => [ map { exists $_->{$var} ? 0 : 1 } @configs ],
+         };
+      }
+   }
+
+   return \@missing;
+}
+
+sub _veq { 
+   my ( $x, $y, $val1, $val2 ) = @_;
+   return 1 if ( ($x eq $val1 || $x eq $val2) && ($y eq $val1 || $y eq $val2) );
+   return 0;
+}
+
+sub _patheq {
+   my ( $x, $y ) = @_;
+   $x .= '/' if $x !~ m/\/$/;
+   $y .= '/' if $y !~ m/\/$/;
+   return $x eq $y;
+}
+
+sub _eqifon { 
+   my ( $x, $y ) = @_;
+   return 1 if ( ($x && $x eq '1' ) && $y );
+   return 1 if ( ($y && $y eq '1' ) && $x );
+   return 0;
+}
+
+sub _eqifnoconf {
+   my ( $online_val, $conf_val ) = @_;
+   return $conf_val == 0 ? 1 : 0;
+}
+
+sub key_intersect {
+   my ( $self, @hashes ) = @_;
+   my %keys  = map { $_ => 1 } keys %{$hashes[0]};
+   my @isect = grep { $keys{$_} } map { keys %{$hashes[$_]} } 1..$#hashes;
+   return @isect;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End MySQLConfigComparer package
 # ###########################################################################
 
 # ###########################################################################
@@ -1611,25 +2091,49 @@ sub main {
    # ########################################################################
    my $o  = new OptionParser(
       strict      => 0,
-      prompt      => '[OPTION...] FILE [FILE...]',
+      prompt      => '[OPTION...] FILE|DSN [FILE|DSN...]',
       description => q{diffs MySQL configurations.},
    );
    $o->get_specs();
    $o->get_opts();
 
+   my $dp = $o->DSNParser();
+   $dp->prop('set-vars', $o->get('set-vars'));
+
+   if ( @ARGV < 1 ) {
+      $o->save_error("Specify at least one file on the command line");
+   }
+
    $o->usage_or_errors();
-
-   # #########################################################################
-   # Load rules from POD and plugins.
-   # #########################################################################
-   my $p   = new PodParser();
-
 
    # #########################################################################
    # Make common modules.
    # #########################################################################
+   my $txtres_parser = new TextResultSetParser();
+   my $config_cmp    = new MySQLConfigComparer();
    my %common_modules = (
+      DSNParser           => $dp,
+      OptionParser        => $o,
+      MySQLConfigComparer => $config_cmp,
+      TextResultSetParser => $txtres_parser,
    );
+
+   # #########################################################################
+   # Make MySQLConfig objs for each FILE|DSN.
+   # #########################################################################
+   my ($online_configs, $offline_configs) = (0, 0);
+   my @configs;
+   foreach my $config_src ( @ARGV ) {
+      my $config_type;
+      if ( -f $config_src ) {
+         MKDEBUG && _d('Config source', $config_src, 'is a file');
+         my $config = parse_config_from_file($config_src, %common_modules);
+         push @configs, $config;
+      }
+      else {
+         MKDEBUG && _d('Config source', $config_src, 'is a DSN');
+      }
+   }
 
    # ##########################################################################
    # Get ready to do the main work.
@@ -1664,6 +2168,77 @@ sub main {
 # ##########################################################################
 # Subroutines
 # ##########################################################################
+
+sub parse_config_from_file {
+   my ( $file, %args ) = @_;
+   die "I need a file argument" unless $file;
+
+   my $config_type = determine_config_type($file);
+   die "Cannot determine the type of MySQL config in $file" unless $config_type;
+
+   my $config;
+   if ( $config_type eq 'show_variables' ) {
+      # Need to convert text recset from file into an arrayref of rows
+      # suitable for MySQLConfig.
+      my $rows = get_rows_from_file($file, %args);
+      $config  = new MySQLConfig();
+      $config->set_config(from=>$config_type, rows=>$rows);
+   }
+   else {
+      $config  = new MySQLConfig();
+      $config->set_config(from=>$config_type, file=>$file);
+   }
+
+   return $config;
+}
+
+sub determine_config_type {
+   my ( $file ) = @_;
+   return unless $file;
+   
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+   my $type;
+   while ( defined(my $line = <$fh>) ) {
+      if (    $line =~ m/\|\s+\w+\s+\|\s+.+?\|/
+           || $line =~ m/\*+ \d/
+           || $line =~ m/Variable_name:\s+\w+/ )
+      {
+         $type = 'show_variables';
+         last;
+      }
+      elsif ( $line =~ m/^--\w+/ ) {
+         $type = 'my_print_defaults';
+         last;
+      }
+      elsif (    $line =~ m/Starts the MySQL database server/
+              || $line =~ m/Default options are read from /
+              || $line =~ m/^help\s+TRUE / )
+      {
+         $type = 'mysqld';
+         last;
+      }
+   }
+
+   close $fh;
+   return $type;
+}
+
+sub get_rows_from_file {
+   my ( $file, %args ) = @_;
+   return unless $file;
+   my $txtres_parser = $args{TextResultSetParser};
+   die "I need a TextResultSetParser argument" unless $txtres_parser;
+
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
+   my $contents = do { local $/ = undef; <$fh> };
+   close $fh;
+
+   my @rows = map {
+      $_->{Variable_name}, $_->{Value}
+   } @{ $txtres_parser->parse($contents) };
+
+   return \@rows;
+}
 
 # Catches signals so we can exit gracefully.
 sub sig_int {
@@ -1705,7 +2280,8 @@ mk-config-diff - Diff MySQL configurations.
 
 =head1 SYNOPSIS
 
-   mk-config-diff config-1.txt
+   # Diff SHOW VARIABLES output saved in each file, print differences.
+   mk-config-diff config-1.txt config-2.txt
 
 =head1 RISKS
 
@@ -1767,6 +2343,13 @@ short form: -F; type: string
 
 Only read mysql options from the given file.  You must give an absolute
 pathname.
+
+=item --[no]diff
+
+Diff the MySQL configs if 2 or more are given.
+
+If 2 or more MySQL configs are specified the default action is to diff
+them and print the results.  Specifying C<--no-diff> disables this.
 
 =item --help
 
