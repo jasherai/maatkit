@@ -4865,6 +4865,13 @@ sub checksum_chunks {
             = ($chunk_stop_time - $chunk_start_time)
             * $final_o->get('sleep-coef');
          MKDEBUG && _d('Sleeping', $sleep_time);
+         if ( $sleep_time < 0 ) {
+            warn "Calculated invalid sleep time: "
+               . "$sleep_time = ($chunk_stop_time - $chunk_start_time) * "
+               . $final_o->get('sleep-coef')
+               . ". Sleep time set to 1 second instead.";
+            $sleep_time = 1;
+         }
          sleep($sleep_time);
       }
    } # End foreach CHUNK
