@@ -15,7 +15,7 @@
 # 100% (1)    Filesort
 # 100% (1)    Full_scan
 # 100% (1)    Tmp_table
-# Query_time distribution
+# Lock_time distribution
 #   1us
 #  10us
 # 100us
@@ -45,12 +45,12 @@ select * from  forest WHERE animal = 'dead'\G
 # Merge pas      0       0       0       0       0       0       0       0
 # 100% (4)    Full_scan
 #  25% (1)    QC_Hit
-# Query_time distribution
+# Lock_time distribution
 #   1us
 #  10us
 # 100us
 #   1ms
-#  10ms
+#  10ms  #####################
 # 100ms  ################################################################
 #    1s
 #  10s+
@@ -72,12 +72,12 @@ SELECT * FROM foo\G
 # bytes         27      66      33      33      33      33       0      33
 # Merge pas      0       0       0       0       0       0       0       0
 # 100% (2)    Full_scan
-# Query_time distribution
+# Lock_time distribution
 #   1us
-#  10us  ################################################################
+#  10us
 # 100us
 #   1ms
-#  10ms
+#  10ms  ################################################################
 # 100ms  ################################################################
 #    1s
 #  10s+
@@ -97,14 +97,14 @@ INSERT INTO tbl VALUES ('a', 'b')\G
 # Time range 2009-08-05 11:00:27 to 2009-08-05 11:00:27
 # bytes         12      31      31      31      31      31       0      31
 # Merge pas      0       0       0       0       0       0       0       0
-# Query_time distribution
+# Lock_time distribution
 #   1us
 #  10us
 # 100us
 #   1ms
-#  10ms
+#  10ms  ################################################################
 # 100ms
-#    1s  ################################################################
+#    1s
 #  10s+
 # Tables
 #    SHOW TABLE STATUS FROM `db1` LIKE 'tbl'\G
@@ -126,14 +126,14 @@ SELECT id FROM tbl WHERE id = 1\G
 # 100% (1)    Disk_filesort
 # 100% (1)    Full_scan
 # 100% (1)    Tmp_table
-# Query_time distribution
-#   1us
+# Lock_time distribution
+#   1us  ################################################################
 #  10us
 # 100us
 #   1ms
 #  10ms
 # 100ms
-#    1s  ################################################################
+#    1s
 #  10s+
 # Tables
 #    SHOW TABLE STATUS FROM `db1` LIKE 'blah'\G

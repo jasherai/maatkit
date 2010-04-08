@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * --order-by changed the Query_time distribution graph (issue 984).
+   * Added --report-histogram (issue 984).
    * Tool crashed immediately on some older versions of Perl (issue 957).
 
 2010-04-01: version 0.9.16

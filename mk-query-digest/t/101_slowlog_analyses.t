@@ -319,7 +319,7 @@ ok(
    no_diff(
       sub { mk_query_digest::main(@args, $sample.'slow034.txt', qw(--order-by Lock_time:sum),
             '--report-format', 'query_report,profile') },
-      "mk-query-digest/t/samples/slow034-order-by-Locktime-sum.txt"
+      "mk-query-digest/t/samples/slow034-order-by-Locktime-sum.txt",
    ),
    'Analysis for slow034 --order-by Lock_time:sum'
 );

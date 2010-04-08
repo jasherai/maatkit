@@ -9886,7 +9886,7 @@ sub main {
                );
                print $qrf->chart_distro(
                   $ea,
-                  attribute  => $orderby_attrib,
+                  attribute  => $o->get('report-histogram'),
                   where      => $item,
                );
 
@@ -10566,7 +10566,9 @@ The execution times show a logarithmic chart of time clustering.  Each query
 goes into one of the "buckets" and is counted up.  The buckets are powers of
 ten.  The first bucket is all values in the "single microsecond range" -- that
 is, less than 10us.  The second is "tens of microseconds," which is from 10us
-up to (but not including) 100us; and so on.
+up to (but not including) 100us; and so on.  The charted attribute can be
+changed by specifying L<"--report-histogram"> but is limited to time-based
+attributes.
 
  # Tables
  #    SHOW TABLE STATUS LIKE 'table1'\G
@@ -10830,6 +10832,15 @@ STDOUT to utf8, passes the mysql_enable_utf8 option to DBD::mysql, and
 runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
 binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
+
+=item --report-histogram
+
+type: string; default: Query_time
+
+Chart the distribution of this attribute's values.
+
+The distribution chart is limited to time-based attributes, so charting
+C<Rows_examined>, for example, will produce a useless chart.
 
 =item --check-attributes-limit
 
