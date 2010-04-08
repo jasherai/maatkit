@@ -38,10 +38,10 @@ $Data::Dumper::Quotekeys = 0;
 #  * underline_header    bool: underline headers with =
 #  * line_prefix         scalar: prefix every line with this string
 #  * line_width          scalar: line width in characters or 'auto'
-#  * truncate_underline  bool: don't underline beyond line_width
-#  * column_errors       scalar: die or warn on column errors (default warn)
-#  * truncate_data_lines bool: truncate data lines to line_width (default yes)
 #  * column_spacing      scalar: string between columns (default one space)
+#  * extend_right        bool: allow right-most column to extend beyond
+#                              line_width (default: no)
+#  * column_errors       scalar: die or warn on column errors (default warn)
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = qw();
@@ -53,7 +53,9 @@ sub new {
       line_prefix         => '# ',
       line_width          => 78,
       column_spacing      => ' ',
-      truncate_data_lines => 1,
+      extend_right        => 0,
+      truncate_line_mark  => '...',
+      column_errors       => 'warn',
       %args,              # args above can be overriden, args below cannot
       n_cols              => 0,
    };
@@ -76,37 +78,55 @@ sub set_title {
 
 # @cols is an array of hashrefs.  Each hashref describes a column and can
 # have the following keys:
+# Required args:
 #   * name           column's name
-#   * truncate       (optional) can truncate column (default yes)
-#   * truncate_mark  (optional) append string to truncate col vals (default ...)
-#   * fixed_width    (optional) fixed width in characters
-#   * min_width      (optional) minimum width in characters
-#   * max_width      (optional) maximum width in characters
-#   * undef_value    (optional) string for undef values (default '')
-#   * trf            (optional) callback to transform values
-#   * type           (optional) printf type (default s)
+# Optional args:
+#   * truncate           can truncate column (default yes)
+#   * truncate_mark      append string to truncate col vals (default ...)
+#   * truncate_side      truncate left or right side of value (default right)
+#   * truncate_callback  coderef to do truncation; overrides other truncate_*
+#
+#   * width_max      maximum character width; min is length of name
+#   * width_pct      percentage character width
+#
+#   * undef_value    string for undef values (default '')
 sub set_columns {
    my ( $self, @cols ) = @_;
+   my $min_hdr_wid = 0;
+
    push @{$self->{cols}}, map {
-      my $col = $_;
-      die "Column does not have a name" unless defined $col->{name};
-      if ( $col->{fixed_wdith} && $col->{fixed_width} < length $col->{name} ) { 
-         die "Fixed width $col->{fixed_wdith} is less than length of "
-            . "column name '$col->{name}'";
-      }
-      if ( $col->{min_width} && $col->{min_width} < length $col->{name} ) {
-         die "Minimum width $col->{min_width} is less than length of "
-            . "column name '$col->{name}'";
-      }
+      my $col      = $_;
+      my $col_name = $col->{name};
+      die "Column does not have a name"
+         unless $col_name;
+
+      # Set defaults if another value wasn't given.
+      $col->{truncate}        = 1 unless defined $col->{truncate};
       $col->{truncate_mark} ||= '...';
-      $col->{type}          ||= 's';
-      $col->{min_width}     ||= $col->{fixed_width} || 0;
-      $col->{max_width}     ||= $col->{fixed_width} || 0;
-      $col->{min_val_width}   = length $col->{name};
-      $col->{max_val_width}   = length $col->{name};
+      $col->{truncate_side} ||= 'right';
+      $col->{undef_value}   ||= '';
+
+      # These values will be computed/updated as lines are added.
+      $col->{min_val} = length $col_name;
+      $col->{max_val} = length $col_name;
+
+      # Calculate if the minimum possible header width will exceed
+      # the line width....
+      $min_hdr_wid += $col->{min_val};
+
       $col;
    } @cols;
+
    $self->{n_cols} = scalar @cols;
+
+   # Add to the minimum possible header width the spacing between columns.
+   $min_hdr_wid += ($self->{n_cols} - 1) * length $self->{column_spacing};
+   MKDEBUG && _d("Minimum header width:", $min_hdr_wid);
+   if ( $min_hdr_wid > $self->{line_width} ) {
+      die "Minimum possible header width $min_hdr_wid is greater than "
+         . "the line width $self->{line_width}";
+   }
+
    return;
 }
 
@@ -115,60 +135,53 @@ sub set_columns {
 # many vals as columns.  Use undef for columns that have no values.
 sub add_line {
    my ( $self, @vals ) = @_;
-   my $n_vals = scalar @vals;
-   $self->_column_error("Number of columns ($self->{n_cols}) and "
-      . "values ($n_vals) do not match") unless $self->{n_cols} == $n_vals;
+   if ( scalar @vals != $self->{n_cols} ) {
+      $self->_column_error("Number of columns ($self->{n_cols}) and "
+         . "values (", scalar @vals, ") do not match");
+   }
+   my $line = $self->_check_line_vals(\@vals);
+   push @{$self->{lines}}, $line if $line;
+   return;
+}
 
+sub _check_line_vals {
+   my ( $self, $vals ) = @_;
    my @line;
-   for my $i ( 0..$#vals ) {
-      my $col      = $self->{cols}->[$i];
-      my $val      = defined $vals[$i] ? $vals[$i] : $col->{undef_value};
-      my $width    = length $val;
-      my $too_wide = 0;  # this var does double duty: it's a bool and also
-                         # the max width at which to truncate the value
-      if ( $col->{fixed_width} && $width > $col->{fixed_width} ) {
-         $too_wide = $col->{fixed_width};
-      }
-      if ( $col->{max_width} && $width > $col->{max_width} ) {
-         $too_wide = $col->{max_width};
-      }
-      if ( $too_wide ) {
-         $self->_column_error("Value '$val' is too wide for column "
-            . $col->{name}) unless $col->{truncate};
-         # If _column_error() dies we never get here.  If it only warns
+   my $n_vals = scalar @$vals - 1;
+   for my $i ( 0..$n_vals ) {
+      my $col   = $self->{cols}->[$i];
+      my $val   = defined $vals->[$i] ? $vals->[$i] : $col->{undef_value};
+      my $width = length $val;
+
+      if ( $col->{width_max} && $width > $col->{width_max} ) {
+         if ( !$col->{truncate} ) {
+            $self->_column_error("Value '$val' is too wide for column "
+               . $col->{name});
+         }
+
+         # If _column_error() dies then we never get here.  If it warns
          # then we truncate the value despite $col->{truncate} being
          # false so the user gets something rather than nothing.
-         $val = $self->_truncate($col, $val, $too_wide);
-         MKDEBUG && _d('Truncated', $vals[$i], 'to', $val);
+         my $callback  = $self->{truncate_callback};
+         my $width_max = $col->{width_max};
+         $val = $callback ? $callback->($col, $val, $width_max)
+              :             $self->truncate_val($col, $val, $width_max);
+         MKDEBUG && _d('Truncated', $vals->[$i], 'to', $val,
+            '; max width:', $width_max);
       }
-      $col->{min_val_width} = min($width, $col->{min_val_width});
-      $col->{max_val_width} = max($width, $col->{max_val_width});
-      $val = $col->{trf}->($val) if $col->{trf};
+
+      $col->{max_val} = max($width, $col->{max_val});
       push @line, $val;
    }
-   push @{$self->{lines}}, \@line;
 
-   return;
+   return \@line;
 }
 
 # Returns the formatted report for the columsn and lines added earlier.
 sub get_report {
    my ( $self ) = @_;
 
-   # Make the printf line format for each row given the columns' settings.
-   my $n_cols = $self->{n_cols} - 1;
-   my @col_fmts;
-   for my $i ( 0..$n_cols ) {
-      my $col      = $self->{cols}->[$i];
-      my $wid      = $i == $n_cols && !$col->{right_justify} ? ''
-                   : $col->{max_width} || $col->{max_val_width} || '';
-      my $col_fmt  = '%'
-                   . ($col->{right_justify} ? '' : '-')
-                   . $wid
-                   . ($col->{type} || 's');
-      push @col_fmts, $col_fmt;
-   }
-
+   my @col_fmts = $self->_make_col_formats();
    my $fmt = ($self->{line_prefix} || '')
            . join($self->{column_spacing}, @col_fmts);
    MKDEBUG && _d('Format:', $fmt);
@@ -180,54 +193,63 @@ sub get_report {
    # Build the report line by line, starting with the title and header lines.
    my @lines;
    push @lines, sprintf "$self->{line_prefix}$self->{title}" if $self->{title};
-   push @lines, $self->_truncate_to_line_width(
+   push @lines, $self->truncate_line(
          sprintf($hdr_fmt, map { $_->{name} } @{$self->{cols}}),
          strip => 1,
-         mark  => undef,
+         mark  => '',
    );
 
    if ( $self->{underline_header} ) {
       my @underlines = map {
-         my $underline = '=' x $_->{max_val_width};
+         my $underline = '=' x ($_->{width_max} || $_->{max_val});
          $underline;
       } @{$self->{cols}};
-      push @lines, $self->_truncate_to_line_width(
+      push @lines, $self->truncate_line(
          sprintf($fmt, @underlines),
          strip => 1,
-         mark  => undef,
+         mark  => '',
       );
    }
 
    push @lines, map {
       my $line = sprintf($fmt, @$_);
-      if ( $self->{truncate_data_lines} ) {
-         $self->_truncate_to_line_width($line);
+      if ( $self->{extend_right} ) {
+         $line;
       }
       else {
-         $line;
+         $self->truncate_line($line);
       }
    } @{$self->{lines}};
 
    return join("\n", @lines) . "\n";
 }
 
-sub _truncate {
+sub truncate_val {
    my ( $self, $col, $val, $width ) = @_;
-   $val  = substr($val, 0, $width - length $col->{truncate_mark});
-   $val .= $col->{truncate_mark};
+   return $val if length $val <= $width;
+   my $mark = $col->{truncate_mark};
+   if ( $col->{truncate_side} eq 'right' ) {
+      $val  = substr($val, 0, $width - length $mark);
+      $val .= $mark;
+   }
+   elsif ( $col->{truncate_side} eq 'left') {
+      $val = $mark . substr($val, -1 * ((length $val) - $width));
+   }
+   else {
+      MKDEBUG && _d("Don't know how to", $col->{truncate_side}, "line");
+   }
    return $val;
 }
 
-sub _truncate_to_line_width {
+sub truncate_line {
    my ( $self, $line, %args ) = @_;
-   $args{mark} = '...' unless exists $args{mark};
+   my $mark = defined $args{mark} ? $args{mark} : $self->{truncate_line_mark};
    if ( $line ) {
       $line =~ s/\s+$// if $args{strip};
       my $len  = length($line);
       if ( $len > $self->{line_width} ) {
-         my $adj_len = $args{mark} ? length $args{mark} : 0;
-         $line  = substr($line, 0, $self->{line_width} - $adj_len);
-         $line .= $args{mark} if $args{mark};
+         $line  = substr($line, 0, $self->{line_width} - length $mark);
+         $line .= $mark if $mark;
       }
    }
    return $line;
@@ -237,6 +259,77 @@ sub _column_error {
    my ( $self, $err ) = @_;
    my $msg = "Column error: $err";
    $self->{column_errors} eq 'die' ? die $msg : warn $msg;
+   return;
+}
+
+# Make the printf line format for each row given the columns' settings.
+sub _make_col_formats {
+   my ( $self ) = @_;
+   my @col_fmts;
+   my $n_cols = $self->{n_cols} - 1;
+
+   # Check for relative/percentage width columns.  There there are any,
+   # then resolve their final print width.
+   $self->_resolve_col_widths();
+
+   for my $i ( 0..$n_cols ) {
+      my $col      = $self->{cols}->[$i];
+      my $wid      = $i == $n_cols && !$col->{right_justify} ? ''
+                   : $col->{width_max} || $col->{max_val};
+      my $col_fmt  = '%'
+                   . ($col->{right_justify} ? '' : '-')
+                   . $wid
+                   . 's';
+      push @col_fmts, $col_fmt;
+   }
+   return @col_fmts;
+}
+
+sub _resolve_col_widths {
+   my ( $self ) = @_;
+   my $n_cols   = $self->{n_cols} - 1;
+   my $line_wid
+      = $self->{line_width}; # - (($n_cols - 1) * length $self->{column_spacing});
+
+   my $have_relative_cols = 0;
+   for my $i ( 0..$n_cols ) {
+      my $col = $self->{cols}->[$i];
+      if ( $col->{width_max} ) {
+         $line_wid -= $col->{width_max};
+      }
+      else {
+         $have_relative_cols = 1;
+      }
+   }
+   MKDEBUG && _d('Have relative cols:', $have_relative_cols);
+
+   if ( $have_relative_cols ) {
+      MKDEBUG && _d($line_wid, 'chars for pct widths');
+      for my $i ( 0..$n_cols ) {
+         my $col = $self->{cols}->[$i];
+         if ( $col->{width_pct} ) {
+            my $wid = int($line_wid * ($col->{width_pct} / 100));
+            MKDEBUG && _d($col->{name}, $col->{width_pct}, '% ==',
+               $wid, 'chars');
+            if ( $wid < $col->{min_val} ) {
+               MKDEBUG && _d('Increased to min val width:', $col->{min_val});
+               $wid = $col->{min_val}
+            }
+            elsif ( $wid > $col->{max_val} ) {
+               MKDEBUG && _d('Reduced to max val width:', $col->{max_val});
+               $wid = $col->{max_val};
+            }
+            $col->{width_max} = $wid;
+         }
+      }
+
+      my @new_lines;
+      foreach my $vals ( @{$self->{lines}} ) {
+         push @new_lines, $self->_check_line_vals($vals);
+      }
+      $self->{lines} = \@new_lines;
+   }
+
    return;
 }
 
