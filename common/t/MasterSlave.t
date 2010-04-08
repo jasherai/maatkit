@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 31;
+use Test::More tests => 34;
 
 use MasterSlave;
 use DSNParser;
@@ -350,5 +350,47 @@ is($ms->get_slave_status($slaves[2])->{master_port}, $port_for{master}, 'slave 3
 # #############################################################################
 # Done.
 # #############################################################################
+
+
+# #############################################################################
+# Adding of is_replication_thread subroutine
+# #############################################################################
+
+is($ms->is_replication_thread(
+       {
+         Id    => '7',
+         User  => 'msandbox',
+         Host  => 'localhost:53246',
+         db    => 'NULL',
+         Command => 'Binlog Dump',
+         Time  => '1174',
+         State => 'Sending binlog event to slave',
+         Info  => 'NULL',
+      }), '7', 'Recognization of a Master thread');
+
+is($ms->is_replication_thread(
+       {
+         Id    => '7',
+         User  => 'msandbox',
+         Host  => 'localhost:53246',
+         db    => 'NULL',
+         Command => 'Binlog Dump',
+         Time  => '1174',
+         State => 'Waiting for master to send event',
+         Info  => 'NULL',
+      }), '7', 'Recognization of a SLAVE IO thread');
+
+is($ms->is_replication_thread(
+       {
+         Id    => '7',
+         User  => 'msandbox',
+         Host  => 'localhost:53246',
+         db    => 'NULL',
+         Command => 'Binlog Dump',
+         Time  => '1174',
+         State => 'Has read all relay log; waiting for the slave I/O thread to update it',
+         Info  => 'NULL',
+        }), '7', 'Recognization of a SLAVE SQL thread');
+
 diag(`$trunk/sandbox/stop-sandbox remove 2903 2902 2901 2900 >/dev/null`);
 exit;

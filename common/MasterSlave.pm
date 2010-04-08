@@ -768,6 +768,41 @@ sub short_host {
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
 }
 
+# This function will return the query if it's a running by a replication thread
+sub is_replication_thread {
+   my ( $self, $query ) = @_; 
+   if ( ( defined $query->{db} && $query->{db} eq 'NULL' && defined $query->{State} ) && 
+         ( 
+            # master thread states
+           $query->{State} =~ m/Sending binlog event to slave/ ||
+           $query->{State} =~ m/Finished reading one binlog; switching to next binlog/ ||
+           $query->{State} =~ m/Has sent all binlog to slave; waiting for binlog to be updated/ ||
+           $query->{State} =~ m/Waiting to finalize termination/ ||
+            # replication slave IO thread states
+           $query->{State} =~ m/Waiting for master update/ ||
+           $query->{State} =~ m/Connecting to master/ ||
+           $query->{State} =~ m/Checking master version/ ||
+           $query->{State} =~ m/Registering slave on master/ ||
+           $query->{State} =~ m/Requesting binlog dump/ ||
+           $query->{State} =~ m/Waiting to reconnect after a failed binlog dump request/ ||
+           $query->{State} =~ m/Reconnecting after a failed binlog dump request/ ||
+           $query->{State} =~ m/Waiting for master to send event/ ||
+           $query->{State} =~ m/Queueing master event to the relay log/ ||
+           $query->{State} =~ m/Waiting to reconnect after a failed master event read/ ||
+           $query->{State} =~ m/Reconnecting after a failed master event read/ ||
+           $query->{State} =~ m/Waiting for the slave SQL thread to free enough relay log space/ ||
+           $query->{State} =~ m/Waiting for slave mutex on exit/ ||
+            # replication slave SQL thread states
+           $query->{State} =~ m/Waiting for the next event in relay log/ ||
+           $query->{State} =~ m/Reading event from the relay log/ ||
+           $query->{State} =~ m/Has read all relay log; waiting for the slave/ ||
+           $query->{State} =~ m/Making temp file/ ||
+           $query->{State} =~ m/Waiting for slave mutex on exit/ ) ) {
+#              print "\nI was running here.. I will return $query->{Id}";
+              return $query->{Id};
+           }
+}
+
 # Stringifies a position in a way that's string-comparable.
 sub pos_to_string {
    my ( $self, $pos ) = @_;
