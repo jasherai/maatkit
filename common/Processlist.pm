@@ -317,6 +317,7 @@ sub _get_rows {
 sub find {
    my ( $self, $proclist, %find_spec ) = @_;
    MKDEBUG && _d('find specs:', Dumper(\%find_spec));
+   my $ms = $self->{MasterSlave};
    my @matches;
    QUERY:
    foreach my $query ( @$proclist ) {
@@ -342,7 +343,15 @@ sub find {
          MKDEBUG && _d('Exceeds idle time');
          $matched++;
       }
-
+      
+      # Don't allow matching replication threads.
+      if ( !$find_spec{replication_threads} ) {
+         if ( $ms && $ms->is_replication_thread($query) != $query->{Id}) {
+            MKDEBUG && _d('Skipping replication thread');
+            next QUERY;
+         }
+      }
+      
       PROPERTY:
       foreach my $property ( qw(Id User Host db State Command Info) ) {
          my $filter = "_find_match_$property";
