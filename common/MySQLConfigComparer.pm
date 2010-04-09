@@ -123,22 +123,29 @@ sub diff {
       my $vals     = $vals{$var};
       my $last_val = scalar @$vals - 1;
 
-      # Compare config0 val to other configs' val.
-      # Stop when a difference is found.
-      VAL:
-      for my $i ( 1..$last_val ) {
-         # First try straight string equality comparison.  If the vals
-         # are equal, stop.  If not, try a special eq_for comparison.
-         if ( $vals->[0] ne $vals->[$i] ) {
-            if ( !$eq_for{$var} || !$eq_for{$var}->($vals->[0], $vals->[$i]) ) {
-               push @diffs, {
-                  var  => $var,
-                  vals => [ map { $_->{$var} } @configs ],  # original vals
-               };
-               last VAL;
+      eval {
+         # Compare config0 val to other configs' val.
+         # Stop when a difference is found.
+         VAL:
+         for my $i ( 1..$last_val ) {
+            # First try straight string equality comparison.  If the vals
+            # are equal, stop.  If not, try a special eq_for comparison.
+            if ( $vals->[0] ne $vals->[$i] ) {
+               if (    !$eq_for{$var}
+                    || !$eq_for{$var}->($vals->[0], $vals->[$i]) ) {
+                  push @diffs, {
+                     var  => $var,
+                     vals => [ map { $_->{$var} } @configs ],  # original vals
+                  };
+                  last VAL;
+               }
             }
-         }
-      } # VAL
+         } # VAL
+      };
+      if ( $EVAL_ERROR ) {
+         my $vals = join(', ', map { defined $_ ? $_ : 'undef' } @$vals);
+         warn "Comparing $var values ($vals) caused an error: $EVAL_ERROR";
+      }
    } # VAR
 
    return \@diffs;
