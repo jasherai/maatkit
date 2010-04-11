@@ -10395,6 +10395,9 @@ server, then use the timings from replaying them to analyze their performance:
  mk-query-digest /path/to/slow.log --execute h=another_server \
    --filter '$event->{fingerprint} =~ m/^select/'
 
+Print out the structure of events so that you can construct complex filters:
+ mk-query-digest /path/to/slow.log -filter 'print Dumper $event'
+
 Watch SHOW FULL PROCESSLIST and output a log in slow query log format:
 
  mk-query-digest --processlist h=host1 --print --no-report
