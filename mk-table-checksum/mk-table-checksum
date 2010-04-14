@@ -5309,7 +5309,9 @@ sub do_tbl_replicate {
          _d("Warning: WHERE clause too large for boundaries column; ",
             "mk-table-sync may fail; value:", $where);
       }
-      elsif ( $warning->{message} =~ m/not safe to log in statement format/ ) {
+      elsif ( ($warning->{code} || 0) == 1592 ) {
+         # Error: 1592 SQLSTATE: HY000  (ER_BINLOG_UNSAFE_STATEMENT)
+         # Message: Statement may not be safe to log in statement format. 
          # Ignore this warning because we have purposely set statement-based
          # replication.
          MKDEBUG && _d('Ignoring warning:', $warning->{message});
