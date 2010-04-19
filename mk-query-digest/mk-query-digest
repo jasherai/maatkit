@@ -8758,7 +8758,8 @@ $OUTPUT_AUTOFLUSH     = 1;
 Transformers->import(qw(shorten micro_t percentage_of ts make_checksum
    any_unix_timestamp));
 
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+use constant MKDEBUG        => $ENV{MKDEBUG}        || 0;
+use constant MKDEBUG_MEMORY => $ENV{MKDEBUG_MEMORY} || 0;
 
 use sigtrap 'handler', \&sig_int, 'normal-signals';
 
@@ -10139,6 +10140,12 @@ sub main {
    grep { $_ }
    ($qv_dbh, $qv_dbh2, $ex_dbh, $ps_dbh, $ep_dbh, $aux_dbh);
 
+   if ( MKDEBUG_MEMORY ) {
+      my $memory_usage_module = $ENV{MKDEBUG_MEMORY};
+      require $memory_usage_module;
+      memory_usage::print_memory_usage();
+   }
+
    return 0;
 } # End main().
 
@@ -10395,8 +10402,9 @@ server, then use the timings from replaying them to analyze their performance:
  mk-query-digest /path/to/slow.log --execute h=another_server \
    --filter '$event->{fingerprint} =~ m/^select/'
 
-Print out the structure of events so that you can construct complex filters:
- mk-query-digest /path/to/slow.log -filter 'print Dumper $event'
+Print the structure of events so you can construct a complex L<"--filter">:
+
+ mk-query-digest /path/to/slow.log --filter 'print Dumper($event)' --no-report
 
 Watch SHOW FULL PROCESSLIST and output a log in slow query log format:
 
