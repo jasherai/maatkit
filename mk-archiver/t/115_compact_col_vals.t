@@ -24,7 +24,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 2;
+   plan tests => 3;
 }
 
 my $output;
@@ -68,6 +68,13 @@ is_deeply(
    $dbh->selectall_arrayref('select * from `t` order by id'),
    $compact_vals,
    'Compacted values'
+);
+
+my $autoinc = $dbh->selectrow_hashref('show table status from `cai` like "t"');
+is(
+   $autoinc->{Auto_increment},
+   16,
+   "Reset AUTO_INCREMENT"
 );
 
 # #############################################################################

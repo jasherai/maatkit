@@ -74,7 +74,8 @@ sub new {
    }
 
    my $self = {
-      dbh      => $dbh,
+      %args,
+      db_tbl   => $db_tbl,
       sth      => $sth,
       col_pos  => undef,
       next_val => 0,
@@ -148,8 +149,18 @@ sub before_bulk_delete {
    die "before_bulk_delete() was called but should not have been called!";
 }
 
+# Reset AUTO_INCREMENT to next, lowest value.
 sub after_finish {
    my ( $self ) = @_;
+   my $o   = $self->{OptionParser};
+   my $sql = "ALTER TABLE $self->{db_tbl} AUTO_INCREMENT=$self->{next_val}";
+   if ( !$o->get('dry-run') ) {
+      MKDEBUG && _d($sql);
+      $self->{dbh}->do($sql);
+   }
+   else {
+      print "# compact_col_vals plugin\n$sql\n";
+   }
    return;
 }
 
