@@ -495,7 +495,6 @@ sub lock_and_wait {
       if ( $args{wait} ) {
          # Always use the misc_dbh dbh to check the master's position, because
          # the main dbh might be in use due to executing $src_sth.
-         MKDEBUG && _d('Waiting', $args{wait}, 'seconds to catch up to master');
          $self->{MasterSlave}->wait_for_master(
             $src->{misc_dbh}, $dst->{dbh}, $args{wait}, $args{timeout_ok});
       }

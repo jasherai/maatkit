@@ -372,8 +372,8 @@ sub wait_for_master {
    my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
    my $result;
    $time = 60 unless defined $time;
-   MKDEBUG && _d('Waiting for slave to catch up to master timeout ok:',
-      $timeoutok);
+   MKDEBUG && _d('Waiting', $time, 'seconds for slave to catch up to master;',
+      'timeout ok:', ($timeoutok ? 'yes' : 'no'));
    $ms ||= $self->get_master_status($master);
    if ( $ms ) {
       my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
