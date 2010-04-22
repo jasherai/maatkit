@@ -4264,7 +4264,7 @@ Archive all rows from oltp_server to olap_server and to a file:
 
 Purge (delete) orphan rows from child table:
 
-  mk-arhicver --source h=host,D=db,t=child \
+  mk-archiver --source h=host,D=db,t=child \
     --purge --where 'NOT EXISTS(SELECT * FROM parent WHERE col=child.col)'
 
 =head1 RISKS
