@@ -17,7 +17,11 @@ use QueryParser;
 use MaatkitTest;
 
 my $qp = new QueryParser();
-my $qr  = new QueryRewriter(QueryParser=>$qp);
+my $qr = new QueryRewriter(QueryParser=>$qp);
+
+# #############################################################################
+# strip_comments()
+# #############################################################################
 
 is(
    $qr->strip_comments("select \n--bar\n foo"),
@@ -38,6 +42,22 @@ is(
 );
 
 is(
+   $qr->strip_comments("select /*\nhello!*/ 1"),
+   'select  1',
+   'Stripped star comment',
+);
+
+is(
+   $qr->strip_comments('select /*!40101 hello*/ 1'),
+   'select /*!40101 hello*/ 1',
+   'Left version star comment',
+);
+
+# #############################################################################
+# fingerprint()
+# #############################################################################
+
+is(
    $qr->fingerprint(
       q{UPDATE groups_search SET  charter = '   -------3\'\' XXXXXXXXX.\n    \n    -----------------------------------------------------', show_in_list = 'Y' WHERE group_id='aaaaaaaa'}),
    'update groups_search set charter = ?, show_in_list = ? where group_id=?',
@@ -51,22 +71,11 @@ is(
 );
 
 is(
-   $qr->distill("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
-   "SELECT film",
-   'Distills mysqldump SELECTs to selects',
-);
-
-is(
    $qr->fingerprint("CALL foo(1, 2, 3)"),
    "call foo",
    'Fingerprints stored procedure calls specially',
 );
 
-is(
-   $qr->distill("CALL foo(1, 2, 3)"),
-   "CALL foo",
-   'Distills stored procedure calls specially',
-);
 
 is(
    $qr->fingerprint('administrator command: Init DB'),
@@ -99,39 +108,9 @@ is(
 );
 
 is(
-   $qr->distill(
-      q{REPLACE /*foo.bar:3/3*/ INTO checksum.checksum (db, tbl, }
-      .q{chunk, boundaries, this_cnt, this_crc) SELECT 'foo', 'bar', }
-      .q{2 AS chunk_num, '`id` >= 2166633', COUNT(*) AS cnt, }
-      .q{LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `id`, `created_by`, }
-      .q{`created_date`, `updated_by`, `updated_date`, `ppc_provider`, }
-      .q{`account_name`, `provider_account_id`, `campaign_name`, }
-      .q{`provider_campaign_id`, `adgroup_name`, `provider_adgroup_id`, }
-      .q{`provider_keyword_id`, `provider_ad_id`, `foo`, `reason`, }
-      .q{`foo_bar_bazz_id`, `foo_bar_baz`, CONCAT(ISNULL(`created_by`), }
-      .q{ISNULL(`created_date`), ISNULL(`updated_by`), ISNULL(`updated_date`), }
-      .q{ISNULL(`ppc_provider`), ISNULL(`account_name`), }
-      .q{ISNULL(`provider_account_id`), ISNULL(`campaign_name`), }
-      .q{ISNULL(`provider_campaign_id`), ISNULL(`adgroup_name`), }
-      .q{ISNULL(`provider_adgroup_id`), ISNULL(`provider_keyword_id`), }
-      .q{ISNULL(`provider_ad_id`), ISNULL(`foo`), ISNULL(`reason`), }
-      .q{ISNULL(`foo_base_foo_id`), ISNULL(`fooe_foo_id`)))) AS UNSIGNED)), 10, }
-      .q{16)) AS crc FROM `foo`.`bar` USE INDEX (`PRIMARY`) WHERE }
-      .q{(`id` >= 2166633); }),
-   'REPLACE SELECT checksum.checksum foo.bar',
-   'Distills mk-table-checksum query',
-);
-
-is(
    $qr->fingerprint("use `foo`"),
    "use ?",
    'Removes identifier from USE',
-);
-
-is(
-   $qr->distill("use `foo`"),
-   "USE",
-   'distills USE',
 );
 
 is(
@@ -140,11 +119,6 @@ is(
    'Removes one-line comments in fingerprints',
 );
 
-is(
-   $qr->distill("select \n--bar\n foo"),
-   "SELECT",
-   'distills queries from DUAL',
-);
 
 is(
    $qr->fingerprint("select foo--bar\nfoo"),
@@ -173,22 +147,11 @@ is(
 );
 
 is(
-   $qr->distill("select null, 5.001, 5001. from foo"),
-   "SELECT foo",
-   "distills simple select",
-);
-
-is(
    $qr->fingerprint("select 'hello', '\nhello\n', \"hello\", '\\'' from foo"),
    "select ?, ?, ?, ? from foo",
    "Handles quoted strings",
 );
 
-is(
-   $qr->distill("select 'hello', '\nhello\n', \"hello\", '\\'' from foo"),
-   "SELECT foo",
-   "distills with quoted strings",
-);
 
 is(
    $qr->fingerprint("select 'hello'\n"),
@@ -207,18 +170,6 @@ is(
    $qr->fingerprint("select   foo"),
    "select foo",
    'Collapses whitespace',
-);
-
-is(
-   $qr->strip_comments("select /*\nhello!*/ 1"),
-   'select  1',
-   'Stripped star comment',
-);
-
-is(
-   $qr->strip_comments('select /*!40101 hello*/ 1'),
-   'select /*!40101 hello*/ 1',
-   'Left version star comment',
 );
 
 is(
@@ -257,12 +208,6 @@ is(
    'Numeric table names',
 );
 
-is(
-   $qr->distill("select foo_1 from foo_2_3"),
-   'SELECT foo_?_?',
-   'distills numeric table names',
-);
-
 # 123f00 => ?oo because f "looks like it could be a number".
 is(
    $qr->fingerprint("select 123foo from 123foo", { prefixes => 1 }),
@@ -283,22 +228,11 @@ is(
 );
 
 is(
-   $qr->distill("insert into abtemp.coxed select foo.bar from foo"),
-   'INSERT SELECT abtemp.coxed foo',
-   'distills insert/select',
-);
-
-is(
    $qr->fingerprint('insert into foo(a, b, c) values(2, 4, 5)'),
    'insert into foo(a, b, c) values(?+)',
    'VALUES lists',
 );
 
-is(
-   $qr->distill('insert into foo(a, b, c) values(2, 4, 5)'),
-   'INSERT foo',
-   'distills value lists',
-);
 
 is(
    $qr->fingerprint('insert into foo(a, b, c) values(2, 4, 5) , (2,4,5)'),
@@ -337,12 +271,6 @@ is(
 );
 
 is(
-   $qr->distill('select 1 union select 2 union select 4'),
-   'SELECT UNION',
-   'union distills together',
-);
-
-is(
    $qr->fingerprint('select 1 union all select 2 union all select 4'),
    'select ? /*repeat union all*/',
    'union all fingerprints together',
@@ -357,7 +285,52 @@ is(
    'union all fingerprints together',
 );
 
+# Issue 322: mk-query-digest segfault before report
+is(
+   $qr->fingerprint( load_file('common/t/samples/huge_replace_into_values.txt') ),
+   q{replace into `film_actor` values(?+)},
+   'huge replace into values() (issue 322)',
+);
+is(
+   $qr->fingerprint( load_file('common/t/samples/huge_insert_ignore_into_values.txt') ),
+   q{insert ignore into `film_actor` values(?+)},
+   'huge insert ignore into values() (issue 322)',
+);
+is(
+   $qr->fingerprint( load_file('common/t/samples/huge_explicit_cols_values.txt') ),
+   q{insert into foo (a,b,c,d,e,f,g,h) values(?+)},
+   'huge insert with explicit columns before values() (issue 322)',
+);
+
+# Those ^ aren't huge enough.  This one is 1.2M large. 
+my $huge_insert = `zcat $trunk/common/t/samples/slow039.txt.gz | tail -n 1`;
+is(
+   $qr->fingerprint($huge_insert),
+   q{insert into the_universe values(?+)},
+   'truly huge insert 1/2 (issue 687)'
+);
+$huge_insert = `zcat $trunk/common/t/samples/slow040.txt.gz | tail -n 2`;
+is(
+   $qr->fingerprint($huge_insert),
+   q{insert into the_universe values(?+)},
+   'truly huge insert 2/2 (issue 687)'
+);
+
+# #############################################################################
+# convert_to_select()
+# #############################################################################
+
 is($qr->convert_to_select(), undef, 'No query');
+
+is(
+   $qr->convert_to_select(
+      'select * from tbl where id = 1'
+   ),
+   'select * from tbl where id = 1',
+   'Does not convert select to select',
+);
+
+# convert REPLACE #############################################################
 
 is(
    $qr->convert_to_select(
@@ -374,6 +347,41 @@ is(
    'select`faz` from bar',
    'replace select',
 );
+
+is(
+   $qr->convert_to_select(
+      'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
+   ),
+   'select * from  foo where a=1 and  b= 3 and  c= 5',
+   'replace with ODKU',
+);
+
+is(
+   $qr->convert_to_select(
+      'replace into foo(a, b, c) values(now(), "3", 5)',
+   ),
+   'select * from  foo where a=now() and  b= "3" and  c= 5',
+   'replace with complicated expressions',
+);
+
+is(
+   $qr->convert_to_select(
+      'replace into foo(a, b, c) values(current_date - interval 1 day, "3", 5)',
+   ),
+   'select * from  foo where a=current_date - interval 1 day and  b= "3" and  c= 5',
+   'replace with complicated expressions',
+);
+
+is (
+   $qr->convert_to_select(q{
+REPLACE DELAYED INTO
+`db1`.`tbl2`(`col1`,col2)
+VALUES ('617653','2007-09-11')}),
+   qq{select * from \n`db1`.`tbl2` where `col1`='617653' and col2='2007-09-11'},
+   'replace delayed',
+);
+
+# convert INSERT ##############################################################
 
 is(
    $qr->convert_to_select(
@@ -401,50 +409,10 @@ is(
 
 is(
    $qr->convert_to_select(
-      'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
-   ),
-   'select * from  foo where a=1 and  b= 3 and  c= 5',
-   'replace with ODKU',
-);
-
-is(
-   $qr->distill(
-      'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
-   ),
-   'REPLACE UPDATE foo',
-   'distills ODKU',
-);
-
-is(
-   $qr->convert_to_select(
-      'replace into foo(a, b, c) values(now(), "3", 5)',
-   ),
-   'select * from  foo where a=now() and  b= "3" and  c= 5',
-   'replace with complicated expressions',
-);
-
-is(
-   $qr->convert_to_select(
-      'replace into foo(a, b, c) values(current_date - interval 1 day, "3", 5)',
-   ),
-   'select * from  foo where a=current_date - interval 1 day and  b= "3" and  c= 5',
-   'replace with complicated expressions',
-);
-
-is(
-   $qr->convert_to_select(
       'insert into foo select * from bar join baz using (bat)',
    ),
    'select * from bar join baz using (bat)',
    'insert select',
-);
-
-is(
-   $qr->distill(
-      'insert into foo select * from bar join baz using (bat)',
-   ),
-   'INSERT SELECT foo bar baz',
-   'distills insert select',
 );
 
 is(
@@ -456,6 +424,43 @@ is(
 );
 
 is(
+   $qr->convert_to_select(q{INSERT INTO foo.bar (col1, col2, col3)
+       VALUES ('unbalanced(', 'val2', 3)}),
+   q{select * from  foo.bar  where col1='unbalanced(' and  }
+   . q{col2= 'val2' and  col3= 3},
+   'unbalanced paren inside a string in VALUES',
+);
+
+# Issue 599: mk-slave-prefetch doesn't parse INSERT IGNORE
+is(
+   $qr->convert_to_select(
+      'INSERT IGNORE INTO Foo (clm1, clm2) VALUE (1,2)',
+   ),
+   'select * from  Foo  where clm1=1 and  clm2=2',
+   'convert_to_select insert ignore into',
+);
+
+# Issue 600: mk-slave-prefetch doesn't parse INSERT INTO Table SET c1 = v1,
+# c2 = v2 ...
+is(
+   $qr->convert_to_select(
+      "INSERT INTO Table SET c1 = 'v1', c2 = 'v2', c3 = 'v3'",
+   ),
+   "select * from  Table where c1 = 'v1' and  c2 = 'v2' and  c3 = 'v3' ",
+   'convert_to_select insert into with set',
+);
+
+is(
+   $qr->convert_to_select(
+      "INSERT INTO db.tbl SET c1=NULL,c2=42,c3='some value with spaces'",
+   ),
+   "select * from  db.tbl where c1=NULL and c2=42 and c3='some value with spaces' ",
+   'convert_to_select insert into with set',
+);
+
+# convert UPDATE ##############################################################
+
+is(
    $qr->convert_to_select(
       'update foo set bar=baz where bat=fiz',
    ),
@@ -464,27 +469,11 @@ is(
 );
 
 is(
-   $qr->distill(
-      'update foo set bar=baz where bat=fiz',
-   ),
-   'UPDATE foo',
-   'distills update',
-);
-
-is(
    $qr->convert_to_select(
       'update foo inner join bar using(baz) set big=little',
    ),
    'select  big=little from foo inner join bar using(baz) ',
    'delete inner join',
-);
-
-is(
-   $qr->distill(
-      'update foo inner join bar using(baz) set big=little',
-   ),
-   'UPDATE foo bar',
-   'distills update-multi',
 );
 
 is(
@@ -503,22 +492,6 @@ WHERE  gizmo='5091'}
    ),
    q{select     whereproblem= '3364', apple = 'fish' from foo.bar where   gizmo='5091'},
    'unknown issue',
-);
-
-is(
-   $qr->convert_to_select(
-      'delete from foo where bar = baz',
-   ),
-   'select * from  foo where bar = baz',
-   'delete',
-);
-
-is(
-   $qr->distill(
-      'delete from foo where bar = baz',
-   ),
-   'DELETE foo',
-   'distills delete',
 );
 
 # Insanity...
@@ -551,104 +524,6 @@ update db2.tbl1 as p
 );
 
 is(
-   $qr->distill('
-update db2.tbl1 as p
-   inner join (
-      select p2.col1, p2.col2
-      from db2.tbl1 as p2
-         inner join db2.tbl3 as ba
-            on p2.col1 = ba.tbl3
-      where col4 = 0
-      order by priority desc, col1, col2
-      limit 10
-   ) as chosen on chosen.col1 = p.col1
-      and chosen.col2 = p.col2
-   set p.col4 = 149945'),
-   'UPDATE SELECT db?.tbl?',
-   'distills complex subquery',
-);
-
-is(
-   $qr->convert_to_select(q{INSERT INTO foo.bar (col1, col2, col3)
-       VALUES ('unbalanced(', 'val2', 3)}),
-   q{select * from  foo.bar  where col1='unbalanced(' and  }
-   . q{col2= 'val2' and  col3= 3},
-   'unbalanced paren inside a string in VALUES',
-);
-
-is(
-   $qr->convert_to_select(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
-   'select 1 from  foo.bar b left join baz.bat c on a=b where nine>eight',
-   'Do not select * from a join',
-);
-
-is(
-   $qr->distill(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
-   'DELETE foo.bar baz.bat',
-   'distills and then collapses same tables',
-);
-
-is (
-   $qr->convert_to_select(q{
-REPLACE DELAYED INTO
-`db1`.`tbl2`(`col1`,col2)
-VALUES ('617653','2007-09-11')}),
-   qq{select * from \n`db1`.`tbl2` where `col1`='617653' and col2='2007-09-11'},
-   'replace delayed',
-);
-
-is (
-   $qr->distill(q{
-REPLACE DELAYED INTO
-`db1`.`tbl2`(`col1`,col2)
-VALUES ('617653','2007-09-11')}),
-   'REPLACE db?.tbl?',
-   'distills replace-delayed',
-);
-
-is(
-   $qr->convert_to_select(
-      'select * from tbl where id = 1'
-   ),
-   'select * from tbl where id = 1',
-   'Does not convert select to select',
-);
-
-is($qr->wrap_in_derived(), undef, 'Cannot wrap undef');
-
-is(
-   $qr->wrap_in_derived(
-      'select * from foo',
-   ),
-   'select 1 from (select * from foo) as x limit 1',
-   'wrap in derived table',
-);
-
-is(
-   $qr->wrap_in_derived('set timestamp=134'),
-   'set timestamp=134',
-   'Do not wrap non-SELECT queries',
-);
-
-is(
-   $qr->distill('set timestamp=134'),
-   'SET',
-   'distills set',
-);
-
-is(
-   $qr->convert_select_list('select * from tbl'),
-   'select 1 from tbl',
-   'Star to one',
-);
-
-is(
-   $qr->convert_select_list('select a, b, c from tbl'),
-   'select isnull(coalesce( a, b, c )) from tbl',
-   'column list to isnull/coalesce'
-);
-
-is(
    $qr->convert_to_select("UPDATE tbl SET col='wherex'WHERE crazy=1"),
    "select  col='wherex' from tbl where  crazy=1",
    "update with SET col='wherex'WHERE"
@@ -666,41 +541,61 @@ is($qr->convert_to_select(
    'update with no space between quoted string and where (issue 168)'
 );
 
-is($qr->distill(
-   q{UPDATE GARDEN_CLUPL PL, GARDENJOB GC, APLTRACT_GARDENPLANT ABU SET }
-   . q{GC.MATCHING_POT = 5, GC.LAST_GARDENPOT = 5, GC.LAST_NAME=}
-   . q{'Rotary', GC.LAST_BUCKET='Pail', GC.LAST_UPDATE='2008-11-27 04:00:59'WHERE}
-   . q{ PL.APLTRACT_GARDENPLANT_ID = GC.APLTRACT_GARDENPLANT_ID AND PL.}
-   . q{APLTRACT_GARDENPLANT_ID = ABU.ID AND GC.MATCHING_POT = 0 AND GC.PERFORM_DIG=1}
-   . q{ AND ABU.DIG = 6 AND ( ((SOIL-COST) > -80.0}
-   . q{ AND BUGS < 60.0 AND (SOIL-COST) < 200.0) AND POTS < 10.0 )}),
-   'UPDATE GARDEN_CLUPL GARDENJOB APLTRACT_GARDENPLANT',
-   'distills where there is alias and comma-join',
+# convert DELETE ##############################################################
+
+is(
+   $qr->convert_to_select(
+      'delete from foo where bar = baz',
+   ),
+   'select * from  foo where bar = baz',
+   'delete',
 );
 
 is(
-   $qr->distill(q{SELECT STRAIGHT_JOIN distinct foo, bar FROM A, B, C}),
-   'SELECT A B C',
-   'distill with STRAIGHT_JOIN',
+   $qr->convert_to_select(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
+   'select 1 from  foo.bar b left join baz.bat c on a=b where nine>eight',
+   'Do not select * from a join',
+);
+
+# #############################################################################
+# wrap_in_derived()
+# #############################################################################
+
+is($qr->wrap_in_derived(), undef, 'Cannot wrap undef');
+
+is(
+   $qr->wrap_in_derived(
+      'select * from foo',
+   ),
+   'select 1 from (select * from foo) as x limit 1',
+   'wrap in derived table',
 );
 
 is(
-   $qr->distill(
-      'replace into checksum.checksum select `last_update`, `foo` from foo.foo'),
-   'REPLACE SELECT checksum.checksum foo.foo',
-   'distill with reserved words');
+   $qr->wrap_in_derived('set timestamp=134'),
+   'set timestamp=134',
+   'Do not wrap non-SELECT queries',
+);
 
-is($qr->distill('SHOW STATUS'), 'SHOW STATUS', 'distill SHOW STATUS');
+# #############################################################################
+# convert_select_list()
+# #############################################################################
 
-is($qr->distill('commit'), 'COMMIT', 'distill COMMIT');
+is(
+   $qr->convert_select_list('select * from tbl'),
+   'select 1 from tbl',
+   'Star to one',
+);
 
-is($qr->distill('FLUSH TABLES WITH READ LOCK'), 'FLUSH', 'distill FLUSH');
+is(
+   $qr->convert_select_list('select a, b, c from tbl'),
+   'select isnull(coalesce( a, b, c )) from tbl',
+   'column list to isnull/coalesce'
+);
 
-is($qr->distill('BEGIN'), 'BEGIN', 'distill BEGIN');
-
-is($qr->distill('start'), 'START', 'distill START');
-
-is($qr->distill('ROLLBACK'), 'ROLLBACK', 'distill ROLLBACK');
+# #############################################################################
+# shorten()
+# #############################################################################
 
 is(
    $qr->shorten("insert into t(a,b,c) values(a,b,c),(d,e,f),(g,h,i)"),
@@ -789,6 +684,202 @@ is(
    "Test case to document that parens are expected to prevent shortening",
 );
 
+# #############################################################################
+# distill()
+# All tests below here are distill() tests.  There's a lot of them.
+# #############################################################################
+
+is(
+   $qr->distill("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
+   "SELECT film",
+   'Distills mysqldump SELECTs to selects',
+);
+
+is(
+   $qr->distill("CALL foo(1, 2, 3)"),
+   "CALL foo",
+   'Distills stored procedure calls specially',
+);
+
+is(
+   $qr->distill(
+      q{REPLACE /*foo.bar:3/3*/ INTO checksum.checksum (db, tbl, }
+      .q{chunk, boundaries, this_cnt, this_crc) SELECT 'foo', 'bar', }
+      .q{2 AS chunk_num, '`id` >= 2166633', COUNT(*) AS cnt, }
+      .q{LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `id`, `created_by`, }
+      .q{`created_date`, `updated_by`, `updated_date`, `ppc_provider`, }
+      .q{`account_name`, `provider_account_id`, `campaign_name`, }
+      .q{`provider_campaign_id`, `adgroup_name`, `provider_adgroup_id`, }
+      .q{`provider_keyword_id`, `provider_ad_id`, `foo`, `reason`, }
+      .q{`foo_bar_bazz_id`, `foo_bar_baz`, CONCAT(ISNULL(`created_by`), }
+      .q{ISNULL(`created_date`), ISNULL(`updated_by`), ISNULL(`updated_date`), }
+      .q{ISNULL(`ppc_provider`), ISNULL(`account_name`), }
+      .q{ISNULL(`provider_account_id`), ISNULL(`campaign_name`), }
+      .q{ISNULL(`provider_campaign_id`), ISNULL(`adgroup_name`), }
+      .q{ISNULL(`provider_adgroup_id`), ISNULL(`provider_keyword_id`), }
+      .q{ISNULL(`provider_ad_id`), ISNULL(`foo`), ISNULL(`reason`), }
+      .q{ISNULL(`foo_base_foo_id`), ISNULL(`fooe_foo_id`)))) AS UNSIGNED)), 10, }
+      .q{16)) AS crc FROM `foo`.`bar` USE INDEX (`PRIMARY`) WHERE }
+      .q{(`id` >= 2166633); }),
+   'REPLACE SELECT checksum.checksum foo.bar',
+   'Distills mk-table-checksum query',
+);
+
+is(
+   $qr->distill("use `foo`"),
+   "USE",
+   'distills USE',
+);
+
+is(
+   $qr->distill(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
+   'DELETE foo.bar baz.bat',
+   'distills and then collapses same tables',
+);
+
+is(
+   $qr->distill("select \n--bar\n foo"),
+   "SELECT",
+   'distills queries from DUAL',
+);
+
+is(
+   $qr->distill("select null, 5.001, 5001. from foo"),
+   "SELECT foo",
+   "distills simple select",
+);
+
+is(
+   $qr->distill("select 'hello', '\nhello\n', \"hello\", '\\'' from foo"),
+   "SELECT foo",
+   "distills with quoted strings",
+);
+
+is(
+   $qr->distill("select foo_1 from foo_2_3"),
+   'SELECT foo_?_?',
+   'distills numeric table names',
+);
+
+is(
+   $qr->distill("insert into abtemp.coxed select foo.bar from foo"),
+   'INSERT SELECT abtemp.coxed foo',
+   'distills insert/select',
+);
+
+is(
+   $qr->distill('insert into foo(a, b, c) values(2, 4, 5)'),
+   'INSERT foo',
+   'distills value lists',
+);
+
+is(
+   $qr->distill('select 1 union select 2 union select 4'),
+   'SELECT UNION',
+   'distill unions together',
+);
+
+is(
+   $qr->distill(
+      'delete from foo where bar = baz',
+   ),
+   'DELETE foo',
+   'distills delete',
+);
+
+is(
+   $qr->distill('set timestamp=134'),
+   'SET',
+   'distills set',
+);
+
+is(
+   $qr->distill(
+      'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
+   ),
+   'REPLACE UPDATE foo',
+   'distills ODKU',
+);
+
+is($qr->distill(
+   q{UPDATE GARDEN_CLUPL PL, GARDENJOB GC, APLTRACT_GARDENPLANT ABU SET }
+   . q{GC.MATCHING_POT = 5, GC.LAST_GARDENPOT = 5, GC.LAST_NAME=}
+   . q{'Rotary', GC.LAST_BUCKET='Pail', GC.LAST_UPDATE='2008-11-27 04:00:59'WHERE}
+   . q{ PL.APLTRACT_GARDENPLANT_ID = GC.APLTRACT_GARDENPLANT_ID AND PL.}
+   . q{APLTRACT_GARDENPLANT_ID = ABU.ID AND GC.MATCHING_POT = 0 AND GC.PERFORM_DIG=1}
+   . q{ AND ABU.DIG = 6 AND ( ((SOIL-COST) > -80.0}
+   . q{ AND BUGS < 60.0 AND (SOIL-COST) < 200.0) AND POTS < 10.0 )}),
+   'UPDATE GARDEN_CLUPL GARDENJOB APLTRACT_GARDENPLANT',
+   'distills where there is alias and comma-join',
+);
+
+is(
+   $qr->distill(q{SELECT STRAIGHT_JOIN distinct foo, bar FROM A, B, C}),
+   'SELECT A B C',
+   'distill with STRAIGHT_JOIN',
+);
+
+is (
+   $qr->distill(q{
+REPLACE DELAYED INTO
+`db1`.`tbl2`(`col1`,col2)
+VALUES ('617653','2007-09-11')}),
+   'REPLACE db?.tbl?',
+   'distills replace-delayed',
+);
+
+is(
+   $qr->distill(
+      'update foo inner join bar using(baz) set big=little',
+   ),
+   'UPDATE foo bar',
+   'distills update-multi',
+);
+
+is(
+   $qr->distill('
+update db2.tbl1 as p
+   inner join (
+      select p2.col1, p2.col2
+      from db2.tbl1 as p2
+         inner join db2.tbl3 as ba
+            on p2.col1 = ba.tbl3
+      where col4 = 0
+      order by priority desc, col1, col2
+      limit 10
+   ) as chosen on chosen.col1 = p.col1
+      and chosen.col2 = p.col2
+   set p.col4 = 149945'),
+   'UPDATE SELECT db?.tbl?',
+   'distills complex subquery',
+);
+
+is(
+   $qr->distill(
+      'replace into checksum.checksum select `last_update`, `foo` from foo.foo'),
+   'REPLACE SELECT checksum.checksum foo.foo',
+   'distill with reserved words');
+
+is($qr->distill('SHOW STATUS'), 'SHOW STATUS', 'distill SHOW STATUS');
+
+is($qr->distill('commit'), 'COMMIT', 'distill COMMIT');
+
+is($qr->distill('FLUSH TABLES WITH READ LOCK'), 'FLUSH', 'distill FLUSH');
+
+is($qr->distill('BEGIN'), 'BEGIN', 'distill BEGIN');
+
+is($qr->distill('start'), 'START', 'distill START');
+
+is($qr->distill('ROLLBACK'), 'ROLLBACK', 'distill ROLLBACK');
+
+is(
+   $qr->distill(
+      'insert into foo select * from bar join baz using (bat)',
+   ),
+   'INSERT SELECT foo bar baz',
+   'distills insert select',
+);
+
 is(
    $qr->distill('create database foo'),
    'CREATE DATABASE foo',
@@ -860,42 +951,15 @@ is(
    'generic distill HTTP put'
 );
 
-# #############################################################################
-# Issue 322: mk-query-digest segfault before report
-# #############################################################################
 is(
-   $qr->fingerprint( load_file('common/t/samples/huge_replace_into_values.txt') ),
-   q{replace into `film_actor` values(?+)},
-   'huge replace into values() (issue 322)',
-);
-is(
-   $qr->fingerprint( load_file('common/t/samples/huge_insert_ignore_into_values.txt') ),
-   q{insert ignore into `film_actor` values(?+)},
-   'huge insert ignore into values() (issue 322)',
-);
-is(
-   $qr->fingerprint( load_file('common/t/samples/huge_explicit_cols_values.txt') ),
-   q{insert into foo (a,b,c,d,e,f,g,h) values(?+)},
-   'huge insert with explicit columns before values() (issue 322)',
+   $qr->distill(
+      'update foo set bar=baz where bat=fiz',
+   ),
+   'UPDATE foo',
+   'distills update',
 );
 
-# Those ^ aren't huge enough.  This one is 1.2M large. 
-my $huge_insert = `zcat $trunk/common/t/samples/slow039.txt.gz | tail -n 1`;
-is(
-   $qr->fingerprint($huge_insert),
-   q{insert into the_universe values(?+)},
-   'truly huge insert 1/2 (issue 687)'
-);
-$huge_insert = `zcat $trunk/common/t/samples/slow040.txt.gz | tail -n 2`;
-is(
-   $qr->fingerprint($huge_insert),
-   q{insert into the_universe values(?+)},
-   'truly huge insert 2/2 (issue 687)'
-);
-
-# #############################################################################
 # Issue 563: Lock tables is not distilled
-# #############################################################################
 is(
    $qr->distill('LOCK TABLES foo WRITE'),
    'LOCK foo',
@@ -912,9 +976,7 @@ is(
    'distills unlock tables'
 );
 
-# #############################################################################
 #  Issue 712: Queries not handled by "distill"
-# #############################################################################
 is(
    $qr->distill('XA START 0x123'),
    'XA_START',
@@ -1077,10 +1139,7 @@ foreach my $show ( @show ) {
    );
 }
 
-# #############################################################################
 #  Issue 735: mk-query-digest doesn't distill query correctly
-# #############################################################################
-
 is( 
 	$qr->distill('SHOW /*!50002 GLOBAL */ STATUS'),
 	'SHOW STATUS',
@@ -1117,10 +1176,7 @@ is(
 	"distills ADMIN STATISTICS"
 );
 
-# #############################################################################
 # Issue 781: mk-query-digest doesn't distill or extract tables properly
-# #############################################################################
-
 is( 
 	$qr->distill("SELECT `id` FROM (`field`) WHERE `id` = '10000016228434112371782015185031'"),
 	'SELECT field',
@@ -1151,36 +1207,6 @@ is(
 	'distills INSERT (tbl)'
 );
 
-# #############################################################################
-# Issue 599: mk-slave-prefetch doesn't parse INSERT IGNORE
-# #############################################################################
-is(
-   $qr->convert_to_select(
-      'INSERT IGNORE INTO Foo (clm1, clm2) VALUE (1,2)',
-   ),
-   'select * from  Foo  where clm1=1 and  clm2=2',
-   'convert_to_select insert ignore into',
-);
-
-# #############################################################################
-# Issue 600: mk-slave-prefetch doesn't parse INSERT INTO Table SET c1 = v1,
-# c2 = v2 ...
-# #############################################################################
-is(
-   $qr->convert_to_select(
-      "INSERT INTO Table SET c1 = 'v1', c2 = 'v2', c3 = 'v3'",
-   ),
-   "select * from  Table where c1 = 'v1' and  c2 = 'v2' and  c3 = 'v3' ",
-   'convert_to_select insert into with set',
-);
-
-is(
-   $qr->convert_to_select(
-      "INSERT INTO db.tbl SET c1=NULL,c2=42,c3='some value with spaces'",
-   ),
-   "select * from  db.tbl where c1=NULL and c2=42 and c3='some value with spaces' ",
-   'convert_to_select insert into with set',
-);
 
 # #############################################################################
 # Done.
