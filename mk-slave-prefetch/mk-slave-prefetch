@@ -1564,7 +1564,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6042
+# QueryRewriter package 6132
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1749,10 +1749,10 @@ sub distill_verbs {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
    };
-   my $verbs = join(q{ }, @verbs);
-   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+   my $verb_str = join(q{ }, @verbs);
+   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
 
-   return $verbs;
+   return $verb_str;
 }
 
 sub __distill_tables {
@@ -1826,7 +1826,7 @@ sub convert_to_select {
                     (?:insert(?:\s+ignore)?|replace)\s+
                     .*?\binto\b(.*?)\(([^\)]+)\)\s*
                     values?\s*(\(.*?\))\s*
-                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
                     \Z
                  }
                  {__insert_to_select($1, $2, $3)}exsi
@@ -1834,8 +1834,8 @@ sub convert_to_select {
                     \A.*?
                     (?:insert(?:\s+ignore)?|replace)\s+
                     (?:.*?\binto)\b(.*?)\s*
-                    set?\s*\b(.*?)\s*
-                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    set\s+(.*?)\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
                     \Z
                  }
                  {__insert_to_select_with_set($1, $2)}exsi
@@ -3158,7 +3158,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5697
+# Quoter package 6079
 # ###########################################################################
 package Quoter;
 
@@ -3184,8 +3184,9 @@ sub quote {
 sub quote_val {
    my ( $self, $val, $is_numeric ) = @_;
 
-   return 'NULL' unless defined $val;  # undef = NULL
-   return "''" if $val eq '';          # blank string = ''
+   return 'NULL' unless defined $val;         # undef = NULL
+   return "''" if $val eq '';                 # blank string = ''
+   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
 
    if ( !defined $is_numeric ) {
       $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
