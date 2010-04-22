@@ -237,8 +237,6 @@ sub sync_table {
          table    => $dst->{tbl},
          where    => $args{where},
       );
-      MKDEBUG && _d('src:', $src_sql);
-      MKDEBUG && _d('dst:', $dst_sql);
 
       if ( $args{transaction} ) {
          if ( $args{bidirectional} ) {
@@ -257,6 +255,8 @@ sub sync_table {
             $dst_sql .= ' FOR UPDATE';
          }
       }
+      MKDEBUG && _d('src:', $src_sql);
+      MKDEBUG && _d('dst:', $dst_sql);
 
       # Give callback a chance to do something with the SQL statements.
       $callback->($src_sql, $dst_sql) if $callback;
@@ -425,6 +425,11 @@ sub unlock {
    return;
 }
 
+# Arguments:
+#    lock         scalar: lock level requested by user
+#    local_level  scalar: lock level code is calling from
+#    src          dbh
+#    dst          dbh
 # Lock levels:
 #   0 => none
 #   1 => per sync cycle
@@ -445,6 +450,7 @@ sub lock_and_wait {
    my $dst = $args{dst};
 
    return unless $args{lock} && $args{lock} == $args{lock_level};
+   MKDEBUG && _d('lock and wait, lock level', $args{lock});
 
    # First, commit/unlock the previous transaction/lock.
    foreach my $dbh ( $src->{dbh}, $dst->{dbh} ) {
@@ -463,7 +469,7 @@ sub lock_and_wait {
    # might have to wait for the slave to catch up before locking on the dest.
    if ( $args{lock} == 3 ) {
       my $sql = 'FLUSH TABLES WITH READ LOCK';
-      MKDEBUG && _d($src->{dbh}, ',', $sql);
+      MKDEBUG && _d($src->{dbh}, $sql);
       $src->{dbh}->do($sql);
    }
    else {
@@ -489,6 +495,7 @@ sub lock_and_wait {
       if ( $args{wait} ) {
          # Always use the misc_dbh dbh to check the master's position, because
          # the main dbh might be in use due to executing $src_sth.
+         MKDEBUG && _d('Waiting', $args{wait}, 'seconds to catch up to master');
          $self->{MasterSlave}->wait_for_master(
             $src->{misc_dbh}, $dst->{dbh}, $args{wait}, $args{timeout_ok});
       }
