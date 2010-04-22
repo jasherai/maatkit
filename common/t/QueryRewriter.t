@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 246;
+use Test::More tests => 247;
 
 use QueryRewriter;
 use QueryParser;
@@ -1154,7 +1154,6 @@ is(
 # #############################################################################
 # Issue 599: mk-slave-prefetch doesn't parse INSERT IGNORE
 # #############################################################################
-
 is(
    $qr->convert_to_select(
       'INSERT IGNORE INTO Foo (clm1, clm2) VALUE (1,2)',
@@ -1163,10 +1162,10 @@ is(
    'convert_to_select insert ignore into',
 );
 
-# #####################################################################################
-# Issue 600: mk-slave-prefetch doesn't parse INSERT INTO Table SET c1 = v1, c2 = v2 ...
-# #####################################################################################
-
+# #############################################################################
+# Issue 600: mk-slave-prefetch doesn't parse INSERT INTO Table SET c1 = v1,
+# c2 = v2 ...
+# #############################################################################
 is(
    $qr->convert_to_select(
       "INSERT INTO Table SET c1 = 'v1', c2 = 'v2', c3 = 'v3'",
@@ -1175,5 +1174,15 @@ is(
    'convert_to_select insert into with set',
 );
 
+is(
+   $qr->convert_to_select(
+      "INSERT INTO db.tbl SET c1=NULL,c2=42,c3='some value with spaces'",
+   ),
+   "select * from  db.tbl where c1=NULL and c2=42 and c3='some value with spaces' ",
+   'convert_to_select insert into with set',
+);
+
+# #############################################################################
+# Done.
+# #############################################################################
 exit;
- 
