@@ -10,7 +10,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 247;
+use Test::More tests => 251;
 
 use QueryRewriter;
 use QueryParser;
@@ -330,6 +330,14 @@ is(
    'Does not convert select to select',
 );
 
+is(
+   $qr->convert_to_select(q{INSERT INTO foo.bar (col1, col2, col3)
+       VALUES ('unbalanced(', 'val2', 3)}),
+   q{select * from  foo.bar  where col1='unbalanced(' and  }
+   . q{col2= 'val2' and  col3= 3},
+   'unbalanced paren inside a string in VALUES',
+);
+
 # convert REPLACE #############################################################
 
 is(
@@ -337,7 +345,7 @@ is(
       'replace into foo select * from bar',
    ),
    'select * from bar',
-   'replace select',
+   'convert REPLACE SELECT',
 );
 
 is(
@@ -345,7 +353,7 @@ is(
       'replace into foo select`faz` from bar',
    ),
    'select`faz` from bar',
-   'replace select',
+   'convert REPLACE SELECT`col`',
 );
 
 is(
@@ -353,7 +361,7 @@ is(
       'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
    ),
    'select * from  foo where a=1 and  b= 3 and  c= 5',
-   'replace with ODKU',
+   'convert REPLACE (cols) VALUES ON DUPE KEY',
 );
 
 is(
@@ -361,7 +369,7 @@ is(
       'replace into foo(a, b, c) values(now(), "3", 5)',
    ),
    'select * from  foo where a=now() and  b= "3" and  c= 5',
-   'replace with complicated expressions',
+   'convert REPLACE (cols) VALUES (now())',
 );
 
 is(
@@ -369,16 +377,24 @@ is(
       'replace into foo(a, b, c) values(current_date - interval 1 day, "3", 5)',
    ),
    'select * from  foo where a=current_date - interval 1 day and  b= "3" and  c= 5',
-   'replace with complicated expressions',
+   'convert REPLACE (cols) VALUES (complex expression)',
 );
 
-is (
+is(
    $qr->convert_to_select(q{
 REPLACE DELAYED INTO
 `db1`.`tbl2`(`col1`,col2)
 VALUES ('617653','2007-09-11')}),
    qq{select * from \n`db1`.`tbl2` where `col1`='617653' and col2='2007-09-11'},
-   'replace delayed',
+   'convert REPLACE DELAYED (cols) VALUES',
+);
+
+is(
+   $qr->convert_to_select(
+      'replace into tbl set col1="a val", col2=123, col3=null',
+   ),
+   'select * from  tbl where col1="a val" and  col2=123 and  col3=null ',
+   'convert REPLACE SET'
 );
 
 # convert INSERT ##############################################################
@@ -388,15 +404,7 @@ is(
       'insert into foo(a, b, c) values(1, 3, 5)',
    ),
    'select * from  foo where a=1 and  b= 3 and  c= 5',
-   'insert',
-);
-
-is(
-   $qr->convert_to_select(
-      'insert ignore into foo(a, b, c) values(1, 3, 5)',
-   ),
-   'select * from  foo where a=1 and  b= 3 and  c= 5',
-   'insert ignore',
+   'convert INSERT (cols) VALUES',
 );
 
 is(
@@ -404,7 +412,24 @@ is(
       'insert into foo(a, b, c) value(1, 3, 5)',
    ),
    'select * from  foo where a=1 and  b= 3 and  c= 5',
-   'insert with VALUE()',
+   'convert INSERT (cols) VALUE',
+);
+
+# Issue 599: mk-slave-prefetch doesn't parse INSERT IGNORE
+is(
+   $qr->convert_to_select(
+      'insert ignore into foo(a, b, c) values(1, 3, 5)',
+   ),
+   'select * from  foo where a=1 and  b= 3 and  c= 5',
+   'convert INSERT IGNORE (cols) VALUES',
+);
+
+is(
+   $qr->convert_to_select(
+      'INSERT IGNORE INTO Foo (clm1, clm2) VALUE (1,2)',
+   ),
+   'select * from  Foo  where clm1=1 and  clm2=2',
+   'convert INSERT IGNORE (cols) VALUE',
 );
 
 is(
@@ -412,32 +437,7 @@ is(
       'insert into foo select * from bar join baz using (bat)',
    ),
    'select * from bar join baz using (bat)',
-   'insert select',
-);
-
-is(
-   $qr->convert_to_select(
-      'insert into foo select * from bar where baz=bat on duplicate key update',
-   ),
-   'select * from bar where baz=bat',
-   'insert select on duplicate key update',
-);
-
-is(
-   $qr->convert_to_select(q{INSERT INTO foo.bar (col1, col2, col3)
-       VALUES ('unbalanced(', 'val2', 3)}),
-   q{select * from  foo.bar  where col1='unbalanced(' and  }
-   . q{col2= 'val2' and  col3= 3},
-   'unbalanced paren inside a string in VALUES',
-);
-
-# Issue 599: mk-slave-prefetch doesn't parse INSERT IGNORE
-is(
-   $qr->convert_to_select(
-      'INSERT IGNORE INTO Foo (clm1, clm2) VALUE (1,2)',
-   ),
-   'select * from  Foo  where clm1=1 and  clm2=2',
-   'convert_to_select insert ignore into',
+   'convert INSERT SELECT',
 );
 
 # Issue 600: mk-slave-prefetch doesn't parse INSERT INTO Table SET c1 = v1,
@@ -447,7 +447,7 @@ is(
       "INSERT INTO Table SET c1 = 'v1', c2 = 'v2', c3 = 'v3'",
    ),
    "select * from  Table where c1 = 'v1' and  c2 = 'v2' and  c3 = 'v3' ",
-   'convert_to_select insert into with set',
+   'convert INSERT SET char cols',
 );
 
 is(
@@ -455,7 +455,39 @@ is(
       "INSERT INTO db.tbl SET c1=NULL,c2=42,c3='some value with spaces'",
    ),
    "select * from  db.tbl where c1=NULL and c2=42 and c3='some value with spaces' ",
-   'convert_to_select insert into with set',
+   'convert INSERT SET NULL col, int col, char col with space',
+);
+
+is(
+   $qr->convert_to_select(
+      'insert into foo (col1) values (1) on duplicate key update',
+   ),
+   'select * from  foo  where col1=1',
+   'convert INSERT (cols) VALUES ON DUPE KEY UPDATE'
+);
+
+is(
+   $qr->convert_to_select(
+      'insert into foo (col1) value (1) on duplicate key update',
+   ),
+   'select * from  foo  where col1=1',
+   'convert INSERT (cols) VALUE ON DUPE KEY UPDATE'
+);
+
+is(
+   $qr->convert_to_select(
+      "insert into tbl set col='foo', col2='some val' on duplicate key update",
+   ),
+   "select * from  tbl where col='foo' and  col2='some val' ",
+   'convert INSERT SET ON DUPE KEY UPDATE',
+);
+
+is(
+   $qr->convert_to_select(
+      'insert into foo select * from bar where baz=bat on duplicate key update',
+   ),
+   'select * from bar where baz=bat',
+   'convert INSERT SELECT ON DUPE KEY UPDATE',
 );
 
 # convert UPDATE ##############################################################
