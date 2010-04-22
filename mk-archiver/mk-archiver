@@ -3396,6 +3396,7 @@ sub main {
       }
       my $dbh = $dp->get_dbh(
          $dp->get_cxn_params($table), { AutoCommit => $ac });
+      MKDEBUG && _d('Inspecting table on', $dp->as_string($table));
 
       # Set options that can enable removing data on the master and archiving it
       # on the slaves.
@@ -4255,8 +4256,16 @@ mk-archiver - Archive rows from a MySQL table into another table or a file.
 
 =head1 SYNOPSIS
 
- mk-archiver --source h=oltp_server,D=test,t=tbl --dest h=olap_server \
-    --file '/var/log/archive/%Y-%m-%d-%D.%t' --limit 1000 --commit-each
+Archive all rows from oltp_server to olap_server and to a file:
+
+  mk-archiver --source h=oltp_server,D=test,t=tbl --dest h=olap_server \
+    --file '/var/log/archive/%Y-%m-%d-%D.%t'                           \
+    --where "1=1" --limit 1000 --commit-each
+
+Purge (delete) orphan rows from child table:
+
+  mk-arhicver --source h=host,D=db,t=child \
+    --purge --where 'NOT EXISTS(SELECT * FROM parent WHERE col=child.col)'
 
 =head1 RISKS
 
@@ -4544,6 +4553,17 @@ L<"--source">.  Most missing values default to the same values as
 L<"--source">, so you don't have to repeat options that are the same in
 L<"--source"> and L<"--dest">.  Use the L<"--help"> option to see which values
 are copied from L<"--source">.
+
+B<WARNING>: Using a default options file (F) DSN option that defines a
+socket for L<"--source"> causes mk-archiver to connect to L<"--dest"> using
+that socket unless another socket for L<"--dest"> is specified.  This
+means that mk-archiver may incorrectly connect to L<"--source"> when it
+connects to L<"--dest">.  For example:
+
+  --source F=host1.cnf,D=db,t=tbl --dest h=host2
+
+When mk-archiver connects to L<"--dest">, host2, it will connect via the
+L<"--source">, host1, socket defined in host1.cnf.
 
 =item --dry-run
 
@@ -4984,6 +5004,17 @@ two options can be used as different methods to achieve the same goal: archive
 data off the master, but leave it on the slave.  For example, you can run a
 purge job on the master and prevent it from happening on the slave using your
 method of choice.
+
+B<WARNING>: Using a default options file (F) DSN option that defines a
+socket for L<"--source"> causes mk-archiver to connect to L<"--dest"> using
+that socket unless another socket for L<"--dest"> is specified.  This
+means that mk-archiver may incorrectly connect to L<"--source"> when it
+connects to L<"--dest">.  For example:
+
+  --source F=host1.cnf,D=db,t=tbl --dest h=host2
+
+When mk-archiver connects to L<"--dest">, host2, it will connect via the
+L<"--source">, host1, socket defined in host1.cnf.
 
 =item --statistics
 
