@@ -15,13 +15,30 @@ use Transformers;
 use QueryReportFormatter;
 use EventAggregator;
 use QueryRewriter;
+use QueryParser;
+use Quoter;
+use ReportFormatter;
+use OptionParser;
+use DSNParser;
 use MaatkitTest;
 
-my ( $qrf, $result, $events, $expected, $qr, $ea );
+my ($result, $events, $expected);
 
-$qr  = new QueryRewriter();
-$qrf = new QueryReportFormatter();
-$ea  = new EventAggregator(
+my $q   = new Quoter();
+my $qp  = new QueryParser();
+my $qr  = new QueryRewriter(QueryParser=>$qp);
+my $o   = new OptionParser(description=>'qrf');
+
+$o->get_specs("$trunk/mk-query-digest/mk-query-digest");
+
+my $qrf = new QueryReportFormatter(
+   OptionParser  => $o,
+   QueryRewriter => $qr,
+   QueryParser   => $qp,
+   Quoter        => $q,
+);
+
+my $ea  = new EventAggregator(
    groupby => 'fingerprint',
    worst   => 'Query_time',
    attributes => {
@@ -35,12 +52,14 @@ $ea  = new EventAggregator(
    },
 );
 
-isa_ok( $qrf, 'QueryReportFormatter' );
+isa_ok($qrf, 'QueryReportFormatter');
 
-$result = $qrf->header();
-like($result,
+$result = $qrf->rusage();
+like(
+   $result,
    qr/^# \S+ user time, \S+ system time, \S+ rss, \S+ vsz/s,
-   'Header looks ok');
+   'rusage report',
+);
 
 $events = [
    {  ts            => '071015 21:43:52',
@@ -128,14 +147,14 @@ foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
 }
-
-$result = $qrf->global_report(
-   $ea,
+$ea->calculate_statistical_metrics();
+$result = $qrf->header(
+   ea      => $ea,
    select  => [ qw(Query_time Lock_time Rows_sent Rows_examined ts) ],
-   worst   => 'Query_time',
+   orderby => 'Query_time',
 );
 
-is($result, $expected, 'Global report');
+is($result, $expected, 'Global (header) report');
 
 $expected = <<EOF;
 # Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 _____
@@ -152,12 +171,12 @@ $expected = <<EOF;
 EOF
 
 $result = $qrf->event_report(
-   $ea,
+   ea => $ea,
    # "users" is here to try to cause a failure
    select => [ qw(Query_time Lock_time Rows_sent Rows_examined ts db user users) ],
-   where   => 'select id from users where name=?',
+   item    => 'select id from users where name=?',
    rank    => 1,
-   worst   => 'Query_time',
+   orderby => 'Query_time',
    reason  => 'top',
 );
 
@@ -176,13 +195,15 @@ $expected = <<EOF;
 EOF
 
 $result = $qrf->chart_distro(
-   $ea,
-   attribute => 'Query_time',
-   where     => 'select id from users where name=?',
+   ea     => $ea,
+   attrib => 'Query_time',
+   item   => 'select id from users where name=?',
 );
 
 is($result, $expected, 'Query_time distro');
 
+SKIP: {
+   skip 'Wider labels not used, not tested', 1;
 $qrf = new QueryReportFormatter(label_width => 15);
 $expected = <<EOF;
 # Query 1: 2 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 ___________
@@ -211,6 +232,7 @@ $result = $qrf->event_report(
 is($result, $expected, 'Event report with wider label');
 
 $qrf = new QueryReportFormatter;
+};
 
 # ########################################################################
 # This one is all about an event that's all zeroes.
@@ -255,7 +277,7 @@ foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
 }
-
+$ea->calculate_statistical_metrics();
 $expected = <<EOF;
 # Overall: 1 total, 1 unique, 0 QPS, 0x concurrency ______________________
 #                    total     min     max     avg     95%  stddev  median
@@ -263,10 +285,10 @@ $expected = <<EOF;
 # Time range        2009-04-12 11:00:13.118191 to 2009-04-12 11:00:13.118191
 EOF
 
-$result = $qrf->global_report(
-   $ea,
+$result = $qrf->header(
+   ea      => $ea,
    select  => [ qw(Query_time Lock_time Rows_sent Rows_examined ts) ],
-   worst   => 'Query_time',
+   orderby => 'Query_time',
 );
 
 is($result, $expected, 'Global report with all zeroes');
@@ -283,11 +305,11 @@ $expected = <<EOF;
 EOF
 
 $result = $qrf->event_report(
-   $ea,
+   ea     => $ea,
    select => [ qw(Query_time Lock_time Rows_sent Rows_examined ts db user users) ],
-   where   => 'administrator command: Connect',
+   item    => 'administrator command: Connect',
    rank    => 1,
-   worst   => 'Query_time',
+   orderby => 'Query_time',
    reason  => 'top',
 );
 
@@ -307,9 +329,9 @@ EOF
 
 # This used to cause illegal division by zero in some cases.
 $result = $qrf->chart_distro(
-   $ea,
-   attribute => 'Query_time',
-   where     => 'administrator command: Connect',
+   ea     => $ea,
+   attrib => 'Query_time',
+   item   => 'administrator command: Connect',
 );
 
 is($result, $expected, 'Chart distro with all zeroes');
@@ -370,11 +392,11 @@ foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
 }
-
-$result = $qrf->global_report(
-   $ea,
-   select  => [ $ea->get_attributes() ],
-   worst   => 'Query_time',
+$ea->calculate_statistical_metrics();
+$result = $qrf->header(
+   ea      => $ea,
+   # select  => [ $ea->get_attributes() ],
+   orderby => 'Query_time',
 );
 
 is($result, $expected, 'Bool (Yes/No) pretty printer');
@@ -385,7 +407,7 @@ is($result, $expected, 'Bool (Yes/No) pretty printer');
 
 # This test uses the $ea from the Bool pretty printer test above.
 is_deeply(
-   [ QueryReportFormatter::sort_attribs($ea, $ea->get_attributes()) ],
+   [ $qrf->sorted_attribs($ea->get_attributes(), $ea) ],
    [qw(
       Query_time
       Lock_time
@@ -396,7 +418,7 @@ is_deeply(
       QC_Hit
       )
    ],
-   'sort_attribs()'
+   'sorted_attribs()'
 );
 
 # ############################################################################
@@ -446,11 +468,12 @@ foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
 }
-$result = $qrf->global_report(
-   $ea,
-   select  => [ $ea->get_attributes() ],
-   worst   => 'Query_time',
-   no_zero_bool => 1,
+$ea->calculate_statistical_metrics();
+$result = $qrf->header(
+   ea        => $ea,
+   # select    => [ $ea->get_attributes() ],
+   orderby   => 'Query_time',
+   zero_bool => 0,
 );
 
 is($result, $expected, 'No zero bool vals');
@@ -482,10 +505,18 @@ sub report_from_file {
       $ea2->aggregate(@_);
    };
    eval {
-      open my $fh, "<", $file or BAIL_OUT($OS_ERROR);
-      1 while $p->parse_event($fh, undef, @callbacks);
+      open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+      my %args = (
+         next_event => sub { return <$fh>;      },
+         tell       => sub { return tell($fh);  },
+      );
+      while ( my $e = $p->parse_event(%args) ) {
+         $_->($e) for @callbacks;
+      }
       close $fh;
    };
+   die $EVAL_ERROR if $EVAL_ERROR;
+   $ea2->calculate_statistical_metrics();
    my %top_spec = (
       attrib  => 'Query_time',
       orderby => 'sum',
@@ -496,12 +527,12 @@ sub report_from_file {
    my $report = '';
    foreach my $rank ( 1 .. @worst ) {
       $report .= $qrf->event_report(
-         $ea2,
-         select => [ $ea2->get_attributes() ],
-         where  => $worst[$rank - 1]->[0],
-         rank   => $rank,
-         worst  => 'Query_time',
-         reason => '',
+         ea      => $ea2,
+         # select  => [ $ea2->get_attributes() ],
+         item    => $worst[$rank - 1]->[0],
+         rank    => $rank,
+         orderby => 'Query_time',
+         reason  => '',
       );
    }
    return $report;
@@ -550,13 +581,13 @@ foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
 }
-
+$ea->calculate_statistical_metrics();
 $result = $qrf->event_report(
-   $ea,
-   select => [ qw(Query_time foo) ],
-   where   => 'select id from users where name=?',
+   ea      => $ea,
+   select  => [ qw(Query_time foo) ],
+   item    => 'select id from users where name=?',
    rank    => 1,
-   worst   => 'Query_time',
+   orderby => 'Query_time',
    reason  => 'top',
 );
 
@@ -588,13 +619,13 @@ foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
 }
-
+$ea->calculate_statistical_metrics();
 $result = $qrf->event_report(
-   $ea,
-   select => [ qw(Query_time foo) ],
-   where   => 'select id from users where name=?',
+   ea      => $ea,
+   select  => [ qw(Query_time foo) ],
+   item    => 'select id from users where name=?',
    rank    => 1,
-   worst   => 'Query_time',
+   orderby => 'Query_time',
    reason  => 'top',
 );
 
@@ -625,13 +656,13 @@ foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
 }
-
+$ea->calculate_statistical_metrics();
 $result = $qrf->event_report(
-   $ea,
-   select => [ qw(Query_time foo) ],
-   where   => 'select id from users where name=?',
+   ea      => $ea,
+   select  => [ qw(Query_time foo) ],
+   item    => 'select id from users where name=?',
    rank    => 1,
-   worst   => 'Query_time',
+   orderby => 'Query_time',
    reason  => 'top',
 );
 
@@ -680,10 +711,11 @@ foreach my $event (@$events) {
    $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
    $ea->aggregate($event);
 }
-$result = $qrf->global_report(
-   $ea,
-   select  => [ $ea->get_attributes() ],
-   worst   => 'Query_time',
+$ea->calculate_statistical_metrics();
+$result = $qrf->header(
+   ea      => $ea,
+   select  => $ea->get_attributes(),
+   orderby => 'Query_time',
 );
 
 is($result, $expected, 'No string attribs in global report (issue 478)');
@@ -723,12 +755,13 @@ $ea  = new EventAggregator(
 foreach my $event (@$events) {
    $ea->aggregate($event);
 }
+$ea->calculate_statistical_metrics();
 $result = $qrf->event_report(
-   $ea,
-   select => [ qw(Query_time host) ],
-   where   => 'foo',
+   ea      => $ea,
+   select  => [ qw(Query_time host) ],
+   item    => 'foo',
    rank    => 1,
-   worst   => 'Query_time',
+   orderby => 'Query_time',
 );
 
 is($result, $expected, "IPs not shortened");
@@ -743,12 +776,13 @@ push @$events,
       host       => '123.123.123.999',
    };
 $ea->aggregate($events->[-1]);
+$ea->calculate_statistical_metrics();
 $result = $qrf->event_report(
-   $ea,
-   select => [ qw(Query_time host) ],
-   where   => 'foo',
+   ea      => $ea,
+   select  => [ qw(Query_time host) ],
+   item    => 'foo',
    rank    => 1,
-   worst   => 'Query_time',
+   orderby => 'Query_time',
 );
 
 $expected = <<EOF;
@@ -761,13 +795,14 @@ EOF
 is($result, $expected, "IPs not shortened with more");
 
 # Test show_all.
+@ARGV = qw(--show-all host);
+$o->get_opts();
 $result = $qrf->event_report(
-   $ea,
+   ea       => $ea,
    select   => [ qw(Query_time host) ],
-   where    => 'foo',
+   item     => 'foo',
    rank     => 1,
-   worst    => 'Query_time',
-   show_all => { host=>1 },
+   orderby  => 'Query_time',
 );
 
 $expected = <<EOF;
@@ -812,12 +847,13 @@ $ea  = new EventAggregator(
 foreach my $event (@$events) {
    $ea->aggregate($event);
 }
+$ea->calculate_statistical_metrics();
 $result = $qrf->event_report(
-   $ea,
-   select => [ qw(Query_time InnoDB_rec_lock_wait InnoDB_IO_r_wait InnoDB_queue_wait) ],
-   where   => 'foo',
+   ea      => $ea,
+   select  => [ qw(Query_time InnoDB_rec_lock_wait InnoDB_IO_r_wait InnoDB_queue_wait) ],
+   item    => 'foo',
    rank    => 1,
-   worst   => 'Query_time',
+   orderby => 'Query_time',
 );
 
 is($result, $expected, "_wait attribs treated as times (issue 948)");

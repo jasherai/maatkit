@@ -18,16 +18,15 @@
 # ###########################################################################
 # QueryReportFormatter package $Revision$
 # ###########################################################################
-
 package QueryReportFormatter;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-Transformers->import(
-   qw(shorten micro_t parse_timestamp unix_timestamp
-      make_checksum percentage_of));
+Transformers->import(qw(
+   shorten micro_t parse_timestamp unix_timestamp make_checksum percentage_of
+));
 
 use constant MKDEBUG           => $ENV{MKDEBUG} || 0;
 use constant LINE_LENGTH       => 74;
@@ -36,15 +35,19 @@ use constant MAX_STRING_LENGTH => 10;
 # Special formatting functions
 my %formatting_function = (
    ts => sub {
-      my ( $stats ) = @_;
-      my $min = parse_timestamp($stats->{min} || '');
-      my $max = parse_timestamp($stats->{max} || '');
+      my ( $vals ) = @_;
+      my $min = parse_timestamp($vals->{min} || '');
+      my $max = parse_timestamp($vals->{max} || '');
       return $min && $max ? "$min to $max" : '';
    },
 );
 
-my $bool_format = '# %3s%% %-6s %s';
-
+# Optional arguments:
+#   * dbh
+#   * OptionParser
+#   * QueryReview
+#   * QueryRewriter
+#   * Quoter
 sub new {
    my ( $class, %args ) = @_;
 
@@ -54,14 +57,56 @@ sub new {
 
    my $self = {
       %args,
+      bool_format => '# %3s%% %-6s %s',
       label_width => $label_width,
+      dont_print  => {
+         header => {
+            user       => 1,
+            db         => 1,
+            pos_in_log => 1,
+         },
+         query_report => {
+            pos_in_log => 1,
+         }
+      },
    };
    return bless $self, $class;
 }
 
-sub header {
-   my ($self) = @_;
+# Arguments:
+#   * reports       arrayref: reports to print
+#   * ea            obj: EventAggregator
+#   * worst         arrayref: worst items
+#   * orderby       scalar: attrib worst items ordered by
+#   * groupby       scalar: attrib worst items grouped by
+# Optional args:
+#   * print_header  bool: "Report grouped by" header
+# Prints the given reports (rusage, heade (global), query_report, etc.) in
+# the given order.  These usually come from mk-query-digest --report-format.
+# Most of the required args are for header() and query_report().
+sub print_reports {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(reports ea worst orderby groupby) ) {
+      die "I need a $arg argument" unless exists $args{$arg};
+   }
+   my $reports = $args{reports};
 
+   if ( $args{print_header} ) {
+      print "\n# ", ( '#' x 72 ), "\n";
+      print "# Report grouped by $args{groupby}\n";
+      print '# ', ( '#' x 72 ), "\n";
+   }
+
+   foreach my $report ( @$reports ) {
+      MKDEBUG && _d('Printing', $report, 'report'); 
+      print $self->$report(%args);
+   }
+
+   return;
+}
+
+sub rusage {
+   my ( $self ) = @_;
    my ( $rss, $vsz, $user, $system ) = ( 0, 0, 0, 0 );
    my $result = '';
    eval {
@@ -80,40 +125,51 @@ sub header {
    return $result;
 }
 
-# Print a report about the global statistics in the EventAggregator.  %opts is a
-# hash that has the following keys:
-#  * select       An arrayref of attributes to print statistics lines for.
-#  * worst        The --orderby attribute.
-sub global_report {
-   my ( $self, $ea, %opts ) = @_;
-   my $stats = $ea->results;
+# Arguments:
+#   * ea         obj: EventAggregator
+#   * orderby    scalar: attrib items ordered by
+# Optional arguments:
+#   * select     arrayref: attribs to print
+#   * zero_bool  bool: print zero bool values (0%)
+# Print a report about the global statistics in the EventAggregator.
+# Formerly called "global_report()."
+sub header {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(ea orderby) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $ea      = $args{ea};
+   my $orderby = $args{orderby};
+
+   my $dont_print = $self->{dont_print}->{header};
+   my $results    = $ea->results();
    my @result;
 
    # Get global count
-   my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt} || 0;
+   my $global_cnt = $results->{globals}->{$orderby}->{cnt} || 0;
 
    # Calculate QPS (queries per second) by looking at the min/max timestamp.
    my ($qps, $conc) = (0, 0);
-   if ( $global_cnt && $stats->{globals}->{ts}
-      && ($stats->{globals}->{ts}->{max} || '')
-         gt ($stats->{globals}->{ts}->{min} || '')
+   if ( $global_cnt && $results->{globals}->{ts}
+      && ($results->{globals}->{ts}->{max} || '')
+         gt ($results->{globals}->{ts}->{min} || '')
    ) {
       eval {
-         my $min  = parse_timestamp($stats->{globals}->{ts}->{min});
-         my $max  = parse_timestamp($stats->{globals}->{ts}->{max});
+         my $min  = parse_timestamp($results->{globals}->{ts}->{min});
+         my $max  = parse_timestamp($results->{globals}->{ts}->{max});
          my $diff = unix_timestamp($max) - unix_timestamp($min);
-         $qps     = $global_cnt / $diff;
-         $conc    = $stats->{globals}->{$opts{worst}}->{sum} / $diff;
+         $qps     = $global_cnt / ($diff || 1);
+         $conc    = $results->{globals}->{$args{orderby}}->{sum} / $diff;
       };
    }
 
    # First line
    MKDEBUG && _d('global_cnt:', $global_cnt, 'unique:',
-      scalar keys %{$stats->{classes}}, 'qps:', $qps, 'conc:', $conc);
+      scalar keys %{$results->{classes}}, 'qps:', $qps, 'conc:', $conc);
    my $line = sprintf(
       '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
       shorten($global_cnt, d=>1_000),
-      shorten(scalar keys %{$stats->{classes}}, d=>1_000),
+      shorten(scalar keys %{$results->{classes}}, d=>1_000),
       shorten($qps  || 0, d=>1_000),
       shorten($conc || 0, d=>1_000));
    $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
@@ -124,22 +180,23 @@ sub global_report {
    push @result, sprintf($format, '', @headers);
 
    # Each additional line
-   foreach my $attrib ( sort_attribs($ea, @{$opts{select}}) ) {
+   my $attribs = $args{select} ? $args{select} : $ea->get_attributes();
+   foreach my $attrib ( $self->sorted_attribs($attribs, $ea) ) {
+      next if $dont_print->{$attrib};
       my $attrib_type = $ea->type_for($attrib);
       next unless $attrib_type; 
-      next unless exists $stats->{globals}->{$attrib};
+      next unless exists $results->{globals}->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, $self->make_label($attrib),
-            $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
+            $formatting_function{$attrib}->($results->{globals}->{$attrib}),
             (map { '' } 0..9); # just for good measure
       }
       else {
-         my $store = $stats->{globals}->{$attrib};
+         my $store = $results->{globals}->{$attrib};
          my @values;
          if ( $attrib_type eq 'num' ) {
-            my $func = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
-            MKDEBUG && _d('Calculating global statistical_metrics for', $attrib);
-            my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
+            my $func    = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
+            my $metrics = $ea->stats()->{globals}->{$attrib};
             @values = (
                @{$store}{qw(sum min max)},
                $store->{sum} / $store->{cnt},
@@ -152,9 +209,10 @@ sub global_report {
             next;
          }
          elsif ( $attrib_type eq 'bool' ) {
-            if ( $store->{sum} > 0 || !$opts{no_zero_bool} ) {
+            if ( $store->{sum} > 0 || $args{zero_bool} ) {
                push @result,
-                  sprintf $bool_format, format_bool_attrib($store), $attrib;
+                  sprintf $self->{bool_format},
+                     $self->format_bool_attrib($store), $attrib;
             }
          }
          else {
@@ -169,29 +227,168 @@ sub global_report {
    return join("\n", map { s/\s+$//; $_ } @result) . "\n";
 }
 
-# Print a report about the statistics in the EventAggregator.  %opts is a
-# hash that has the following keys:
-#  * select       An arrayref of attributes to print statistics lines for.
-#  * where        The value of the group-by attribute, such as the fingerprint.
-#  * rank         The (optional) rank of the query, for the header
-#  * worst        The --orderby attribute
-#  * reason       Why this one is being reported on: top|outlier
-#  * show_all     (optional) Show all vals for these (string) attribs
-# TODO: it would be good to start using $ea->metrics() here for simplicity and
-# uniform code.
+# Arguments:
+#   * ea       obj: EventAggregator
+#   * worst    arrayref: worst items
+#   * orderby  scalar: attrib worst items ordered by
+#   * groupby  scalar: attrib worst items grouped by
+# Optional arguments:
+#   * select   arrayref: attribs to print
+sub query_report {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(ea worst orderby groupby) ) {
+      die "I need a $arg argument" unless defined $arg;
+   }
+   my $ea      = $args{ea};
+   my $groupby = $args{groupby};
+   my $worst   = $args{worst};
+   my $n_worst = scalar @$worst;
+
+   my $o   = $self->{OptionParser};
+   my $q   = $self->{Quoter};
+   my $qv  = $self->{QueryReview};
+   my $qr  = $self->{QueryRewriter};
+
+   # Print each worst item: its stats/metrics (sum/min/max/95%/etc.),
+   # Query_time distro chart, tables, EXPLAIN, fingerprint, etc.
+   # Items are usually unique queries/fingerprints--depends on how
+   # the events were grouped.
+   ITEM:
+   foreach my $rank ( 1..$n_worst ) {
+      my $item       = $worst->[$rank - 1]->[0];
+      my $stats      = $ea->results->{classes}->{$item};
+      my $sample     = $ea->results->{samples}->{$item};
+      my $samp_query = $sample->{arg} || '';
+      my $reason     = $args{explain_why} ? $worst->[$rank - 1]->[1] : '';
+
+      # ###############################################################
+      # Possibly skip item for --review.
+      # ###############################################################
+      my $review_vals;
+      if ( $qv ) {
+         $review_vals = $qv->get_review_info($item);
+         next ITEM if $review_vals->{reviewed_by} && !$o->get('report-all');
+      }
+
+      # ###############################################################
+      # Get tables for --for-explain.
+      # ###############################################################
+      my ($default_db) = $sample->{db}       ? $sample->{db}
+                       : $stats->{db}->{unq} ? keys %{$stats->{db}->{unq}}
+                       :                       undef;
+      my @tables;
+      if ( $o->get('for-explain') ) {
+         @tables = extract_tables($samp_query, $default_db);
+      }
+
+      # ###############################################################
+      # Print the standard query analysis report.
+      # ###############################################################
+      print "\n";
+      print $self->event_report(
+         %args,
+         item  => $item,
+         rank   => $rank,
+         reason => $reason,
+      );
+
+      if ( $o->get('report-histogram') ) {
+         print $self->chart_distro(
+            %args,
+            attribute => $o->get('report-histogram'),
+            item     => $item,
+         );
+      }
+
+      if ( $qv && $review_vals ) {
+         # Print the review information that is already in the table
+         # before putting anything new into the table.
+         print "# Review information\n";
+         foreach my $col ( $qv->review_cols() ) {
+            my $val = $review_vals->{$col};
+            if ( !$val || $val ne '0000-00-00 00:00:00' ) { # issue 202
+               printf "# %13s: %-s\n", $col, ($val ? $val : '');
+            }
+         }
+      }
+
+      if ( $groupby eq 'fingerprint' ) {
+         # Shorten it if necessary (issue 216 and 292).           
+         $samp_query = $qr->shorten($samp_query, $o->get('shorten'))
+            if $o->get('shorten');
+
+         # Print query fingerprint.
+         print "# Fingerprint\n#    $item\n"
+            if $o->get('fingerprints');
+
+         # Print tables used by query.
+         $self->print_tables(@tables)
+            if $o->get('for-explain');
+
+         if ( $item =~ m/^(?:[\(\s]*select|insert|replace)/ ) {
+            if ( $item =~ m/^(?:insert|replace)/ ) { # No EXPLAIN
+               print $samp_query, "\\G\n";
+            }
+            else {
+               print "# EXPLAIN\n$samp_query\\G\n"; 
+               $self->print_explain($samp_query, $default_db);
+            }
+         }
+         else {
+            print "$samp_query\\G\n"; 
+            my $converted = $qr->convert_to_select($samp_query);
+            if ( $o->get('for-explain')
+                 && $converted
+                 && $converted =~ m/^[\(\s]*select/i ) {
+               # It converted OK to a SELECT
+               print "# Converted for EXPLAIN\n# EXPLAIN\n";
+               print "$converted\\G\n";
+            }
+         }
+      }
+      elsif ( $groupby eq 'tables' ) {
+         my ( $db, $tbl ) = $q->split_unquote($item);
+         $self->print_tables([$db, $tbl]);
+      }
+
+      # Finally, print the item. 
+      print $item, "\n"; 
+   }
+
+   return;
+}
+
+# Arguments:
+#   * ea          obj: EventAggregator
+#   * item        scalar: Item in ea results
+#   * orderby     scalar: attribute that events are ordered by
+# Optional arguments:
+#   * select     arrayref: attribs to print
+#   * reason      scalar: why this item is being reported (top|outlier)
+#   * rank        scalar: item rank among the worst
+#   * zero_bool   bool: print zero bool values (0%)
+# Print a report about the statistics in the EventAggregator.
+# Called by query_report().
 sub event_report {
-   my ( $self, $ea, %opts ) = @_;
-   my $stats = $ea->results;
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(ea item orderby) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $ea      = $args{ea};
+   my $item    = $args{item};
+   my $orderby = $args{orderby};
+
+   my $dont_print = $self->{dont_print}->{query_report};
+   my $results    = $ea->results();
    my @result;
 
-   # Does the data exist?  Is there a sample event?
-   my $store = $stats->{classes}->{$opts{where}};
-   return "# No such event $opts{where}\n" unless $store;
-   my $sample = $stats->{samples}->{$opts{where}};
+   # Return unless the item exists in the results (it should).
+   my $store = $results->{classes}->{$item};
+   return "# No such event $item\n" unless $store;
 
    # Pick the first attribute to get counts
-   my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
-   my $class_cnt  = $store->{$opts{worst}}->{cnt};
+   my $global_cnt = $results->{globals}->{$orderby}->{cnt};
+   my $class_cnt  = $store->{$orderby}->{cnt};
 
    # Calculate QPS (queries per second) by looking at the min/max timestamp.
    my ($qps, $conc) = (0, 0);
@@ -204,25 +401,28 @@ sub event_report {
          my $max  = parse_timestamp($store->{ts}->{max});
          my $diff = unix_timestamp($max) - unix_timestamp($min);
          $qps     = $class_cnt / $diff;
-         $conc    = $store->{$opts{worst}}->{sum} / $diff;
+         $conc    = $store->{$orderby}->{sum} / $diff;
       };
    }
 
-   # First line
+   # First line like:
+   # Query 1: 9 QPS, 0x concurrency, ID 0x7F7D57ACDD8A346E at byte 5 ________
    my $line = sprintf(
       '# %s %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
       ($ea->{groupby} eq 'fingerprint' ? 'Query' : 'Item'),
-      $opts{rank} || 0,
+      $args{rank} || 0,
       shorten($qps  || 0, d=>1_000),
       shorten($conc || 0, d=>1_000),
-      make_checksum($opts{where}),
-      $sample->{pos_in_log} || 0);
+      make_checksum($item),
+      $results->{samples}->{$item}->{pos_in_log} || 0,
+   );
    $line .= ('_' x (LINE_LENGTH - length($line) + $self->{label_width} - 9));
    push @result, $line;
 
-   if ( $opts{reason} ) {
-      push @result, "# This item is included in the report because it matches "
-         . ($opts{reason} eq 'top' ? '--limit.' : '--outliers.');
+   if ( $args{reason} ) {
+      push @result,
+         "# This item is included in the report because it matches "
+            . ($args{reason} eq 'top' ? '--limit.' : '--outliers.');
    }
 
    # Column header line
@@ -235,7 +435,9 @@ sub event_report {
          map { '' } (1 ..9);
 
    # Each additional line
-   foreach my $attrib ( sort_attribs($ea, @{$opts{select}}) ) {
+   my $attribs = $args{select} ? $args{select} : $ea->get_attributes();
+   foreach my $attrib ( $self->sorted_attribs($attribs, $ea) ) {
+      next if $dont_print->{$attrib};
       my $attrib_type = $ea->type_for($attrib);
       next unless $attrib_type; 
       next unless exists $store->{$attrib};
@@ -250,8 +452,8 @@ sub event_report {
          my @values;
          my $pct;
          if ( $attrib_type eq 'num' ) {
-            my $func = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
-            my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
+            my $func    = $attrib =~ m/time|wait$/ ? \&micro_t : \&shorten;
+            my $metrics = $ea->stats()->{classes}->{$item}->{$attrib};
             @values = (
                @{$vals}{qw(sum min max)},
                $vals->{sum} / $vals->{cnt},
@@ -259,18 +461,19 @@ sub event_report {
             );
             @values = map { defined $_ ? $func->($_) : '' } @values;
             $pct = percentage_of($vals->{sum},
-               $stats->{globals}->{$attrib}->{sum});
+               $results->{globals}->{$attrib}->{sum});
          }
          elsif ( $attrib_type eq 'string' ) {
             push @values,
-               format_string_list($vals, $opts{show_all}->{$attrib}),
+               $self->format_string_list($attrib, $vals),
                (map { '' } 0..9); # just for good measure
             $pct = '';
          }
          elsif ( $attrib_type eq 'bool' ) {
-            if ( $vals->{sum} > 0 || !$opts{no_zero_bool} ) {
+            if ( $vals->{sum} > 0 || $args{zero_bool} ) {
                push @result,
-                  sprintf $bool_format, format_bool_attrib($vals), $attrib;
+                  sprintf $self->{bool_format},
+                     $self->format_bool_attrib($vals), $attrib;
             }
          }
          else {
@@ -286,27 +489,37 @@ sub event_report {
    return join("\n", map { s/\s+$//; $_ } @result) . "\n";
 }
 
+# Arguments:
+#  * ea      obj: EventAggregator
+#  * item    scalar: item in ea results
+#  * attrib  scalar: item's attribute to chart
 # Creates a chart of value distributions in buckets.  Right now it bucketizes
-# into 8 buckets, powers of ten starting with .000001. %opts has:
-#  * where        The value of the group-by attribute, such as the fingerprint.
-#  * attribute    An attribute to chart.
+# into 8 buckets, powers of ten starting with .000001.
 sub chart_distro {
-   my ( $self, $ea, %opts ) = @_;
-   my $stats = $ea->results;
-   my $store = $stats->{classes}->{$opts{where}}->{$opts{attribute}};
-   my $vals  = $store->{all};
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(ea item attrib) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $ea     = $args{ea};
+   my $item   = $args{item};
+   my $attrib = $args{attrib};
+
+   my $results = $ea->results();
+   my $store   = $results->{classes}->{$item}->{$attrib};
+   my $vals    = $store->{all};
    return "" unless defined $vals && scalar @$vals;
+
    # TODO: this is broken.
    my @buck_tens = $ea->buckets_of(10);
    my @distro = map { 0 } (0 .. 7);
    map { $distro[$buck_tens[$_]] += $vals->[$_] } (1 .. @$vals - 1);
 
-   my $max_val = 0;
    my $vals_per_mark; # number of vals represented by 1 #-mark
+   my $max_val        = 0;
    my $max_disp_width = 64;
-   my $bar_fmt = "# %5s%s";
-   my @distro_labels = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
-   my @results = "# $opts{attribute} distribution";
+   my $bar_fmt        = "# %5s%s";
+   my @distro_labels  = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
+   my @results        = "# $attrib distribution";
 
    # Find the distro with the most values. This will set
    # vals_per_mark and become the bar at max_disp_width.
@@ -316,12 +529,14 @@ sub chart_distro {
    $vals_per_mark = $max_val / $max_disp_width;
 
    foreach my $i ( 0 .. $#distro ) {
-      my $n_vals = $distro[$i];
+      my $n_vals  = $distro[$i];
       my $n_marks = $n_vals / ($vals_per_mark || 1);
+
       # Always print at least 1 mark for any bucket that has at least
       # 1 value. This skews the graph a tiny bit, but it allows us to
       # see all buckets that have values.
       $n_marks = 1 if $n_marks < 1 && $n_vals > 0;
+
       my $bar = ($n_marks ? '  ' : '') . '#' x $n_marks;
       push @results, sprintf $bar_fmt, $distro_labels[$i], $bar;
    }
@@ -329,11 +544,188 @@ sub chart_distro {
    return join("\n", @results) . "\n";
 }
 
-# Makes a header format and returns the format and the column header names.  The
-# argument is either 'global' or anything else.
+# Profile subreport (issue 381).
+# Arguments:
+#   * ea            obj: EventAggregator
+#   * worst         arrayref: worst items
+#   * groupby       scalar: attrib worst items grouped by
+# Optional arguments:
+#   * distill_args  hashref: extra args for distill()
+sub profile {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(ea worst groupby) ) {
+      die "I need a $arg argument" unless defined $arg;
+   }
+   my $ea      = $args{ea};
+   my $worst   = $args{worst};
+   my $groupby = $args{groupby};
+   my $n_worst = scalar @$worst;
+
+   my $qr  = $self->{QueryRewriter};
+
+   my @profiles;
+   my $total_r = 0;
+
+   foreach my $rank ( 1..$n_worst ) {
+      my $item       = $worst->[$rank - 1]->[0];
+      my $stats      = $ea->results->{classes}->{$item};
+      my $sample     = $ea->results->{samples}->{$item};
+      my $samp_query = $sample->{arg} || '';
+      my %profile    = (
+         rank   => $rank,
+         r      => $stats->{Query_time}->{sum},
+         cnt    => $stats->{Query_time}->{cnt},
+         sample => $groupby eq 'fingerprint' ?
+                    $qr->distill($samp_query, %{$args{distill_args}}) : $item,
+         id     => $groupby eq 'fingerprint' ? make_checksum($item)   : '',
+      );
+      $total_r += $profile{r};
+      push @profiles, \%profile;
+   }
+
+   my $report = new ReportFormatter(
+      line_width       => 74,
+      long_last_column => 1,
+   );
+   $report->set_title('Profile');
+   $report->set_columns(
+      { name => 'Rank',          right_justify => 1, },
+      { name => 'Query ID',                          },
+      { name => 'Response time', right_justify => 1, },
+      { name => 'Calls',         right_justify => 1, },
+      { name => 'R/Call',        right_justify => 1, },
+      { name => 'Item',                              },
+   );
+
+   foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @profiles ) {
+      my $rt  = sprintf('%10.4f', $item->{r});
+      my $rtp = sprintf('%4.1f%%', $item->{r} / ($total_r || 1) * 100);
+      my $rc  = sprintf('%8.4f', $item->{r} / $item->{cnt});
+      $report->add_line(
+         $item->{rank},
+         "0x$item->{id}",
+         "$rt $rtp",
+         $item->{cnt},
+         $rc,
+         $item->{sample},
+      );
+   }
+   return "\n" . $report->get_report();
+}
+
+# Prepared statements subreport (issue 740).
+# Arguments:
+#   * ea            obj: EventAggregator
+#   * worst         arrayref: worst items
+#   * groupby       scalar: attrib worst items grouped by
+# Optional arguments:
+#   * distill_args  hashref: extra args for distill()
+sub prepared {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(ea worst groupby) ) {
+      die "I need a $arg argument" unless defined $arg;
+   }
+   my $ea      = $args{ea};
+   my $worst   = $args{worst};
+   my $groupby = $args{groupby};
+   my $n_worst = scalar @$worst;
+
+   my $qr = $self->{QueryRewriter};
+
+   my @prepared;       # prepared statements
+   my %seen_prepared;  # report each PREP-EXEC pair once
+   my $total_r;
+
+   foreach my $rank ( 1..$n_worst ) {
+      my $item       = $worst->[$rank - 1]->[0];
+      my $stats      = $ea->results->{classes}->{$item};
+      my $sample     = $ea->results->{samples}->{$item};
+      my $samp_query = $sample->{arg} || '';
+
+      next unless $stats->{Statement_id} && $item =~ m/^(?:prepare|execute) /;
+
+      # Each PREPARE (probably) has some EXECUTE and each EXECUTE (should)
+      # have some PREPARE.  But these are only the top N events so we can get
+      # here a PREPARE but not its EXECUTE or vice-versa.  The prepared
+      # statements report requires both so this code gets the missing pair
+      # from the ea stats.
+      my ($prep_stmt, $prep, $prep_r, $prep_cnt);
+      my ($exec_stmt, $exec, $exec_r, $exec_cnt);
+      if ( $item =~ m/^prepare / ) {
+         $prep_stmt           = $item;
+         ($exec_stmt = $item) =~ s/^prepare /execute /;
+      }
+      else {
+         ($prep_stmt = $item) =~ s/^execute /prepare /;
+         $exec_stmt           = $item;
+      }
+
+      # Report each PREPARE/EXECUTE pair once.
+      if ( !$seen_prepared{$prep_stmt}++ ) {
+         $exec     = $ea->results->{classes}->{$exec_stmt};
+         $exec_r   = $exec->{Query_time}->{sum};
+         $exec_cnt = $exec->{Query_time}->{cnt};
+
+         $prep     = $ea->results->{classes}->{$prep_stmt};
+         $prep_r   = $prep->{Query_time}->{sum};
+         $prep_cnt = scalar keys %{$prep->{Statement_id}->{unq}},
+         push @prepared, {
+            prep_r   => $prep_r, 
+            prep_cnt => $prep_cnt,
+            exec_r   => $exec_r,
+            exec_cnt => $exec_cnt,
+            rank     => $rank,
+            sample   => $groupby eq 'fingerprint'
+                          ? $qr->distill($samp_query, %{$args{distill_args}})
+                          : $item,
+            id       => $groupby eq 'fingerprint' ? make_checksum($item)
+                                                  : '',
+         };
+         $total_r += $prepared[-1]->{r};
+      }
+   }
+
+   # Return unless there are prepared statements to report.
+   return unless scalar @prepared;
+
+   my $report = new ReportFormatter(
+      line_width       => 74,
+      long_last_column => 1,
+   );
+   $report->set_title('Prepared statements');
+   $report->set_columns(
+      { name => 'Rank',          right_justify => 1, },
+      { name => 'Query ID',                          },
+      { name => 'PREP',          right_justify => 1, },
+      { name => 'PREP Response', right_justify => 1, },
+      { name => 'EXEC',          right_justify => 1, },
+      { name => 'EXEC Response', right_justify => 1, },
+      { name => 'Item',                              },
+   );
+
+   foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @prepared ) {
+      my $exec_rt  = sprintf('%10.4f', $item->{exec_r});
+      my $exec_rtp = sprintf('%4.1f%%',$item->{exec_r}/($total_r || 1) * 100);
+      my $prep_rt  = sprintf('%10.4f', $item->{prep_r});
+      my $prep_rtp = sprintf('%4.1f%%',$item->{prep_r}/($total_r || 1) * 100);
+      $report->add_line(
+         $item->{rank},
+         "0x$item->{id}",
+         $item->{prep_cnt} || 0,
+         "$prep_rt $prep_rtp",
+         $item->{exec_cnt} || 0,
+         "$exec_rt $exec_rtp",
+         $item->{sample},
+      );
+   }
+   return print "\n" . $report->get_report();
+}
+
+# Makes a header format and returns the format and the column header names
+# The argument is either 'global' or anything else.
 sub make_header {
    my ( $self, $global ) = @_;
-   my $format = "# %-$self->{label_width}s %6s %7s %7s %7s %7s %7s %7s %7s";
+   my $format  = "# %-$self->{label_width}s %6s %7s %7s %7s %7s %7s %7s %7s";
    my @headers = qw(pct total min max avg 95% stddev median);
    if ( $global ) {
       $format =~ s/%(\d+)s/' ' x $1/e;
@@ -364,66 +756,70 @@ sub make_label {
 
 # Does pretty-printing for bool (Yes/No) attributes like QC_Hit.
 sub format_bool_attrib {
-   my ( $stats ) = @_;
+   my ( $self, $vals ) = @_;
    # Since the value is either 1 or 0, the sum is the number of
    # all true events and the number of false events is the total
    # number of events minus those that were true.
-   my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
-   # my $p_false = percentage_of($stats->{cnt} - $stats->{sum}, $stats->{cnt});
-   my $n_true = '(' . shorten($stats->{sum} || 0, d=>1_000, p=>0) . ')';
+   my $p_true = percentage_of($vals->{sum},  $vals->{cnt});
+   my $n_true = '(' . shorten($vals->{sum} || 0, d=>1_000, p=>0) . ')';
    return $p_true, $n_true;
 }
 
 # Does pretty-printing for lists of strings like users, hosts, db.
 sub format_string_list {
-   my ( $stats, $show_all ) = @_;
-   if ( exists $stats->{unq} ) {
-      # Only class stats have unq.
-      my $cnt_for = $stats->{unq};
-      if ( 1 == keys %$cnt_for ) {
-         my ($str) = keys %$cnt_for;
-         # - 30 for label, spacing etc.
-         $str = substr($str, 0, LINE_LENGTH - 30) . '...'
-            if length $str > LINE_LENGTH - 30;
-         return (1, $str);
-      }
-      my $line = '';
-      my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
-                     keys %$cnt_for;
-      my $i = 0;
-      foreach my $str ( @top ) {
-         my $print_str;
-         if ( $str =~ m/(?:\d+\.){3}\d+/ ) {
-            $print_str = $str;  # Do not shorten IP addresses.
-         }
-         elsif ( length $str > MAX_STRING_LENGTH ) {
-            $print_str = substr($str, 0, MAX_STRING_LENGTH) . '...';
-         }
-         else {
-            $print_str = $str;
-         }
-         if ( !$show_all ) {
-            last if (length $line) + (length $print_str)  > LINE_LENGTH - 27;
-         }
-         $line .= "$print_str ($cnt_for->{$str}), ";
-         $i++;
-      }
-      $line =~ s/, $//;
-      if ( $i < @top ) {
-         $line .= "... " . (@top - $i) . " more";
-      }
-      return (scalar keys %$cnt_for, $line);
+   my ( $self, $attrib, $vals ) = @_;
+   my $o        = $self->{OptionParser};
+   my $show_all = $o->get('show-all');
+
+   # Only class result values have unq.  So if unq doesn't exist,
+   # then we've been given global values.
+   if ( !exists $vals->{unq} ) {
+      return ($vals->{cnt});
    }
-   else {
-      # Global stats don't have unq.
-      return ($stats->{cnt});
+
+   my $cnt_for = $vals->{unq};
+   if ( 1 == keys %$cnt_for ) {
+      my ($str) = keys %$cnt_for;
+      # - 30 for label, spacing etc.
+      $str = substr($str, 0, LINE_LENGTH - 30) . '...'
+         if length $str > LINE_LENGTH - 30;
+      return (1, $str);
    }
+   my $line = '';
+   my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
+                  keys %$cnt_for;
+   my $i = 0;
+   foreach my $str ( @top ) {
+      my $print_str;
+      if ( $str =~ m/(?:\d+\.){3}\d+/ ) {
+         $print_str = $str;  # Do not shorten IP addresses.
+      }
+      elsif ( length $str > MAX_STRING_LENGTH ) {
+         $print_str = substr($str, 0, MAX_STRING_LENGTH) . '...';
+      }
+      else {
+         $print_str = $str;
+      }
+      if ( !$show_all->{$attrib} ) {
+         last if (length $line) + (length $print_str)  > LINE_LENGTH - 27;
+      }
+      $line .= "$print_str ($cnt_for->{$str}), ";
+      $i++;
+   }
+
+   $line =~ s/, $//;
+
+   if ( $i < @top ) {
+      $line .= "... " . (@top - $i) . " more";
+   }
+
+   return (scalar keys %$cnt_for, $line);
 }
 
 # Attribs are sorted into three groups: basic attributes (Query_time, etc.),
 # other non-bool attributes sorted by name, and bool attributes sorted by name.
-sub sort_attribs {
-   my ( $ea, @attribs ) = @_;
+sub sorted_attribs {
+   my ( $self, $attribs, $ea ) = @_;
    my %basic_attrib = (
       Query_time    => 0,
       Lock_time     => 1,
@@ -439,7 +835,7 @@ sub sort_attribs {
    my @bool_attribs;
 
    ATTRIB:
-   foreach my $attrib ( @attribs ) {
+   foreach my $attrib ( @$attribs ) {
       if ( exists $basic_attrib{$attrib} ) {
          push @basic_attribs, $attrib;
       }
@@ -459,6 +855,69 @@ sub sort_attribs {
          $basic_attrib{$a} <=> $basic_attrib{$b} } @basic_attribs;
 
    return @basic_attribs, @non_bool_attribs, @bool_attribs;
+}
+
+sub extract_tables {
+   my ( $self, $query, $default_db ) = @_;
+   MKDEBUG && _d('Extracting tables');
+   my $qp = $self->{QueryParser};
+   my $q  = $self->{Quoter};
+   my @tables;
+   my %seen;
+   foreach my $db_tbl ( $qp->get_tables($query) ) {
+      next unless $db_tbl;
+      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
+      push @tables, [ $db || $default_db, $tbl ];
+   }
+   return @tables;
+}
+
+# Gets a default database and a list of arrayrefs of [db, tbl] to print out
+sub print_tables {
+   my ( $self, @tables ) = @_;
+   return unless @tables;
+   my $q = $self->{Quoter};
+   print "# Tables\n";
+   foreach my $db_tbl ( @tables ) {
+      my ( $db, $tbl ) = @$db_tbl;
+      print '#    SHOW TABLE STATUS',
+         ($db ? " FROM `$db`" : ''), " LIKE '$tbl'\\G\n";
+      print "#    SHOW CREATE TABLE ",
+         $q->quote(grep { $_ } @$db_tbl), "\\G\n";
+   }
+   return;
+}
+
+sub print_explain {
+   my ( $self, $query, $db ) = @_;
+   my $dbh = $self->{dbh};
+   my $q   = $self->{Quoter};
+   my $qp  = $self->{QueryParser};
+   return unless $dbh && $query;
+   eval {
+      if ( !$qp->has_derived_table($query) ) {
+         if ( $db ) {
+            $dbh->do("USE " . $q->quote($db));
+         }
+         my $sth = $dbh->prepare("EXPLAIN /*!50100 PARTITIONS */ $query");
+         $sth->execute();
+         my $i = 1;
+         while ( my @row = $sth->fetchrow_array() ) {
+            print "# *************************** ", $i++,
+               ". row ***************************\n";
+            foreach my $j ( 0 .. $#row ) {
+               printf "# %13s: %s\n", $sth->{NAME}->[$j],
+                  defined $row[$j] ? $row[$j] : 'NULL';
+            }
+         }
+      }
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d("Problem explaining", $query, $EVAL_ERROR);
+      print "# EXPLAIN failed: $EVAL_ERROR";
+   }
+   return;
 }
 
 sub _d {

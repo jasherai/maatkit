@@ -95,6 +95,8 @@ sub new {
       result_classes => {},
       result_globals => {},
       result_samples => {},
+      class_metrics  => {},
+      global_metrics => {},
       n_events       => 0,
       unrolled_loops => undef,
       type_for       => { %{$args{type_for} || { Query_time => 'num' }} },
@@ -250,6 +252,14 @@ sub results {
       classes => $self->{result_classes},
       globals => $self->{result_globals},
       samples => $self->{result_samples},
+   };
+}
+
+sub stats {
+   my ( $self ) = @_;
+   return {
+      classes => $self->{class_metrics},
+      globals => $self->{global_metrics},
    };
 }
 
@@ -513,6 +523,39 @@ sub bucket_value {
    }
 }
 
+# Calculate 95%, stddev and median for numeric attributes in the
+# global and classes stores that have all values (1k buckets).
+# Save the metrics in global_metrics and class_metrics.
+sub calculate_statistical_metrics {
+   my ( $self ) = @_;
+   my $classes        = $self->{result_classes};
+   my $globals        = $self->{result_globals};
+   my $class_metrics  = $self->{class_metrics};
+   my $global_metrics = $self->{global_metrics};
+
+   foreach my $attrib ( keys %$globals ) {
+      if ( exists $globals->{$attrib}->{all} ) {
+         $global_metrics->{$attrib}
+            = $self->_calc_metrics(
+               $globals->{$attrib}->{all},
+               $globals->{$attrib},
+            );
+      }
+
+      foreach my $class ( keys %$classes ) {
+         if ( exists $classes->{$class}->{$attrib}->{all} ) {
+            $class_metrics->{$class}->{$attrib}
+               = $self->_calc_metrics(
+                  $classes->{$class}->{$attrib}->{all},
+                  $classes->{$class}->{$attrib}
+               );
+         }
+      }
+   }
+
+   return;
+}
+
 # Given an arrayref of vals, returns a hashref with the following
 # statistical metrics:
 #
@@ -521,9 +564,9 @@ sub bucket_value {
 #    stddev    => of all values
 #    median    => of all values
 #
-# The vals arrayref is the buckets as per the above (see the comments at the top
-# of this file).  $args should contain cnt, min and max properties.
-sub calculate_statistical_metrics {
+# The vals arrayref is the buckets as per the above (see the comments at the
+# top of this file).  $args should contain cnt, min and max properties.
+sub _calc_metrics {
    my ( $self, $vals, $args ) = @_;
    my $statistical_metrics = {
       pct_95    => 0,
@@ -567,9 +610,9 @@ sub calculate_statistical_metrics {
    }
 
    # Determine cutoff point for 95% if there are at least 10 vals.  Cutoff
-   # serves also for the number of vals left in the 95%.  E.g. with 50 vals the
-   # cutoff is 47 which means there are 47 vals: 0..46.  $cutoff is NOT an array
-   # index.
+   # serves also for the number of vals left in the 95%.  E.g. with 50 vals
+   # the cutoff is 47 which means there are 47 vals: 0..46.  $cutoff is NOT
+   # an array index.
    my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
@@ -631,11 +674,13 @@ sub metrics {
    foreach my $arg ( qw(attrib where) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $stats = $self->results;
-   my $store = $stats->{classes}->{$args{where}}->{$args{attrib}};
+   my $attrib = $args{attrib};
+   my $where   = $args{where};
 
-   my $global_cnt = $stats->{globals}->{$args{attrib}}->{cnt};
-   my $metrics    = $self->calculate_statistical_metrics($store->{all}, $store);
+   my $stats      = $self->results();
+   my $metrics    = $self->stats();
+   my $store      = $stats->{classes}->{$where}->{$attrib};
+   my $global_cnt = $stats->{globals}->{$attrib}->{cnt};
 
    return {
       cnt    => $store->{cnt},
@@ -644,9 +689,9 @@ sub metrics {
       min    => $store->{min},
       max    => $store->{max},
       avg    => $store->{sum} && $store->{cnt} ? $store->{sum} / $store->{cnt} : 0,
-      median => $metrics->{median},
-      pct_95 => $metrics->{pct_95},
-      stddev => $metrics->{stddev},
+      median => $metrics->{classes}->{$where}->{$attrib}->{median} || 0,
+      pct_95 => $metrics->{classes}->{$where}->{$attrib}->{pct_95} || 0,
+      stddev => $metrics->{classes}->{$where}->{$attrib}->{stddev} || 0,
    };
 }
 
@@ -689,6 +734,7 @@ sub top_events {
       ) {
          # Calculate the 95th percentile of this event's specified attribute.
          MKDEBUG && _d('Calculating statistical_metrics');
+# TODO
          my $stats = $self->calculate_statistical_metrics(
             $classes->{$groupby}->{$args{ol_attrib}}->{all},
             $classes->{$groupby}->{$args{ol_attrib}}
@@ -726,11 +772,11 @@ sub add_new_attributes {
    return;
 }
 
-# Returns a list of all the attributes that were either given
+# Returns an arrayref of all the attributes that were either given
 # explicitly to new() or that were auto-detected.
 sub get_attributes {
    my ( $self ) = @_;
-   return @{$self->{all_attribs}};
+   return $self->{all_attribs};
 }
 
 sub events_processed {

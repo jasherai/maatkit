@@ -413,10 +413,10 @@ foreach my $event (@$events) {
 is_deeply( $ea->results, $result, 'user aggregation' );
 
 is($ea->type_for('Query_time'), 'num', 'Query_time is numeric');
-
+$ea->calculate_statistical_metrics();
 is_deeply(
    $ea->metrics(
-      where => 'bob',
+      where  => 'bob',
       attrib => 'Query_time',
    ),
    {  pct    => 1/3,
@@ -434,7 +434,7 @@ is_deeply(
 
 is_deeply(
    $ea->metrics(
-      where => 'foofoofoo',
+      where  => 'foofoofoo',
       attrib => 'doesnotexist',
    ),
    {  pct    => 0,
@@ -577,7 +577,7 @@ is_deeply(
 # Test statistical metrics: 95%, stddev, and median
 # #############################################################################
 
-$result = $ea->calculate_statistical_metrics(
+$result = $ea->_calc_metrics(
    bucketize( [ 2, 3, 6, 4, 8, 9, 1, 1, 1, 5, 4, 3, 1 ] ) );
 # The above bucketize will be bucketized as:
 # VALUE  BUCKET  VALUE        RANGE                       N VALS  SUM
@@ -603,7 +603,7 @@ is_deeply(
    'Calculates statistical metrics'
 );
 
-$result = $ea->calculate_statistical_metrics(
+$result = $ea->_calc_metrics(
    bucketize( [ 1, 1, 1, 1, 2, 3, 4, 4, 4, 4, 6, 8, 9 ] ) );
 # The above bucketize will be bucketized as:
 # VALUE  BUCKET  VALUE        RANGE                       N VALS
@@ -630,7 +630,7 @@ is_deeply(
 # This is a special case: only two values, widely separated.  The median should
 # be exact (because we pass in min/max) and the stdev should never be bigger
 # than half the difference between min/max.
-$result = $ea->calculate_statistical_metrics(
+$result = $ea->_calc_metrics(
    bucketize( [ 0.000002, 0.018799 ] ) );
 is_deeply(
    $result,
@@ -642,7 +642,7 @@ is_deeply(
    'Calculates stats for two-element special case',
 );
 
-$result = $ea->calculate_statistical_metrics(undef);
+$result = $ea->_calc_metrics(undef);
 is_deeply(
    $result,
    {  stddev => 0,
@@ -653,7 +653,7 @@ is_deeply(
    'Calculates statistical metrics for undef array'
 );
 
-$result = $ea->calculate_statistical_metrics( [] );
+$result = $ea->_calc_metrics( [] );
 is_deeply(
    $result,
    {  stddev => 0,
@@ -664,7 +664,7 @@ is_deeply(
    'Calculates statistical metrics for empty array'
 );
 
-$result = $ea->calculate_statistical_metrics( [ 1, 2 ], {} );
+$result = $ea->_calc_metrics( [ 1, 2 ], {} );
 is_deeply(
    $result,
    {  stddev => 0,
@@ -675,7 +675,7 @@ is_deeply(
    'Calculates statistical metrics for when $stats missing'
 );
 
-$result = $ea->calculate_statistical_metrics( bucketize( [0.9] ) );
+$result = $ea->_calc_metrics( bucketize( [0.9] ) );
 is_deeply(
    $result,
    {  stddev => 0,
@@ -1128,7 +1128,7 @@ my $bad_event = {
    cnt => 605
 };
 
-$result = $ea->calculate_statistical_metrics($bad_vals, $bad_event);
+$result = $ea->_calc_metrics($bad_vals, $bad_event);
 is_deeply(
    $result,
    {
@@ -1156,7 +1156,7 @@ $bad_event = {
    cnt  => 12,
 };
 
-$result = $ea->calculate_statistical_metrics($bad_vals, $bad_event);
+$result = $ea->_calc_metrics($bad_vals, $bad_event);
 is_deeply(
    $result,
    {
@@ -1181,7 +1181,7 @@ $bad_event = {
    cnt  => 9,
 };
 
-$result = $ea->calculate_statistical_metrics($bad_vals, $bad_event);
+$result = $ea->_calc_metrics($bad_vals, $bad_event);
 is_deeply(
    $result,
    {
@@ -1316,7 +1316,7 @@ is_deeply(
 );
 
 is_deeply(
-   [ sort $ea->get_attributes() ],
+   [ sort @{$ea->get_attributes()} ],
    [qw(Query_time Schema new_prop other_prop)],
    'get_attributes()',
 );
