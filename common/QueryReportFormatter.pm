@@ -621,7 +621,7 @@ sub profile {
       { name => 'Response time', right_justify => 1, },
       { name => 'Calls',         right_justify => 1, },
       { name => 'R/Call',        right_justify => 1, },
-      { name => 'Item',                              },
+      { name => 'Item',          extend_right  => 1, },
    );
 
    foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @profiles ) {
