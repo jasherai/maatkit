@@ -613,6 +613,7 @@ sub profile {
    my $report = $args{ReportFormatter} || new ReportFormatter(
       line_width       => LINE_LENGTH,
       long_last_column => 1,
+      extend_right     => 1,
    );
    $report->set_title('Profile');
    $report->set_columns(
@@ -621,7 +622,7 @@ sub profile {
       { name => 'Response time', right_justify => 1, },
       { name => 'Calls',         right_justify => 1, },
       { name => 'R/Call',        right_justify => 1, },
-      { name => 'Item',          extend_right  => 1, },
+      { name => 'Item',                              },
    );
 
    foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @profiles ) {
@@ -719,6 +720,7 @@ sub prepared {
    my $report = $args{ReportFormatter} || new ReportFormatter(
       line_width       => LINE_LENGTH,
       long_last_column => 1,
+      extend_right     => 1,     
    );
    $report->set_title('Prepared statements');
    $report->set_columns(
@@ -728,7 +730,7 @@ sub prepared {
       { name => 'PREP Response', right_justify => 1, },
       { name => 'EXEC',          right_justify => 1, },
       { name => 'EXEC Response', right_justify => 1, },
-      { name => 'Item',          extend_right  => 1, },
+      { name => 'Item',                              },
    );
 
    foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @prepared ) {
