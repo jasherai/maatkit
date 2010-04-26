@@ -246,7 +246,8 @@ sub header {
 #   * orderby  scalar: attrib worst items ordered by
 #   * groupby  scalar: attrib worst items grouped by
 # Optional arguments:
-#   * select   arrayref: attribs to print, mostly for test; see dont_print
+#   * select       arrayref: attribs to print, mostly for test; see dont_print
+#   * explain_why  bool: print reason why item is reported
 sub query_report {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(ea worst orderby groupby) ) {
