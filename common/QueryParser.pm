@@ -459,6 +459,26 @@ sub parse {
    return $parsed;
 }
 
+# Returns an array of arrayrefs like [db,tbl] for each unique db.tbl
+# in the query and its subqueries.  db may be undef.
+sub extract_tables {
+   my ( $self, %args ) = @_;
+   my $query      = $args{query};
+   my $default_db = $args{default_db};
+   my $q          = $self->{Quoter} || $args{Quoter};
+   return unless $query;
+   MKDEBUG && _d('Extracting tables');
+   my @tables;
+   my %seen;
+   foreach my $db_tbl ( $self->get_tables($query) ) {
+      next unless $db_tbl;
+      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
+      push @tables, [ $db || $default_db, $tbl ];
+   }
+   return @tables;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }

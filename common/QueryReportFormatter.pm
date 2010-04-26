@@ -301,7 +301,11 @@ sub query_report {
                        :                       undef;
       my @tables;
       if ( $o->get('for-explain') ) {
-         @tables = $self->extract_tables($samp_query, $default_db);
+         @tables = $self->{QueryParser}->extract_tables(
+            query      => $samp_query,
+            default_db => $default_db,
+            Quoter     => $self->{Quoter},
+         );
       }
 
       # ###############################################################
@@ -879,22 +883,6 @@ sub sorted_attribs {
          $basic_attrib{$a} <=> $basic_attrib{$b} } @basic_attribs;
 
    return @basic_attribs, @non_bool_attribs, @bool_attribs;
-}
-
-sub extract_tables {
-   my ( $self, $query, $default_db ) = @_;
-   MKDEBUG && _d('Extracting tables');
-   my $qp = $self->{QueryParser};
-   my $q  = $self->{Quoter};
-   my @tables;
-   my %seen;
-   foreach my $db_tbl ( $qp->get_tables($query) ) {
-      next unless $db_tbl;
-      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
-      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
-      push @tables, [ $db || $default_db, $tbl ];
-   }
-   return @tables;
 }
 
 # Gets a default database and a list of arrayrefs of [db, tbl] to print out
