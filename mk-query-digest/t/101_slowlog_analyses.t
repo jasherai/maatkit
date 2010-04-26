@@ -301,7 +301,7 @@ ok(
 ok(
    no_diff(
       sub { mk_query_digest::main(@args, $sample.'slow020.txt', qw(--no-report --table-access)) },
-      "mk-query-digest/t/samples/slow020_table_access.txt"
+      "mk-query-digest/t/samples/slow020_table_access.txt",
    ),
    'Analysis for slow020 with --table-access'
 );
