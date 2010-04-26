@@ -10372,7 +10372,7 @@ sub main {
          } # Each groupby
       }
       else {
-         print "# No events processed.\n";
+         print "\n# No events processed.\n";
       }
 
       if ( $o->get('pipeline-profile') ) {

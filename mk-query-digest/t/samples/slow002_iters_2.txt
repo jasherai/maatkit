@@ -40,4 +40,5 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
 # Rank Query ID           Response time     Calls R/Call   Item
 # ==== ================== ================= ===== ======== ===============
 #    1 0x66825DDC008FFA89     0.7261 100.0%     1   0.7261 UPDATE db?.tuningdetail_?_? db?.gonzo
+
 # No events processed.
