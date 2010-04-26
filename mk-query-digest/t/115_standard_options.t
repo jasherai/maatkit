@@ -31,10 +31,13 @@ my $output;
 # #############################################################################
 # Issue 248: Add --user, --pass, --host, etc to all tools
 # #############################################################################
+
+# This is a poor test because sometimes it will catch queries on the proclist
+# and other times it won't.
 $output = `$trunk/mk-query-digest/mk-query-digest --processlist 127.1,P=12345,u=msandbox,p=msandbox --run-time 1 --port 12345`;
 like(
    $output,
-   qr/Rank\s+Query ID/,
+   qr/(?:Rank\s+Query ID|No events processed)/,
    'DSN opts inherit from --host, --port, etc. (issue 248)'
 );
 
