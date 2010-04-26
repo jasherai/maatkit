@@ -837,7 +837,7 @@ $ea = new EventAggregator(
 while ( my $event = generate_event() ) {
    $ea->aggregate($event);
 }
-
+$ea->calculate_statistical_metrics();
 my @chosen;
 
 @chosen = $ea->top_events(

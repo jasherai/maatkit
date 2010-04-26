@@ -732,14 +732,8 @@ sub top_events {
       elsif ( $args{ol_attrib} && (!$args{ol_freq}
          || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
-         # Calculate the 95th percentile of this event's specified attribute.
-         MKDEBUG && _d('Calculating statistical_metrics');
-# TODO
-         my $stats = $self->calculate_statistical_metrics(
-            $classes->{$groupby}->{$args{ol_attrib}}->{all},
-            $classes->{$groupby}->{$args{ol_attrib}}
-         );
-         if ( $stats->{pct_95} >= $args{ol_limit} ) {
+         my $stats = $self->{class_metrics}->{$groupby}->{$args{ol_attrib}};
+         if ( ($stats->{pct_95} || 0) >= $args{ol_limit} ) {
             push @chosen, [$groupby, 'outlier'];
          }
       }
