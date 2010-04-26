@@ -74,12 +74,14 @@ sub new {
       label_width => $label_width,
       dont_print  => {         # don't print these attribs in these reports
          header => {
-            user       => 1,
-            db         => 1,
-            pos_in_log => 1,
+            user        => 1,
+            db          => 1,
+            pos_in_log  => 1,
+            fingerprint => 1,
          },
          query_report => {
-            pos_in_log => 1,
+            pos_in_log  => 1,
+            fingerprint => 1,
          }
       },
    };
