@@ -37,7 +37,7 @@ File                           stmt   bran   cond    sub    pod   time  total
 ...it/common/QueryAdvisor.pm   73.7   44.4   50.0   80.0    0.0    8.7   64.1
 ...mmon/QueryAdvisorRules.pm   96.2   86.2   68.2   96.7    0.0   57.0   89.1
 ...kit/common/QueryParser.pm   93.9   73.8   69.2   91.7    n/a  100.0   88.3
-...n/QueryReportFormatter.pm   97.3   80.0   66.7  100.0    n/a  100.0   89.8
+...n/QueryReportFormatter.pm   94.1   68.8   57.0  100.0    0.0   14.9   80.6
 ...kit/common/QueryReview.pm   91.0   68.2   66.7   91.7    n/a  100.0   84.7
 ...t/common/QueryRewriter.pm   96.0   88.2   70.0   94.7    n/a   53.8   92.1
 .../maatkit/common/Quoter.pm  100.0  100.0  100.0  100.0    n/a  100.0  100.0
