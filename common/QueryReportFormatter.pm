@@ -1,4 +1,4 @@
-# This program is copyright 2008-2009 Percona Inc.
+# This program is copyright 2008-2010 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -19,6 +19,15 @@
 # QueryReportFormatter package $Revision$
 # ###########################################################################
 package QueryReportFormatter;
+
+# This package is used primarily by mk-query-digest to print its reports.
+# The main sub is print_reports() which prints the various reports fo
+# mk-query-digest --report-format.  Each report is produced in a sub of
+# the same name; e.g. --report-format=query_report == sub query_report().
+# The given ea (EventAggregator object) is expected to be "complete"; i.e.
+# fully aggregated and $ea->calculate_statistical_metrics() already called.
+# Subreports "profile" and "prepared" require the ReportFormatter module,
+# which is also in mk-query-digest.
 
 use strict;
 use warnings FATAL => 'all';
@@ -42,14 +51,18 @@ my %formatting_function = (
    },
 );
 
-# Optional arguments:
-#   * dbh
+# Arguments:
 #   * OptionParser
-#   * QueryReview
 #   * QueryRewriter
 #   * Quoter
+# Optional arguments:
+#   * QueryReview    Used in query_report()
+#   * dbh            Used in explain_report()
 sub new {
    my ( $class, %args ) = @_;
+   foreach my $arg ( qw(OptionParser QueryRewriter Quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
 
    # If ever someone wishes for a wider label width.
    my $label_width = $args{label_width} || 9;
@@ -59,7 +72,7 @@ sub new {
       %args,
       bool_format => '# %3s%% %-6s %s',
       label_width => $label_width,
-      dont_print  => {
+      dont_print  => {         # don't print these attribs in these reports
          header => {
             user       => 1,
             db         => 1,
@@ -99,7 +112,7 @@ sub print_reports {
 
    foreach my $report ( @$reports ) {
       MKDEBUG && _d('Printing', $report, 'report'); 
-      print $self->$report(%args);
+      print "\n", $self->$report(%args);
    }
 
    return;
@@ -108,12 +121,12 @@ sub print_reports {
 sub rusage {
    my ( $self ) = @_;
    my ( $rss, $vsz, $user, $system ) = ( 0, 0, 0, 0 );
-   my $result = '';
+   my $rusage = '';
    eval {
       my $mem = `ps -o rss,vsz -p $PID 2>&1`;
       ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
       ( $user, $system ) = times();
-      $result = sprintf "# %s user time, %s system time, %s rss, %s vsz\n",
+      $rusage = sprintf "# %s user time, %s system time, %s rss, %s vsz\n",
          micro_t( $user,   p_s => 1, p_ms => 1 ),
          micro_t( $system, p_s => 1, p_ms => 1 ),
          shorten( ($rss || 0) * 1_024 ),
@@ -122,14 +135,14 @@ sub rusage {
    if ( $EVAL_ERROR ) {
       MKDEBUG && _d($EVAL_ERROR);
    }
-   return $result;
+   return $rusage ? $rusage : "# Could not get rusage\n";
 }
 
 # Arguments:
 #   * ea         obj: EventAggregator
 #   * orderby    scalar: attrib items ordered by
 # Optional arguments:
-#   * select     arrayref: attribs to print
+#   * select     arrayref: attribs to print, mostly for testing; see dont_print
 #   * zero_bool  bool: print zero bool values (0%)
 # Print a report about the global statistics in the EventAggregator.
 # Formerly called "global_report()."
@@ -233,7 +246,7 @@ sub header {
 #   * orderby  scalar: attrib worst items ordered by
 #   * groupby  scalar: attrib worst items grouped by
 # Optional arguments:
-#   * select   arrayref: attribs to print
+#   * select   arrayref: attribs to print, mostly for test; see dont_print
 sub query_report {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(ea worst orderby groupby) ) {
@@ -248,6 +261,8 @@ sub query_report {
    my $q   = $self->{Quoter};
    my $qv  = $self->{QueryReview};
    my $qr  = $self->{QueryRewriter};
+
+   my $report = '';
 
    # Print each worst item: its stats/metrics (sum/min/max/95%/etc.),
    # Query_time distro chart, tables, EXPLAIN, fingerprint, etc.
@@ -278,14 +293,14 @@ sub query_report {
                        :                       undef;
       my @tables;
       if ( $o->get('for-explain') ) {
-         @tables = extract_tables($samp_query, $default_db);
+         @tables = $self->extract_tables($samp_query, $default_db);
       }
 
       # ###############################################################
       # Print the standard query analysis report.
       # ###############################################################
-      print "\n";
-      print $self->event_report(
+      $report .= "\n" if $rank > 1;  # space between each event report
+      $report .= $self->event_report(
          %args,
          item  => $item,
          rank   => $rank,
@@ -293,21 +308,21 @@ sub query_report {
       );
 
       if ( $o->get('report-histogram') ) {
-         print $self->chart_distro(
+         $report .= $self->chart_distro(
             %args,
-            attribute => $o->get('report-histogram'),
-            item     => $item,
+            attrib => $o->get('report-histogram'),
+            item   => $item,
          );
       }
 
       if ( $qv && $review_vals ) {
          # Print the review information that is already in the table
          # before putting anything new into the table.
-         print "# Review information\n";
+         $report .= "# Review information\n";
          foreach my $col ( $qv->review_cols() ) {
             my $val = $review_vals->{$col};
             if ( !$val || $val ne '0000-00-00 00:00:00' ) { # issue 202
-               printf "# %13s: %-s\n", $col, ($val ? $val : '');
+               $report .= sprintf "# %13s: %-s\n", $col, ($val ? $val : '');
             }
          }
       }
@@ -318,44 +333,43 @@ sub query_report {
             if $o->get('shorten');
 
          # Print query fingerprint.
-         print "# Fingerprint\n#    $item\n"
+         $report .= "# Fingerprint\n#    $item\n"
             if $o->get('fingerprints');
 
          # Print tables used by query.
-         $self->print_tables(@tables)
+         $report .= $self->tables_report(@tables)
             if $o->get('for-explain');
 
          if ( $item =~ m/^(?:[\(\s]*select|insert|replace)/ ) {
             if ( $item =~ m/^(?:insert|replace)/ ) { # No EXPLAIN
-               print $samp_query, "\\G\n";
+               $report .= "$samp_query\\G\n";
             }
             else {
-               print "# EXPLAIN\n$samp_query\\G\n"; 
-               $self->print_explain($samp_query, $default_db);
+               $report .= "# EXPLAIN\n$samp_query\\G\n"; 
+               $report .= $self->explain_report($samp_query, $default_db);
             }
          }
          else {
-            print "$samp_query\\G\n"; 
+            $report .= "$samp_query\\G\n"; 
             my $converted = $qr->convert_to_select($samp_query);
             if ( $o->get('for-explain')
                  && $converted
                  && $converted =~ m/^[\(\s]*select/i ) {
                # It converted OK to a SELECT
-               print "# Converted for EXPLAIN\n# EXPLAIN\n";
-               print "$converted\\G\n";
+               $report .= "# Converted for EXPLAIN\n# EXPLAIN\n$converted\\G\n";
             }
          }
       }
-      elsif ( $groupby eq 'tables' ) {
-         my ( $db, $tbl ) = $q->split_unquote($item);
-         $self->print_tables([$db, $tbl]);
+      else {
+         if ( $groupby eq 'tables' ) {
+            my ( $db, $tbl ) = $q->split_unquote($item);
+            $report .= $self->tables_report([$db, $tbl]);
+         }
+         $report .= "$item\n";
       }
-
-      # Finally, print the item. 
-      print $item, "\n"; 
    }
 
-   return;
+   return $report;
 }
 
 # Arguments:
@@ -363,7 +377,7 @@ sub query_report {
 #   * item        scalar: Item in ea results
 #   * orderby     scalar: attribute that events are ordered by
 # Optional arguments:
-#   * select     arrayref: attribs to print
+#   * select      arrayref: attribs to print, mostly for testing; see dont_print
 #   * reason      scalar: why this item is being reported (top|outlier)
 #   * rank        scalar: item rank among the worst
 #   * zero_bool   bool: print zero bool values (0%)
@@ -550,7 +564,8 @@ sub chart_distro {
 #   * worst         arrayref: worst items
 #   * groupby       scalar: attrib worst items grouped by
 # Optional arguments:
-#   * distill_args  hashref: extra args for distill()
+#   * distill_args     hashref: extra args for distill()
+#   * ReportFormatter  obj: passed-in ReportFormatter for testing
 sub profile {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(ea worst groupby) ) {
@@ -583,8 +598,8 @@ sub profile {
       push @profiles, \%profile;
    }
 
-   my $report = new ReportFormatter(
-      line_width       => 74,
+   my $report = $args{ReportFormatter} || new ReportFormatter(
+      line_width       => LINE_LENGTH,
       long_last_column => 1,
    );
    $report->set_title('Profile');
@@ -610,7 +625,7 @@ sub profile {
          $item->{sample},
       );
    }
-   return "\n" . $report->get_report();
+   return $report->get_report();
 }
 
 # Prepared statements subreport (issue 740).
@@ -620,6 +635,7 @@ sub profile {
 #   * groupby       scalar: attrib worst items grouped by
 # Optional arguments:
 #   * distill_args  hashref: extra args for distill()
+#   * ReportFormatter  obj: passed-in ReportFormatter for testing
 sub prepared {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(ea worst groupby) ) {
@@ -634,7 +650,7 @@ sub prepared {
 
    my @prepared;       # prepared statements
    my %seen_prepared;  # report each PREP-EXEC pair once
-   my $total_r;
+   my $total_r = 0;
 
    foreach my $rank ( 1..$n_worst ) {
       my $item       = $worst->[$rank - 1]->[0];
@@ -642,6 +658,7 @@ sub prepared {
       my $sample     = $ea->results->{samples}->{$item};
       my $samp_query = $sample->{arg} || '';
 
+      $total_r += $stats->{Query_time}->{sum};
       next unless $stats->{Statement_id} && $item =~ m/^(?:prepare|execute) /;
 
       # Each PREPARE (probably) has some EXECUTE and each EXECUTE (should)
@@ -651,6 +668,7 @@ sub prepared {
       # from the ea stats.
       my ($prep_stmt, $prep, $prep_r, $prep_cnt);
       my ($exec_stmt, $exec, $exec_r, $exec_cnt);
+
       if ( $item =~ m/^prepare / ) {
          $prep_stmt           = $item;
          ($exec_stmt = $item) =~ s/^prepare /execute /;
@@ -665,7 +683,6 @@ sub prepared {
          $exec     = $ea->results->{classes}->{$exec_stmt};
          $exec_r   = $exec->{Query_time}->{sum};
          $exec_cnt = $exec->{Query_time}->{cnt};
-
          $prep     = $ea->results->{classes}->{$prep_stmt};
          $prep_r   = $prep->{Query_time}->{sum};
          $prep_cnt = scalar keys %{$prep->{Statement_id}->{unq}},
@@ -681,15 +698,14 @@ sub prepared {
             id       => $groupby eq 'fingerprint' ? make_checksum($item)
                                                   : '',
          };
-         $total_r += $prepared[-1]->{r};
       }
    }
 
    # Return unless there are prepared statements to report.
    return unless scalar @prepared;
 
-   my $report = new ReportFormatter(
-      line_width       => 74,
+   my $report = $args{ReportFormatter} || new ReportFormatter(
+      line_width       => LINE_LENGTH,
       long_last_column => 1,
    );
    $report->set_title('Prepared statements');
@@ -700,7 +716,7 @@ sub prepared {
       { name => 'PREP Response', right_justify => 1, },
       { name => 'EXEC',          right_justify => 1, },
       { name => 'EXEC Response', right_justify => 1, },
-      { name => 'Item',                              },
+      { name => 'Item',          extend_right  => 1, },
    );
 
    foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @prepared ) {
@@ -718,7 +734,7 @@ sub prepared {
          $item->{sample},
       );
    }
-   return print "\n" . $report->get_report();
+   return $report->get_report();
 }
 
 # Makes a header format and returns the format and the column header names
@@ -874,27 +890,30 @@ sub extract_tables {
 }
 
 # Gets a default database and a list of arrayrefs of [db, tbl] to print out
-sub print_tables {
+sub tables_report {
    my ( $self, @tables ) = @_;
-   return unless @tables;
-   my $q = $self->{Quoter};
-   print "# Tables\n";
+   return '' unless @tables;
+   my $q      = $self->{Quoter};
+   my $tables = "";
    foreach my $db_tbl ( @tables ) {
       my ( $db, $tbl ) = @$db_tbl;
-      print '#    SHOW TABLE STATUS',
-         ($db ? " FROM `$db`" : ''), " LIKE '$tbl'\\G\n";
-      print "#    SHOW CREATE TABLE ",
-         $q->quote(grep { $_ } @$db_tbl), "\\G\n";
+      $tables .= '#    SHOW TABLE STATUS'
+               . ($db ? " FROM `$db`" : '')
+               . " LIKE '$tbl'\\G\n";
+      $tables .= "#    SHOW CREATE TABLE "
+               . $q->quote(grep { $_ } @$db_tbl)
+               . "\\G\n";
    }
-   return;
+   return $tables ? "# Tables\n$tables" : "# No tables\n";
 }
 
-sub print_explain {
+sub explain_report {
    my ( $self, $query, $db ) = @_;
    my $dbh = $self->{dbh};
    my $q   = $self->{Quoter};
    my $qp  = $self->{QueryParser};
-   return unless $dbh && $query;
+   return '' unless $dbh && $query;
+   my $explain = '';
    eval {
       if ( !$qp->has_derived_table($query) ) {
          if ( $db ) {
@@ -904,20 +923,20 @@ sub print_explain {
          $sth->execute();
          my $i = 1;
          while ( my @row = $sth->fetchrow_array() ) {
-            print "# *************************** ", $i++,
-               ". row ***************************\n";
+            $explain .= "# *************************** $i. "
+                      . "row ***************************\n";
             foreach my $j ( 0 .. $#row ) {
-               printf "# %13s: %s\n", $sth->{NAME}->[$j],
+               $explain .= sprintf "# %13s: %s\n", $sth->{NAME}->[$j],
                   defined $row[$j] ? $row[$j] : 'NULL';
             }
+            $i++;  # next row number
          }
       }
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d("Problem explaining", $query, $EVAL_ERROR);
-      print "# EXPLAIN failed: $EVAL_ERROR";
+      MKDEBUG && _d("EXPLAIN failed:", $query, $EVAL_ERROR);
    }
-   return;
+   return $explain ? $explain : "# EXPLAIN failed: $EVAL_ERROR";
 }
 
 sub _d {

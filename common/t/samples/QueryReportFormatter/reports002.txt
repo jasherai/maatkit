@@ -1,0 +1,59 @@
+
+# Query 1: 0 QPS, 0x concurrency, ID 0x3F79759E7FA2F117 at byte 1106 _____
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         50       1
+# Exec time     99    30ms    30ms    30ms    30ms    30ms       0    30ms
+# Time range 2009-12-08 09:23:49.637892 to 2009-12-08 09:23:49.637892
+# arg                    1 EXECUTE SELECT i FROM d.t WHERE i="3"
+# bytes         51      37      37      37      37      37       0      37
+# cmd                    1   Query
+# Statement     50       2       2       2       2       2       0       2
+# Warning c      0       0       0       0       0       0       0       0
+# Query_time distribution
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms  ################################################################
+# 100ms
+#    1s
+#  10s+
+# Tables
+#    SHOW TABLE STATUS FROM `d` LIKE 't'\G
+#    SHOW CREATE TABLE `d`.`t`\G
+EXECUTE SELECT i FROM d.t WHERE i="3"\G
+# Converted for EXPLAIN
+# EXPLAIN
+SELECT i FROM d.t WHERE i="3"\G
+
+# Query 2: 0 QPS, 0x concurrency, ID 0xAA8E9FA785927259 at byte 0 ________
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         50       1
+# Exec time      0   286us   286us   286us   286us   286us       0   286us
+# Time range 2009-12-08 09:23:49.637394 to 2009-12-08 09:23:49.637394
+# arg                    1 PREPARE SELECT i FROM d.t WHERE i=?
+# bytes         48      35      35      35      35      35       0      35
+# cmd                    1   Query
+# Statement     50       2       2       2       2       2       0       2
+# Warning c      0       0       0       0       0       0       0       0
+# Query_time distribution
+#   1us
+#  10us
+# 100us  ################################################################
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
+# Tables
+#    SHOW TABLE STATUS FROM `d` LIKE 't'\G
+#    SHOW CREATE TABLE `d`.`t`\G
+PREPARE SELECT i FROM d.t WHERE i=?\G
+# Converted for EXPLAIN
+# EXPLAIN
+SELECT i FROM d.t WHERE i=?\G
+
+# Prepared statements
+# Rank Query ID           PREP PREP Response    EXEC EXEC Response    Item
+# ==== ================== ==== ================ ==== ================ ====
+#    1 0x3F79759E7FA2F117    0     0.0003  0.9%    1     0.0303 99.1% SELECT d.t

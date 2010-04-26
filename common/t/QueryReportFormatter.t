@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 26;
 
 use Transformers;
 use QueryReportFormatter;
@@ -20,7 +20,13 @@ use Quoter;
 use ReportFormatter;
 use OptionParser;
 use DSNParser;
+use ReportFormatter;
+use Sandbox;
 use MaatkitTest;
+
+my $dp  = new DSNParser(opts=>$dsn_opts);
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
 
 my ($result, $events, $expected);
 
@@ -35,7 +41,7 @@ my $qrf = new QueryReportFormatter(
    OptionParser  => $o,
    QueryRewriter => $qr,
    QueryParser   => $qp,
-   Quoter        => $q,
+   Quoter        => $q, 
 );
 
 my $ea  = new EventAggregator(
@@ -857,6 +863,169 @@ $result = $qrf->event_report(
 );
 
 is($result, $expected, "_wait attribs treated as times (issue 948)");
+
+
+# #############################################################################
+# print_reports()
+# #############################################################################
+$events = [
+   {
+      cmd         => 'Query',
+      arg         => "select col from tbl where id=42",
+      fingerprint => "select col from tbl where id=?",
+      Query_time  => '1.000652',
+      Lock_time   => '0.001292',
+      ts          => '071015 21:43:52',
+      pos_in_log  => 123,
+      db          => 'foodb',
+   },
+];
+$ea = new EventAggregator(
+   groupby => 'fingerprint',
+   worst   => 'Query_time',
+);
+foreach my $event ( @$events ) {
+   $ea->aggregate($event);
+}
+$ea->calculate_statistical_metrics();
+
+# Reset opts in case anything above left something set.
+@ARGV = qw();
+$o->get_opts();
+
+# Normally, the report subs will make their own ReportFormatter but
+# that package isn't visible to QueryReportFormatter right now so we
+# make ReportFormatters and pass them in.  Since ReporFormatters can't
+# be shared, we can only test one subreport at a time, else the
+# prepared statements subreport will reuse/reprint stuff from the
+# profile subreport.
+my $report = new ReportFormatter(line_width=>74, long_last_column=>1);
+
+ok(
+   no_diff(
+      sub { $qrf->print_reports(
+         reports => [qw(header query_report profile)],
+         ea      => $ea,
+         worst   => [['select col from tbl where id=?','top']],
+         orderby => 'Query_time',
+         groupby => 'fingerprint',
+         ReportFormatter => $report,
+      ); },
+      "common/t/samples/QueryReportFormatter/reports001.txt",
+   ),
+   "print_reports(header, query_report, profile)"
+);
+
+$report = new ReportFormatter(line_width=>74, long_last_column=>1);
+
+ok(
+   no_diff(
+      sub { $qrf->print_reports(
+         reports => [qw(profile query_report header)],
+         ea      => $ea,
+         worst   => [['select col from tbl where id=?','top']],
+         orderby => 'Query_time',
+         groupby => 'fingerprint',
+         ReportFormatter => $report,
+      ); },
+      "common/t/samples/QueryReportFormatter/reports003.txt",
+   ),
+   "print_reports(profile, query_report, header)",
+);
+
+$events = [
+   {
+      Query_time    => '0.000286',
+      Warning_count => 0,
+      arg           => 'PREPARE SELECT i FROM d.t WHERE i=?',
+      fingerprint   => 'prepare select i from d.t where i=?',
+      bytes         => 35,
+      cmd           => 'Query',
+      db            => undef,
+      pos_in_log    => 0,
+      ts            => '091208 09:23:49.637394',
+      Statement_id  => 2,
+   },
+   {
+      Query_time    => '0.030281',
+      Warning_count => 0,
+      arg           => 'EXECUTE SELECT i FROM d.t WHERE i="3"',
+      fingerprint   => 'execute select i from d.t where i=?',
+      bytes         => 37,
+      cmd           => 'Query',
+      db            => undef,
+      pos_in_log    => 1106,
+      ts            => '091208 09:23:49.637892',
+      Statement_id  => 2,
+   },
+];
+$ea = new EventAggregator(
+   groupby => 'fingerprint',
+   worst   => 'Query_time',
+);
+foreach my $event ( @$events ) {
+   $ea->aggregate($event);
+}
+$ea->calculate_statistical_metrics();
+$report = new ReportFormatter(
+   line_width       => 74,
+   long_last_column => 1, 
+   extend_right     => 1
+);
+ok(
+   no_diff(
+      sub {
+         $qrf->print_reports(
+            reports => ['query_report','prepared'],
+            ea      => $ea,
+            worst   => [
+               ['execute select i from d.t where i=?', 'top'],
+               ['prepare select i from d.t where i=?', 'top'],
+            ],
+            orderby => 'Query_time',
+            groupby => 'fingerprint',
+            ReportFormatter => $report,
+         );
+      },
+      "common/t/samples/QueryReportFormatter/reports002.txt",
+   ),
+   "print_reports(query_report, prepared)"
+);
+
+
+# #############################################################################
+# EXPLAIN report
+# #############################################################################
+SKIP: {
+   skip 'Cannot connect to sandbox master', 1 unless $dbh;
+   $sb->load_file('master', "common/t/samples/QueryReportFormatter/table.sql");
+
+   # Normally dbh would be passed to QueryReportFormatter::new().  If it's
+   # set earlier then previous tests cause EXPLAIN failures due to their
+   # fake dbs.
+   $qrf->{dbh} = $dbh;
+
+   is(
+      $qrf->explain_report("select * from qrf.t where i=2", 'qrf'),
+"# *************************** 1. row ***************************
+#            id: 1
+#   select_type: SIMPLE
+#         table: t
+#    partitions: NULL
+#          type: const
+# possible_keys: PRIMARY
+#           key: PRIMARY
+#       key_len: 4
+#           ref: const
+#          rows: 1
+#         Extra: 
+",
+   "explain_report()"
+   );
+
+   $sb->wipe_clean($dbh);
+   $dbh->disconnect();
+}
 
 # #############################################################################
 # Done.
