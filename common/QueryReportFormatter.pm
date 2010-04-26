@@ -269,7 +269,7 @@ sub query_report {
    if ( $args{print_header} ) {
       $report .= "# " . ( '#' x 72 ) . "\n"
                . "# Report grouped by $groupby\n"
-               . '# ' . ( '#' x 72 ) . "\n";
+               . '# ' . ( '#' x 72 ) . "\n\n";
    }
 
    # Print each worst item: its stats/metrics (sum/min/max/95%/etc.),
