@@ -112,9 +112,9 @@ sub print_reports {
 
    foreach my $report ( @$reports ) {
       MKDEBUG && _d('Printing', $report, 'report'); 
-      my $report = $self->$report(%args);
-      if ( $report ) {
-         print "\n", $report;
+      my $report_output = $self->$report(%args);
+      if ( $report_output ) {
+         print "\n", $report_output;
       }
       else {
          MKDEBUG && _d('No', $report, 'report');
