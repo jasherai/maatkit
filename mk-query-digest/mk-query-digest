@@ -10361,6 +10361,13 @@ sub main {
                );
             }
 
+            if ( my $file = $o->get('save-results') ) {
+               save_results(
+                  ea   => $ea[$i],
+                  file => $file,
+               );
+            }
+
             $ea[$i]->reset_aggregated_data();  # reset for next iteration
 
             # Print header report only once.  So remove it from the
@@ -10721,6 +10728,32 @@ sub update_query_review_tables {
       }
    }
 
+   return;
+}
+
+sub save_results {
+   my ( %args ) = @_;
+   foreach my $arg ( qw(ea file) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $results = $args{ea}->results();
+   my $file    = $args{file};
+   return unless $file;
+   MKDEBUG && _d('Saving results to', $file);
+
+   my $fh;
+   if ( !open $fh , '>', $file ) {
+      warn "Cannot open $file to save results: $OS_ERROR";
+      return;
+   }
+
+   local $Data::Dumper::Indent    = 0;
+   local $Data::Dumper::Sortkeys  = 0;
+   local $Data::Dumper::Quotekeys = 0;
+   local $Data::Dumper::Purity    = 1;
+   printf $fh Dumper($results);
+
+   close $fh;
    return;
 }
 
@@ -11908,6 +11941,12 @@ aggregating and reporting if you're just using this to print out samples of
 queries.  A complete example:
 
   mk-query-digest --sample 2 --no-report --print slow.log
+
+=item --save-results
+
+type: string
+
+Save results to the specified file.
 
 =item --select
 
