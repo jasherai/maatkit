@@ -94,8 +94,6 @@ sub new {
 #   * worst         arrayref: worst items
 #   * orderby       scalar: attrib worst items ordered by
 #   * groupby       scalar: attrib worst items grouped by
-# Optional args:
-#   * print_header  bool: "Report grouped by" header
 # Prints the given reports (rusage, heade (global), query_report, etc.) in
 # the given order.  These usually come from mk-query-digest --report-format.
 # Most of the required args are for header() and query_report().
@@ -105,12 +103,6 @@ sub print_reports {
       die "I need a $arg argument" unless exists $args{$arg};
    }
    my $reports = $args{reports};
-
-   if ( $args{print_header} ) {
-      print "\n# ", ( '#' x 72 ), "\n";
-      print "# Report grouped by $args{groupby}\n";
-      print '# ', ( '#' x 72 ), "\n";
-   }
 
    foreach my $report ( @$reports ) {
       MKDEBUG && _d('Printing', $report, 'report'); 
@@ -256,6 +248,7 @@ sub header {
 # Optional arguments:
 #   * select       arrayref: attribs to print, mostly for test; see dont_print
 #   * explain_why  bool: print reason why item is reported
+#   * print_header  bool: "Report grouped by" header
 sub query_report {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(ea worst orderby groupby) ) {
@@ -272,6 +265,12 @@ sub query_report {
    my $qr  = $self->{QueryRewriter};
 
    my $report = '';
+
+   if ( $args{print_header} ) {
+      $report .= "# " . ( '#' x 72 ) . "\n"
+               . "# Report grouped by $groupby\n"
+               . '# ' . ( '#' x 72 ) . "\n";
+   }
 
    # Print each worst item: its stats/metrics (sum/min/max/95%/etc.),
    # Query_time distro chart, tables, EXPLAIN, fingerprint, etc.
