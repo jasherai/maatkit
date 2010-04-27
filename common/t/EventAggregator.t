@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 73;
+use Test::More tests => 74;
 
 use QueryRewriter;
 use EventAggregator;
@@ -1568,6 +1568,176 @@ is(
    $EVAL_ERROR,
    '',
    'No error parsing binlog with @attribs (issue 607)'
+);
+
+# #############################################################################
+# Add (+) overloading.
+# #############################################################################
+my $ea1 = new EventAggregator(
+   groupby    => 'fingerprint',
+   worst      => 'Query_time',
+   attributes => {
+      Query_time => [qw(Query_time)],
+      user       => [qw(user)],
+      ts         => [qw(ts)],
+      Rows_sent  => [qw(Rows_sent)],
+      Full_scan  => [qw(Full_scan)],
+   },
+);
+$events = [
+   {  ts            => '071015 19:00:00',
+      cmd           => 'Query',
+      user          => 'root',
+      arg           => "SELECT id FROM users WHERE name='foo'",
+      Query_time    => '0.000652',
+      Rows_sent     => 1,
+      pos_in_log    => 0,
+      Full_scan     => 'No',
+   },
+];
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea1->aggregate($event);
+}
+
+my $ea2 = new EventAggregator(
+   groupby    => 'fingerprint',
+   worst      => 'Query_time',
+   attributes => {
+      Query_time => [qw(Query_time)],
+      user       => [qw(user)],
+      ts         => [qw(ts)],
+      Rows_sent  => [qw(Rows_sent)],
+      Full_scan  => [qw(Full_scan)],
+   },
+);
+$events = [
+   {  ts            => '071015 21:43:52',
+      cmd           => 'Query',
+      user          => 'bob',
+      arg           => "SELECT id FROM users WHERE name='bar'",
+      Query_time    => '0.000682',
+      Rows_sent     => 2,
+      pos_in_log    => 5,
+      Full_scan     => 'Yes',
+   }
+];
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea2->aggregate($event);
+}
+
+$result = {
+   classes => {
+      'select id from users where name=?' => {
+         Query_time => {
+            min => '0.000652',
+            max => '0.000682',
+            all =>
+               [ ( map {0} ( 0 .. 132 ) ), 1, 1, ( map {0} ( 135 .. 999 ) ) ],
+            sum => '0.001334',
+            cnt => 2,
+         },
+         user => {
+            unq => {
+               bob  => 1,
+               root => 1
+            },
+            # min => 'bob',
+            # max => 'root',
+            cnt => 2,
+         },
+         ts => {
+            min => '071015 19:00:00',
+            max => '071015 21:43:52',
+         },
+         Rows_sent => {
+            min => 1,
+            max => 2,
+            all => [
+               (map {0} (0..283)),
+               1,
+               (map {0} (285..297)),
+               1,
+               (map {0} (299..999)),
+            ],
+            sum => 3,
+            cnt => 2,
+         },
+         Full_scan => {
+            cnt => 2,
+            max => 1,
+            min => 0,
+            sum => 1,
+            unq => {
+               '0' => 1,
+               '1' => 1,
+            },
+         },
+      },
+   },
+   globals => {
+      Query_time => {
+         min => '0.000652',
+         max => '0.000682',
+         sum => '0.001334',
+         cnt => 2,
+         all => [
+            ( map {0} ( 0 .. 132 ) ),
+            1, 1, ( map {0} ( 135 .. 156 ) ),
+            ( map {0} ( 157 .. 999 ) ),
+         ],
+      },
+      user => {
+         # min => 'bob',
+         # max => 'root',
+         cnt => 2,
+      },
+      ts => {
+         min => '071015 19:00:00',
+         max => '071015 21:43:52',
+      },
+      Rows_sent => {
+         min => 1,
+         max => 2,
+         sum => 3,
+         cnt => 2,
+         all => [
+            (map {0} (0..283 )),
+            1,
+            (map {0} (285..297)),
+            1,
+            (map {0} (299..999)),
+         ],
+      },
+      Full_scan => {
+         cnt => 2,
+         max => 1,
+         min => 0,
+         sum => 1,
+      },
+   },
+   samples => {
+      'select id from users where name=?' => {
+         ts            => '071015 21:43:52',
+         cmd           => 'Query',
+         user          => 'bob',
+         arg           => "SELECT id FROM users WHERE name='bar'",
+         Query_time    => '0.000682',
+         Rows_sent     => 2,
+         pos_in_log    => 5,
+         fingerprint   => 'select id from users where name=?',
+         Full_scan     => 'Yes',
+      },
+   },
+};
+
+my $ea3 = $ea1 + $ea2;
+
+is_deeply(
+   $ea3->results,
+   $result,
+   "Add results"
 );
 
 # #############################################################################

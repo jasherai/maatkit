@@ -22,6 +22,15 @@ package EventAggregator;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use List::Util qw(min max);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use overload
+   '+'    => \&_add,
+   'bool' => sub { $_[0]; };
 
 # ###########################################################################
 # Set up some constants for bucketing values.  It is impossible to keep all
@@ -253,6 +262,14 @@ sub results {
       globals => $self->{result_globals},
       samples => $self->{result_samples},
    };
+}
+
+sub set_results {
+   my ( $self, $results ) = @_;
+   $self->{result_classes} = $results->{classes};
+   $self->{result_globals} = $results->{globals};
+   $self->{result_samples} = $results->{samples};
+   return;
 }
 
 sub stats {
@@ -795,6 +812,229 @@ sub make_alt_attrib {
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
    return $sub;
+}
+
+# Overload + to add two EventAggregator objects.  Returns an EventAggregator
+# with results equal to the sum of the original two objs.
+sub _add {
+   my ( $ea1, $ea2 ) = @_;
+   my $r1 = $ea1->results;
+   my $r2 = $ea2->results;
+
+   # If the two ea don't have the same groupby and worst then adding
+   # them will produce a nonsensical result.  (Maybe not if worst
+   # differs but certainly if groupby differs).
+   die "EventAggregator objects have different groupby: "
+      . "$ea1->{groupby} and $ea2->{groupby}"
+      unless $ea1->{groupby} eq $ea2->{groupby};
+   die "EventAggregator objects have different worst: "
+      . "$ea1->{worst} and $ea2->{worst}"
+      unless $ea1->{worst} eq $ea2->{worst};
+
+   my $worst = $ea1->{worst};  # for merging, finding worst sample
+
+   # The summed/merged results of the two given results.  When building
+   # this hash, do not shallow copy, do deep copy so the returned ea
+   # is truly its own obj and does not point to data structs in one of
+   # the given ea results.
+   my $r_sum = {
+      classes => {},
+      globals => {},
+      samples => {},
+   };
+
+   # Get all classes and attribs from each results.  They probably don't
+   # have all the same classes or attribs.
+   my %all_classes
+      = map { $_ => 1 } (keys %{$r1->{samples}}, keys %{$r2->{samples}});
+   my %all_attribs
+      = map { $_ => 1 } (keys %{$r1->{globals}}, keys %{$r2->{globals}});
+
+   # Descend into each class (e.g. unique query/fingerprint), each
+   # attribute (e.g. Query_time, etc.), and then each attribute
+   # value (e.g. min, max, etc.).  If either a class or attrib is
+   # missing in one of the results, deep copy the extant class/attrib;
+   # if both exist, add/merge the results.
+   CLASS:
+   foreach my $class ( keys %all_classes ) {
+      my $r1_class = $r1->{classes}->{$class};
+      my $r2_class = $r2->{classes}->{$class};
+
+      if ( $r1_class && $r2_class ) {
+         # Class exists in both results.  Add/merge all their attributes.
+         my $sum_class = {};  # new summed/merged results
+         
+         CLASS_ATTRIB:
+         foreach my $attrib ( keys %all_attribs ) {
+            if ( $r1_class->{$attrib} && $r2_class->{$attrib} ) {
+               $sum_class->{$attrib}
+                  = _add_attrib_vals(
+                     $attrib, $r1_class->{$attrib}, $r2_class->{$attrib});
+            }
+            else {
+               my $attrib_vals = $r1_class->{$attrib} || $r2_class->{$attrib};
+               $sum_class->{$attrib} =
+                  _deep_copy_attrib_vals($attrib_vals);
+            }
+         }
+
+         $r_sum->{classes}->{$class} = $sum_class;
+      }
+      else {
+         # Class is missing in one of the results; use the results that exist.
+         my $sum_class = $r1_class || $r2_class;
+         $$r_sum->{classes}->{$class} = _deep_copy_attribs($sum_class);
+      }
+   }
+
+   # Same as above but for the global attribs/vals.
+   GLOBAL_ATTRIB:
+   foreach my $attrib ( keys %all_attribs ) {
+      my $r1_global = $r1->{globals}->{$attrib};
+      my $r2_global = $r2->{globals}->{$attrib};
+
+      if ( $r1_global && $r2_global ) {
+         # Global attrib exists in both results.  Add/merge all its values.
+         $r_sum->{globals}->{$attrib}
+            = _add_attrib_vals($attrib, $r1_global,$r2_global);
+      }
+      else {
+         # Global attrib is missing in one of the results; use the results
+         # that exist.
+         my $attrib_vals = $r1_global || $r2_global;
+         $r_sum->{globals}->{$attrib} = _deep_copy_attrib_vals($attrib_vals);
+      }
+   }
+
+   # Same as above but for the samples, keeping the worst sample.
+   SAMPLE:
+   my $sum_samples = $r_sum->{samples};
+   foreach my $sample ( keys %all_classes ) {
+      my $r_sample;
+      if ( $r1->{samples}->{$sample} && $r2->{samples}->{$sample} ) {
+         my $r1_worst = $r1->{samples}->{$sample}->{$worst};
+         my $r2_worst = $r2->{samples}->{$sample}->{$worst};
+         $r_sample    = $r1_worst > $r2_worst ? $r1->{samples}->{$sample}
+                      :                         $r2->{samples}->{$sample};
+      }
+      else {
+         $r_sample = $r1->{samples}->{$sample} || $r2->{samples}->{$sample};
+      }
+
+      # Events don't have references to other data structs
+      # so we don't have to worry about doing a deep copy.
+      @{$sum_samples->{$sample}}{keys %$r_sample} = values %$r_sample;
+   }
+
+   # Create a new EventAggregator obj, initialize it with the summed results,
+   # and return it.
+   my $ea_sum = new EventAggregator(
+      groupby => $ea1->{groupby},
+      worst   => $ea1->{worst},
+   );
+   $ea_sum->set_results($r_sum);
+   return $ea_sum;
+}
+
+# Returns a hashref with the added/merged attribute values from the
+# two vals hashrefs which contain values for the given attrib.
+# The retuned hashref is not complete; some attrib values are removed
+# because they're not needed by QueryReportFormatter.  E.g. ts attrib
+# normally has values for unq, but unq isn't used so it's ignored here.
+sub _add_attrib_vals {
+   my ( $attrib, $vals1, $vals2 ) = @_;
+   my $sum = {};
+
+   if ( $attrib eq 'ts' ) {
+      my @ts_vals
+         = sort $vals1->{min}, $vals2->{min}, $vals1->{max}, $vals2->{max};
+      $sum->{min} = $ts_vals[0];
+      $sum->{max} = $ts_vals[-1];
+      return $sum;
+   }
+
+   # Assuming both sets of values are the same attribute (that's the caller
+   # responsibility), each should have the same values (min, max, unq, etc.)
+   foreach my $val ( keys %$vals1 ) {
+      my $val1 = $vals1->{$val};
+      my $val2 = $vals2->{$val};
+
+      if ( (!ref $val1) && (!ref $val2) ) {
+         # Value is scalar but return unless it's numeric.
+         # Only numeric values have "sum".
+         if ( $val eq 'max' ) {
+            next unless exists $vals1->{sum};
+            $sum->{$val} = max($val1, $val2);
+         }
+         elsif ( $val eq 'min' ) {
+            next unless exists $vals1->{sum};
+            $sum->{$val} = min($val1, $val2);
+         }
+         else {
+            $sum->{$val} = $val1 + $val2;
+         }
+      }
+      elsif ( (ref $val1 eq 'ARRAY') && (ref $val2 eq 'ARRAY') ) {
+         # Value is an arrayref, so it should be 1k buckets.
+         my $n_buckets = (scalar @$val1) - 1;
+         $sum->{$val} = [ map { 0 } (0..$n_buckets) ];
+         for my $i ( 0..$n_buckets ) {
+            $sum->{$val}->[$i] = $val1->[$i] + $val2->[$i];
+         }
+      }
+      elsif ( (ref $val1 eq 'HASH')  && (ref $val2 eq 'HASH')  ) {
+         # Value is a hashref, probably for unq string occurences.
+         @{$sum->{$val}}{keys %$val1} = values %$val1;
+         map { $sum->{$val}->{$_} += $val2->{$_} } keys %$val2;
+      }
+      else {
+         # This shouldn't happen.
+         MKDEBUG && _d('vals1:', Dumper($vals1));
+         MKDEBUG && _d('vals2:', Dumper($vals2));
+         die "Cannot add attribute values for $val: type mismatch";
+      }
+   }
+
+   return $sum;
+}
+
+# These _deep_copy_* subs only go 1 level deep because, so far,
+# no ea data struct has a ref any deeper.
+sub _deep_copy_attribs {
+   my ( $attribs ) = @_;
+   my $copy = {};
+   foreach my $attrib ( keys %$attribs ) {
+      $copy->{$attrib} = _deep_copy_attrib_vals($attribs->{$attrib});
+   }
+   return $copy;
+}
+
+sub _deep_copy_attrib_vals {
+   my ( $vals ) = @_;
+   my $copy = {};
+   foreach my $val ( keys %$vals ) {
+      if ( my $ref_type = ref $val ) {
+         if ( $ref_type eq 'ARRAY' ) {
+            my $n_elems = (scalar @$val) - 1;
+            $copy->{$val} = [ map { undef } ( 0..$n_elems ) ];
+            for my $i ( 0..$n_elems ) {
+               $copy->{$val}->[$i] = $vals->{$val}->[$i];
+            }
+         }
+         elsif ( $ref_type eq 'HASH' ) {
+            $copy->{$val} = {};
+            map { $copy->{$val}->{$_} += $vals->{$val}->{$_} }
+               keys %{$vals->{$val}}
+         }
+         else {
+            die "I don't know how to deep copy a $ref_type reference";
+         }
+      }
+      else {
+         $copy->{$val} = $vals->{$val};
+      }
+   }
+   return $copy;
 }
 
 sub _d {
