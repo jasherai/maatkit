@@ -287,6 +287,12 @@ sub attributes {
    return $self->{type_for};
 }
 
+sub set_attribute_types {
+   my ( $self, $attrib_types ) = @_;
+   $self->{type_for} = $attrib_types;
+   return;
+}
+
 # Returns the type of the attribute (as decided by the aggregation process,
 # which inspects the values).
 sub type_for {
