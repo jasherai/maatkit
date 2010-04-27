@@ -900,6 +900,8 @@ sub merge {
          # Events don't have references to other data structs
          # so we don't have to worry about doing a deep copy.
          if ( $new_worst_sample ) {
+            MKDEBUG && _d('New worst sample:', $worst, '=',
+               $new_worst_sample->{$worst}, 'item:', substr($class, 0, 100));
             @{$r_merged->{samples}->{$class}}{keys %$new_worst_sample}
                = values %$new_worst_sample;
          }
@@ -930,6 +932,7 @@ sub merge {
       worst   => $ea1->{worst},
    );
    $ea_merged->set_results($r_merged);
+   $ea_merged->set_attribute_types($ea1->attributes);
    return $ea_merged;
 }
 
