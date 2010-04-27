@@ -551,7 +551,7 @@ sub calculate_statistical_metrics {
    my $globals        = $self->{result_globals};
    my $class_metrics  = $self->{class_metrics};
    my $global_metrics = $self->{global_metrics};
-
+   MKDEBUG && _d('Calculating statistical_metrics');
    foreach my $attrib ( keys %$globals ) {
       if ( exists $globals->{$attrib}->{all} ) {
          $global_metrics->{$attrib}
@@ -823,6 +823,7 @@ sub merge {
 
    die "EventAggregator::merge() requires 2 or more EventAggregator objects"
       unless scalar @ea_objs > 1;
+   MKDEBUG && _d('Merging', scalar @ea_objs, 'ea');
 
    # If all the ea don't have the same groupby and worst then adding
    # them will produce a nonsensical result.  (Maybe not if worst
@@ -830,12 +831,6 @@ sub merge {
    my $ea1   = shift @ea_objs;
    my $r1    = $ea1->results;
    my $worst = $ea1->{worst};  # for merging, finding worst sample
-
-   # ...get all classes and attribs from each results.  They probably don't
-   # have all the same classes or attribs.
-   my %all_classes = map { $_ => 1 } keys %{$r1->{samples}};
-   my %all_attribs = map { $_ => 1 } keys %{$r1->{globals}};
-
    foreach my $ea ( @ea_objs ) {
       die "EventAggregator objects have different groupby: "
          . "$ea1->{groupby} and $ea->{groupby}"
@@ -843,10 +838,6 @@ sub merge {
       die "EventAggregator objects have different worst: "
          . "$ea1->{worst} and $ea->{worst}"
          unless $ea1->{worst} eq $ea->{worst};
-
-      my $r = $ea->results;
-      map { $all_classes{$_} = 1 } keys %{$r->{samples}};
-      map { $all_attribs{$_} = 1 } keys %{$r->{globals}};
    }
 
    # First, deep copy the first ea obj.  Do not shallow copy, do deep copy
@@ -879,7 +870,7 @@ sub merge {
          if ( $r1_class && $r2_class ) {
             # Class exists in both results.  Add/merge all their attributes.
             CLASS_ATTRIB:
-            foreach my $attrib ( keys %all_attribs ) {
+            foreach my $attrib ( keys %$r2_class ) {
                if ( $r1_class->{$attrib} && $r2_class->{$attrib} ) {
                   _add_attrib_vals($r1_class->{$attrib}, $r2_class->{$attrib});
                }
