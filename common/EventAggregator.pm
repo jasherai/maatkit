@@ -888,14 +888,14 @@ sub merge {
          # Update the worst sample if either the r2 sample is worst than
          # the r1 or there's no such sample in r1.
          my $new_worst_sample;
-         if ( $r1->{samples}->{$class} && $r2->{samples}->{$class} ) {
+         if ( $r_merged->{samples}->{$class} && $r2->{samples}->{$class} ) {
             if (   $r2->{samples}->{$class}->{$worst}
-                 > $r1->{samples}->{$class}->{$worst} ) {
+                 > $r_merged->{samples}->{$class}->{$worst} ) {
                $new_worst_sample = $r2->{samples}->{$class}
             }
          }
-         elsif ( !$r1->{samples}->{$class} ) {
-            $new_worst_sample = $r1->{samples}->{$class};
+         elsif ( !$r_merged->{samples}->{$class} ) {
+            $new_worst_sample = $r2->{samples}->{$class};
          }
          # Events don't have references to other data structs
          # so we don't have to worry about doing a deep copy.
