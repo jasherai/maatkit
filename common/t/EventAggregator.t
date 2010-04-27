@@ -1571,7 +1571,7 @@ is(
 );
 
 # #############################################################################
-# Add (+) overloading.
+# merge()
 # #############################################################################
 my $ea1 = new EventAggregator(
    groupby    => 'fingerprint',
@@ -1582,24 +1582,10 @@ my $ea1 = new EventAggregator(
       ts         => [qw(ts)],
       Rows_sent  => [qw(Rows_sent)],
       Full_scan  => [qw(Full_scan)],
+      ea1_only   => [qw(ea1_only)],
+      ea2_only   => [qw(ea2_only)],
    },
 );
-$events = [
-   {  ts            => '071015 19:00:00',
-      cmd           => 'Query',
-      user          => 'root',
-      arg           => "SELECT id FROM users WHERE name='foo'",
-      Query_time    => '0.000652',
-      Rows_sent     => 1,
-      pos_in_log    => 0,
-      Full_scan     => 'No',
-   },
-];
-foreach my $event (@$events) {
-   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
-   $ea1->aggregate($event);
-}
-
 my $ea2 = new EventAggregator(
    groupby    => 'fingerprint',
    worst      => 'Query_time',
@@ -1609,8 +1595,28 @@ my $ea2 = new EventAggregator(
       ts         => [qw(ts)],
       Rows_sent  => [qw(Rows_sent)],
       Full_scan  => [qw(Full_scan)],
+      ea1_only   => [qw(ea1_only)],
+      ea2_only   => [qw(ea2_only)],
    },
 );
+
+$events = [
+   {  ts            => '071015 19:00:00',
+      cmd           => 'Query',
+      user          => 'root',
+      arg           => "SELECT id FROM users WHERE name='foo'",
+      Query_time    => '0.000652',
+      Rows_sent     => 1,
+      pos_in_log    => 0,
+      Full_scan     => 'No',
+      ea1_only      => 5,
+   },
+];
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea1->aggregate($event);
+}
+
 $events = [
    {  ts            => '071015 21:43:52',
       cmd           => 'Query',
@@ -1620,6 +1626,7 @@ $events = [
       Rows_sent     => 2,
       pos_in_log    => 5,
       Full_scan     => 'Yes',
+      ea2_only      => 7,
    }
 ];
 foreach my $event (@$events) {
@@ -1643,13 +1650,18 @@ $result = {
                bob  => 1,
                root => 1
             },
-            # min => 'bob',
-            # max => 'root',
+            min => 'bob',
+            max => 'root',
             cnt => 2,
          },
          ts => {
             min => '071015 19:00:00',
             max => '071015 21:43:52',
+            cnt => 2,
+            unq => {
+               '071015 19:00:00' => 1,
+               '071015 21:43:52' => 1,
+            },
          },
          Rows_sent => {
             min => 1,
@@ -1674,6 +1686,20 @@ $result = {
                '1' => 1,
             },
          },
+         ea1_only => {
+            min => '5',
+            max => '5',
+            all => [(map {0} (0..316)), 1, (map {0} (318..999)) ], 
+            sum => '5',
+            cnt => 1,
+         },
+         ea2_only => {
+            min => '7',
+            max => '7',
+            all => [(map {0} (0..323)), 1, (map {0} (325..999)) ],
+            sum => '7',
+            cnt => 1,
+         },
       },
    },
    globals => {
@@ -1689,13 +1715,14 @@ $result = {
          ],
       },
       user => {
-         # min => 'bob',
-         # max => 'root',
+         min => 'bob',
+         max => 'root',
          cnt => 2,
       },
       ts => {
          min => '071015 19:00:00',
          max => '071015 21:43:52',
+         cnt => 2,
       },
       Rows_sent => {
          min => 1,
@@ -1716,6 +1743,20 @@ $result = {
          min => 0,
          sum => 1,
       },
+      ea1_only => {
+         min => '5',
+         max => '5',
+         all => [(map {0} (0..316)), 1, (map {0} (318..999)) ], 
+         sum => '5',
+         cnt => 1,
+      },
+      ea2_only => {
+         min => '7',
+         max => '7',
+         all => [(map {0} (0..323)), 1, (map {0} (325..999)) ],
+         sum => '7',
+         cnt => 1,
+      },
    },
    samples => {
       'select id from users where name=?' => {
@@ -1728,16 +1769,17 @@ $result = {
          pos_in_log    => 5,
          fingerprint   => 'select id from users where name=?',
          Full_scan     => 'Yes',
+         ea2_only      => 7,
       },
    },
 };
 
-my $ea3 = $ea1 + $ea2;
+my $ea3 = EventAggregator::merge($ea1, $ea2);
 
 is_deeply(
    $ea3->results,
    $result,
-   "Add results"
+   "Merge results"
 );
 
 # #############################################################################

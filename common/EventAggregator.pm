@@ -28,10 +28,6 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use overload
-   '+'    => \&_add,
-   'bool' => sub { $_[0]; };
-
 # ###########################################################################
 # Set up some constants for bucketing values.  It is impossible to keep all
 # values seen in memory, but putting them into logarithmically scaled buckets
@@ -820,144 +816,135 @@ sub make_alt_attrib {
    return $sub;
 }
 
-# Overload + to add two EventAggregator objects.  Returns an EventAggregator
-# with results equal to the sum of the original two objs.
-sub _add {
-   my ( $ea1, $ea2 ) = @_;
-   my $r1 = $ea1->results;
-   my $r2 = $ea2->results;
+# Merge/add the given arrayref of EventAggregator objects.
+# Returns a new EventAggregator obj.
+sub merge {
+   my ( @ea_objs ) = @_;
 
-   # If the two ea don't have the same groupby and worst then adding
+   die "EventAggregator::merge() requires 2 or more EventAggregator objects"
+      unless scalar @ea_objs > 1;
+
+   # If all the ea don't have the same groupby and worst then adding
    # them will produce a nonsensical result.  (Maybe not if worst
-   # differs but certainly if groupby differs).
-   die "EventAggregator objects have different groupby: "
-      . "$ea1->{groupby} and $ea2->{groupby}"
-      unless $ea1->{groupby} eq $ea2->{groupby};
-   die "EventAggregator objects have different worst: "
-      . "$ea1->{worst} and $ea2->{worst}"
-      unless $ea1->{worst} eq $ea2->{worst};
-
+   # differs but certainly if groupby differs).  And while checking this...
+   my $ea1   = shift @ea_objs;
+   my $r1    = $ea1->results;
    my $worst = $ea1->{worst};  # for merging, finding worst sample
 
-   # The summed/merged results of the two given results.  When building
-   # this hash, do not shallow copy, do deep copy so the returned ea
-   # is truly its own obj and does not point to data structs in one of
-   # the given ea results.
-   my $r_sum = {
+   # ...get all classes and attribs from each results.  They probably don't
+   # have all the same classes or attribs.
+   my %all_classes = map { $_ => 1 } keys %{$r1->{samples}};
+   my %all_attribs = map { $_ => 1 } keys %{$r1->{globals}};
+
+   foreach my $ea ( @ea_objs ) {
+      die "EventAggregator objects have different groupby: "
+         . "$ea1->{groupby} and $ea->{groupby}"
+         unless $ea1->{groupby} eq $ea->{groupby};
+      die "EventAggregator objects have different worst: "
+         . "$ea1->{worst} and $ea->{worst}"
+         unless $ea1->{worst} eq $ea->{worst};
+
+      my $r = $ea->results;
+      map { $all_classes{$_} = 1 } keys %{$r->{samples}};
+      map { $all_attribs{$_} = 1 } keys %{$r->{globals}};
+   }
+
+   # First, deep copy the first ea obj.  Do not shallow copy, do deep copy
+   # so the returned ea is truly its own obj and does not point to data
+   # structs in one of the given ea.
+   my $r_merged = {
       classes => {},
-      globals => {},
+      globals => _deep_copy_attribs($r1->{globals}),
       samples => {},
    };
+   map {
+      $r_merged->{classes}->{$_} = _deep_copy_attribs($r1->{classes}->{$_});
+   } keys %{$r1->{classes}};
 
-   # Get all classes and attribs from each results.  They probably don't
-   # have all the same classes or attribs.
-   my %all_classes
-      = map { $_ => 1 } (keys %{$r1->{samples}}, keys %{$r2->{samples}});
-   my %all_attribs
-      = map { $_ => 1 } (keys %{$r1->{globals}}, keys %{$r2->{globals}});
+   # Then, merge/add the other eas.  r1* is the eventual return val.
+   # r2* is the current ea being merged/added into r1*.
+   foreach my $ea ( @ea_objs ) {
+      my $r2 = $ea->results;
 
-   # Descend into each class (e.g. unique query/fingerprint), each
-   # attribute (e.g. Query_time, etc.), and then each attribute
-   # value (e.g. min, max, etc.).  If either a class or attrib is
-   # missing in one of the results, deep copy the extant class/attrib;
-   # if both exist, add/merge the results.
-   CLASS:
-   foreach my $class ( keys %all_classes ) {
-      my $r1_class = $r1->{classes}->{$class};
-      my $r2_class = $r2->{classes}->{$class};
+      # Descend into each class (e.g. unique query/fingerprint), each
+      # attribute (e.g. Query_time, etc.), and then each attribute
+      # value (e.g. min, max, etc.).  If either a class or attrib is
+      # missing in one of the results, deep copy the extant class/attrib;
+      # if both exist, add/merge the results.
+      CLASS:
+      foreach my $class ( keys %{$r2->{classes}} ) {
+         my $r1_class = $r_merged->{classes}->{$class};
+         my $r2_class = $r2->{classes}->{$class};
 
-      if ( $r1_class && $r2_class ) {
-         # Class exists in both results.  Add/merge all their attributes.
-         my $sum_class = {};  # new summed/merged results
-         
-         CLASS_ATTRIB:
-         foreach my $attrib ( keys %all_attribs ) {
-            if ( $r1_class->{$attrib} && $r2_class->{$attrib} ) {
-               $sum_class->{$attrib}
-                  = _add_attrib_vals(
-                     $attrib, $r1_class->{$attrib}, $r2_class->{$attrib});
-            }
-            else {
-               my $attrib_vals = $r1_class->{$attrib} || $r2_class->{$attrib};
-               $sum_class->{$attrib} =
-                  _deep_copy_attrib_vals($attrib_vals);
+         if ( $r1_class && $r2_class ) {
+            # Class exists in both results.  Add/merge all their attributes.
+            CLASS_ATTRIB:
+            foreach my $attrib ( keys %all_attribs ) {
+               if ( $r1_class->{$attrib} && $r2_class->{$attrib} ) {
+                  _add_attrib_vals($r1_class->{$attrib}, $r2_class->{$attrib});
+               }
+               elsif ( !$r1_class->{$attrib} ) {
+                  $r1_class->{$attrib} =
+                     _deep_copy_attrib_vals($r2_class->{$attrib})
+               }
             }
          }
+         elsif ( !$r1_class ) {
+            # Class is missing in r1; deep copy it from r2.
+            $r_merged->{classes}->{$class} = _deep_copy_attribs($r2_class);
+         }
 
-         $r_sum->{classes}->{$class} = $sum_class;
-      }
-      else {
-         # Class is missing in one of the results; use the results that exist.
-         my $sum_class = $r1_class || $r2_class;
-         $$r_sum->{classes}->{$class} = _deep_copy_attribs($sum_class);
-      }
-   }
-
-   # Same as above but for the global attribs/vals.
-   GLOBAL_ATTRIB:
-   foreach my $attrib ( keys %all_attribs ) {
-      my $r1_global = $r1->{globals}->{$attrib};
-      my $r2_global = $r2->{globals}->{$attrib};
-
-      if ( $r1_global && $r2_global ) {
-         # Global attrib exists in both results.  Add/merge all its values.
-         $r_sum->{globals}->{$attrib}
-            = _add_attrib_vals($attrib, $r1_global,$r2_global);
-      }
-      else {
-         # Global attrib is missing in one of the results; use the results
-         # that exist.
-         my $attrib_vals = $r1_global || $r2_global;
-         $r_sum->{globals}->{$attrib} = _deep_copy_attrib_vals($attrib_vals);
-      }
-   }
-
-   # Same as above but for the samples, keeping the worst sample.
-   SAMPLE:
-   my $sum_samples = $r_sum->{samples};
-   foreach my $sample ( keys %all_classes ) {
-      my $r_sample;
-      if ( $r1->{samples}->{$sample} && $r2->{samples}->{$sample} ) {
-         my $r1_worst = $r1->{samples}->{$sample}->{$worst};
-         my $r2_worst = $r2->{samples}->{$sample}->{$worst};
-         $r_sample    = $r1_worst > $r2_worst ? $r1->{samples}->{$sample}
-                      :                         $r2->{samples}->{$sample};
-      }
-      else {
-         $r_sample = $r1->{samples}->{$sample} || $r2->{samples}->{$sample};
+         # Update the worst sample if either the r2 sample is worst than
+         # the r1 or there's no such sample in r1.
+         my $new_worst_sample;
+         if ( $r1->{samples}->{$class} && $r2->{samples}->{$class} ) {
+            if (   $r2->{samples}->{$class}->{$worst}
+                 > $r1->{samples}->{$class}->{$worst} ) {
+               $new_worst_sample = $r2->{samples}->{$class}
+            }
+         }
+         elsif ( !$r1->{samples}->{$class} ) {
+            $new_worst_sample = $r1->{samples}->{$class};
+         }
+         # Events don't have references to other data structs
+         # so we don't have to worry about doing a deep copy.
+         if ( $new_worst_sample ) {
+            @{$r_merged->{samples}->{$class}}{keys %$new_worst_sample}
+               = values %$new_worst_sample;
+         }
       }
 
-      # Events don't have references to other data structs
-      # so we don't have to worry about doing a deep copy.
-      @{$sum_samples->{$sample}}{keys %$r_sample} = values %$r_sample;
+      # Same as above but for the global attribs/vals.
+      GLOBAL_ATTRIB:
+      foreach my $attrib ( keys %{$r2->{globals}} ) {
+         my $r1_global = $r_merged->{globals}->{$attrib};
+         my $r2_global = $r2->{globals}->{$attrib};
+
+         if ( $r1_global && $r2_global ) {
+            # Global attrib exists in both results.  Add/merge all its values.
+            _add_attrib_vals($r1_global, $r2_global);
+         }
+         elsif ( !$r1_global ) {
+            # Global attrib is missing in r1; deep cpoy it from r2 global.
+            $r_merged->{globals}->{$attrib}
+               = _deep_copy_attrib_vals($r2_global);
+         }
+      }
    }
 
    # Create a new EventAggregator obj, initialize it with the summed results,
    # and return it.
-   my $ea_sum = new EventAggregator(
+   my $ea_merged = new EventAggregator(
       groupby => $ea1->{groupby},
       worst   => $ea1->{worst},
    );
-   $ea_sum->set_results($r_sum);
-   return $ea_sum;
+   $ea_merged->set_results($r_merged);
+   return $ea_merged;
 }
 
-# Returns a hashref with the added/merged attribute values from the
-# two vals hashrefs which contain values for the given attrib.
-# The retuned hashref is not complete; some attrib values are removed
-# because they're not needed by QueryReportFormatter.  E.g. ts attrib
-# normally has values for unq, but unq isn't used so it's ignored here.
+# Adds/merges vals2 attrib values into vals1.
 sub _add_attrib_vals {
-   my ( $attrib, $vals1, $vals2 ) = @_;
-   my $sum = {};
-
-   if ( $attrib eq 'ts' ) {
-      my @ts_vals
-         = sort $vals1->{min}, $vals2->{min}, $vals1->{max}, $vals2->{max};
-      $sum->{min} = $ts_vals[0];
-      $sum->{max} = $ts_vals[-1];
-      return $sum;
-   }
+   my ( $vals1, $vals2 ) = @_;
 
    # Assuming both sets of values are the same attribute (that's the caller
    # responsibility), each should have the same values (min, max, unq, etc.)
@@ -968,30 +955,37 @@ sub _add_attrib_vals {
       if ( (!ref $val1) && (!ref $val2) ) {
          # Value is scalar but return unless it's numeric.
          # Only numeric values have "sum".
+         my $is_num = exists $vals1->{sum} ? 1 : 0;
          if ( $val eq 'max' ) {
-            next unless exists $vals1->{sum};
-            $sum->{$val} = max($val1, $val2);
+            if ( $is_num ) {
+               $vals1->{$val} = $val1 > $val2  ? $val1 : $val2;
+            }
+            else {
+               $vals1->{$val} = $val1 gt $val2 ? $val1 : $val2;
+            }
          }
          elsif ( $val eq 'min' ) {
-            next unless exists $vals1->{sum};
-            $sum->{$val} = min($val1, $val2);
+            if ( $is_num ) {
+               $vals1->{$val} = $val1 < $val2  ? $val1 : $val2;
+            }
+            else {
+               $vals1->{$val} = $val1 lt $val2 ? $val1 : $val2;
+            }
          }
          else {
-            $sum->{$val} = $val1 + $val2;
+            $vals1->{$val} += $val2;
          }
       }
       elsif ( (ref $val1 eq 'ARRAY') && (ref $val2 eq 'ARRAY') ) {
          # Value is an arrayref, so it should be 1k buckets.
          my $n_buckets = (scalar @$val1) - 1;
-         $sum->{$val} = [ map { 0 } (0..$n_buckets) ];
          for my $i ( 0..$n_buckets ) {
-            $sum->{$val}->[$i] = $val1->[$i] + $val2->[$i];
+            $vals1->{$val}->[$i] += $val2->[$i];
          }
       }
       elsif ( (ref $val1 eq 'HASH')  && (ref $val2 eq 'HASH')  ) {
          # Value is a hashref, probably for unq string occurences.
-         @{$sum->{$val}}{keys %$val1} = values %$val1;
-         map { $sum->{$val}->{$_} += $val2->{$_} } keys %$val2;
+         map { $vals1->{$val}->{$_} += $val2->{$_} } keys %$val2;
       }
       else {
          # This shouldn't happen.
@@ -1001,7 +995,7 @@ sub _add_attrib_vals {
       }
    }
 
-   return $sum;
+   return;
 }
 
 # These _deep_copy_* subs only go 1 level deep because, so far,
@@ -1017,28 +1011,34 @@ sub _deep_copy_attribs {
 
 sub _deep_copy_attrib_vals {
    my ( $vals ) = @_;
-   my $copy = {};
-   foreach my $val ( keys %$vals ) {
-      if ( my $ref_type = ref $val ) {
-         if ( $ref_type eq 'ARRAY' ) {
-            my $n_elems = (scalar @$val) - 1;
-            $copy->{$val} = [ map { undef } ( 0..$n_elems ) ];
-            for my $i ( 0..$n_elems ) {
-               $copy->{$val}->[$i] = $vals->{$val}->[$i];
+   my $copy;
+   if ( ref $vals eq 'HASH' ) {
+      $copy = {};
+      foreach my $val ( keys %$vals ) {
+         if ( my $ref_type = ref $val ) {
+            if ( $ref_type eq 'ARRAY' ) {
+               my $n_elems = (scalar @$val) - 1;
+               $copy->{$val} = [ map { undef } ( 0..$n_elems ) ];
+               for my $i ( 0..$n_elems ) {
+                  $copy->{$val}->[$i] = $vals->{$val}->[$i];
+               }
+            }
+            elsif ( $ref_type eq 'HASH' ) {
+               $copy->{$val} = {};
+               map { $copy->{$val}->{$_} += $vals->{$val}->{$_} }
+                  keys %{$vals->{$val}}
+            }
+            else {
+               die "I don't know how to deep copy a $ref_type reference";
             }
          }
-         elsif ( $ref_type eq 'HASH' ) {
-            $copy->{$val} = {};
-            map { $copy->{$val}->{$_} += $vals->{$val}->{$_} }
-               keys %{$vals->{$val}}
-         }
          else {
-            die "I don't know how to deep copy a $ref_type reference";
+            $copy->{$val} = $vals->{$val};
          }
       }
-      else {
-         $copy->{$val} = $vals->{$val};
-      }
+   }
+   else {
+      $copy = $vals;
    }
    return $copy;
 }
