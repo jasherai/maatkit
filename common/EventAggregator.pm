@@ -831,6 +831,11 @@ sub merge {
    my $ea1   = shift @ea_objs;
    my $r1    = $ea1->results;
    my $worst = $ea1->{worst};  # for merging, finding worst sample
+
+   # ...get all attributes and their types to properly initialize the
+   # returned ea obj;
+   my %attrib_types = %{ $ea1->attributes() };
+
    foreach my $ea ( @ea_objs ) {
       die "EventAggregator objects have different groupby: "
          . "$ea1->{groupby} and $ea->{groupby}"
@@ -838,6 +843,12 @@ sub merge {
       die "EventAggregator objects have different worst: "
          . "$ea1->{worst} and $ea->{worst}"
          unless $ea1->{worst} eq $ea->{worst};
+      
+      my $attrib_types = $ea->attributes();
+      map {
+         $attrib_types{$_} = $attrib_types->{$_}
+            unless exists $attrib_types{$_};
+      } keys %$attrib_types;
    }
 
    # First, deep copy the first ea obj.  Do not shallow copy, do deep copy
@@ -928,11 +939,12 @@ sub merge {
    # Create a new EventAggregator obj, initialize it with the summed results,
    # and return it.
    my $ea_merged = new EventAggregator(
-      groupby => $ea1->{groupby},
-      worst   => $ea1->{worst},
+      groupby    => $ea1->{groupby},
+      worst      => $ea1->{worst},
+      attributes => { map { $_=>[$_] } keys %attrib_types },
    );
    $ea_merged->set_results($r_merged);
-   $ea_merged->set_attribute_types($ea1->attributes);
+   $ea_merged->set_attribute_types(\%attrib_types);
    return $ea_merged;
 }
 
