@@ -4536,13 +4536,18 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6140
+# EventAggregator package 6162
 # ###########################################################################
 package EventAggregator;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use List::Util qw(min max);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG      => $ENV{MKDEBUG} || 0;
 use constant BUCK_SIZE    => 1.05;
@@ -4713,6 +4718,14 @@ sub results {
    };
 }
 
+sub set_results {
+   my ( $self, $results ) = @_;
+   $self->{result_classes} = $results->{classes};
+   $self->{result_globals} = $results->{globals};
+   $self->{result_samples} = $results->{samples};
+   return;
+}
+
 sub stats {
    my ( $self ) = @_;
    return {
@@ -4724,6 +4737,12 @@ sub stats {
 sub attributes {
    my ( $self ) = @_;
    return $self->{type_for};
+}
+
+sub set_attribute_types {
+   my ( $self, $attrib_types ) = @_;
+   $self->{type_for} = $attrib_types;
+   return;
 }
 
 sub type_for {
@@ -4911,7 +4930,7 @@ sub calculate_statistical_metrics {
    my $globals        = $self->{result_globals};
    my $class_metrics  = $self->{class_metrics};
    my $global_metrics = $self->{global_metrics};
-
+   MKDEBUG && _d('Calculating statistical_metrics');
    foreach my $attrib ( keys %$globals ) {
       if ( exists $globals->{$attrib}->{all} ) {
          $global_metrics->{$attrib}
@@ -5133,6 +5152,201 @@ sub make_alt_attrib {
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
    return $sub;
+}
+
+sub merge {
+   my ( @ea_objs ) = @_;
+
+   die "EventAggregator::merge() requires 2 or more EventAggregator objects"
+      unless scalar @ea_objs > 1;
+   MKDEBUG && _d('Merging', scalar @ea_objs, 'ea');
+
+   my $ea1   = shift @ea_objs;
+   my $r1    = $ea1->results;
+   my $worst = $ea1->{worst};  # for merging, finding worst sample
+
+   my %attrib_types = %{ $ea1->attributes() };
+
+   foreach my $ea ( @ea_objs ) {
+      die "EventAggregator objects have different groupby: "
+         . "$ea1->{groupby} and $ea->{groupby}"
+         unless $ea1->{groupby} eq $ea->{groupby};
+      die "EventAggregator objects have different worst: "
+         . "$ea1->{worst} and $ea->{worst}"
+         unless $ea1->{worst} eq $ea->{worst};
+      
+      my $attrib_types = $ea->attributes();
+      map {
+         $attrib_types{$_} = $attrib_types->{$_}
+            unless exists $attrib_types{$_};
+      } keys %$attrib_types;
+   }
+
+   my $r_merged = {
+      classes => {},
+      globals => _deep_copy_attribs($r1->{globals}),
+      samples => {},
+   };
+   map {
+      $r_merged->{classes}->{$_} = _deep_copy_attribs($r1->{classes}->{$_});
+   } keys %{$r1->{classes}};
+
+   foreach my $ea ( @ea_objs ) {
+      my $r2 = $ea->results;
+
+      CLASS:
+      foreach my $class ( keys %{$r2->{classes}} ) {
+         my $r1_class = $r_merged->{classes}->{$class};
+         my $r2_class = $r2->{classes}->{$class};
+
+         if ( $r1_class && $r2_class ) {
+            CLASS_ATTRIB:
+            foreach my $attrib ( keys %$r2_class ) {
+               if ( $r1_class->{$attrib} && $r2_class->{$attrib} ) {
+                  _add_attrib_vals($r1_class->{$attrib}, $r2_class->{$attrib});
+               }
+               elsif ( !$r1_class->{$attrib} ) {
+                  $r1_class->{$attrib} =
+                     _deep_copy_attrib_vals($r2_class->{$attrib})
+               }
+            }
+         }
+         elsif ( !$r1_class ) {
+            $r_merged->{classes}->{$class} = _deep_copy_attribs($r2_class);
+         }
+
+         my $new_worst_sample;
+         if ( $r_merged->{samples}->{$class} && $r2->{samples}->{$class} ) {
+            if (   $r2->{samples}->{$class}->{$worst}
+                 > $r_merged->{samples}->{$class}->{$worst} ) {
+               $new_worst_sample = $r2->{samples}->{$class}
+            }
+         }
+         elsif ( !$r_merged->{samples}->{$class} ) {
+            $new_worst_sample = $r2->{samples}->{$class};
+         }
+         if ( $new_worst_sample ) {
+            MKDEBUG && _d('New worst sample:', $worst, '=',
+               $new_worst_sample->{$worst}, 'item:', substr($class, 0, 100));
+            @{$r_merged->{samples}->{$class}}{keys %$new_worst_sample}
+               = values %$new_worst_sample;
+         }
+      }
+
+      GLOBAL_ATTRIB:
+      foreach my $attrib ( keys %{$r2->{globals}} ) {
+         my $r1_global = $r_merged->{globals}->{$attrib};
+         my $r2_global = $r2->{globals}->{$attrib};
+
+         if ( $r1_global && $r2_global ) {
+            _add_attrib_vals($r1_global, $r2_global);
+         }
+         elsif ( !$r1_global ) {
+            $r_merged->{globals}->{$attrib}
+               = _deep_copy_attrib_vals($r2_global);
+         }
+      }
+   }
+
+   my $ea_merged = new EventAggregator(
+      groupby    => $ea1->{groupby},
+      worst      => $ea1->{worst},
+      attributes => { map { $_=>[$_] } keys %attrib_types },
+   );
+   $ea_merged->set_results($r_merged);
+   $ea_merged->set_attribute_types(\%attrib_types);
+   return $ea_merged;
+}
+
+sub _add_attrib_vals {
+   my ( $vals1, $vals2 ) = @_;
+
+   foreach my $val ( keys %$vals1 ) {
+      my $val1 = $vals1->{$val};
+      my $val2 = $vals2->{$val};
+
+      if ( (!ref $val1) && (!ref $val2) ) {
+         my $is_num = exists $vals1->{sum} ? 1 : 0;
+         if ( $val eq 'max' ) {
+            if ( $is_num ) {
+               $vals1->{$val} = $val1 > $val2  ? $val1 : $val2;
+            }
+            else {
+               $vals1->{$val} = $val1 gt $val2 ? $val1 : $val2;
+            }
+         }
+         elsif ( $val eq 'min' ) {
+            if ( $is_num ) {
+               $vals1->{$val} = $val1 < $val2  ? $val1 : $val2;
+            }
+            else {
+               $vals1->{$val} = $val1 lt $val2 ? $val1 : $val2;
+            }
+         }
+         else {
+            $vals1->{$val} += $val2;
+         }
+      }
+      elsif ( (ref $val1 eq 'ARRAY') && (ref $val2 eq 'ARRAY') ) {
+         my $n_buckets = (scalar @$val1) - 1;
+         for my $i ( 0..$n_buckets ) {
+            $vals1->{$val}->[$i] += $val2->[$i];
+         }
+      }
+      elsif ( (ref $val1 eq 'HASH')  && (ref $val2 eq 'HASH')  ) {
+         map { $vals1->{$val}->{$_} += $val2->{$_} } keys %$val2;
+      }
+      else {
+         MKDEBUG && _d('vals1:', Dumper($vals1));
+         MKDEBUG && _d('vals2:', Dumper($vals2));
+         die "Cannot add attribute values for $val: type mismatch";
+      }
+   }
+
+   return;
+}
+
+sub _deep_copy_attribs {
+   my ( $attribs ) = @_;
+   my $copy = {};
+   foreach my $attrib ( keys %$attribs ) {
+      $copy->{$attrib} = _deep_copy_attrib_vals($attribs->{$attrib});
+   }
+   return $copy;
+}
+
+sub _deep_copy_attrib_vals {
+   my ( $vals ) = @_;
+   my $copy;
+   if ( ref $vals eq 'HASH' ) {
+      $copy = {};
+      foreach my $val ( keys %$vals ) {
+         if ( my $ref_type = ref $val ) {
+            if ( $ref_type eq 'ARRAY' ) {
+               my $n_elems = (scalar @$val) - 1;
+               $copy->{$val} = [ map { undef } ( 0..$n_elems ) ];
+               for my $i ( 0..$n_elems ) {
+                  $copy->{$val}->[$i] = $vals->{$val}->[$i];
+               }
+            }
+            elsif ( $ref_type eq 'HASH' ) {
+               $copy->{$val} = {};
+               map { $copy->{$val}->{$_} += $vals->{$val}->{$_} }
+                  keys %{$vals->{$val}}
+            }
+            else {
+               die "I don't know how to deep copy a $ref_type reference";
+            }
+         }
+         else {
+            $copy->{$val} = $vals->{$val};
+         }
+      }
+   }
+   else {
+      $copy = $vals;
+   }
+   return $copy;
 }
 
 sub _d {
@@ -10731,12 +10945,24 @@ sub update_query_review_tables {
    return;
 }
 
+# Save EventAggregator (ea) results to file.  To reconstruct an ea
+# later, the following info is saved, in this format:
+#   groupby (e.g. fingerprint)
+#
+#   worst  (e.g. Query_time)
+#
+#   attribute types (hashref with attrib=>type for each attrib)
+#
+#   results (3 hashrefs for classes, globals and samples)
+# Each bit of info is separated by a blank line so the program that
+# loads them can easily parse one from the other ($INPUT_RECORD_SEPARATOR='').
 sub save_results {
    my ( %args ) = @_;
    foreach my $arg ( qw(ea file) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $results = $args{ea}->results();
+   my $ea      = $args{ea};
+   my $results = $ea->results();
    my $file    = $args{file};
    return unless $file;
    MKDEBUG && _d('Saving results to', $file);
@@ -10751,6 +10977,10 @@ sub save_results {
    local $Data::Dumper::Sortkeys  = 0;
    local $Data::Dumper::Quotekeys = 0;
    local $Data::Dumper::Purity    = 1;
+
+   print  $fh "$ea->{groupby}\n\n$ea->{worst}\n\n";
+   printf $fh Dumper($ea->attributes);
+   print  $fh "\n\n";
    printf $fh Dumper($results);
 
    close $fh;
