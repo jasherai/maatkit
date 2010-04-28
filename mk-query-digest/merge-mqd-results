@@ -4608,7 +4608,7 @@ if ( !caller ) { exit main(@ARGV); }
 
 =head1 NAME
 
-merge-mqd-results - Merge and report on results saved by mk-query-digest --save-results.
+merge-mqd-results - Merge multiple mk-query-digest reports into one.
 
 =head1 SYNOPSIS
 
