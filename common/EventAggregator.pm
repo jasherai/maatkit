@@ -858,14 +858,12 @@ sub merge {
       samples => {},
    };
    map {
-      $r_merged->{classes}->{$_} = _deep_copy_attribs($r1->{classes}->{$_});
-   } keys %{$r1->{classes}};
+      $r_merged->{classes}->{$_}
+         = _deep_copy_attribs($r1->{classes}->{$_});
 
-   if ( scalar @ea_objs == 0 ) {
-      # Special case with only 1 ea obj so there's nothing to merge.
-      @{$r_merged->{samples}}{keys %{$r1->{samples}}}
-         = values %{$r1->{samples}};
-   }
+      @{$r_merged->{samples}->{$_}}{keys %{$r1->{samples}->{$_}}}
+         = values %{$r1->{samples}->{$_}};
+   } keys %{$r1->{classes}};
 
    # Then, merge/add the other eas.  r1* is the eventual return val.
    # r2* is the current ea being merged/added into r1*.
@@ -922,8 +920,10 @@ sub merge {
             if ( $new_worst_sample ) {
                MKDEBUG && _d('New worst sample:', $worst, '=',
                   $new_worst_sample->{$worst}, 'item:', substr($class, 0, 100));
-               @{$r_merged->{samples}->{$class}}{keys %$new_worst_sample}
+               my %new_sample;
+               @new_sample{keys %$new_worst_sample}
                   = values %$new_worst_sample;
+               $r_merged->{samples}->{$class} = \%new_sample;
             }
          }
       };
