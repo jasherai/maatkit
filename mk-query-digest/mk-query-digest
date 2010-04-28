@@ -4536,7 +4536,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6162
+# EventAggregator package 6165
 # ###########################################################################
 package EventAggregator;
 
@@ -5156,10 +5156,8 @@ sub make_alt_attrib {
 
 sub merge {
    my ( @ea_objs ) = @_;
-
-   die "EventAggregator::merge() requires 2 or more EventAggregator objects"
-      unless scalar @ea_objs > 1;
    MKDEBUG && _d('Merging', scalar @ea_objs, 'ea');
+   return unless scalar @ea_objs;
 
    my $ea1   = shift @ea_objs;
    my $r1    = $ea1->results;
@@ -5190,6 +5188,11 @@ sub merge {
    map {
       $r_merged->{classes}->{$_} = _deep_copy_attribs($r1->{classes}->{$_});
    } keys %{$r1->{classes}};
+
+   if ( scalar @ea_objs == 0 ) {
+      @{$r_merged->{samples}}{keys %{$r1->{samples}}}
+         = values %{$r1->{samples}};
+   }
 
    foreach my $ea ( @ea_objs ) {
       my $r2 = $ea->results;
@@ -10519,7 +10522,9 @@ sub main {
          my @reports = @{$o->get('report-format')};
 
          for my $i ( 0..$#groupby ) {
-            $ea[$i]->calculate_statistical_metrics();
+            if ( $o->get('report') || $qv ) {
+               $ea[$i]->calculate_statistical_metrics();
+            }
 
             my ($orderby_attrib, $orderby_func) = split(/:/, $orderby[$i]);
             $orderby_attrib = check_orderby_attrib($orderby_attrib, $ea[$i], $o);
@@ -11028,7 +11033,7 @@ sub save_results {
    }
 
    local $Data::Dumper::Indent    = 0;
-   local $Data::Dumper::Sortkeys  = 0;
+   local $Data::Dumper::Sortkeys  = 1;
    local $Data::Dumper::Quotekeys = 0;
    local $Data::Dumper::Purity    = 1;
 
