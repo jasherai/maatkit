@@ -1970,7 +1970,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6165
+# EventAggregator package 6170
 # ###########################################################################
 package EventAggregator;
 
@@ -2620,68 +2620,86 @@ sub merge {
       samples => {},
    };
    map {
-      $r_merged->{classes}->{$_} = _deep_copy_attribs($r1->{classes}->{$_});
+      $r_merged->{classes}->{$_}
+         = _deep_copy_attribs($r1->{classes}->{$_});
+
+      @{$r_merged->{samples}->{$_}}{keys %{$r1->{samples}->{$_}}}
+         = values %{$r1->{samples}->{$_}};
    } keys %{$r1->{classes}};
 
-   if ( scalar @ea_objs == 0 ) {
-      @{$r_merged->{samples}}{keys %{$r1->{samples}}}
-         = values %{$r1->{samples}};
-   }
+   for my $i ( 0..$#ea_objs ) {
+      MKDEBUG && _d('Merging ea obj', ($i + 1));
+      my $r2 = $ea_objs[$i]->results;
 
-   foreach my $ea ( @ea_objs ) {
-      my $r2 = $ea->results;
+      eval {
+         CLASS:
+         foreach my $class ( keys %{$r2->{classes}} ) {
+            my $r1_class = $r_merged->{classes}->{$class};
+            my $r2_class = $r2->{classes}->{$class};
 
-      CLASS:
-      foreach my $class ( keys %{$r2->{classes}} ) {
-         my $r1_class = $r_merged->{classes}->{$class};
-         my $r2_class = $r2->{classes}->{$class};
-
-         if ( $r1_class && $r2_class ) {
-            CLASS_ATTRIB:
-            foreach my $attrib ( keys %$r2_class ) {
-               if ( $r1_class->{$attrib} && $r2_class->{$attrib} ) {
-                  _add_attrib_vals($r1_class->{$attrib}, $r2_class->{$attrib});
-               }
-               elsif ( !$r1_class->{$attrib} ) {
-                  $r1_class->{$attrib} =
-                     _deep_copy_attrib_vals($r2_class->{$attrib})
+            if ( $r1_class && $r2_class ) {
+               CLASS_ATTRIB:
+               foreach my $attrib ( keys %$r2_class ) {
+                  MKDEBUG && _d('merge', $attrib);
+                  if ( $r1_class->{$attrib} && $r2_class->{$attrib} ) {
+                     _add_attrib_vals($r1_class->{$attrib}, $r2_class->{$attrib});
+                  }
+                  elsif ( !$r1_class->{$attrib} ) {
+                  MKDEBUG && _d('copy', $attrib);
+                     $r1_class->{$attrib} =
+                        _deep_copy_attrib_vals($r2_class->{$attrib})
+                  }
                }
             }
-         }
-         elsif ( !$r1_class ) {
-            $r_merged->{classes}->{$class} = _deep_copy_attribs($r2_class);
-         }
+            elsif ( !$r1_class ) {
+               MKDEBUG && _d('copy class');
+               $r_merged->{classes}->{$class} = _deep_copy_attribs($r2_class);
+            }
 
-         my $new_worst_sample;
-         if ( $r_merged->{samples}->{$class} && $r2->{samples}->{$class} ) {
-            if (   $r2->{samples}->{$class}->{$worst}
-                 > $r_merged->{samples}->{$class}->{$worst} ) {
-               $new_worst_sample = $r2->{samples}->{$class}
+            my $new_worst_sample;
+            if ( $r_merged->{samples}->{$class} && $r2->{samples}->{$class} ) {
+               if (   $r2->{samples}->{$class}->{$worst}
+                    > $r_merged->{samples}->{$class}->{$worst} ) {
+                  $new_worst_sample = $r2->{samples}->{$class}
+               }
+            }
+            elsif ( !$r_merged->{samples}->{$class} ) {
+               $new_worst_sample = $r2->{samples}->{$class};
+            }
+            if ( $new_worst_sample ) {
+               MKDEBUG && _d('New worst sample:', $worst, '=',
+                  $new_worst_sample->{$worst}, 'item:', substr($class, 0, 100));
+               my %new_sample;
+               @new_sample{keys %$new_worst_sample}
+                  = values %$new_worst_sample;
+               $r_merged->{samples}->{$class} = \%new_sample;
             }
          }
-         elsif ( !$r_merged->{samples}->{$class} ) {
-            $new_worst_sample = $r2->{samples}->{$class};
-         }
-         if ( $new_worst_sample ) {
-            MKDEBUG && _d('New worst sample:', $worst, '=',
-               $new_worst_sample->{$worst}, 'item:', substr($class, 0, 100));
-            @{$r_merged->{samples}->{$class}}{keys %$new_worst_sample}
-               = values %$new_worst_sample;
-         }
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Error merging class/sample: $EVAL_ERROR";
       }
 
-      GLOBAL_ATTRIB:
-      foreach my $attrib ( keys %{$r2->{globals}} ) {
-         my $r1_global = $r_merged->{globals}->{$attrib};
-         my $r2_global = $r2->{globals}->{$attrib};
+      eval {
+         GLOBAL_ATTRIB:
+         MKDEBUG && _d('Merging global attributes');
+         foreach my $attrib ( keys %{$r2->{globals}} ) {
+            my $r1_global = $r_merged->{globals}->{$attrib};
+            my $r2_global = $r2->{globals}->{$attrib};
 
-         if ( $r1_global && $r2_global ) {
-            _add_attrib_vals($r1_global, $r2_global);
+            if ( $r1_global && $r2_global ) {
+               MKDEBUG && _d('merge', $attrib);
+               _add_attrib_vals($r1_global, $r2_global);
+            }
+            elsif ( !$r1_global ) {
+               MKDEBUG && _d('copy', $attrib);
+               $r_merged->{globals}->{$attrib}
+                  = _deep_copy_attrib_vals($r2_global);
+            }
          }
-         elsif ( !$r1_global ) {
-            $r_merged->{globals}->{$attrib}
-               = _deep_copy_attrib_vals($r2_global);
-         }
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Error merging globals: $EVAL_ERROR";
       }
    }
 
@@ -2703,6 +2721,8 @@ sub _add_attrib_vals {
       my $val2 = $vals2->{$val};
 
       if ( (!ref $val1) && (!ref $val2) ) {
+         die "undefined $val value" unless defined $val1 && defined $val2;
+
          my $is_num = exists $vals1->{sum} ? 1 : 0;
          if ( $val eq 'max' ) {
             if ( $is_num ) {
@@ -2725,18 +2745,20 @@ sub _add_attrib_vals {
          }
       }
       elsif ( (ref $val1 eq 'ARRAY') && (ref $val2 eq 'ARRAY') ) {
+         die "Empty $val arrayref" unless @$val1 && @$val2;
          my $n_buckets = (scalar @$val1) - 1;
          for my $i ( 0..$n_buckets ) {
             $vals1->{$val}->[$i] += $val2->[$i];
          }
       }
       elsif ( (ref $val1 eq 'HASH')  && (ref $val2 eq 'HASH')  ) {
+         die "Empty $val hashref" unless %$val1 and %$val2;
          map { $vals1->{$val}->{$_} += $val2->{$_} } keys %$val2;
       }
       else {
          MKDEBUG && _d('vals1:', Dumper($vals1));
          MKDEBUG && _d('vals2:', Dumper($vals2));
-         die "Cannot add attribute values for $val: type mismatch";
+         die "$val type mismatch";
       }
    }
 
@@ -4332,6 +4354,9 @@ package merge_mqd_results;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use File::Basename qw(dirname);
+use File::Find;
+use File::Spec;
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
@@ -4449,9 +4474,11 @@ sub main {
 sub merge_results {
    my ( @files ) = @_;
 
+   # Get all files by recursing into any directories.
+   my @all_files = get_files(@files);
+
    my @ea;
-   foreach my $file ( @files ) {
-      MKDEBUG && _d('Loading', $file);
+   foreach my $file ( @all_files ) {
       eval {
          my $ea_info = load_ea_info($file);
          my $ea      = new EventAggregator(
@@ -4469,6 +4496,24 @@ sub merge_results {
 
    my $sum_ea = EventAggregator::merge(@ea);
    return $sum_ea, $sum_ea->{groupby};
+}
+
+sub get_files {
+   my ( @files ) = @_;
+   my @all_files;
+   File::Find::find(
+      {  no_chdir => 1,
+         wanted   => sub {
+            my ( $dir, $filename ) = ($File::Find::dir, $File::Find::name);
+            if ( -f $filename ) {
+               my ($vol, $dirs, $file) = File::Spec->splitpath( $filename );
+               push @all_files, $filename;
+            }
+         },
+      },
+      map { File::Spec->rel2abs($_) } @files
+   );
+   return @all_files;
 }
 
 sub load_ea_info {
