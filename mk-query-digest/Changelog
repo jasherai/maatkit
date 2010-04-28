@@ -1,6 +1,6 @@
 Changelog for mk-query-digest:
 
-   * Added --save-results (issue 990).
+   * Added --save-results and --[no]gzip (issue 990).
    * --order-by changed the Query_time distribution graph (issue 984).
    * Added --report-histogram (issue 984).
    * Tool crashed immediately on some older versions of Perl (issue 957).

@@ -4334,6 +4334,12 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
+eval {
+  require IO::Uncompress::Gunzip;
+  IO::Uncompress::Gunzip->import(qw(gunzip $GunzipError));
+};
+my $can_gunzip = $EVAL_ERROR ? 0 : 1;
+
 use constant MKDEBUG => $ENV{MKDEBUG}        || 0;
 
 sub main {
@@ -4439,28 +4445,23 @@ sub main {
 
 sub merge_results {
    my ( @files ) = @_;
+
    my @ea;
    foreach my $file ( @files ) {
       MKDEBUG && _d('Loading', $file);
-      my $fh;
-      if ( !open $fh, '<', $file ) {
-         warn "Cannot open $file: $OS_ERROR";
-         next;
-      }
       eval {
-         my ($groupby, $worst, $attrib_types, $results) = load_ea_info($fh);
-         my $ea = new EventAggregator(
-            groupby => $groupby,
-            worst   => $worst,
+         my $ea_info = load_ea_info($file);
+         my $ea      = new EventAggregator(
+            groupby => $ea_info->{groupby},
+            worst   => $ea_info->{worst},
          );
-         $ea->set_attribute_types($attrib_types);
-         $ea->set_results($results);
+         $ea->set_attribute_types($ea_info->{attribute_types});
+         $ea->set_results($ea_info->{results});
          push @ea, $ea;
       };
       if ( $EVAL_ERROR ) {
          warn "Failed to load results from $file: $EVAL_ERROR";
       }
-      close $fh if $fh;
    }
 
    my $sum_ea = EventAggregator::merge(@ea);
@@ -4468,43 +4469,36 @@ sub merge_results {
 }
 
 sub load_ea_info {
-   my ( $fh ) = @_;
-   die "I need a fh" unless $fh;
-   local $INPUT_RECORD_SEPARATOR = '';
+   my ( $file ) = @_;
+   die "I need a file argument" unless $file;
 
-   # First line should be groupby value.
-   my $groupby = <$fh>;
-   die "No groupby value" unless $groupby;
-   $groupby =~ s/\s//g;
-   die "Invalid groupby value" if $groupby =~ m/[^\w]/;
+   my $ea_info = "";
+   if ( $file =~ m/\.gz$/ ) {
+      die "IO::Uncompress::Gunzip not installed" unless $can_gunzip;
+      our $GunzipError;
+      my $output = \$ea_info;
+      gunzip($file => $output)
+         or die "Cannot unzip $file: $GunzipError\n";
+   }
+   else {
+      open my $fh, '<', $file
+         or die "Cannot open $file: $OS_ERROR\n";
+      $ea_info = do { local $/ = undef; <$fh> };
+      close $fh;
+   }
 
-   # Second line should be worst value.
-   my $worst = <$fh>;
-   die "No worst value" unless $worst;
-   $worst =~ s/\s//g;
-   die "Invalid worst value" if $worst =~ m/[^\w]/;
-
-   MKDEBUG && _d('groupby:', $groupby, 'worst:', $worst);
-
-   # Next chunk should be attribute types hashref.  This is
-   # magically evaled into existence as $VAR1.
+   # The dumped ea info is evaled into existence as $VAR1.
    my $VAR1;
-   my $chunk = <$fh>;
-   eval $chunk;
-   die "No attribute types" unless defined $VAR1;
-   die "Invalid attribute types"
-      unless (ref $VAR1 eq 'HASH') && scalar keys %$VAR1;
-   my $attrib_types = $VAR1;
-   
-   # Last chunk should be results hashref.  Evaled into $VAR1 again.
-   $VAR1  = undef;
-   $chunk = <$fh>;
-   eval $chunk;
-   die "No results" unless defined $VAR1;
-   die "Invalid results" unless (ref $VAR1 eq 'HASH') && scalar keys %$VAR1;
-   my $results = $VAR1;
+   eval $ea_info;
 
-   return ($groupby, $worst, $attrib_types, $results);
+   die "Invalid results"          unless (ref $VAR1 eq 'HASH') && keys %$VAR1;
+   die "No groupby in results"    unless $VAR1->{groupby};
+   die "No worst in results"      unless $VAR1->{worst};
+   die "No attributes in results" unless $VAR1->{attribute_types};
+   die "No results in results"    unless $VAR1->{results};
+   MKDEBUG && _d('groupby:', $VAR1->{groupby}, 'worst:', $VAR1->{worst});
+
+   return $VAR1;
 }
 
 sub get_worst_queries {
