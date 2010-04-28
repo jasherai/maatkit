@@ -869,74 +869,91 @@ sub merge {
 
    # Then, merge/add the other eas.  r1* is the eventual return val.
    # r2* is the current ea being merged/added into r1*.
-   foreach my $ea ( @ea_objs ) {
-      my $r2 = $ea->results;
+   for my $i ( 0..$#ea_objs ) {
+      MKDEBUG && _d('Merging ea obj', ($i + 1));
+      my $r2 = $ea_objs[$i]->results;
 
       # Descend into each class (e.g. unique query/fingerprint), each
       # attribute (e.g. Query_time, etc.), and then each attribute
       # value (e.g. min, max, etc.).  If either a class or attrib is
       # missing in one of the results, deep copy the extant class/attrib;
       # if both exist, add/merge the results.
-      CLASS:
-      foreach my $class ( keys %{$r2->{classes}} ) {
-         my $r1_class = $r_merged->{classes}->{$class};
-         my $r2_class = $r2->{classes}->{$class};
+      eval {
+         CLASS:
+         foreach my $class ( keys %{$r2->{classes}} ) {
+            my $r1_class = $r_merged->{classes}->{$class};
+            my $r2_class = $r2->{classes}->{$class};
 
-         if ( $r1_class && $r2_class ) {
-            # Class exists in both results.  Add/merge all their attributes.
-            CLASS_ATTRIB:
-            foreach my $attrib ( keys %$r2_class ) {
-               if ( $r1_class->{$attrib} && $r2_class->{$attrib} ) {
-                  _add_attrib_vals($r1_class->{$attrib}, $r2_class->{$attrib});
-               }
-               elsif ( !$r1_class->{$attrib} ) {
-                  $r1_class->{$attrib} =
-                     _deep_copy_attrib_vals($r2_class->{$attrib})
+            if ( $r1_class && $r2_class ) {
+               # Class exists in both results.  Add/merge all their attributes.
+               CLASS_ATTRIB:
+               foreach my $attrib ( keys %$r2_class ) {
+                  MKDEBUG && _d('merge', $attrib);
+                  if ( $r1_class->{$attrib} && $r2_class->{$attrib} ) {
+                     _add_attrib_vals($r1_class->{$attrib}, $r2_class->{$attrib});
+                  }
+                  elsif ( !$r1_class->{$attrib} ) {
+                  MKDEBUG && _d('copy', $attrib);
+                     $r1_class->{$attrib} =
+                        _deep_copy_attrib_vals($r2_class->{$attrib})
+                  }
                }
             }
-         }
-         elsif ( !$r1_class ) {
-            # Class is missing in r1; deep copy it from r2.
-            $r_merged->{classes}->{$class} = _deep_copy_attribs($r2_class);
-         }
+            elsif ( !$r1_class ) {
+               # Class is missing in r1; deep copy it from r2.
+               MKDEBUG && _d('copy class');
+               $r_merged->{classes}->{$class} = _deep_copy_attribs($r2_class);
+            }
 
-         # Update the worst sample if either the r2 sample is worst than
-         # the r1 or there's no such sample in r1.
-         my $new_worst_sample;
-         if ( $r_merged->{samples}->{$class} && $r2->{samples}->{$class} ) {
-            if (   $r2->{samples}->{$class}->{$worst}
-                 > $r_merged->{samples}->{$class}->{$worst} ) {
-               $new_worst_sample = $r2->{samples}->{$class}
+            # Update the worst sample if either the r2 sample is worst than
+            # the r1 or there's no such sample in r1.
+            my $new_worst_sample;
+            if ( $r_merged->{samples}->{$class} && $r2->{samples}->{$class} ) {
+               if (   $r2->{samples}->{$class}->{$worst}
+                    > $r_merged->{samples}->{$class}->{$worst} ) {
+                  $new_worst_sample = $r2->{samples}->{$class}
+               }
+            }
+            elsif ( !$r_merged->{samples}->{$class} ) {
+               $new_worst_sample = $r2->{samples}->{$class};
+            }
+            # Events don't have references to other data structs
+            # so we don't have to worry about doing a deep copy.
+            if ( $new_worst_sample ) {
+               MKDEBUG && _d('New worst sample:', $worst, '=',
+                  $new_worst_sample->{$worst}, 'item:', substr($class, 0, 100));
+               @{$r_merged->{samples}->{$class}}{keys %$new_worst_sample}
+                  = values %$new_worst_sample;
             }
          }
-         elsif ( !$r_merged->{samples}->{$class} ) {
-            $new_worst_sample = $r2->{samples}->{$class};
-         }
-         # Events don't have references to other data structs
-         # so we don't have to worry about doing a deep copy.
-         if ( $new_worst_sample ) {
-            MKDEBUG && _d('New worst sample:', $worst, '=',
-               $new_worst_sample->{$worst}, 'item:', substr($class, 0, 100));
-            @{$r_merged->{samples}->{$class}}{keys %$new_worst_sample}
-               = values %$new_worst_sample;
-         }
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Error merging class/sample: $EVAL_ERROR";
       }
 
       # Same as above but for the global attribs/vals.
-      GLOBAL_ATTRIB:
-      foreach my $attrib ( keys %{$r2->{globals}} ) {
-         my $r1_global = $r_merged->{globals}->{$attrib};
-         my $r2_global = $r2->{globals}->{$attrib};
+      eval {
+         GLOBAL_ATTRIB:
+         MKDEBUG && _d('Merging global attributes');
+         foreach my $attrib ( keys %{$r2->{globals}} ) {
+            my $r1_global = $r_merged->{globals}->{$attrib};
+            my $r2_global = $r2->{globals}->{$attrib};
 
-         if ( $r1_global && $r2_global ) {
-            # Global attrib exists in both results.  Add/merge all its values.
-            _add_attrib_vals($r1_global, $r2_global);
+            if ( $r1_global && $r2_global ) {
+               # Global attrib exists in both results.  Add/merge all its values.
+               MKDEBUG && _d('merge', $attrib);
+               _add_attrib_vals($r1_global, $r2_global);
+            }
+            elsif ( !$r1_global ) {
+               # Global attrib is missing in r1; deep cpoy it from r2 global.
+               MKDEBUG && _d('copy', $attrib);
+               $r_merged->{globals}->{$attrib}
+                  = _deep_copy_attrib_vals($r2_global);
+            }
          }
-         elsif ( !$r1_global ) {
-            # Global attrib is missing in r1; deep cpoy it from r2 global.
-            $r_merged->{globals}->{$attrib}
-               = _deep_copy_attrib_vals($r2_global);
-         }
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Error merging globals: $EVAL_ERROR";
       }
    }
 
