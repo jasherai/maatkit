@@ -415,7 +415,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 6018
+# TableChecksum package 6078
 # ###########################################################################
 package TableChecksum;
 
@@ -647,10 +647,10 @@ sub make_row_checksum {
          if ( $type eq 'timestamp' ) {
             $result .= ' + 0';
          }
-         elsif ( $type =~ m/float|double/ && $args{float_precision} ) {
+         elsif ( $args{float_precision} && $type =~ m/float|double/ ) {
             $result = "ROUND($result, $args{float_precision})";
          }
-         elsif ( $type =~ m/varchar/ && $args{trim} ) {
+         elsif ( $args{trim} && $type =~ m/varchar/ ) {
             $result = "TRIM($result)";
          }
          $result;
@@ -2862,7 +2862,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5697
+# Quoter package 6079
 # ###########################################################################
 package Quoter;
 
@@ -2888,8 +2888,9 @@ sub quote {
 sub quote_val {
    my ( $self, $val, $is_numeric ) = @_;
 
-   return 'NULL' unless defined $val;  # undef = NULL
-   return "''" if $val eq '';          # blank string = ''
+   return 'NULL' unless defined $val;         # undef = NULL
+   return "''" if $val eq '';                 # blank string = ''
+   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
 
    if ( !defined $is_numeric ) {
       $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
@@ -2926,7 +2927,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6040
+# MasterSlave package 6137
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3215,8 +3216,8 @@ sub wait_for_master {
    my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
    my $result;
    $time = 60 unless defined $time;
-   MKDEBUG && _d('Waiting for slave to catch up to master timeout ok:',
-      $timeoutok);
+   MKDEBUG && _d('Waiting', $time, 'seconds for slave to catch up to master;',
+      'timeout ok:', ($timeoutok ? 'yes' : 'no'));
    $ms ||= $self->get_master_status($master);
    if ( $ms ) {
       my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
@@ -3542,6 +3543,36 @@ sub short_host {
       $port = $dsn->{P};
    }
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
+}
+
+sub is_replication_thread {
+   my ( $self, $query ) = @_; 
+   if ( ( defined $query->{db} && $query->{db} eq 'NULL' && defined $query->{State} ) && 
+         ( 
+           $query->{State} =~ m/Sending binlog event to slave/ ||
+           $query->{State} =~ m/Finished reading one binlog; switching to next binlog/ ||
+           $query->{State} =~ m/Has sent all binlog to slave; waiting for binlog to be updated/ ||
+           $query->{State} =~ m/Waiting to finalize termination/ ||
+           $query->{State} =~ m/Waiting for master update/ ||
+           $query->{State} =~ m/Connecting to master/ ||
+           $query->{State} =~ m/Checking master version/ ||
+           $query->{State} =~ m/Registering slave on master/ ||
+           $query->{State} =~ m/Requesting binlog dump/ ||
+           $query->{State} =~ m/Waiting to reconnect after a failed binlog dump request/ ||
+           $query->{State} =~ m/Reconnecting after a failed binlog dump request/ ||
+           $query->{State} =~ m/Waiting for master to send event/ ||
+           $query->{State} =~ m/Queueing master event to the relay log/ ||
+           $query->{State} =~ m/Waiting to reconnect after a failed master event read/ ||
+           $query->{State} =~ m/Reconnecting after a failed master event read/ ||
+           $query->{State} =~ m/Waiting for the slave SQL thread to free enough relay log space/ ||
+           $query->{State} =~ m/Waiting for slave mutex on exit/ ||
+           $query->{State} =~ m/Waiting for the next event in relay log/ ||
+           $query->{State} =~ m/Reading event from the relay log/ ||
+           $query->{State} =~ m/Has read all relay log; waiting for the slave/ ||
+           $query->{State} =~ m/Making temp file/ ||
+           $query->{State} =~ m/Waiting for slave mutex on exit/ ) ) {
+              return $query->{Id};
+           }
 }
 
 sub pos_to_string {
@@ -4030,6 +4061,138 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# ExecutionThrottler package 5266
+# ###########################################################################
+package ExecutionThrottler;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use List::Util qw(sum min max);
+use Time::HiRes qw(time);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw(rate_max get_rate check_int step);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $self = {
+      step       => 0.05,  # default
+      %args, 
+      rate_ok    => undef,
+      last_check => undef,
+      stats      => {
+         rate_avg     => 0,
+         rate_samples => [],
+      },
+      int_rates  => [],
+      skip_prob  => 0.0,
+   };
+
+   return bless $self, $class;
+}
+
+sub throttle {
+   my ( $self, %args ) = @_;
+   my $time = $args{misc}->{time} || time;
+   if ( $self->_time_to_check($time) ) {
+      my $rate_avg = (sum(@{$self->{int_rates}})   || 0)
+                   / (scalar @{$self->{int_rates}} || 1);
+      my $running_avg = $self->_save_rate_avg($rate_avg);
+      MKDEBUG && _d('Average rate for last interval:', $rate_avg);
+
+      if ( $args{stats} ) {
+         $args{stats}->{throttle_checked_rate}++;
+         $args{stats}->{throttle_rate_avg} = sprintf '%.2f', $running_avg;
+      }
+
+      @{$self->{int_rates}} = ();
+
+      if ( $rate_avg > $self->{rate_max} ) {
+         $self->{skip_prob} += $self->{step};
+         $self->{skip_prob}  = 1.0 if $self->{skip_prob} > 1.0;
+         MKDEBUG && _d('Rate max exceeded');
+         $args{stats}->{throttle_rate_max_exceeded}++ if $args{stats};
+      }
+      else {
+         $self->{skip_prob} -= $self->{step};
+         $self->{skip_prob} = 0.0 if $self->{skip_prob} < 0.0;
+         $args{stats}->{throttle_rate_ok}++ if $args{stats};
+      }
+
+      MKDEBUG && _d('Skip probability:', $self->{skip_prob});
+      $self->{last_check} = $time;
+   }
+   else {
+      my $current_rate = $self->{get_rate}->();
+      push @{$self->{int_rates}}, $current_rate;
+      if ( $args{stats} ) {
+         $args{stats}->{throttle_rate_min} = min(
+            ($args{stats}->{throttle_rate_min} || ()), $current_rate);
+         $args{stats}->{throttle_rate_max} = max(
+            ($args{stats}->{throttle_rate_max} || ()), $current_rate);
+      }
+      MKDEBUG && _d('Current rate:', $current_rate);
+   } 
+
+   if ( $args{event} ) {
+      $args{event}->{Skip_exec} = $self->{skip_prob} <= rand() ? 'No' : 'Yes';
+   }
+
+   return $args{event};
+}
+
+sub _time_to_check {
+   my ( $self, $time ) = @_;
+   if ( !$self->{last_check} ) {
+      $self->{last_check} = $time;
+      return 0;
+   }
+   return $time - $self->{last_check} >= $self->{check_int} ? 1 : 0;
+}
+
+sub rate_avg {
+   my ( $self ) = @_;
+   return $self->{stats}->{rate_avg} || 0;
+}
+
+sub skip_probability {
+   my ( $self ) = @_;
+   return $self->{skip_prob};
+}
+
+sub _save_rate_avg {
+   my ( $self, $rate ) = @_;
+   my $samples  = $self->{stats}->{rate_samples};
+   push @$samples, $rate;
+   shift @$samples if @$samples > 1_000;
+   $self->{stats}->{rate_avg} = sum(@$samples) / (scalar @$samples);
+   return $self->{stats}->{rate_avg} || 0;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ExecutionThrottler package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -4147,6 +4310,9 @@ sub main {
       @hosts = $hosts[0];
    }
 
+   # --replicate auto-enables --throttle unless user set --throttle explicitly.
+   $o->set('throttle', 1) if $o->get('replicate') && !$o->got('throttle');
+
    if ( !$o->get('help') ) {
       if ( $o->get('replicate-check') && !$o->get('replicate') ) {
          $o->save_error("--replicate-check requires --replicate.");
@@ -4164,6 +4330,17 @@ sub main {
       if ( $o->get('resume') && $o->get('replicate') ) {
          $o->save_error('--resume does not work with --replicate.  '
             . 'Use --resume-replicate instead.');
+      }
+
+      if ( $o->get('check-slave-lag') && !$o->get('throttle') ) {
+         # User specified --check-slave-lag DSN and --no-throttle.
+         # They probably meant just --check-slave-lag DSN.
+         $o->save_error('--no-throttle contradicts --check-slave-lag; '
+            . '--check-slave-lag alone limits --throttle to that slave');
+      }
+      if ( $o->get('throttle') && !$o->get('replicate') ) {
+         # User did --throttle (explicitly) without --replicate.
+         $o->save_error('--throttle requires --replicate');
       }
    }
 
@@ -6470,11 +6647,18 @@ Do not print checksum results.
 
 Re-checksum chunks that L<"--replicate-check"> found to be different.
 
+=item --recurse
+
+Number of levels to recurse in the hierarchy for L<"--[no]throttle">.
+Default is infinite.
+
+See L<"--recursion-method">.
+
 =item --recursion-method
 
 type: string
 
-Preferred recursion method used to find slaves for L<"--replicate-check">.
+Preferred recursion method for L<"--replicate-check"> and L<"--[no]throttle">.
 
 Possible methods are:
 
@@ -6768,6 +6952,17 @@ short form: -t; type: hash; group: Filter
 Do only this comma-separated list of tables.
 
 Table names may be qualified with the database name.
+
+=item --[no]throttle
+
+Throttle checksumming with L<"--replicate"> by most lagged slave.
+
+When L<"--replicate"> is used, mk-table-checksum automatically discovers every
+slave and throttles checksumming if any slave lags more than L<"--max-lag">.
+Specify C<--no-throttle> to disable this behavior completely, or specify
+L<"--check-slave-lag"> and mk-table-checksum will only check that slave.
+
+See also L<"--recurse"> and L<"--recursion-method">.
 
 =item --trim
 
