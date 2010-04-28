@@ -980,6 +980,9 @@ sub _add_attrib_vals {
       my $val2 = $vals2->{$val};
 
       if ( (!ref $val1) && (!ref $val2) ) {
+         # min, max, cnt, sum should never be undef.
+         die "undefined $val value" unless defined $val1 && defined $val2;
+
          # Value is scalar but return unless it's numeric.
          # Only numeric values have "sum".
          my $is_num = exists $vals1->{sum} ? 1 : 0;
@@ -1004,27 +1007,25 @@ sub _add_attrib_vals {
          }
       }
       elsif ( (ref $val1 eq 'ARRAY') && (ref $val2 eq 'ARRAY') ) {
-         if ( MKDEBUG ) {
-            die "Empty arrayref" if !@$val1 || !@$val2;
-         }
          # Value is an arrayref, so it should be 1k buckets.
+         # Should never be empty.
+         die "Empty $val arrayref" unless @$val1 && @$val2;
          my $n_buckets = (scalar @$val1) - 1;
          for my $i ( 0..$n_buckets ) {
             $vals1->{$val}->[$i] += $val2->[$i];
          }
       }
       elsif ( (ref $val1 eq 'HASH')  && (ref $val2 eq 'HASH')  ) {
-         if ( MKDEBUG ) {
-            die "Empty hashref" if !%$val1 || !%$val2;
-         }
          # Value is a hashref, probably for unq string occurences.
+         # Should never be empty.
+         die "Empty $val hashref" unless %$val1 and %$val2;
          map { $vals1->{$val}->{$_} += $val2->{$_} } keys %$val2;
       }
       else {
          # This shouldn't happen.
          MKDEBUG && _d('vals1:', Dumper($vals1));
          MKDEBUG && _d('vals2:', Dumper($vals2));
-         die "Cannot add attribute values for $val: type mismatch";
+         die "$val type mismatch";
       }
    }
 
