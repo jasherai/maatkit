@@ -1004,6 +1004,9 @@ sub _add_attrib_vals {
          }
       }
       elsif ( (ref $val1 eq 'ARRAY') && (ref $val2 eq 'ARRAY') ) {
+         if ( MKDEBUG ) {
+            die "Empty arrayref" if !@$val1 || !@$val2;
+         }
          # Value is an arrayref, so it should be 1k buckets.
          my $n_buckets = (scalar @$val1) - 1;
          for my $i ( 0..$n_buckets ) {
@@ -1011,6 +1014,9 @@ sub _add_attrib_vals {
          }
       }
       elsif ( (ref $val1 eq 'HASH')  && (ref $val2 eq 'HASH')  ) {
+         if ( MKDEBUG ) {
+            die "Empty hashref" if !%$val1 || !%$val2;
+         }
          # Value is a hashref, probably for unq string occurences.
          map { $vals1->{$val}->{$_} += $val2->{$_} } keys %$val2;
       }
