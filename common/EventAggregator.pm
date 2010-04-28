@@ -820,10 +820,8 @@ sub make_alt_attrib {
 # Returns a new EventAggregator obj.
 sub merge {
    my ( @ea_objs ) = @_;
-
-   die "EventAggregator::merge() requires 2 or more EventAggregator objects"
-      unless scalar @ea_objs > 1;
    MKDEBUG && _d('Merging', scalar @ea_objs, 'ea');
+   return unless scalar @ea_objs;
 
    # If all the ea don't have the same groupby and worst then adding
    # them will produce a nonsensical result.  (Maybe not if worst
@@ -862,6 +860,12 @@ sub merge {
    map {
       $r_merged->{classes}->{$_} = _deep_copy_attribs($r1->{classes}->{$_});
    } keys %{$r1->{classes}};
+
+   if ( scalar @ea_objs == 0 ) {
+      # Special case with only 1 ea obj so there's nothing to merge.
+      @{$r_merged->{samples}}{keys %{$r1->{samples}}}
+         = values %{$r1->{samples}};
+   }
 
    # Then, merge/add the other eas.  r1* is the eventual return val.
    # r2* is the current ea being merged/added into r1*.
