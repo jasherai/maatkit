@@ -3475,10 +3475,9 @@ value as reported by SHOW PROCESSLIST.
 
 =item --ignore-command
 
-type: string; group: Matches; default: Binlog.Dump
+type: string; group: Matches
 
-Ignore queries whose Command matches this Perl regex.  The default is to keep
-the slave threads from being killed on the master.
+Ignore queries whose Command matches this Perl regex.
 
 See L<"--match-command">.
 
