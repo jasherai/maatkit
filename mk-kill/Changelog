@@ -1,5 +1,9 @@
 Changelog for mk-kill:
 
+   * Replication threads were allowed to match by default (issue 853).
+   * Added --replication-threads (issue 853).
+   * Added --all (issue 853).
+
 2010-04-01: version 0.9.4
 
    * Added DSN OPTIONS section to POD (issue 55).

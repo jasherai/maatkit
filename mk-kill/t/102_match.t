@@ -9,10 +9,14 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 10;
+use Test::More tests => 14;
 
 use MaatkitTest;
+use Sandbox;
 require "$trunk/mk-kill/mk-kill";
+my $dp = new DSNParser(opts=>$dsn_opts);
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $slave_dbh = $sb->get_dbh_for('slave1');
 
 my $output;
 
@@ -108,6 +112,62 @@ like(
    qr/KILL 2 \(Query 9 sec\) select \* from foo2/,
    "--match-state Locked --ignore-state '' --busy-time 5"
 );
+
+# The queries in recset002 are both State: Locked which is ignored
+# by default so nothing should match, not even for --all.
+$output = output(
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset002.txt",
+      qw(--all --print)); }
+);
+is(
+   $output,
+   '',
+   "--all except ignored"
+);
+
+# Now --all should match.
+$output = output(
+   sub { mk_kill::main("$trunk/common/t/samples/pl/recset002.txt",
+      qw(--all --print --ignore-state blahblah)); }
+);
+like(
+   $output,
+   qr/KILL 1 \(Query 4 sec\).+?KILL 2 \(Query 5 sec\)/ms,
+   "--all"
+);
+
+# #############################################################################
+# Live tests.
+# #############################################################################
+SKIP: {
+   skip "Cannot connect to sandbox slave", 1 unless $slave_dbh;
+   
+   my $pl        = $slave_dbh->selectall_arrayref('show processlist');
+   my @repl_thds = map { $_->[0] } grep { $_->[1] eq 'system user' } @$pl;
+   skip "Sandbox slave has no replication threads", unless scalar @repl_thds;
+
+   my $repl_thd_ids = join("|", @repl_thds);
+
+   $output = output(
+      sub { mk_kill::main(qw(-F /tmp/12346/my.sandbox.cnf --match-user system --print)); }
+   );
+   is(
+      $output,
+      '',
+      "Doesn't match replication threads by default"
+   );
+
+   $output = output(
+      sub { mk_kill::main(qw(-F /tmp/12346/my.sandbox.cnf --match-user system --print --replication-threads)); }
+   );
+   like(
+      $output,
+      qr/KILL (?:$repl_thd_ids)/,
+      "--replication-threads allows matching replication thread"
+   );
+
+   $slave_dbh->disconnect();
+};
 
 # #############################################################################
 # Done.

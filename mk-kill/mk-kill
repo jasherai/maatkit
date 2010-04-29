@@ -1782,7 +1782,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 5266
+# Processlist package 6187
 # ###########################################################################
 package Processlist;
 
@@ -1812,7 +1812,11 @@ use constant {
 
 sub new {
    my ( $class, %args ) = @_;
+   foreach my $arg ( qw(MasterSlave) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    my $self = {
+      %args,
       prev_rows => [],
       new_rows  => [],
       curr_row  => undef,
@@ -1960,11 +1964,19 @@ sub _get_rows {
 sub find {
    my ( $self, $proclist, %find_spec ) = @_;
    MKDEBUG && _d('find specs:', Dumper(\%find_spec));
+   my $ms  = $self->{MasterSlave};
+   my $all = $find_spec{all};
    my @matches;
    QUERY:
    foreach my $query ( @$proclist ) {
       MKDEBUG && _d('Checking query', Dumper($query));
       my $matched = 0;
+
+      if (    !$find_spec{replication_threads}
+           && $ms->is_replication_thread($query) ) {
+         MKDEBUG && _d('Skipping replication thread');
+         next QUERY;
+      }
 
       if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
          if ( $query->{Time} < $find_spec{busy_time} ) {
@@ -1983,7 +1995,7 @@ sub find {
          MKDEBUG && _d('Exceeds idle time');
          $matched++;
       }
-
+ 
       PROPERTY:
       foreach my $property ( qw(Id User Host db State Command Info) ) {
          my $filter = "_find_match_$property";
@@ -2001,7 +2013,7 @@ sub find {
             $matched++;
          }
       }
-      if ( $matched ) {
+      if ( $matched || $all ) {
          MKDEBUG && _d("Query matched one or more specs, adding");
          push @matches, $query;
          next QUERY;
@@ -2198,6 +2210,690 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# MasterSlave package 6184
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MasterSlave;
+
+use English qw(-no_match_vars);
+use List::Util qw(min max);
+use Data::Dumper;
+$Data::Dumper::Quotekeys = 0;
+$Data::Dumper::Indent    = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
+}
+
+sub recurse_to_slaves {
+   my ( $self, $args, $level ) = @_;
+   $level ||= 0;
+   my $dp   = $args->{dsn_parser};
+   my $dsn  = $args->{dsn};
+
+   my $dbh;
+   eval {
+      $dbh = $args->{dbh} || $dp->get_dbh(
+         $dp->get_cxn_params($dsn), { AutoCommit => 1 });
+      MKDEBUG && _d('Connected to', $dp->as_string($dsn));
+   };
+   if ( $EVAL_ERROR ) {
+      print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n"
+         or die "Cannot print: $OS_ERROR";
+      return;
+   }
+
+   my $sql  = 'SELECT @@SERVER_ID';
+   MKDEBUG && _d($sql);
+   my ($id) = $dbh->selectrow_array($sql);
+   MKDEBUG && _d('Working on server ID', $id);
+   my $master_thinks_i_am = $dsn->{server_id};
+   if ( !defined $id
+       || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
+       || $args->{server_ids_seen}->{$id}++
+   ) {
+      MKDEBUG && _d('Server ID seen, or not what master said');
+      if ( $args->{skip_callback} ) {
+         $args->{skip_callback}->($dsn, $dbh, $level, $args->{parent});
+      }
+      return;
+   }
+
+   $args->{callback}->($dsn, $dbh, $level, $args->{parent});
+
+   if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
+
+      my @slaves =
+         grep { !$_->{master_id} || $_->{master_id} == $id } # Only my slaves.
+         $self->find_slave_hosts($dp, $dbh, $dsn, $args->{method});
+
+      foreach my $slave ( @slaves ) {
+         MKDEBUG && _d('Recursing from',
+            $dp->as_string($dsn), 'to', $dp->as_string($slave));
+         $self->recurse_to_slaves(
+            { %$args, dsn => $slave, dbh => undef, parent => $dsn }, $level + 1 );
+      }
+   }
+}
+
+sub find_slave_hosts {
+   my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
+
+   my @methods = qw(processlist hosts);
+   if ( $method ) {
+      @methods = grep { $_ ne $method } @methods;
+      unshift @methods, $method;
+   }
+   else {
+      if ( ($dsn->{P} || 3306) != 3306 ) {
+         MKDEBUG && _d('Port number is non-standard; using only hosts method');
+         @methods = qw(hosts);
+      }
+   }
+   MKDEBUG && _d('Looking for slaves on', $dsn_parser->as_string($dsn),
+      'using methods', @methods);
+
+   my @slaves;
+   METHOD:
+   foreach my $method ( @methods ) {
+      my $find_slaves = "_find_slaves_by_$method";
+      MKDEBUG && _d('Finding slaves with', $find_slaves);
+      @slaves = $self->$find_slaves($dsn_parser, $dbh, $dsn);
+      last METHOD if @slaves;
+   }
+
+   MKDEBUG && _d('Found', scalar(@slaves), 'slaves');
+   return @slaves;
+}
+
+sub _find_slaves_by_processlist {
+   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+
+   my @slaves = map  {
+      my $slave        = $dsn_parser->parse("h=$_", $dsn);
+      $slave->{source} = 'processlist';
+      $slave;
+   }
+   grep { $_ }
+   map  {
+      my ( $host ) = $_->{host} =~ m/^([^:]+):/;
+      if ( $host eq 'localhost' ) {
+         $host = '127.0.0.1'; # Replication never uses sockets.
+      }
+      $host;
+   } $self->get_connected_slaves($dbh);
+
+   return @slaves;
+}
+
+sub _find_slaves_by_hosts {
+   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+
+   my @slaves;
+   my $sql = 'SHOW SLAVE HOSTS';
+   MKDEBUG && _d($dbh, $sql);
+   @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+
+   if ( @slaves ) {
+      MKDEBUG && _d('Found some SHOW SLAVE HOSTS info');
+      @slaves = map {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         my $spec = "h=$hash{host},P=$hash{port}"
+            . ( $hash{user} ? ",u=$hash{user}" : '')
+            . ( $hash{password} ? ",p=$hash{password}" : '');
+         my $dsn           = $dsn_parser->parse($spec, $dsn);
+         $dsn->{server_id} = $hash{server_id};
+         $dsn->{master_id} = $hash{master_id};
+         $dsn->{source}    = 'hosts';
+         $dsn;
+      } @slaves;
+   }
+
+   return @slaves;
+}
+
+sub get_connected_slaves {
+   my ( $self, $dbh ) = @_;
+
+   my $show = "SHOW GRANTS FOR ";
+   my $user = 'CURRENT_USER()';
+   my $vp   = $self->{VersionParser};
+   if ( $vp && !$vp->version_ge($dbh, '4.1.2') ) {
+      $user = $dbh->selectrow_arrayref('SELECT USER()')->[0];
+      $user =~ s/([^@]+)@(.+)/'$1'\@'$2'/;
+   }
+   my $sql = $show . $user;
+   MKDEBUG && _d($dbh, $sql);
+
+   my $proc;
+   eval {
+      $proc = grep {
+         m/ALL PRIVILEGES.*?\*\.\*|PROCESS/
+      } @{$dbh->selectcol_arrayref($sql)};
+   };
+   if ( $EVAL_ERROR ) {
+
+      if ( $EVAL_ERROR =~ m/no such grant defined for user/ ) {
+         MKDEBUG && _d('Retrying SHOW GRANTS without host; error:',
+            $EVAL_ERROR);
+         ($user) = split('@', $user);
+         $sql    = $show . $user;
+         MKDEBUG && _d($sql);
+         eval {
+            $proc = grep {
+               m/ALL PRIVILEGES.*?\*\.\*|PROCESS/
+            } @{$dbh->selectcol_arrayref($sql)};
+         };
+      }
+
+      die "Failed to $sql: $EVAL_ERROR" if $EVAL_ERROR;
+   }
+   if ( !$proc ) {
+      die "You do not have the PROCESS privilege";
+   }
+
+   $sql = 'SHOW PROCESSLIST';
+   MKDEBUG && _d($dbh, $sql);
+   grep { $_->{command} =~ m/Binlog Dump/i }
+   map  { # Lowercase the column names
+      my %hash;
+      @hash{ map { lc $_ } keys %$_ } = values %$_;
+      \%hash;
+   }
+   @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+}
+
+sub is_master_of {
+   my ( $self, $master, $slave ) = @_;
+   my $master_status = $self->get_master_status($master)
+      or die "The server specified as a master is not a master";
+   my $slave_status  = $self->get_slave_status($slave)
+      or die "The server specified as a slave is not a slave";
+   my @connected     = $self->get_connected_slaves($master)
+      or die "The server specified as a master has no connected slaves";
+   my (undef, $port) = $master->selectrow_array('SHOW VARIABLES LIKE "port"');
+
+   if ( $port != $slave_status->{master_port} ) {
+      die "The slave is connected to $slave_status->{master_port} "
+         . "but the master's port is $port";
+   }
+
+   if ( !grep { $slave_status->{master_user} eq $_->{user} } @connected ) {
+      die "I don't see any slave I/O thread connected with user "
+         . $slave_status->{master_user};
+   }
+
+   if ( ($slave_status->{slave_io_state} || '')
+      eq 'Waiting for master to send event' )
+   {
+      my ( $master_log_name, $master_log_num )
+         = $master_status->{file} =~ m/^(.*?)\.0*([1-9][0-9]*)$/;
+      my ( $slave_log_name, $slave_log_num )
+         = $slave_status->{master_log_file} =~ m/^(.*?)\.0*([1-9][0-9]*)$/;
+      if ( $master_log_name ne $slave_log_name
+         || abs($master_log_num - $slave_log_num) > 1 )
+      {
+         die "The slave thinks it is reading from "
+            . "$slave_status->{master_log_file},  but the "
+            . "master is writing to $master_status->{file}";
+      }
+   }
+   return 1;
+}
+
+sub get_master_dsn {
+   my ( $self, $dbh, $dsn, $dsn_parser ) = @_;
+   my $master = $self->get_slave_status($dbh) or return undef;
+   my $spec   = "h=$master->{master_host},P=$master->{master_port}";
+   return       $dsn_parser->parse($spec, $dsn);
+}
+
+sub get_slave_status {
+   my ( $self, $dbh ) = @_;
+   if ( !$self->{not_a_slave}->{$dbh} ) {
+      my $sth = $self->{sths}->{$dbh}->{SLAVE_STATUS}
+            ||= $dbh->prepare('SHOW SLAVE STATUS');
+      MKDEBUG && _d($dbh, 'SHOW SLAVE STATUS');
+      $sth->execute();
+      my ($ss) = @{$sth->fetchall_arrayref({})};
+
+      if ( $ss && %$ss ) {
+         $ss = { map { lc($_) => $ss->{$_} } keys %$ss }; # lowercase the keys
+         return $ss;
+      }
+
+      MKDEBUG && _d('This server returns nothing for SHOW SLAVE STATUS');
+      $self->{not_a_slave}->{$dbh}++;
+   }
+}
+
+sub get_master_status {
+   my ( $self, $dbh ) = @_;
+   if ( !$self->{not_a_master}->{$dbh} ) {
+      my $sth = $self->{sths}->{$dbh}->{MASTER_STATUS}
+            ||= $dbh->prepare('SHOW MASTER STATUS');
+      MKDEBUG && _d($dbh, 'SHOW MASTER STATUS');
+      $sth->execute();
+      my ($ms) = @{$sth->fetchall_arrayref({})};
+
+      if ( $ms && %$ms ) {
+         $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
+         if ( $ms->{file} && $ms->{position} ) {
+            return $ms;
+         }
+      }
+
+      MKDEBUG && _d('This server returns nothing for SHOW MASTER STATUS');
+      $self->{not_a_master}->{$dbh}++;
+   }
+}
+
+sub wait_for_master {
+   my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
+   my $result;
+   $time = 60 unless defined $time;
+   MKDEBUG && _d('Waiting', $time, 'seconds for slave to catch up to master;',
+      'timeout ok:', ($timeoutok ? 'yes' : 'no'));
+   $ms ||= $self->get_master_status($master);
+   if ( $ms ) {
+      my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+      MKDEBUG && _d($slave, $query);
+      ($result) = $slave->selectrow_array($query);
+      my $stat = defined $result ? $result : 'NULL';
+      MKDEBUG && _d('Result of waiting:', $stat);
+      if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
+         die "MASTER_POS_WAIT returned $stat";
+      }
+   }
+   else {
+      MKDEBUG && _d('Not waiting: this server is not a master');
+   }
+   return $result;
+}
+
+sub stop_slave {
+   my ( $self, $dbh ) = @_;
+   my $sth = $self->{sths}->{$dbh}->{STOP_SLAVE}
+         ||= $dbh->prepare('STOP SLAVE');
+   MKDEBUG && _d($dbh, $sth->{Statement});
+   $sth->execute();
+}
+
+sub start_slave {
+   my ( $self, $dbh, $pos ) = @_;
+   if ( $pos ) {
+      my $sql = "START SLAVE UNTIL MASTER_LOG_FILE='$pos->{file}', "
+              . "MASTER_LOG_POS=$pos->{position}";
+      MKDEBUG && _d($dbh, $sql);
+      $dbh->do($sql);
+   }
+   else {
+      my $sth = $self->{sths}->{$dbh}->{START_SLAVE}
+            ||= $dbh->prepare('START SLAVE');
+      MKDEBUG && _d($dbh, $sth->{Statement});
+      $sth->execute();
+   }
+}
+
+sub catchup_to_master {
+   my ( $self, $slave, $master, $time ) = @_;
+   $self->stop_slave($master);
+   $self->stop_slave($slave);
+   my $slave_status  = $self->get_slave_status($slave);
+   my $slave_pos     = $self->repl_posn($slave_status);
+   my $master_status = $self->get_master_status($master);
+   my $master_pos    = $self->repl_posn($master_status);
+   MKDEBUG && _d('Master position:', $self->pos_to_string($master_pos),
+      'Slave position:', $self->pos_to_string($slave_pos));
+   if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
+      MKDEBUG && _d('Waiting for slave to catch up to master');
+      $self->start_slave($slave, $master_pos);
+      eval {
+         $self->wait_for_master($master, $slave, $time, 0, $master_status);
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+         if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
+            $slave_status = $self->get_slave_status($slave);
+            if ( !$self->slave_is_running($slave_status) ) {
+               MKDEBUG && _d('Master position:',
+                  $self->pos_to_string($master_pos),
+                  'Slave position:', $self->pos_to_string($slave_pos));
+               $slave_pos = $self->repl_posn($slave_status);
+               if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
+                  die "$EVAL_ERROR but slave has not caught up to master";
+               }
+               MKDEBUG && _d('Slave is caught up to master and stopped');
+            }
+            else {
+               die "$EVAL_ERROR but slave was still running";
+            }
+         }
+         else {
+            die $EVAL_ERROR;
+         }
+      }
+   }
+}
+
+sub catchup_to_same_pos {
+   my ( $self, $s1_dbh, $s2_dbh ) = @_;
+   $self->stop_slave($s1_dbh);
+   $self->stop_slave($s2_dbh);
+   my $s1_status = $self->get_slave_status($s1_dbh);
+   my $s2_status = $self->get_slave_status($s2_dbh);
+   my $s1_pos    = $self->repl_posn($s1_status);
+   my $s2_pos    = $self->repl_posn($s2_status);
+   if ( $self->pos_cmp($s1_pos, $s2_pos) < 0 ) {
+      $self->start_slave($s1_dbh, $s2_pos);
+   }
+   elsif ( $self->pos_cmp($s2_pos, $s1_pos) < 0 ) {
+      $self->start_slave($s2_dbh, $s1_pos);
+   }
+
+   $s1_status = $self->get_slave_status($s1_dbh);
+   $s2_status = $self->get_slave_status($s2_dbh);
+   $s1_pos    = $self->repl_posn($s1_status);
+   $s2_pos    = $self->repl_posn($s2_status);
+
+   if ( $self->slave_is_running($s1_status)
+     || $self->slave_is_running($s2_status)
+     || $self->pos_cmp($s1_pos, $s2_pos) != 0)
+   {
+      die "The servers aren't both stopped at the same position";
+   }
+
+}
+
+sub change_master_to {
+   my ( $self, $dbh, $master_dsn, $master_pos ) = @_;
+   $self->stop_slave($dbh);
+   MKDEBUG && _d(Dumper($master_dsn), Dumper($master_pos));
+   my $sql = "CHANGE MASTER TO MASTER_HOST='$master_dsn->{h}', "
+      . "MASTER_PORT= $master_dsn->{P}, MASTER_LOG_FILE='$master_pos->{file}', "
+      . "MASTER_LOG_POS=$master_pos->{position}";
+   MKDEBUG && _d($dbh, $sql);
+   $dbh->do($sql);
+}
+
+sub make_sibling_of_master {
+   my ( $self, $slave_dbh, $slave_dsn, $dsn_parser, $timeout) = @_;
+
+   my $master_dsn  = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "This server is not a slave";
+   my $master_dbh  = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($master_dsn), { AutoCommit => 1 });
+   my $gmaster_dsn
+      = $self->get_master_dsn($master_dbh, $master_dsn, $dsn_parser)
+      or die "This server's master is not a slave";
+   my $gmaster_dbh = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($gmaster_dsn), { AutoCommit => 1 });
+   if ( $self->short_host($slave_dsn) eq $self->short_host($gmaster_dsn) ) {
+      die "The slave's master's master is the slave: master-master replication";
+   }
+
+   $self->stop_slave($master_dbh);
+   $self->catchup_to_master($slave_dbh, $master_dbh, $timeout);
+   $self->stop_slave($slave_dbh);
+
+   my $master_status = $self->get_master_status($master_dbh);
+   my $mslave_status = $self->get_slave_status($master_dbh);
+   my $slave_status  = $self->get_slave_status($slave_dbh);
+   my $master_pos    = $self->repl_posn($master_status);
+   my $slave_pos     = $self->repl_posn($slave_status);
+
+   if ( !$self->slave_is_running($mslave_status)
+     && !$self->slave_is_running($slave_status)
+     && $self->pos_cmp($master_pos, $slave_pos) == 0)
+   {
+      $self->change_master_to($slave_dbh, $gmaster_dsn,
+         $self->repl_posn($mslave_status)); # Note it's not $master_pos!
+   }
+   else {
+      die "The servers aren't both stopped at the same position";
+   }
+
+   $mslave_status = $self->get_slave_status($master_dbh);
+   $slave_status  = $self->get_slave_status($slave_dbh);
+   my $mslave_pos = $self->repl_posn($mslave_status);
+   $slave_pos     = $self->repl_posn($slave_status);
+   if ( $self->short_host($mslave_status) ne $self->short_host($slave_status)
+     || $self->pos_cmp($mslave_pos, $slave_pos) != 0)
+   {
+      die "The servers don't have the same master/position after the change";
+   }
+}
+
+sub make_slave_of_sibling {
+   my ( $self, $slave_dbh, $slave_dsn, $sib_dbh, $sib_dsn,
+        $dsn_parser, $timeout) = @_;
+
+   if ( $self->short_host($slave_dsn) eq $self->short_host($sib_dsn) ) {
+      die "You are trying to make the slave a slave of itself";
+   }
+
+   my $master_dsn1 = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "This server is not a slave";
+   my $master_dbh1 = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($master_dsn1), { AutoCommit => 1 });
+   my $master_dsn2 = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "The sibling is not a slave";
+   if ( $self->short_host($master_dsn1) ne $self->short_host($master_dsn2) ) {
+      die "This server isn't a sibling of the slave";
+   }
+   my $sib_master_stat = $self->get_master_status($sib_dbh)
+      or die "Binary logging is not enabled on the sibling";
+   die "The log_slave_updates option is not enabled on the sibling"
+      unless $self->has_slave_updates($sib_dbh);
+
+   $self->catchup_to_same_pos($slave_dbh, $sib_dbh);
+
+   $sib_master_stat = $self->get_master_status($sib_dbh);
+   $self->change_master_to($slave_dbh, $sib_dsn,
+         $self->repl_posn($sib_master_stat));
+
+   my $slave_status = $self->get_slave_status($slave_dbh);
+   my $slave_pos    = $self->repl_posn($slave_status);
+   $sib_master_stat = $self->get_master_status($sib_dbh);
+   if ( $self->short_host($slave_status) ne $self->short_host($sib_dsn)
+     || $self->pos_cmp($self->repl_posn($sib_master_stat), $slave_pos) != 0)
+   {
+      die "After changing the slave's master, it isn't a slave of the sibling, "
+         . "or it has a different replication position than the sibling";
+   }
+}
+
+sub make_slave_of_uncle {
+   my ( $self, $slave_dbh, $slave_dsn, $unc_dbh, $unc_dsn,
+        $dsn_parser, $timeout) = @_;
+
+   if ( $self->short_host($slave_dsn) eq $self->short_host($unc_dsn) ) {
+      die "You are trying to make the slave a slave of itself";
+   }
+
+   my $master_dsn = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "This server is not a slave";
+   my $master_dbh = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($master_dsn), { AutoCommit => 1 });
+   my $gmaster_dsn
+      = $self->get_master_dsn($master_dbh, $master_dsn, $dsn_parser)
+      or die "The master is not a slave";
+   my $unc_master_dsn
+      = $self->get_master_dsn($unc_dbh, $unc_dsn, $dsn_parser)
+      or die "The uncle is not a slave";
+   if ($self->short_host($gmaster_dsn) ne $self->short_host($unc_master_dsn)) {
+      die "The uncle isn't really the slave's uncle";
+   }
+
+   my $unc_master_stat = $self->get_master_status($unc_dbh)
+      or die "Binary logging is not enabled on the uncle";
+   die "The log_slave_updates option is not enabled on the uncle"
+      unless $self->has_slave_updates($unc_dbh);
+
+   $self->catchup_to_same_pos($master_dbh, $unc_dbh);
+   $self->catchup_to_master($slave_dbh, $master_dbh, $timeout);
+
+   my $slave_status  = $self->get_slave_status($slave_dbh);
+   my $master_status = $self->get_master_status($master_dbh);
+   if ( $self->pos_cmp(
+         $self->repl_posn($slave_status),
+         $self->repl_posn($master_status)) != 0 )
+   {
+      die "The slave is not caught up to its master";
+   }
+
+   $unc_master_stat = $self->get_master_status($unc_dbh);
+   $self->change_master_to($slave_dbh, $unc_dsn,
+      $self->repl_posn($unc_master_stat));
+
+
+   $slave_status    = $self->get_slave_status($slave_dbh);
+   my $slave_pos    = $self->repl_posn($slave_status);
+   if ( $self->short_host($slave_status) ne $self->short_host($unc_dsn)
+     || $self->pos_cmp($self->repl_posn($unc_master_stat), $slave_pos) != 0)
+   {
+      die "After changing the slave's master, it isn't a slave of the uncle, "
+         . "or it has a different replication position than the uncle";
+   }
+}
+
+sub detach_slave {
+   my ( $self, $dbh ) = @_;
+   $self->stop_slave($dbh);
+   my $stat = $self->get_slave_status($dbh)
+      or die "This server is not a slave";
+   $dbh->do('CHANGE MASTER TO MASTER_HOST=""');
+   $dbh->do('RESET SLAVE'); # Wipes out master.info, etc etc
+   return $stat;
+}
+
+sub slave_is_running {
+   my ( $self, $slave_status ) = @_;
+   return ($slave_status->{slave_sql_running} || 'No') eq 'Yes';
+}
+
+sub has_slave_updates {
+   my ( $self, $dbh ) = @_;
+   my $sql = q{SHOW VARIABLES LIKE 'log_slave_updates'};
+   MKDEBUG && _d($dbh, $sql);
+   my ($name, $value) = $dbh->selectrow_array($sql);
+   return $value && $value =~ m/^(1|ON)$/;
+}
+
+sub repl_posn {
+   my ( $self, $status ) = @_;
+   if ( exists $status->{file} && exists $status->{position} ) {
+      return {
+         file     => $status->{file},
+         position => $status->{position},
+      };
+   }
+   else {
+      return {
+         file     => $status->{relay_master_log_file},
+         position => $status->{exec_master_log_pos},
+      };
+   }
+}
+
+sub get_slave_lag {
+   my ( $self, $dbh ) = @_;
+   my $stat = $self->get_slave_status($dbh);
+   return $stat->{seconds_behind_master};
+}
+
+sub pos_cmp {
+   my ( $self, $a, $b ) = @_;
+   return $self->pos_to_string($a) cmp $self->pos_to_string($b);
+}
+
+sub short_host {
+   my ( $self, $dsn ) = @_;
+   my ($host, $port);
+   if ( $dsn->{master_host} ) {
+      $host = $dsn->{master_host};
+      $port = $dsn->{master_port};
+   }
+   else {
+      $host = $dsn->{h};
+      $port = $dsn->{P};
+   }
+   return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
+}
+   
+sub is_replication_thread {
+   my ( $self, $query, $type ) = @_; 
+   return unless $query;
+
+   $type ||= 'all';
+   die "Invalid type: $type"
+      unless $type =~ m/binlog_dump|slave_io|slave_sql|all/i;
+
+   my $match = 0;
+   if ( $type =~ m/binlog_dump|all/i ) {
+      $match = 1
+         if ($query->{Command} || $query->{command} || '') eq "Binlog Dump";
+   }
+   if ( !$match ) {
+      if ( ($query->{User} || $query->{user} || '') eq "system user" ) {
+         my $state = $query->{State} || $query->{state} || '';
+         if ( $type =~ m/slave_io|all/i ) {
+            ($match) = $state =~ m/
+               ^(Waiting\sfor\smaster\supdate
+                |Connecting\sto\smaster
+                |Waiting\sto\sreconnect\safter\sa\sfailed
+                |Reconnecting\safter\sa\sfailed\sbinlog
+                |Waiting\sfor\smaster\sto\ssend\sevent
+                |Queueing\smaster\sevent\sto\sthe\srelay
+                |Waiting\sto\sreconnect\safter\sa\sfailed
+                |Reconnecting\safter\sa\sfailed\smaster
+                |Waiting\sfor\sthe\sslave\sSQL\sthread)/xi;
+         }
+         if ( !$match && $type =~ m/slave_sql|all/i ) {
+            ($match) = $state =~ m/
+               ^(Waiting\sfor\sthe\snext\sevent
+                |Reading\sevent\sfrom\sthe\srelay\slog
+                |Has\sread\sall\srelay\slog;\swaiting
+                |Making\stemp\sfile)/xi; 
+         }
+      }
+      else {
+         MKDEBUG && _d('Not system user');
+      }
+   }
+   MKDEBUG && _d($type, 'replication thread:', ($match ? 'yes' : 'no'),
+      '; match:', $match);
+   return $match;
+}
+
+sub pos_to_string {
+   my ( $self, $pos ) = @_;
+   my $fmt  = '%s/%020d';
+   return sprintf($fmt, @{$pos}{qw(file position)});
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End MasterSlave package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -2226,7 +2922,8 @@ my $o;
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
-   my $pl = new Processlist();
+   my $ms = new MasterSlave();
+   my $pl = new Processlist(MasterSlave => $ms);
    my $vp = new VersionParser();
 
    # ########################################################################
@@ -2256,6 +2953,8 @@ sub main {
       $o->set('interval', max(1, $o->get('busy-time') / 2))
          unless $o->got('interval');
    }
+   
+   $o->set('only-oldest', 0) if $o->get('all') && !$o->got('only-oldest');
 
    # If parsing files, then don't wait.
    if ( @ARGV ) {
@@ -2348,9 +3047,11 @@ sub main {
    my $now      = $start;
 
    my %find_spec = (
-      only_oldest => $o->get('only-oldest'),
-      busy_time   => $o->get('busy-time'),
-      idle_time   => $o->get('idle-time'),
+      only_oldest         => $o->get('only-oldest'),
+      busy_time           => $o->get('busy-time'),
+      idle_time           => $o->get('idle-time'),
+      all                 => $o->get('all'),
+      replication_threads => $o->get('replication-threads'),
       ignore => {
          Command  => $o->get('ignore-command'),
          db       => $o->get('ignore-db'),
@@ -2743,6 +3444,19 @@ All pattern matches are case-senstive.
 
 =over
 
+=item --all
+
+group: Matches
+
+Kill all connections that are not ignored.
+
+If no ignore options are specified, then every connection is killed (except
+replication threads, unless L<"--replication-threads"> is also specified).
+If some ignore options are specified, then every connection except ignored
+connections are killed.
+
+Implies C<--no-only-oldest>.
+
 =item --busy-time
 
 type: time; group: Matches
@@ -2809,10 +3523,9 @@ See L<"--match-state">.
 
 =item --ignore-user
 
-type: string; group: Matches; default: system.user
+type: string; group: Matches
 
-Ignore queries whose user matches this Perl regex.  The default is to keep the
-replication threads from being killed on the slave.
+Ignore queries whose user matches this Perl regex.
 
 See L<"--match-user">.
 
@@ -2903,6 +3616,18 @@ default: yes; group: Matches
 Only kill the single oldest query.  This is to prevent killing queries that
 aren't really long-running, they're just long-waiting.  This sorts matching
 queries by Time and kills the one with the highest Time value.
+
+This option is disabled if L<"--all"> is specified.
+
+=item --replication-threads
+
+group: Matches
+
+Allow matching and killing replication threads.
+
+By default, matches do not apply to replication threads; i.e. replication
+threads are completely ignored.  Specifying this option allows matches to
+match (and potentially kill) replication threads on masters and slaves.
 
 =back
 
