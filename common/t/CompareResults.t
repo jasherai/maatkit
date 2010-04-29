@@ -288,7 +288,7 @@ is_deeply(
 
 $report = <<EOF;
 # Checksum differences
-# Query ID           master    slave     
+# Query ID           master    slave
 # ================== ========= ==========
 # D2D386B840D3BEEA-1 $events[0]->{checksum} $events[1]->{checksum}
 
@@ -512,7 +512,7 @@ is_deeply(
 
 $report = <<EOF;
 # Column value differences
-# Query ID           Column master slave      
+# Query ID           Column master slave
 # ================== ====== ====== ===========
 # CFC309761E9131C5-3 c      c      should be c
 
@@ -570,7 +570,7 @@ is_deeply(
 
 $report = <<EOF;
 # Column value differences
-# Query ID           Column master slave      
+# Query ID           Column master slave
 # ================== ====== ====== ===========
 # CFC309761E9131C5-3 c      a      should be a
 EOF

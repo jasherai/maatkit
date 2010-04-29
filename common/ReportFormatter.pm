@@ -135,7 +135,7 @@ sub set_columns {
       my $col      = $cols[$i];
       my $col_name = $col->{name};
       my $col_len  = length $col_name;
-      die "Column does not have a name" unless $col_name;
+      die "Column does not have a name" unless defined $col_name;
 
       if ( $col->{width} ) {
          $col->{width_pct} = ceil(($col->{width} * 100) / $self->{line_width});

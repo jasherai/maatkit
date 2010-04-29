@@ -319,7 +319,7 @@ sub _report_diff_warnings {
 
    return unless keys %{$self->{diffs}->{warnings}};
 
-   my $report = new ReportFormatter(truncate_data_lines => 0);
+   my $report = new ReportFormatter(extend_right => 1);
    $report->set_title('New warnings');
    $report->set_columns(
       $args{query_id_col},
@@ -353,7 +353,7 @@ sub _report_diff_levels {
 
    return unless keys %{$self->{diffs}->{levels}};
 
-   my $report = new ReportFormatter(truncate_data_lines => 0);
+   my $report = new ReportFormatter(extend_right => 1);
    $report->set_title('Warning level differences');
    $report->set_columns(
       $args{query_id_col},

@@ -115,7 +115,7 @@ sub event_report {
          if ( $stats && $stats->{$thing} ) {
             my $vals = $stats->{$thing};
             my $func = $thing =~ m/time$/ ? \&micro_t : \&shorten;
-            my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
+            my $metrics = $host->{ea}->metrics(attrib=>$thing, where=>$where);
             my @n = (
                @{$vals}{qw(sum min max)},
                ($vals->{sum} || 0) / ($vals->{cnt} || 1),

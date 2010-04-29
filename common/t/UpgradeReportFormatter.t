@@ -34,10 +34,12 @@ sub aggregate {
       $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
       $ea1->aggregate($event);
    }
+   $ea1->calculate_statistical_metrics();
    foreach my $event (@$events2) {
       $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
       $ea2->aggregate($event);
    }
+   $ea2->calculate_statistical_metrics(); 
 }
 
 $meta_ea = new EventAggregator(
