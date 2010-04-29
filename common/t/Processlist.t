@@ -9,12 +9,13 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 19;
+use Test::More tests => 21;
 
 use Processlist;
 use MaatkitTest;
 use TextResultSetParser;
 use Transformers;
+use MasterSlave;
 use MaatkitTest;
 
 my $pl  = new Processlist();
@@ -466,37 +467,32 @@ is_deeply(
 # #########################################################################
 # Tests for "find" functionality.
 # #########################################################################
+my $ms = new MasterSlave();
+$pl    = new Processlist(MasterSlave => $ms);
+%find_spec = (
+   match => { User => 'msandbox' },
+);
+@queries = $pl->find(
+   $rsp->parse(load_file('common/t/samples/pl/recset008.txt')),
+   %find_spec,
+);
+ok(
+   @queries == 1,
+   "Matched binlog dump repl thread"
+);
 
 %find_spec = (
-   replication_threads => 1,
-   busy_time    => undef,
-   ignore => {
-   },
-   match => {
-   },
+   replication_threads => 0,
+   match => { User => 'msandbox' },
 );
-is_deeply(
-   [
-      $pl->find(
-         $rsp->parse(load_file('common/t/samples/pl/recset008.txt')),
-         %find_spec,
-      )
-   ],
-   [
-      {
-         Id    => '7',
-         User  => 'msandbox',
-         Host  => 'localhost:53246',
-         db    => 'NULL',
-         Command => 'Binlog Dump',
-         Time  => '1174',
-         State => 'Has sent all binlog to slave; waiting for binlog to be updated',
-         Info  => 'NULL',
-      }
-   ],
-   'got rep thread'
+@queries = $pl->find(
+   $rsp->parse(load_file('common/t/samples/pl/recset008.txt')),
+   %find_spec,
 );
-
+ok(
+   @queries == 0,
+   "Skipped binlog dump repl thread"
+);
 
 # #############################################################################
 # Done.

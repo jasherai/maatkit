@@ -46,6 +46,7 @@ use constant {
 sub new {
    my ( $class, %args ) = @_;
    my $self = {
+      %args,
       prev_rows => [],
       new_rows  => [],
       curr_row  => undef,
@@ -317,12 +318,28 @@ sub _get_rows {
 sub find {
    my ( $self, $proclist, %find_spec ) = @_;
    MKDEBUG && _d('find specs:', Dumper(\%find_spec));
+
+   # Match replication threads by default.
+   $find_spec{replication_threads} = 1
+      unless defined $find_spec{replication_threads};
    my $ms = $self->{MasterSlave};
+   if ( !$find_spec{replication_threads}  && !$ms ) {
+      # If this happens, you didn't pass MasterSlave=>obj to new().
+      die "I need a MasterSlave object to skip replication threads";
+   }
+
    my @matches;
    QUERY:
    foreach my $query ( @$proclist ) {
       MKDEBUG && _d('Checking query', Dumper($query));
       my $matched = 0;
+
+      # Don't allow matching replication threads.
+      if (    !$find_spec{replication_threads}
+           && $ms->is_replication_thread($query) ) {
+         MKDEBUG && _d('Skipping replication thread');
+         next QUERY;
+      }
 
       # Match special busy_time.
       if ( $find_spec{busy_time} && ($query->{Command} || '') eq 'Query' ) {
@@ -343,15 +360,7 @@ sub find {
          MKDEBUG && _d('Exceeds idle time');
          $matched++;
       }
-      
-      # Don't allow matching replication threads.
-      if ( !$find_spec{replication_threads} ) {
-         if ( $ms && $ms->is_replication_thread($query) != $query->{Id}) {
-            MKDEBUG && _d('Skipping replication thread');
-            next QUERY;
-         }
-      }
-      
+ 
       PROPERTY:
       foreach my $property ( qw(Id User Host db State Command Info) ) {
          my $filter = "_find_match_$property";
