@@ -1005,21 +1005,27 @@ SKIP: {
    # fake dbs.
    $qrf->{dbh} = $dbh;
 
-   is(
-      $qrf->explain_report("select * from qrf.t where i=2", 'qrf'),
+   chomp(my $version = `$trunk/sandbox/mk-test-env version`);
+   my $explain =
 "# *************************** 1. row ***************************
 #            id: 1
 #   select_type: SIMPLE
 #         table: t
-#          type: const
+"
+. (($version || '') ge '5.1' ? "#    partitions: NULL\n" : '') .
+"#          type: const
 # possible_keys: PRIMARY
 #           key: PRIMARY
 #       key_len: 4
 #           ref: const
 #          rows: 1
 #         Extra: 
-",
-   "explain_report()"
+";
+
+   is(
+      $qrf->explain_report("select * from qrf.t where i=2", 'qrf'),
+      $explain,
+      "explain_report()"
    );
 
    $sb->wipe_clean($dbh);
