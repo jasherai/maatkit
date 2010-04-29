@@ -789,6 +789,8 @@ sub is_replication_thread {
       # On a slave, there are two threads.  Both have user="system user".
       if ( ($query->{User} || $query->{user} || '') eq "system user" ) {
          my $state = $query->{State} || $query->{state} || '';
+         # These patterns are abbreviated because if the first few words
+         # match chances are very high it's the full slave thd state.
          if ( $type =~ m/slave_io|all/i ) {
             ($match) = $state =~ m/
                ^(Waiting\sfor\smaster\supdate
@@ -802,8 +804,6 @@ sub is_replication_thread {
                 |Waiting\sfor\sthe\sslave\sSQL\sthread)/xi;
          }
          if ( !$match && $type =~ m/slave_sql|all/i ) {
-            # These patterns are abbreviated because if the first few words
-            # match chances are very high it's the full slave thd state.
             ($match) = $state =~ m/
                ^(Waiting\sfor\sthe\snext\sevent
                 |Reading\sevent\sfrom\sthe\srelay\slog
