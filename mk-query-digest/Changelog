@@ -1,5 +1,9 @@
 Changelog for mk-query-digest:
 
+   * Made --report-format order configurable (issue 990).
+   * Changed order of --report-format (issue 935).
+   * Added "files" to --report-format (issue 955).
+   * Added "date" to --report-format (issue 756).
    * Added --save-results and --[no]gzip (issue 990).
    * --order-by changed the Query_time distribution graph (issue 984).
    * Added --report-histogram (issue 984).

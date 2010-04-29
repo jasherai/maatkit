@@ -5728,7 +5728,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6151
+# QueryReportFormatter package 6175
 # ###########################################################################
 
 package QueryReportFormatter;
@@ -5790,16 +5790,21 @@ sub print_reports {
       die "I need a $arg argument" unless exists $args{$arg};
    }
    my $reports = $args{reports};
+   my $group   = $args{group};
+   my $last_report;
 
    foreach my $report ( @$reports ) {
       MKDEBUG && _d('Printing', $report, 'report'); 
       my $report_output = $self->$report(%args);
       if ( $report_output ) {
-         print "\n", $report_output;
+         print "\n"
+            if !$last_report || !($group->{$last_report} && $group->{$report});
+         print $report_output;
       }
       else {
          MKDEBUG && _d('No', $report, 'report');
       }
+      $last_report = $report;
    }
 
    return;
@@ -5823,6 +5828,19 @@ sub rusage {
       MKDEBUG && _d($EVAL_ERROR);
    }
    return $rusage ? $rusage : "# Could not get rusage\n";
+}
+
+sub date {
+   my ( $self ) = @_;
+   return "# Current date: " . (scalar localtime) . "\n";
+}
+
+sub files {
+   my ( $self, %args ) = @_;
+   if ( $args{files} ) {
+      return "# Files: " . join(', ', @{$args{files}}) . "\n";
+   }
+   return;
 }
 
 sub header {
@@ -10421,6 +10439,7 @@ sub main {
    my $instrument = $o->get('pipeline-profile') || $o->get('execute-throttle');
    MKDEBUG && _d('Instrument:', $instrument);
 
+   my @read_files;
    if ( @ARGV == 0 ) {
       push @ARGV, '-'; # Magical STDIN filename.
    }
@@ -10467,6 +10486,7 @@ sub main {
 
             if ( $file eq '-' ) {
                $fh = *STDIN;
+               push @read_files, 'STDIN';
                MKDEBUG && _d('Reading STDIN');
             }
             else {
@@ -10475,6 +10495,7 @@ sub main {
                   warn "Cannot open $file: $OS_ERROR\n";
                   next EVENT;
                }
+               push @read_files, $file;
                MKDEBUG && _d('Reading', $file);
 
                # Reset these var in case we read two logs out of order by time.
@@ -10595,6 +10616,8 @@ sub main {
                   groupby      => $groupby[$i],
                   print_header => $print_header,
                   explain_why  => $explain_why,
+                  files        => \@read_files,
+                  group        => {map {$_=>1} qw(rusage date files header)}
                );
             }
 
@@ -11198,7 +11221,7 @@ L<http://code.google.com/p/maatkit/wiki/EventAttributes>.
 The default output is a query analysis report.  The L<"--[no]report"> option
 controls whether or not this report is printed.  Sometimes you may wish to
 parse all the queries but suppress the report, for example when using
-L<"--print"> or L<"--review">.
+L<"--print">, L<"--review"> or L<"--save-results">.
 
 There is one paragraph for each class of query analyzed.  A "class" of queries
 all have the same value for the L<"--group-by"> attribute which is
@@ -11207,17 +11230,37 @@ abstracted version of the query text with literals removed, whitespace
 collapsed, and so forth.  The report is formatted so it's easy to paste into
 emails without wrapping, and all non-query lines begin with a comment, so you
 can save it to a .sql file and open it in your favorite syntax-highlighting
-text editor.  There is a response-time profile at the very end.
+text editor.  There is a response-time profile at the beginning.
 
-The report begins with one paragraph about the entire analysis run.  The
-information is very similar to what you'll see for each class of queries in the
-log, but it doesn't have some information that would be too expensive to keep
-globally for the analysis.  It also has some statistics about the code's
-excution itself, such as the CPU and memory usage.
+The output described here is controlled by L<"--report-format">.
+That option allows you to specify what to print and in what order.
+The default output in the default order is described here.
 
-Following this, each query then appears in a paragraph.  Here's a sample,
-slightly reformatted so 'perldoc' will not wrap lines in a terminal.  The
-following will all be one paragraph, but we'll break it up for commentary.
+The report, by default, begins with a paragraph about the entire analysis run
+The information is very similar to what you'll see for each class of queries in
+the log, but it doesn't have some information that would be too expensive to
+keep globally for the analysis.  It also has some statistics about the code's
+excution itself, such as the CPU and memory usage, the local date and time
+of the run, and a list of input file read/parsed.
+
+Following this is the response-time profile over the events.  This is a
+highly summarized view of the unique events in the detailed query report
+that follows.  Here is a sample:
+
+  # Rank Query ID           Response time    Calls   R/Call     Item
+  # ==== ================== ================ ======= ========== ====
+  #    1 0x31DA25F95494CA95     0.1494 99.9%       1   0.149435 SHOW
+  #    2 0x3AEAAD0E15D725B5     0.0001  0.1%       2   0.000041 SET
+  #    3 0x813031B8BBC3B329     0.0000  0.0%       1   0.000015 COMMIT
+
+The columns should be fairly self-explanatory: rank, query ID, response time sum
+and percentage of total; number of calls and response time per call; and the
+distilled query (see L<"distill"> for more detail on this).
+
+Next, the detailed query report is printed.  Each query appears in a paragraph.
+Here is a sample, slightly reformatted so 'perldoc' will not wrap lines in a
+terminal.  The following will all be one paragraph, but we'll break it up for
+commentary.
 
  # Query 2: 0.01 QPS, 0.02x conc, ID 0xFDEA8D2993C9CAF3 at byte 160665
 
@@ -11311,18 +11354,7 @@ above, and something like the following:
 
   tail -c +<offset> /path/to/file | head
 
-The final bit of output is the response-time profile over the events.  This is a
-summarized view of what we've already seen.  Here is a sample:
-
-  # Rank Query ID           Response time    Calls   R/Call     Item
-  # ==== ================== ================ ======= ========== ====
-  #    1 0x31DA25F95494CA95     0.1494 99.9%       1   0.149435 SHOW
-  #    2 0x3AEAAD0E15D725B5     0.0001  0.1%       2   0.000041 SET
-  #    3 0x813031B8BBC3B329     0.0000  0.0%       1   0.000015 COMMIT
-
-The columns should be fairly self-explanatory: rank, query ID, response time sum
-and percentage of total; number of calls and response time per call; and the
-distilled query (see L<"distill"> for more detail on this).
+See also L<"--report-format">.
 
 =head1 QUERY REVIEWS
 
@@ -12099,17 +12131,23 @@ Include all queries, even if they have already been reviewed.
 
 =item --report-format
 
-type: Array; default: rusage,header,query_report,profile,prepared
+type: Array; default: rusage,date,files,header,profile,query_report,prepared
 
-Print these elements in the query analysis report.  Valid element names are
-rusage, header, query_report, profile and prepared.  The rusage is information
-about CPU times and memory usage.  The header is information about the entire
-analysis run.  The query_report is detailed information on each query in the
-report.  The profile is a compact table of queries for an at-a-glance view of
-the report. Order does not matter; you cannot use this parameter to influence
-the order of items in the report, only the presence or absence of items.
-The prepared report listed prepared statements, the number of times each
-was prepared and executed.  It only prints if there were prepared statements.
+Print these sections of the query analysis report.
+
+  SECTION      PRINTS
+  ============ ==============================================================
+  rusgae       CPU times and memory usage reported by ps
+  date         Current local date and time
+  files        Input files read/parse
+  header       Summary of the entire analysis run
+  profile      Compact table of queries for an at-a-glance view of the report
+  query_report Detailed information about each unique query
+  prepared     Prepared statements
+
+The sections are printed in the order specified.  The rusage, date, files and
+header sections are grouped together if specified together; other sections are
+separted by blank lines.
 
 See L<"OUTPUT"> for more information on the various parts of the query report.
 
