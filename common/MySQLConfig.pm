@@ -22,6 +22,10 @@ package MySQLConfig;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -54,6 +58,7 @@ sub new {
       # defaults
       defaults_file  => undef, 
       show_variables => "SHOW /*!40103 GLOBAL*/ VARIABLES",
+      version        => '',
 
       # override defaults
       %args,
@@ -114,6 +119,7 @@ sub set_config {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $from = $args{from};
+   MKDEBUG && _d('Set config', Dumper(\%args));
 
    if ( $from eq 'mysqld' || $from eq 'my_print_defaults' ) {
       die "Setting the MySQL config from $from requires a "
@@ -154,6 +160,8 @@ sub set_config {
          my $sql = $self->{show_variables};
          MKDEBUG && _d($args{dbh}, $sql);
          $rows = $args{dbh}->selectall_arrayref($sql);
+
+         $self->_set_version($args{dbh}) unless $self->{version};
       }
       $self->set_online_config($rows);
    }
@@ -249,7 +257,6 @@ sub _parse_varvals {
    # Keep track if item is var or val because each needs special modifications.
    my $var      = 1;
    my $last_var = undef;
-
    foreach my $item ( @varvals ) {
       if ( $var ) {
          # Variable names via config files are like "log-bin" but
@@ -271,7 +278,7 @@ sub _parse_varvals {
          if ( $item ) {
             $item =~ s/^\s+//;
 
-            if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])/i ) {
+            if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])$/i ) {
                my %factor_for = (
                   k => 1_024,
                   m => 1_048_576,
@@ -301,6 +308,16 @@ sub _parse_varvals {
    }
 
    return \%config, \%duplicates;
+}
+
+sub _set_version {
+   my ( $self, $dbh ) = @_;
+   my $version = $dbh->selectrow_arrayref('SELECT VERSION()')->[0];
+   return unless $version;
+   $version =~ s/(\d\.\d{1,2}.\d{1,2})/$1/;
+   MKDEBUG && _d('MySQL version', $version);
+   $self->{version} = $version;
+   return;
 }
 
 sub _d {

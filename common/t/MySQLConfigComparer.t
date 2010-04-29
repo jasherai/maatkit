@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 8;
+use Test::More tests => 9;
 
 use MySQLConfigComparer;
 use MySQLConfig;
@@ -30,7 +30,7 @@ my $cc = new MySQLConfigComparer();
 my $c1 = new MySQLConfig();
 my $c2 = new MySQLConfig();
 
-my $diffs;
+my $diff;
 my $output;
 my $sample = "common/t/samples/configs/";
 
@@ -70,8 +70,12 @@ is_deeply(
 $c1->set_config(from=>'mysqld', file=>"$trunk/$sample/mysqldhelp001.txt");
 $c2->set_config(from=>'mysqld', file=>"$trunk/$sample/mysqldhelp002.txt");
 
+$diff = $cc->diff(
+   configs=>[$c1->get_config(offline=>1), $c2->get_config(offline=>1)]
+);
+
 is_deeply(
-   $cc->diff($c1->get_config(offline=>1), $c2->get_config(offline=>1)),
+   $diff,
    [
       {
        vals => [
@@ -202,7 +206,7 @@ is_deeply(
       }
    ],
    "Diff two different configs"
-);
+) or print Dumper($diff);
 
 
 # #############################################################################
@@ -249,18 +253,29 @@ is_deeply(
 # Online tests.
 # #############################################################################
 SKIP: {
-   skip 'Cannot connect to sandbox master', 1 unless $dbh;
+   skip 'Cannot connect to sandbox master', 2 unless $dbh;
 
    $c1 = new MySQLConfig();
-   $c1->set_config(from=>'mysqld', file=>"$trunk/$sample/mysqldhelp001.txt");
+
+   chomp(my $version = `$trunk/sandbox/mk-test-env version`);
+   my $file = "$trunk/$sample/" . ($version eq '5.0' ? 'mysqldhelp001.txt'
+                                                     : 'mysqldhelp003.txt');
    $c1->set_config(from=>'show_variables', dbh=>$dbh);
+   $c1->set_config(from=>'mysqld',         file=>$file);
+
+   like(
+      $c1->{version},
+      qr/\d+.\d+.\d+/,
+      "Got version $c1->{version}",
+   );
 
    # If the sandbox master isn't borked then all its vars should be fresh.
+   my $stale = $cc->stale_variables($c1);
    is_deeply(
-      $cc->stale_variables($c1),
+      $stale,
       [],
       "Sandbox has no stale vars"
-   );
+   ) or print Dumper($stale);
 }
 
 # #############################################################################

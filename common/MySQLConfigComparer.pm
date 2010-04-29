@@ -66,8 +66,11 @@ my %eq_for = (
    open_files_limit          => sub { return _eqifnoconf(@_);           },
    slow_query_log_file       => sub { return _eqifnoconf(@_);           },
    tmpdir                    => sub { return _eqifnoconf(@_);           },
+   binlog_format             => sub { return _eqifnoconf(@_);           },
 
    long_query_time           => sub { return $_[0] == $_[1] ? 1 : 0;    },
+
+   datadir                   => sub { return _eqdatadir(@_);            },
 );
 
 sub new {
@@ -91,14 +94,16 @@ sub new {
 # has var "bar" but $configs[0] does not, then the var is not compared.
 # Called missing() to discover which vars are missing in the configs.
 sub diff {
-   my ( $self, @configs ) = @_;
+   my ( $self, %args ) = @_;
+   my $configs  = $args{configs};
+   my $versions = $args{versions};
    my @diffs;
-   die "diff() requires at least one config" if @configs < 1;
-   return \@diffs if @configs == 1;  # One config can't differ with itself.
-   MKDEBUG && _d('diff configs:', Dumper(\@configs));
+   die "diff() requires at least one config" if @$configs < 1;
+   return \@diffs if @$configs == 1;  # One config can't differ with itself.
+   MKDEBUG && _d('diff configs:', Dumper($configs));
 
    # Get list of vars that exist in all configs (intersection of their keys).
-   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect(@configs);
+   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($configs);
 
    # Make a list of values from each config for all the common vars.  So,
    #   %vals = {
@@ -113,7 +118,7 @@ sub diff {
             my $val    = defined $config->{$var} ? $config->{$var} : '';
             $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
             $val;
-         } @configs 
+         } @$configs 
       ];
       $var => $vals;
    } @vars;
@@ -132,10 +137,10 @@ sub diff {
             # are equal, stop.  If not, try a special eq_for comparison.
             if ( $vals->[0] ne $vals->[$i] ) {
                if (    !$eq_for{$var}
-                    || !$eq_for{$var}->($vals->[0], $vals->[$i]) ) {
+                    || !$eq_for{$var}->($vals->[0], $vals->[$i], $versions) ) {
                   push @diffs, {
                      var  => $var,
-                     vals => [ map { $_->{$var} } @configs ],  # original vals
+                     vals => [ map { $_->{$var} } @$configs ],  # original vals
                   };
                   last VAL;
                }
@@ -159,9 +164,16 @@ sub stale_variables {
    my ( $self, $config ) = @_;
    return unless $config;
 
+   MKDEBUG && _d('Getting stale variables (online, offline)');
    my $diffs = $self->diff(
-      $config->get_config(),
-      $config->get_config(offline=>1)
+      configs => [
+         $config->get_config(),
+         $config->get_config(offline=>1),
+      ],
+      versions => [
+         $config->{version},
+         $config->{version},
+      ],
    );
 
    # Convert diff struct to something more explicit.
@@ -204,7 +216,7 @@ sub missing {
 
 # True if x is val1 or val2 and y is val1 or val2.
 sub _veq { 
-   my ( $x, $y, $val1, $val2 ) = @_;
+   my ( $x, $y, $versions, $val1, $val2 ) = @_;
    return 1 if ( ($x eq $val1 || $x eq $val2) && ($y eq $val1 || $y eq $val2) );
    return 0;
 }
@@ -233,7 +245,17 @@ sub _eqifnoconf {
    return $conf_val == 0 ? 1 : 0;
 }
 
-# Given an array of hashes, returns an array of keys that
+sub _eqdatadir {
+   my ( $online_val, $conf_val, $versions ) = @_;
+   if ( ($versions->[0] || '') gt '5.1.0' && (($conf_val || '') eq '.') ) {
+      MKDEBUG && _d('MySQL 5.1 datadir conf val bug;',
+         'online val:', $online_val, 'offline val:', $conf_val);
+      return 1;
+   }
+   return ($online_val || '') eq ($conf_val || '') ? 1 : 0;
+}
+
+# Given an arrayref of hashes, returns an array of keys that
 # are the intersection of all the hashes' keys.  Example:
 #   my $foo = { foo=>1, nit=>1   };
 #   my $bar = { bar=>2, bla=>'', };
@@ -241,9 +263,10 @@ sub _eqifnoconf {
 #   my @a   = ( $foo, $bar, $zap );
 # key_intersect(\@a) return ['foo'].
 sub key_intersect {
-   my ( $self, @hashes ) = @_;
-   my %keys  = map { $_ => 1 } keys %{$hashes[0]};
-   my @isect = grep { $keys{$_} } map { keys %{$hashes[$_]} } 1..$#hashes;
+   my ( $self, $hashes ) = @_;
+   my %keys  = map { $_ => 1 } keys %{$hashes->[0]};
+   my $n_hashes = (scalar @$hashes) - 1;
+   my @isect = grep { $keys{$_} } map { keys %{$hashes->[$_]} } 1..$n_hashes;
    return @isect;
 }
 
