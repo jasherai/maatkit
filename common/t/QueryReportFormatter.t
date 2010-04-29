@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 29;
 
 use Transformers;
 use QueryReportFormatter;
@@ -1011,7 +1011,6 @@ SKIP: {
 #            id: 1
 #   select_type: SIMPLE
 #         table: t
-#    partitions: NULL
 #          type: const
 # possible_keys: PRIMARY
 #           key: PRIMARY
@@ -1027,10 +1026,80 @@ SKIP: {
    $dbh->disconnect();
 }
 
+
+# #############################################################################
+# files and date reports.
+# #############################################################################
+like(
+   $qrf->date(),
+   qr/# Current date: .+?\d+:\d+:\d+/,
+   "date report"
+);
+
+is(
+   $qrf->files(files=>[qw(foo bar)]),
+   "# Files: foo, bar\n",
+   "files report"
+);
+
+# #############################################################################
+# Test report grouping.
+# #############################################################################
+$events = [
+   {
+      cmd         => 'Query',
+      arg         => "select col from tbl where id=42",
+      fingerprint => "select col from tbl where id=?",
+      Query_time  => '1.000652',
+      Lock_time   => '0.001292',
+      ts          => '071015 21:43:52',
+      pos_in_log  => 123,
+      db          => 'foodb',
+   },
+];
+$ea = new EventAggregator(
+   groupby => 'fingerprint',
+   worst   => 'Query_time',
+);
+foreach my $event ( @$events ) {
+   $ea->aggregate($event);
+}
+$ea->calculate_statistical_metrics();
+@ARGV = qw();
+$o->get_opts();
+$report = new ReportFormatter(line_width=>74, long_last_column=>1);
+$qrf    = new QueryReportFormatter(
+   OptionParser  => $o,
+   QueryRewriter => $qr,
+   QueryParser   => $qp,
+   Quoter        => $q, 
+);
+my $output = output(
+   sub { $qrf->print_reports(
+      reports => [qw(rusage date files header query_report profile)],
+      ea      => $ea,
+      worst   => [['select col from tbl where id=?','top']],
+      orderby => 'Query_time',
+      groupby => 'fingerprint',
+      files   => [qw(foo bar)],
+      group   => {map {$_=>1} qw(rusage date files header)},
+      ReportFormatter => $report,
+   ); }
+);
+like(
+   $output,
+   qr/
+^#\s.+?\suser time.+?vsz$
+^#\sCurrent date:.+?$
+^#\sFiles:\sfoo,\sbar$
+   /mx,
+   "grouped reports"
+);
+
 # #############################################################################
 # Done.
 # #############################################################################
-my $output = '';
+$output = '';
 {
    local *STDERR;
    open STDERR, '>', \$output;

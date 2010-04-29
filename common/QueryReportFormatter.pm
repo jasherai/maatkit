@@ -94,6 +94,10 @@ sub new {
 #   * worst         arrayref: worst items
 #   * orderby       scalar: attrib worst items ordered by
 #   * groupby       scalar: attrib worst items grouped by
+# Optional arguments:
+#   * files         arrayref: files read for input
+#   * group         hashref: don't add blank line between these reports
+#                            if they appear together
 # Prints the given reports (rusage, heade (global), query_report, etc.) in
 # the given order.  These usually come from mk-query-digest --report-format.
 # Most of the required args are for header() and query_report().
@@ -103,16 +107,21 @@ sub print_reports {
       die "I need a $arg argument" unless exists $args{$arg};
    }
    my $reports = $args{reports};
+   my $group   = $args{group};
+   my $last_report;
 
    foreach my $report ( @$reports ) {
       MKDEBUG && _d('Printing', $report, 'report'); 
       my $report_output = $self->$report(%args);
       if ( $report_output ) {
-         print "\n", $report_output;
+         print "\n"
+            if !$last_report || !($group->{$last_report} && $group->{$report});
+         print $report_output;
       }
       else {
          MKDEBUG && _d('No', $report, 'report');
       }
+      $last_report = $report;
    }
 
    return;
@@ -136,6 +145,19 @@ sub rusage {
       MKDEBUG && _d($EVAL_ERROR);
    }
    return $rusage ? $rusage : "# Could not get rusage\n";
+}
+
+sub date {
+   my ( $self ) = @_;
+   return "# Current date: " . (scalar localtime) . "\n";
+}
+
+sub files {
+   my ( $self, %args ) = @_;
+   if ( $args{files} ) {
+      return "# Files: " . join(', ', @{$args{files}}) . "\n";
+   }
+   return;
 }
 
 # Arguments:
