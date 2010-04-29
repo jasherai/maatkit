@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox master';
 }
 else {
-   plan tests => 3;
+   plan tests => 5;
 }
 
 my $q  = new Quoter();
@@ -43,9 +43,8 @@ my %common_modules = (
 $sb->load_file('master', 'mk-slave-prefetch/t/samples/secondary_indexes.sql');
 
 my @queries = mk_slave_prefetch::get_secondary_index_queries(
-   dbh         => $dbh,
-   db          => 'test2',
-   query       => 'select 1 from test2.t order by a',
+   dbh   => $dbh,
+   query => 'select 1 from test2.t order by a',
    %common_modules,
 );
 is_deeply(
@@ -72,25 +71,22 @@ UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AN
 );
 
 @queries = mk_slave_prefetch::get_secondary_index_queries(
-   dbh         => $dbh,
-   db          => 'test2',
-   query       => 'select 1 from test2.t where a=1 and b=2',
+   dbh   => $dbh,
+   query => 'select 1 from test2.t where a=1 and b=2',
    %common_modules,
 );
 is_deeply(
    \@queries,
    [
       "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1",
-
       "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1",
    ],
    'Secondary index queries for single-row prefetch query'
 );
 
 @queries = mk_slave_prefetch::get_secondary_index_queries(
-   dbh         => $dbh,
-   db          => 'test2',
-   query       => 'select 1 from `test2`.`t` where a>5',
+   dbh   => $dbh,
+   query => 'select 1 from `test2`.`t` where a>5',
    %common_modules,
 );
 is_deeply(
@@ -104,6 +100,40 @@ UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AN
 UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c` IS NULL LIMIT 1",
    ],
    'Secondary index queries with NULL row values'
+);
+
+
+# #############################################################################
+# Use default_db only if necessary.
+# #############################################################################
+@queries = mk_slave_prefetch::get_secondary_index_queries(
+   dbh         => $dbh,
+   default_db  => 'other_db',
+   query       => 'select 1 from `t` where a=1',
+   %common_modules,
+);
+is_deeply(
+   \@queries,
+   [
+      'SELECT `c` FROM `other_db`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1',
+      'SELECT `b`, `c` FROM `other_db`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1',
+   ],
+   'Use default db if no db from table',
+);
+
+@queries = mk_slave_prefetch::get_secondary_index_queries(
+   dbh         => $dbh,
+   default_db  => 'other_db',
+   query       => 'select 1 from `test2`.`t` where a=1',
+   %common_modules,
+);
+is_deeply(
+   \@queries,
+   [
+      'SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1',
+      'SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1',
+   ],
+   "Don't use default db if db from table",
 );
 
 # #############################################################################

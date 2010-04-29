@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 2;
+   plan tests => 3;
 }
 
 my $output;
@@ -54,6 +54,18 @@ SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1 /*tid1*/
 SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1 /*tid1*/
 ",
    "Get secondary indexes"
+);
+
+# binlog008.txt doesn't specify db in query so --database should do that
+# for us.
+$output = `$cmd $trunk/common/t/samples/binlogs/binlog008.txt --secondary-indexes --database test2`;
+is(
+   $output,
+"select 1 from  t where a=1 /*tid1*/
+SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1 /*tid1*/
+SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1 /*tid1*/
+",
+   "Get secondary indexes with default database"
 );
 
 # #############################################################################

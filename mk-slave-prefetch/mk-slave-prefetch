@@ -3913,7 +3913,7 @@ sub main {
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
    $dbh->{InactiveDestroy}  = 1;
    $dbh->{FetchHashKeyName} = 'NAME_lc';
-   $dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
+   $dbh->do('/*!40001 SET @@session.query_cache_type=OFF */');
 
    # ########################################################################
    # Daemonize only after (potentially) asking for passwords.
@@ -3982,8 +3982,15 @@ sub main {
    # A pipeline process will enqueue rewritten queries which these threads
    # then either execute or print.  They're also responsible for doing
    # secondary index queries for --secondary-indexes.
-   my $query_queue  = new Thread::Queue;
-   my $n_threads    = $o->get('threads') || 1;
+   my $query_queue   = new Thread::Queue;
+   my $n_threads     = $o->get('threads') || 1;
+
+   # These don't change so no need to get() them every time.
+   my $execute       = $o->get('execute');
+   my $print         = $o->get('print');
+   my $secondary_idx = $o->get('secondary-indexes');
+   my $default_db    = $o->get('database');
+
    my @thrs;
    MKDEBUG && _d('Creating', $n_threads, 'threads');
    for ( 1..$n_threads ) {
@@ -3991,7 +3998,7 @@ sub main {
          my $tdbh = $dp->get_dbh($dp->get_cxn_params($dsn), {AutoCommit => 1});
          $tdbh->{InactiveDestroy}  = 1;
          $tdbh->{FetchHashKeyName} = 'NAME_lc';
-         $tdbh->do('/*!40001 set @@session.query_cache_type=OFF */');
+         $tdbh->do('/*!40001 SEt @@session.query_cache_type=OFF */');
 
          my $curdb = '';
          my $tid    = threads->self()->tid();
@@ -4012,7 +4019,7 @@ sub main {
                $curdb = $db;
             }
             push @sql, $query;  # primary query
-            if ( $o->get('secondary-indexes') ) {
+            if ( $secondary_idx ) {
                push @sql, get_secondary_index_queries(
                   query       => $query,
                   dbh         => $tdbh,
@@ -4020,17 +4027,18 @@ sub main {
                   TableParser => $tp,
                   Quoter      => $q,
                   QueryParser => $qp,
+                  default_db  => $curdb || $default_db,
                );
             }
             foreach my $sql ( @sql ) {
-               if ( $o->get('execute') ) {
+               if ( $execute ) {
                   eval {
                      $tdbh->do($sql);
                   };
                    warn "Thread $tid failed to executed query: $EVAL_ERROR"
                      if $EVAL_ERROR;
                }
-               print "$sql /*tid$tid*/\n" if $o->get('print');
+               print "$sql /*tid$tid*/\n" if $print;
             }
          }  # dequeue
          $tdbh->disconnect();
@@ -4287,7 +4295,7 @@ sub get_secondary_index_queries {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($dbh, $query, $du, $tp, $q, $qp) = @args{@required_args};
-   my $db = $args{db};
+   my $default_db = $args{default_db};
 
    if ( $query !~ m/select 1 from/ ) {
       MKDEBUG && _d("Query doesn't 'select 1 from'; is it a rewritten query?");
@@ -4297,16 +4305,17 @@ sub get_secondary_index_queries {
 
    MKDEBUG && _d('Getting secondary index queries for', $query);
 
-   my @tbls = $qp->get_tables($query);
-   my $tbl  = $tbls[0];
-   if ( !$tbl ) {
-      MKDEBUG && _d('Cannot parse tables from', $query);
+   my @tbls   = $qp->get_tables($query);
+   my $db_tbl = $tbls[0];
+   if ( !$db_tbl ) {
+      MKDEBUG && _d('Cannot parse tables from query');
       return;
    }
-   ($db, $tbl) = $q->split_unquote($tbl);
-   MKDEBUG && _d('Using table', $tbl);
+   my ($db, $tbl) = $q->split_unquote($db_tbl);
+   $db ||= $default_db;
+   MKDEBUG && _d('Query uses db.table', $db, '.', $tbl);
    if ( !$db ) {
-      MKDEBUG && _d('No db for table, skipping query');
+      MKDEBUG && _d('No db from table or default db, skipping query');
       return;
    }
 
@@ -4315,7 +4324,7 @@ sub get_secondary_index_queries {
       $tbl_struct = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl));
    };
    if ( $EVAL_ERROR || !$tbl_struct ) {
-      MKDEBUG && _d('Failed to', $tbl, 'struct:', $EVAL_ERROR);
+      MKDEBUG && _d('Failed to get', $tbl, 'struct:', $EVAL_ERROR);
       return;
    }
 
@@ -4324,7 +4333,7 @@ sub get_secondary_index_queries {
       $rows = $dbh->selectall_arrayref($query, { Slice => {} });
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d('Error executing prefetch query:', $EVAL_ERROR);
+      MKDEBUG && _d('Error executing query:', $EVAL_ERROR);
       return;
    }
    if ( @$rows == 0 ) {
@@ -4556,6 +4565,9 @@ short form: -D; type: string
 The database to use for the connection.  The initial connection will be to this
 database, but mk-slave-prefetch will issue C<USE> statements as required by the
 binary log events.
+
+This database is also used as the default database for L<"--secondary-indexes">
+if the database cannot automatically be determined from the query.
 
 =item --defaults-file
 
