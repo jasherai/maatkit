@@ -4295,6 +4295,16 @@ sub get_secondary_index_queries {
       die "I need a $arg argument" unless $args{$arg};
    }
    my ($dbh, $query, $du, $tp, $q, $qp) = @args{@required_args};
+
+   # The "current db" just for the puprose of making secondary index queries
+   # is, first, the db parsed from the query query then, two, failing that
+   # the default db (where the default db is $event->{db} || --database).
+   # This is so cases like,
+   #   USE foo;  DELETE FROM bar.tbl WHERE 1;
+   # are handled correctly.  If the default db were used first, then we'd
+   # incorrectly get the foo.tbl struct.  If the query's table wasn't db-
+   # qualified then we'd use the default/current db, foo, to get the table
+   # struct and this would probably be correct.
    my $default_db = $args{default_db};
 
    if ( $query !~ m/select 1 from/ ) {
