@@ -18,7 +18,8 @@ use Transformers;
 use MasterSlave;
 use MaatkitTest;
 
-my $pl  = new Processlist();
+my $ms  = new MasterSlave();
+my $pl  = new Processlist(MasterSlave=>$ms);
 my $rsp = new TextResultSetParser();
 
 my @events;
@@ -50,7 +51,7 @@ is_deeply($pl->_get_rows()->{prev_rows}, [], 'Prev does not know about undef que
 is(scalar @events, 0, 'No events fired from connection in process');
 
 # Make a new one to replicate a bug with certainty...
-$pl = Processlist->new();
+$pl = Processlist->new(MasterSlave=>$ms);
 
 # An existing sleeping query that goes away doesn't crash anything.
 parse_n_times(
@@ -77,7 +78,7 @@ is_deeply($pl->_get_rows()->{prev_rows}, [], 'everything went away');
 is(scalar @events, 0, 'No events fired from sleeping connection that left');
 
 # Make sure there's a fresh start...
-$pl = Processlist->new();
+$pl = Processlist->new(MasterSlave=>$ms);
 
 # The initial processlist shows a query in progress.
 parse_n_times(
@@ -467,22 +468,7 @@ is_deeply(
 # #########################################################################
 # Tests for "find" functionality.
 # #########################################################################
-my $ms = new MasterSlave();
-$pl    = new Processlist(MasterSlave => $ms);
 %find_spec = (
-   match => { User => 'msandbox' },
-);
-@queries = $pl->find(
-   $rsp->parse(load_file('common/t/samples/pl/recset008.txt')),
-   %find_spec,
-);
-ok(
-   @queries == 1,
-   "Matched binlog dump repl thread"
-);
-
-%find_spec = (
-   replication_threads => 0,
    match => { User => 'msandbox' },
 );
 @queries = $pl->find(
@@ -491,7 +477,20 @@ ok(
 );
 ok(
    @queries == 0,
-   "Skipped binlog dump repl thread"
+   "Doesn't match replication thread by default"
+);
+
+%find_spec = (
+   replication_threads => 1,
+   match => { User => 'msandbox' },
+);
+@queries = $pl->find(
+   $rsp->parse(load_file('common/t/samples/pl/recset008.txt')),
+   %find_spec,
+);
+ok(
+   @queries == 1,
+   "Matches replication thread"
 );
 
 # #############################################################################
