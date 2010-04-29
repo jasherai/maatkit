@@ -15,7 +15,7 @@ use MaatkitTest;
 shift @INC;  # our unshift (above)
 shift @INC;  # MaatkitTest's unshift
 
-my $cmd       = "$trunk/mk-query-digest/merge-mqd-results --report-format header,query_report,profile";
+my $cmd       = "$trunk/mk-query-digest/mk-merge-mqd-results --report-format header,query_report,profile";
 my $mqd       = "$trunk/mk-query-digest/mk-query-digest --report-format header,query_report,profile";
 my $sample    = "$trunk/common/t/samples/";
 my $ressample = "$trunk/mk-query-digest/t/samples/save-results/";

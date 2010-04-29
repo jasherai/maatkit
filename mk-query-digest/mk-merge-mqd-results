@@ -3162,7 +3162,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 6151
+# QueryReportFormatter package 6175
 # ###########################################################################
 
 package QueryReportFormatter;
@@ -3224,16 +3224,21 @@ sub print_reports {
       die "I need a $arg argument" unless exists $args{$arg};
    }
    my $reports = $args{reports};
+   my $group   = $args{group};
+   my $last_report;
 
    foreach my $report ( @$reports ) {
       MKDEBUG && _d('Printing', $report, 'report'); 
       my $report_output = $self->$report(%args);
       if ( $report_output ) {
-         print "\n", $report_output;
+         print "\n"
+            if !$last_report || !($group->{$last_report} && $group->{$report});
+         print $report_output;
       }
       else {
          MKDEBUG && _d('No', $report, 'report');
       }
+      $last_report = $report;
    }
 
    return;
@@ -3257,6 +3262,19 @@ sub rusage {
       MKDEBUG && _d($EVAL_ERROR);
    }
    return $rusage ? $rusage : "# Could not get rusage\n";
+}
+
+sub date {
+   my ( $self ) = @_;
+   return "# Current date: " . (scalar localtime) . "\n";
+}
+
+sub files {
+   my ( $self, %args ) = @_;
+   if ( $args{files} ) {
+      return "# Files: " . join(', ', @{$args{files}}) . "\n";
+   }
+   return;
 }
 
 sub header {
@@ -4767,16 +4785,23 @@ Port number to use for connection.
 
 =item --report-format
 
-type: Array; default: rusage,header,query_report,profile,prepared
+type: Array; default: rusage,date,files,header,profile,query_report,prepared
 
-Print these elements in the query analysis report.  Valid element names are
-rusage, header, query_report, profile and prepared.  The rusage is information
-about CPU times and memory usage.  The header is information about the entire
-analysis run.  The query_report is detailed information on each query in the
-report.  The profile is a compact table of queries for an at-a-glance view of
-the report. The prepared report listed prepared statements, the number of times
-each was prepared and executed.  It only prints if there were prepared
-statements.
+Print these sections of the query analysis report.
+
+  SECTION      PRINTS
+  ============ ==============================================================
+  rusgae       CPU times and memory usage reported by ps
+  date         Current local date and time
+  files        Input files read/parse
+  header       Summary of the entire analysis run
+  profile      Compact table of queries for an at-a-glance view of the report
+  query_report Detailed information about each unique query
+  prepared     Prepared statements
+
+The sections are printed in the order specified.  The rusage, date, files and
+header sections are grouped together if specified together; other sections are
+separted by blank lines.
 
 =item --set-vars
 
