@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 21;
+use Test::More tests => 23;
 
 use Processlist;
 use MaatkitTest;
@@ -491,6 +491,50 @@ ok(
 ok(
    @queries == 1,
    "Matches replication thread"
+);
+
+
+# #############################################################################
+# Find "all".
+# #############################################################################
+%find_spec = (
+   all => 1,
+);
+@queries = $pl->find(
+   $rsp->parse(load_file('common/t/samples/pl/recset002.txt')),
+   %find_spec,
+);
+
+is_deeply(
+   \@queries,
+   $rsp->parse(load_file('common/t/samples/pl/recset002.txt')),
+   "Find all queries"
+);
+
+%find_spec = (
+   all => 1,
+   ignore => { Info => 'foo1' },
+);
+@queries = $pl->find(
+   $rsp->parse(load_file('common/t/samples/pl/recset002.txt')),
+   %find_spec,
+);
+
+is_deeply(
+   \@queries,
+   [
+      {
+         Id      => '2',
+         User    => 'user1',
+         Host    => '1.2.3.4:5455',
+         db      => 'foo',
+         Command => 'Query',
+         Time    => '5',
+         State   => 'Locked',
+         Info    => 'select * from foo2;',
+      }
+   ],
+   "Find all queries that aren't ignored"
 );
 
 # #############################################################################

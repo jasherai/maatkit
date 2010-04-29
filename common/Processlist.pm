@@ -323,7 +323,8 @@ sub _get_rows {
 sub find {
    my ( $self, $proclist, %find_spec ) = @_;
    MKDEBUG && _d('find specs:', Dumper(\%find_spec));
-   my $ms = $self->{MasterSlave};
+   my $ms  = $self->{MasterSlave};
+   my $all = $find_spec{all};
    my @matches;
    QUERY:
    foreach my $query ( @$proclist ) {
@@ -374,7 +375,7 @@ sub find {
             $matched++;
          }
       }
-      if ( $matched ) {
+      if ( $matched || $all ) {
          MKDEBUG && _d("Query matched one or more specs, adding");
          push @matches, $query;
          next QUERY;
