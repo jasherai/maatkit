@@ -9,7 +9,7 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 34;
+use Test::More tests => 44;
 
 use MasterSlave;
 use DSNParser;
@@ -348,49 +348,119 @@ is($ms->get_slave_status($slaves[1])->{master_port}, $port_for{master}, 'slave 2
 is($ms->get_slave_status($slaves[2])->{master_port}, $port_for{master}, 'slave 3 port');
 
 # #############################################################################
+# Test is_replication_thread()
+# #############################################################################
+my $query = {
+   Id      => '302',
+   User    => 'msandbox',
+   Host    => 'localhost',
+   db      => 'NULL',
+   Command => 'Query',
+   Time    => '0',
+   State   => 'NULL',
+   Info    => 'show processlist',
+};
+
+ok(
+   !$ms->is_replication_thread($query),
+   "Non-rpl thd is not repl thd"
+);
+
+ok(
+   !$ms->is_replication_thread($query, 'binlog_dump'),
+   "Non-rpl thd is not binlog dump thd"
+);
+
+ok(
+   !$ms->is_replication_thread($query, 'slave_io'),
+   "Non-rpl thd is not slave io thd"
+);
+
+ok(
+   !$ms->is_replication_thread($query, 'slave_sql'),
+   "Non-rpl thd is not slave sql thd"
+);
+
+$query = {
+   Id      => '7',
+   User    => 'msandbox',
+   Host    => 'localhost:53246',
+   db      => 'NULL',
+   Command => 'Binlog Dump',
+   Time    => '1174',
+   State   => 'Sending binlog event to slave',
+   Info    => 'NULL',
+},
+
+ok(
+   $ms->is_replication_thread($query),
+   'Binlog Dump is a repl thd'
+);
+
+ok(
+   !$ms->is_replication_thread($query, 'slave_io'),
+   'Binlog Dump is not a slave io thd'
+);
+
+ok(
+   !$ms->is_replication_thread($query, 'slave_sql'),
+   'Binlog Dump is not a slave sql thd'
+);
+
+$query = {
+   Id      => '7',
+   User    => 'system user',
+   Host    => '',
+   db      => 'NULL',
+   Command => 'Connect',
+   Time    => '1174',
+   State   => 'Waiting for master to send event',
+   Info    => 'NULL',
+},
+
+ok(
+   $ms->is_replication_thread($query),
+   'Slave io thd is a repl thd'
+);
+
+ok(
+   $ms->is_replication_thread($query, 'slave_io'),
+   'Slave io thd is a slave io thd'
+);
+
+ok(
+   !$ms->is_replication_thread($query, 'slave_sql'),
+   'Slave io thd is not a slave sql thd',
+);
+
+$query = {
+   Id      => '7',
+   User    => 'system user',
+   Host    => '',
+   db      => 'NULL',
+   Command => 'Connect',
+   Time    => '1174',
+   State   => 'Has read all relay log; waiting for the slave I/O thread to update it',
+   Info    => 'NULL',
+},
+
+ok(
+   $ms->is_replication_thread($query),
+   'Slave sql thd is a repl thd'
+);
+
+ok(
+   !$ms->is_replication_thread($query, 'slave_io'),
+   'Slave sql thd is not a slave io thd'
+);
+
+ok(
+   $ms->is_replication_thread($query, 'slave_sql'),
+   'Slave sql thd is a slave sql thd',
+);
+
+# #############################################################################
 # Done.
 # #############################################################################
-
-
-# #############################################################################
-# Adding of is_replication_thread subroutine
-# #############################################################################
-
-is($ms->is_replication_thread(
-       {
-         Id    => '7',
-         User  => 'msandbox',
-         Host  => 'localhost:53246',
-         db    => 'NULL',
-         Command => 'Binlog Dump',
-         Time  => '1174',
-         State => 'Sending binlog event to slave',
-         Info  => 'NULL',
-      }), '7', 'Recognization of a Master thread');
-
-is($ms->is_replication_thread(
-       {
-         Id    => '7',
-         User  => 'msandbox',
-         Host  => 'localhost:53246',
-         db    => 'NULL',
-         Command => 'Binlog Dump',
-         Time  => '1174',
-         State => 'Waiting for master to send event',
-         Info  => 'NULL',
-      }), '7', 'Recognization of a SLAVE IO thread');
-
-is($ms->is_replication_thread(
-       {
-         Id    => '7',
-         User  => 'msandbox',
-         Host  => 'localhost:53246',
-         db    => 'NULL',
-         Command => 'Binlog Dump',
-         Time  => '1174',
-         State => 'Has read all relay log; waiting for the slave I/O thread to update it',
-         Info  => 'NULL',
-        }), '7', 'Recognization of a SLAVE SQL thread');
-
 diag(`$trunk/sandbox/stop-sandbox remove 2903 2902 2901 2900 >/dev/null`);
 exit;

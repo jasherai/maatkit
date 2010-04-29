@@ -767,40 +767,57 @@ sub short_host {
    }
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
 }
-
-# This function will return the query if it's a running by a replication thread
+   
+# Arguments:
+#   * query   hashref: a processlist item
+#   * type    scalar: all, binlog_dump, slave_io or slave_sql
+# Returns true if the query is the given type of replication thread.
 sub is_replication_thread {
-   my ( $self, $query ) = @_; 
-   if ( ( defined $query->{db} && $query->{db} eq 'NULL' && defined $query->{State} ) && 
-         ( 
-            # master thread states
-           $query->{State} =~ m/Sending binlog event to slave/ ||
-           $query->{State} =~ m/Finished reading one binlog; switching to next binlog/ ||
-           $query->{State} =~ m/Has sent all binlog to slave; waiting for binlog to be updated/ ||
-           $query->{State} =~ m/Waiting to finalize termination/ ||
-            # replication slave IO thread states
-           $query->{State} =~ m/Waiting for master update/ ||
-           $query->{State} =~ m/Connecting to master/ ||
-           $query->{State} =~ m/Checking master version/ ||
-           $query->{State} =~ m/Registering slave on master/ ||
-           $query->{State} =~ m/Requesting binlog dump/ ||
-           $query->{State} =~ m/Waiting to reconnect after a failed binlog dump request/ ||
-           $query->{State} =~ m/Reconnecting after a failed binlog dump request/ ||
-           $query->{State} =~ m/Waiting for master to send event/ ||
-           $query->{State} =~ m/Queueing master event to the relay log/ ||
-           $query->{State} =~ m/Waiting to reconnect after a failed master event read/ ||
-           $query->{State} =~ m/Reconnecting after a failed master event read/ ||
-           $query->{State} =~ m/Waiting for the slave SQL thread to free enough relay log space/ ||
-           $query->{State} =~ m/Waiting for slave mutex on exit/ ||
-            # replication slave SQL thread states
-           $query->{State} =~ m/Waiting for the next event in relay log/ ||
-           $query->{State} =~ m/Reading event from the relay log/ ||
-           $query->{State} =~ m/Has read all relay log; waiting for the slave/ ||
-           $query->{State} =~ m/Making temp file/ ||
-           $query->{State} =~ m/Waiting for slave mutex on exit/ ) ) {
-#              print "\nI was running here.. I will return $query->{Id}";
-              return $query->{Id};
-           }
+   my ( $self, $query, $type ) = @_; 
+   return unless $query;
+
+   $type ||= 'all';
+   die "Invalid type: $type"
+      unless $type =~ m/binlog_dump|slave_io|slave_sql|all/i;
+
+   my $match = 0;
+   if ( $type =~ m/binlog_dump|all/i ) {
+      $match = 1
+         if ($query->{Command} || $query->{command} || '') eq "Binlog Dump";
+   }
+   if ( !$match ) {
+      # On a slave, there are two threads.  Both have user="system user".
+      if ( ($query->{User} || $query->{user} || '') eq "system user" ) {
+         my $state = $query->{State} || $query->{state} || '';
+         if ( $type =~ m/slave_io|all/i ) {
+            ($match) = $state =~ m/
+               ^(Waiting\sfor\smaster\supdate
+                |Connecting\sto\smaster
+                |Waiting\sto\sreconnect\safter\sa\sfailed
+                |Reconnecting\safter\sa\sfailed\sbinlog
+                |Waiting\sfor\smaster\sto\ssend\sevent
+                |Queueing\smaster\sevent\sto\sthe\srelay
+                |Waiting\sto\sreconnect\safter\sa\sfailed
+                |Reconnecting\safter\sa\sfailed\smaster
+                |Waiting\sfor\sthe\sslave\sSQL\sthread)/xi;
+         }
+         if ( !$match && $type =~ m/slave_sql|all/i ) {
+            # These patterns are abbreviated because if the first few words
+            # match chances are very high it's the full slave thd state.
+            ($match) = $state =~ m/
+               ^(Waiting\sfor\sthe\snext\sevent
+                |Reading\sevent\sfrom\sthe\srelay\slog
+                |Has\sread\sall\srelay\slog;\swaiting
+                |Making\stemp\sfile)/xi; 
+         }
+      }
+      else {
+         MKDEBUG && _d('Not system user');
+      }
+   }
+   MKDEBUG && _d($type, 'replication thread:', ($match ? 'yes' : 'no'),
+      '; match:', $match);
+   return $match;
 }
 
 # Stringifies a position in a way that's string-comparable.
