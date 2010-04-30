@@ -34,6 +34,12 @@ BEGIN {
 };
 our $trunk = $ENV{MAATKIT_TRUNK};
 
+our $sandbox_version = '';
+eval {
+   chomp(my $v = `$trunk/sandbox/mk-test-env version`);
+   $sandbox_version = $v if $v;
+};
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -62,6 +68,7 @@ our @EXPORT      = qw(
    throws_ok
    $trunk
    $dsn_opts
+   $sandbox_version
 );
 our @EXPORT_OK   = qw();
 

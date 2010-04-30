@@ -257,9 +257,9 @@ SKIP: {
 
    $c1 = new MySQLConfig();
 
-   chomp(my $version = `$trunk/sandbox/mk-test-env version`);
-   my $file = "$trunk/$sample/" . ($version eq '5.0' ? 'mysqldhelp001.txt'
-                                                     : 'mysqldhelp003.txt');
+   my $file = "$trunk/$sample/"
+            . ($sandbox_version eq '5.0' ? 'mysqldhelp001.txt'
+                                         : 'mysqldhelp003.txt');
    $c1->set_config(from=>'show_variables', dbh=>$dbh);
    $c1->set_config(from=>'mysqld',         file=>$file);
 

@@ -1005,14 +1005,13 @@ SKIP: {
    # fake dbs.
    $qrf->{dbh} = $dbh;
 
-   chomp(my $version = `$trunk/sandbox/mk-test-env version`);
    my $explain =
 "# *************************** 1. row ***************************
 #            id: 1
 #   select_type: SIMPLE
 #         table: t
 "
-. (($version || '') ge '5.1' ? "#    partitions: NULL\n" : '') .
+. (($sandbox_version || '') ge '5.1' ? "#    partitions: NULL\n" : '') .
 "#          type: const
 # possible_keys: PRIMARY
 #           key: PRIMARY
