@@ -40,14 +40,19 @@ my $message =
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.";
 
 # Lines marking pkg header/start and footer/end.
-my $marker = qr/($line# (?:End )?$pkg_name package\n$line)/;
+my $header = qr/($line# $pkg_name package \d+\n(?:$message\n)?$line)/;
+my $footer = qr/($line# End $pkg_name package\n$line)/;
 
 # Replace code in tool between markers with updated pkg code.
-$tool =~ s/$marker.*?$marker/$1$pkg_code$2/s;
+if ( $tool =~ s/$header.*?$footer/$1$pkg_code$2/s ) {
 
-# Add message if it's not already in the pkg header.
-if ( $tool !~ m/$pkg_name package $ver\n$message/ ) {
-   $tool =~ s/$pkg_name package $ver/$pkg_name package $ver\n$message/;
+   # Add message if it's not already in the pkg header.
+   if ( $tool !~ m/# $pkg_name package $ver\n$message/ ) {
+      $tool =~ s/# $pkg_name package $ver/# $pkg_name package $ver\n$message/;
+   }
+}
+else {
+   warn "Failed to match module code in tool; module not updated!";
 }
 
 print $tool;
