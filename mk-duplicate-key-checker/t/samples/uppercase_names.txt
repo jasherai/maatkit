@@ -7,7 +7,7 @@
 #   KEY `A` (`A`)
 #   PRIMARY KEY  (`A`),
 # Column types:
-#	  `a` int(11) NOT NULL default '0'
+#	  `a` int(11) not null default '0'
 # To remove this duplicate index, execute:
 ALTER TABLE `test`.`UPPER_TEST` DROP INDEX `A`;
 

@@ -7,7 +7,7 @@
 #   CONSTRAINT `fk_1` FOREIGN KEY (`id`) REFERENCES `issue_331_t1` (`t1_id`)
 #   CONSTRAINT `fk_2` FOREIGN KEY (`id`) REFERENCES `issue_331_t1` (`t1_id`)
 # Column types:
-#	  `id` bigint(20) NOT NULL default '0'
+#	  `id` bigint(20) not null default '0'
 # To remove this duplicate foreign key, execute:
 ALTER TABLE `issue_331`.`issue_331_t2` DROP FOREIGN KEY `fk_1`;
 

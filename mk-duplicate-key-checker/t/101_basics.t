@@ -27,8 +27,10 @@ else {
 }
 
 my $output;
-my $cnf = "/tmp/12345/my.sandbox.cnf";
-my $cmd = "$trunk/mk-duplicate-key-checker/mk-duplicate-key-checker -F $cnf -h 127.1";
+my $sample = "mk-duplicate-key-checker/t/samples/";
+my $cnf    = "/tmp/12345/my.sandbox.cnf";
+my $cmd    = "$trunk/mk-duplicate-key-checker/mk-duplicate-key-checker -F $cnf -h 127.1";
+my @args   = ('-F', $cnf, qw(-h 127.1));
 
 $sb->wipe_clean($dbh);
 $sb->create_dbs($dbh, ['test']);
@@ -44,38 +46,52 @@ is(`$cmd -d test --nosummary`, '', 'No dupes on clean sandbox');
 $sb->load_file('master', 'common/t/samples/dupe_key.sql', 'test');
 
 ok(
-   no_diff("$cmd -d test", 'mk-duplicate-key-checker/t/samples/basic_output.txt'),
+   no_diff(
+      sub { mk_duplicate_key_checker::main(@args, qw(-d test)) },
+      "$sample/basic_output.txt"),
    'Default output'
 );
 
 ok(
-   no_diff("$cmd -d test --nosql", 'mk-duplicate-key-checker/t/samples/nosql_output.txt'),
+   no_diff(
+      sub { mk_duplicate_key_checker::main(@args, qw(-d test --nosql)) },
+      "$sample/nosql_output.txt"),
    '--nosql'
 );
 
 ok(
-   no_diff("$cmd -d test --nosummary", 'mk-duplicate-key-checker/t/samples/nosummary_output.txt'),
+   no_diff(
+      sub { mk_duplicate_key_checker::main(@args, qw(-d test --nosummary)) },
+      "$sample/nosummary_output.txt"),
    '--nosummary'
 );
 
 $sb->load_file('master', 'common/t/samples/uppercase_names.sql', 'test');
 
 ok(
-   no_diff("$cmd -d test -t UPPER_TEST", 'mk-duplicate-key-checker/t/samples/uppercase_names.txt'),
+   no_diff(
+      sub { mk_duplicate_key_checker::main(@args, qw(-d test -t UPPER_TEST)) },
+      ($sandbox_version ge '5.1' ? "$sample/uppercase_names-51.txt"
+                                 : "$sample/uppercase_names.txt")
+   ),
    'Issue 306 crash on uppercase column names'
 );
 
 $sb->load_file('master', 'common/t/samples/issue_269-1.sql', 'test');
 
 ok(
-   no_diff("$cmd -d test -t a", 'mk-duplicate-key-checker/t/samples/issue_269.txt'),
+   no_diff(
+      sub { mk_duplicate_key_checker::main(@args, qw(-d test -t a)) },
+      "$sample/issue_269.txt"),
    'No dupes for issue 269'
 );
 
 $sb->wipe_clean($dbh);
 
 ok(
-   no_diff("$cmd -d test", 'mk-duplicate-key-checker/t/samples/nonexistent_db.txt'),
+   no_diff(
+      sub { mk_duplicate_key_checker::main(@args, qw(-d test)) },
+      "$sample/nonexistent_db.txt"),
    'No results for nonexistent db'
 );
 

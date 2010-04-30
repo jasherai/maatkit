@@ -1,14 +1,15 @@
 # ########################################################################
-# test.dupe_key                                                           
+# test.UPPER_TEST                                                         
 # ########################################################################
 
-# a is a left-prefix of a_2
+# A is a duplicate of PRIMARY
 # Key definitions:
-#   KEY `a` (`a`),
-#   KEY `a_2` (`a`,`b`)
+#   KEY `A` (`A`)
+#   PRIMARY KEY (`A`),
 # Column types:
-#	  `a` int(11) default null
-#	  `b` int(11) default null
+#	  `a` int(11) not null default '0'
+# To remove this duplicate index, execute:
+ALTER TABLE `test`.`UPPER_TEST` DROP INDEX `A`;
 
 # ########################################################################
 # Summary of indexes                                                      

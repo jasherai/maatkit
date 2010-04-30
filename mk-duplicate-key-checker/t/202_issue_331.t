@@ -26,9 +26,9 @@ else {
    plan tests => 1;
 }
 
-my $output;
-my $cnf = "/tmp/12345/my.sandbox.cnf";
-my $cmd = "$trunk/mk-duplicate-key-checker/mk-duplicate-key-checker -F $cnf -h 127.1";
+my $cnf    = "/tmp/12345/my.sandbox.cnf";
+my $sample = "mk-duplicate-key-checker/t/samples/";
+my @args   = ('-F', $cnf, qw(-h 127.1));
 
 $sb->wipe_clean($dbh);
 $sb->create_dbs($dbh, ['test']);
@@ -39,7 +39,10 @@ $sb->create_dbs($dbh, ['test']);
 
 $sb->load_file('master', 'mk-duplicate-key-checker/t/samples/issue_331.sql', 'test');
 ok(
-   no_diff("$cmd -d issue_331", 'mk-duplicate-key-checker/t/samples/issue_331.txt'),
+   no_diff(
+      sub { mk_duplicate_key_checker::main(@args, qw(-d issue_331)) },
+      'mk-duplicate-key-checker/t/samples/issue_331.txt',
+   ),
    'Issue 331 crash on fks'
 );
 

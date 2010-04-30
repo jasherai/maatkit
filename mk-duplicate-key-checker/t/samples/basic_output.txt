@@ -7,8 +7,8 @@
 #   KEY `a` (`a`),
 #   KEY `a_2` (`a`,`b`)
 # Column types:
-#	  `a` int(11) default NULL
-#	  `b` int(11) default NULL
+#	  `a` int(11) default null
+#	  `b` int(11) default null
 # To remove this duplicate index, execute:
 ALTER TABLE `test`.`dupe_key` DROP INDEX `a`;
 

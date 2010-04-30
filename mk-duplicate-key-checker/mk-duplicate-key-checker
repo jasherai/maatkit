@@ -3364,14 +3364,14 @@ my $max_width = 74;
 my $hdr_width = $max_width - 2;  # for '# '
 my $hdr_fmt   = "# %-${hdr_width}s\n";
 
-my %summary = ( 'Total Indexes' => 0 );
-my %seen_tbl;
-
-my $q  = new Quoter();
-my $tp = new TableParser(Quoter => $q);
-
 sub main {
    @ARGV = @_;  # set global ARGV for this package
+
+   my %summary = ( 'Total Indexes' => 0 );
+   my %seen_tbl;
+
+   my $q  = new Quoter();
+   my $tp = new TableParser(Quoter => $q);
 
    # #######################################################################
    # Get configuration information and parse command line options.
@@ -3468,8 +3468,8 @@ sub main {
          next TABLE unless %$keys || %$fks;
 
          if ( $o->got('verbose') ) {
-            print_all_keys($keys, $tbl_info) if $keys;
-            print_all_keys($fks,  $tbl_info) if $fks;
+            print_all_keys($keys, $tbl_info, \%seen_tbl) if $keys;
+            print_all_keys($fks,  $tbl_info, \%seen_tbl) if $fks;
          }
          else {
             MKDEBUG && _d('Getting duplicate keys on', $database, $table);
@@ -3481,10 +3481,14 @@ sub main {
                %tp_opts,
                # get_duplicate_keys() ignores these args but passes them
                # to the callback:
-                  dbh   => $dbh,
-                  is_fk => 0,
-                  o     => $o,
-                  ks    => $ks,
+                  dbh      => $dbh,
+                  is_fk    => 0,
+                  o        => $o,
+                  ks       => $ks,
+                  tp       => $tp,
+                  q        => $q,
+                  seen_tbl => \%seen_tbl,
+                  summary  => \%summary,
             ) if $keys;
 
             $dk->get_duplicate_fks(
@@ -3498,6 +3502,10 @@ sub main {
                   is_fk => 1,
                   o     => $o,
                   ks    => $ks,
+                  tp       => $tp,
+                  q        => $q,
+                  seen_tbl => \%seen_tbl,
+                  summary  => \%summary,
             ) if $fks;
          }
 
@@ -3517,11 +3525,11 @@ sub main {
 # ##########################################################################
 
 sub print_all_keys {
-   my ( $keys, $tbl_info ) = @_;
+   my ( $keys, $tbl_info, $seen_tbl ) = @_;
    return unless $keys;
    my $db  = $tbl_info->{db};
    my $tbl = $tbl_info->{tbl};
-   if ( !$seen_tbl{"$db$tbl"}++ ) {
+   if ( !$seen_tbl->{"$db$tbl"}++ ) {
       printf $hdr_fmt, ('#' x $hdr_width);
       printf $hdr_fmt, "$db.$tbl";
       printf $hdr_fmt, ('#' x $hdr_width);
@@ -3536,18 +3544,22 @@ sub print_all_keys {
 sub print_duplicate_key {
    my ( $dupe, %args ) = @_;
    return unless $dupe;
-   foreach my $arg ( qw(tbl_info dbh is_fk o ks) ) {
+   foreach my $arg ( qw(tbl_info dbh is_fk o ks q tp seen_tbl) ) {
       die "I need a $arg argument" unless exists $args{$arg};
    }
    MKDEBUG && _d('Printing duplicate key', $dupe->{key});
-   my $db     = $args{tbl_info}->{db};
-   my $tbl    = $args{tbl_info}->{tbl};
-   my $dbh    = $args{dbh};
-   my $o      = $args{o};
-   my $ks     = $args{ks};
-   my $struct = $tp->parse($args{tbl_info}->{ddl});
+   my $db       = $args{tbl_info}->{db};
+   my $tbl      = $args{tbl_info}->{tbl};
+   my $dbh      = $args{dbh};
+   my $o        = $args{o};
+   my $ks       = $args{ks};
+   my $seen_tbl = $args{seen_tbl};
+   my $q        = $args{q};
+   my $tp       = $args{tp};
+   my $summary  = $args{summary};
+   my $struct   = $tp->parse($args{tbl_info}->{ddl});
 
-   if ( !$seen_tbl{"$db$tbl"}++ ) {
+   if ( !$seen_tbl->{"$db$tbl"}++ ) {
       printf $hdr_fmt, ('#' x $hdr_width);
       printf $hdr_fmt, "$db.$tbl";
       printf $hdr_fmt, ('#' x $hdr_width);
@@ -3566,7 +3578,7 @@ sub print_duplicate_key {
    foreach my $col ( @{$dupe->{cols}}, @{$dupe->{duplicate_of_cols}} ) {
       next if $seen{$col}++;
       MKDEBUG && _d('col', $col);
-      print "#\t" . $struct->{defs}->{lc $col} . "\n";
+      print "#\t" . lc($struct->{defs}->{lc $col}) . "\n";
    }
 
    if ( $o->get('sql') ) {
@@ -3588,8 +3600,8 @@ sub print_duplicate_key {
    }
    print "\n";
 
-   if ( $o->get('summary') ) {
-      $summary{'Total Duplicate Indexes'} += 1;
+   if ( $o->get('summary') && $summary ) {
+      $summary->{'Total Duplicate Indexes'} += 1;
       my ($size, $chosen_key) = $ks->get_key_size(
          name        => $dupe->{key},
          cols        => $dupe->{cols},
@@ -3606,7 +3618,7 @@ sub print_duplicate_key {
          $size ||= 0;
 
          # Create Size Duplicate Keys summary even if there's no valid keys.
-         $summary{'Size Duplicate Indexes'} += $size;
+         $summary->{'Size Duplicate Indexes'} += $size;
 
          if ( $size ) {
             if ( $chosen_key && $chosen_key ne $dupe->{key} ) {

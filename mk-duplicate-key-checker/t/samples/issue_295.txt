@@ -7,8 +7,8 @@
 #   KEY `b_a` (`b`,`a`)
 #   PRIMARY KEY  (`a`),
 # Column types:
-#	  `b` int(11) NOT NULL
-#	  `a` int(11) NOT NULL
+#	  `b` int(11) not null
+#	  `a` int(11) not null
 # To shorten this duplicate clustered index, execute:
 ALTER TABLE `issue_295`.`t` DROP INDEX `b_a`, ADD INDEX `b_a` (`b`);
 
