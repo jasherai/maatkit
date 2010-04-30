@@ -438,7 +438,7 @@ sub no_diff {
    }
 
    # diff the outputs.
-   my $retval = system("diff $expected_output $tmp_file");
+   my $retval = system("diff $tmp_file $expected_output");
 
    # diff returns 0 if there were no differences,
    # so !0 = 1 = no diff in our testing parlance.
