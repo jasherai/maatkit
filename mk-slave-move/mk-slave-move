@@ -29,6 +29,11 @@ our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # OptionParser package 5985
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -977,6 +982,11 @@ sub _d {
 
 # ###########################################################################
 # DSNParser package 6057
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -1320,7 +1330,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6040
+# MasterSlave package 6184
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MasterSlave.pm
+#   trunk/common/t/MasterSlave.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1609,8 +1624,8 @@ sub wait_for_master {
    my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
    my $result;
    $time = 60 unless defined $time;
-   MKDEBUG && _d('Waiting for slave to catch up to master timeout ok:',
-      $timeoutok);
+   MKDEBUG && _d('Waiting', $time, 'seconds for slave to catch up to master;',
+      'timeout ok:', ($timeoutok ? 'yes' : 'no'));
    $ms ||= $self->get_master_status($master);
    if ( $ms ) {
       my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
@@ -1937,6 +1952,51 @@ sub short_host {
    }
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
 }
+   
+sub is_replication_thread {
+   my ( $self, $query, $type ) = @_; 
+   return unless $query;
+
+   $type ||= 'all';
+   die "Invalid type: $type"
+      unless $type =~ m/binlog_dump|slave_io|slave_sql|all/i;
+
+   my $match = 0;
+   if ( $type =~ m/binlog_dump|all/i ) {
+      $match = 1
+         if ($query->{Command} || $query->{command} || '') eq "Binlog Dump";
+   }
+   if ( !$match ) {
+      if ( ($query->{User} || $query->{user} || '') eq "system user" ) {
+         my $state = $query->{State} || $query->{state} || '';
+         if ( $type =~ m/slave_io|all/i ) {
+            ($match) = $state =~ m/
+               ^(Waiting\sfor\smaster\supdate
+                |Connecting\sto\smaster
+                |Waiting\sto\sreconnect\safter\sa\sfailed
+                |Reconnecting\safter\sa\sfailed\sbinlog
+                |Waiting\sfor\smaster\sto\ssend\sevent
+                |Queueing\smaster\sevent\sto\sthe\srelay
+                |Waiting\sto\sreconnect\safter\sa\sfailed
+                |Reconnecting\safter\sa\sfailed\smaster
+                |Waiting\sfor\sthe\sslave\sSQL\sthread)/xi;
+         }
+         if ( !$match && $type =~ m/slave_sql|all/i ) {
+            ($match) = $state =~ m/
+               ^(Waiting\sfor\sthe\snext\sevent
+                |Reading\sevent\sfrom\sthe\srelay\slog
+                |Has\sread\sall\srelay\slog;\swaiting
+                |Making\stemp\sfile)/xi; 
+         }
+      }
+      else {
+         MKDEBUG && _d('Not system user');
+      }
+   }
+   MKDEBUG && _d($type, 'replication thread:', ($match ? 'yes' : 'no'),
+      '; match:', $match);
+   return $match;
+}
 
 sub pos_to_string {
    my ( $self, $pos ) = @_;
@@ -1960,6 +2020,11 @@ sub _d {
 
 # ###########################################################################
 # Daemon package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Daemon.pm
+#   trunk/common/t/Daemon.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Daemon;
@@ -2139,6 +2204,11 @@ sub _d {
 
 # ###########################################################################
 # VersionParser package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/VersionParser.pm
+#   trunk/common/t/VersionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package VersionParser;
 

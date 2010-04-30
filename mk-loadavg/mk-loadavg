@@ -29,6 +29,11 @@ our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # OptionParser package 5985
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -977,6 +982,11 @@ sub _d {
 
 # ###########################################################################
 # VersionParser package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/VersionParser.pm
+#   trunk/common/t/VersionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package VersionParser;
 
@@ -1026,6 +1036,11 @@ sub _d {
 
 # ###########################################################################
 # DSNParser package 6057
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -1370,6 +1385,11 @@ sub _d {
 
 # ###########################################################################
 # Daemon package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Daemon.pm
+#   trunk/common/t/Daemon.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Daemon;
@@ -1549,6 +1569,11 @@ sub _d {
 
 # ###########################################################################
 # InnoDBStatusParser package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/InnoDBStatusParser.pm
+#   trunk/common/t/InnoDBStatusParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package InnoDBStatusParser;
 
@@ -2584,6 +2609,11 @@ sub _d {
 
 # ###########################################################################
 # Transformers package 5715
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Transformers.pm
+#   trunk/common/t/Transformers.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Transformers;
@@ -2819,6 +2849,11 @@ sub _d {
 
 # ###########################################################################
 # ProcesslistAggregator package 5669
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ProcesslistAggregator.pm
+#   trunk/common/t/ProcesslistAggregator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package ProcesslistAggregator;
 
@@ -2878,6 +2913,11 @@ sub _d {
 
 # ###########################################################################
 # WatchStatus package 5401
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/WatchStatus.pm
+#   trunk/common/t/WatchStatus.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package WatchStatus;
 
@@ -3094,6 +3134,11 @@ sub _d {
 
 # ###########################################################################
 # WatchProcesslist package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/WatchProcesslist.pm
+#   trunk/common/t/WatchProcesslist.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package WatchProcesslist;
 
@@ -3241,6 +3286,11 @@ sub _d {
 
 # ###########################################################################
 # WatchServer package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/WatchServer.pm
+#   trunk/common/t/WatchServer.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package WatchServer;
 

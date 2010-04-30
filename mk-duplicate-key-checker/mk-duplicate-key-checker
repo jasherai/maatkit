@@ -29,6 +29,11 @@ our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # VersionParser package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/VersionParser.pm
+#   trunk/common/t/VersionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package VersionParser;
 
@@ -77,7 +82,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5697
+# Quoter package 6079
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Quoter.pm
+#   trunk/common/t/Quoter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package Quoter;
 
@@ -103,8 +113,9 @@ sub quote {
 sub quote_val {
    my ( $self, $val, $is_numeric ) = @_;
 
-   return 'NULL' unless defined $val;  # undef = NULL
-   return "''" if $val eq '';          # blank string = ''
+   return 'NULL' unless defined $val;         # undef = NULL
+   return "''" if $val eq '';                 # blank string = ''
+   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
 
    if ( !defined $is_numeric ) {
       $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
@@ -142,6 +153,11 @@ sub literal_like {
 
 # ###########################################################################
 # TableParser package 5980
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableParser.pm
+#   trunk/common/t/TableParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableParser;
 
@@ -530,6 +546,11 @@ sub _d {
 
 # ###########################################################################
 # MySQLDump package 5998
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MySQLDump.pm
+#   trunk/common/t/MySQLDump.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MySQLDump;
 
@@ -838,6 +859,11 @@ sub _d {
 
 # ###########################################################################
 # DSNParser package 6057
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -1182,6 +1208,11 @@ sub _d {
 
 # ###########################################################################
 # OptionParser package 5985
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -2130,6 +2161,11 @@ sub _d {
 
 # ###########################################################################
 # KeySize package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/KeySize.pm
+#   trunk/common/t/KeySize.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package KeySize;
 
@@ -2260,6 +2296,11 @@ sub _d {
 
 # ###########################################################################
 # DuplicateKeyFinder package 5798
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DuplicateKeyFinder.pm
+#   trunk/common/t/DuplicateKeyFinder.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DuplicateKeyFinder;
 
@@ -2642,6 +2683,11 @@ sub _d {
 
 # ###########################################################################
 # Transformers package 5715
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Transformers.pm
+#   trunk/common/t/Transformers.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Transformers;
@@ -2877,6 +2923,11 @@ sub _d {
 
 # ###########################################################################
 # Daemon package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Daemon.pm
+#   trunk/common/t/Daemon.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Daemon;
@@ -3056,6 +3107,11 @@ sub _d {
 
 # ###########################################################################
 # SchemaIterator package 5473
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SchemaIterator.pm
+#   trunk/common/t/SchemaIterator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package SchemaIterator;
 

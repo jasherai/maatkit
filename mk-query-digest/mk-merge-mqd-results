@@ -22,6 +22,11 @@ use warnings FATAL => 'all';
 
 # ###########################################################################
 # OptionParser package 5985
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -970,6 +975,11 @@ sub _d {
 
 # ###########################################################################
 # DSNParser package 6057
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -1314,6 +1324,11 @@ sub _d {
 
 # ###########################################################################
 # Quoter package 6079
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Quoter.pm
+#   trunk/common/t/Quoter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package Quoter;
 
@@ -1379,6 +1394,11 @@ sub literal_like {
 
 # ###########################################################################
 # Transformers package 5715
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Transformers.pm
+#   trunk/common/t/Transformers.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Transformers;
@@ -1614,6 +1634,11 @@ sub _d {
 
 # ###########################################################################
 # QueryRewriter package 6132
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryRewriter.pm
+#   trunk/common/t/QueryRewriter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1971,6 +1996,11 @@ sub _d {
 
 # ###########################################################################
 # EventAggregator package 6170
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/EventAggregator.pm
+#   trunk/common/t/EventAggregator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package EventAggregator;
 
@@ -2823,7 +2853,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 6123
+# ReportFormatter package 6190
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ReportFormatter.pm
+#   trunk/common/t/ReportFormatter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package ReportFormatter;
 
@@ -2884,7 +2919,7 @@ sub set_columns {
       my $col      = $cols[$i];
       my $col_name = $col->{name};
       my $col_len  = length $col_name;
-      die "Column does not have a name" unless $col_name;
+      die "Column does not have a name" unless defined $col_name;
 
       if ( $col->{width} ) {
          $col->{width_pct} = ceil(($col->{width} * 100) / $self->{line_width});
@@ -3163,6 +3198,11 @@ sub _d {
 
 # ###########################################################################
 # QueryReportFormatter package 6175
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryReportFormatter.pm
+#   trunk/common/t/QueryReportFormatter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package QueryReportFormatter;
@@ -3981,6 +4021,11 @@ sub _d {
 
 # ###########################################################################
 # QueryParser package 6148
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryParser.pm
+#   trunk/common/t/QueryParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package QueryParser;
 

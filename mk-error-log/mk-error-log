@@ -26,6 +26,11 @@ our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # OptionParser package 5985
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -974,6 +979,11 @@ sub _d {
 
 # ###########################################################################
 # ReportFormatter package 6190
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ReportFormatter.pm
+#   trunk/common/t/ReportFormatter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package ReportFormatter;
 
@@ -1313,6 +1323,11 @@ sub _d {
 
 # ###########################################################################
 # ErrorLogParser package 6004
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ErrorLogParser.pm
+#   trunk/common/t/ErrorLogParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package ErrorLogParser;
 
@@ -1460,6 +1475,11 @@ sub _d {
 
 # ###########################################################################
 # ErrorLogPatternMatcher package 6096
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ErrorLogPatternMatcher.pm
+#   trunk/common/t/ErrorLogPatternMatcher.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package ErrorLogPatternMatcher;
 
@@ -1622,6 +1642,11 @@ sub _d {
 
 # ###########################################################################
 # Transformers package 5715
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Transformers.pm
+#   trunk/common/t/Transformers.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Transformers;

@@ -29,6 +29,11 @@ our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # OptionParser package 5985
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -977,6 +982,11 @@ sub _d {
 
 # ###########################################################################
 # Quoter package 6079
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Quoter.pm
+#   trunk/common/t/Quoter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package Quoter;
 
@@ -1042,6 +1052,11 @@ sub literal_like {
 
 # ###########################################################################
 # DSNParser package 6057
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -1386,6 +1401,11 @@ sub _d {
 
 # ###########################################################################
 # VersionParser package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/VersionParser.pm
+#   trunk/common/t/VersionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package VersionParser;
 
@@ -1435,6 +1455,11 @@ sub _d {
 
 # ###########################################################################
 # TableSyncStream package 5697
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableSyncStream.pm
+#   trunk/common/t/TableSyncStream.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableSyncStream;
 
@@ -1550,6 +1575,11 @@ sub _d {
 
 # ###########################################################################
 # TableParser package 5980
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableParser.pm
+#   trunk/common/t/TableParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableParser;
 
@@ -1938,6 +1968,11 @@ sub _d {
 
 # ###########################################################################
 # RowDiff package 5697
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/RowDiff.pm
+#   trunk/common/t/RowDiff.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package RowDiff;
 
@@ -2119,6 +2154,11 @@ sub _d {
 
 # ###########################################################################
 # MySQLDump package 5998
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MySQLDump.pm
+#   trunk/common/t/MySQLDump.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MySQLDump;
 
@@ -2427,6 +2467,11 @@ sub _d {
 
 # ###########################################################################
 # ChangeHandler package 6081
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ChangeHandler.pm
+#   trunk/common/t/ChangeHandler.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package ChangeHandler;
 
@@ -2742,6 +2787,11 @@ sub _d {
 
 # ###########################################################################
 # TableChunker package 5955
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableChunker.pm
+#   trunk/common/t/TableChunker.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3163,6 +3213,11 @@ sub _d {
 
 # ###########################################################################
 # TableChecksum package 6078
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableChecksum.pm
+#   trunk/common/t/TableChecksum.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableChecksum;
 
@@ -3540,6 +3595,11 @@ sub _d {
 
 # ###########################################################################
 # TableSyncChunk package 5712
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableSyncChunk.pm
+#   trunk/common/t/TableSyncChunk.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableSyncChunk;
 
@@ -3846,6 +3906,11 @@ sub _d {
 
 # ###########################################################################
 # TableSyncNibble package 5712
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableSyncNibble.pm
+#   trunk/common/t/TableSyncNibble.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableSyncNibble;
 
@@ -4214,6 +4279,11 @@ sub _d {
 
 # ###########################################################################
 # TableSyncGroupBy package 5697
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableSyncGroupBy.pm
+#   trunk/common/t/TableSyncGroupBy.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableSyncGroupBy;
 
@@ -4364,7 +4434,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 5863
+# TableSyncer package 6137
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableSyncer.pm
+#   trunk/common/t/TableSyncer.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableSyncer;
 
@@ -4521,8 +4596,6 @@ sub sync_table {
          table    => $dst->{tbl},
          where    => $args{where},
       );
-      MKDEBUG && _d('src:', $src_sql);
-      MKDEBUG && _d('dst:', $dst_sql);
 
       if ( $args{transaction} ) {
          if ( $args{bidirectional} ) {
@@ -4538,6 +4611,8 @@ sub sync_table {
             $dst_sql .= ' FOR UPDATE';
          }
       }
+      MKDEBUG && _d('src:', $src_sql);
+      MKDEBUG && _d('dst:', $dst_sql);
 
       $callback->($src_sql, $dst_sql) if $callback;
 
@@ -4694,6 +4769,7 @@ sub lock_and_wait {
    my $dst = $args{dst};
 
    return unless $args{lock} && $args{lock} == $args{lock_level};
+   MKDEBUG && _d('lock and wait, lock level', $args{lock});
 
    foreach my $dbh ( $src->{dbh}, $dst->{dbh} ) {
       if ( $args{transaction} ) {
@@ -4709,7 +4785,7 @@ sub lock_and_wait {
 
    if ( $args{lock} == 3 ) {
       my $sql = 'FLUSH TABLES WITH READ LOCK';
-      MKDEBUG && _d($src->{dbh}, ',', $sql);
+      MKDEBUG && _d($src->{dbh}, $sql);
       $src->{dbh}->do($sql);
    }
    else {
@@ -4807,6 +4883,11 @@ sub _d {
 
 # ###########################################################################
 # TableNibbler package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableNibbler.pm
+#   trunk/common/t/TableNibbler.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableNibbler;
 
@@ -5061,7 +5142,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6040
+# MasterSlave package 6184
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MasterSlave.pm
+#   trunk/common/t/MasterSlave.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -5350,8 +5436,8 @@ sub wait_for_master {
    my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
    my $result;
    $time = 60 unless defined $time;
-   MKDEBUG && _d('Waiting for slave to catch up to master timeout ok:',
-      $timeoutok);
+   MKDEBUG && _d('Waiting', $time, 'seconds for slave to catch up to master;',
+      'timeout ok:', ($timeoutok ? 'yes' : 'no'));
    $ms ||= $self->get_master_status($master);
    if ( $ms ) {
       my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
@@ -5678,6 +5764,51 @@ sub short_host {
    }
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
 }
+   
+sub is_replication_thread {
+   my ( $self, $query, $type ) = @_; 
+   return unless $query;
+
+   $type ||= 'all';
+   die "Invalid type: $type"
+      unless $type =~ m/binlog_dump|slave_io|slave_sql|all/i;
+
+   my $match = 0;
+   if ( $type =~ m/binlog_dump|all/i ) {
+      $match = 1
+         if ($query->{Command} || $query->{command} || '') eq "Binlog Dump";
+   }
+   if ( !$match ) {
+      if ( ($query->{User} || $query->{user} || '') eq "system user" ) {
+         my $state = $query->{State} || $query->{state} || '';
+         if ( $type =~ m/slave_io|all/i ) {
+            ($match) = $state =~ m/
+               ^(Waiting\sfor\smaster\supdate
+                |Connecting\sto\smaster
+                |Waiting\sto\sreconnect\safter\sa\sfailed
+                |Reconnecting\safter\sa\sfailed\sbinlog
+                |Waiting\sfor\smaster\sto\ssend\sevent
+                |Queueing\smaster\sevent\sto\sthe\srelay
+                |Waiting\sto\sreconnect\safter\sa\sfailed
+                |Reconnecting\safter\sa\sfailed\smaster
+                |Waiting\sfor\sthe\sslave\sSQL\sthread)/xi;
+         }
+         if ( !$match && $type =~ m/slave_sql|all/i ) {
+            ($match) = $state =~ m/
+               ^(Waiting\sfor\sthe\snext\sevent
+                |Reading\sevent\sfrom\sthe\srelay\slog
+                |Has\sread\sall\srelay\slog;\swaiting
+                |Making\stemp\sfile)/xi; 
+         }
+      }
+      else {
+         MKDEBUG && _d('Not system user');
+      }
+   }
+   MKDEBUG && _d($type, 'replication thread:', ($match ? 'yes' : 'no'),
+      '; match:', $match);
+   return $match;
+}
 
 sub pos_to_string {
    my ( $self, $pos ) = @_;
@@ -5701,6 +5832,11 @@ sub _d {
 
 # ###########################################################################
 # Daemon package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Daemon.pm
+#   trunk/common/t/Daemon.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Daemon;
@@ -5880,6 +6016,11 @@ sub _d {
 
 # ###########################################################################
 # SchemaIterator package 5473
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SchemaIterator.pm
+#   trunk/common/t/SchemaIterator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package SchemaIterator;
 
@@ -6166,6 +6307,11 @@ sub _d {
 
 # ###########################################################################
 # Transformers package 5715
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Transformers.pm
+#   trunk/common/t/Transformers.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Transformers;

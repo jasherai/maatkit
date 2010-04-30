@@ -26,6 +26,11 @@ our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # OptionParser package 5985
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -974,6 +979,11 @@ sub _d {
 
 # ###########################################################################
 # SlowLogParser package 6043
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SlowLogParser.pm
+#   trunk/common/t/SlowLogParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package SlowLogParser;
 
@@ -1155,6 +1165,11 @@ sub _d {
 
 # ###########################################################################
 # BinaryLogParser package 5358
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/BinaryLogParser.pm
+#   trunk/common/t/BinaryLogParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package BinaryLogParser;
 
@@ -1348,6 +1363,11 @@ sub _d {
 
 # ###########################################################################
 # GeneralLogParser package 6054
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/GeneralLogParser.pm
+#   trunk/common/t/GeneralLogParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package GeneralLogParser;
 
@@ -1499,7 +1519,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 5447
+# LogSplitter package 6094
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/LogSplitter.pm
+#   trunk/common/t/LogSplitter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package LogSplitter;
@@ -1513,7 +1538,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG           => $ENV{MKDEBUG};
+use constant MKDEBUG           => $ENV{MKDEBUG} || 0;
 use constant MAX_OPEN_FILES    => 1000;
 use constant CLOSE_N_LRU_FILES => 100;
 
@@ -1882,6 +1907,11 @@ sub _d {
 
 # ###########################################################################
 # DSNParser package 6057
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -2226,6 +2256,11 @@ sub _d {
 
 # ###########################################################################
 # MaatkitCommon package 5531
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MaatkitCommon.pm
+#   trunk/common/t/MaatkitCommon.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MaatkitCommon;
 
@@ -2291,6 +2326,11 @@ sub get_number_of_cpus {
 
 # ###########################################################################
 # Daemon package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Daemon.pm
+#   trunk/common/t/Daemon.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Daemon;

@@ -26,6 +26,11 @@ our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # DSNParser package 6057
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -370,6 +375,11 @@ sub _d {
 
 # ###########################################################################
 # MySQLDump package 5998
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MySQLDump.pm
+#   trunk/common/t/MySQLDump.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MySQLDump;
 
@@ -678,6 +688,11 @@ sub _d {
 
 # ###########################################################################
 # TableParser package 5980
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableParser.pm
+#   trunk/common/t/TableParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableParser;
 
@@ -1066,6 +1081,11 @@ sub _d {
 
 # ###########################################################################
 # Quoter package 6079
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Quoter.pm
+#   trunk/common/t/Quoter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package Quoter;
 
@@ -1131,6 +1151,11 @@ sub literal_like {
 
 # ###########################################################################
 # OptionParser package 5985
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -2079,6 +2104,11 @@ sub _d {
 
 # ###########################################################################
 # Transformers package 5715
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Transformers.pm
+#   trunk/common/t/Transformers.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Transformers;
@@ -2314,6 +2344,11 @@ sub _d {
 
 # ###########################################################################
 # SlowLogParser package 6043
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SlowLogParser.pm
+#   trunk/common/t/SlowLogParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package SlowLogParser;
 
@@ -2494,13 +2529,23 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 6094
+# EventAggregator package 6170
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/EventAggregator.pm
+#   trunk/common/t/EventAggregator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package EventAggregator;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use List::Util qw(min max);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG      => $ENV{MKDEBUG} || 0;
 use constant BUCK_SIZE    => 1.05;
@@ -2544,6 +2589,8 @@ sub new {
       result_classes => {},
       result_globals => {},
       result_samples => {},
+      class_metrics  => {},
+      global_metrics => {},
       n_events       => 0,
       unrolled_loops => undef,
       type_for       => { %{$args{type_for} || { Query_time => 'num' }} },
@@ -2669,9 +2716,31 @@ sub results {
    };
 }
 
+sub set_results {
+   my ( $self, $results ) = @_;
+   $self->{result_classes} = $results->{classes};
+   $self->{result_globals} = $results->{globals};
+   $self->{result_samples} = $results->{samples};
+   return;
+}
+
+sub stats {
+   my ( $self ) = @_;
+   return {
+      classes => $self->{class_metrics},
+      globals => $self->{global_metrics},
+   };
+}
+
 sub attributes {
    my ( $self ) = @_;
    return $self->{type_for};
+}
+
+sub set_attribute_types {
+   my ( $self, $attrib_types ) = @_;
+   $self->{type_for} = $attrib_types;
+   return;
 }
 
 sub type_for {
@@ -2854,6 +2923,36 @@ sub bucket_value {
 }
 
 sub calculate_statistical_metrics {
+   my ( $self ) = @_;
+   my $classes        = $self->{result_classes};
+   my $globals        = $self->{result_globals};
+   my $class_metrics  = $self->{class_metrics};
+   my $global_metrics = $self->{global_metrics};
+   MKDEBUG && _d('Calculating statistical_metrics');
+   foreach my $attrib ( keys %$globals ) {
+      if ( exists $globals->{$attrib}->{all} ) {
+         $global_metrics->{$attrib}
+            = $self->_calc_metrics(
+               $globals->{$attrib}->{all},
+               $globals->{$attrib},
+            );
+      }
+
+      foreach my $class ( keys %$classes ) {
+         if ( exists $classes->{$class}->{$attrib}->{all} ) {
+            $class_metrics->{$class}->{$attrib}
+               = $self->_calc_metrics(
+                  $classes->{$class}->{$attrib}->{all},
+                  $classes->{$class}->{$attrib}
+               );
+         }
+      }
+   }
+
+   return;
+}
+
+sub _calc_metrics {
    my ( $self, $vals, $args ) = @_;
    my $statistical_metrics = {
       pct_95    => 0,
@@ -2948,11 +3047,13 @@ sub metrics {
    foreach my $arg ( qw(attrib where) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $stats = $self->results;
-   my $store = $stats->{classes}->{$args{where}}->{$args{attrib}};
+   my $attrib = $args{attrib};
+   my $where   = $args{where};
 
-   my $global_cnt = $stats->{globals}->{$args{attrib}}->{cnt};
-   my $metrics    = $self->calculate_statistical_metrics($store->{all}, $store);
+   my $stats      = $self->results();
+   my $metrics    = $self->stats();
+   my $store      = $stats->{classes}->{$where}->{$attrib};
+   my $global_cnt = $stats->{globals}->{$attrib}->{cnt};
 
    return {
       cnt    => $store->{cnt},
@@ -2961,9 +3062,9 @@ sub metrics {
       min    => $store->{min},
       max    => $store->{max},
       avg    => $store->{sum} && $store->{cnt} ? $store->{sum} / $store->{cnt} : 0,
-      median => $metrics->{median},
-      pct_95 => $metrics->{pct_95},
-      stddev => $metrics->{stddev},
+      median => $metrics->{classes}->{$where}->{$attrib}->{median} || 0,
+      pct_95 => $metrics->{classes}->{$where}->{$attrib}->{pct_95} || 0,
+      stddev => $metrics->{classes}->{$where}->{$attrib}->{stddev} || 0,
    };
 }
 
@@ -2989,12 +3090,8 @@ sub top_events {
       elsif ( $args{ol_attrib} && (!$args{ol_freq}
          || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
-         MKDEBUG && _d('Calculating statistical_metrics');
-         my $stats = $self->calculate_statistical_metrics(
-            $classes->{$groupby}->{$args{ol_attrib}}->{all},
-            $classes->{$groupby}->{$args{ol_attrib}}
-         );
-         if ( $stats->{pct_95} >= $args{ol_limit} ) {
+         my $stats = $self->{class_metrics}->{$groupby}->{$args{ol_attrib}};
+         if ( ($stats->{pct_95} || 0) >= $args{ol_limit} ) {
             push @chosen, [$groupby, 'outlier'];
          }
       }
@@ -3028,7 +3125,7 @@ sub add_new_attributes {
 
 sub get_attributes {
    my ( $self ) = @_;
-   return @{$self->{all_attribs}};
+   return $self->{all_attribs};
 }
 
 sub events_processed {
@@ -3055,6 +3152,226 @@ sub make_alt_attrib {
    return $sub;
 }
 
+sub merge {
+   my ( @ea_objs ) = @_;
+   MKDEBUG && _d('Merging', scalar @ea_objs, 'ea');
+   return unless scalar @ea_objs;
+
+   my $ea1   = shift @ea_objs;
+   my $r1    = $ea1->results;
+   my $worst = $ea1->{worst};  # for merging, finding worst sample
+
+   my %attrib_types = %{ $ea1->attributes() };
+
+   foreach my $ea ( @ea_objs ) {
+      die "EventAggregator objects have different groupby: "
+         . "$ea1->{groupby} and $ea->{groupby}"
+         unless $ea1->{groupby} eq $ea->{groupby};
+      die "EventAggregator objects have different worst: "
+         . "$ea1->{worst} and $ea->{worst}"
+         unless $ea1->{worst} eq $ea->{worst};
+      
+      my $attrib_types = $ea->attributes();
+      map {
+         $attrib_types{$_} = $attrib_types->{$_}
+            unless exists $attrib_types{$_};
+      } keys %$attrib_types;
+   }
+
+   my $r_merged = {
+      classes => {},
+      globals => _deep_copy_attribs($r1->{globals}),
+      samples => {},
+   };
+   map {
+      $r_merged->{classes}->{$_}
+         = _deep_copy_attribs($r1->{classes}->{$_});
+
+      @{$r_merged->{samples}->{$_}}{keys %{$r1->{samples}->{$_}}}
+         = values %{$r1->{samples}->{$_}};
+   } keys %{$r1->{classes}};
+
+   for my $i ( 0..$#ea_objs ) {
+      MKDEBUG && _d('Merging ea obj', ($i + 1));
+      my $r2 = $ea_objs[$i]->results;
+
+      eval {
+         CLASS:
+         foreach my $class ( keys %{$r2->{classes}} ) {
+            my $r1_class = $r_merged->{classes}->{$class};
+            my $r2_class = $r2->{classes}->{$class};
+
+            if ( $r1_class && $r2_class ) {
+               CLASS_ATTRIB:
+               foreach my $attrib ( keys %$r2_class ) {
+                  MKDEBUG && _d('merge', $attrib);
+                  if ( $r1_class->{$attrib} && $r2_class->{$attrib} ) {
+                     _add_attrib_vals($r1_class->{$attrib}, $r2_class->{$attrib});
+                  }
+                  elsif ( !$r1_class->{$attrib} ) {
+                  MKDEBUG && _d('copy', $attrib);
+                     $r1_class->{$attrib} =
+                        _deep_copy_attrib_vals($r2_class->{$attrib})
+                  }
+               }
+            }
+            elsif ( !$r1_class ) {
+               MKDEBUG && _d('copy class');
+               $r_merged->{classes}->{$class} = _deep_copy_attribs($r2_class);
+            }
+
+            my $new_worst_sample;
+            if ( $r_merged->{samples}->{$class} && $r2->{samples}->{$class} ) {
+               if (   $r2->{samples}->{$class}->{$worst}
+                    > $r_merged->{samples}->{$class}->{$worst} ) {
+                  $new_worst_sample = $r2->{samples}->{$class}
+               }
+            }
+            elsif ( !$r_merged->{samples}->{$class} ) {
+               $new_worst_sample = $r2->{samples}->{$class};
+            }
+            if ( $new_worst_sample ) {
+               MKDEBUG && _d('New worst sample:', $worst, '=',
+                  $new_worst_sample->{$worst}, 'item:', substr($class, 0, 100));
+               my %new_sample;
+               @new_sample{keys %$new_worst_sample}
+                  = values %$new_worst_sample;
+               $r_merged->{samples}->{$class} = \%new_sample;
+            }
+         }
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Error merging class/sample: $EVAL_ERROR";
+      }
+
+      eval {
+         GLOBAL_ATTRIB:
+         MKDEBUG && _d('Merging global attributes');
+         foreach my $attrib ( keys %{$r2->{globals}} ) {
+            my $r1_global = $r_merged->{globals}->{$attrib};
+            my $r2_global = $r2->{globals}->{$attrib};
+
+            if ( $r1_global && $r2_global ) {
+               MKDEBUG && _d('merge', $attrib);
+               _add_attrib_vals($r1_global, $r2_global);
+            }
+            elsif ( !$r1_global ) {
+               MKDEBUG && _d('copy', $attrib);
+               $r_merged->{globals}->{$attrib}
+                  = _deep_copy_attrib_vals($r2_global);
+            }
+         }
+      };
+      if ( $EVAL_ERROR ) {
+         warn "Error merging globals: $EVAL_ERROR";
+      }
+   }
+
+   my $ea_merged = new EventAggregator(
+      groupby    => $ea1->{groupby},
+      worst      => $ea1->{worst},
+      attributes => { map { $_=>[$_] } keys %attrib_types },
+   );
+   $ea_merged->set_results($r_merged);
+   $ea_merged->set_attribute_types(\%attrib_types);
+   return $ea_merged;
+}
+
+sub _add_attrib_vals {
+   my ( $vals1, $vals2 ) = @_;
+
+   foreach my $val ( keys %$vals1 ) {
+      my $val1 = $vals1->{$val};
+      my $val2 = $vals2->{$val};
+
+      if ( (!ref $val1) && (!ref $val2) ) {
+         die "undefined $val value" unless defined $val1 && defined $val2;
+
+         my $is_num = exists $vals1->{sum} ? 1 : 0;
+         if ( $val eq 'max' ) {
+            if ( $is_num ) {
+               $vals1->{$val} = $val1 > $val2  ? $val1 : $val2;
+            }
+            else {
+               $vals1->{$val} = $val1 gt $val2 ? $val1 : $val2;
+            }
+         }
+         elsif ( $val eq 'min' ) {
+            if ( $is_num ) {
+               $vals1->{$val} = $val1 < $val2  ? $val1 : $val2;
+            }
+            else {
+               $vals1->{$val} = $val1 lt $val2 ? $val1 : $val2;
+            }
+         }
+         else {
+            $vals1->{$val} += $val2;
+         }
+      }
+      elsif ( (ref $val1 eq 'ARRAY') && (ref $val2 eq 'ARRAY') ) {
+         die "Empty $val arrayref" unless @$val1 && @$val2;
+         my $n_buckets = (scalar @$val1) - 1;
+         for my $i ( 0..$n_buckets ) {
+            $vals1->{$val}->[$i] += $val2->[$i];
+         }
+      }
+      elsif ( (ref $val1 eq 'HASH')  && (ref $val2 eq 'HASH')  ) {
+         die "Empty $val hashref" unless %$val1 and %$val2;
+         map { $vals1->{$val}->{$_} += $val2->{$_} } keys %$val2;
+      }
+      else {
+         MKDEBUG && _d('vals1:', Dumper($vals1));
+         MKDEBUG && _d('vals2:', Dumper($vals2));
+         die "$val type mismatch";
+      }
+   }
+
+   return;
+}
+
+sub _deep_copy_attribs {
+   my ( $attribs ) = @_;
+   my $copy = {};
+   foreach my $attrib ( keys %$attribs ) {
+      $copy->{$attrib} = _deep_copy_attrib_vals($attribs->{$attrib});
+   }
+   return $copy;
+}
+
+sub _deep_copy_attrib_vals {
+   my ( $vals ) = @_;
+   my $copy;
+   if ( ref $vals eq 'HASH' ) {
+      $copy = {};
+      foreach my $val ( keys %$vals ) {
+         if ( my $ref_type = ref $val ) {
+            if ( $ref_type eq 'ARRAY' ) {
+               my $n_elems = (scalar @$val) - 1;
+               $copy->{$val} = [ map { undef } ( 0..$n_elems ) ];
+               for my $i ( 0..$n_elems ) {
+                  $copy->{$val}->[$i] = $vals->{$val}->[$i];
+               }
+            }
+            elsif ( $ref_type eq 'HASH' ) {
+               $copy->{$val} = {};
+               map { $copy->{$val}->{$_} += $vals->{$val}->{$_} }
+                  keys %{$vals->{$val}}
+            }
+            else {
+               die "I don't know how to deep copy a $ref_type reference";
+            }
+         }
+         else {
+            $copy->{$val} = $vals->{$val};
+         }
+      }
+   }
+   else {
+      $copy = $vals;
+   }
+   return $copy;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -3070,7 +3387,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 5843
+# QueryParser package 6148
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryParser.pm
+#   trunk/common/t/QueryParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package QueryParser;
 
@@ -3417,6 +3739,24 @@ sub parse {
    return $parsed;
 }
 
+sub extract_tables {
+   my ( $self, %args ) = @_;
+   my $query      = $args{query};
+   my $default_db = $args{default_db};
+   my $q          = $self->{Quoter} || $args{Quoter};
+   return unless $query;
+   MKDEBUG && _d('Extracting tables');
+   my @tables;
+   my %seen;
+   foreach my $db_tbl ( $self->get_tables($query) ) {
+      next unless $db_tbl;
+      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
+      push @tables, [ $db || $default_db, $tbl ];
+   }
+   return @tables;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -3432,7 +3772,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6093
+# QueryRewriter package 6132
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryRewriter.pm
+#   trunk/common/t/QueryRewriter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3694,7 +4039,7 @@ sub convert_to_select {
                     (?:insert(?:\s+ignore)?|replace)\s+
                     .*?\binto\b(.*?)\(([^\)]+)\)\s*
                     values?\s*(\(.*?\))\s*
-                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
                     \Z
                  }
                  {__insert_to_select($1, $2, $3)}exsi
@@ -3702,8 +4047,8 @@ sub convert_to_select {
                     \A.*?
                     (?:insert(?:\s+ignore)?|replace)\s+
                     (?:.*?\binto)\b(.*?)\s*
-                    set?\s*\b(.*?)\s*
-                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    set\s+(.*?)\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
                     \Z
                  }
                  {__insert_to_select_with_set($1, $2)}exsi
@@ -3790,6 +4135,11 @@ sub _d {
 
 # ###########################################################################
 # Daemon package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Daemon.pm
+#   trunk/common/t/Daemon.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Daemon;
@@ -3969,6 +4319,11 @@ sub _d {
 
 # ###########################################################################
 # ChangeHandler package 6081
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ChangeHandler.pm
+#   trunk/common/t/ChangeHandler.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package ChangeHandler;
 
@@ -4284,6 +4639,11 @@ sub _d {
 
 # ###########################################################################
 # RowDiff package 5697
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/RowDiff.pm
+#   trunk/common/t/RowDiff.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package RowDiff;
 
@@ -4465,6 +4825,11 @@ sub _d {
 
 # ###########################################################################
 # TableChunker package 5955
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableChunker.pm
+#   trunk/common/t/TableChunker.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -4886,6 +5251,11 @@ sub _d {
 
 # ###########################################################################
 # TableNibbler package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableNibbler.pm
+#   trunk/common/t/TableNibbler.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableNibbler;
 
@@ -5141,6 +5511,11 @@ sub _d {
 
 # ###########################################################################
 # TableChecksum package 6078
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableChecksum.pm
+#   trunk/common/t/TableChecksum.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableChecksum;
 
@@ -5517,7 +5892,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 5863
+# TableSyncer package 6137
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableSyncer.pm
+#   trunk/common/t/TableSyncer.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableSyncer;
 
@@ -5674,8 +6054,6 @@ sub sync_table {
          table    => $dst->{tbl},
          where    => $args{where},
       );
-      MKDEBUG && _d('src:', $src_sql);
-      MKDEBUG && _d('dst:', $dst_sql);
 
       if ( $args{transaction} ) {
          if ( $args{bidirectional} ) {
@@ -5691,6 +6069,8 @@ sub sync_table {
             $dst_sql .= ' FOR UPDATE';
          }
       }
+      MKDEBUG && _d('src:', $src_sql);
+      MKDEBUG && _d('dst:', $dst_sql);
 
       $callback->($src_sql, $dst_sql) if $callback;
 
@@ -5847,6 +6227,7 @@ sub lock_and_wait {
    my $dst = $args{dst};
 
    return unless $args{lock} && $args{lock} == $args{lock_level};
+   MKDEBUG && _d('lock and wait, lock level', $args{lock});
 
    foreach my $dbh ( $src->{dbh}, $dst->{dbh} ) {
       if ( $args{transaction} ) {
@@ -5862,7 +6243,7 @@ sub lock_and_wait {
 
    if ( $args{lock} == 3 ) {
       my $sql = 'FLUSH TABLES WITH READ LOCK';
-      MKDEBUG && _d($src->{dbh}, ',', $sql);
+      MKDEBUG && _d($src->{dbh}, $sql);
       $src->{dbh}->do($sql);
    }
    else {
@@ -5960,6 +6341,11 @@ sub _d {
 
 # ###########################################################################
 # TableSyncChunk package 5712
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableSyncChunk.pm
+#   trunk/common/t/TableSyncChunk.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableSyncChunk;
 
@@ -6266,6 +6652,11 @@ sub _d {
 
 # ###########################################################################
 # TableSyncNibble package 5712
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableSyncNibble.pm
+#   trunk/common/t/TableSyncNibble.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableSyncNibble;
 
@@ -6634,6 +7025,11 @@ sub _d {
 
 # ###########################################################################
 # TableSyncGroupBy package 5697
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableSyncGroupBy.pm
+#   trunk/common/t/TableSyncGroupBy.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableSyncGroupBy;
 
@@ -6785,6 +7181,11 @@ sub _d {
 
 # ###########################################################################
 # Outfile package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Outfile.pm
+#   trunk/common/t/Outfile.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package Outfile;
 
@@ -6834,6 +7235,11 @@ sub _d {
 
 # ###########################################################################
 # MockSyncStream package 5697
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MockSyncStream.pm
+#   trunk/common/t/MockSyncStream.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MockSyncStream;
 
@@ -6952,6 +7358,11 @@ sub _d {
 
 # ###########################################################################
 # MockSth package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MockSth.pm
+#   trunk/common/t/MockSth.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MockSth;
 
@@ -7021,6 +7432,11 @@ sub _d {
 
 # ###########################################################################
 # VersionParser package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/VersionParser.pm
+#   trunk/common/t/VersionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package VersionParser;
 
@@ -7069,24 +7485,26 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 6108
+# ReportFormatter package 6190
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ReportFormatter.pm
+#   trunk/common/t/ReportFormatter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package ReportFormatter;
+
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use List::Util qw(min max);
+use POSIX qw(ceil);
 
 eval { require Term::ReadKey };
 my $have_term = $EVAL_ERROR ? 0 : 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -7095,11 +7513,14 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
-      underline_header    => 1,
-      line_prefix         => '# ',
-      line_width          => 78,
-      column_spacing      => ' ',
-      truncate_data_lines => 1,
+      underline_header     => 1,
+      line_prefix          => '# ',
+      line_width           => 78,
+      column_spacing       => ' ',
+      extend_right         => 0,
+      truncate_line_mark   => '...',
+      column_errors        => 'warn',
+      truncate_header_side => 'left',
       %args,              # args above can be overriden, args below cannot
       n_cols              => 0,
    };
@@ -7122,135 +7543,265 @@ sub set_title {
 
 sub set_columns {
    my ( $self, @cols ) = @_;
-   push @{$self->{cols}}, map {
-      my $col = $_;
-      die "Column does not have a name" unless defined $col->{name};
-      if ( $col->{fixed_wdith} && $col->{fixed_width} < length $col->{name} ) { 
-         die "Fixed width $col->{fixed_wdith} is less than length of "
-            . "column name '$col->{name}'";
+   my $min_hdr_wid = 0;  # check that header fits on line
+   my $used_width  = 0;
+   my @auto_width_cols;
+
+   for my $i ( 0..$#cols ) {
+      my $col      = $cols[$i];
+      my $col_name = $col->{name};
+      my $col_len  = length $col_name;
+      die "Column does not have a name" unless defined $col_name;
+
+      if ( $col->{width} ) {
+         $col->{width_pct} = ceil(($col->{width} * 100) / $self->{line_width});
+         MKDEBUG && _d('col:', $col_name, 'width:', $col->{width}, 'chars =',
+            $col->{width_pct}, '%');
       }
-      if ( $col->{min_width} && $col->{min_width} < length $col->{name} ) {
-         die "Minimum width $col->{min_width} is less than length of "
-            . "column name '$col->{name}'";
+
+      if ( $col->{width_pct} ) {
+         $used_width += $col->{width_pct};
       }
-      $col->{truncate_mark} ||= '...';
-      $col->{type}          ||= 's';
-      $col->{min_width}     ||= $col->{fixed_width} || 0;
-      $col->{max_width}     ||= $col->{fixed_width} || 0;
-      $col->{min_val_width}   = length $col->{name};
-      $col->{max_val_width}   = length $col->{name};
-      $col;
-   } @cols;
+      else {
+         MKDEBUG && _d('Auto width col:', $col_name);
+         $col->{auto_width} = 1;
+         push @auto_width_cols, $i;
+      }
+
+      $col->{truncate}        = 1 unless defined $col->{truncate};
+      $col->{truncate_mark}   = '...' unless defined $col->{truncate_mark};
+      $col->{truncate_side} ||= 'right';
+      $col->{undef_value}     = '' unless defined $col->{undef_value};
+
+      $col->{min_val} = 0;
+      $col->{max_val} = 0;
+
+      $min_hdr_wid        += $col_len;
+      $col->{header_width} = $col_len;
+
+      $col->{right_most} = 1 if $i == $#cols;
+
+      push @{$self->{cols}}, $col;
+   }
+
    $self->{n_cols} = scalar @cols;
+
+   if ( ($used_width || 0) > 100 ) {
+      die "Total width_pct for all columns is >100%";
+   }
+
+   if ( @auto_width_cols ) {
+      my $wid_per_col = int((100 - $used_width) / scalar @auto_width_cols);
+      MKDEBUG && _d('Line width left:', (100-$used_width), '%;',
+         'each auto width col:', $wid_per_col, '%');
+      map { $self->{cols}->[$_]->{width_pct} = $wid_per_col } @auto_width_cols;
+   }
+
+   $min_hdr_wid += ($self->{n_cols} - 1) * length $self->{column_spacing};
+   MKDEBUG && _d('min header width:', $min_hdr_wid);
+   if ( $min_hdr_wid > $self->{line_width} ) {
+      MKDEBUG && _d('Will truncate headers because min header width',
+         $min_hdr_wid, '> line width', $self->{line_width});
+      $self->{truncate_headers} = 1;
+   }
+
    return;
 }
 
 sub add_line {
    my ( $self, @vals ) = @_;
    my $n_vals = scalar @vals;
-   $self->_column_error("Number of columns ($self->{n_cols}) and "
-      . "values ($n_vals) do not match") unless $self->{n_cols} == $n_vals;
-
-   my @line;
-   for my $i ( 0..$#vals ) {
-      my $col      = $self->{cols}->[$i];
-      my $val      = defined $vals[$i] ? $vals[$i] : $col->{undef_value};
-      my $width    = length $val;
-      my $too_wide = 0;  # this var does double duty: it's a bool and also
-      if ( $col->{fixed_width} && $width > $col->{fixed_width} ) {
-         $too_wide = $col->{fixed_width};
-      }
-      if ( $col->{max_width} && $width > $col->{max_width} ) {
-         $too_wide = $col->{max_width};
-      }
-      if ( $too_wide ) {
-         $self->_column_error("Value '$val' is too wide for column "
-            . $col->{name}) unless $col->{truncate};
-         $val = $self->_truncate($col, $val, $too_wide);
-         MKDEBUG && _d('Truncated', $vals[$i], 'to', $val);
-      }
-      $col->{min_val_width} = min($width, $col->{min_val_width});
-      $col->{max_val_width} = max($width, $col->{max_val_width});
-      $val = $col->{trf}->($val) if $col->{trf};
-      push @line, $val;
+   if ( $n_vals != $self->{n_cols} ) {
+      $self->_column_error("Number of values $n_vals does not match "
+         . "number of columns $self->{n_cols}");
    }
-   push @{$self->{lines}}, \@line;
-
+   for my $i ( 0..($n_vals-1) ) {
+      my $col   = $self->{cols}->[$i];
+      my $val   = defined $vals[$i] ? $vals[$i] : $col->{undef_value};
+      my $width = length $val;
+      $col->{min_val} = min($width, ($col->{min_val} || $width));
+      $col->{max_val} = max($width, ($col->{max_val} || $width));
+   }
+   push @{$self->{lines}}, \@vals;
    return;
 }
 
 sub get_report {
    my ( $self ) = @_;
 
-   my $n_cols = $self->{n_cols} - 1;
-   my @col_fmts;
-   for my $i ( 0..$n_cols ) {
-      my $col      = $self->{cols}->[$i];
-      my $wid      = $i == $n_cols && !$col->{right_justify} ? ''
-                   : $col->{max_width} || $col->{max_val_width} || '';
-      my $col_fmt  = '%'
-                   . ($col->{right_justify} ? '' : '-')
-                   . $wid
-                   . ($col->{type} || 's');
-      push @col_fmts, $col_fmt;
-   }
+   $self->_calculate_column_widths();
+   $self->_truncate_headers() if $self->{truncate_headers};
+   $self->_truncate_line_values();
 
-   my $fmt = ($self->{line_prefix} || '')
-           . join($self->{column_spacing}, @col_fmts);
+   my @col_fmts = $self->_make_column_formats();
+   my $fmt      = ($self->{line_prefix} || '')
+                . join($self->{column_spacing}, @col_fmts);
    MKDEBUG && _d('Format:', $fmt);
 
    (my $hdr_fmt = $fmt) =~ s/%([^-])/%-$1/g;
 
    my @lines;
    push @lines, sprintf "$self->{line_prefix}$self->{title}" if $self->{title};
-   push @lines, $self->_truncate_to_line_width(
+   push @lines, $self->_truncate_line(
          sprintf($hdr_fmt, map { $_->{name} } @{$self->{cols}}),
          strip => 1,
-         mark  => undef,
+         mark  => '',
    );
 
    if ( $self->{underline_header} ) {
-      my @underlines = map {
-         my $underline = '=' x $_->{max_val_width};
-         $underline;
-      } @{$self->{cols}};
-      push @lines, $self->_truncate_to_line_width(
+      my @underlines = map { '=' x $_->{print_width} } @{$self->{cols}};
+      push @lines, $self->_truncate_line(
          sprintf($fmt, @underlines),
-         strip => 1,
-         mark  => undef,
+         mark  => '',
       );
    }
 
    push @lines, map {
-      my $line = sprintf($fmt, @$_);
-      if ( $self->{truncate_data_lines} ) {
-         $self->_truncate_to_line_width($line);
+      my $vals = $_;
+      my $i    = 0;
+      my @vals = map {
+            defined $_ ? $_ : $self->{cols}->[$i++]->{undef_value}
+      } @$vals;
+      my $line = sprintf($fmt, @vals);
+      if ( $self->{extend_right} ) {
+         $line;
       }
       else {
-         $line;
+         $self->_truncate_line($line);
       }
    } @{$self->{lines}};
 
    return join("\n", @lines) . "\n";
 }
 
-sub _truncate {
-   my ( $self, $col, $val, $width ) = @_;
-   $val  = substr($val, 0, $width - length $col->{truncate_mark});
-   $val .= $col->{truncate_mark};
+sub truncate_value {
+   my ( $self, $col, $val, $width, $side ) = @_;
+   return $val if length $val <= $width;
+   return $val if $col->{right_most} && $self->{extend_right};
+   $side  ||= $col->{truncate_side};
+   my $mark = $col->{truncate_mark};
+   if ( $side eq 'right' ) {
+      $val  = substr($val, 0, $width - length $mark);
+      $val .= $mark;
+   }
+   elsif ( $side eq 'left') {
+      $val = $mark . substr($val, -1 * $width + length $mark);
+   }
+   else {
+      MKDEBUG && _d("I don't know how to", $side, "truncate values");
+   }
    return $val;
 }
 
-sub _truncate_to_line_width {
+sub _calculate_column_widths {
+   my ( $self ) = @_;
+
+   my $extra_space = 0;
+   foreach my $col ( @{$self->{cols}} ) {
+      my $print_width = int($self->{line_width} * ($col->{width_pct} / 100));
+
+      MKDEBUG && _d('col:', $col->{name}, 'width pct:', $col->{width_pct},
+         'char width:', $print_width,
+         'min val:', $col->{min_val}, 'max val:', $col->{max_val});
+
+      if ( $col->{auto_width} ) {
+         if ( $col->{min_val} && $print_width < $col->{min_val} ) {
+            MKDEBUG && _d('Increased to min val width:', $col->{min_val});
+            $print_width = $col->{min_val};
+         }
+         elsif ( $col->{max_val} &&  $print_width > $col->{max_val} ) {
+            MKDEBUG && _d('Reduced to max val width:', $col->{max_val});
+            $extra_space += $print_width - $col->{max_val};
+            $print_width  = $col->{max_val};
+         }
+      }
+
+      $col->{print_width} = $print_width;
+      MKDEBUG && _d('print width:', $col->{print_width});
+   }
+
+   MKDEBUG && _d('Extra space:', $extra_space);
+   while ( $extra_space-- ) {
+      foreach my $col ( @{$self->{cols}} ) {
+         if (    $col->{auto_width}
+              && (    $col->{print_width} < $col->{max_val}
+                   || $col->{print_width} < $col->{header_width})
+         ) {
+            $col->{print_width}++;
+         }
+      }
+   }
+
+   return;
+}
+
+sub _truncate_headers {
+   my ( $self, $col ) = @_;
+   my $side = $self->{truncate_header_side};
+   foreach my $col ( @{$self->{cols}} ) {
+      my $col_name    = $col->{name};
+      my $print_width = $col->{print_width};
+      next if length $col_name <= $print_width;
+      $col->{name}  = $self->truncate_value($col, $col_name, $print_width, $side);
+      MKDEBUG && _d('Truncated hdr', $col_name, 'to', $col->{name},
+         'max width:', $print_width);
+   }
+   return;
+}
+
+sub _truncate_line_values {
+   my ( $self ) = @_;
+   my $n_vals = $self->{n_cols} - 1;
+   foreach my $vals ( @{$self->{lines}} ) {
+      for my $i ( 0..$n_vals ) {
+         my $col   = $self->{cols}->[$i];
+         my $val   = defined $vals->[$i] ? $vals->[$i] : $col->{undef_value};
+         my $width = length $val;
+
+         if ( $col->{print_width} && $width > $col->{print_width} ) {
+            if ( !$col->{truncate} ) {
+               $self->_column_error("Value '$val' is too wide for column "
+                  . $col->{name});
+            }
+
+            my $callback  = $self->{truncate_callback};
+            my $print_width = $col->{print_width};
+            $val = $callback ? $callback->($col, $val, $print_width)
+                 :             $self->truncate_value($col, $val, $print_width);
+            MKDEBUG && _d('Truncated val', $vals->[$i], 'to', $val,
+               '; max width:', $print_width);
+            $vals->[$i] = $val;
+         }
+      }
+   }
+   return;
+}
+
+sub _make_column_formats {
+   my ( $self ) = @_;
+   my @col_fmts;
+   my $n_cols = $self->{n_cols} - 1;
+   for my $i ( 0..$n_cols ) {
+      my $col = $self->{cols}->[$i];
+
+      my $width = $col->{right_most} && !$col->{right_justify} ? ''
+                : $col->{print_width};
+
+      my $col_fmt  = '%' . ($col->{right_justify} ? '' : '-') . $width . 's';
+      push @col_fmts, $col_fmt;
+   }
+   return @col_fmts;
+}
+
+sub _truncate_line {
    my ( $self, $line, %args ) = @_;
-   $args{mark} = '...' unless exists $args{mark};
+   my $mark = defined $args{mark} ? $args{mark} : $self->{truncate_line_mark};
    if ( $line ) {
       $line =~ s/\s+$// if $args{strip};
       my $len  = length($line);
       if ( $len > $self->{line_width} ) {
-         my $adj_len = $args{mark} ? length $args{mark} : 0;
-         $line  = substr($line, 0, $self->{line_width} - $adj_len);
-         $line .= $args{mark} if $args{mark};
+         $line  = substr($line, 0, $self->{line_width} - length $mark);
+         $line .= $mark if $mark;
       }
    }
    return $line;
@@ -7278,7 +7829,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# UpgradeReportFormatter package 5287
+# UpgradeReportFormatter package 6190
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/UpgradeReportFormatter.pm
+#   trunk/common/t/UpgradeReportFormatter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 
@@ -7371,7 +7927,7 @@ sub event_report {
          if ( $stats && $stats->{$thing} ) {
             my $vals = $stats->{$thing};
             my $func = $thing =~ m/time$/ ? \&micro_t : \&shorten;
-            my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
+            my $metrics = $host->{ea}->metrics(attrib=>$thing, where=>$where);
             my @n = (
                @{$vals}{qw(sum min max)},
                ($vals->{sum} || 0) / ($vals->{cnt} || 1),
@@ -7463,6 +8019,11 @@ sub _d {
 
 # ###########################################################################
 # CompareResults package 5976
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/CompareResults.pm
+#   trunk/common/t/CompareResults.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package CompareResults;
 
@@ -8308,6 +8869,11 @@ sub _d {
 
 # ###########################################################################
 # CompareQueryTimes package 5285
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/CompareQueryTimes.pm
+#   trunk/common/t/CompareQueryTimes.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package CompareQueryTimes;
 
@@ -8595,7 +9161,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# CompareWarnings package 6108
+# CompareWarnings package 6190
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/CompareWarnings.pm
+#   trunk/common/t/CompareWarnings.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package CompareWarnings;
 
@@ -8847,7 +9418,7 @@ sub _report_diff_warnings {
 
    return unless keys %{$self->{diffs}->{warnings}};
 
-   my $report = new ReportFormatter(truncate_data_lines => 0);
+   my $report = new ReportFormatter(extend_right => 1);
    $report->set_title('New warnings');
    $report->set_columns(
       $args{query_id_col},
@@ -8881,7 +9452,7 @@ sub _report_diff_levels {
 
    return unless keys %{$self->{diffs}->{levels}};
 
-   my $report = new ReportFormatter(truncate_data_lines => 0);
+   my $report = new ReportFormatter(extend_right => 1);
    $report->set_title('Warning level differences');
    $report->set_columns(
       $args{query_id_col},
@@ -9536,6 +10107,9 @@ sub main {
       if ( !$meta_ea->events_processed() ) {
          print "# No events processed.\n";
       }
+      foreach my $host ( @$hosts ) {
+         $host->{ea}->calculate_statistical_metrics();
+      }
 
       my $urf = new UpgradeReportFormatter();
       my ($orderby_attrib, $orderby_func) = split(/:/, $o->get('order-by'));
@@ -9672,7 +10246,7 @@ sub report_errors {
 
    return unless keys %$errors;
 
-   my $rf = new ReportFormatter(truncate_data_lines=>0);
+   my $rf = new ReportFormatter(extend_right=>1);
    $rf->set_title('Errors');
    $rf->set_columns(
       {

@@ -28,6 +28,11 @@ our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # TableParser package 5980
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableParser.pm
+#   trunk/common/t/TableParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableParser;
 
@@ -416,6 +421,11 @@ sub _d {
 
 # ###########################################################################
 # TableChecksum package 6078
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableChecksum.pm
+#   trunk/common/t/TableChecksum.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package TableChecksum;
 
@@ -793,6 +803,11 @@ sub _d {
 
 # ###########################################################################
 # OptionParser package 5985
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/OptionParser.pm
+#   trunk/common/t/OptionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package OptionParser;
 
@@ -1741,6 +1756,11 @@ sub _d {
 
 # ###########################################################################
 # DSNParser package 6057
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -2085,6 +2105,11 @@ sub _d {
 
 # ###########################################################################
 # VersionParser package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/VersionParser.pm
+#   trunk/common/t/VersionParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package VersionParser;
 
@@ -2134,6 +2159,11 @@ sub _d {
 
 # ###########################################################################
 # MySQLDump package 5998
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MySQLDump.pm
+#   trunk/common/t/MySQLDump.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MySQLDump;
 
@@ -2442,6 +2472,11 @@ sub _d {
 
 # ###########################################################################
 # TableChunker package 5955
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/TableChunker.pm
+#   trunk/common/t/TableChunker.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2863,6 +2898,11 @@ sub _d {
 
 # ###########################################################################
 # Quoter package 6079
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Quoter.pm
+#   trunk/common/t/Quoter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package Quoter;
 
@@ -2927,7 +2967,12 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 6137
+# MasterSlave package 6184
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MasterSlave.pm
+#   trunk/common/t/MasterSlave.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3544,35 +3589,50 @@ sub short_host {
    }
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
 }
-
+   
 sub is_replication_thread {
-   my ( $self, $query ) = @_; 
-   if ( ( defined $query->{db} && $query->{db} eq 'NULL' && defined $query->{State} ) && 
-         ( 
-           $query->{State} =~ m/Sending binlog event to slave/ ||
-           $query->{State} =~ m/Finished reading one binlog; switching to next binlog/ ||
-           $query->{State} =~ m/Has sent all binlog to slave; waiting for binlog to be updated/ ||
-           $query->{State} =~ m/Waiting to finalize termination/ ||
-           $query->{State} =~ m/Waiting for master update/ ||
-           $query->{State} =~ m/Connecting to master/ ||
-           $query->{State} =~ m/Checking master version/ ||
-           $query->{State} =~ m/Registering slave on master/ ||
-           $query->{State} =~ m/Requesting binlog dump/ ||
-           $query->{State} =~ m/Waiting to reconnect after a failed binlog dump request/ ||
-           $query->{State} =~ m/Reconnecting after a failed binlog dump request/ ||
-           $query->{State} =~ m/Waiting for master to send event/ ||
-           $query->{State} =~ m/Queueing master event to the relay log/ ||
-           $query->{State} =~ m/Waiting to reconnect after a failed master event read/ ||
-           $query->{State} =~ m/Reconnecting after a failed master event read/ ||
-           $query->{State} =~ m/Waiting for the slave SQL thread to free enough relay log space/ ||
-           $query->{State} =~ m/Waiting for slave mutex on exit/ ||
-           $query->{State} =~ m/Waiting for the next event in relay log/ ||
-           $query->{State} =~ m/Reading event from the relay log/ ||
-           $query->{State} =~ m/Has read all relay log; waiting for the slave/ ||
-           $query->{State} =~ m/Making temp file/ ||
-           $query->{State} =~ m/Waiting for slave mutex on exit/ ) ) {
-              return $query->{Id};
-           }
+   my ( $self, $query, $type ) = @_; 
+   return unless $query;
+
+   $type ||= 'all';
+   die "Invalid type: $type"
+      unless $type =~ m/binlog_dump|slave_io|slave_sql|all/i;
+
+   my $match = 0;
+   if ( $type =~ m/binlog_dump|all/i ) {
+      $match = 1
+         if ($query->{Command} || $query->{command} || '') eq "Binlog Dump";
+   }
+   if ( !$match ) {
+      if ( ($query->{User} || $query->{user} || '') eq "system user" ) {
+         my $state = $query->{State} || $query->{state} || '';
+         if ( $type =~ m/slave_io|all/i ) {
+            ($match) = $state =~ m/
+               ^(Waiting\sfor\smaster\supdate
+                |Connecting\sto\smaster
+                |Waiting\sto\sreconnect\safter\sa\sfailed
+                |Reconnecting\safter\sa\sfailed\sbinlog
+                |Waiting\sfor\smaster\sto\ssend\sevent
+                |Queueing\smaster\sevent\sto\sthe\srelay
+                |Waiting\sto\sreconnect\safter\sa\sfailed
+                |Reconnecting\safter\sa\sfailed\smaster
+                |Waiting\sfor\sthe\sslave\sSQL\sthread)/xi;
+         }
+         if ( !$match && $type =~ m/slave_sql|all/i ) {
+            ($match) = $state =~ m/
+               ^(Waiting\sfor\sthe\snext\sevent
+                |Reading\sevent\sfrom\sthe\srelay\slog
+                |Has\sread\sall\srelay\slog;\swaiting
+                |Making\stemp\sfile)/xi; 
+         }
+      }
+      else {
+         MKDEBUG && _d('Not system user');
+      }
+   }
+   MKDEBUG && _d($type, 'replication thread:', ($match ? 'yes' : 'no'),
+      '; match:', $match);
+   return $match;
 }
 
 sub pos_to_string {
@@ -3597,6 +3657,11 @@ sub _d {
 
 # ###########################################################################
 # Daemon package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Daemon.pm
+#   trunk/common/t/Daemon.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 
 package Daemon;
@@ -3776,6 +3841,11 @@ sub _d {
 
 # ###########################################################################
 # SchemaIterator package 5473
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/SchemaIterator.pm
+#   trunk/common/t/SchemaIterator.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package SchemaIterator;
 
@@ -4062,6 +4132,11 @@ sub _d {
 
 # ###########################################################################
 # ExecutionThrottler package 5266
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ExecutionThrottler.pm
+#   trunk/common/t/ExecutionThrottler.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package ExecutionThrottler;
 
