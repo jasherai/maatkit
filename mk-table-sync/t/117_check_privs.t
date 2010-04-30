@@ -52,9 +52,10 @@ $slave_dbh->do('create database issue_907');
 $slave_dbh->do('create table issue_907.t (i int)');
 $slave_dbh->do('insert into issue_907.t values (1)');
 
-`/tmp/12345/use -uroot -e "GRANT SELECT, SHOW DATABASES ON *.* TO 'test_907'\@'localhost' IDENTIFIED BY 'msandbox'"`;
+# On 5.1 user needs SUPER to set binlog_format, which mk-table-sync does.
+`/tmp/12345/use -uroot -e "GRANT SUPER, SELECT, SHOW DATABASES ON *.* TO 'test_907'\@'localhost' IDENTIFIED BY 'msandbox'"`;
 
-#2) run and get output to see what it's like when it's broken,  
+#2) run and get output to see what it's like when it's broken.  
 $output = output(
    sub { mk_table_sync::main(@args) },
    undef,
@@ -66,10 +67,7 @@ like(
    "Can't --print without all privs"
 );
 
-#3) run again (outside of test) to see what output is like when it works 
-# done, output is :
-
-#check if its ok with no privleges option
+#3) run again to see what output is like when it works 
 $output = output(
    sub { mk_table_sync::main(@args, '--no-check-privileges') },
    undef,
@@ -82,7 +80,7 @@ is(
    "Can --print without all privs and --no-check-privileges"
 );
 
-#+ clean up user
+#4) clean up user
 $master_dbh->do('DROP USER \'test_907\'@\'localhost\'');
 
 # #############################################################################
