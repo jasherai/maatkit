@@ -36,26 +36,41 @@ fi
 
 for FILE in `ls $trunk/$PACK/mk-*`
 do
+   echo "Updating modules in $FILE..."
+   pkgs_updated=0
    for MOD in `grep 'End .* package' $FILE | awk '{print $3}'`
    do
       if [ -z "$MODULE" -o "$MOD" = "$MODULE" ]; then
          if [ -f "$trunk/common/$MOD.pm" ]; then
             if grep -q '^# [A-Z].* package.*Revision' $FILE; then
-               echo "\nERROR: $FILE has a malformed module header:"
+               echo "  ERROR: $FILE has a malformed module header:"
                grep '^# [A-Z].* package.*Revision' $FILE
                echo
                exit 1
             fi
 
-            cat $FILE | $trunk/maatkit/insert_module $MOD > $MOD.tmp
-            if diff -q $FILE $MOD.tmp | grep differ > /dev/null ; then
-               echo "Updating $MOD in $FILE";
+            pkg_uncommitted=`svn status "$trunk/common/$MOD.pm"`
+            if [ -n "$pkg_uncommitted" ]; then
+               echo "  Skipping $MOD because it has uncommited changes"
+               continue
+            fi
+
+            pkg_ver=`grep Revision $trunk/common/OptionParser.pm | cut -d' ' -f5`
+            pkg_ver_in_tool=`grep '^# OptionParser package' $FILE  | cut -d' ' -f4`
+            if [ $pkg_ver -gt $pkg_ver_in_tool ]; then
+               cat $FILE | $trunk/maatkit/insert_module $MOD 0 > $MOD.tmp
                cat $MOD.tmp > $FILE;
+               echo "  Updated $MOD from r$pkg_ver_in_tool to r$pkg_ver"
+               pkgs_updated=1
             fi
          else
-            echo "\nWARNING: $FILE uses nonexistent module $MOD\n"
+            echo "  WARNING: $FILE uses nonexistent module $MOD\n"
          fi
          rm -f $MOD.tmp;
       fi
    done
+   if [ $pkgs_updated -eq 0 ]; then
+      echo "  All modules are up to date"
+   fi
+   echo
 done

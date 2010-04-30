@@ -7,7 +7,7 @@ use English qw(-no_match_vars);
 
 # Read in the standard input, and replace the desired module by the contents of
 # the most recent version of the module.
-# Example: :%!../maatkit/insert_module TableParser
+# Example: cat mk-table-sync | ../maatkit/insert_module TableParser
 
 my $trunk = $ENV{MAATKIT_TRUNK};
 die "MAATKIT_TRUNK environment variable is not set." unless $trunk;
@@ -23,7 +23,15 @@ $text =~ s/^ *#.*\n//gm; # strip comments out
 $input =~ s/ $module package (\d+)/ $module package/; # strip revision
 close $file;
 my $line = "# ###########################################################################\n";
+
+my $message =  
+"# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/${module}.pm
+#   trunk/common/t/${module}.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.";
+
 my $marker = qr/($line# (?:End )?$module package\n$line)/;
 $input =~ s/$marker.*?$marker/$1$text$2/s;
-$input =~ s/ $module package/ $module package $ver/; # add revision
+$input =~ s/ $module package/ $module package $ver\n$message/; # add revision
 print $input;
