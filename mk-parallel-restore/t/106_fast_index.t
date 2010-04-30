@@ -91,18 +91,19 @@ SKIP: {
       qr/0\s+failures/,
       '--fast-index: no failures reported'
    );
-   $output = $dbh->selectrow_arrayref('show create table issue_729.posts')->[1];
+   $output = lc($dbh->selectrow_arrayref('show create table issue_729.posts')->[1]);
+   $output =~ s/primary key  /primary key /;  # 5.0/5.1 difference *sigh*
    is(
       $output,
-"CREATE TABLE `posts` (
-  `id` int(10) unsigned NOT NULL auto_increment,
-  `template_id` smallint(5) unsigned NOT NULL default '0',
-  `other_id` bigint(20) unsigned NOT NULL default '0',
-  `date` int(10) unsigned NOT NULL default '0',
-  `private` tinyint(3) unsigned NOT NULL default '0',
-  PRIMARY KEY  (`id`),
-  KEY `other_id` (`other_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=15418 DEFAULT CHARSET=latin1",
+"create table `posts` (
+  `id` int(10) unsigned not null auto_increment,
+  `template_id` smallint(5) unsigned not null default '0',
+  `other_id` bigint(20) unsigned not null default '0',
+  `date` int(10) unsigned not null default '0',
+  `private` tinyint(3) unsigned not null default '0',
+  primary key (`id`),
+  key `other_id` (`other_id`)
+) engine=innodb auto_increment=15418 default charset=latin1",
       '--fast-index: secondary index was created'
    );
 
