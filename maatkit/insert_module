@@ -1,37 +1,55 @@
 #!/usr/bin/perl
 
-use strict;
-use warnings FATAL => 'all';
-
-use English qw(-no_match_vars);
-
 # Read in the standard input, and replace the desired module by the contents of
 # the most recent version of the module.
 # Example: cat mk-table-sync | ../maatkit/insert_module TableParser
 
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
 my $trunk = $ENV{MAATKIT_TRUNK};
 die "MAATKIT_TRUNK environment variable is not set." unless $trunk;
 
-$INPUT_RECORD_SEPARATOR = undef;
-my $input = <STDIN>;
-my $module = shift @ARGV;
-open my $file, "<", "$trunk/common/$module.pm"
-   or die $OS_ERROR;
-my $text = <$file>;
-my ( $ver ) = $text =~ m/\$Revision: (\d+) \$/;
-$text =~ s/^ *#.*\n//gm; # strip comments out
-$input =~ s/ $module package (\d+)/ $module package/; # strip revision
-close $file;
+$INPUT_RECORD_SEPARATOR = undef;  # slurp tool from STDIN and module from file
+
+my $tool = <STDIN>;
+
+my $pkg_name = shift @ARGV;
+open my $fh, "<", "$trunk/common/$pkg_name.pm"
+   or die "Cannot open $pkg_name.pm: $OS_ERROR";
+my $pkg_code = <$fh>;
+close $fh;
+
+# Update module revno in tool.
+my ($ver) = $pkg_code =~ m/\$Revision: (\d+) \$/;
+$tool =~ s/$pkg_name package \d+/$pkg_name package $ver/;
+
+# Strip comment from module.
+$pkg_code =~ s/^ *#.*\n//gm;
+
+# Lines around pkg header and footer.
 my $line = "# ###########################################################################\n";
 
-my $message =  
+# http://code.google.com/p/maatkit/issues/detail?id=893
+my $message =
 "# This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
-#   trunk/common/${module}.pm
-#   trunk/common/t/${module}.t
+#   trunk/common/${pkg_name}.pm
+#   trunk/common/t/${pkg_name}.t
 # See http://code.google.com/p/maatkit/wiki/Developers for more information.";
 
-my $marker = qr/($line# (?:End )?$module package\n$line)/;
-$input =~ s/$marker.*?$marker/$1$text$2/s;
-$input =~ s/ $module package/ $module package $ver\n$message/; # add revision
-print $input;
+# Lines marking pkg header/start and footer/end.
+my $marker = qr/($line# (?:End )?$pkg_name package\n$line)/;
+
+# Replace code in tool between markers with updated pkg code.
+$tool =~ s/$marker.*?$marker/$1$pkg_code$2/s;
+
+# Add message if it's not already in the pkg header.
+if ( $tool !~ m/$pkg_name package $ver\n$message/ ) {
+   $tool =~ s/$pkg_name package $ver/$pkg_name package $ver\n$message/;
+}
+
+print $tool;
+
+exit;
