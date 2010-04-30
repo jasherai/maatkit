@@ -39,10 +39,31 @@ $sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
 
 # Check --schema
 $output = `$cmd --tables checksum_test --checksum --schema 2>&1`;
-like($output, qr/2752458186\s+127.1.test2.checksum_test/, 'Checksum test with --schema' );
+my $checksum = $sandbox_version ge '5.1' ? '3688961686' : '2752458186';
+like(
+   $output,
+   qr/$checksum\s+127.1.test2.checksum_test/,
+   '--checksum --schema'
+);
 
-# Should output the same thing, it only lacks the AUTO_INCREMENT specifier.
-like($output, qr/2752458186\s+127.1.test.checksum_test/, 'Checksum 2 test with --schema' );
+# Should output the same thing, it only lacks the AUTO_INCREMENT specifier
+# which is removed by the code before the schema is checksummed so the two
+# tables end up having the same checksum.
+like(
+   $output,
+   qr/$checksum\s+127.1.test.checksum_test/,
+   '--checksum --schema, AUTO_INCREMENT removed'
+);
+
+$output = `$cmd --schema -d test -t checksum_test 2>&1`;
+like(
+   $output,
+qr/
+DATABASE\s+TABLE\s+CHUNK\s+HOST\s+ENGINE\s+COUNT\s+CHECKSUM\s+TIME\s+WAIT\s+STAT\s+LAG\n
+test\s+checksum_test\s+0\s+127.1\s+MyISAM\s+NULL\s+$checksum\s+0\s+0\s+NULL\s+NULL\n
+/x,
+   "Checksum --schema"
+);
 
 # #############################################################################
 # Issue 5: Add ability to checksum table schema instead of data
@@ -55,8 +76,11 @@ $sb->wipe_clean($master_dbh);
 
 my $awk_slice = "awk '{print \$1,\$2,\$7}'";
 
-my $ret_val = system("$cmd P=12346 --ignore-databases sakila --schema | $awk_slice | diff $trunk/mk-table-checksum/t/samples/sample_schema_opt -");
-cmp_ok($ret_val, '==', 0, '--schema basic output');
+# This test is too flaky because it depends on MySQL version and mysql
+# tables.  The 3 tests above accomplish the same thing more deterministically:
+# testing that we can checksum schema.
+# my $ret_val = system("$cmd P=12346 --ignore-databases sakila --schema | $awk_slice | diff $trunk/mk-table-checksum/t/samples/sample_schema_opt -");
+# cmp_ok($ret_val, '==', 0, '--schema basic output');
 
 $output = `$cmd --schema --quiet`;
 is(
@@ -134,7 +158,8 @@ $sb->create_dbs($master_dbh, [qw(test)]);
 diag(`/tmp/12345/use -e 'SET SQL_LOG_BIN=0; CREATE TABLE test.only_on_master(a int);'`);
 
 $output = `$cmd P=12346 -t test.only_on_master --schema 2>&1`;
-like($output, qr/MyISAM\s+NULL\s+23678842/, 'Table on master checksummed with --schema');
+$checksum = $sandbox_version ge '5.1' ? '2402764438' : '23678842';
+like($output, qr/MyISAM\s+NULL\s+$checksum/, 'Table on master checksummed with --schema');
 like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed with --schema');
 like($output, qr/test.only_on_master does not exist on slave 127\.1:12346/, 'Debug reports missing slave table with --schema');
 
