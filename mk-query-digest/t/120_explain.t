@@ -33,6 +33,8 @@ else {
    plan tests => 3;
 }
 
+my $sample = "mk-query-digest/t/samples/";
+
 $dbh->do('drop database if exists food');
 $dbh->do('create database food');
 $dbh->do('use food');
@@ -46,7 +48,8 @@ ok(
    no_diff(
       sub { mk_query_digest::main(@args,
          "$trunk/common/t/samples/slow007.txt") },
-      "mk-query-digest/t/samples/slow007_explain_1.txt"
+      ($sandbox_version ge '5.1' ? "$sample/slow007_explain_1-51.txt"
+                                 : "$sample/slow007_explain_1.txt")
    ),
    'Analysis for slow007 with --explain, no rows',
 );
@@ -58,7 +61,8 @@ ok(
    no_diff(
       sub { mk_query_digest::main(@args,
          "$trunk/common/t/samples/slow007.txt") },
-      "mk-query-digest/t/samples/slow007_explain_2.txt"
+      ($sandbox_version ge '5.1' ? "$sample/slow007_explain_2-51.txt"
+                                 : "$sample/slow007_explain_2.txt")
    ),
    'Analysis for slow007 with --explain',
 );

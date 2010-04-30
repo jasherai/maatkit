@@ -1,0 +1,41 @@
+
+# Query 1: 0 QPS, 0x concurrency, ID 0x8E306CDB7A800841 at byte 0 ________
+# This item is included in the report because it matches --limit.
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       1
+# Exec time    100    12us    12us    12us    12us    12us       0    12us
+# Lock time      0       0       0       0       0       0       0       0
+# Rows sent      0       0       0       0       0       0       0       0
+# Rows exam      0       0       0       0       0       0       0       0
+# Users                  1 [SQL_SLAVE]
+# Hosts                  1
+# Databases              1    food
+# Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
+# bytes        100      23      23      23      23      23       0      23
+# Merge pas      0       0       0       0       0       0       0       0
+# Query_time distribution
+#   1us
+#  10us  ################################################################
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
+# Tables
+#    SHOW TABLE STATUS FROM `food` LIKE 'trees'\G
+#    SHOW CREATE TABLE `food`.`trees`\G
+# EXPLAIN
+SELECT fruit FROM trees\G
+# *************************** 1. row ***************************
+#            id: 1
+#   select_type: SIMPLE
+#         table: trees
+#    partitions: NULL
+#          type: system
+# possible_keys: NULL
+#           key: NULL
+#       key_len: NULL
+#           ref: NULL
+#          rows: 0
+#         Extra: const row not found
