@@ -35,7 +35,8 @@ my $cnf='/tmp/12345/my.sandbox.cnf';
 my $cmd = "$trunk/mk-loadavg/mk-loadavg -F $cnf -h 127.1";
 
 diag(`rm -rf $log $sentinel $pid $out`);
-system("$cmd --watch 'Processlist:state:executing:count:>:2' -v --daemonize  --interval 1 --sentinel $sentinel --pid $pid --execute-command 'echo OK >> $out' --log $log");
+my $state = $sandbox_version ge '5.1' ? 'user sleep' : 'executing';
+system("$cmd --watch 'Processlist:state:$state:count:>:2' -v --daemonize  --interval 1 --sentinel $sentinel --pid $pid --execute-command 'echo OK >> $out' --log $log");
 ok(
    -f $pid && -f $log,
    'mk-loadavg is running'
