@@ -4131,143 +4131,6 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ExecutionThrottler package 5266
-# This package is a copy without comments from the original.  The original
-# with comments and its test file can be found in the SVN repository at,
-#   trunk/common/ExecutionThrottler.pm
-#   trunk/common/t/ExecutionThrottler.t
-# See http://code.google.com/p/maatkit/wiki/Developers for more information.
-# ###########################################################################
-package ExecutionThrottler;
-
-use strict;
-use warnings FATAL => 'all';
-use English qw(-no_match_vars);
-
-use List::Util qw(sum min max);
-use Time::HiRes qw(time);
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Sortkeys  = 1;
-$Data::Dumper::Quotekeys = 0;
-
-use constant MKDEBUG => $ENV{MKDEBUG} || 0;
-
-sub new {
-   my ( $class, %args ) = @_;
-   my @required_args = qw(rate_max get_rate check_int step);
-   foreach my $arg ( @required_args ) {
-      die "I need a $arg argument" unless defined $args{$arg};
-   }
-   my $self = {
-      step       => 0.05,  # default
-      %args, 
-      rate_ok    => undef,
-      last_check => undef,
-      stats      => {
-         rate_avg     => 0,
-         rate_samples => [],
-      },
-      int_rates  => [],
-      skip_prob  => 0.0,
-   };
-
-   return bless $self, $class;
-}
-
-sub throttle {
-   my ( $self, %args ) = @_;
-   my $time = $args{misc}->{time} || time;
-   if ( $self->_time_to_check($time) ) {
-      my $rate_avg = (sum(@{$self->{int_rates}})   || 0)
-                   / (scalar @{$self->{int_rates}} || 1);
-      my $running_avg = $self->_save_rate_avg($rate_avg);
-      MKDEBUG && _d('Average rate for last interval:', $rate_avg);
-
-      if ( $args{stats} ) {
-         $args{stats}->{throttle_checked_rate}++;
-         $args{stats}->{throttle_rate_avg} = sprintf '%.2f', $running_avg;
-      }
-
-      @{$self->{int_rates}} = ();
-
-      if ( $rate_avg > $self->{rate_max} ) {
-         $self->{skip_prob} += $self->{step};
-         $self->{skip_prob}  = 1.0 if $self->{skip_prob} > 1.0;
-         MKDEBUG && _d('Rate max exceeded');
-         $args{stats}->{throttle_rate_max_exceeded}++ if $args{stats};
-      }
-      else {
-         $self->{skip_prob} -= $self->{step};
-         $self->{skip_prob} = 0.0 if $self->{skip_prob} < 0.0;
-         $args{stats}->{throttle_rate_ok}++ if $args{stats};
-      }
-
-      MKDEBUG && _d('Skip probability:', $self->{skip_prob});
-      $self->{last_check} = $time;
-   }
-   else {
-      my $current_rate = $self->{get_rate}->();
-      push @{$self->{int_rates}}, $current_rate;
-      if ( $args{stats} ) {
-         $args{stats}->{throttle_rate_min} = min(
-            ($args{stats}->{throttle_rate_min} || ()), $current_rate);
-         $args{stats}->{throttle_rate_max} = max(
-            ($args{stats}->{throttle_rate_max} || ()), $current_rate);
-      }
-      MKDEBUG && _d('Current rate:', $current_rate);
-   } 
-
-   if ( $args{event} ) {
-      $args{event}->{Skip_exec} = $self->{skip_prob} <= rand() ? 'No' : 'Yes';
-   }
-
-   return $args{event};
-}
-
-sub _time_to_check {
-   my ( $self, $time ) = @_;
-   if ( !$self->{last_check} ) {
-      $self->{last_check} = $time;
-      return 0;
-   }
-   return $time - $self->{last_check} >= $self->{check_int} ? 1 : 0;
-}
-
-sub rate_avg {
-   my ( $self ) = @_;
-   return $self->{stats}->{rate_avg} || 0;
-}
-
-sub skip_probability {
-   my ( $self ) = @_;
-   return $self->{skip_prob};
-}
-
-sub _save_rate_avg {
-   my ( $self, $rate ) = @_;
-   my $samples  = $self->{stats}->{rate_samples};
-   push @$samples, $rate;
-   shift @$samples if @$samples > 1_000;
-   $self->{stats}->{rate_avg} = sum(@$samples) / (scalar @$samples);
-   return $self->{stats}->{rate_avg} || 0;
-}
-
-sub _d {
-   my ($package, undef, $line) = caller 0;
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-        map { defined $_ ? $_ : 'undef' }
-        @_;
-   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
-}
-
-1;
-
-# ###########################################################################
-# End ExecutionThrottler package
-# ###########################################################################
-
-# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -4457,12 +4320,37 @@ sub main {
 
    my $main_dbh = get_cxn($hosts[0], %common_modules);
 
-   my $lag_dbh;
-   {
+   # #########################################################################
+   # Prepare --throttle.
+   # #########################################################################
+   my @slaves;
+   if ( $o->get('throttle') ) {
       if ( $o->get('check-slave-lag') ) {
-         my $dsn = $dp->parse(
-            $o->get('check-slave-lag'), $hosts[0], $dsn_defaults);
-         $lag_dbh = get_cxn($dsn, %common_modules);
+         MKDEBUG && _d('Using --check-slave-lag DSN for --throttle');
+         # OptionParser can't auto-copy DSN vals from a cmd line DSN
+         # to an opt DSN, so we copy them manually.
+         my $dsn = $dp->copy($hosts[0], $o->get('check-slave-lag'));
+         push @slaves, { dsn=>$dsn, dbh=>get_cxn($dsn, %common_modules) };
+      }
+      else {
+         MKDEBUG && _d('Recursing to slaves for --throttle');
+         $ms->recurse_to_slaves(
+            {  dbh        => $main_dbh,
+               dsn        => $hosts[0],
+               dsn_parser => $dp,
+               recurse    => $o->get('recurse'),
+               method     => $o->get('recursion-method'),
+               callback   => sub {
+                  my ( $dsn, $dbh, $level, $parent ) = @_;
+                  return unless $level;
+                  MKDEBUG && _d('--throttle slave:', $dp->as_string($dsn));
+                  $dbh->{InactiveDestroy}  = 1; # Prevent destroying on fork.
+                  $dbh->{FetchHashKeyName} = 'NAME_lc';
+                  push @slaves, { dsn=>$dsn, dbh=>$dbh };
+                  return;
+               },
+            }
+         );
       }
    }
 
@@ -4592,7 +4480,7 @@ sub main {
          db      => $database,
          tbls    => $tables,
          hosts   => \@hosts,
-         lag_dbh => $lag_dbh,
+         slaves  => \@slaves, 
          %common_modules
       );
    }
@@ -4965,13 +4853,14 @@ sub checksum_chunks {
    CHUNK:
    foreach my $chunk_num ( 0 .. $num_chunks - 1 ) {
 
-      if ( my $lag_dbh = $args{lag_dbh} ) {
-         my $lag = $ms->get_slave_lag($lag_dbh);
-         while ( !defined $lag || $lag > $final_o->get('max-lag') ) {
-            MKDEBUG && _d('Sleeping: slave lag is', $lag);
-            sleep($o->get('check-interval'));
-            $lag = $ms->get_slave_lag($lag_dbh);
-         }
+      if ( $o->get('throttle') ) {
+         wait_for_slaves(
+            slaves         => $args{slaves},
+            max_lag        => $o->get('max-lag'),
+            check_interval => $o->get('check-interval'),
+            DSNParser      => $dp,
+            MasterSlave    => $ms,
+         );
       }
 
       if (    ($num_chunks > 1 || $final_o->get('single-chunk'))
@@ -5867,6 +5756,35 @@ sub print_err {
    print STDERR $msg, "\n";
 }
 
+# Returns when Seconds_Behind_Master on all the given slaves
+# is < max_lag, waits check_interval seconds between checks
+# if a slave is lagging too much.
+sub wait_for_slaves {
+   my ( %args ) = @_;
+   my $slaves         = $args{slaves};
+   my $max_lag        = $args{max_lag};
+   my $check_interval = $args{check_interval};
+   my $dp             = $args{DSNParser};
+   my $ms             = $args{MasterSlave};
+
+   return unless scalar @$slaves;
+
+   foreach my $slave ( @$slaves ) {
+      MKDEBUG && _d('Checking slave', $dp->as_string($slave->{dsn}),
+         'lag for --throttle');
+      my $lag = $ms->get_slave_lag($slave->{dbh});
+      while ( !defined $lag || $lag > $max_lag ) {
+         MKDEBUG && _d('Slave lag', $lag, '>', $max_lag,
+            '; sleeping', $check_interval);
+         sleep $check_interval;
+         $lag = $ms->get_slave_lag($slave->{dbh});
+      }
+      MKDEBUG && _d('Slave ready, lag', $lag, '<=', $max_lag);
+   }
+
+   return;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -6369,16 +6287,18 @@ Prompt for a password when connecting to MySQL.
 
 =item --check-interval
 
-type: time; default: 1s
+type: time; group: Throttle; default: 1s
 
 How often to check for slave lag if L<"--check-slave-lag"> is given.
 
 =item --check-slave-lag
 
-type: string
+type: DSN; group: Throttle
 
-Pause checksumming each chunk until the specified DSN's slave lag is less than
-L<"--max-lag">.
+Pause checksumming until the specified slave's lag is less than L<"--max-lag">.
+
+If this option is specified, it limits L<"--[no]throttle"> to checking
+only this slave.
 
 =item --checksum
 
@@ -6591,7 +6511,7 @@ that.
 
 =item --max-lag
 
-type: time; default: 1s
+type: time; group: Throttle; default: 1s
 
 Suspend checksumming if the slave given by L<"--check-slave-lag"> lags.
 
@@ -6723,6 +6643,8 @@ Do not print checksum results.
 Re-checksum chunks that L<"--replicate-check"> found to be different.
 
 =item --recurse
+
+group: Throttle
 
 Number of levels to recurse in the hierarchy for L<"--[no]throttle">.
 Default is infinite.
@@ -6969,6 +6891,8 @@ probabilistic behavior apply to tables that aren't divided into chunks.
 
 =item --slave-lag
 
+group: Output
+
 Report replication delay on the slaves.
 
 If this option is enabled, the output will show how many seconds behind the
@@ -6982,7 +6906,7 @@ does not invalidate the correctness of the results, so this option is disabled.
 
 =item --sleep
 
-type: int
+type: int; group: Throttle 
 
 Sleep time between checksums.
 
@@ -6995,7 +6919,7 @@ L<"--check-slave-lag"> for techniques that permit greater control.
 
 =item --sleep-coef
 
-type: float
+type: float; group: Throttle
 
 Calculate L<"--sleep"> as a multiple of the last checksum time.
 
@@ -7029,6 +6953,8 @@ Do only this comma-separated list of tables.
 Table names may be qualified with the database name.
 
 =item --[no]throttle
+
+group: Throttle
 
 Throttle checksumming with L<"--replicate"> by most lagged slave.
 

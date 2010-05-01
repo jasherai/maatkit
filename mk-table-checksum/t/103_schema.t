@@ -27,7 +27,7 @@ elsif ( !$slave_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 31;
+   plan tests => 30;
 }
 
 my $output;
@@ -120,7 +120,6 @@ my @opt_combos = ( # --schema and
    '--replicate=checksum_tbl',
    '--resume samples/resume01_partial.txt',
    '--since \'"2008-01-01" - interval 1 day\'',
-   '--slave-lag',
    '--sleep=1000',
    '--wait=1000',
    '--where="id > 1000"',
