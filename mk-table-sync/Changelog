@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2010-05-03: version 1.0.27
+
    * Added --[no]hex-blob to HEX() BLOB data by default (issue 641).
    * Tool crashed on MySQL 4.0 due to "SHOW GRANTS" (issue 285).
 

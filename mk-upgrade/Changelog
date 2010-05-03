@@ -1,5 +1,7 @@
 Changelog for mk-upgrade:
 
+2010-05-03: version 0.9.7
+
    * Shortened hostname column headers.
 
 2010-04-01: version 0.9.6

@@ -1,5 +1,7 @@
 Changelog for mk-error-log:
 
+2010-05-03: version 1.0.3
+
    * Extended Message column to 78 character line width.
 
 2010-04-01: version 1.0.2

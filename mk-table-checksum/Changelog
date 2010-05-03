@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2010-05-03: version 1.2.14
+
    * Added --throttle-method, permit throttling by lag of all slaves (issue 67).
    * Checksum queries still caused fatal warnings on MySQL 5.1 (issue 186).
 

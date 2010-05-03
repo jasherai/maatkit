@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2010-05-03: version 0.9.17
+
    * Made --report-format order configurable (issue 990).
    * Changed order of --report-format (issue 935).
    * Added "files" to --report-format (issue 955).
