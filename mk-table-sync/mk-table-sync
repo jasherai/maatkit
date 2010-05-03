@@ -7850,9 +7850,10 @@ In general, this tool is best suited when your tables have a primary key or
 unique index.  Although it can synchronize data in tables lacking a primary key
 or unique index, it might be best to sychronize that data by another means.
 
-At the time of this release, there is a bug that causes invalid SQL when
-syncing columns with binary data, a potential bug using L<"--lock-and-rename">
-with MySQL 5.1, and a bug detecting certain differences.
+At the time of this release, there is a potential bug using
+L<"--lock-and-rename"> with MySQL 5.1, a bug detecting certain differences,
+a bug using ROUND() across different platforms, a bug mixing collations,
+and a bug chunking inside mk-table-checksum boundaries.
 
 The authoritative source for updated information is always the online issue
 tracking system.  Issues that affect this tool will be marked as such.  You can
