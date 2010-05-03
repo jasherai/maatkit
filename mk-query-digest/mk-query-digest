@@ -12418,15 +12418,6 @@ runs SET NAMES UTF8 after connecting to MySQL.  Any other value sets
 binmode on STDOUT without the utf8 layer, and runs SET NAMES after
 connecting to MySQL.
 
-=item --report-histogram
-
-type: string; default: Query_time
-
-Chart the distribution of this attribute's values.
-
-The distribution chart is limited to time-based attributes, so charting
-C<Rows_examined>, for example, will produce a useless chart.
-
 =item --check-attributes-limit
 
 type: int; default: 1000
@@ -12984,6 +12975,15 @@ header sections are grouped together if specified together; other sections are
 separted by blank lines.
 
 See L<"OUTPUT"> for more information on the various parts of the query report.
+
+=item --report-histogram
+
+type: string; default: Query_time
+
+Chart the distribution of this attribute's values.
+
+The distribution chart is limited to time-based attributes, so charting
+C<Rows_examined>, for example, will produce a useless chart.
 
 =item --review
 
