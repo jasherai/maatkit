@@ -50,8 +50,8 @@ $output = `$cmd $trunk/common/t/samples/binlogs/binlog007.txt --secondary-indexe
 is(
    $output,
 "select 1 from  test2.t where a=1 /*tid1*/
-SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1 /*tid1*/
-SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1 /*tid1*/
+SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='3' LIMIT 1 /*tid1*/
+SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='2' AND `c`='3' LIMIT 1 /*tid1*/
 ",
    "Get secondary indexes"
 );
@@ -62,8 +62,8 @@ $output = `$cmd $trunk/common/t/samples/binlogs/binlog008.txt --secondary-indexe
 is(
    $output,
 "select 1 from  t where a=1 /*tid1*/
-SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1 /*tid1*/
-SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1 /*tid1*/
+SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='3' LIMIT 1 /*tid1*/
+SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='2' AND `c`='3' LIMIT 1 /*tid1*/
 ",
    "Get secondary indexes with default database"
 );

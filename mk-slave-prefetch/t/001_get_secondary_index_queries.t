@@ -50,21 +50,21 @@ my @queries = mk_slave_prefetch::get_secondary_index_queries(
 is_deeply(
    \@queries,
    [
-      "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1
-UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=2 LIMIT 1
-UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=5 LIMIT 1
+      "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='3' LIMIT 1
+UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='2' LIMIT 1
+UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='5' LIMIT 1
 UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='0' LIMIT 1
 UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c` IS NULL LIMIT 1
-UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=7 LIMIT 1",
+UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='7' LIMIT 1",
 
 
-      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1
-UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=2 LIMIT 1
-UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=4 AND `c`=5 LIMIT 1
+      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='2' AND `c`='3' LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='2' AND `c`='2' LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='4' AND `c`='5' LIMIT 1
 UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='0' AND `c`='0' LIMIT 1
-UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=1 AND `c`=2 LIMIT 1
-UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=6 AND `c` IS NULL LIMIT 1
-UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c`=7 LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='1' AND `c`='2' LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='6' AND `c` IS NULL LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c`='7' LIMIT 1
 UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c` IS NULL LIMIT 1",
    ],
    'Secondary index queries for multi-row prefetch query'
@@ -78,8 +78,8 @@ UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AN
 is_deeply(
    \@queries,
    [
-      "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1",
-      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1",
+      "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='3' LIMIT 1",
+      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='2' AND `c`='3' LIMIT 1",
    ],
    'Secondary index queries for single-row prefetch query'
 );
@@ -93,10 +93,10 @@ is_deeply(
    \@queries,
    [
       "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c` IS NULL LIMIT 1
-UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=7 LIMIT 1",
+UNION ALL SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='7' LIMIT 1",
 
-      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=6 AND `c` IS NULL LIMIT 1
-UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c`=7 LIMIT 1
+      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='6' AND `c` IS NULL LIMIT 1
+UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c`='7' LIMIT 1
 UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AND `c` IS NULL LIMIT 1",
    ],
    'Secondary index queries with NULL row values'
@@ -115,8 +115,8 @@ UNION ALL SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b` IS NULL AN
 is_deeply(
    \@queries,
    [
-      'SELECT `c` FROM `other_db`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1',
-      'SELECT `b`, `c` FROM `other_db`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1',
+      "SELECT `c` FROM `other_db`.`t` FORCE INDEX(`c`) WHERE `c`='3' LIMIT 1",
+      "SELECT `b`, `c` FROM `other_db`.`t` FORCE INDEX(`b`) WHERE `b`='2' AND `c`='3' LIMIT 1",
    ],
    'Use default db if no db from table',
 );
@@ -130,8 +130,8 @@ is_deeply(
 is_deeply(
    \@queries,
    [
-      'SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`=3 LIMIT 1',
-      'SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`=2 AND `c`=3 LIMIT 1',
+      "SELECT `c` FROM `test2`.`t` FORCE INDEX(`c`) WHERE `c`='3' LIMIT 1",
+      "SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='2' AND `c`='3' LIMIT 1",
    ],
    "Don't use default db if db from table",
 );
