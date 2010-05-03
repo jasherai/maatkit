@@ -973,7 +973,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5966
+# DSNParser package 6057
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -1097,11 +1102,13 @@ sub parse_options {
 }
 
 sub as_string {
-   my ( $self, $dsn ) = @_;
+   my ( $self, $dsn, $props ) = @_;
    return $dsn unless ref $dsn;
+   my %allowed = $props ? map { $_=>1 } @$props : ();
    return join(',',
-      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_})  }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      grep { !$props || $allowed{$_}                   }
       sort keys %$dsn );
 }
 
@@ -1494,9 +1501,15 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# PodParser package 5904
+# PodParser package 6025
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/PodParser.pm
+#   trunk/common/t/PodParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package PodParser;
+
 
 use strict;
 use warnings FATAL => 'all';
@@ -1504,65 +1517,136 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
+my %parse_items_from = (
+   'OPTIONS'     => 1,
+   'DSN OPTIONS' => 1,
+   'RULES'       => 1,
+);
+
+my %item_pattern_for = (
+   'OPTIONS'     => qr/--(.*)/,
+   'DSN OPTIONS' => qr/\* (.)/,
+   'RULES'       => qr/(.*)/,
+);
+
+my %section_has_rules = (
+   'OPTIONS'     => 1,
+   'DSN OPTIONS' => 0,
+   'RULES'       => 0,
+);
+
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw() ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-
    my $self = {
+      current_section => '',
+      current_item    => '',
+      in_list         => 0,
+      items           => {},
    };
    return bless $self, $class;
 }
+ 
+sub get_items {
+   my ( $self, $section ) = @_;
+   return $section ? $self->{items}->{$section} : $self->{items};
+}
 
-sub parse_section {
-   my ( $self, %args ) = @_;
-   my ($file, $section, $subsection, $trf)
-      = @args{qw(file section subsection trf)};
+sub parse_from_file {
+   my ( $self, $file ) = @_;
+   return unless $file;
 
-   $file ||= __FILE__;
-   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
-   MKDEBUG && _d('Parsing POD section', $section, $subsection, 'from', $file);
-
-   local $INPUT_RECORD_SEPARATOR = '';
-   my $POD_link_re = '[LC]<"?([^">]+)"?>';
-
+   open my $fh, "<", $file or die "Cannot open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';  # read paragraphs
    my $para;
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 $section/;
-      MKDEBUG && _d($para);
-      last;
-   }
-   if ( !$para ) {
-      MKDEBUG && _d('Did not find section', $section);
-      return;
-   }
 
-   if ( $subsection ) {
-      while ( $para = <$fh> ) {
-         next unless $para =~ m/^=head2 $subsection/;
-         last
+   1 while defined($para = <$fh>) && $para !~ m/^=pod/;
+   die "$file does not contain =pod" unless $para;
+
+   while ( defined($para = <$fh>) && $para !~ m/^=cut/ ) {
+      if ( $para =~ m/^=(head|item|over|back)/ ) {
+         my ($cmd, $name) = $para =~ m/^=(\w+)(?:\s+(.+))?/;
+         $name ||= '';
+         MKDEBUG && _d('cmd:', $cmd, 'name:', $name);
+         $self->command($cmd, $name);
+      }
+      else {
+         $self->textblock($para);
       }
    }
-   if ( !$para ) {
-      MKDEBUG && _d('Did not find subsection', $subsection);
-      return;
-   }
 
-   my @chunks;
-   while ( $para = <$fh> ) {
-      last if ($subsection ? $para =~ m/^=head[12]/ : $para =~ m/^=head1/);
-      next if $para =~ m/=head/;
-      chomp $para;
-      $para =~ s/$POD_link_re/$1/go;
-      if ( $trf ) {
-         $para = $trf->($para);
-         next unless $para;
+   close $fh;
+}
+
+sub command {
+   my ( $self, $cmd, $name ) = @_;
+   
+   $name =~ s/\s+\Z//m;  # Remove \n and blank line after name.
+   
+   if  ( $cmd eq 'head1' && $parse_items_from{$name} ) {
+      MKDEBUG && _d('In section', $name);
+      $self->{current_section} = $name;
+      $self->{items}->{$name}  = {};
+   }
+   elsif ( $cmd eq 'over' ) {
+      MKDEBUG && _d('Start items in', $self->{current_section});
+      $self->{in_list} = 1;
+   }
+   elsif ( $cmd eq 'item' ) {
+      my $pat = $item_pattern_for{ $self->{current_section} };
+      my ($item) = $name =~ m/$pat/;
+      if ( $item ) {
+         MKDEBUG && _d($self->{current_section}, 'item:', $item);
+         $self->{items}->{ $self->{current_section} }->{$item} = {
+            desc => '',  # every item should have a desc
+         };
+         $self->{current_item} = $item;
       }
-      push @chunks, $para;
+      else {
+         warn "Item $name does not match $pat";
+      }
+   }
+   elsif ( $cmd eq '=back' ) {
+      MKDEBUG && _d('End items');
+      $self->{in_list} = 0;
+   }
+   else {
+      $self->{current_section} = '';
+      $self->{in_list}         = 0;
+   }
+   
+   return;
+}
+
+sub textblock {
+   my ( $self, $para ) = @_;
+
+   return unless $self->{current_section} && $self->{current_item};
+
+   my $section = $self->{current_section};
+   my $item    = $self->{items}->{$section}->{ $self->{current_item} };
+
+   $para =~ s/\s+\Z//;
+
+   if ( $para =~ m/\b\w+: / ) {
+      MKDEBUG && _d('Item attributes:', $para);
+      map {
+         my ($attrib, $val) = split(/: /, $_);
+         $item->{$attrib} = defined $val ? $val : 1;
+      } split(/; /, $para);
+   }
+   else {
+      MKDEBUG && _d('Item desc:', substr($para, 0, 40),
+         length($para) > 40 ? '...' : '');
+      $para =~ s/\n+/ /g;
+      $item->{desc} .= $para;
    }
 
-   return @chunks;
+   return;
+}
+
+sub verbatim {
+   my ( $self, $para ) = @_;
+   return;
 }
 
 sub _d {

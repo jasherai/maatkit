@@ -1620,13 +1620,22 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfig package 6115
+# MySQLConfig package 6192
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MySQLConfig.pm
+#   trunk/common/t/MySQLConfig.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MySQLConfig;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
@@ -1658,6 +1667,7 @@ sub new {
    my $self = {
       defaults_file  => undef, 
       show_variables => "SHOW /*!40103 GLOBAL*/ VARIABLES",
+      version        => '',
 
       %args,
 
@@ -1702,6 +1712,7 @@ sub set_config {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $from = $args{from};
+   MKDEBUG && _d('Set config', Dumper(\%args));
 
    if ( $from eq 'mysqld' || $from eq 'my_print_defaults' ) {
       die "Setting the MySQL config from $from requires a "
@@ -1742,6 +1753,8 @@ sub set_config {
          my $sql = $self->{show_variables};
          MKDEBUG && _d($args{dbh}, $sql);
          $rows = $args{dbh}->selectall_arrayref($sql);
+
+         $self->_set_version($args{dbh}) unless $self->{version};
       }
       $self->set_online_config($rows);
    }
@@ -1807,7 +1820,6 @@ sub _parse_varvals {
 
    my $var      = 1;
    my $last_var = undef;
-
    foreach my $item ( @varvals ) {
       if ( $var ) {
          $item =~ s/-/_/g;
@@ -1824,7 +1836,7 @@ sub _parse_varvals {
          if ( $item ) {
             $item =~ s/^\s+//;
 
-            if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])/i ) {
+            if ( my ($num, $factor) = $item =~ m/(\d+)([kmgt])$/i ) {
                my %factor_for = (
                   k => 1_024,
                   m => 1_048_576,
@@ -1854,6 +1866,16 @@ sub _parse_varvals {
    return \%config, \%duplicates;
 }
 
+sub _set_version {
+   my ( $self, $dbh ) = @_;
+   my $version = $dbh->selectrow_arrayref('SELECT VERSION()')->[0];
+   return unless $version;
+   $version =~ s/(\d\.\d{1,2}.\d{1,2})/$1/;
+   MKDEBUG && _d('MySQL version', $version);
+   $self->{version} = $version;
+   return;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1869,7 +1891,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLConfigComparer package 6124
+# MySQLConfigComparer package 6192
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/MySQLConfigComparer.pm
+#   trunk/common/t/MySQLConfigComparer.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package MySQLConfigComparer;
 
@@ -1915,8 +1942,11 @@ my %eq_for = (
    open_files_limit          => sub { return _eqifnoconf(@_);           },
    slow_query_log_file       => sub { return _eqifnoconf(@_);           },
    tmpdir                    => sub { return _eqifnoconf(@_);           },
+   binlog_format             => sub { return _eqifnoconf(@_);           },
 
    long_query_time           => sub { return $_[0] == $_[1] ? 1 : 0;    },
+
+   datadir                   => sub { return _eqdatadir(@_);            },
 );
 
 sub new {
@@ -1927,13 +1957,15 @@ sub new {
 }
 
 sub diff {
-   my ( $self, @configs ) = @_;
+   my ( $self, %args ) = @_;
+   my $configs  = $args{configs};
+   my $versions = $args{versions};
    my @diffs;
-   die "diff() requires at least one config" if @configs < 1;
-   return \@diffs if @configs == 1;  # One config can't differ with itself.
-   MKDEBUG && _d('diff configs:', Dumper(\@configs));
+   die "diff() requires at least one config" if @$configs < 1;
+   return \@diffs if @$configs == 1;  # One config can't differ with itself.
+   MKDEBUG && _d('diff configs:', Dumper($configs));
 
-   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect(@configs);
+   my @vars = grep { !$ignore_vars{$_} } $self->key_intersect($configs);
 
    my %vals = map {
       my $var  = $_;
@@ -1943,7 +1975,7 @@ sub diff {
             my $val    = defined $config->{$var} ? $config->{$var} : '';
             $val       = $alt_val_for{$val} if exists $alt_val_for{$val};
             $val;
-         } @configs 
+         } @$configs 
       ];
       $var => $vals;
    } @vars;
@@ -1958,10 +1990,10 @@ sub diff {
          for my $i ( 1..$last_val ) {
             if ( $vals->[0] ne $vals->[$i] ) {
                if (    !$eq_for{$var}
-                    || !$eq_for{$var}->($vals->[0], $vals->[$i]) ) {
+                    || !$eq_for{$var}->($vals->[0], $vals->[$i], $versions) ) {
                   push @diffs, {
                      var  => $var,
-                     vals => [ map { $_->{$var} } @configs ],  # original vals
+                     vals => [ map { $_->{$var} } @$configs ],  # original vals
                   };
                   last VAL;
                }
@@ -1981,9 +2013,16 @@ sub stale_variables {
    my ( $self, $config ) = @_;
    return unless $config;
 
+   MKDEBUG && _d('Getting stale variables (online, offline)');
    my $diffs = $self->diff(
-      $config->get_config(),
-      $config->get_config(offline=>1)
+      configs => [
+         $config->get_config(),
+         $config->get_config(offline=>1),
+      ],
+      versions => [
+         $config->{version},
+         $config->{version},
+      ],
    );
 
    my @stale_vars = map {
@@ -2021,7 +2060,7 @@ sub missing {
 }
 
 sub _veq { 
-   my ( $x, $y, $val1, $val2 ) = @_;
+   my ( $x, $y, $versions, $val1, $val2 ) = @_;
    return 1 if ( ($x eq $val1 || $x eq $val2) && ($y eq $val1 || $y eq $val2) );
    return 0;
 }
@@ -2045,10 +2084,21 @@ sub _eqifnoconf {
    return $conf_val == 0 ? 1 : 0;
 }
 
+sub _eqdatadir {
+   my ( $online_val, $conf_val, $versions ) = @_;
+   if ( ($versions->[0] || '') gt '5.1.0' && (($conf_val || '') eq '.') ) {
+      MKDEBUG && _d('MySQL 5.1 datadir conf val bug;',
+         'online val:', $online_val, 'offline val:', $conf_val);
+      return 1;
+   }
+   return ($online_val || '') eq ($conf_val || '') ? 1 : 0;
+}
+
 sub key_intersect {
-   my ( $self, @hashes ) = @_;
-   my %keys  = map { $_ => 1 } keys %{$hashes[0]};
-   my @isect = grep { $keys{$_} } map { keys %{$hashes[$_]} } 1..$#hashes;
+   my ( $self, $hashes ) = @_;
+   my %keys  = map { $_ => 1 } keys %{$hashes->[0]};
+   my $n_hashes = (scalar @$hashes) - 1;
+   my @isect = grep { $keys{$_} } map { keys %{$hashes->[$_]} } 1..$n_hashes;
    return @isect;
 }
 
@@ -2067,7 +2117,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ReportFormatter package 6123
+# ReportFormatter package 6190
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/ReportFormatter.pm
+#   trunk/common/t/ReportFormatter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package ReportFormatter;
 
@@ -2128,7 +2183,7 @@ sub set_columns {
       my $col      = $cols[$i];
       my $col_name = $col->{name};
       my $col_len  = length $col_name;
-      die "Column does not have a name" unless $col_name;
+      die "Column does not have a name" unless defined $col_name;
 
       if ( $col->{width} ) {
          $col->{width_pct} = ceil(($col->{width} * 100) / $self->{line_width});

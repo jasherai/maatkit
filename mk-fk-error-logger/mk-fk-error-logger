@@ -976,7 +976,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 5697
+# Quoter package 6226
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/Quoter.pm
+#   trunk/common/t/Quoter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package Quoter;
 
@@ -1000,16 +1005,11 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, $val, $is_numeric ) = @_;
+   my ( $self, $val ) = @_;
 
-   return 'NULL' unless defined $val;  # undef = NULL
-   return "''" if $val eq '';          # blank string = ''
-
-   if ( !defined $is_numeric ) {
-      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
-   }
-
-   return $val if $is_numeric;
+   return 'NULL' unless defined $val;         # undef = NULL
+   return "''" if $val eq '';                 # blank string = ''
+   return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
 
    $val =~ s/(['\\])/\\$1/g;
    return "'$val'";
@@ -1040,7 +1040,12 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 5966
+# DSNParser package 6057
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/DSNParser.pm
+#   trunk/common/t/DSNParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package DSNParser;
 
@@ -1164,11 +1169,13 @@ sub parse_options {
 }
 
 sub as_string {
-   my ( $self, $dsn ) = @_;
+   my ( $self, $dsn, $props ) = @_;
    return $dsn unless ref $dsn;
+   my %allowed = $props ? map { $_=>1 } @$props : ();
    return join(',',
-      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_})  }
       grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      grep { !$props || $allowed{$_}                   }
       sort keys %$dsn );
 }
 

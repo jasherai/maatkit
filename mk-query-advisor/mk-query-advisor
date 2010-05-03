@@ -1306,7 +1306,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 5843
+# QueryParser package 6148
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryParser.pm
+#   trunk/common/t/QueryParser.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 package QueryParser;
 
@@ -1653,6 +1658,24 @@ sub parse {
    return $parsed;
 }
 
+sub extract_tables {
+   my ( $self, %args ) = @_;
+   my $query      = $args{query};
+   my $default_db = $args{default_db};
+   my $q          = $self->{Quoter} || $args{Quoter};
+   return unless $query;
+   MKDEBUG && _d('Extracting tables');
+   my @tables;
+   my %seen;
+   foreach my $db_tbl ( $self->get_tables($query) ) {
+      next unless $db_tbl;
+      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
+      push @tables, [ $db || $default_db, $tbl ];
+   }
+   return @tables;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1668,7 +1691,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 6042
+# QueryRewriter package 6132
+# This package is a copy without comments from the original.  The original
+# with comments and its test file can be found in the SVN repository at,
+#   trunk/common/QueryRewriter.pm
+#   trunk/common/t/QueryRewriter.t
+# See http://code.google.com/p/maatkit/wiki/Developers for more information.
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1853,10 +1881,10 @@ sub distill_verbs {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
    };
-   my $verbs = join(q{ }, @verbs);
-   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+   my $verb_str = join(q{ }, @verbs);
+   $verb_str =~ s/( UNION SELECT)+/ UNION/g;
 
-   return $verbs;
+   return $verb_str;
 }
 
 sub __distill_tables {
@@ -1930,7 +1958,7 @@ sub convert_to_select {
                     (?:insert(?:\s+ignore)?|replace)\s+
                     .*?\binto\b(.*?)\(([^\)]+)\)\s*
                     values?\s*(\(.*?\))\s*
-                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
                     \Z
                  }
                  {__insert_to_select($1, $2, $3)}exsi
@@ -1938,8 +1966,8 @@ sub convert_to_select {
                     \A.*?
                     (?:insert(?:\s+ignore)?|replace)\s+
                     (?:.*?\binto)\b(.*?)\s*
-                    set?\s*\b(.*?)\s*
-                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    set\s+(.*?)\s*
+                    (?:\blimit\b|on\s+duplicate\s+key.*)?\s*
                     \Z
                  }
                  {__insert_to_select_with_set($1, $2)}exsi

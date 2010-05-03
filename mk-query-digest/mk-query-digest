@@ -374,7 +374,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 6079
+# Quoter package 6226
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/Quoter.pm
@@ -403,17 +403,11 @@ sub quote {
 }
 
 sub quote_val {
-   my ( $self, $val, $is_numeric ) = @_;
+   my ( $self, $val ) = @_;
 
    return 'NULL' unless defined $val;         # undef = NULL
    return "''" if $val eq '';                 # blank string = ''
    return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
-
-   if ( !defined $is_numeric ) {
-      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
-   }
-
-   return $val if $is_numeric;
 
    $val =~ s/(['\\])/\\$1/g;
    return "'$val'";
