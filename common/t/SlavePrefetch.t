@@ -111,7 +111,7 @@ SKIP: {
    my $output = `cat $tmp_file 2>&1`;
    like(
       $output,
-      qr/090910  8:26:23 server id 12345  end_log_pos 1925/,
+      qr/090910  \d+:26:23 server id 12345  end_log_pos 1925/,
       'Opened relay binlog'
    );
    diag(`rm -rf $tmp_file 2>/dev/null`);
