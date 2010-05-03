@@ -51,14 +51,17 @@ do
                continue
             fi
 
-            pkg_ver=`grep Revision $trunk/common/OptionParser.pm | cut -d' ' -f5`
+            pkg_ver=`grep Revision $trunk/common/$MOD.pm | cut -d' ' -f5`
             if [ -z "$FORCE_UPDATE" ]; then
-               pkg_ver_in_tool=`grep '^# OptionParser package' $FILE  | cut -d' ' -f4`
+               pkg_ver_in_tool=`grep "^# $MOD package" $FILE  | cut -d' ' -f4`
             else
                pkg_ver_in_tool=0
             fi
 
-            if [ $pkg_ver -gt $pkg_ver_in_tool ]; then
+            if [ -n "$MKDEBUG" ]; then
+               echo "  has $MOD.pm r$pkg_ver_in_tool"
+            fi
+            if [ $pkg_ver_in_tool -lt $pkg_ver ]; then
                cat $FILE | $trunk/maatkit/insert_module $MOD 0 > $MOD.tmp
                cat $MOD.tmp > $FILE;
                echo "  Updated $MOD from r$pkg_ver_in_tool to r$pkg_ver"
