@@ -4248,8 +4248,10 @@ sub main {
       @hosts = $hosts[0];
    }
 
-   # --replicate auto-enables --throttle unless user set --throttle explicitly.
-   $o->set('throttle', 1) if $o->get('replicate') && !$o->got('throttle');
+   # --replicate auto-enables --throttle-method slavelag unless user
+   # set --throttle-method explicitly.
+   $o->set('throttle-method', 'slavelag')
+      if $o->get('replicate') && !$o->got('throttle-method');
 
    if ( !$o->get('help') ) {
       if ( $o->get('replicate-check') && !$o->get('replicate') ) {
@@ -4270,15 +4272,16 @@ sub main {
             . 'Use --resume-replicate instead.');
       }
 
-      if ( $o->get('check-slave-lag') && !$o->get('throttle') ) {
-         # User specified --check-slave-lag DSN and --no-throttle.
+      if ( $o->get('check-slave-lag') && $o->get('throttle-method') eq 'none') {
+         # User specified --check-slave-lag DSN and --throttle-method none.
          # They probably meant just --check-slave-lag DSN.
-         $o->save_error('--no-throttle contradicts --check-slave-lag; '
-            . '--check-slave-lag alone limits --throttle to that slave');
+         $o->save_error('-throttle-method=none contradicts --check-slave-lag '
+            . 'because --check-slave-lag implies --throttle-method=slavelag');
       }
-      if ( $o->get('throttle') && !$o->get('replicate') ) {
-         # User did --throttle (explicitly) without --replicate.
-         $o->save_error('--throttle requires --replicate');
+      if ( $o->get('throttle-method') ne 'none' && !$o->get('replicate') ) {
+         # User did --throttle-method (explicitly) without --replicate.
+         $o->save_error('--throttle-method ', $o->get('throttle-method'),
+            ' requires --replicate');
       }
    }
 
@@ -4321,19 +4324,20 @@ sub main {
    my $main_dbh = get_cxn($hosts[0], %common_modules);
 
    # #########################################################################
-   # Prepare --throttle.
+   # Prepare --throttle-method.
    # #########################################################################
+   my $throttle_method = $o->get('throttle-method');
    my @slaves;
-   if ( $o->get('throttle') ) {
+   if ( $throttle_method eq 'slavelag' ) {
       if ( $o->get('check-slave-lag') ) {
-         MKDEBUG && _d('Using --check-slave-lag DSN for --throttle');
+         MKDEBUG && _d('Using --check-slave-lag DSN for throttle');
          # OptionParser can't auto-copy DSN vals from a cmd line DSN
          # to an opt DSN, so we copy them manually.
          my $dsn = $dp->copy($hosts[0], $o->get('check-slave-lag'));
          push @slaves, { dsn=>$dsn, dbh=>get_cxn($dsn, %common_modules) };
       }
       else {
-         MKDEBUG && _d('Recursing to slaves for --throttle');
+         MKDEBUG && _d('Recursing to slaves for throttle');
          $ms->recurse_to_slaves(
             {  dbh        => $main_dbh,
                dsn        => $hosts[0],
@@ -4343,7 +4347,7 @@ sub main {
                callback   => sub {
                   my ( $dsn, $dbh, $level, $parent ) = @_;
                   return unless $level;
-                  MKDEBUG && _d('--throttle slave:', $dp->as_string($dsn));
+                  MKDEBUG && _d('throttle slave:', $dp->as_string($dsn));
                   $dbh->{InactiveDestroy}  = 1; # Prevent destroying on fork.
                   $dbh->{FetchHashKeyName} = 'NAME_lc';
                   push @slaves, { dsn=>$dsn, dbh=>$dbh };
@@ -4848,12 +4852,13 @@ sub checksum_chunks {
    # This is by design. It lets me unlock the table on the master
    # between chunks.
    # ##################################################################
-   my $num_chunks = scalar(@{$tbl->{chunks}});
+   my $num_chunks      = scalar(@{$tbl->{chunks}});
+   my $throttle_method = $o->get('throttle-method');
    MKDEBUG && _d('Checksumming', $num_chunks, 'chunks');
    CHUNK:
    foreach my $chunk_num ( 0 .. $num_chunks - 1 ) {
 
-      if ( $o->get('throttle') ) {
+      if ( $throttle_method eq 'slavelag' ) {
          wait_for_slaves(
             slaves         => $args{slaves},
             max_lag        => $o->get('max-lag'),
@@ -5771,7 +5776,7 @@ sub wait_for_slaves {
 
    foreach my $slave ( @$slaves ) {
       MKDEBUG && _d('Checking slave', $dp->as_string($slave->{dsn}),
-         'lag for --throttle');
+         'lag for throttle');
       my $lag = $ms->get_slave_lag($slave->{dbh});
       while ( !defined $lag || $lag > $max_lag ) {
          MKDEBUG && _d('Slave lag', $lag, '>', $max_lag,
@@ -6297,8 +6302,8 @@ type: DSN; group: Throttle
 
 Pause checksumming until the specified slave's lag is less than L<"--max-lag">.
 
-If this option is specified, it limits L<"--[no]throttle"> to checking
-only this slave.
+If this option is specified and L<"--throttle-method"> is set to C<slavelag>
+then L<"--throttle-method"> only checks this slave.
 
 =item --checksum
 
@@ -6646,7 +6651,7 @@ Re-checksum chunks that L<"--replicate-check"> found to be different.
 
 group: Throttle
 
-Number of levels to recurse in the hierarchy for L<"--[no]throttle">.
+Number of levels to recurse in the hierarchy when discovering slaves.
 Default is infinite.
 
 See L<"--recursion-method">.
@@ -6655,7 +6660,7 @@ See L<"--recursion-method">.
 
 type: string
 
-Preferred recursion method for L<"--replicate-check"> and L<"--[no]throttle">.
+Preferred recursion method for discovering slaves.
 
 Possible methods are:
 
@@ -6952,16 +6957,18 @@ Do only this comma-separated list of tables.
 
 Table names may be qualified with the database name.
 
-=item --[no]throttle
+=item --throttle-method
 
-group: Throttle
+type: string; default: none; group: Throttle
 
-Throttle checksumming with L<"--replicate"> by most lagged slave.
+Throttle checksumming when doing L<"--replicate">.
 
-When L<"--replicate"> is used, mk-table-checksum automatically discovers every
-slave and throttles checksumming if any slave lags more than L<"--max-lag">.
-Specify C<--no-throttle> to disable this behavior completely, or specify
-L<"--check-slave-lag"> and mk-table-checksum will only check that slave.
+At present there is only one method: C<slavelag>.  When L<"--replicate"> is
+used, mk-table-checksum automatically sets L<"--throttle-method"> to
+C<slavelag> and discovers every slave and throttles checksumming if any slave
+lags more than L<"--max-lag">.  Specify C<-throttle-method none> to disable
+this behavior completely, or specify L<"--check-slave-lag"> and
+mk-table-checksum will only check that slave.
 
 See also L<"--recurse"> and L<"--recursion-method">.
 

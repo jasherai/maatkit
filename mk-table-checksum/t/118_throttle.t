@@ -34,7 +34,7 @@ elsif ( !$slave2_dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave2';
 }
 else {
-   plan tests => 12;
+   plan tests => 21;
 }
 
 my $output;
@@ -63,10 +63,10 @@ $row = $master_dbh->selectall_arrayref('select * from test.checksum');
 is(
    scalar @$row,
    1,
-   '--throttle, no slave lag'
+   'Throttle slavelag, no slave lag'
 );
 
-# By default --throttle should find all slaves and wait for the most
+# By default --throttle-method should find all slaves and wait for the most
 # lagged one.  If we stop slave sql_thread on slave2, mk-table-checksum
 # should see this (as undef lag) and wait.  While it's waiting, no
 # checksum should appear in the repl table.
@@ -91,7 +91,7 @@ $row = $master_dbh->selectall_arrayref('select * from test.checksum');
 is(
    scalar @$row,
    0,
-   '--throttle waited for slave2'
+   'Throttle slavelag waited for slave2'
 );
 
 $slave2_dbh->do('start slave sql_thread');
@@ -123,7 +123,7 @@ $row = $master_dbh->selectall_arrayref('select * from test.checksum');
 is(
    scalar @$row,
    1,
-   '--throttle waited for slave2 and continue when it was ready'
+   'Throttle slavelag waited for slave2 and continue when it was ready'
 );
 
 
@@ -131,9 +131,9 @@ is(
 # --check-slave-lag
 # #############################################################################
 
-# Before --throttle this stuff was handled by --check-slave-lag which
+# Before --throttle-method this stuff was handled by --check-slave-lag which
 # specifies one slave.  Because Ryan flogs me severely when I break
-# backwards compatibility, specifying --check-slave-lag limits --throttle
+# backwards compatibility, specifying --check-slave-lag limits --throttle-method
 # to that one slave.  To check this we stop slave sql_thread on slave2
 # and specify slave1.  The checksum should proceed because slave2 should
 # be ignored.
@@ -152,7 +152,7 @@ $row = $master_dbh->selectall_arrayref('select * from test.checksum');
 is(
    scalar @$row,
    1,
-   '--throttle checked only --check-slave-lag'
+   'Throttle slavelag checked only --check-slave-lag'
 );
 
 # Start slave2 sql_thread and stop slave1 sql_thread and test that
@@ -184,8 +184,9 @@ $row = $master_dbh->selectall_arrayref('select * from test.checksum');
 is(
    scalar @$row,
    0,
-   '--throttle waited for --check-slave-lag'
+   'Throttle slavelag waited for --check-slave-lag'
 );
+
 
 $slave1_dbh->do('start slave sql_thread');
 $row = $slave1_dbh->selectrow_hashref('show slave status');
@@ -194,6 +195,84 @@ is(
    'Yes',
    'Started slave SQL thread on slave1'
 ) or BAIL_OUT("Failed to restart SQL thread on slave1 (12346)");
+
+# Clear out all checksum tables before next test where we'll stop slaves
+# and test throttle method "none".
+$master_dbh->do('TRUNCATE TABLE test.checksum');
+sleep 1;
+
+$slave1_dbh->do('stop slave sql_thread');
+$row = $slave1_dbh->selectrow_hashref('show slave status');
+is(
+   $row->{Slave_SQL_Running},
+   'No',
+   'Stopped slave SQL thread on slave1'
+);
+
+# Disable throttle explicitly.
+
+$slave2_dbh->do('stop slave sql_thread');
+$row = $slave2_dbh->selectrow_hashref('show slave status');
+is(
+   $row->{Slave_SQL_Running},
+   'No',
+   'Stopped slave SQL thread on slave2'
+);
+
+# All slaves are stopped at this point.
+wait_for(sub { mk_table_checksum::main(@args, qw(--throttle-method none)) }, 2);
+
+$row = $master_dbh->selectall_arrayref('select * from test.checksum');
+is(
+   scalar @$row,
+   1,
+   'Throttle none'
+);
+
+$row = $slave1_dbh->selectall_arrayref('select * from test.checksum');
+is(
+   scalar @$row,
+   0,
+   'No checksum replicated to slave1 yet'
+);
+
+$row = $slave2_dbh->selectall_arrayref('select * from test.checksum');
+is(
+   scalar @$row,
+   0,
+   'No checksum replicated to slave2 yet'
+);
+
+
+$slave1_dbh->do('start slave sql_thread');
+$row = $slave1_dbh->selectrow_hashref('show slave status');
+is(
+   $row->{Slave_SQL_Running},
+   'Yes',
+   'Started slave SQL thread on slave1'
+) or BAIL_OUT("Failed to restart SQL thread on slave1 (12346)");
+
+$slave2_dbh->do('start slave sql_thread');
+$row = $slave2_dbh->selectrow_hashref('show slave status');
+is(
+   $row->{Slave_SQL_Running},
+   'Yes',
+   'Started slave SQL thread on slave2'
+) or BAIL_OUT("Failed to restart SQL thread on slave2 (12347)");
+
+$row = $slave1_dbh->selectall_arrayref('select * from test.checksum');
+is(
+   scalar @$row,
+   1,
+   'Checksum replicated to slave1'
+);
+
+$row = $slave2_dbh->selectall_arrayref('select * from test.checksum');
+is(
+   scalar @$row,
+   1,
+   'Checksum replicated to slave2'
+);
 
 # #############################################################################
 # Done.
