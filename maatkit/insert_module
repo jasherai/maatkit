@@ -23,7 +23,7 @@ close $fh;
 
 # Update module revno in tool.
 my ($ver) = $pkg_code =~ m/\$Revision: (\d+) \$/;
-$tool =~ s/$pkg_name package \d+/$pkg_name package $ver/;
+$tool =~ s/^# $pkg_name package \d+/# $pkg_name package $ver/m;
 
 # Strip comment from module.
 $pkg_code =~ s/^ *#.*\n//gm;
