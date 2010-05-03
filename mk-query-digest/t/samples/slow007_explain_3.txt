@@ -27,4 +27,4 @@
 #    SHOW CREATE TABLE `food`.`trees`\G
 # EXPLAIN
 SELECT fruit FROM trees\G
-# EXPLAIN failed: DBD::mysql::st execute failed: Table 'food.trees' doesn't exist [for Statement "EXPLAIN /*!50100 PARTITIONS */ SELECT fruit FROM trees"] at /home/daniel/dev/maatkit/mk-query-digest/mk-query-digest line 0.
+# EXPLAIN failed: DBD::mysql::st execute failed: Table 'food.trees' doesn't exist [for Statement "EXPLAIN /*!50100 PARTITIONS */ SELECT fruit FROM trees"] at line ?.
