@@ -44,7 +44,7 @@ my $ch = new ChangeHandler(
 $ch->change('INSERT', { a => 1, b => 2 }, [qw(a)] );
 
 is_deeply(\@rows,
-   ['INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',],
+   ["INSERT INTO `test`.`foo`(`a`, `b`) VALUES ('1', '2')",],
    'First row',
 );
 
@@ -52,13 +52,13 @@ $ch->change(undef, { a => 1, b => 2 }, [qw(a)] );
 
 is_deeply(
    \@rows,
-   ['INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',],
+   ["INSERT INTO `test`.`foo`(`a`, `b`) VALUES ('1', '2')",],
    'Skips undef action'
 );
 
 
 is_deeply(\@rows,
-   ['INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',],
+   ["INSERT INTO `test`.`foo`(`a`, `b`) VALUES ('1', '2')",],
    'First row',
 );
 
@@ -67,7 +67,7 @@ $ch->{queue} = 1;
 $ch->change('DELETE', { a => 1, b => 2 }, [qw(a)] );
 
 is_deeply(\@rows,
-   ['INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',],
+   ["INSERT INTO `test`.`foo`(`a`, `b`) VALUES ('1', '2')",],
    'Second row not there yet',
 );
 
@@ -75,8 +75,8 @@ $ch->process_rows(1);
 
 is_deeply(\@rows,
    [
-   'INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',
-   'DELETE FROM `test`.`foo` WHERE `a`=1 LIMIT 1',
+   "INSERT INTO `test`.`foo`(`a`, `b`) VALUES ('1', '2')",
+   "DELETE FROM `test`.`foo` WHERE `a`='1' LIMIT 1",
    ],
    'Second row there',
 );
@@ -87,8 +87,8 @@ $ch->process_rows(1);
 
 is_deeply(\@rows,
    [
-   'INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',
-   'DELETE FROM `test`.`foo` WHERE `a`=1 LIMIT 1',
+   "INSERT INTO `test`.`foo`(`a`, `b`) VALUES ('1', '2')",
+   "DELETE FROM `test`.`foo` WHERE `a`='1' LIMIT 1",
    ],
    'Third row not there',
 );
@@ -97,9 +97,9 @@ $ch->process_rows();
 
 is_deeply(\@rows,
    [
-   'INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',
-   'DELETE FROM `test`.`foo` WHERE `a`=1 LIMIT 1',
-   'UPDATE `test`.`foo` SET `b`=2 WHERE `a`=1 LIMIT 1',
+   "INSERT INTO `test`.`foo`(`a`, `b`) VALUES ('1', '2')",
+   "DELETE FROM `test`.`foo` WHERE `a`='1' LIMIT 1",
+   "UPDATE `test`.`foo` SET `b`='2' WHERE `a`='1' LIMIT 1",
    ],
    'All rows',
 );
@@ -181,7 +181,7 @@ $ch->change('INSERT', { a => 1, b => 2 }, [qw(a)] );
 
 is_deeply(
    \@rows,
-   ['INSERT INTO `test`.`left_foo`(`a`, `b`) VALUES (1, 2)',],
+   ["INSERT INTO `test`.`left_foo`(`a`, `b`) VALUES ('1', '2')",],
    'INSERT new dst',
 );
 
@@ -189,8 +189,8 @@ $ch->change('DELETE', { a => 1, b => 2 }, [qw(a)] );
 $ch->process_rows(1);
 is_deeply(\@rows,
    [
-   'INSERT INTO `test`.`left_foo`(`a`, `b`) VALUES (1, 2)',
-   'DELETE FROM `test`.`left_foo` WHERE `a`=1 LIMIT 1',
+   "INSERT INTO `test`.`left_foo`(`a`, `b`) VALUES ('1', '2')",
+   "DELETE FROM `test`.`left_foo` WHERE `a`='1' LIMIT 1",
    ],
    'DELETE new dst',
 );
@@ -226,9 +226,9 @@ SKIP: {
    is_deeply(
       \@rows,
       [
-         "UPDATE `test`.`foo` SET `b`='en' WHERE `a`=1 LIMIT 1",
-         "DELETE FROM `test`.`foo` WHERE `a`=1 LIMIT 1",
-         "INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 'en')",
+         "UPDATE `test`.`foo` SET `b`='en' WHERE `a`='1' LIMIT 1",
+         "DELETE FROM `test`.`foo` WHERE `a`='1' LIMIT 1",
+         "INSERT INTO `test`.`foo`(`a`, `b`) VALUES ('1', 'en')",
       ],
       'Fetch-back',
    );
@@ -262,25 +262,25 @@ $ch = new ChangeHandler(
 
 is(
    $ch->make_INSERT($row, [qw(id foo bar)]),
-   "INSERT INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES (1, 'foo', 'bar')",
+   "INSERT INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES ('1', 'foo', 'bar')",
    'make_INSERT() preserves column order'
 );
 
 is(
    $ch->make_REPLACE($row, [qw(id foo bar)]),
-   "REPLACE INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES (1, 'foo', 'bar')",
+   "REPLACE INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES ('1', 'foo', 'bar')",
    'make_REPLACE() preserves column order'
 );
 
 is(
    $ch->make_UPDATE($row, [qw(id foo)]),
-   "UPDATE `test`.`issue_371` SET `bar`='bar' WHERE `id`=1 AND `foo`='foo' LIMIT 1",
+   "UPDATE `test`.`issue_371` SET `bar`='bar' WHERE `id`='1' AND `foo`='foo' LIMIT 1",
    'make_UPDATE() preserves column order'
 );
 
 is(
    $ch->make_DELETE($row, [qw(id foo bar)]),
-   "DELETE FROM `test`.`issue_371` WHERE `id`=1 AND `foo`='foo' AND `bar`='bar' LIMIT 1",
+   "DELETE FROM `test`.`issue_371` WHERE `id`='1' AND `foo`='foo' AND `bar`='bar' LIMIT 1",
    'make_DELETE() preserves column order'
 );
 
@@ -289,19 +289,19 @@ $row->{other_col} = 'zzz';
 
 is(
    $ch->make_INSERT($row, [qw(id foo bar)]),
-   "INSERT INTO `test`.`issue_371`(`id`, `foo`, `bar`, `other_col`) VALUES (1, 'foo', 'bar', 'zzz')",
+   "INSERT INTO `test`.`issue_371`(`id`, `foo`, `bar`, `other_col`) VALUES ('1', 'foo', 'bar', 'zzz')",
    'make_INSERT() preserves column order, with col not in tbl'
 );
 
 is(
    $ch->make_REPLACE($row, [qw(id foo bar)]),
-   "REPLACE INTO `test`.`issue_371`(`id`, `foo`, `bar`, `other_col`) VALUES (1, 'foo', 'bar', 'zzz')",
+   "REPLACE INTO `test`.`issue_371`(`id`, `foo`, `bar`, `other_col`) VALUES ('1', 'foo', 'bar', 'zzz')",
    'make_REPLACE() preserves column order, with col not in tbl'
 );
 
 is(
    $ch->make_UPDATE($row, [qw(id foo)]),
-   "UPDATE `test`.`issue_371` SET `bar`='bar', `other_col`='zzz' WHERE `id`=1 AND `foo`='foo' LIMIT 1",
+   "UPDATE `test`.`issue_371` SET `bar`='bar', `other_col`='zzz' WHERE `id`='1' AND `foo`='foo' LIMIT 1",
    'make_UPDATE() preserves column order, with col not in tbl'
 );
 
@@ -318,19 +318,19 @@ SKIP: {
 
    is(
       $ch->make_INSERT($row, [qw(id foo)]),
-      "INSERT INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES (1, 'foo', 'a')",
+      "INSERT INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES ('1', 'foo', 'a')",
       'make_INSERT() preserves column order, with fetch-back'
    );
 
    is(
       $ch->make_REPLACE($row, [qw(id foo)]),
-      "REPLACE INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES (1, 'foo', 'a')",
+      "REPLACE INTO `test`.`issue_371`(`id`, `foo`, `bar`) VALUES ('1', 'foo', 'a')",
       'make_REPLACE() preserves column order, with fetch-back'
    );
 
    is(
       $ch->make_UPDATE($row, [qw(id foo)]),
-      "UPDATE `test`.`issue_371` SET `bar`='a' WHERE `id`=1 AND `foo`='foo' LIMIT 1",
+      "UPDATE `test`.`issue_371` SET `bar`='a' WHERE `id`='1' AND `foo`='foo' LIMIT 1",
       'make_UPDATE() preserves column order, with fetch-back'
    );
 };
@@ -408,8 +408,8 @@ SKIP: {
    is_deeply(
       \@rows,
       [
-         'UPDATE `issue_641`.`rt` SET `b`=0x089504E470D0A1A0A0000000D4948445200000079000000750802000000E55AD965000000097048597300000EC300000EC301C76FA8640000200049444154789C4CBB7794246779FFBBF78F7B7EBE466177677772CE3D9D667AA67BA62776CE39545557CE3974EE9EB049AB9556392210414258083 WHERE `id`=1 LIMIT 1',
-         'INSERT INTO `issue_641`.`rt`(`id`, `b`) VALUES (1, 0x089504E470D0A1A0A0000000D4948445200000079000000750802000000E55AD965000000097048597300000EC300000EC301C76FA8640000200049444154789C4CBB7794246779FFBBF78F7B7EBE466177677772CE3D9D667AA67BA62776CE39545557CE3974EE9EB049AB9556392210414258083)',
+         "UPDATE `issue_641`.`rt` SET `b`=0x089504E470D0A1A0A0000000D4948445200000079000000750802000000E55AD965000000097048597300000EC300000EC301C76FA8640000200049444154789C4CBB7794246779FFBBF78F7B7EBE466177677772CE3D9D667AA67BA62776CE39545557CE3974EE9EB049AB9556392210414258083 WHERE `id`='1' LIMIT 1",
+         "INSERT INTO `issue_641`.`rt`(`id`, `b`) VALUES ('1', 0x089504E470D0A1A0A0000000D4948445200000079000000750802000000E55AD965000000097048597300000EC300000EC301C76FA8640000200049444154789C4CBB7794246779FFBBF78F7B7EBE466177677772CE3D9D667AA67BA62776CE39545557CE3974EE9EB049AB9556392210414258083)",
       ],
       "UPDATE and INSERT binary data as hex"
    );

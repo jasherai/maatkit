@@ -38,20 +38,14 @@ sub quote {
    return join('.', map { '`' . $_ . '`' } @vals);
 }
 
+# Quote everything, even numbers to avoid problems where
+# the col is char so user really means col="3".
 sub quote_val {
-   my ( $self, $val, $is_numeric ) = @_;
+   my ( $self, $val ) = @_;
 
    return 'NULL' unless defined $val;         # undef = NULL
    return "''" if $val eq '';                 # blank string = ''
    return $val if $val =~ m/^0x[0-9a-fA-F]/;  # hex value like 0xe5f190
-
-   # Determine if val is numeric if it wasn't specified.
-   if ( !defined $is_numeric ) {
-      $is_numeric = $val =~ m/^0|\D/ ? 0 : 1;
-   }
-
-   # Return numeric vals as-is, no quoting.
-   return $val if $is_numeric;
 
    # Quote and return non-numeric vals.
    $val =~ s/(['\\])/\\$1/g;

@@ -188,10 +188,10 @@ my $test1_rows = [
  [qw(4 bz)],
 ];
 my $inserts = [
-   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en')",
-   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca')",
-   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (3, 'ab')",
-   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (4, 'bz')",
+   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('1', 'en')",
+   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('2', 'ca')",
+   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('3', 'ab')",
+   "INSERT INTO `test`.`test2`(`a`, `b`) VALUES ('4', 'bz')",
 ];
 my $src = {
    dbh      => $src_dbh,

@@ -126,7 +126,7 @@ SKIP: {
       ),
       q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS }
       . q{cnt, LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`, `c`) AS UNSIGNED)), }
-      . q{10, 16)) AS crc FROM `test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < 1) OR (`a` = 1 }
+      . q{10, 16)) AS crc FROM `test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' }
       . q{AND `b` <= 'en'))) AND ((foo=1))},
       'First nibble SQL with FNV_64',
    );
@@ -147,7 +147,7 @@ is(
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND ((foo=1))},
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en'))) AND ((foo=1))},
    'First nibble SQL',
 );
 
@@ -163,7 +163,7 @@ is(
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND ((foo=1))},
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE (((`a` < '1') OR (`a` = '1' AND `b` <= 'en'))) AND ((foo=1))},
    'First nibble SQL, again',
 );
 
@@ -182,8 +182,8 @@ is(
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) AND }
-   . q{((`a` < 2) OR (`a` = 2 AND `b` <= 'ca')))) AND (((foo=1)))},
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '1') OR (`a` = '1' AND `b` > 'en')) AND }
+   . q{((`a` < '2') OR (`a` = '2' AND `b` <= 'ca')))) AND (((foo=1)))},
    'Second nibble SQL',
 );
 
@@ -219,7 +219,7 @@ is(
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > 4) OR (`a` = 4 AND `b` > 'bz')) AND }
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '4') OR (`a` = '4' AND `b` > 'bz')) AND }
    . q{1=1)) AND ((foo=1))},
    'End-of-table nibble SQL',
 );
@@ -263,8 +263,8 @@ is($t->{state}, 2, 'Now in state to fetch individual rows');
 ok($t->pending_changes(), 'Pending changes not done yet');
 is($t->get_sql(database => 'test', table => 'test1'),
    q{SELECT /*rows in nibble*/ `a`, `b`, `c`, SHA1(CONCAT_WS('#', `a`, `b`, `c`)) AS __crc FROM }
-   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) }
-   . q{AND ((`a` < 2) OR (`a` = 2 AND `b` <= 'ca'))))}
+   . q{`test`.`test1` USE INDEX (`PRIMARY`) WHERE ((((`a` > '1') OR (`a` = '1' AND `b` > 'en')) }
+   . q{AND ((`a` < '2') OR (`a` = '2' AND `b` <= 'ca'))))}
    . q{ ORDER BY `a`, `b`},
    'SQL now working inside nibble'
 );
@@ -274,7 +274,7 @@ is(scalar(@rows), 0, 'No bad row triggered');
 $t->not_in_left(rr => {a => 1, b => 'en'});
 
 is_deeply(\@rows,
-   ["DELETE FROM `test`.`test1` WHERE `a`=1 AND `b`='en' LIMIT 1"],
+   ["DELETE FROM `test`.`test1` WHERE `a`='1' AND `b`='en' LIMIT 1"],
    'Working inside nibble, got a bad row',
 );
 
@@ -284,7 +284,7 @@ $t->same_row(
    rr => {a => 1, b => 'en', __crc => 'foo'} );
 
 is_deeply(\@rows,
-   ["DELETE FROM `test`.`test1` WHERE `a`=1 AND `b`='en' LIMIT 1"],
+   ["DELETE FROM `test`.`test1` WHERE `a`='1' AND `b`='en' LIMIT 1"],
    'No more rows added',
 );
 
@@ -294,8 +294,8 @@ $t->same_row(
 
 is_deeply(\@rows,
    [
-      "DELETE FROM `test`.`test1` WHERE `a`=1 AND `b`='en' LIMIT 1",
-      "UPDATE `test`.`test1` SET `c`='a' WHERE `a`=1 AND `b`='en' LIMIT 1",
+      "DELETE FROM `test`.`test1` WHERE `a`='1' AND `b`='en' LIMIT 1",
+      "UPDATE `test`.`test1` SET `c`='a' WHERE `a`='1' AND `b`='en' LIMIT 1",
    ],
    'Row added to update differing row',
 );
@@ -523,7 +523,7 @@ $t->set_checksum_queries(
 $sql = $t->get_sql(database=>'issue_804', table=>'t');
 is(
    $sql,
-   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `accountid`, `purchaseid`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < 49) OR (`accountid` = 49 AND `purchaseid` <= 50)))",
+   "SELECT /*issue_804.t:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `accountid`, `purchaseid`)) AS UNSIGNED)), 10, 16)) AS crc FROM `issue_804`.`t` FORCE INDEX(`purchases_accountid_purchaseid`) WHERE (((`accountid` < '49') OR (`accountid` = '49' AND `purchaseid` <= '50')))",
    'SQL nibble for issue_804 table'
 );
 

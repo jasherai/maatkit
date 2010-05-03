@@ -99,12 +99,12 @@ $d->compare_sets(
 is_deeply(
    \@rows,
    [
-   'INSERT INTO `test`.`foo`(`a`, `b`, `c`) VALUES (1, 2, 3)',
-   'DELETE FROM `test`.`foo` WHERE `a`=2 AND `b`=2 AND `c`=3 LIMIT 1',
-   'DELETE FROM `test`.`foo` WHERE `a`=2 AND `b`=2 AND `c`=3 LIMIT 1',
-   'INSERT INTO `test`.`foo`(`a`, `b`, `c`) VALUES (3, 2, 3)',
-   'INSERT INTO `test`.`foo`(`a`, `b`, `c`) VALUES (3, 2, 3)',
-   'DELETE FROM `test`.`foo` WHERE `a`=4 AND `b`=2 AND `c`=3 LIMIT 1',
+   "INSERT INTO `test`.`foo`(`a`, `b`, `c`) VALUES ('1', '2', '3')",
+   "DELETE FROM `test`.`foo` WHERE `a`='2' AND `b`='2' AND `c`='3' LIMIT 1",
+   "DELETE FROM `test`.`foo` WHERE `a`='2' AND `b`='2' AND `c`='3' LIMIT 1",
+   "INSERT INTO `test`.`foo`(`a`, `b`, `c`) VALUES ('3', '2', '3')",
+   "INSERT INTO `test`.`foo`(`a`, `b`, `c`) VALUES ('3', '2', '3')",
+   "DELETE FROM `test`.`foo` WHERE `a`='4' AND `b`='2' AND `c`='3' LIMIT 1",
    ],
    'rows from handler',
 );

@@ -246,7 +246,7 @@ is(scalar(@rows), 0, 'No bad row triggered');
 $t->not_in_left(rr => {a => 1});
 
 is_deeply(\@rows,
-   ['DELETE FROM `test`.`test1` WHERE `a`=1 LIMIT 1'],
+   ["DELETE FROM `test`.`test1` WHERE `a`='1' LIMIT 1"],
    'Working inside chunk, got a bad row',
 );
 
@@ -254,8 +254,8 @@ is_deeply(\@rows,
 $t->not_in_right(lr => {a => 1});
 is_deeply(\@rows,
    [
-   'DELETE FROM `test`.`test1` WHERE `a`=1 LIMIT 1',
-   "INSERT INTO `test`.`test1`(`a`, `b`) VALUES (1, 'en')",
+   "DELETE FROM `test`.`test1` WHERE `a`='1' LIMIT 1",
+   "INSERT INTO `test`.`test1`(`a`, `b`) VALUES ('1', 'en')",
    ],
    'Missing row fetched back from DB',
 );
@@ -265,8 +265,8 @@ $t->same_row( lr => {a => 1, __crc => 'foo'}, rr => {a => 1, __crc => 'foo'} );
 
 is_deeply(\@rows,
    [
-   'DELETE FROM `test`.`test1` WHERE `a`=1 LIMIT 1',
-   "INSERT INTO `test`.`test1`(`a`, `b`) VALUES (1, 'en')",
+   "DELETE FROM `test`.`test1` WHERE `a`='1' LIMIT 1",
+   "INSERT INTO `test`.`test1`(`a`, `b`) VALUES ('1', 'en')",
    ],
    'No more rows added',
 );
@@ -275,9 +275,9 @@ $t->same_row( lr => {a => 1, __crc => 'foo'}, rr => {a => 1, __crc => 'bar'} );
 
 is_deeply(\@rows,
    [
-      'DELETE FROM `test`.`test1` WHERE `a`=1 LIMIT 1',
-      "INSERT INTO `test`.`test1`(`a`, `b`) VALUES (1, 'en')",
-      "UPDATE `test`.`test1` SET `b`='en' WHERE `a`=1 LIMIT 1",
+      "DELETE FROM `test`.`test1` WHERE `a`='1' LIMIT 1",
+      "INSERT INTO `test`.`test1`(`a`, `b`) VALUES ('1', 'en')",
+      "UPDATE `test`.`test1` SET `b`='en' WHERE `a`='1' LIMIT 1",
    ],
    'Row added to update differing row',
 );

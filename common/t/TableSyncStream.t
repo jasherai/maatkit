@@ -52,7 +52,7 @@ is(
       database => 'test',
       table    => 'foo',
    ),
-   'SELECT SQL_BUFFER_RESULT `a`, `b`, `c` FROM `test`.`foo` WHERE foo=1',
+   "SELECT SQL_BUFFER_RESULT `a`, `b`, `c` FROM `test`.`foo` WHERE foo=1",
    'Got SQL with SQL_BUFFER_RESULT OK',
 );
 
@@ -67,7 +67,7 @@ is(
       database => 'test',
       table    => 'foo',
    ),
-   'SELECT `a`, `b`, `c` FROM `test`.`foo` WHERE foo=1',
+   "SELECT `a`, `b`, `c` FROM `test`.`foo` WHERE foo=1",
    'Got SQL OK',
 );
 
@@ -95,8 +95,8 @@ $d->compare_sets(
 is_deeply(
    \@rows,
    [
-   'INSERT INTO `test`.`foo`(`a`, `b`, `c`) VALUES (1, 2, 3)',
-   'DELETE FROM `test`.`foo` WHERE `a`=4 AND `b`=2 AND `c`=3 LIMIT 1',
+   "INSERT INTO `test`.`foo`(`a`, `b`, `c`) VALUES ('1', '2', '3')",
+   "DELETE FROM `test`.`foo` WHERE `a`='4' AND `b`='2' AND `c`='3' LIMIT 1",
    ],
    'rows from handler',
 );
