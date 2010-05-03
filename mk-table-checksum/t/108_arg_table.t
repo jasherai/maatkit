@@ -37,8 +37,8 @@ $sb->load_file('master', 'mk-table-checksum/t/samples/before.sql');
 # Check --since with --arg-table. The value in the --arg-table table
 # ought to override the --since passed on the command-line.
 $output = `$cmd --arg-table test.argtest --since 20 --explain 2>&1`;
-unlike($output, qr/`a`>=20/, 'Argtest overridden');
-like($output, qr/`a`>=1/, 'Argtest set to something else');
+unlike($output, qr/`a`>='20'/, 'Argtest overridden');
+like($output, qr/`a`>='1'/, 'Argtest set to something else');
 
 # Make sure that --arg-table table has only legally allowed columns in it
 $output = `$cmd --arg-table test.argtest2 2>&1`;

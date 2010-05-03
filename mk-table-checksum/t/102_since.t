@@ -41,7 +41,7 @@ like($output, qr/2007-12-31/, '--since is calculated as an expression');
 # ought to override the --since passed on the command-line.
 $output = `$cmd --arg-table test.argtest --since 20 --explain 2>&1`;
 unlike($output, qr/`a`>=20/, 'Argtest overridden');
-like($output, qr/`a`>=1/, 'Argtest set to something else');
+like($output, qr/`a`>='1'/, 'Argtest set to something else');
 
 $output = `MKDEBUG=1 $cmd --since 'current_date + interval 1 day' -t test.blackhole 2>&1`;
 like($output, qr/Finished chunk/, '--since does not crash on blackhole tables');
@@ -50,7 +50,7 @@ $output = `MKDEBUG=1 $cmd --since 'current_date + interval 1 day' 2>&1`;
 like($output, qr/Skipping.*--since/, '--since skips tables');
 
 $output = `$cmd --since 100 --explain`;
-like($output, qr/`a`>=100/, '--since adds WHERE clauses');
+like($output, qr/`a`>='100'/, '--since adds WHERE clauses');
 
 $output = `$cmd --since current_date 2>&1 | grep HASH`;
 unlike($output, qr/HASH\(0x/, '--since does not f*** up table names');
