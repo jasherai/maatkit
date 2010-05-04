@@ -3285,7 +3285,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# SlavePrefetch package 5722
+# SlavePrefetch package 6232
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlavePrefetch.pm
@@ -3309,19 +3309,21 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(dbh oktorun chk_int chk_min chk_max
-                          datadir QueryRewriter);
+   my @required_args = qw(dbh oktorun chk_int chk_min chk_max QueryRewriter);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   $args{'offset'}            ||= 128;
-   $args{'window'}            ||= 4_096;
-   $args{'io-lag'}            ||= 1_024;
-   $args{'query-sample-size'} ||= 4;
-   $args{'max-query-time'}    ||= 1;
 
    my $self = {
-      %args, 
+      offset              => 128,
+      window              => 4_096,
+      'io-lag'            => 1_024,
+      'query-sample-size' => 4,
+      'max-query-time'    => 1,
+      mysqlbinlog         => 'mysqlbinlog',
+
+      %args,
+
       pos          => 0,
       next         => 0,
       last_ts      => 0,
@@ -3405,9 +3407,12 @@ sub reset_stats {
 
 sub open_relay_log {
    my ( $self, %args ) = @_;
-   my @required_args = qw(tmpdir);
-   foreach my $arg ( @required_args ) {
+   foreach my $arg ( qw(relay_log) ) {
       die "I need a $arg argument" unless $args{$arg};
+   }
+
+   if ( !-r $args{relay_log} ) {
+      die "Relay log $args{relay_log} does not exist or is not readable";
    }
 
    my $cmd = $self->_mysqlbinlog_cmd(%args);
@@ -3424,18 +3429,10 @@ sub open_relay_log {
 
 sub _mysqlbinlog_cmd {
    my ( $self, %args ) = @_;
-   my $datadir     = $args{datadir}     || $self->{datadir};
-   my $start_pos   = $args{start_pos}   || $self->{slave}->{pos};
-   my $file        = $args{file}        || $self->{slave}->{file};
-   my $mysqlbinlog = $args{mysqlbinlog} || 'mysqlbinlog';
-
-   if ( !-r "$datadir/$file" ) {
-      die "Relay log $datadir/$file does not exist or is not readable";
-   }
-
-   my $cmd = "$mysqlbinlog "
-           . ($args{tmpdir} ? "-l $args{tmpdir}" : '')
-           . " --start-pos=$start_pos $datadir/$file"
+   my $cmd = $self->{mysqlbinlog}
+           . ($args{tmpdir}    ? " --local-load=$args{tmpdir} "   : '')
+           . ($args{start_pos} ? " --start-pos=$args{start_pos} " : '')
+           . $args{relay_log}
            . (MKDEBUG ? ' 2>/dev/null' : '');
    MKDEBUG && _d($cmd);
    return $cmd;
@@ -3904,6 +3901,7 @@ use threads;
 use Thread::Queue;
 use List::Util qw(max sum);
 use Time::HiRes qw(sleep);
+use File::Basename qw(dirname);
 use sigtrap qw(handler finish untrapped normal-signals);
 
 use Data::Dumper;
@@ -3922,6 +3920,15 @@ my $end;
 sub main {
    @ARGV = @_;  # set global ARGV for this package
 
+   # Reset global vars.
+   $oktorun   = 1;
+   $sentinel  = undef;
+   $run_time  = undef;
+   $end       = undef;
+
+   # ##########################################################################
+   # Get configuration information.
+   # ##########################################################################
    my $o  = new OptionParser(
       strict      => 0,
       prompt      => '[OPTION...] [FILE]',
@@ -3946,6 +3953,8 @@ sub main {
            || $chk_max < $chk_min || $chk_min < 0 ) {
       $o->save_error("You specified an invalid range for --check-interval");
    }
+
+   $o->set('sleep', 0) if $o->get('relay-log') && $o->get('dry-run');
 
    if ( @ARGV > 1 ) {
       $o->save_error("You can specify only one FILE");
@@ -4005,8 +4014,21 @@ sub main {
       query_stats  => {},
       query_errors => {},
    };
-   my $datadir = $dbh->selectrow_arrayref('SHOW VARIABLES LIKE "datadir"')->[1];
-   MKDEBUG && _d('Data directory', $datadir);
+   my $relay_log_dir = $o->get('relay-log-dir');
+   if ( !$relay_log_dir ) {
+      my $dir = File::Basename::dirname(
+         $dbh->selectrow_arrayref('SHOW VARIABLES LIKE "relay_log"')->[1]
+      );
+      # dirname() return . if the file has no path but this doesn't
+      # mean MySQL is reading relay logs from . so we ignore this
+      # and fall back to datadir next.
+      $relay_log_dir = $dir unless $dir eq '.';
+   }
+   if ( !$relay_log_dir ) {
+      $relay_log_dir
+         = $dbh->selectrow_arrayref('SHOW VARIABLES LIKE "datadir"')->[1];
+   }
+   MKDEBUG && _d('relay log dir:', $relay_log_dir);
 
    my $lp  = new BinaryLogParser();
    my $qr  = new QueryRewriter();
@@ -4017,7 +4039,6 @@ sub main {
       chk_int              => $chk_int,
       chk_min              => $chk_min,
       chk_max              => $chk_max,
-      datadir              => $datadir,
       QueryRewriter        => $qr,
       have_subqueries      => $vp->version_ge($dbh,'4.1.0'),
       stats                => $stats,
@@ -4123,7 +4144,7 @@ sub main {
 
    if ( !$o->get('dry-run') ) {
       push @pipeline, sub {
-         my ( %args ) = @_;
+      my ( %args ) = @_;
          # TODO: is this effective?
          if ( !$spf->slave_is_running() ) {
             MKDEBUG && _d('Slave is not running');
@@ -4190,22 +4211,11 @@ sub main {
    my $more_events;
    my $oktorun_sub = sub { $more_events = $_[0]; };
 
-   my $slave_is_running;
-   if ( $o->get('dry-run') ) {
-      $slave_is_running = sub { return 1; };
-   }
-   else {
-      $slave_is_running = sub {
-         return $spf->slave_is_running();
-      };
-   }
-
-   # Checked in oktorun()
    $run_time = $o->get('run-time');
    $end      = time + ($run_time || 0);  # When we should exit
 
    EVENT:
-   while ( oktorun() && $slave_is_running->() ) {
+   while ( oktorun() ) {
       if ( !$fh ) {
          if ( $o->got('relay-log') ) {
             my $file = shift @$relay_logs;
@@ -4227,10 +4237,32 @@ sub main {
             }
          }
          else {
-            $fh = $spf->open_relay_log(tmpdir => $o->get('tmpdir'));
-            if ( !$fh ) {
-               warn "Failed to open slave relay log";
-               last EVENT;
+            my $slave_status = $spf->get_slave_status();
+            if ( !$slave_status->{running} ) {
+               _d("Slave is not running; retry in 1s");
+               sleep 1;
+               next EVENT;
+            }
+            my $relay_log = "$relay_log_dir/$slave_status->{file}";
+            eval {
+               $fh = $spf->open_relay_log(
+                  relay_log => $relay_log,
+                  start_pos => $slave_status->{pos},
+                  tmpdir    => $o->get('tmpdir'),
+               );
+            };
+            if ( $EVAL_ERROR ) {
+               if ( $o->get('continue-on-error') ) {
+                  chomp $EVAL_ERROR;
+                  warn "Cannot open relay log $relay_log: $EVAL_ERROR; "
+                     . "retry in 1s";
+                  sleep 1;
+                  next EVENT;
+               }
+               else {
+                  warn "Failed to open relay log $relay_log: $EVAL_ERROR";
+                  last EVENT;
+               }
             }
          }
          $next_event  = sub { return <$fh>;    };
@@ -4241,7 +4273,6 @@ sub main {
       eval {
          my $event = {};
          foreach my $process ( @pipeline ) {
-            last unless oktorun();
             $event = $process->(
                event      => $event,
                next_event => $next_event,
@@ -4253,18 +4284,14 @@ sub main {
             last unless $event;
          }
          if ( !$more_events ) {
-            MKDEBUG && _d('No more events');
-            close $fh if $fh;
-            $fh = undef;
-
             # If running live, no more events means we've parsed the
             # entire relay log and there's nothing left for us or the
             # slave to do.  So wait a second to see if the slave receives
             # more replicated statements.
-            if ( !$o->get('dry-run') ) {
-               MKDEBUG && _d('Waiting 1s for more relay log events');
-               sleep 1;
-            }
+            MKDEBUG && _d('No more events');
+            close $fh if $fh;
+            $fh = undef;
+            sleep $o->get('sleep');
          }
       };
       if ( $EVAL_ERROR ) {
@@ -4827,14 +4854,27 @@ type: string
 
 Read only the specified relay log file; - to read from STDIN.
 
-By default the slave's current C<Relay_Log_File> reported by
-C<SHOW SLAVE STATUS>) is read.  This option allows you to specify a relay
+By default mk-slave-prefetch reads the C<Relay_Log_File> reported by
+C<SHOW SLAVE STATUS>.  This option allows you to specify a relay
 log file that has already be converted to text by C<mysqlbinlog>.
 The tool will exit after reading and parsing this file.
 
 This option is useful with L<"--dry-run"> and L<"--print"> if you want to
 see how the tool would rewrite the relay log's events without executing
 them or having to wait for a lagged slave.
+
+=item --relay-log-dir
+
+type: string
+
+Open the slave's C<Relay_Log_File> relative to this directory.
+
+Unless this option is specified, mk-slave-prefetch automatically determines
+the directory that relay logs are in by first looking at the C<relay_log>
+system variable to see if it specifies a path.  If it does, this path is
+used; if it does not, then the C<datadir> variable value is used.
+
+This option is ignored if an explicit L<"--relay-log"> is specified.
 
 =item --run-time
 
@@ -4858,6 +4898,18 @@ type: string; default: wait_timeout=10000
 
 Set these MySQL variables.  Immediately after connecting to MySQL, this
 string will be appended to SET and executed.
+
+=item --sleep
+
+type: time; default: 1s
+
+Sleep time before checking for new events.
+
+When mk-slave-prefetch is done reading all the events in a relay log, it sleeps
+this amount of time before checking for new events.
+
+This option is automatically set to zero if both L<"--relay-log"> and
+L<"--dry-run"> are specified.
 
 =item --socket
 

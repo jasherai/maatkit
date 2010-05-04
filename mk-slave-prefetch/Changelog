@@ -1,5 +1,8 @@
 Changelog for mk-slave-prefetch:
 
+   * Added --relay-log-dir (issue 288).
+   * Added --sleep.
+
 2010-05-03: version 1.0.17
 
    * Made --secondary-indexes use --database db if necessary (issue 998).
