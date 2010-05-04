@@ -37,7 +37,6 @@ my $spf = new SlavePrefetch(
    chk_int         => 4,
    chk_min         => 1,
    chk_max         => 8,
-   datadir         => '/tmp/12346/data',
    QueryRewriter   => $qr,
    have_subqueries => 1,
    stats           => { events => 0 },
@@ -77,10 +76,8 @@ open my $tmp_fh, '>', $tmp_file;
 my $fh;
 eval {
    $fh = $spf->open_relay_log(
-      tmpdir    => '/dev/null',
-      datadir   => "$trunk/common/t/samples",
+      relay_log => "$trunk/common/t/samples/relay-binlog001",
       start_pos => 1708,
-      file      => 'relay-binlog001',
    );
 };
 is(
@@ -96,11 +93,10 @@ ok(
 is(
    $spf->_mysqlbinlog_cmd(
       tmpdir    => '/dev/null',
-      datadir   => "$trunk/common/t/samples",
+      relay_log => "$trunk/common/t/samples/relay-binlog001",
       start_pos => 1708,
-      file      => 'relay-binlog001',
    ),
-   "mysqlbinlog -l /dev/null --start-pos=1708 $trunk/common/t/samples/relay-binlog001",
+   "mysqlbinlog --local-load=/dev/null  --start-pos=1708 $trunk/common/t/samples/relay-binlog001",
    'mysqlbinlog cmd'
 );
 
@@ -830,7 +826,6 @@ SKIP: {
       chk_int         => 4,
       chk_min         => 1,
       chk_max         => 8,
-      datadir         => '/tmp/12346/data',
       QueryRewriter   => $qr,
       have_subqueries => 1,
       stats           => { events => 0 },

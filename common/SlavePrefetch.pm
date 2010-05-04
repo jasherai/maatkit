@@ -33,16 +33,17 @@ $Data::Dumper::Quotekeys = 0;
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 # Arguments:
-#   * dbh                Slave dbh
-#   * oktorun            Callback for early termination
-#   * chk_int            Check interval
-#   * chk_min            Minimum check interval
-#   * chk_max            Maximum check interval 
-#   * datadir            datadir system var
-#   * stats              hashref for stat counters
-#   * QueryRewriter      Common module
-#   * stats_file         (optional) Filename with saved stats
-#   * have_subqueries    (optional) bool: Yes if MySQL >= 4.1.0
+#   * dbh                dbh: slave
+#   * oktorun            coderef: callback to terminate when waiting for window
+#   * chk_int            scalar: check interval
+#   * chk_min            scalar: minimum check interval
+#   * chk_max            scalar: maximum check interval 
+#   * QueryRewriter      obj
+# Optional arguments:
+#   * mysqlbinlog        scalar: mysqlbinlog command
+#   * stats              hashref: stats counter
+#   * stats_file         scalar filename with saved stats
+#   * have_subqueries    bool: yes if MySQL >= 4.1.0
 #   * offset             # The remaining args are equivalent mk-slave-prefetch
 #   * window             # options.  Defaults are provided to make testing
 #   * io-lag             # easier, so they are technically optional.
@@ -56,19 +57,24 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 #   * progress           #
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = qw(dbh oktorun chk_int chk_min chk_max
-                          datadir QueryRewriter);
+   my @required_args = qw(dbh oktorun chk_int chk_min chk_max QueryRewriter);
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   $args{'offset'}            ||= 128;
-   $args{'window'}            ||= 4_096;
-   $args{'io-lag'}            ||= 1_024;
-   $args{'query-sample-size'} ||= 4;
-   $args{'max-query-time'}    ||= 1;
 
    my $self = {
-      %args, 
+      # Defaults
+      offset              => 128,
+      window              => 4_096,
+      'io-lag'            => 1_024,
+      'query-sample-size' => 4,
+      'max-query-time'    => 1,
+      mysqlbinlog         => 'mysqlbinlog',
+
+      # Override defaults
+      %args,
+
+      # Private variables
       pos          => 0,
       next         => 0,
       last_ts      => 0,
@@ -152,16 +158,19 @@ sub reset_stats {
 
 
 # Arguments:
-#   * tmpdir         Dir for mysqlbinlog --local-load
-#   * datadir        (optional) Datadir for file
-#   * start_pos      (optional) Start pos for mysqlbinlog --start-pos
-#   * file           (optional) Name of the relay log
-#   * mysqlbinlog    (optional) mysqlbinlog command (if not in PATH)
+#   * relay_log      scalar: full /path/relay-log file name
+# Optional arguments:
+#   * tmpdir         (optional) dir for mysqlbinlog --local-load
+#   * start_pos      (optional) start pos for mysqlbinlog --start-pos
 sub open_relay_log {
    my ( $self, %args ) = @_;
-   my @required_args = qw(tmpdir);
-   foreach my $arg ( @required_args ) {
+   foreach my $arg ( qw(relay_log) ) {
       die "I need a $arg argument" unless $args{$arg};
+   }
+
+   # Ensure file is readable
+   if ( !-r $args{relay_log} ) {
+      die "Relay log $args{relay_log} does not exist or is not readable";
    }
 
    my $cmd = $self->_mysqlbinlog_cmd(%args);
@@ -178,19 +187,10 @@ sub open_relay_log {
 
 sub _mysqlbinlog_cmd {
    my ( $self, %args ) = @_;
-   my $datadir     = $args{datadir}     || $self->{datadir};
-   my $start_pos   = $args{start_pos}   || $self->{slave}->{pos};
-   my $file        = $args{file}        || $self->{slave}->{file};
-   my $mysqlbinlog = $args{mysqlbinlog} || 'mysqlbinlog';
-
-   # Ensure file is readable
-   if ( !-r "$datadir/$file" ) {
-      die "Relay log $datadir/$file does not exist or is not readable";
-   }
-
-   my $cmd = "$mysqlbinlog "
-           . ($args{tmpdir} ? "-l $args{tmpdir}" : '')
-           . " --start-pos=$start_pos $datadir/$file"
+   my $cmd = $self->{mysqlbinlog}
+           . ($args{tmpdir}    ? " --local-load=$args{tmpdir} "   : '')
+           . ($args{start_pos} ? " --start-pos=$args{start_pos} " : '')
+           . $args{relay_log}
            . (MKDEBUG ? ' 2>/dev/null' : '');
    MKDEBUG && _d($cmd);
    return $cmd;
