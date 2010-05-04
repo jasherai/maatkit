@@ -3285,7 +3285,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# SlavePrefetch package 6232
+# SlavePrefetch package 6234
 # This package is a copy without comments from the original.  The original
 # with comments and its test file can be found in the SVN repository at,
 #   trunk/common/SlavePrefetch.pm
@@ -3331,6 +3331,7 @@ sub new {
       last_chk     => 0,
       query_stats  => {},
       query_errors => {},
+      tbl_cols     => {},
       callbacks    => {
          show_slave_status => sub {
             my ( $dbh ) = @_;
@@ -3603,6 +3604,18 @@ sub rewrite_query {
    }
 
    my ($query, $fingerprint) = $self->prepare_query($event->{arg});
+
+   if ( !$query
+        && $event->{arg} =~ m/^INSERT|REPLACE/i
+        && $self->{TableParser}
+        && $self->{QueryParser} )
+   {
+      my $new_arg = $self->inject_columns_list($event->{arg});
+      return unless $new_arg;
+      $event->{arg} = $new_arg;
+      return $self->rewrite_query($event);
+   }
+
    if ( !$query ) {
       MKDEBUG && _d('Failed to prepare query, skipping');
       return;
@@ -3612,6 +3625,56 @@ sub rewrite_query {
    $event->{fingerprint}  = $fingerprint;
 
    return $event;
+}
+
+sub inject_columns_list {
+   my ( $self, $query ) = @_; 
+   my $tp   = $self->{TableParser};
+   my $qp   = $self->{QueryParser};
+   my $dbh  = $self->{dbh};
+   return unless $tp && $qp;
+   MKDEBUG && _d('Attempting to inject columns list into query');
+
+   my @tbls = $qp->get_tables($query);
+   if ( !@tbls ) {
+      MKDEBUG && _d("Can't get tables from query");
+      return;
+   }
+   if ( @tbls > 1 ) {
+      MKDEBUG && _d("Query has more than one table");
+      return;
+   }
+
+   my $tbl_cols = $self->{tbl_cols}->{$tbls[0]};
+   if ( !$tbl_cols ) {
+      my $sql = "SHOW CREATE TABLE $tbls[0]";
+      MKDEBUG && _d($sql);
+      my $show_create = $dbh->selectrow_arrayref($sql)->[1];
+      if ( !$show_create ) {
+         MKDEBUG && _d("Failed to", $sql);
+         return;
+      }
+      my $tbl_struct = $tp->parse($show_create);
+      if ( !$tbl_struct ) {
+         MKDEBUG && _d("Failed to parse table struct");
+         return;
+      }
+      $tbl_cols = join(',', map { "`$_`" } @{$tbl_struct->{cols}});
+      $self->{tbl_cols}->{$tbls[0]} = $tbl_cols;
+   }
+   else {
+      MKDEBUG && _d('Using cached columns for', $tbls[0]);
+   }
+
+   if ( !($query =~ s/ VALUES?/ ($tbl_cols) VALUES/i) ) {
+      MKDEBUG && _d("Failed to inject columns list");
+      return;
+   }
+
+   MKDEBUG && _d('Successfully inject columns list:',
+      substr($query, 0, 100), '...');
+
+   return $query;
 }
 
 sub get_window {
@@ -4030,8 +4093,12 @@ sub main {
    }
    MKDEBUG && _d('relay log dir:', $relay_log_dir);
 
+   my $q   = new Quoter();
+   my $tp  = new TableParser(Quoter => $q);
+   my $du  = new MySQLDump(cache => 0);
    my $lp  = new BinaryLogParser();
-   my $qr  = new QueryRewriter();
+   my $qp  = new QueryParser();
+   my $qr  = new QueryRewriter(QueryParser => $qp);
    my $vp  = new VersionParser();
    my $spf = new SlavePrefetch(
       dbh                  => $dbh,
@@ -4039,7 +4106,6 @@ sub main {
       chk_int              => $chk_int,
       chk_min              => $chk_min,
       chk_max              => $chk_max,
-      QueryRewriter        => $qr,
       have_subqueries      => $vp->version_ge($dbh,'4.1.0'),
       stats                => $stats,
       stats_file           => shift @ARGV,
@@ -4054,15 +4120,11 @@ sub main {
       'reject-regexp'      => $o->get('reject-regexp'),
       'permit-regexp'      => $o->get('permit-regexp'),
       progress             => $o->get('progress'),
+      TableParser          => $o->get('inject-columns') ? $tp : undef,
+      QueryParser          => $qp,
+      QueryRewriter        => $qr,
    );
 
-   my ($q, $tp, $du, $qp); 
-   if ( $o->get('secondary-indexes') ) {
-      $q   = new Quoter();
-      $tp  = new TableParser(Quoter => $q);
-      $du  = new MySQLDump(cache => 0);
-      $qp  = new QueryParser();
-   }
 
    # ########################################################################
    # Create threads to execute and/or print primary and secondary queries.
@@ -4714,6 +4776,23 @@ Show help and exit.
 short form: -h; type: string
 
 Connect to host.
+
+=item --[no]inject-columns
+
+default: yes
+
+Inject C<(columns)> into INSERT/REPLACE that don't specify them.
+
+Normally this query cannot be rewritten because mk-slave-prefetch doesn't
+know which columns the values refer to: C<INSERT INTO tbl VALUES (1,2)>.
+This option causes mk-slave-prefetch to C<SHOW CREATE TABLE> the table
+from the query, get its columns and inject these columns into the query,
+like: C<INSERT INTO tbl (`col1`,`col2`) VALUES (1,2)>.  This allows the
+query to be written as a SELECT and prefetched.
+
+Columns for each unique database.table are cached, so this operation
+may fail if an C<ALTER TABLE> statement changes the order or name of
+any columns.
 
 =item --io-lag
 

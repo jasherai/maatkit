@@ -23,7 +23,7 @@ if ( !$dbh ) {
    plan skip_all => 'Cannot connect to sandbox slave';
 }
 else {
-   plan tests => 3;
+   plan tests => 4;
 }
 
 my $output;
@@ -32,7 +32,7 @@ my $cmd  = "$trunk/mk-slave-prefetch/mk-slave-prefetch -F $cnf --dry-run --print
 
 # MaatkitTest::output() can't capture the STDOUT of the threads.
 
-$output = `$cmd $trunk/mk-slave-prefetch/t/samples/binlog001.txt`;
+$output = `$cmd $trunk/mk-slave-prefetch/t/samples/binlog001.txt --no-inject-columns`;
 is(
    $output,
 "USE `foo` /*tid1*/
@@ -69,7 +69,18 @@ SELECT `b`, `c` FROM `test2`.`t` FORCE INDEX(`b`) WHERE `b`='2' AND `c`='3' LIMI
 );
 
 # #############################################################################
+# Issue 1003: Rewrite INSERT without columns list
+# #############################################################################
+$output = `$cmd $trunk/common/t/samples/binlogs/binlog009.txt`;
+is(
+   $output,
+"select 1 from  test2.t  where `a`=1 and `b`=2 and `c`=3 /*tid1*/
+",
+   "Rewrite INSERT without columns list (issue 1003)"
+);
+
+# #############################################################################
 # Done.
 # #############################################################################
-$sb->wipe_clean($dbh);
+# $sb->wipe_clean($dbh);
 exit;

@@ -1,5 +1,6 @@
 Changelog for mk-slave-prefetch:
 
+   * Added --[no]inject-columns (issue 1003).
    * Added --relay-log-dir (issue 288).
    * Added --sleep.
 
