@@ -9,13 +9,16 @@ BEGIN {
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 65;
+use Test::More tests => 66;
 
 use SlavePrefetch;
 use QueryRewriter;
 use BinaryLogParser;
 use DSNParser;
 use Sandbox;
+use TableParser;
+use Quoter;
+use QueryParser;
 use MaatkitTest;
 
 my $dp = new DSNParser(opts=>$dsn_opts);
@@ -23,7 +26,8 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
 use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
-my $qr      = new QueryRewriter();
+my $qp      = new QueryParser();
+my $qr      = new QueryRewriter(QueryParser=>$qp);
 my $dbh     = 1;  # we don't need to connect yet
 my $oktorun = 1;
 
@@ -909,6 +913,49 @@ sub use_db {
 
 # Tests for carrying the db forward were removed because
 # this is now handled by an earlier processes in mk-slave-prefetch.
+
+# #############################################################################
+# Rewrite INSERT without columns list.
+# #############################################################################
+SKIP: {
+   skip 'Cannot connect to sandbox slave', 6 unless $slave_dbh;
+
+   my $q  = new Quoter();
+   my $tp = new TableParser(Quoter => $q);
+
+   # Load any 'ol table.  This one is like:
+   # CREATE TABLE `issue_94` (
+   #   a INT NOT NULL,
+   #   b INT NOT NULL,
+   #   c CHAR(16) NOT NULL,
+   #   INDEX idx (a)
+   # );
+   $sb->create_dbs($slave_dbh, [qw(test)]);
+   $sb->load_file('slave1', 'common/t/samples/issue_94.sql');
+
+   my $spf = new SlavePrefetch(
+      dbh             => $slave_dbh,
+      oktorun         => \&oktorun,
+      chk_int         => 4,
+      chk_min         => 1,
+      chk_max         => 8,
+      QueryRewriter   => $qr,
+      TableParser     => $tp,
+      QueryParser     => $qp,
+   );
+   my $event = $spf->rewrite_query(
+      {
+         arg => "INSERT INTO test.issue_94 VALUES (1, 2, 'your ad here')",
+      }
+   );
+   is(
+      $event->{arg},
+      "select 1 from  test.issue_94  where `a`=1 and `b`= 2 and `c`= 'your ad here'",
+      'Rewrote INSERT without columns list'
+   );
+
+   $sb->wipe_clean($slave_dbh);
+}
 
 # #############################################################################
 # Done.

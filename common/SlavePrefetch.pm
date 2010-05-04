@@ -40,6 +40,8 @@ use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 #   * chk_max            scalar: maximum check interval 
 #   * QueryRewriter      obj
 # Optional arguments:
+#   * TableParser        obj: allows rewrite_query() to rewrite more
+#   * QueryParser        obj: allows rewrite_query() to rewrite more
 #   * mysqlbinlog        scalar: mysqlbinlog command
 #   * stats              hashref: stats counter
 #   * stats_file         scalar filename with saved stats
@@ -82,6 +84,7 @@ sub new {
       last_chk     => 0,
       query_stats  => {},
       query_errors => {},
+      tbl_cols     => {},
       callbacks    => {
          show_slave_status => sub {
             my ( $dbh ) = @_;
@@ -398,6 +401,20 @@ sub rewrite_query {
    }
 
    my ($query, $fingerprint) = $self->prepare_query($event->{arg});
+
+   # Maybe rewrite failed INSERT|REPLACE by injecting missing columns list.
+   # http://code.google.com/p/maatkit/issues/detail?id=1003
+   if ( !$query
+        && $event->{arg} =~ m/^INSERT|REPLACE/i
+        && $self->{TableParser}
+        && $self->{QueryParser} )
+   {
+      my $new_arg = $self->inject_columns_list($event->{arg});
+      return unless $new_arg;
+      $event->{arg} = $new_arg;
+      return $self->rewrite_query($event);
+   }
+
    if ( !$query ) {
       MKDEBUG && _d('Failed to prepare query, skipping');
       return;
@@ -407,6 +424,56 @@ sub rewrite_query {
    $event->{fingerprint}  = $fingerprint;
 
    return $event;
+}
+
+sub inject_columns_list {
+   my ( $self, $query ) = @_; 
+   my $tp   = $self->{TableParser};
+   my $qp   = $self->{QueryParser};
+   my $dbh  = $self->{dbh};
+   return unless $tp && $qp;
+   MKDEBUG && _d('Attempting to inject columns list into query');
+
+   my @tbls = $qp->get_tables($query);
+   if ( !@tbls ) {
+      MKDEBUG && _d("Can't get tables from query");
+      return;
+   }
+   if ( @tbls > 1 ) {
+      MKDEBUG && _d("Query has more than one table");
+      return;
+   }
+
+   my $tbl_cols = $self->{tbl_cols}->{$tbls[0]};
+   if ( !$tbl_cols ) {
+      my $sql = "SHOW CREATE TABLE $tbls[0]";
+      MKDEBUG && _d($sql);
+      my $show_create = $dbh->selectrow_arrayref($sql)->[1];
+      if ( !$show_create ) {
+         MKDEBUG && _d("Failed to", $sql);
+         return;
+      }
+      my $tbl_struct = $tp->parse($show_create);
+      if ( !$tbl_struct ) {
+         MKDEBUG && _d("Failed to parse table struct");
+         return;
+      }
+      $tbl_cols = join(',', map { "`$_`" } @{$tbl_struct->{cols}});
+      $self->{tbl_cols}->{$tbls[0]} = $tbl_cols;
+   }
+   else {
+      MKDEBUG && _d('Using cached columns for', $tbls[0]);
+   }
+
+   if ( !($query =~ s/ VALUES?/ ($tbl_cols) VALUES/i) ) {
+      MKDEBUG && _d("Failed to inject columns list");
+      return;
+   }
+
+   MKDEBUG && _d('Successfully inject columns list:',
+      substr($query, 0, 100), '...');
+
+   return $query;
 }
 
 sub get_window {
